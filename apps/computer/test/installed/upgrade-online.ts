@@ -68,6 +68,20 @@ function exited(child: ChildProcess): Promise<number | null> {
   return new Promise((resolve) => child.once('exit', (code) => resolve(code)))
 }
 
+// What the installed command answers to --version, asked again until it
+// answers the expected version or the caller's bound ends.
+async function installedVersion(expected: string): Promise<string> {
+  for (;;) {
+    const version = command('--version')
+    const answer: Buffer[] = []
+    version.stdout?.on('data', (chunk: Buffer) => answer.push(chunk))
+    const code = await exited(version)
+    const said = Buffer.concat(answer).toString().trim()
+    if (code === 0 && said === expected) return said
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+  }
+}
+
 function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
   return Promise.race([promise, new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error(`${what} timed out:\n${Buffer.concat(log).toString()}`)), ms).unref())])
 }
@@ -164,11 +178,10 @@ try {
   await dropped
   await within(gateway.connected(), 60_000, 'reconnecting')
   await logged(new RegExp(`upgrading to ${corrupt.replace(/\./g, '\\.')} failed: .*EINTEGRITY`), 300_000, 'the corrupt release being refused')
-  const version = command('--version')
-  const answer: Buffer[] = []
-  version.stdout?.on('data', (chunk: Buffer) => answer.push(chunk))
-  assert.equal(await within(exited(version), 30_000, '--version'), 0)
-  assert.equal(Buffer.concat(answer).toString().trim(), next, 'the refused release left the installed one')
+  // npm on Windows removes the installed package before the failed install
+  // gives up; the run then reinstalls the version it runs. The installed
+  // command answers once that is back.
+  assert.equal(await within(installedVersion(next), 120_000, 'the installed version after the refusal'), next, 'the refused release left the installed one')
   assert.equal(gateway.headers.at(-1)?.['x-talgent-computer-version'], next)
   console.log(`a release failing npm's integrity check left Talgent Computer ${next} in place on ${process.platform}`)
 } catch (error) {
