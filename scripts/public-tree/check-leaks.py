@@ -26,7 +26,13 @@ Then gitleaks, when installed, scans the public tree.
 Derived code under gen/ is skipped: it is regenerated from proto/, which is
 checked.
 
-Exit status 1 when anything is found. Usage: check-leaks.py [--skip-secret-scan]
+With --pushed, as a pre-push hook, it reads the refs Git is pushing from
+stdin and checks each pushed commit's tree instead of the working tree, so
+uncommitted and untracked files change nothing. A commit of a repository that
+holds the public tree is checked by its own copy of this script.
+
+Exit status 1 when anything is found.
+Usage: check-leaks.py [--pushed] [--skip-secret-scan]
 """
 
 import bisect
@@ -265,5 +271,52 @@ def main():
     return status
 
 
+def pushed_commits(lines):
+    """The local commits of pre-push input lines, without deletions or repeats."""
+    commits = []
+    for line in lines:
+        fields = line.split()
+        if len(fields) != 4 or set(fields[1]) == {"0"} or fields[1] in commits:
+            continue
+        commits.append(fields[1])
+    return commits
+
+
+def check_pushed(args):
+    status = 0
+    # A hook runs with Git's repository variables set; the checked worktree
+    # must resolve to itself.
+    local = set(git("rev-parse", "--local-env-vars").split())
+    env = {k: v for k, v in os.environ.items() if k not in local}
+    for commit in pushed_commits(sys.stdin):
+        try:
+            commit = git("rev-parse", "--verify", "--quiet", commit + "^{commit}").strip()
+        except subprocess.CalledProcessError:
+            print(f"pushed object {commit[:12]} is not a commit; refused unchecked", file=sys.stderr)
+            status = 1
+            continue
+        with tempfile.TemporaryDirectory() as scratch:
+            tree = Path(scratch) / "tree"
+            git("worktree", "add", "--quiet", "--detach", str(tree), commit)
+            try:
+                script = Path(__file__).resolve()
+                if HOLDS_TREE:
+                    # The commit's own checker and manifest; a commit without
+                    # them cannot be checked as the public tree.
+                    script = tree / PREFIX / "scripts/public-tree/check-leaks.py"
+                    if not script.is_file():
+                        print(f"pushed commit {commit[:12]} has no {script.relative_to(tree)}; refused unchecked", file=sys.stderr)
+                        status = 1
+                        continue
+                print(f"checking pushed commit {commit[:12]}", file=sys.stderr)
+                run = subprocess.run([sys.executable, str(script), *args], cwd=tree, env=env, stdin=subprocess.DEVNULL)
+                status = status or run.returncode
+            finally:
+                git("worktree", "remove", "--force", str(tree))
+    return status
+
+
 if __name__ == "__main__":
+    if "--pushed" in sys.argv[1:]:
+        sys.exit(check_pushed([a for a in sys.argv[1:] if a != "--pushed"]))
     sys.exit(main())

@@ -71,6 +71,7 @@ test:
 	bash test/next-version-test.sh
 	bash test/sandbox-dockerfile-test.sh
 	bash test/marketplace-sync-test.sh
+	bash test/pre-push-leak-check-test.sh
 	TALGENT_TEST_SERVICES=nats bash scripts/test/with-middleware.sh go test -p=4 $(UNIT_TEST_FLAGS) $(UNIT_PACKAGES)
 
 # Compile, without running, the test binaries of test / test-integration to
