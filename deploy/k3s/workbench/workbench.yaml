@@ -367,12 +367,13 @@ data:
           workers: 4
           request-timeout-seconds: 120
           archive-base-url: ${MARKETPLACE_ARCHIVE_BASE_URL}
+          # Keyed by name: an overlay's profile adds sources beside these.
           sources:
-            - name: claude-plugins-official
+            claude-plugins-official:
               uri: https://github.com/anthropics/claude-plugins-official.git
               owned: false
               priority: 10
-            - name: talgent
+            talgent:
               uri: https://github.com/talgent-work/marketplace.git
               owned: true
               priority: 100

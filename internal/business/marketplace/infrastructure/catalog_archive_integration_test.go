@@ -81,7 +81,7 @@ func TestArchiveSynchronizationParallelIncrementalAndFailureRetention(t *testing
 	writeCatalog(t, source, "upstream", entries)
 	store, e := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
 	require.NoError(t, e)
-	config := infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 5, CertificateAuthority: certificate, Sources: []infrastructure.CatalogSource{{Name: "upstream", URI: source}}}
+	config := infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 5, CertificateAuthority: certificate, Sources: map[string]infrastructure.CatalogSource{"upstream": {URI: source}}}
 	syncer, e := infrastructure.NewCatalogSynchronizer(config, store)
 	require.NoError(t, e)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -158,7 +158,7 @@ func TestAcquisitionDeadlinePublishesCompletedPlugins(t *testing.T) {
 	writeCatalog(t, source, "upstream", entries)
 	store, e := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
 	require.NoError(t, e)
-	syncer, e := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 10, CertificateAuthority: certificate, Sources: []infrastructure.CatalogSource{{Name: "upstream", URI: source}}}, store)
+	syncer, e := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 10, CertificateAuthority: certificate, Sources: map[string]infrastructure.CatalogSource{"upstream": {URI: source}}}, store)
 	require.NoError(t, e)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
@@ -183,7 +183,7 @@ func TestUnchangedManifestVersionReusesRelease(t *testing.T) {
 	writeCatalog(t, source, "owned", []map[string]any{{"name": "catalog-alias", "version": "1.0.0", "description": "Alias title", "source": "./plugin"}, {"name": "owned", "description": "Canonical title", "source": "./plugin"}})
 	store, e := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
 	require.NoError(t, e)
-	syncer, e := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 5, ArchiveBaseURL: "https://example.invalid/archives", Sources: []infrastructure.CatalogSource{{Name: "owned", URI: source, Owned: true}}}, store)
+	syncer, e := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 5, ArchiveBaseURL: "https://example.invalid/archives", Sources: map[string]infrastructure.CatalogSource{"owned": {URI: source, Owned: true}}}, store)
 	require.NoError(t, e)
 	require.NoError(t, syncer.SynchronizeCatalog(t.Context(), false))
 	before, e := store.Get(t.Context(), "owned")

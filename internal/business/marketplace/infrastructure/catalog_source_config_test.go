@@ -8,7 +8,11 @@ import (
 )
 
 func acquisition(sources ...infrastructure.CatalogSource) infrastructure.CatalogAcquisitionConfig {
-	return infrastructure.CatalogAcquisitionConfig{Workers: 1, RequestTimeoutSeconds: 5, ArchiveBaseURL: "https://catalog.example.invalid/marketplace/archives", Sources: sources}
+	named := make(map[string]infrastructure.CatalogSource, len(sources))
+	for _, source := range sources {
+		named[source.Name] = source
+	}
+	return infrastructure.CatalogAcquisitionConfig{Workers: 1, RequestTimeoutSeconds: 5, ArchiveBaseURL: "https://catalog.example.invalid/marketplace/archives", Sources: named}
 }
 
 var deployKey = &infrastructure.CatalogSourceCredentials{SSHKeyFile: "/etc/talgent/marketplace-sources/private/ssh-privatekey", KnownHostsFile: "/etc/talgent/marketplace-sources/known_hosts"}

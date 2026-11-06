@@ -34,9 +34,7 @@ fi
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 # Resolved once: the render and the database bootstrap use the same values.
-resolve_k3s_environment "${KUSTOMIZATION}" "${work}/environment.env"
-export TALGENT_ENVIRONMENT_FILE="${work}/environment.env"
-export_environment "${TALGENT_ENVIRONMENT_FILE}"
+use_k3s_environment "${KUSTOMIZATION}" "${work}"
 
 kubectl create namespace "${NS}" --dry-run=client -o yaml | kubectl apply -f -
 rendered="${work}/rendered.yaml"

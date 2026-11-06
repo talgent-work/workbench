@@ -75,7 +75,7 @@ func TestCatalogSynchronization(t *testing.T) {
 	mux.Handle(marketplacehttp.ContentPath, marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorRepositories{}), slog.Default()))
 	synchronizer, err := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 45,
 		CertificateAuthority: certificate, ArchiveBaseURL: server.URL + "/marketplace/archives",
-		Sources: []infrastructure.CatalogSource{{Name: "owned", URI: owned, Owned: true}, {Name: "external", URI: external}}}, store)
+		Sources: map[string]infrastructure.CatalogSource{"owned": {URI: owned, Owned: true}, "external": {URI: external}}}, store)
 	require.NoError(t, err)
 	synchronize := func() error { return synchronizer.SynchronizeCatalog(ctx, false) }
 

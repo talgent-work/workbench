@@ -83,7 +83,7 @@ func TestPrivateCatalogSourceSynchronizesWithItsDeployKey(t *testing.T) {
 	certificate := filepath.Join(t.TempDir(), "ca.pem")
 	require.NoError(t, os.WriteFile(certificate, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0o600))
 	synchronizer, err := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 1, RequestTimeoutSeconds: 30, CertificateAuthority: certificate, ArchiveBaseURL: server.URL + "/marketplace/archives",
-		Sources: []infrastructure.CatalogSource{{Name: "private", URI: "ssh://git@git.example.invalid" + bare, Owned: true, Credentials: &infrastructure.CatalogSourceCredentials{SSHKeyFile: key, KnownHostsFile: known}}}}, store)
+		Sources: map[string]infrastructure.CatalogSource{"private": {URI: "ssh://git@git.example.invalid" + bare, Owned: true, Credentials: &infrastructure.CatalogSourceCredentials{SSHKeyFile: key, KnownHostsFile: known}}}}, store)
 	require.NoError(t, err)
 
 	require.NoError(t, synchronizer.SynchronizeCatalog(ctx, false))

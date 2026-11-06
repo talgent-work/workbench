@@ -43,7 +43,7 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 	defer archiveServer.Close()
 	certificate := filepath.Join(t.TempDir(), "ca.pem")
 	require.NoError(t, os.WriteFile(certificate, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: archiveServer.Certificate().Raw}), 0600))
-	synchronizer, err := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 5, CertificateAuthority: certificate, ArchiveBaseURL: archiveServer.URL + "/marketplace/archives", Sources: []infrastructure.CatalogSource{{Name: "source", URI: root, Owned: true}}}, store)
+	synchronizer, err := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 5, CertificateAuthority: certificate, ArchiveBaseURL: archiveServer.URL + "/marketplace/archives", Sources: map[string]infrastructure.CatalogSource{"source": {URI: root, Owned: true}}}, store)
 	require.NoError(t, err)
 	runs := infrastructure.NewSynchronizationRuns(db)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

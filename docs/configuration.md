@@ -192,7 +192,7 @@ How Agent reaches Computer and Managed Computers.
 | `synchronization.acquisition.request-timeout-seconds` | 120 | One request |
 | `synchronization.acquisition.archive-base-url` | `${MARKETPLACE_ARCHIVE_BASE_URL:}` | HTTPS base address Works download owned archives from: `<origin>/marketplace/archives` |
 | `synchronization.acquisition.certificate-authority` | none | A CA bundle file for the sources |
-| `synchronization.acquisition.sources[]` | `claude-plugins-official` (priority 10), `talgent` (owned, priority 100) | Catalog sources: `name`, git `uri`, `priority` (the higher wins a Plugin both list), `owned` (archives served from this deployment), and for a private SSH source `credentials.ssh-key-file` and `credentials.known-hosts-file` |
+| `synchronization.acquisition.sources.<name>` | `claude-plugins-official` (priority 10), `talgent` (owned, priority 100) | Catalog sources keyed by name, so a profile adds sources beside these: git `uri`, `priority` (the higher wins a Plugin both list), `owned` (archives served from this deployment), and for a private SSH source `credentials.ssh-key-file` and `credentials.known-hosts-file` |
 | `provider-connectors[]` | none; base registers `github` | Connectors people install, each authenticated by a Provider: `name`, `description`, `category`, `provider`, `target`, `authentication`, a `command` with `args` or a `type` with `url` and `headers`, and `credential-environment` |
 | `platform-connector.gateway-address` | `${NATIVE_GATEWAY_ADDRESS:}` | The MCP server every Work connects to as the platform Connector, with `description` and `category`; empty publishes none |
 | `directory` | `${MARKETPLACE_DIRECTORY:/mnt/talgent/marketplace}` | Where owned archives are kept |

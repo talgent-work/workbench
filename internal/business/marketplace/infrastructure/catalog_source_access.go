@@ -12,9 +12,10 @@ import (
 )
 
 // CatalogSource configures one catalog source: what publication knows of it
-// and, for a private catalog, how acquisition reads it.
+// and, for a private catalog, how acquisition reads it. Its name is its key
+// in CatalogAcquisitionConfig.Sources.
 type CatalogSource struct {
-	Name     string `json:"name" yaml:"name" toml:"name"`
+	Name     string `json:"-" yaml:"-" toml:"-"`
 	URI      string `json:"uri" yaml:"uri" toml:"uri"`
 	Priority int    `json:"priority" yaml:"priority" toml:"priority"`
 	Owned    bool   `json:"owned" yaml:"owned" toml:"owned"`

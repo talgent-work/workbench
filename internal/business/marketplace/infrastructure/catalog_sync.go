@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 	"net/url"
 	"os"
@@ -20,11 +21,13 @@ import (
 )
 
 type CatalogAcquisitionConfig struct {
-	Sources               []CatalogSource `json:"sources" yaml:"sources" toml:"sources"`
-	RequestTimeoutSeconds int             `json:"request-timeout-seconds" yaml:"request-timeout-seconds" toml:"request-timeout-seconds"`
-	Workers               int             `json:"workers" yaml:"workers" toml:"workers"`
-	ArchiveBaseURL        string          `json:"archive-base-url" yaml:"archive-base-url" toml:"archive-base-url"`
-	CertificateAuthority  string          `json:"certificate-authority" yaml:"certificate-authority" toml:"certificate-authority"`
+	// Sources are keyed by name, so a configuration profile adds sources
+	// beside the ones it inherits instead of listing them again.
+	Sources               map[string]CatalogSource `json:"sources" yaml:"sources" toml:"sources"`
+	RequestTimeoutSeconds int                      `json:"request-timeout-seconds" yaml:"request-timeout-seconds" toml:"request-timeout-seconds"`
+	Workers               int                      `json:"workers" yaml:"workers" toml:"workers"`
+	ArchiveBaseURL        string                   `json:"archive-base-url" yaml:"archive-base-url" toml:"archive-base-url"`
+	CertificateAuthority  string                   `json:"certificate-authority" yaml:"certificate-authority" toml:"certificate-authority"`
 }
 
 var catalogName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,127}$`)
@@ -33,10 +36,9 @@ func (c CatalogAcquisitionConfig) Validate() error {
 	if c.RequestTimeoutSeconds <= 0 || c.Workers < 1 || c.Workers > 8 || len(c.Sources) == 0 {
 		return errors.New("marketplace: sources, positive request timeout and 1–8 workers are required")
 	}
-	seen := map[string]bool{}
-	for _, source := range c.Sources {
-		if !catalogName.MatchString(source.Name) || seen[source.Name] || strings.TrimSpace(source.URI) == "" || strings.HasPrefix(source.URI, "-") {
-			return errors.New("marketplace: invalid or duplicate catalog source")
+	for _, source := range c.sources() {
+		if !catalogName.MatchString(source.Name) || strings.TrimSpace(source.URI) == "" || strings.HasPrefix(source.URI, "-") {
+			return fmt.Errorf("marketplace: invalid catalog source %q", source.Name)
 		}
 		if e := validateSourceAccess(source); e != nil {
 			return e
@@ -47,9 +49,19 @@ func (c CatalogAcquisitionConfig) Validate() error {
 				return errors.New("marketplace: owned archive base URL must use HTTPS without credentials, query or fragment")
 			}
 		}
-		seen[source.Name] = true
 	}
 	return nil
+}
+
+// sources are the configured sources, each named by its key, in name order.
+func (c CatalogAcquisitionConfig) sources() []CatalogSource {
+	sources := make([]CatalogSource, 0, len(c.Sources))
+	for name, source := range c.Sources {
+		source.Name = name
+		sources = append(sources, source)
+	}
+	sort.Slice(sources, func(i, j int) bool { return sources[i].Name < sources[j].Name })
+	return sources
 }
 
 type CatalogSynchronizer struct {
@@ -100,7 +112,7 @@ func (s *CatalogSynchronizer) synchronize(ctx context.Context) error {
 	}
 	defer cancel()
 	sources := make([]SourceReleases, 0, len(s.config.Sources))
-	for _, source := range s.config.Sources {
+	for _, source := range s.config.sources() {
 		result, e := s.readSource(acquireCtx, a, source)
 		if ctx.Err() != nil {
 			return ctx.Err()

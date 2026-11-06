@@ -39,8 +39,13 @@ env_file_keys() {
 # kustomization DIR to OUT and fails unless it sets every key DIR's
 # placeholders name.
 resolve_k3s_environment() {
-  local dir="$1" out="$2" namespace="${TALGENT_NAMESPACE:-talgent}" file key
-  if [[ -n "${TALGENT_ENVIRONMENT_FILE:-}" ]]; then
+  local dir="$1" out="$2" namespace="${TALGENT_NAMESPACE:-talgent}" file key origin
+  # A deploy resolves its environment once (use_k3s_environment); the scripts
+  # it runs reuse that file, still checked against DIR's placeholders.
+  if [[ -n "${TALGENT_RESOLVED_ENVIRONMENT:-}" ]]; then
+    cp "${TALGENT_RESOLVED_ENVIRONMENT}" "${out}"
+    origin=""
+  elif [[ -n "${TALGENT_ENVIRONMENT_FILE:-}" ]]; then
     if [[ ! -r "${TALGENT_ENVIRONMENT_FILE}" ]]; then
       echo "TALGENT_ENVIRONMENT_FILE=${TALGENT_ENVIRONMENT_FILE} is not readable" >&2
       return 1
@@ -52,6 +57,7 @@ resolve_k3s_environment() {
       return 1
     fi
     cp "${file}" "${out}"
+    origin="TALGENT_ENVIRONMENT_FILE"
   else
     local configmap
     if ! configmap="$(kubectl -n "${namespace}" get configmap workbench-environment -o json)"; then
@@ -59,6 +65,7 @@ resolve_k3s_environment() {
       return 1
     fi
     jq -r '.data // {} | to_entries[] | "\(.key)=\(.value)"' <<< "${configmap}" > "${out}"
+    origin="ConfigMap ${namespace}/workbench-environment"
   fi
   env_file_keys "${out}" > /dev/null || return 1
   local -A present=()
@@ -71,6 +78,20 @@ resolve_k3s_environment() {
       fi
     done < <(env_file_keys "${file}")
   done < <(k3s_placeholder_files "${dir}")
+  if [[ -n "${origin}" ]]; then
+    echo "resolved the environment from ${origin}" >&2
+  fi
+}
+
+# use_k3s_environment DIR WORK resolves the deployment's environment for the
+# kustomization DIR into the directory WORK, unless the deploy running this
+# script already has, and exports it to this script and the ones it runs.
+use_k3s_environment() {
+  if [[ -z "${TALGENT_RESOLVED_ENVIRONMENT:-}" ]]; then
+    resolve_k3s_environment "$1" "$2/environment.env"
+    export TALGENT_RESOLVED_ENVIRONMENT="$2/environment.env"
+  fi
+  export_environment "${TALGENT_RESOLVED_ENVIRONMENT}"
 }
 
 # export_environment FILE exports every KEY=VALUE of FILE. The file wins over
