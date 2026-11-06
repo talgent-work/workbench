@@ -117,14 +117,10 @@ jobs:
             [ -f "apps/${svc}/Dockerfile" ] && TS_SERVICES+=("$svc")
           done
 
-          # Every image is ghcr.io/talgent-work/<product>-<service>; a web app's
-          # directory already starts with the product's name.
-          PRODUCT=workbench
+          # Every image is ghcr.io/talgent-work/talgent-<service>, as in
+          # scripts/deploy/lib/images.sh.
           image_name() {
-            case "$1" in
-              "$PRODUCT" | "$PRODUCT"-*) printf '%s' "$1" ;;
-              *) printf '%s-%s' "$PRODUCT" "$1" ;;
-            esac
+            printf 'talgent-%s' "$1"
           }
 
           # Build matrix entries: {name, image, dockerfile, build_args}.
@@ -418,7 +414,7 @@ jobs:
         id: base
         run: |
           hash=$(cat deploy/sandbox/Dockerfile.base .dockerignore | sha256sum | cut -d' ' -f1)
-          echo "tag=ghcr.io/talgent-work/workbench-sandbox-base:env-$hash" >> "$GITHUB_OUTPUT"
+          echo "tag=ghcr.io/talgent-work/talgent-sandbox-base:env-$hash" >> "$GITHUB_OUTPUT"
       - name: Build changed sandbox environment
         id: build
         if: needs.detect-changes.outputs.sandbox_base_required == 'true'
@@ -474,7 +470,7 @@ jobs:
           platforms: linux/amd64
           outputs: type=registry
           build-args: SANDBOX_BASE_IMAGE=${{ needs.sandbox-base.outputs.image }}
-          tags: ghcr.io/talgent-work/workbench-sandbox:${{ needs.image-tag.outputs.tag }}
+          tags: ghcr.io/talgent-work/talgent-sandbox:${{ needs.image-tag.outputs.tag }}
           cache-from: type=gha,scope=sandbox
           cache-to: type=gha,mode=max,scope=sandbox,ignore-error=true
 

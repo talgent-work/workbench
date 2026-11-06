@@ -57,7 +57,7 @@ assert_contains 'sandbox_required: ${{ steps.changed.outputs.sandbox_required }}
 assert_contains 'build-sandbox:' "independent sandbox job"
 assert_contains "needs.detect-changes.outputs.sandbox_required == 'true'" "sandbox job condition"
 assert_contains 'file: deploy/sandbox/Dockerfile' "sandbox Dockerfile build"
-assert_contains 'tags: ghcr.io/talgent-work/workbench-sandbox:${{ needs.image-tag.outputs.tag }}' "sandbox image tag"
+assert_contains 'tags: ghcr.io/talgent-work/talgent-sandbox:${{ needs.image-tag.outputs.tag }}' "sandbox image tag"
 assert_file_not_contains "${WORKFLOW}" '      - build-sandbox' "service matrix must not wait for sandbox"
 assert_file_not_contains "${WORKFLOW}" 'needs.build-sandbox.result' "service matrix must not depend on sandbox results"
 assert_contains 'outputs: type=registry' "builds publish directly to registry"
@@ -79,8 +79,8 @@ fi
 if ! grep -Fxq 'build_web_app workbench-web' "${BUILD_SCRIPT}"; then
   fail "the local image build must build the web app"
 fi
-# Every image is named after the product.
-assert_contains 'PRODUCT=workbench' "image names"
+# Every image is talgent-<service>.
+assert_contains "printf 'talgent-%s'" "image names"
 assert_contains 'tags: ghcr.io/talgent-work/${{ matrix.image }}:${{ needs.image-tag.outputs.tag }}' "service image tag"
 
 # Intent: web image builds no longer receive SPA OIDC provider build arguments;
@@ -162,7 +162,7 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
             if build_all == "true":
                 assert names == {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web", "execd"}, names
             images = {entry["name"]: entry["image"] for entry in json.loads(values["matrix"])}
-            assert all(image == name if name.startswith("workbench-") else image == "workbench-" + name for name, image in images.items()), images
+            assert all(image == "talgent-" + name for name, image in images.items()), images
             if expected is not None:
                 assert names == expected, names
         print(name+": PASS")
@@ -181,15 +181,15 @@ script = "\n".join(line[10:] for line in body[a:b].splitlines()[1:])
 script = script.replace("${{ github.event.repository.default_branch || 'master' }}", "master")
 script = script.replace('go run ./scripts/ci/substantive "$1" "$2"', 'cat')
 everything = {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web", "execd", "sandbox"}
-# A reused image is named after the product.
-image = lambda name: name if name.startswith("workbench-") else "workbench-" + name
+# A reused image is talgent-<service>.
+image = lambda name: "talgent-" + name
 for name, changed, missing, built, sandbox in [
     ("release of a Workbench web change", "apps/workbench-web/src/app.tsx", "", {"workbench-web"}, "false"),
     ("release of a shared Go change", "pkg/taskqueue/runtime.go", "", {"controlplane", "dispatcher", "streamgateway", "computer-gateway"}, "false"),
     ("release of a Talgent Computer change", "apps/computer/src/cli.ts", "", set(), "false"),
     ("release with nothing to build", "docs/guide.md", "", set(), "false"),
-    ("release missing a previous image", "docs/guide.md", "workbench-streamgateway:v0.0.1", {"streamgateway"}, "false"),
-    ("release missing the previous sandbox", "docs/guide.md", "workbench-sandbox:v0.0.1", set(), "true"),
+    ("release missing a previous image", "docs/guide.md", "talgent-streamgateway:v0.0.1", {"streamgateway"}, "false"),
+    ("release missing the previous sandbox", "docs/guide.md", "talgent-sandbox:v0.0.1", set(), "true"),
 ]:
     with tempfile.NamedTemporaryFile() as output:
         env = os.environ | dict(CURRENT_REF="HEAD", IMAGE_TAG="v0.0.2", RELEASE="true", BUILD_ALL="false",

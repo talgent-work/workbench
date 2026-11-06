@@ -324,9 +324,9 @@ objects that a newer base no longer has; delete them by hand.
 
 ### Images
 
-A release publishes `ghcr.io/talgent-work/workbench-controlplane`, `workbench-dispatcher`,
-`workbench-streamgateway`, `workbench-computer-gateway`, `workbench-sandbox`, `workbench-execd`
-and `workbench-web`, all tagged `vX.Y.Z`. Always set `TALGENT_IMAGE_TAG`: without it the scripts
+A release publishes `ghcr.io/talgent-work/talgent-controlplane`, `talgent-dispatcher`,
+`talgent-streamgateway`, `talgent-computer-gateway`, `talgent-sandbox`, `talgent-execd`
+and `talgent-workbench-web`, all tagged `vX.Y.Z`. Always set `TALGENT_IMAGE_TAG`: without it the scripts
 deploy the tag written in `scripts/deploy/lib/images.sh`, which need not be the release you
 checked out.
 
@@ -338,7 +338,7 @@ TALGENT_REGISTRY=registry.example.com/talgent TALGENT_IMAGE_TAG=build-$(git rev-
 ```
 
 Deploy with the same `TALGENT_REGISTRY` and `TALGENT_IMAGE_TAG`. The sandbox image builds on
-`workbench-sandbox-base`, tagged by the hash of its recipe and reused while that is unchanged.
+`talgent-sandbox-base`, tagged by the hash of its recipe and reused while that is unchanged.
 OpenSandbox runs the execd image pinned by digest in `deploy/opensandbox/server.yaml`, whatever
 the tag; set `TALGENT_EXECD_IMAGE` to a complete tag or digest to use another.
 

@@ -130,7 +130,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `network-deny` | `[]` | Further egress targets denied beside the private ranges and all IPv6 |
 | `opensandbox.address`, `opensandbox.api-key` | `${OPENSANDBOX_ADDRESS:http://opensandbox:80}`, `${OPENSANDBOX_API_KEY:}` | The OpenSandbox Server; base key: Secret `opensandbox-api` |
 | `native.binary` | `claude` | The Claude Code command in the sandbox image |
-| `image` | `${AGENT_NATIVE_IMAGE:}` | The sandbox image; base: `ghcr.io/talgent-work/workbench-sandbox:<tag>`, set when rendered |
+| `image` | `${AGENT_NATIVE_IMAGE:}` | The sandbox image; base: `ghcr.io/talgent-work/talgent-sandbox:<tag>`, set when rendered |
 | `requests`, `limits` | `cpu: 250m`, `memory: 512Mi`; `cpu: "2"`, `memory: 2Gi` | The sandbox container's resources |
 | `environment.TALGENT_API_ADDRESS` | `${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent.svc.cluster.local}` | The platform API a sandbox calls, on the standard port: the only kind its Credential Proxy adds the Work credential to |
 | `environment.OTEL_EXPORTER_OTLP_ENDPOINT` | `${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}` | Where Claude Code sends its telemetry |
@@ -288,7 +288,7 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
 | Variable | Script | Meaning |
 |---|---|---|
 | `TALGENT_ENVIRONMENT_FILE` | `apply-k3s.sh`, `render-k3s.sh` | The environment, a `KEY=VALUE` file outside the repository; unset reads ConfigMap `workbench-environment` |
-| `TALGENT_IMAGE_TAG`, `TALGENT_REGISTRY` | `render-k3s.sh`, `build-and-push-images.sh` | Tag of the Workbench's images (`workbench-*`), and registry (default `ghcr.io/talgent-work`) |
+| `TALGENT_IMAGE_TAG`, `TALGENT_REGISTRY` | `render-k3s.sh`, `build-and-push-images.sh` | Tag of the Workbench's images (listed in `scripts/deploy/lib/images.sh`), and registry (default `ghcr.io/talgent-work`) |
 | `TALGENT_OVERLAY_IMAGE_TAG` | `render-k3s.sh` | Tag of an overlay's own images of `ghcr.io/talgent-work`; required when the overlay names any |
 | `TALGENT_PUSH_IMAGES` | `build-and-push-images.sh` | `1` pushes what it builds |
 | `TALGENT_NAMESPACE` | all | Must be `talgent` |
