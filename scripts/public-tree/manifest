@@ -19,6 +19,7 @@ core docs
 core README.md
 
 public gen
+public deploy/controlplane
 public deploy/execd
 public deploy/juicefs
 public deploy/kata
