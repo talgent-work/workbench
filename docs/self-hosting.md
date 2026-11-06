@@ -256,17 +256,14 @@ It uses `kafka-topics.sh` from `PATH`, or else runs it in the Docker container `
   and `otel_metrics_*` at startup ([OTel Collector](configuration.md#otel-collector)).
 - `scripts/deploy/bootstrap-clickhouse.sh` applies `deploy/middleware/init/clickhouse/002-talgent.sql`:
   the functions, tables and materialized views that turn that telemetry into Usage, kept for 30
-  days. It needs the Collector's tables and stops with an error until they exist.
+  days. It needs the Collector's tables: with `CLICKHOUSE_WAIT_SECONDS` it waits that long for
+  them, and without it stops with an error until they exist.
 
 The service account `CLICKHOUSE_USER` therefore creates and writes `talgent_messages` and
 `talgent_trace`, and reads them and `default`. `bootstrap-clickhouse.sh` connects as
 `CLICKHOUSE_MIGRATION_USER` (default `default`) with `CLICKHOUSE_MIGRATION_PASSWORD`, which
 creates functions, tables and views there; set `CLICKHOUSE_CONTAINER=<container>` to run it with
 `docker exec` instead of a local `clickhouse-client`.
-
-`apply-k3s.sh` runs `bootstrap-clickhouse.sh` before it deploys the Collector. On a fresh
-ClickHouse, deploy first with `TALGENT_SKIP_CLICKHOUSE_MIGRATION=1`, then run it as in
-[section 7](#7-deploy).
 
 ## 7. Deploy
 
@@ -293,11 +290,6 @@ read -rs ACCOUNT_GITHUB_CLIENT_SECRET && export ACCOUNT_GITHUB_CLIENT_SECRET
 # Preview what will be applied
 scripts/deploy/render-k3s.sh deploy/k3s/workbench | less
 
-# First deploy on a fresh ClickHouse: projections follow once the Collector runs
-TALGENT_SKIP_CLICKHOUSE_MIGRATION=1 scripts/deploy/apply-k3s.sh deploy/k3s/workbench
-CLICKHOUSE_ADDR=192.0.2.13:9000 scripts/deploy/bootstrap-clickhouse.sh
-
-# Every later deploy
 scripts/deploy/apply-k3s.sh deploy/k3s/workbench
 ```
 
@@ -312,12 +304,14 @@ scripts/deploy/apply-k3s.sh deploy/k3s/workbench
    `../workbench`, where the render places it, and its own images take
    `TALGENT_OVERLAY_IMAGE_TAG`.
 3. Ensures the Secrets of [section 4](#4-secrets) and applies the namespace budget.
-4. Applies the MySQL schema and the ClickHouse projections, unless skipped.
+4. Applies the MySQL schema, unless skipped.
 5. Runs `apply-opensandbox.sh`: checks the Kata RuntimeClass and the WireGuard backend, applies
    the environment ConfigMap and the Collector and waits for it, writes the Collector's address
    into the sandbox NetworkPolicy, then deploys the OpenSandbox Controller (namespace
    `opensandbox-system`) and Server and waits for them.
-6. Applies everything rendered and waits for controlplane.
+6. Applies the ClickHouse projections once the Collector's tables exist (waiting up to
+   `CLICKHOUSE_WAIT_SECONDS`, default 120), unless skipped.
+7. Applies everything rendered and waits for controlplane.
 
 Processes do not reload configuration. After changing a ConfigMap or Secret by hand,
 `kubectl -n talgent rollout restart deployment/<service>`. `kubectl apply` does not delete

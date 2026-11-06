@@ -135,12 +135,14 @@ else
   echo "skip MySQL schema bootstrap because TALGENT_SKIP_DB_BOOTSTRAP=1" >&2
 fi
 
+# OpenSandbox's step deploys the Collector, which creates the native tables
+# the ClickHouse projections read.
+bash "${ROOT_DIR}/scripts/deploy/apply-opensandbox.sh" "${rendered}"
+
 if [[ "${SKIP_CLICKHOUSE_MIGRATION}" != "1" ]]; then
-  bash "${ROOT_DIR}/scripts/deploy/bootstrap-clickhouse.sh"
+  CLICKHOUSE_WAIT_SECONDS="${CLICKHOUSE_WAIT_SECONDS:-120}" bash "${ROOT_DIR}/scripts/deploy/bootstrap-clickhouse.sh"
 else
   echo "skip ClickHouse migration because TALGENT_SKIP_CLICKHOUSE_MIGRATION=1" >&2
 fi
-
-bash "${ROOT_DIR}/scripts/deploy/apply-opensandbox.sh" "${rendered}"
 kubectl apply -f "${rendered}"
 kubectl -n "${NS}" rollout status deployment/controlplane --timeout=180s

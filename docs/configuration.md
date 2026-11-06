@@ -297,7 +297,7 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
 | `REDIS_PASSWORD` | `apply-k3s.sh` | The Redis password, written to the optional Secret `redis-auth` when set |
 | `ACCOUNT_GITHUB_CLIENT_ID`, `ACCOUNT_GITHUB_CLIENT_SECRET` | `apply-k3s.sh` | Written to Secret `account-github-oauth` |
 | `TALGENT_EXECD_IMAGE` | `apply-opensandbox.sh` | Another execd image than the pinned one |
-| `CLICKHOUSE_ADDR`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_MIGRATION_USER`, `CLICKHOUSE_MIGRATION_PASSWORD`, `CLICKHOUSE_MIGRATION_SQL`, `CLICKHOUSE_CONTAINER` | `bootstrap-clickhouse.sh` | Defaults `127.0.0.1:9000`, `talgent_trace`, `default`, empty, `deploy/middleware/init/clickhouse/002-talgent.sql`, none |
+| `CLICKHOUSE_ADDR`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_MIGRATION_USER`, `CLICKHOUSE_MIGRATION_PASSWORD`, `CLICKHOUSE_MIGRATION_SQL`, `CLICKHOUSE_CONTAINER`, `CLICKHOUSE_WAIT_SECONDS` | `bootstrap-clickhouse.sh` | Defaults `127.0.0.1:9000`, `talgent_trace`, `default`, empty, `deploy/middleware/init/clickhouse/002-talgent.sql`, none, 0 (`apply-k3s.sh`: 120): how long to wait for the Collector's tables |
 | `KAFKA_BOOTSTRAP_SERVER`, `KAFKA_PARTITIONS`, `KAFKA_REPLICATION_FACTOR`, `KAFKA_CONTAINER` | `bootstrap-kafka.sh` | Defaults `127.0.0.1:9092`, 10, 1, `kafka` |
 | `JUICEFS_CSI_VERSION`, `JUICEFS_CSI_CONTROLLER_REPLICAS`, `JUICEFS_CSI_DASHBOARD_REPLICAS`, `JUICEFS_CSI_INSTALL_CONFIRM` | `scripts/juicefs/install-csi-k3s.sh` | Defaults `v0.31.6`, 1, 0; confirm with `local-k3s` |
 | `JUICEFS_META_URL`, `REDIS_PASSWORD` | `scripts/juicefs/metadata.sh` | The metadata Redis URL without credentials, and its password |
