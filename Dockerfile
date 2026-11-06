@@ -1,27 +1,33 @@
 # syntax=docker/dockerfile:1.7
 
-FROM golang:1.26.10 AS builder
-ARG SERVICE
-WORKDIR /app
-COPY go.mod go.sum ./
+# A Go service of cmd/<SERVICE> that runs nothing but itself. A service that
+# needs system tools has its own deploy/<service>/Dockerfile.
+
+# The builder runs on the build host's platform and cross-compiles for the
+# target, so a multi-platform build needs no emulation. The source is bound,
+# not copied, so no layer holds it.
+FROM --platform=$BUILDPLATFORM golang:1.26.10 AS builder
+ARG TARGETOS TARGETARCH SERVICE
+WORKDIR /src
 RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=bind,source=go.mod,target=go.mod \
+    --mount=type=bind,source=go.sum,target=go.sum \
     go mod download
-COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -ldflags="-s -w" -o /app/${SERVICE} ./cmd/${SERVICE}
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w" -o /out/service ./cmd/${SERVICE}
 
-FROM debian:bookworm-slim
+# distroless/static carries CA certificates and tzdata, with no shell or
+# package manager. Its nonroot user is UID 65532, numeric so Kubernetes
+# runAsNonRoot can verify it.
+FROM gcr.io/distroless/static-debian13:nonroot
 ARG SERVICE
-ENV SERVICE_BIN=${SERVICE}
-# controlplane synchronizes Marketplace catalogs with git and npm, and reads a
-# private catalog source over SSH with its deploy key.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
-    && if [ "${SERVICE}" = "controlplane" ]; then apt-get install -y --no-install-recommends git npm openssh-client; fi \
-    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=builder /app/${SERVICE} /app/${SERVICE}
-# loader.Load uses relative path "./configs/<service>/defaults.yml"; ship the
-# baseline config so the service can boot inside the container.
-COPY --from=builder /app/configs/${SERVICE} /app/configs/${SERVICE}
-ENTRYPOINT ["sh", "-c", "exec /app/$SERVICE_BIN"]
+COPY --from=builder /out/service /app/service
+# loader.Load reads ./configs/<service>/defaults.yml; the deployment mounts its
+# own over it.
+COPY configs/${SERVICE} /app/configs/${SERVICE}
+USER 65532:65532
+ENTRYPOINT ["/app/service"]

@@ -502,6 +502,30 @@ jobs:
           docker build -f deploy/execd/Dockerfile -t talgent-execd:nss-check .
           python3 deploy/execd/verify-nss-bootstrap.py talgent-execd:nss-check
 
+      # A runner starts with empty cache mounts, so a Go service compiled from
+      # scratch every time. Its module and build caches persist in the Actions
+      # cache per service and go.sum; buildkit-cache-dance moves them into the
+      # builder's cache mounts and, after a miss, back out to be saved.
+      - name: Restore the Go caches
+        if: startsWith(matrix.build_args, 'SERVICE=')
+        id: go-cache
+        uses: actions/cache@v5
+        with:
+          path: go-cache
+          key: docker-go-${{ matrix.name }}-${{ hashFiles('go.sum') }}
+          restore-keys: docker-go-${{ matrix.name }}-
+
+      - name: Move the Go caches into the builder
+        if: startsWith(matrix.build_args, 'SERVICE=')
+        uses: reproducible-containers/buildkit-cache-dance@v3.4.0
+        with:
+          cache-map: |
+            {
+              "go-cache/mod": "/go/pkg/mod",
+              "go-cache/build": "/root/.cache/go-build"
+            }
+          skip-extraction: ${{ steps.go-cache.outputs.cache-hit }}
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
