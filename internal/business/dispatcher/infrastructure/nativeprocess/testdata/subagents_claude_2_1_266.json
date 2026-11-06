@@ -1,0 +1,137 @@
+[
+ {
+  "type": "system",
+  "subtype": "task_started",
+  "task_id": "abd6784b0eca9193c",
+  "tool_use_id": "toolu_01BWgsWaeCnK4oy1ongzSTFb",
+  "description": "bg echo",
+  "subagent_type": "general-purpose",
+  "is_backgrounded": true,
+  "spawn_depth": 1,
+  "task_type": "local_agent"
+ },
+ {
+  "type": "system",
+  "subtype": "task_updated",
+  "task_id": "abd6784b0eca9193c",
+  "patch": {
+   "status": "completed",
+   "end_time": 1792491117584
+  }
+ },
+ {
+  "type": "system",
+  "subtype": "task_notification",
+  "task_id": "abd6784b0eca9193c",
+  "tool_use_id": "toolu_01BWgsWaeCnK4oy1ongzSTFb",
+  "status": "completed"
+ },
+ {
+  "type": "system",
+  "subtype": "task_started",
+  "task_id": "a3ae5ec36d8d9d756",
+  "tool_use_id": "toolu_01Et2uPmtdALdYjj3r8oFn7i",
+  "description": "count files",
+  "subagent_type": "general-purpose",
+  "is_backgrounded": false,
+  "spawn_depth": 1,
+  "task_type": "local_agent"
+ },
+ {
+  "type": "system",
+  "subtype": "task_updated",
+  "task_id": "a3ae5ec36d8d9d756",
+  "patch": {
+   "status": "completed",
+   "end_time": 1792491129099
+  }
+ },
+ {
+  "type": "system",
+  "subtype": "task_notification",
+  "task_id": "a3ae5ec36d8d9d756",
+  "tool_use_id": "toolu_01Et2uPmtdALdYjj3r8oFn7i",
+  "status": "completed"
+ },
+ {
+  "type": "system",
+  "subtype": "task_started",
+  "task_id": "a4601ed954d3d1d2a",
+  "tool_use_id": "toolu_01FrJoksqFMfRoPt5kNz7M84",
+  "description": "nest probe",
+  "subagent_type": "general-purpose",
+  "is_backgrounded": false,
+  "spawn_depth": 1,
+  "task_type": "local_agent"
+ },
+ {
+  "type": "system",
+  "subtype": "task_started",
+  "task_id": "a363fcb1931226726",
+  "tool_use_id": "toolu_01Y7ypWtNqzrAA59NTQRmFdJ",
+  "description": "inner look",
+  "subagent_type": "Explore",
+  "is_backgrounded": false,
+  "spawn_depth": 2,
+  "task_type": "local_agent"
+ },
+ {
+  "type": "system",
+  "subtype": "task_updated",
+  "task_id": "a363fcb1931226726",
+  "patch": {
+   "status": "completed",
+   "end_time": 1792491153672
+  }
+ },
+ {
+  "type": "system",
+  "subtype": "task_notification",
+  "task_id": "a363fcb1931226726",
+  "tool_use_id": "toolu_01Y7ypWtNqzrAA59NTQRmFdJ",
+  "status": "completed"
+ },
+ {
+  "type": "system",
+  "subtype": "task_updated",
+  "task_id": "a4601ed954d3d1d2a",
+  "patch": {
+   "status": "completed",
+   "end_time": 1792491159510
+  }
+ },
+ {
+  "type": "system",
+  "subtype": "task_notification",
+  "task_id": "a4601ed954d3d1d2a",
+  "tool_use_id": "toolu_01FrJoksqFMfRoPt5kNz7M84",
+  "status": "completed"
+ },
+ {
+  "type": "system",
+  "subtype": "task_started",
+  "task_id": "a917d464cbb99d031",
+  "tool_use_id": "toolu_01QTyhTvJiYuanBr6QnfNMQ7",
+  "description": "long sleeper",
+  "subagent_type": "general-purpose",
+  "is_backgrounded": true,
+  "spawn_depth": 1,
+  "task_type": "local_agent"
+ },
+ {
+  "type": "system",
+  "subtype": "task_updated",
+  "task_id": "a917d464cbb99d031",
+  "patch": {
+   "status": "killed",
+   "end_time": 1792491164910
+  }
+ },
+ {
+  "type": "system",
+  "subtype": "task_notification",
+  "task_id": "a917d464cbb99d031",
+  "tool_use_id": "toolu_01QTyhTvJiYuanBr6QnfNMQ7",
+  "status": "stopped"
+ }
+]

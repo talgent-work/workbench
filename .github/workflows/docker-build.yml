@@ -1,0 +1,552 @@
+name: Docker Build
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: false
+        type: string
+      build_all:
+        required: false
+        type: boolean
+        default: false
+      base_ref:
+        required: false
+        type: string
+        default: ''
+      services:
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      current_ref: ${{ steps.tag.outputs.current_ref }}
+      build_all: ${{ steps.tag.outputs.build_all }}
+      services: ${{ steps.tag.outputs.services }}
+      release: ${{ steps.tag.outputs.release }}
+    steps:
+      - name: Resolve image tag
+        id: tag
+        env:
+          CALL_TAG: ${{ inputs.tag }}
+          CALL_BUILD_ALL: ${{ inputs.build_all }}
+          CALL_SERVICES: ${{ inputs.services }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -n "${CALL_TAG}" ]; then
+            echo "tag=${CALL_TAG}" >> "$GITHUB_OUTPUT"
+            echo "current_ref=${CALL_TAG}" >> "$GITHUB_OUTPUT"
+            echo "build_all=${CALL_BUILD_ALL:-false}" >> "$GITHUB_OUTPUT"
+            echo "services=${CALL_SERVICES}" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          safe_branch=$(printf '%s' "${REF_NAME}" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's#[^a-z0-9_.-]+#-#g; s#^-+##; s#-+$##')
+          short_sha=$(printf '%s' "${SHA}" | cut -c1-7)
+
+          echo "tag=${safe_branch}-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "current_ref=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "build_all=${CALL_BUILD_ALL:-false}" >> "$GITHUB_OUTPUT"
+          echo "services=${CALL_SERVICES}" >> "$GITHUB_OUTPUT"
+
+  detect-changes:
+    needs: image-tag
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.changed.outputs.matrix }}
+      sandbox_required: ${{ steps.changed.outputs.sandbox_required }}
+      sandbox_base_required: ${{ steps.changed.outputs.sandbox_base_required }}
+      reuse: ${{ steps.changed.outputs.reuse }}
+      previous_tag: ${{ steps.changed.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.image-tag.outputs.current_ref }}
+
+      # A release checks that the previous release's images exist before reusing them.
+      - uses: docker/login-action@v4
+        if: needs.image-tag.outputs.release == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Detect changed services
+        id: changed
+        env:
+          CURRENT_REF: ${{ needs.image-tag.outputs.current_ref }}
+          IMAGE_TAG: ${{ needs.image-tag.outputs.tag }}
+          BUILD_ALL: ${{ needs.image-tag.outputs.build_all }}
+          RELEASE: ${{ needs.image-tag.outputs.release }}
+          SELECTED_SERVICES: ${{ needs.image-tag.outputs.services }}
+          PREVIOUS_BUILD_REF: ${{ inputs.base_ref }}
+        run: |
+          set -euo pipefail
+          MODULE=$(go list -m)
+          PREV_TAG=$(git tag --list 'v*' --sort=-version:refname | grep -v "^${IMAGE_TAG}$" | head -1 || true)
+          DIFF=""
+          DIFF_RESOLVED=false
+          DIFF_AVAILABLE=false
+
+          # Product deployment targets; helper commands are not release images.
+          GO_SERVICES=(controlplane dispatcher streamgateway computer-gateway)
+          SANDBOX_INPUT_PATTERN='^(\.dockerignore$|deploy/sandbox/Dockerfile$|deploy/sandbox/Dockerfile\.base$)'
+
+          # TS services under apps/ that ship a Dockerfile.
+          TS_SERVICES=()
+          for dir in apps/*/; do
+            svc="$(basename "$dir")"
+            [ -f "apps/${svc}/Dockerfile" ] && TS_SERVICES+=("$svc")
+          done
+
+          # Every image is ghcr.io/talgent-work/<product>-<service>; a web app's
+          # directory already starts with the product's name.
+          PRODUCT=workbench
+          image_name() {
+            case "$1" in
+              "$PRODUCT" | "$PRODUCT"-*) printf '%s' "$1" ;;
+              *) printf '%s-%s' "$PRODUCT" "$1" ;;
+            esac
+          }
+
+          # Build matrix entries: {name, image, dockerfile, build_args}.
+          MATRIX=()
+          SANDBOX_REQUIRED=false
+          SANDBOX_BASE_REQUIRED=false
+          resolve_diff() {
+            if $DIFF_RESOLVED; then
+              return
+            fi
+            DIFF_RESOLVED=true
+
+            BASE_REF=""
+            if [ "${RELEASE}" != "true" ]; then
+              BASE_REF="${PREVIOUS_BUILD_REF}"
+              if [ -n "$BASE_REF" ] && ! git cat-file -e "${BASE_REF}^{commit}" 2>/dev/null; then
+                git fetch origin "$BASE_REF" --depth=1
+              fi
+              if [ -z "$BASE_REF" ]; then
+                # Include changes from failed/cancelled pushes, even without a PR.
+                BASE_REF=$(git merge-base origin/master "$CURRENT_REF" || true)
+              fi
+            elif [ -n "$PREV_TAG" ]; then
+              BASE_REF="$PREV_TAG"
+            else
+              DEFAULT_BRANCH="${{ github.event.repository.default_branch || 'master' }}"
+              git fetch origin "${DEFAULT_BRANCH}" --depth=1
+              BASE_REF="origin/${DEFAULT_BRANCH}"
+            fi
+
+            if [ -z "$BASE_REF" ] || ! git cat-file -e "${BASE_REF}^{commit}" 2>/dev/null; then
+              echo "No usable comparison base"
+              return
+            fi
+
+            DIFF_AVAILABLE=true
+            echo "Comparing $BASE_REF..$CURRENT_REF"
+            ALL_CHANGED=$(git diff --no-renames --name-only "$BASE_REF".."$CURRENT_REF")
+            # A file whose change is only comments or layout cannot change an image.
+            DIFF=$(printf '%s\n' "$ALL_CHANGED" | substantive_changes "$BASE_REF" "$CURRENT_REF")
+            echo "Changed files:"
+            echo "$DIFF"
+            IGNORED=$(comm -23 <(printf '%s\n' "$ALL_CHANGED" | sort) <(printf '%s\n' "$DIFF" | sort) | sed '/^$/d')
+            if [ -n "$IGNORED" ]; then
+              echo "Ignored, comments or layout only:"
+              echo "$IGNORED"
+            fi
+          }
+          substantive_changes() {
+            go run ./scripts/ci/substantive "$1" "$2"
+          }
+          add_sandbox() {
+            SANDBOX_REQUIRED=true
+          }
+          # A Go service with its own deploy/<service>/Dockerfile builds from it.
+          add_go() {
+            local dockerfile="Dockerfile"
+            [ -f "deploy/$1/Dockerfile" ] && dockerfile="deploy/$1/Dockerfile"
+            MATRIX+=("$(jq -nc --arg n "$1" --arg i "$(image_name "$1")" --arg f "$dockerfile" \
+              '{name: $n, image: $i, dockerfile: $f, build_args: ("SERVICE=" + $n)}')")
+          }
+          # Inputs a Go service's image takes beyond its Go packages: its own
+          # deploy/<service>/ directory.
+          extra_inputs() {
+            printf 'deploy/%s/' "$1"
+          }
+          add_execd() {
+            MATRIX+=("$(jq -nc --arg i "$(image_name execd)" '{name: "execd", image: $i, dockerfile: "deploy/execd/Dockerfile", build_args: ""}')")
+          }
+          # A TS service's inputs: its own apps/<service>/ directory and those of
+          # the workspace packages it depends on, transitively, such as
+          # workbench-ui and the generated contracts.
+          ts_inputs() {
+            local queue=("apps/$1") seen=" " dir dep candidate packages
+            packages=$(sed -n 's/^  - "\(.*\)"$/\1/p' pnpm-workspace.yaml)
+            while [ ${#queue[@]} -gt 0 ]; do
+              dir="${queue[0]}"
+              queue=("${queue[@]:1}")
+              case "$seen" in *" $dir "*) continue ;; esac
+              seen+="$dir "
+              printf '%s/\n' "$dir"
+              for dep in $(jq -r '[.dependencies // {}, .devDependencies // {}] | add | to_entries[] | select(.value | startswith("workspace:")) | .key' "$dir/package.json"); do
+                # Each pnpm-workspace.yaml package glob, expanded.
+                for candidate in $packages; do
+                  if [ -f "$candidate/package.json" ] && [ "$(jq -r .name "$candidate/package.json")" = "$dep" ]; then
+                    queue+=("$candidate")
+                  fi
+                done
+              done
+            done
+          }
+          add_ts() {
+            MATRIX+=("$(jq -nc --arg n "$1" --arg i "$(image_name "$1")" \
+              '{name: $n, image: $i, dockerfile: ("apps/" + $n + "/Dockerfile"), build_args: ""}')")
+          }
+          service_exists() {
+            local svc="$1"
+            [ "$svc" = "sandbox" ] && return 0
+            [ "$svc" = "execd" ] && return 0
+            local candidate
+            for candidate in "${GO_SERVICES[@]}" "${TS_SERVICES[@]}"; do
+              [ "$candidate" = "$svc" ] && return 0
+            done
+            return 1
+          }
+          add_service() {
+            local svc="$1"
+            if [ "$svc" = "sandbox" ]; then
+              add_sandbox
+              return 0
+            fi
+            if [ "$svc" = "execd" ]; then
+              add_execd
+              return 0
+            fi
+            local candidate
+            for candidate in "${GO_SERVICES[@]}"; do
+              if [ "$candidate" = "$svc" ]; then
+                add_go "$candidate"
+                return 0
+              fi
+            done
+            for candidate in "${TS_SERVICES[@]}"; do
+              if [ "$candidate" = "$svc" ]; then
+                add_ts "$candidate"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          if [ "${BUILD_ALL}" = "true" ]; then
+            echo "build_all=true — building all services"
+            add_sandbox
+            SANDBOX_BASE_REQUIRED=true
+            add_execd
+            for svc in "${GO_SERVICES[@]}"; do add_go "$svc"; done
+            for svc in "${TS_SERVICES[@]}"; do add_ts "$svc"; done
+          elif [ -n "${SELECTED_SERVICES}" ]; then
+            echo "Selected services: ${SELECTED_SERVICES}"
+            REQUESTED_SERVICES=()
+            IFS=',' read -ra requested <<< "${SELECTED_SERVICES}"
+            for raw in "${requested[@]}"; do
+              svc="$(printf '%s' "$raw" | xargs | tr '[:upper:]' '[:lower:]')"
+              [ -z "$svc" ] && continue
+              if ! service_exists "$svc"; then
+                echo "::error::Unknown service '${svc}'. Valid services: sandbox execd ${GO_SERVICES[*]} ${TS_SERVICES[*]}"
+                exit 1
+              fi
+              if [ "$svc" = "sandbox" ]; then
+                add_sandbox
+              else
+                REQUESTED_SERVICES+=("$svc")
+              fi
+            done
+            for svc in "${REQUESTED_SERVICES[@]}"; do
+              add_service "$svc"
+            done
+          else
+            resolve_diff
+            if ! $DIFF_AVAILABLE; then
+              echo "No usable comparison base — building all services"
+              add_sandbox
+              SANDBOX_BASE_REQUIRED=true
+              add_execd
+              for svc in "${GO_SERVICES[@]}"; do add_go "$svc"; done
+              for svc in "${TS_SERVICES[@]}"; do add_ts "$svc"; done
+            else
+              # Workspace-wide Go triggers force a full Go rebuild.
+              GO_FORCE=false
+              if echo "$DIFF" | grep -qE '^(go\.(mod|sum)|Dockerfile|\.dockerignore)$'; then
+                echo "Go build inputs changed — rebuilding all Go services"
+                GO_FORCE=true
+              fi
+
+              # Workspace-wide TS triggers force a full TS rebuild.
+              TS_FORCE=false
+              if echo "$DIFF" | grep -qE '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|tsconfig\.base\.json|\.dockerignore)$'; then
+                echo "TS workspace contract changed — rebuilding all TS services"
+                TS_FORCE=true
+              fi
+
+              if echo "$DIFF" | grep -qE '^(deploy/sandbox/Dockerfile\.base|\.dockerignore)$'; then
+                SANDBOX_BASE_REQUIRED=true
+              fi
+              if echo "$DIFF" | grep -qE "$SANDBOX_INPUT_PATTERN"; then
+                echo "Native sandbox inputs changed — rebuilding sandbox"
+                add_sandbox
+              fi
+
+              if echo "$DIFF" | grep -qE '^(deploy/execd/|\.dockerignore$)'; then
+                echo "Native bootstrap inputs changed — rebuilding execd installer"
+                add_execd
+              fi
+
+              for svc in "${GO_SERVICES[@]}"; do
+                if $GO_FORCE; then
+                  add_go "$svc"
+                  continue
+                fi
+                # In-module transitive deps for this service.
+                DEPS=$(CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go list -deps ./cmd/${svc} \
+                  | grep "^${MODULE}/" \
+                  | sed "s|^${MODULE}/||")
+                PATTERN="^(cmd/${svc}/|configs/${svc}/|$(extra_inputs "$svc")"
+                while IFS= read -r dep; do
+                  [ -n "$dep" ] && PATTERN+="|${dep}/"
+                done <<< "$DEPS"
+                PATTERN+=")"
+                if echo "$DIFF" | grep -vE '(_test\.go|\.md)$' | grep -qE "$PATTERN"; then
+                  echo "Go service changed: $svc"
+                  add_go "$svc"
+                else
+                  echo "Go service unchanged: $svc — skipping"
+                fi
+              done
+
+              for svc in "${TS_SERVICES[@]}"; do
+                if $TS_FORCE; then
+                  add_ts "$svc"
+                  continue
+                fi
+                PATTERN="^($(ts_inputs "$svc" | sed 's/[.]/\\./g' | paste -sd'|'))"
+                if echo "$DIFF" | grep -qE "$PATTERN"; then
+                  echo "TS service changed: $svc"
+                  add_ts "$svc"
+                else
+                  echo "TS service unchanged: $svc — skipping"
+                fi
+              done
+            fi
+          fi
+
+          # A release gives every image its tag. What did not change since the
+          # previous release reuses that release's image; an image the previous
+          # release lacks is built.
+          REUSE=()
+          if [ "${RELEASE:-}" = "true" ] && [ "${BUILD_ALL}" != "true" ] && [ -z "${SELECTED_SERVICES}" ] && $DIFF_AVAILABLE; then
+            BUILT=" $(printf '%s\n' "${MATRIX[@]}" | jq -r '.name' | tr '\n' ' ') "
+            $SANDBOX_REQUIRED && BUILT+="sandbox "
+            for svc in sandbox execd "${GO_SERVICES[@]}" "${TS_SERVICES[@]}"; do
+              case "$BUILT" in *" $svc "*) continue ;; esac
+              if docker buildx imagetools inspect "ghcr.io/talgent-work/$(image_name "$svc"):${PREV_TAG}" >/dev/null 2>&1; then
+                echo "Unchanged since ${PREV_TAG}: $svc — reusing its image"
+                REUSE+=("$(image_name "$svc")")
+              else
+                echo "Unchanged since ${PREV_TAG} but its image is missing: $svc — building"
+                add_service "$svc"
+              fi
+            done
+          fi
+
+          # A manually selected sandbox still needs a changed environment built.
+          if $SANDBOX_REQUIRED && ! $SANDBOX_BASE_REQUIRED; then
+            resolve_diff
+            if ! $DIFF_AVAILABLE || echo "$DIFF" | grep -qE '^(deploy/sandbox/Dockerfile\.base|\.dockerignore)$'; then
+              SANDBOX_BASE_REQUIRED=true
+            fi
+          fi
+
+          echo "sandbox_base_required=${SANDBOX_BASE_REQUIRED}" >> "$GITHUB_OUTPUT"
+          echo "sandbox_required=${SANDBOX_REQUIRED}" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=${PREV_TAG}" >> "$GITHUB_OUTPUT"
+          echo "reuse=$(printf '%s\n' "${REUSE[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+          if [ ${#MATRIX[@]} -eq 0 ]; then
+            echo "matrix=[]" >> "$GITHUB_OUTPUT"
+            echo "No services to build"
+          else
+            JSON=$(printf '%s\n' "${MATRIX[@]}" | jq -sc .)
+            echo "matrix=$JSON" >> "$GITHUB_OUTPUT"
+            echo "Matrix: $JSON"
+          fi
+
+  sandbox-base:
+    needs: [image-tag, detect-changes]
+    if: needs.detect-changes.outputs.sandbox_required == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.resolve.outputs.image }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.image-tag.outputs.current_ref }}
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Name the sandbox environment
+        id: base
+        run: |
+          hash=$(cat deploy/sandbox/Dockerfile.base .dockerignore | sha256sum | cut -d' ' -f1)
+          echo "tag=ghcr.io/talgent-work/workbench-sandbox-base:env-$hash" >> "$GITHUB_OUTPUT"
+      - name: Build changed sandbox environment
+        id: build
+        if: needs.detect-changes.outputs.sandbox_base_required == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/sandbox/Dockerfile.base
+          platforms: linux/amd64
+          outputs: type=registry
+          tags: ${{ steps.base.outputs.tag }}
+          cache-from: type=gha,scope=sandbox-base
+          cache-to: type=gha,mode=max,scope=sandbox-base,ignore-error=true
+      - name: Pin sandbox environment digest
+        id: resolve
+        env:
+          BASE_TAG: ${{ steps.base.outputs.tag }}
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          digest="$BUILT_DIGEST"
+          if [ -z "$digest" ]; then
+            digest=$(docker buildx imagetools inspect "$BASE_TAG" --format '{{json .Manifest}}' | jq -er '.digest')
+          fi
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image=$BASE_TAG@$digest" >> "$GITHUB_OUTPUT"
+
+  build-sandbox:
+    needs:
+      - image-tag
+      - detect-changes
+      - sandbox-base
+    if: needs.detect-changes.result == 'success' && needs.detect-changes.outputs.sandbox_required == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.image-tag.outputs.current_ref }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push sandbox
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/sandbox/Dockerfile
+          platforms: linux/amd64
+          outputs: type=registry
+          build-args: SANDBOX_BASE_IMAGE=${{ needs.sandbox-base.outputs.image }}
+          tags: ghcr.io/talgent-work/workbench-sandbox:${{ needs.image-tag.outputs.tag }}
+          cache-from: type=gha,scope=sandbox
+          cache-to: type=gha,mode=max,scope=sandbox,ignore-error=true
+
+  build:
+    needs:
+      - image-tag
+      - detect-changes
+    if: needs.detect-changes.result == 'success' && needs.detect-changes.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.image-tag.outputs.current_ref }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify shared HOME bootstrap with real NSS
+        if: matrix.name == 'execd'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libnss3-tools
+          docker build -f deploy/execd/Dockerfile -t talgent-execd:nss-check .
+          python3 deploy/execd/verify-nss-bootstrap.py talgent-execd:nss-check
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          outputs: type=registry
+          build-args: ${{ matrix.build_args }}
+          tags: ghcr.io/talgent-work/${{ matrix.image }}:${{ needs.image-tag.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.name }},ignore-error=true
+
+  # Gives the release tag to images that did not change since the previous
+  # release, without rebuilding them.
+  retag:
+    needs:
+      - image-tag
+      - detect-changes
+    if: needs.detect-changes.result == 'success' && needs.detect-changes.outputs.reuse != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        name: ${{ fromJson(needs.detect-changes.outputs.reuse) }}
+    steps:
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the previous release's image
+        env:
+          IMAGE: ghcr.io/talgent-work/${{ matrix.name }}
+          TAG: ${{ needs.image-tag.outputs.tag }}
+          PREVIOUS: ${{ needs.detect-changes.outputs.previous_tag }}
+        run: docker buildx imagetools create --tag "$IMAGE:$TAG" "$IMAGE:$PREVIOUS"

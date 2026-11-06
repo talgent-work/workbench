@@ -1,0 +1,136 @@
+package command_test
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
+	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+)
+
+// dispatcherBuffer serves Dispatcher's input buffer API and records each
+// hand-off, so acceptance crosses the real Connect client.
+func dispatcherBuffer(t *testing.T) (*execution.DispatcherControl, chan *dispatcherprivatev1.EnqueueInputRequest) {
+	t.Helper()
+	received := make(chan *dispatcherprivatev1.EnqueueInputRequest, 4)
+	mux := http.NewServeMux()
+	mux.Handle(dispatcherprivatev1connect.ExecutionServiceEnqueueInputProcedure, connect.NewUnaryHandler(dispatcherprivatev1connect.ExecutionServiceEnqueueInputProcedure,
+		func(_ context.Context, request *connect.Request[dispatcherprivatev1.EnqueueInputRequest]) (*connect.Response[dispatcherprivatev1.EnqueueInputResponse], error) {
+			received <- request.Msg
+			return connect.NewResponse(&dispatcherprivatev1.EnqueueInputResponse{HandOff: dispatcherprivatev1.InputHandOff_INPUT_HAND_OFF_BUFFERED}), nil
+		}))
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	return execution.NewDispatcherControl(server.Client(), server.URL, "control"), received
+}
+
+func TestInputCommandPreservesPayloadAndRejectsInvalidDelivery(t *testing.T) {
+	ctx := context.Background()
+	_, sessions := runningMessagingSession(t)
+	control, received := dispatcherBuffer(t)
+	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, control), &initialRequestStore{})
+	input := command.ExecutionInput{ID: "f28f3171-1268-4f97-b7d2-1ac831099012", Text: "  exact task\n下一步  "}
+	request := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: input}
+	for _, invalid := range []command.ExecutionInput{{ID: "invalid", Text: "task"}, {ID: input.ID, Text: " \n\t"}} {
+		request.Input = invalid
+		require.ErrorIs(t, deliveryErr(handler.Deliver(ctx, request)), domain.ErrInvalidWork)
+	}
+	require.Empty(t, received, "invalid input must never reach Dispatcher")
+	request.Input = input
+	require.NoError(t, deliveryErr(handler.Deliver(ctx, request)))
+	select {
+	case delivered := <-received:
+		require.Equal(t, sessions.session.ID, delivered.WorkId)
+		require.Equal(t, input.ID, delivered.GetText().GetInputId())
+		require.Equal(t, "  exact task\n下一步  ", delivered.GetText().GetText())
+	default:
+		t.Fatal("successful hand-off did not reach Dispatcher")
+	}
+	require.NoError(t, command.NewStopWorkHandler(sessions, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(controlPort{})).Handle(ctx,
+		command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: "stop"}))
+	request.Input.ID = uuid.NewString()
+	require.NoError(t, deliveryErr(handler.Deliver(ctx, request)), "a stopping Work keeps input for its next start")
+	require.Len(t, received, 1)
+}
+
+func TestReplyEntryMapsResponseAndChecksIdentity(t *testing.T) {
+	ctx := context.Background()
+	_, sessions := runningMessagingSession(t)
+	control, received := dispatcherBuffer(t)
+	handler := command.NewRespondWorkInteractionHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, control))
+	response := command.InteractionResponse{InteractionID: "old-question", Allow: true, AlwaysAllow: true, Reason: "owner answer", UpdatedInputJSON: `{"answer":"proceed"}`}
+	request := command.RespondWorkInteraction{SubjectID: "owner", WorkID: sessions.session.ID, Response: response}
+	require.NoError(t, handler.Handle(ctx, request))
+	require.Equal(t, "old-question", (<-received).GetReply().GetInteractionId(), "request matching belongs to Dispatcher")
+	request.Response.InteractionID = " "
+	require.ErrorIs(t, handler.Handle(ctx, request), domain.ErrInvalidWork)
+	require.Empty(t, received, "empty request identities must not reach Dispatcher")
+	request.Response.InteractionID = "question"
+	require.NoError(t, handler.Handle(ctx, request))
+	select {
+	case delivered := <-received:
+		reply := delivered.GetReply()
+		require.Equal(t, sessions.session.ID, delivered.WorkId)
+		require.Equal(t, "question", reply.GetInteractionId())
+		require.True(t, reply.GetAllow())
+		require.True(t, reply.GetAlwaysAllow())
+		require.Equal(t, "owner answer", reply.GetReason())
+		require.Equal(t, `{"answer":"proceed"}`, reply.GetUpdatedInputJson())
+	default:
+		t.Fatal("successful reply did not reach Dispatcher")
+	}
+}
+
+// Storage, capacity and execution readiness use the existing application test
+// fixtures. Message transport crosses the real Connect client/HTTP boundary;
+// native deduplication and isolation are covered by the Dispatcher native suite.
+func runningMessagingSession(t *testing.T) (*startupAgentStore, *feedbackSessionStore) {
+	t.Helper()
+	return runningMessagingSessionForPurpose(t, "work")
+}
+
+func runningMessagingSessionForPurpose(t *testing.T, purpose string) (*startupAgentStore, *feedbackSessionStore) {
+	t.Helper()
+	ctx := context.Background()
+	agents, sessions := startupStoresForPurpose(t, purpose)
+	sessions.starts = map[string]query.AdmittedStart{uuid.NewString(): {WorkID: sessions.session.ID, Kind: query.StartKindStart}}
+	factory := infrastructure.NewExecutionRequestsFactory(&startupPort{})
+	require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
+	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutorPrepared, WorkID: sessions.session.ID}))
+	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.AgentStarted, WorkID: sessions.session.ID}))
+	return agents, sessions
+}
+
+func TestOrdinaryInputEntryDelegatesWaitingWork(t *testing.T) {
+	ctx := context.Background()
+	_, sessions := runningMessagingSessionForPurpose(t, "intent_coordinator")
+	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), infrastructure.NewExecutionRequestsFactory(controlPort{}), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", ObservationSequence: 1000, RequiredInteractionIDs: []string{"coordinator-question"}, Kind: command.UserInteractionRequired, WorkID: sessions.session.ID, InteractionID: "coordinator-question"}))
+	control, received := dispatcherBuffer(t)
+	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, control), &initialRequestStore{})
+	input := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: command.ExecutionInput{ID: uuid.NewString(), Text: "accepted business handoff"}}
+	require.NoError(t, deliveryErr(handler.Deliver(ctx, input)))
+	select {
+	case delivered := <-received:
+		require.Equal(t, input.Input.ID, delivered.GetText().GetInputId())
+		require.Equal(t, "accepted business handoff", delivered.GetText().GetText())
+	default:
+		t.Fatal("a pending question incorrectly blocked the input")
+	}
+	state, err := sessions.Get(ctx, sessions.session.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.WorkWorking, state.State, "accepted input ends Waiting; the Harness holds it behind the question")
+}

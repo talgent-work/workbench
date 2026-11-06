@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package talgent.agent.private.v1;
+
+import "google/protobuf/timestamp.proto";
+import "talgent/agent/private/v1/work_subject.proto";
+import "talgent/agent/public/v1/progress.proto";
+import "talgent/agent/public/v1/startup.proto";
+import "talgent/agent/public/v1/work.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1;agentprivatev1";
+
+// WorkFactsService supplies Works' collaboration facts to trusted callers, which
+// authorize their own scope and compose the facts with their own. Selection is
+// by Project; Agent interprets no Subject. No message stream content is
+// supplied.
+service WorkFactsService {
+  // ListWorks lists Works matching every supplied condition.
+  rpc ListWorks(ListWorksRequest) returns (ListWorksResponse);
+  // GetWorkFacts reads one Work's collaboration facts.
+  rpc GetWorkFacts(GetWorkFactsRequest) returns (GetWorkFactsResponse);
+  // GetWorkReport reports lifecycle statistics of the selected Works.
+  rpc GetWorkReport(GetWorkReportRequest) returns (GetWorkReportResponse);
+}
+
+// WorkFacts is what others may know about a Work without reading its message stream.
+message WorkFacts {
+  // Stable Work identity.
+  string work_id = 1;
+  // The one business object the Work is about.
+  WorkSubject subject = 2;
+  // The Work's Project.
+  string project_id = 3;
+  // The Work's Agent Owner: its definition's Owner.
+  string agent_owner = 4;
+  // Who started the Work, a fact.
+  string started_by = 5;
+  // Authoritative Work lifecycle state.
+  string state = 6;
+  // Accepted stop or abnormal-completion reason.
+  string state_reason = 7;
+  // Retained runtime diagnostic; set only by GetWorkFacts.
+  string diagnostic_reason = 8;
+  // Persisted Plan/TODO snapshot; set only by GetWorkFacts.
+  talgent.agent.public.v1.WorkProgress work_progress = 9;
+  // Recoverable startup facts; set only by GetWorkFacts.
+  talgent.agent.public.v1.StartupProgress startup_progress = 10;
+  // When the Work was started.
+  google.protobuf.Timestamp created_at = 11;
+  // Last persisted Work update.
+  google.protobuf.Timestamp updated_at = 12;
+  // The Work's Turn awaits the user's answer; Waiting is not a lifecycle
+  // state.
+  bool waiting = 13;
+  // Permanent closure has been accepted and is awaiting completion.
+  bool archive_pending = 14;
+  // The message stream is public within the Work's scope; otherwise private.
+  bool visibility_public = 15;
+  // The Work's start waits in its Computer's line for room; set only by
+  // GetWorkFacts.
+  bool desk_waiting = 16;
+  // The origin of the Work's current Disconnection; absent while its
+  // execution environment is observed.
+  google.protobuf.Timestamp disconnected_since = 17;
+}
+
+// ListWorksRequest selects Works; at least a Project, an owner or identities.
+message ListWorksRequest {
+  // The Project of every listed Work.
+  string project_id = 1;
+  // Opaque definition purpose.
+  string purpose = 2;
+  // Works whose definition this person owns.
+  string agent_owner = 3;
+  // Work identities, at most 500.
+  repeated string work_ids = 4;
+  // Order by last update descending instead of identity ascending.
+  bool recent = 5;
+  // Optional archive category.
+  optional bool archived = 6;
+  // Maximum results; defaults and caps at 500.
+  int32 limit = 7;
+  // Exclusive identity cursor for ascending order.
+  string after = 8;
+}
+
+// ListWorksResponse lists the matching Works.
+message ListWorksResponse {
+  // Matching Works.
+  repeated WorkFacts works = 1;
+}
+
+// GetWorkFactsRequest selects one Work.
+message GetWorkFactsRequest {
+  // Work identity.
+  string work_id = 1;
+}
+
+// GetWorkFactsResponse carries the Work's collaboration facts.
+message GetWorkFactsResponse {
+  // Collaboration facts.
+  WorkFacts work = 1;
+}
+
+// GetWorkReportRequest selects reported Works and fixed UTC buckets.
+message GetWorkReportRequest {
+  // The Project of every reported Work; required.
+  string project_id = 1;
+  // Opaque definition purpose.
+  string purpose = 2;
+  // One of 24h, 7d or 30d.
+  string window = 3;
+  // Exclusive aligned report end; omitted uses the current UTC interval.
+  google.protobuf.Timestamp end = 4;
+}
+
+// GetWorkReportResponse counts Work identities.
+message GetWorkReportResponse {
+  // Inclusive selected period start.
+  google.protobuf.Timestamp start = 1;
+  // Exclusive selected period end.
+  google.protobuf.Timestamp end = 2;
+  // Data observation cutoff, capped at the current time.
+  google.protobuf.Timestamp observed_at = 3;
+  // Bucket width in seconds.
+  int64 step_seconds = 4;
+  // Selected period, including its eligible Works.
+  talgent.agent.public.v1.WorkPeriodReport current = 5;
+  // Adjacent equal preceding period.
+  talgent.agent.public.v1.WorkPeriodReport previous = 6;
+}

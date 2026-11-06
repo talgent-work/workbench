@@ -1,0 +1,86 @@
+/* Shared approved Work message-flow geometry. */
+.p-page > .agent-grid:has(.wm-scroll) { position: relative; flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.agent-grid .stream-panel:has(> .wm-scroll) { height: 100%; min-height: 0; overflow: visible; }
+.stream-panel:has(> .wm-scroll) > .wpb-conversation { position: absolute; inset-inline: 0; bottom: 0; z-index: 20; }
+.wm-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; padding: 24px 0 calc(var(--wm-dock-height, 58px) + 24px); overflow-anchor: auto; }
+.wm-conversation { width: min(var(--wpb-panel-width), calc(100% - 2 * var(--wpb-panel-gutter))); margin-inline: auto; }
+.wm-turn + .wm-turn { margin-top: 48px; }
+/* Only the last turn keeps the anchor's room; a later turn without a user
+   message, such as one a background task starts, follows directly. */
+.wm-turn[data-new-user-anchor]:last-child { min-height: calc(var(--wm-viewport-height) * 2 / 3); }
+.wm-user { display: flex; justify-content: flex-end; margin-bottom: 32px; }
+.wm-user img { display: block; max-width: 100%; max-height: 240px; object-fit: contain; border-radius: 12px; }
+.wm-user p { max-width: 85%; width: fit-content; margin: 0; padding: 11px 18px; border-radius: 24px; background: var(--accent); color: var(--accent-foreground); font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.wm-process-toggle { display: flex; align-items: center; gap: 7px; padding: 6px 0; width: 100%; color: var(--muted); text-align: left; font-size: 14px; line-height: 22px; border-bottom: 1px solid color-mix(in oklch, var(--separator) 45%, transparent); }
+.wm-process-toggle:hover { color: var(--foreground); }
+.wm-process-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 4px; }
+.wm-process-toggle > svg { transform: rotate(-90deg); transition: transform 150ms; }
+.wm-process-toggle > .wm-chevron-open { transform: none; }
+.wm-process { padding-top: 12px; color: var(--muted); }
+.wm-process .app-markdown { color: inherit; }
+.wm-conversation .app-markdown h1 { font-size: 22px; }
+.wm-conversation .app-markdown h2 { font-size: 20px; }
+.wm-conversation .app-markdown h3 { font-size: 18px; }
+.wm-conversation .app-markdown :is(h4, h5, h6) { font-size: 16px; }
+@media (max-width: 560px) {
+  .wm-conversation .app-markdown h1 { font-size: 20px; }
+}
+.wm-process > * + * { margin-top: 10px; }
+.wm-activity { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.wm-activity svg { flex-shrink: 0; }
+.wm-tool-group summary { display: flex; align-items: center; gap: 7px; width: fit-content; cursor: pointer; font-size: 14px; line-height: 24px; list-style: none; }
+.wm-tool-group summary::-webkit-details-marker { display: none; }
+.wm-tool-group:not([open]) summary > svg:last-child { transform: rotate(-90deg); }
+.wm-question-record dl { margin: 12px 0 0 24px; font-size: 14px; line-height: 1.6; }
+.wm-question-record dl > div + div { margin-top: 12px; }
+.wm-question-record dt { font-weight: 500; }
+.wm-question-record dd { margin: 3px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.wm-tool-group .wm-activity { margin-top: 5px; }
+.wm-tool-group .wm-activity span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wm-thinking { display: inline-block; width: fit-content; color: transparent; background: linear-gradient(100deg, color-mix(in oklch, var(--muted) 55%, var(--surface)) 35%, var(--foreground) 50%, color-mix(in oklch, var(--muted) 55%, var(--surface)) 65%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; animation: wm-thinking 1.5s linear infinite; }
+.wm-result { padding-top: 22px; }
+.wm-process[hidden] + .wm-result { padding-top: 10px; }
+.wm-result-actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--muted); }
+.wm-result-actions .button { color: inherit; width: 30px; height: 30px; min-width: 30px; }
+.wm-result-actions [role="alert"] { font-size: 12px; }
+.wm-result-actions time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.wm-toc { position: absolute; right: -28px; top: 32%; z-index: 19; width: 28px; max-height: 45%; overflow-y: auto; scrollbar-width: none; border-radius: 14px; padding-block: 6px; }
+.wm-toc:is(:hover, :focus-within) { width: min(300px, 90%); background: var(--surface); box-shadow: 0 4px 20px rgb(0 0 0 / 8%); padding: 10px 6px; }
+.wm-toc-item { display: flex; align-items: center; justify-content: flex-end; gap: 12px; width: 100%; min-height: 16px; padding: 0 4px; color: var(--muted); border-radius: 6px; text-align: left; font-size: 13px; line-height: 16px; }
+.wm-toc:is(:hover, :focus-within) .wm-toc-item { min-height: 24px; }
+.wm-toc-item:hover { background: var(--surface-secondary); }
+.wm-toc-item:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.wm-toc-item[aria-current] { color: var(--foreground); }
+.wm-toc-mark { flex-shrink: 0; width: 12px; height: 2px; border-radius: 2px; background: currentColor; opacity: .45; }
+.wm-toc-item[aria-current] .wm-toc-mark { width: 20px; opacity: 1; }
+.wm-toc-label { display: none; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wm-toc-number { display: inline-block; width: 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wm-toc:is(:hover, :focus-within) .wm-toc-label { display: block; }
+@keyframes wm-thinking { from { background-position: 150% 0; } to { background-position: -150% 0; } }
+@media (prefers-reduced-motion: reduce) { .wm-thinking { animation: none; background: none; color: var(--muted); } .wm-process-toggle > svg { transition: none; } }
+@media (max-width: 740px) { .wm-user p { max-width: 92%; } }
+@media (max-width: 900px) {
+  .wm-toc { right: 0; }
+  .agent-grid:has(.wm-scroll) .cr-card { max-height: calc(100dvh - 200px); }
+}
+
+.wm-process-toggle.button { justify-content: flex-start; height: auto; min-width: 0; border-radius: 0; background: transparent; font-weight: 400; }
+.wm-tool-summary.button { display: flex; gap: 7px; justify-content: flex-start; width: fit-content; min-width: 0; height: auto; padding: 0; background: transparent; color: inherit; font-size: 14px; font-weight: 400; line-height: 24px; }
+.wm-tool-summary[aria-expanded="false"] > svg { transform: rotate(-90deg); }
+.wm-activity.button { height: auto; min-width: 0; max-width: 100%; padding: 0; justify-content: flex-start; background: transparent; font-weight: 400; }
+.wm-activity .wm-tool-failed { flex-shrink: 0; color: var(--danger); }
+.wm-toc-item.button { height: auto; min-width: 0; font-weight: 400; background: transparent; }
+.wm-tool-detail { padding: 10px 0 4px 26px; font-size: 13px; }
+.wm-tool-detail pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); line-height: 1.6; }
+.wm-detail-pages { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.wm-latest { position: absolute; bottom: calc(var(--wm-dock-height, 58px) + 8px); left: 50%; transform: translateX(-50%); z-index: 21; }
+.wm-error, .wm-assistant { color: var(--foreground); }
+.wm-note { margin: 0; color: var(--muted); font-size: 0.8125rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.agent-grid:has(.wm-scroll) > .cr-rail { position: absolute; top: 0; right: 0; margin: 0; width: min(var(--context-rail-width), 100%); z-index: 19; }
+
+.wm-work-status { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; color: var(--muted); }
+
+.wm-tool-reader > section + section { margin-top: 16px; }
+.wm-tool-reader h4 { margin-bottom: 8px; font-size: inherit; font-weight: 500; color: var(--muted); }
+

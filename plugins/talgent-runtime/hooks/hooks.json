@@ -1,0 +1,17 @@
+{
+  "description": "The core product context at session start.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/product-context.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

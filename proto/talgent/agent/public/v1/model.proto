@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package talgent.agent.public.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1;agentpublicv1";
+
+// WorkModelSelection is what a Work's conversation uses for its model: a
+// Model Configuration, or, on a Managed Computer, the machine's own Claude
+// login. Exactly one is selected.
+message WorkModelSelection {
+  // Model Configuration identity from the available startup options; empty
+  // with machine_login.
+  string configuration_id = 1;
+  // The Managed Computer's own Claude login instead of a Model Configuration;
+  // rejected on a Cloud.
+  bool machine_login = 2;
+}
+
+// ModelVendor is the company whose models a Model Template reaches.
+enum ModelVendor {
+  // No recognized vendor.
+  MODEL_VENDOR_UNSPECIFIED = 0;
+  // Anthropic.
+  MODEL_VENDOR_ANTHROPIC = 1;
+  // OpenAI.
+  MODEL_VENDOR_OPENAI = 2;
+  // DeepSeek.
+  MODEL_VENDOR_DEEPSEEK = 3;
+  // Zhipu (GLM).
+  MODEL_VENDOR_ZHIPU = 4;
+  // Moonshot (Kimi).
+  MODEL_VENDOR_KIMI = 5;
+  // Alibaba (Qwen).
+  MODEL_VENDOR_QWEN = 6;
+  // MiniMax.
+  MODEL_VENDOR_MINIMAX = 7;
+}
+
+// WorkModelOption describes one provided Model Configuration.
+message WorkModelOption {
+  // Thinking levels its Model Template supports.
+  repeated string thinking_levels = 1;
+  // Its Model Template's default thinking level; empty uses the Harness default.
+  string default_thinking_level = 2;
+  // Model Configuration identity used in the creation request.
+  string configuration_id = 3;
+  // Name people see when choosing a model.
+  string name = 4;
+  // Vendor of its Model Template, identifying how it is presented.
+  ModelVendor vendor = 5;
+}

@@ -1,0 +1,490 @@
+syntax = "proto3";
+
+package talgent.agent.public.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "talgent/agent/public/v1/appearance.proto";
+import "talgent/agent/public/v1/capability.proto";
+import "talgent/agent/public/v1/harness.proto";
+import "talgent/agent/public/v1/model.proto";
+import "talgent/agent/public/v1/plugin.proto";
+import "talgent/agent/public/v1/progress.proto";
+import "talgent/agent/public/v1/service_access.proto";
+import "talgent/agent/public/v1/soul.proto";
+import "talgent/agent/public/v1/startup.proto";
+import "talgent/dispatcher/public/v1/unified_message.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1;agentpublicv1";
+
+// AgentWorkService is the neutral "my Work" API. Every Work operation is
+// admitted only for the Work's owner; ChangeWorkAgentAppearance addresses an
+// AgentDefinition and is admitted only for the human it represents. Both are
+// decided from Agent's own facts.
+service AgentWorkService {
+  // ChangeWorkAgentAppearance changes the name and icon of the Work Agent that
+  // represents the caller; only that human may change it.
+  rpc ChangeWorkAgentAppearance(ChangeWorkAgentAppearanceRequest) returns (ChangeWorkAgentAppearanceResponse);
+  // GetMyWorkAgent reads the caller's Work Agent, or the appearance it would
+  // start with when the caller has none yet; it never creates one.
+  rpc GetMyWorkAgent(GetMyWorkAgentRequest) returns (GetMyWorkAgentResponse);
+  // EnsureMyWorkAgent returns the caller's Work Agent, establishing it when
+  // the caller has none yet.
+  rpc EnsureMyWorkAgent(EnsureMyWorkAgentRequest) returns (EnsureMyWorkAgentResponse);
+  // GetAgentSoul reads an Agent's Soul; only one of its Owners may read it.
+  rpc GetAgentSoul(GetAgentSoulRequest) returns (GetAgentSoulResponse);
+  // ChangeAgentSoul replaces an Agent's Soul; only one of its Owners may. Each
+  // of its Works takes it up at its next start; running Turns are unaffected.
+  rpc ChangeAgentSoul(ChangeAgentSoulRequest) returns (ChangeAgentSoulResponse);
+  // GetWorkCapabilities reads actual Harness candidates and their latest updates.
+  rpc GetWorkCapabilities(GetWorkCapabilitiesRequest) returns (GetWorkCapabilitiesResponse);
+  // GetWorkPluginResults reads installation and loading projections for selected plugins.
+  rpc GetWorkPluginResults(GetWorkPluginResultsRequest) returns (GetWorkPluginResultsResponse);
+  // GetWorkServiceAccess reads fixed selection and latest safe supply feedback.
+  rpc GetWorkServiceAccess(GetWorkServiceAccessRequest) returns (GetWorkServiceAccessResponse);
+  // CancelTurn interrupts only the addressed turn, leaving the Work running.
+  // It answers Unavailable while the Work's execution environment is not
+  // observed, such as during a Disconnection.
+  rpc CancelTurn(CancelTurnRequest) returns (CancelTurnResponse);
+  // GetCurrentTurn reads native activity independently of paginated history.
+  // It answers Unavailable while the Work's execution environment is not
+  // observed, such as during a Disconnection.
+  rpc GetCurrentTurn(GetCurrentTurnRequest) returns (GetCurrentTurnResponse);
+  // ListPendingInteractions reads the Harness requests awaiting the user's reply,
+  // independently of paginated message history. It answers Unavailable while
+  // the Work's execution environment is not observed.
+  rpc ListPendingInteractions(ListPendingInteractionsRequest) returns (ListPendingInteractionsResponse);
+  // GetWork reads the caller's own Work without changing the record.
+  rpc GetWork(GetWorkRequest) returns (GetWorkResponse);
+  // ChangeWorkVisibility switches the caller's own Work between private and
+  // public within its Project. A project-scoped definition's Work keeps its
+  // visibility.
+  rpc ChangeWorkVisibility(ChangeWorkVisibilityRequest) returns (ChangeWorkVisibilityResponse);
+  // RevokeWorkShare stops one reader from reading the caller's own Work; that
+  // reader's open message streams end at once. Granting goes through the
+  // caller that knows the Work's Project members.
+  rpc RevokeWorkShare(RevokeWorkShareRequest) returns (RevokeWorkShareResponse);
+  // ListWorkLifecycleEvents reads the Work's lifecycle transitions for its continuous timeline.
+  rpc ListWorkLifecycleEvents(ListWorkLifecycleEventsRequest) returns (ListWorkLifecycleEventsResponse);
+  // StopWork requests normal stop of the observed execution.
+  rpc StopWork(StopWorkRequest) returns (StopWorkResponse);
+  // ResumeWork explicitly resumes the fixed assignee's stopped conversation.
+  rpc ResumeWork(ResumeWorkRequest) returns (ResumeWorkResponse);
+  // RestartWork retries a Failed Work using its existing native Session when present.
+  rpc RestartWork(RestartWorkRequest) returns (RestartWorkResponse);
+  // ArchiveWork permanently closes an eligible stopped or failed conversation.
+  rpc ArchiveWork(ArchiveWorkRequest) returns (ArchiveWorkResponse);
+  // SendMessage delivers ordinary input to an existing AgentWork.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  // RespondToInteraction replies to the current required interaction.
+  rpc RespondToInteraction(RespondToInteractionRequest) returns (RespondToInteractionResponse);
+  // SetThinkingLevel adjusts the current Work Harness and retains its accepted setting.
+  rpc SetThinkingLevel(SetThinkingLevelRequest) returns (SetThinkingLevelResponse);
+  // GetThinkingLevel reads the retained setting for an accessible Work in any state.
+  rpc GetThinkingLevel(GetThinkingLevelRequest) returns (GetThinkingLevelResponse);
+  // SetPermissionMode changes the permission mode of a running Work on a
+  // Managed Computer at once and retains the mode its Harness accepted for
+  // the Work's later starts.
+  rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
+}
+
+// SetPermissionModeRequest names the running Managed Work and its new mode.
+message SetPermissionModeRequest {
+  // Stable Work conversation identity.
+  string work_id = 1;
+  // The permission mode to apply; it must be specified.
+  PermissionMode permission_mode = 2;
+}
+
+// SetPermissionModeResponse is the permission mode the Harness accepted.
+message SetPermissionModeResponse {
+  // The permission mode now retained by the Work.
+  PermissionMode permission_mode = 1;
+}
+
+// SetThinkingLevelRequest requests an adjustable Harness setting.
+message SetThinkingLevelRequest {
+  // Stable Work conversation identity.
+  string work_id = 1;
+  // Supported level, or empty to restore the Harness default.
+  string level = 2;
+}
+
+// SetThinkingLevelResponse acknowledges native acceptance and persistence, not an inference boundary.
+message SetThinkingLevelResponse {}
+
+// GetThinkingLevelRequest selects the Work conversation, including stopped and closed Work.
+message GetThinkingLevelRequest {
+  // Stable Work conversation identity.
+  string work_id = 1;
+}
+
+// GetThinkingLevelResponse reports the setting retained by AgentWork.
+message GetThinkingLevelResponse {
+  // Retained level, or empty to use the Harness default.
+  string level = 1;
+}
+
+// WorkInfo is a read-only Work projection, not another entity.
+message WorkInfo {
+  // The stable AgentWork identity.
+  string work_id = 1;
+  // Authoritative Work lifecycle state.
+  string state = 2;
+  // Accepted stop or abnormal-completion reason.
+  string state_reason = 3;
+  // Retained runtime diagnostic.
+  string diagnostic_reason = 4;
+  // Conversation creation time.
+  google.protobuf.Timestamp created_at = 5;
+  // Last persisted Work update time.
+  google.protobuf.Timestamp updated_at = 6;
+  // The Work's Turn awaits the user's answer; Waiting is not a lifecycle
+  // state.
+  bool waiting = 7;
+  // Permanent closure has been accepted and is awaiting completion.
+  bool archive_pending = 8;
+  // Continuation admission or readiness is pending.
+  bool resume_pending = 9;
+  // Recoverable startup facts independent of the running lifecycle state.
+  StartupProgress startup_progress = 10;
+  // Currently permitted Work controls; commands recheck permission and state.
+  repeated string allowed_actions = 11;
+  // Model retained when this Work was created: a Model Configuration or the
+  // machine's Claude login.
+  WorkModelSelection model = 12;
+  // Retained initial request and the Work's fixed capabilities, without secrets.
+  WorkStartupRequest startup_request = 13;
+  // Persisted Plan/TODO snapshot; absence means no plan has been reported.
+  WorkProgress work_progress = 14;
+  // Work revision observed by the caller, used to reject stale controls.
+  int64 version = 15;
+  // The message stream is public within the Work's Project; otherwise private.
+  bool visibility_public = 16;
+  // Readers the owner lets read the message stream while it is private.
+  repeated string share_reader_ids = 17;
+  // The retained Model Configuration as currently provided; absent when withdrawn.
+  WorkModelOption model_option = 18;
+  // The Work's start waits in its Computer's line for room; the Work stays
+  // Starting until it is seated, and a stop or close withdraws the start.
+  bool desk_waiting = 19;
+  // The Harness permission mode of a Work on a Managed Computer;
+  // unspecified for a Cloud Work, which always bypasses permission prompts.
+  PermissionMode permission_mode = 20;
+  // The Work runs in Claude Code's sandbox for its life.
+  bool sandbox = 21;
+  // The origin of the Work's current Disconnection: the platform lost
+  // observation of its execution environment then. Absent while it is
+  // observed; a Disconnection is a fact, not a Work state.
+  google.protobuf.Timestamp disconnected_since = 22;
+  // The Computer the Work runs on for its life: a Cloud or one of the
+  // starting person's Managed Computers.
+  string computer_id = 23;
+  // The Work stays Stopped while its Managed Computer is away, keeping the
+  // input sent meanwhile; its Resume is requested once more when the machine
+  // reconnects (ReachResumeDue).
+  bool resume_on_reconnection = 24;
+}
+
+// ChangeWorkVisibilityRequest selects the owner's Work and its new visibility.
+message ChangeWorkVisibilityRequest {
+  // The owner's Work.
+  string work_id = 1;
+  // True makes it public within its Project; false makes it private.
+  bool public = 2;
+}
+
+// ChangeWorkVisibilityResponse returns the Work after the change.
+message ChangeWorkVisibilityResponse {
+  // Current Work facts.
+  WorkInfo work = 1;
+}
+
+// RevokeWorkShareRequest selects the owner's Work and the reader to remove.
+message RevokeWorkShareRequest {
+  // The owner's Work.
+  string work_id = 1;
+  // The reader whose Work Share ends; revoking an absent reader changes nothing.
+  string reader_user_id = 2;
+}
+
+// RevokeWorkShareResponse returns the Work after the change.
+message RevokeWorkShareResponse {
+  // Current Work facts.
+  WorkInfo work = 1;
+}
+
+// WorkStartupRequest restores the original startup input across page reloads.
+// It is a read projection, not an instruction to send that input again.
+message WorkStartupRequest {
+  // Identity of the retained initial preparation request.
+  string request_id = 1;
+  // Ordinary initial input; excludes the capability/system prompt.
+  string initial_message = 2;
+  // Requested initial effort, not the current adjustable Harness setting.
+  string initial_thinking_level = 3;
+  // Fixed native Plugin role captured by the Work.
+  string startup_agent = 4;
+  // Fixed Plugin identities; no Plugin configuration or credentials.
+  repeated string plugins = 5;
+  // Selected repositories, enriched by committed checkout preparation when available.
+  repeated WorkStartupRepository repositories = 6;
+}
+
+// WorkStartupRepository is a safe display of a retained checkout selection.
+message WorkStartupRepository {
+  // Selected external repository identity.
+  string repository_id = 1;
+  // Repository name when checkout preparation has resolved it.
+  string name = 2;
+  // Retained checkout base branch; empty until preparation is available.
+  string base_branch = 3;
+  // "checked_out" or "not_checked_out" once workspace preparation has ended;
+  // empty while it has not. A repository not checked out degrades the Work.
+  string checkout_status = 4;
+  // Why a repository was not checked out: "timed_out" (Startup Deadline) or
+  // "checkout_unavailable". Empty when checked out.
+  string checkout_reason = 5;
+}
+
+// GetWorkRequest selects the authorized conversation.
+message GetWorkRequest {
+  // The actual AgentWork identity.
+  string work_id = 1;
+}
+
+// GetWorkResponse contains current Work facts.
+message GetWorkResponse {
+  // The authorized conversation view.
+  WorkInfo work = 1;
+}
+
+// StopWorkRequest requests normal execution stop.
+message StopWorkRequest {
+  // The actual AgentWork identity.
+  string work_id = 1;
+  // Apply stop only to this observed Work revision.
+  optional int64 expected_version = 2;
+}
+
+// StopWorkResponse reports facts after stop acceptance.
+message StopWorkResponse {
+  // The conversation view, which may still be stopping.
+  WorkInfo work = 1;
+}
+
+// ResumeWorkRequest requests explicit continuation.
+message ResumeWorkRequest {
+  // The actual AgentWork identity.
+  string work_id = 1;
+  // Apply only to this observed Work revision.
+  optional int64 expected_version = 2;
+}
+
+// ResumeWorkResponse reports facts after continuation acceptance.
+message ResumeWorkResponse {
+  // The conversation view, which may still be starting.
+  WorkInfo work = 1;
+}
+
+// RestartWorkRequest explicitly retries a Failed Work; it does not discard context.
+message RestartWorkRequest {
+  // The existing AgentWork identity, never a replacement conversation.
+  string work_id = 1;
+  // Apply only to this observed Work revision.
+  optional int64 expected_version = 2;
+}
+
+// RestartWorkResponse reports the retained conversation after restart admission.
+message RestartWorkResponse {
+  // The same conversation view, which may still be starting.
+  WorkInfo work = 1;
+}
+
+// ArchiveWorkRequest requests independent execution archive.
+message ArchiveWorkRequest {
+  // The actual AgentWork identity.
+  string work_id = 1;
+  // Apply only to this observed Work revision.
+  optional int64 expected_version = 2;
+}
+
+// ArchiveWorkResponse reports facts after archive acceptance.
+message ArchiveWorkResponse {
+  // The conversation view, which may still have closure pending.
+  WorkInfo work = 1;
+}
+
+// SendMessageRequest preserves input identity across transport retries.
+message SendMessageRequest {
+  // The actual AgentWork conversation identity.
+  string work_id = 1;
+  // Stable caller-generated input identity.
+  string input_id = 2;
+  // Ordinary user input.
+  string text = 3;
+}
+
+// SendMessageResponse acknowledges delivery acceptance, not execution completion.
+message SendMessageResponse {}
+
+// RespondToInteractionRequest supplies a reply without choosing a principal.
+message RespondToInteractionRequest {
+  // The actual AgentWork conversation identity.
+  string work_id = 1;
+  // Identity of the required interaction being answered.
+  string interaction_id = 2;
+  // Whether the requested operation is allowed.
+  bool allow = 3;
+  // Whether the runtime may remember this permission.
+  bool always_allow = 4;
+  // Updated input for the requested operation.
+  string updated_input_json = 5;
+}
+
+// RespondToInteractionResponse does not clear the Work's waiting fact.
+message RespondToInteractionResponse {}
+
+// RepositorySelection selects an existing authorized repository binding.
+message RepositorySelection {
+  // External repository identity from the startup options.
+  string repository_id = 1;
+  // Requested checkout base branch.
+  string base_branch = 2;
+}
+
+// CreationCapabilities contains optional creation-time capability differences.
+message CreationCapabilities {
+  // Explicit replacement prompt; omission inherits the base.
+  optional string prompt = 1;
+  // Plugins to add or configure.
+  repeated CreationPlugin plugins = 2;
+  // Explicit startup Agent capability; omission inherits the base.
+  optional string startup_agent = 3;
+  // Connectors to add or remove for this Work only.
+  repeated CreationConnector connectors = 4;
+}
+
+// CreationConnector adds or removes one catalog Connector for this Work only.
+message CreationConnector {
+  // Catalog Connector name.
+  string name = 1;
+  // True adds the Connector; false removes a default. Required entries stay.
+  bool include = 2;
+}
+
+// CreationPlugin requests a plugin under existing Agent composition rules.
+message CreationPlugin {
+  // Plugin identity.
+  string name = 1;
+  // Explicit typed values; omitted names preserve personal configuration.
+  google.protobuf.Struct configuration = 2;
+  // Per-Work inclusion; omitted means include.
+  optional bool include = 3;
+}
+
+// WorkPeriodReport excludes failed Work before every count and denominator.
+message WorkPeriodReport {
+  // Eligible Work creations in this period; absent means unavailable.
+  optional int64 created = 1;
+  // Starting or Running, excluding required interaction, at period end.
+  optional int64 active = 2;
+  // Required human interaction at period end.
+  optional int64 waiting = 3;
+  // Permanently closed stock at period end, once per eligible Work.
+  optional int64 closed = 4;
+  // False when retained facts cannot establish this historical population.
+  bool history_complete = 5;
+  // Creation events, closure events and lifetime percentiles by closure bucket.
+  repeated WorkReportBucket buckets = 6;
+  // Eligible Work states at period end.
+  repeated WorkDistribution states = 7;
+  // Eligible Work grouped by owner participant.
+  repeated WorkDistribution owners = 8;
+  // Eligible Works of this period, which a caller may classify by its own
+  // facts; filled for the selected period only.
+  repeated string eligible_work_ids = 9;
+}
+
+// WorkReportBucket contains independent observations, never averaged percentiles.
+message WorkReportBucket {
+  // Inclusive bucket start.
+  google.protobuf.Timestamp start = 1;
+  // Work creations, absent when history is unavailable.
+  optional int64 created = 2;
+  // Permanent closure events, absent when history is unavailable.
+  optional int64 closed = 3;
+  // P50 lifetime in minutes; absent for no observations or unavailable history.
+  optional double p50_minutes = 4;
+  // P75 lifetime in minutes.
+  optional double p75_minutes = 5;
+  // P90 lifetime in minutes.
+  optional double p90_minutes = 6;
+}
+
+// WorkDistribution is an identity or lifecycle group, without presentation names.
+message WorkDistribution {
+  // State code or owner participant identity.
+  string key = 1;
+  // Eligible Work in this group.
+  int64 count = 2;
+}
+
+// ListPendingInteractionsRequest addresses the Work whose requests are read.
+message ListPendingInteractionsRequest {
+  // Work whose pending requests are read.
+  string work_id = 1;
+}
+
+// ListPendingInteractionsResponse lists the Work's current Harness requests.
+message ListPendingInteractionsResponse {
+  // Requests awaiting a reply, including ones whose reply is still being delivered.
+  repeated talgent.dispatcher.public.v1.PendingInteraction interactions = 1;
+}
+
+// CancelTurnRequest addresses the turn to interrupt.
+message CancelTurnRequest {
+  // Work running the turn.
+  string work_id = 1;
+  // Turn to interrupt; a different current turn is left running.
+  string turn_id = 2;
+}
+
+// Delivery is acknowledged here; native facts establish actual turn completion.
+message CancelTurnResponse {}
+
+// GetCurrentTurnRequest addresses the Work whose activity is read.
+message GetCurrentTurnRequest {
+  // Work whose current turn is read.
+  string work_id = 1;
+}
+
+// GetCurrentTurnResponse describes the Work's turn in progress, if any.
+message GetCurrentTurnResponse {
+  // Native identity of the turn in progress; empty when none has one yet.
+  string turn_id = 1;
+  // Whether cancellation of this turn has been requested and not yet observed.
+  bool cancel_requested = 2;
+  // Includes admitted input awaiting its native turn identity.
+  bool active = 3;
+}
+
+// ListWorkLifecycleEventsRequest selects one authorized Work.
+message ListWorkLifecycleEventsRequest {
+  // Work whose lifecycle transitions are read.
+  string work_id = 1;
+}
+
+// ListWorkLifecycleEventsResponse lists transitions in the order they were committed.
+message ListWorkLifecycleEventsResponse {
+  // Lifecycle transitions of the Work's one Harness Session, oldest first.
+  repeated WorkLifecycleEvent events = 1;
+}
+
+// WorkLifecycleEvent is one committed Work lifecycle transition, such as a stop or resume.
+message WorkLifecycleEvent {
+  // Lifecycle state entered: created, starting, running, stopping, stopped, failed, closing or closed.
+  string state = 1;
+  // Time the transition was observed.
+  google.protobuf.Timestamp occurred_at = 2;
+}

@@ -1,0 +1,16 @@
+logger:
+  level: "${LOG_LEVEL:info}"
+  output: "${LOG_OUTPUT:console}"
+
+http:
+  addr: "${STREAMGATEWAY_HTTP_ADDR::8084}"
+
+clickhouse:
+  dsn: "${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}"
+
+nats:
+  url: "${NATS_URL:nats://localhost:4222}"
+
+agent:
+  address: "${STREAMGATEWAY_AGENT_ADDR:http://127.0.0.1:8080}"
+  control-token: "${AGENT_CONTROL_TOKEN:}"

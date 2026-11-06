@@ -1,0 +1,40 @@
+/* Start Work tray cards: per-Work choices as check rows, and Plugins and
+   Connectors browsed by catalog category beside a rail. */
+.wst-rows { display: grid; gap: 1px; align-content: start; }
+.wst-scroll { max-height: 320px; overflow-y: auto; margin-top: 4px; }
+.wst-group-title { padding: 8px 10px 2px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.wst-check-row { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 2px 4px 2px 10px; border-radius: 10px; }
+.wst-check-row:hover { background: color-mix(in oklch, var(--foreground) 4%, transparent); }
+.wst-check { flex: 1; min-width: 0; }
+.wst-check .checkbox__content { flex-direction: row; align-items: center; justify-content: flex-start; gap: 12px; width: 100%; text-align: left; }
+.wst-check .checkbox__control { box-shadow: inset 0 0 0 1px var(--border); }
+.wst-check-copy { display: grid; gap: 1px; min-width: 0; }
+.wst-check-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wst-check-copy > :not(.wst-check-title) { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wst-check-row[data-struck] .wst-check-title { color: var(--muted); text-decoration: line-through; }
+.wst-catalog { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 6px; height: 272px; margin-top: 4px; }
+.wst-catalog[data-searching] { grid-template-columns: minmax(0, 1fr); }
+.wst-rail { overflow-y: auto; padding-right: 6px; border-right: 1px solid var(--separator); }
+.wst-rail-item { display: flex; align-items: center; gap: 8px; min-height: 34px; }
+.wst-rail-item[aria-selected="true"] { background: color-mix(in oklch, var(--foreground) 6%, transparent); }
+.wst-rail-item[aria-selected="true"] .wst-rail-name { font-weight: 500; }
+.wst-rail-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.wst-count { font-size: 11px; font-variant-numeric: tabular-nums; }
+.wst-pane { min-width: 0; overflow-y: auto; }
+.wst-back-row { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--separator); }
+.wst-heading { font-size: 13px; font-weight: 500; }
+.wst-params { display: grid; gap: 12px; padding: 4px 6px 8px; }
+.wst-picker-empty { display: grid; gap: 10px; justify-items: start; padding: 8px; font-size: 13px; color: var(--muted); }
+.wst-switch-row { padding: 8px 10px 4px; margin-top: 4px; border-top: 1px solid var(--separator); font-size: 13px; }
+.wst-switch-row .switch, .wst-switch-row .switch__content { width: 100%; }
+.wst-switch-row .switch__content { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wst-switch-row .wst-switch-note { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.wst-offline { margin-left: auto; flex-shrink: 0; color: var(--muted); font-size: 12px; }
+.wst-feedback { display: grid; gap: 4px; margin: 12px 20px 0; font-size: 13px; }
+.wst-feedback p { display: flex; align-items: center; gap: 6px; }
+
+.wst-unavailable { margin: 0 0 16px; }
+@media (max-width: 740px) {
+  .wpb-popover-wide { width: calc(100vw - 24px); }
+  .wst-catalog { grid-template-columns: 128px minmax(0, 1fr); }
+}

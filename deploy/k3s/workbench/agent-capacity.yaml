@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: application-requests
+  namespace: talgent
+  labels:
+    app.kubernetes.io/name: agent-capacity
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+---
+# Agent checks this namespace-wide budget before requesting an environment.
+# Service Pods share the namespace; their requests count toward the same budget.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: agent-executions
+  namespace: talgent
+  labels:
+    app.kubernetes.io/name: agent-capacity
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 12Gi
+    pods: "64"

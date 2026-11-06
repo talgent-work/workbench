@@ -1,0 +1,3 @@
+gen/ts/**/*_pb.ts whitespace=-blank-at-eof
+deploy/execd/*.patch -whitespace
+deploy/opensandbox/egress/*.patch -whitespace

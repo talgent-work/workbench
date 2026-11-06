@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package talgent.marketplace.private.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1;marketplaceprivatev1";
+
+// SynchronizationService is available only to authenticated platform operations.
+service SynchronizationService {
+  // RequestSynchronization queues a refresh or returns the current operation.
+  rpc RequestSynchronization(RequestSynchronizationRequest) returns (RequestSynchronizationResponse);
+  // GetSynchronization returns the latest operational status, including partial failure.
+  rpc GetSynchronization(GetSynchronizationRequest) returns (GetSynchronizationResponse);
+}
+
+// RequestSynchronizationRequest controls acquisition of unchanged versions.
+message RequestSynchronizationRequest {
+  // Reacquire unchanged packages; immutable release identity still applies.
+  bool force = 1;
+}
+
+// RequestSynchronizationResponse identifies the accepted or existing operation.
+message RequestSynchronizationResponse {
+  // Current synchronization; its force policy is immutable once accepted.
+  SynchronizationRun run = 1;
+}
+
+// GetSynchronizationRequest queries the latest operation.
+message GetSynchronizationRequest {}
+
+// GetSynchronizationResponse is empty before the first trigger.
+message GetSynchronizationResponse {
+  // Latest synchronization operation.
+  SynchronizationRun run = 1;
+}
+
+// SynchronizationRun describes delivery and publication, not a catalog aggregate.
+message SynchronizationRun {
+  // UUID of the current operation.
+  string id = 1;
+  // queued, running, succeeded, partial_failure, failed, or timed_out.
+  string status = 2;
+  // Whether unchanged versions are reacquired.
+  bool force = 3;
+  // Acceptance time in Unix milliseconds.
+  int64 requested_at_unix_ms = 4;
+  // Last acceptable execution time in Unix milliseconds.
+  int64 deadline_unix_ms = 5;
+  // Completion time; zero while pending.
+  int64 finished_at_unix_ms = 6;
+  // Each failed source or plugin with its safe diagnosis.
+  repeated SynchronizationFailure failures = 7;
+}
+
+// SynchronizationFailure identifies a retained or unavailable publication.
+message SynchronizationFailure {
+  // Configured source name.
+  string source = 1;
+  // Plugin slug; empty when source enumeration failed.
+  string slug = 2;
+  // Why it failed, as the source answered: URLs keep only scheme, host and
+  // path, and no credential, query or token appears.
+  string reason = 3;
+}

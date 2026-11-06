@@ -1,0 +1,93 @@
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test binary and coverage
+*.test
+*.out
+coverage.*
+*.coverprofile
+*.lcov
+profile.cov
+coverage/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Go vendor (if used)
+# vendor/
+
+# Node.js
+node_modules/
+.npm
+
+# pnpm
+.pnpm-store/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+.vite/
+
+# ESLint / Prettier cache
+.eslintcache
+.stylelintcache
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.*
+
+# Local GitHub App credentials used while testing SCM integration.
+/app.yaml
+
+# Logs
+*.log
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Editor/IDE
+# .idea/
+# .vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go service binaries at repo root (from `make build`)
+/sandbox
+/supervisor
+/trace
+
+# Git worktrees
+.worktrees/
+
+# Local dev config overlays (contain real credentials/IPs, never commit)
+/configs/*/*_dev.yml
+
+.superpowers/
+
+# Local rendered deployment files
+/deploy/k3s/talgent.rendered.yaml
+.playwright-mcp/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+# heroui-agents-md
+.heroui-docs/
+
+# Independent publication checkout; not a submodule or product build input.
+/marketplace/
+/.marketplace-publish/
+
+/.plugin-source/

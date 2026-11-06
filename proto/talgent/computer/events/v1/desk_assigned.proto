@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package talgent.computer.events.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1;computereventsv1";
+
+// DeskAssigned is the Desk Assigned Published Fact: a Computer seated a
+// waiting Desk, so its run may start now. It is published best effort after
+// the seating commits and keyed by the Work; Agent also asks Computer for the
+// Desks its waiting starts hold, so a lost fact only delays a start.
+message DeskAssigned {
+  // Unique identity of this publication.
+  string event_id = 1;
+  // When the Desk was seated.
+  google.protobuf.Timestamp occurred_at = 2;
+  // The Computer that seated it.
+  string computer_id = 3;
+  // The Desk identity given at admission.
+  string desk_id = 4;
+  // The Work its run belongs to.
+  string work_id = 5;
+}

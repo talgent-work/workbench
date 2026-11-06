@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Checks the tracked tree for references the public Workbench tree must not carry.
+
+The public tree is this script's tree, the Workbench. The repository checked
+is the one the script runs in: it may hold the public tree and more, such as
+an extension beside it, or be an extension's own repository that reaches the
+Workbench elsewhere and holds no public tree. Every tracked file of the
+repository:
+  - private network addresses outside the documentation ranges (RFC 5737);
+    network ranges such as 10.0.0.0/8 and the k3s defaults 10.42/10.43 pass
+  - private host names (*.lan, *.internal, *.local, *.ts.net, ...)
+  - deployment subdomains of the product's own domain
+  - every pattern of the local file TALGENT_LEAK_PATTERNS_FILE (default
+    ~/.config/talgent/leak-patterns), which names one environment's concrete
+    values and therefore never enters the repository
+The core tree (the `core` entries of scripts/public-tree/manifest) also:
+  - ADR and issue references, links to development documents
+  - the extension's concepts (Orchestra, Intent, Project Knowledge, ...)
+  - the `jacexh` account
+Every file of the public tree is a `core` or `public` entry of the manifest.
+Then gitleaks, when installed, scans the public tree.
+
+Derived code under gen/ is skipped: it is regenerated from proto/, which is
+checked.
+
+Exit status 1 when anything is found. Usage: check-leaks.py [--skip-secret-scan]
+"""
+
+import bisect
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+TREE = Path(__file__).resolve().parents[2]
+MANIFEST = TREE / "scripts/public-tree/manifest"
+
+PRIVATE_ADDRESS = re.compile(
+    r"(?<![\w.])("
+    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+    r"|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+    r"|192\.168\.\d{1,3}\.\d{1,3}"
+    r"|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}"
+    r")(?!\w|\.\d)(/\d{1,2})?"
+)
+# A whole private range, as a deny or allow list names it.
+NETWORK_RANGES = {"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"}
+# k3s's default Pod and Service networks.
+K3S_DEFAULTS = re.compile(r"10\.4[23]\.")
+# Private name suffixes; .local and .internal only where a host is named, since
+# file names such as settings.local.json share them.
+PRIVATE_HOST = re.compile(
+    r"\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:lan|intranet|corp|home\.arpa|ts\.net)\b(?![\w.-])"
+    r"|(?<=://)[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:local|internal)\b(?![\w-])"
+    r"|(?<=@)[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:local|internal)\b(?![\w-])"
+)
+PUBLIC_HOSTS = {"host.docker.internal", "svc.cluster.local"}
+DEPLOYMENT_SUBDOMAIN = re.compile(r"(?<![\w.@-])(?:[a-z0-9-]+\.)+talgent\.work\b(?![\w-])")
+# An extended attribute named after the product, not a host.
+ATTRIBUTE_NAMES = {"user.talgent.work"}
+
+ADR = re.compile(r"\bADRs?[ -]?\d{2,4}\b|\badr/\d{4}")
+ISSUE = re.compile(r"(?<![\w&#/])#[1-9]\d{1,3}(?![\w%])|/issues/\d+|/pull/\d+")
+# A colour value in a style declaration, such as `color: #333;`.
+CSS_COLOR = re.compile(r"(?:color|background|border|fill|stroke|shadow|outline|gradient)[\w-]*\s*:[^;\n]*$")
+STYLE_FILES = (".css", ".scss", ".ts", ".tsx", ".html")
+# A path that names a tracked development document; only those stay private.
+DOC_PATH = re.compile(r"(?:(?<=\.\./)|(?<![\w.:/-]))docs/[\w./-]*[\w/]")
+DEV_DOC = re.compile(r"\b(?:CONTEXT|DEPLOYMENT|AGENTS|CLAUDE)\.md\b")
+EXTENSION_TERM = re.compile(
+    r"\b(?:Orchestra|orchestra|Orchestrator|orchestrator|Intents?|intents?|Alignments?"
+    r"|Assignees?|PM\s+Coordinators?|pm-coordinator|Project\s+Knowledge|projectknowledge"
+    r"|MCP\s+Gateway|mcp-gateway|mcpgateway|Action\s+Calls?|[Ww]iki)\b"
+)
+# A test's stated intent ("Intent:", "Intent (real):") is the English word.
+TEST_INTENT_LABEL = re.compile(r"\bIntent(?: \(\w+\))?:")
+ACCOUNT = re.compile(r"jacexh")
+# A line continuation inside a comment, so terms split over lines still match.
+COMMENT_BREAK = re.compile(r"[ \t]*\n[ \t]*(?://+|#+|\*+(?!/)|--)?[ \t]*")
+
+
+def git(*args, cwd=None):
+    return subprocess.run(["git", *args], cwd=cwd or ROOT, check=True, capture_output=True, text=True).stdout
+
+
+# The repository checked, whether it holds the public tree, and the tree's
+# path in it ("" when the tree is the repository).
+ROOT = Path(git("rev-parse", "--show-toplevel", cwd=Path.cwd()).strip()).resolve()
+HOLDS_TREE = TREE == ROOT or ROOT in TREE.parents
+PREFIX = "" if not HOLDS_TREE or ROOT == TREE else TREE.relative_to(ROOT).as_posix() + "/"
+SKIPPED = ("gen/", PREFIX + "gen/")
+
+
+def manifest():
+    entries = {"core": [], "public": []}
+    if not HOLDS_TREE:
+        return entries
+    for raw in MANIFEST.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        kind, _, path = line.partition(" ")
+        if kind not in entries or not path:
+            sys.exit(f"{MANIFEST}: not a manifest line: {raw}")
+        entries[kind].append(PREFIX + path.strip().rstrip("/"))
+    return entries
+
+
+def under(path, prefixes):
+    return any(path == p or path.startswith(p + "/") for p in prefixes)
+
+
+def local_patterns():
+    location = os.environ.get("TALGENT_LEAK_PATTERNS_FILE", str(Path.home() / ".config/talgent/leak-patterns"))
+    path = Path(location)
+    if not path.is_file():
+        return []
+    patterns = []
+    for line in path.read_text().splitlines():
+        if line.strip() and not line.lstrip().startswith("#"):
+            patterns.append(re.compile(line.strip()))
+    return patterns
+
+
+def read(path):
+    try:
+        data = (ROOT / path).read_bytes()
+    except (FileNotFoundError, IsADirectoryError):
+        return None
+    if b"\0" in data[:8192]:
+        return None
+    return data.decode("utf-8", errors="replace")
+
+
+def line_of(text, offset):
+    return text.count("\n", 0, offset) + 1
+
+
+def local_findings(text, extra):
+    for pattern in extra:
+        for m in pattern.finditer(text):
+            yield m.start(), "local pattern", m.group(0)
+
+
+def everywhere_findings(text):
+    for m in PRIVATE_ADDRESS.finditer(text):
+        address, prefix = m.group(1), m.group(2) or ""
+        if address + prefix in NETWORK_RANGES or K3S_DEFAULTS.match(address):
+            continue
+        yield m.start(), "private address", m.group(0)
+    for m in PRIVATE_HOST.finditer(text):
+        if any(m.group(0) == h or m.group(0).endswith("." + h) for h in PUBLIC_HOSTS):
+            continue
+        yield m.start(), "private host name", m.group(0)
+    for m in DEPLOYMENT_SUBDOMAIN.finditer(text):
+        if m.group(0) not in ATTRIBUTE_NAMES:
+            yield m.start(), "deployment domain", m.group(0)
+
+
+def core_findings(path, text, documents):
+    for m in ADR.finditer(text):
+        yield m.start(), "ADR reference", m.group(0)
+    for m in ISSUE.finditer(text):
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        if path.endswith(STYLE_FILES) and CSS_COLOR.search(text[line_start : m.start()]):
+            continue
+        yield m.start(), "issue reference", m.group(0)
+    for m in DOC_PATH.finditer(text):
+        if m.group(0).rstrip("/") in documents:
+            yield m.start(), "development document", m.group(0)
+    for m in DEV_DOC.finditer(text):
+        yield m.start(), "development document", m.group(0)
+    for m in ACCOUNT.finditer(text):
+        yield m.start(), "account", m.group(0)
+    # Join comment continuations into one space each. Every joined segment
+    # records where it starts in the joined text and in the original text.
+    joined, starts, origins, length, last = [], [0], [0], 0, 0
+    for m in COMMENT_BREAK.finditer(text):
+        joined.append(text[last : m.start()] + " ")
+        length += m.start() - last + 1
+        starts.append(length)
+        origins.append(m.end())
+        last = m.end()
+    joined.append(text[last:])
+    flat = "".join(joined)
+    labels = {m.start() for m in TEST_INTENT_LABEL.finditer(flat)}
+    for m in EXTENSION_TERM.finditer(flat):
+        if m.start() in labels:
+            continue
+        segment = bisect.bisect_right(starts, m.start()) - 1
+        original = origins[segment] + m.start() - starts[segment]
+        yield original, "extension term", " ".join(m.group(0).split())
+
+
+def public(path, entries):
+    return under(path, entries["core"] + entries["public"])
+
+
+def gitleaks(entries, tracked):
+    binary = shutil.which("gitleaks")
+    if not binary:
+        # CI sets TALGENT_REQUIRE_SECRET_SCAN, so a failed install fails the check.
+        if os.environ.get("TALGENT_REQUIRE_SECRET_SCAN"):
+            print("gitleaks is not installed", file=sys.stderr)
+            return 1
+        print("gitleaks is not installed; skipped the secret scan", file=sys.stderr)
+        return 0
+    # The public tree as the working tree holds it, so uncommitted changes
+    # are scanned too.
+    with tempfile.TemporaryDirectory() as tree:
+        for path in tracked:
+            source = ROOT / path
+            if public(path, entries) and source.is_file():
+                target = Path(tree) / path[len(PREFIX) :]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+        result = subprocess.run([binary, "dir", "--no-banner", "--redact", tree], cwd=ROOT)
+    return result.returncode
+
+
+def main():
+    entries = manifest()
+    extra = local_patterns()
+    found = 0
+    tracked = [p for p in git("ls-files", "-z").split("\0") if p]
+    # Development documents are the repository's docs/ outside the public tree.
+    documents = set()
+    for path in tracked:
+        if path.startswith("docs/") and not path.startswith(PREFIX):
+            parts = path.split("/")
+            documents.update("/".join(parts[:i]) for i in range(2, len(parts) + 1))
+    for path in tracked:
+        if path.startswith(SKIPPED):
+            continue
+        text = read(path)
+        if text is None:
+            continue
+        findings = list(local_findings(text, extra)) + list(everywhere_findings(text))
+        if under(path, entries["core"]):
+            findings += core_findings(path, text, documents)
+        elif HOLDS_TREE and path.startswith(PREFIX) and not public(path, entries):
+            findings.append((0, "not in the manifest", path[len(PREFIX) :]))
+        for offset, rule, match in sorted(set(findings)):
+            print(f"{path}:{line_of(text, offset)}: {rule}: {match}")
+            found += 1
+    status = 1 if found else 0
+    if HOLDS_TREE and "--skip-secret-scan" not in sys.argv[1:] and gitleaks(entries, tracked):
+        status = 1
+    if found:
+        print(f"{found} finding(s)", file=sys.stderr)
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())

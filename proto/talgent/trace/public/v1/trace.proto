@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package talgent.trace.public.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/trace/public/v1;tracepublicv1";
+
+// TraceQueryService reads observations by Work, Project or person. A Work's
+// observations are scoped by its Project when it has one: the reader is
+// admitted by the Project access decision; a Work without a Project is named
+// without one, and its owner and Work Share holders read it.
+service TraceQueryService {
+  // List retained structured native events of an authorized Project or Work.
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+  // ListSpansBySession lists one Work's spans.
+  rpc ListSpansBySession(ListSpansBySessionRequest) returns (ListSpansBySessionResponse);
+  // ListSpansByOwner lists a Project's spans carrying the caller attributes
+  // owner_context and owner_id.
+  rpc ListSpansByOwner(ListSpansByOwnerRequest) returns (ListSpansByOwnerResponse);
+  // GetSpan RPC.
+  rpc GetSpan(GetSpanRequest) returns (GetSpanResponse);
+  // GetSessionTraceMetrics reads one Work's measurements.
+  rpc GetSessionTraceMetrics(GetSessionTraceMetricsRequest) returns (GetSessionTraceMetricsResponse);
+  // GetProjectTraceMetrics reads a Project's measurements.
+  rpc GetProjectTraceMetrics(GetProjectTraceMetricsRequest) returns (GetProjectTraceMetricsResponse);
+  // GetPersonalTraceMetrics reads the authenticated person's own measurements
+  // across every Work of their Agent, with or without a Project; only that
+  // person reads them.
+  rpc GetPersonalTraceMetrics(GetPersonalTraceMetricsRequest) returns (GetPersonalTraceMetricsResponse);
+}
+
+// Span message.
+message Span {
+  // span id field.
+  string span_id = 1;
+  // trace id field.
+  string trace_id = 2;
+  // parent span id field.
+  string parent_span_id = 3;
+  // name field.
+  string name = 4;
+  // kind field.
+  string kind = 5;
+  // start time field.
+  google.protobuf.Timestamp start_time = 6;
+  // end time field.
+  google.protobuf.Timestamp end_time = 7;
+  // duration nanos field.
+  int64 duration_nanos = 8;
+  // status code field.
+  string status_code = 9;
+  // status message field.
+  string status_message = 10;
+  // attributes field.
+  map<string, string> attributes = 11;
+  // Native resource attributes, excluding retired internal platform identities.
+  map<string, string> resource_attributes = 12;
+  // Consumer classification; unknown evidence remains unclassified.
+  string category = 13;
+  // Native tool-use identity shared by call, permission, execution and result evidence.
+  string call_id = 14;
+  // Harness subagent identity, distinct from platform AgentSession identity.
+  string native_agent_id = 15;
+  // Parent Harness subagent identity when explicitly reported.
+  string parent_native_agent_id = 16;
+  // AgentSession identity.
+  string agent_work_id = 17;
+  // project id field.
+  string project_id = 18;
+  // runtime purpose field.
+  string runtime_purpose = 19;
+  // owner context field.
+  string owner_context = 20;
+  // owner id field.
+  string owner_id = 21;
+}
+
+// ListSpansByOwnerRequest message.
+message ListSpansByOwnerRequest {
+  // project id field.
+  string project_id = 1;
+  // owner context field.
+  string owner_context = 2;
+  // owner id field.
+  string owner_id = 3;
+  // runtime purpose field.
+  string runtime_purpose = 4;
+  // limit field.
+  int32 limit = 5;
+  // after cursor field.
+  string after_cursor = 6;
+}
+
+// ListSpansByOwnerResponse message.
+message ListSpansByOwnerResponse {
+  // spans field.
+  repeated Span spans = 1;
+  // next cursor field.
+  string next_cursor = 2;
+}
+
+// ListSpansBySessionRequest message.
+message ListSpansBySessionRequest {
+  // The Work's Project; empty for a Work without one.
+  string project_id = 1;
+  // AgentSession identity.
+  string agent_work_id = 2;
+  // Opaque cursor returned by the previous page.
+  string after_cursor = 3;
+  // limit field.
+  int32 limit = 4;
+  // Pages from the latest span backwards; the default is oldest first.
+  // A cursor continues in the order of the request that returned it.
+  bool newest_first = 5;
+}
+
+// ListSpansBySessionResponse message.
+message ListSpansBySessionResponse {
+  // spans field.
+  repeated Span spans = 1;
+  // Opaque cursor for the next page, or empty when exhausted.
+  string next_cursor = 2;
+}
+
+// GetSpanRequest message.
+message GetSpanRequest {
+  // Native span identity is scoped by Trace ID and trusted Project attribution.
+  string span_id = 1;
+  // The Project scope, authorized before looking up evidence; empty for a
+  // span of a Work without a Project.
+  string project_id = 2;
+  // Required native Trace ID; Span ID alone is not globally unique.
+  string trace_id = 3;
+  // The Work the span belongs to; required without a Project.
+  string agent_work_id = 4;
+}
+
+// GetSpanResponse message.
+message GetSpanResponse {
+  // span field.
+  Span span = 1;
+}
+
+// GetSessionTraceMetricsRequest message.
+message GetSessionTraceMetricsRequest {
+  // AgentSession identity.
+  string agent_work_id = 1;
+  // start time field.
+  google.protobuf.Timestamp start_time = 2;
+  // end time field.
+  google.protobuf.Timestamp end_time = 3;
+  // step seconds field.
+  int32 step_seconds = 4;
+  // metric kinds field.
+  repeated string metric_kinds = 5;
+  // The Work's Project; empty for a Work without one.
+  string project_id = 6;
+}
+
+// GetProjectTraceMetricsRequest message.
+message GetProjectTraceMetricsRequest {
+  // project id field.
+  string project_id = 1;
+  // start time field.
+  google.protobuf.Timestamp start_time = 2;
+  // end time field.
+  google.protobuf.Timestamp end_time = 3;
+  // step seconds field.
+  int32 step_seconds = 4;
+  // metric kinds field.
+  repeated string metric_kinds = 5;
+}
+
+// GetPersonalTraceMetricsRequest names a window of the authenticated person's
+// usage; the person is never named by the request.
+message GetPersonalTraceMetricsRequest {
+  // start time field.
+  google.protobuf.Timestamp start_time = 1;
+  // end time field.
+  google.protobuf.Timestamp end_time = 2;
+  // step seconds field.
+  int32 step_seconds = 3;
+  // metric kinds field.
+  repeated string metric_kinds = 4;
+  // Narrows to one of the person's Works.
+  string agent_work_id = 5;
+}
+
+// GetPersonalTraceMetricsResponse message.
+message GetPersonalTraceMetricsResponse {
+  // buckets field.
+  repeated TraceMetricBucket buckets = 1;
+  // totals field.
+  repeated TraceMetricTotal totals = 2;
+}
+
+// GetSessionTraceMetricsResponse message.
+message GetSessionTraceMetricsResponse {
+  // buckets field.
+  repeated TraceMetricBucket buckets = 1;
+  // totals field.
+  repeated TraceMetricTotal totals = 2;
+}
+
+// GetProjectTraceMetricsResponse message.
+message GetProjectTraceMetricsResponse {
+  // buckets field.
+  repeated TraceMetricBucket buckets = 1;
+  // totals field.
+  repeated TraceMetricTotal totals = 2;
+}
+
+// TraceMetricBucket message.
+message TraceMetricBucket {
+  // bucket start field.
+  google.protobuf.Timestamp bucket_start = 1;
+  // bucket seconds field.
+  int32 bucket_seconds = 2;
+  // project id field.
+  string project_id = 3;
+  // AgentSession identity.
+  string agent_work_id = 4;
+  // metric kind field.
+  string metric_kind = 5;
+  // dimension field.
+  string dimension = 6;
+  // value field.
+  double value = 7;
+  // Number of observed facts with unknown values for this metric.
+  uint64 unknown_count = 8;
+  // Known interpretation gaps; absence does not prove lossless collection.
+  repeated string gaps = 9;
+  // The person whose Agent made the Work, empty for a Work of an Agent that
+  // represents no person.
+  string user_id = 10;
+  // runtime purpose field.
+  string runtime_purpose = 11;
+  // Caller attribute naming the kind of business object that started the Work.
+  string owner_context = 12;
+  // Caller attribute naming that business object.
+  string owner_id = 13;
+}
+
+// TraceMetricTotal message.
+message TraceMetricTotal {
+  // metric kind field.
+  string metric_kind = 1;
+  // dimension field.
+  string dimension = 2;
+  // value field.
+  double value = 3;
+  // Unknown contributions are separate from the sum of known values.
+  uint64 unknown_count = 4;
+}
+
+// Bounded query of retained native OTLP log evidence.
+message ListEventsRequest {
+  // The authorized Project scope; empty for a Work without a Project.
+  string project_id = 1;
+  // The Work filter; required without a Project.
+  string agent_work_id = 2;
+  // Optional native Trace ID filter.
+  string trace_id = 3;
+  // Optional native tool-use identity filter.
+  string call_id = 4;
+  // Inclusive event-time lower bound, still limited by raw retention.
+  google.protobuf.Timestamp start_time = 5;
+  // Exclusive event-time upper bound.
+  google.protobuf.Timestamp end_time = 6;
+  // Page size, default and maximum 500.
+  int32 limit = 7;
+  // Opaque pagination cursor from a preceding response for the same scope.
+  string after_cursor = 8;
+}
+
+// Retained native OTLP log evidence, not a platform business event.
+message NativeEvent {
+  // Stable identity for identical retained log deliveries.
+  string id = 1;
+  // Native event timestamp.
+  google.protobuf.Timestamp timestamp = 2;
+  // Native Trace ID, when provided.
+  string trace_id = 3;
+  // Explicitly reported associated Span ID, when provided.
+  string span_id = 4;
+  // Native event.name attribute, when provided.
+  string name = 5;
+  // Original structured event body.
+  string body = 6;
+  // Native event attributes, preserving missing/redacted/truncated evidence.
+  map<string, string> attributes = 7;
+  // Native resource attributes, excluding retired internal platform identities.
+  map<string, string> resource_attributes = 8;
+  // Trusted platform Project attribution.
+  string project_id = 9;
+  // Trusted platform Session attribution.
+  string agent_work_id = 10;
+}
+
+// One page of authorized retained native event evidence.
+message ListEventsResponse {
+  // Events ordered by native timestamp and stable evidence identity.
+  repeated NativeEvent events = 1;
+  // Opaque cursor for the next page, or empty when exhausted.
+  string next_cursor = 2;
+}

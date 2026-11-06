@@ -1,0 +1,275 @@
+{
+ "read_whole": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "session_id": "s",
+  "uuid": "u1",
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "read-1",
+     "type": "tool_result",
+     "content": "     1\t# Notes\n     2\t\n     3\tBody\n"
+    }
+   ]
+  },
+  "tool_use_result": {
+   "type": "text",
+   "file": {
+    "filePath": "/workspace/notes.md",
+    "content": "# Notes\n\nBody\n",
+    "numLines": 3,
+    "startLine": 1,
+    "totalLines": 3
+   }
+  }
+ },
+ "read_range": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "read-2",
+     "type": "tool_result",
+     "content": "    41\tfunc main() {}\n"
+    }
+   ]
+  },
+  "tool_use_result": {
+   "type": "text",
+   "file": {
+    "filePath": "/workspace/main.go",
+    "content": "func main() {}\n",
+    "numLines": 1,
+    "startLine": 41,
+    "totalLines": 120
+   }
+  }
+ },
+ "read_capped": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "read-3",
+     "type": "tool_result",
+     "content": "..."
+    }
+   ]
+  },
+  "tool_use_result": {
+   "type": "text",
+   "file": {
+    "filePath": "/workspace/big.log",
+    "content": "line\n",
+    "numLines": 1,
+    "startLine": 1,
+    "totalLines": 9000,
+    "truncatedByTokenCap": true
+   }
+  }
+ },
+ "read_image": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "read-4",
+     "type": "tool_result",
+     "content": [
+      {
+       "type": "image",
+       "source": {
+        "type": "base64",
+        "media_type": "image/png",
+        "data": "iVBORw0KGgo="
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "tool_use_result": {
+   "type": "image",
+   "file": {
+    "base64": "iVBORw0KGgo=",
+    "type": "image/png",
+    "originalSize": 8
+   }
+  }
+ },
+ "write": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "write-1",
+     "type": "tool_result",
+     "content": "File created successfully at: /workspace/report.md"
+    }
+   ]
+  },
+  "tool_use_result": {
+   "type": "create",
+   "filePath": "/workspace/report.md",
+   "content": "# Report\n\nWritten body\n",
+   "structuredPatch": [],
+   "originalFile": null
+  }
+ },
+ "edit": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "edit-1",
+     "type": "tool_result",
+     "content": "The file /workspace/app.ts has been updated successfully."
+    }
+   ]
+  },
+  "tool_use_result": {
+   "filePath": "/workspace/app.ts",
+   "oldString": "const a = 1;",
+   "newString": "const a = 2;",
+   "originalFile": "// SECRET ORIGINAL FILE\nconst a = 1;\n",
+   "structuredPatch": [
+    {
+     "oldStart": 2,
+     "oldLines": 1,
+     "newStart": 2,
+     "newLines": 1,
+     "lines": [
+      "-const a = 1;",
+      "+const a = 2;"
+     ]
+    }
+   ],
+   "userModified": false,
+   "replaceAll": false,
+   "gitDiff": {
+    "filename": "app.ts",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 1,
+    "changes": 2,
+    "patch": "SECRET GIT PATCH"
+   }
+  }
+ },
+ "error": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "write-2",
+     "type": "tool_result",
+     "content": "Error: permission denied",
+     "is_error": true
+    }
+   ]
+  },
+  "tool_use_result": "Error: permission denied"
+ },
+ "string_result": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "write-3",
+     "type": "tool_result",
+     "content": "Error: file not read"
+    }
+   ]
+  },
+  "tool_use_result": "Error: file not read"
+ },
+ "two_results": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "read-5",
+     "type": "tool_result",
+     "content": "a"
+    },
+    {
+     "tool_use_id": "read-6",
+     "type": "tool_result",
+     "content": "b"
+    }
+   ]
+  },
+  "tool_use_result": {
+   "type": "text",
+   "file": {
+    "filePath": "/workspace/a.md",
+    "content": "a",
+    "numLines": 1,
+    "startLine": 1,
+    "totalLines": 1
+   }
+  }
+ },
+ "subagent": {
+  "type": "user",
+  "parent_tool_use_id": "task-1",
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "read-7",
+     "type": "tool_result",
+     "content": "x"
+    }
+   ]
+  },
+  "tool_use_result": {
+   "type": "text",
+   "file": {
+    "filePath": "/workspace/a.md",
+    "content": "x",
+    "numLines": 1,
+    "startLine": 1,
+    "totalLines": 1
+   }
+  }
+ },
+ "other_shape": {
+  "type": "user",
+  "parent_tool_use_id": null,
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "tool_use_id": "task-2",
+     "type": "tool_result",
+     "content": "Task #1 created successfully"
+    }
+   ]
+  },
+  "tool_use_result": {
+   "task": {
+    "id": "1",
+    "subject": "Inspect"
+   }
+  }
+ }
+}

@@ -1,0 +1,19 @@
+/* A context rail: a card of collapsible sections beside a page's main
+   content, shared by every page that has one. */
+.cr-card { padding: 6px 18px; background: var(--surface); border: 1px solid color-mix(in oklch,var(--separator) 35%,transparent); border-radius: 22px; box-shadow: 0 4px 20px rgb(0 0 0 / 4%); max-height: calc(100dvh - 88px); overflow-y: auto; }
+.cr-section { padding: 14px 0; min-width: 0; }
+.cr-section~.cr-section { border-top: 1px solid color-mix(in oklch,var(--separator) 50%,transparent); }
+.cr-heading { display: flex; align-items: center; justify-content: space-between; min-height: 24px; gap: 6px; }
+.cr-heading h3 { flex: 1; min-width: 0; }
+.cr-heading>.button { min-width: 24px; width: 24px; height: 24px; padding: 0; color: var(--muted); }
+.cr-section h3,.cr-section-trigger { font-family: inherit; font-size: 14px; font-weight: 500; color: var(--muted); line-height: 22px; }
+.cr-section-trigger { --button-bg: transparent; --button-bg-hover: transparent; --button-bg-pressed: transparent; width: 100%; display: flex; justify-content: space-between; gap: 8px; padding: 0; height: 24px; min-height: 24px; }
+.cr-summary { margin-right: auto; color: color-mix(in oklch,var(--muted) 70%,transparent); font-size: 12px; font-variant-numeric: tabular-nums; }
+.cr-expand { opacity: 0; flex-shrink: 0; }
+.cr-section-trigger[aria-expanded="true"] .cr-expand { transform: rotate(90deg); }
+.cr-section:hover .cr-expand,.cr-section:focus-within .cr-expand { opacity: 1; }
+.cr-heading+div:not([hidden])>.cr-list { margin-top: 5px; }
+.cr-list { list-style: none; margin: 0; padding: 0; }
+@media (pointer: coarse) { .cr-expand { opacity: 1; } }
+@media (max-width: 900px) { .cr-card { max-height: none; } }
+.cr-notice { padding-block: 10px; font-size: 12px; }

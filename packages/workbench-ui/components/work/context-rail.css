@@ -1,0 +1,61 @@
+/* A page's context card. */
+/* The rail's top edge on both tabs: below the top bar and the page's 16px top
+   padding, where the Work grid starts. */
+.p-page { --context-rail-width: 280px; --context-gap: 40px; --context-content-gutter: 28px; --context-rail-top: calc(var(--topbar-height) + 16px); }
+.p-page>.idp-page,
+.p-page>.agent-grid { grid-template-columns: minmax(0, 1fr) var(--context-rail-width); gap: var(--context-gap); }
+.p-page>.agent-grid:has(.stream-panel-unstarted, .stream-panel-starting) { grid-template-columns: minmax(0, 1fr); }
+.cr-rail { position: sticky; top: var(--context-rail-top); align-self: start; min-width: 0; margin-top: -8px; }
+.cr-file-row { display: flex; align-items: center; min-width: 0; }
+.cr-file { display: flex; justify-content: start; gap: 8px; width: 100%; min-width: 0; height: 30px; padding: 4px 0; font-size: 13px; font-weight: 400; text-align: left; }
+.cr-file>svg { flex-shrink: 0; }
+.cr-file>span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-file-icon[data-kind="document"] { color: color-mix(in oklab,var(--color-blue-500) 65%,var(--foreground)); }
+.cr-file-icon[data-kind="pdf"] { color: var(--danger); }
+.cr-file-icon[data-kind="image"] { color: color-mix(in oklab,var(--color-pink-500) 65%,var(--foreground)); }
+.cr-file-icon[data-kind="code"] { color: var(--muted); }
+.cr-file-more { min-width: 22px; width: 22px; height: 28px; padding: 0; color: var(--muted); opacity: 0; }
+.cr-file-row:hover .cr-file-more,.cr-file-row:focus-within .cr-file-more { opacity: 1; }
+.cr-todos { display: grid; gap: 2px; margin: 0; padding: 8px 0 0; list-style: none; font-size: 13px; line-height: 26px; }
+.cr-todos>li { display: flex; gap: 10px; align-items: center; min-width: 0; color: var(--foreground); }
+.cr-todos>li>span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-todos svg, .cr-todo-now { flex-shrink: 0; }
+.cr-todos [data-status="completed"] { color: var(--muted); }
+.cr-todos [data-status="pending"]>svg { color: color-mix(in oklch,var(--muted) 55%,transparent); }
+.cr-todos [data-status="in_progress"] { font-weight: 500; }
+/* The item being worked on: the one mark in the list that moves. */
+.cr-todo-now { position: relative; width: 12px; height: 12px; }
+.cr-todo-now::after { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--foreground); animation: cr-todo-pulse 1.8s ease-in-out infinite; }
+@keyframes cr-todo-pulse { 50% { opacity: .25; transform: scale(.6); } }
+@media (prefers-reduced-motion: reduce) { .cr-todo-now::after { animation: none; } }
+.cr-popover { width: 300px; max-width: calc(100vw - 24px); }
+.cr-popover .popover__dialog { display: grid; gap: 12px; }
+.cr-manifest { max-height: 240px; overflow: auto; font-size: 12px; overflow-wrap: anywhere; }
+.cr-token-usage { padding-top: 0; font-variant-numeric: tabular-nums; }
+.cr-token-bar { display: flex; gap: 3px; height: 5px; margin: 16px 0 12px; overflow: hidden; border-radius: 3px; }
+.cr-token-bar>span { min-width: 0; }
+@media (pointer: coarse) { .cr-file-more { opacity: 1; } }
+@media (max-width: 1100px) {
+  .p-page { --context-rail-width: 250px; --context-gap: 20px; }
+}
+@media (max-width: 900px) {
+  .p-page>.idp-page,.p-page>.agent-grid { grid-template-columns: minmax(0,1fr); }
+  .cr-rail { position: relative; top: auto; margin-top: 30px; width: 100%; }
+  .cr-file-more { opacity: 1; }
+}
+
+.cr-rail[data-collapsed="true"] { display: none; }
+.cr-file-tooltip { display: grid; gap: 5px; max-width: min(320px,calc(100vw - 24px)); padding: 12px; font-size: 12px; overflow-wrap: anywhere; }
+.cr-file-tooltip strong { font-size: 13px; font-weight: 500; }
+.cr-file-tooltip>span { color: var(--muted); }
+
+/* Token Usage is one total; its bar and parts show on hover or keyboard
+   focus within the section, and always where there is no hover. */
+.cr-token-total { display: block; margin-top: 4px; font-size: 18px; line-height: 1.3; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.3px; }
+/* The parts stay readable by assistive tech while visually folded away. */
+@media (hover: hover) {
+  .cr-token-section:not(:hover, :focus-within) .cr-token-bar { display: none; }
+  .cr-token-section:not(:hover, :focus-within) .cr-token-breakdown { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+@media (max-width: 800px) { .p-page { --context-content-gutter: 18px; } }

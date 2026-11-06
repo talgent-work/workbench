@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package talgent.account.private.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/account/private/v1;accountprivatev1";
+
+// UserDirectoryService is the platform-wide directory of Accounts, available
+// only to trusted contexts that call with x-talgent-service-id. It is never
+// mounted through the public gateway. It applies no Project scope.
+service UserDirectoryService {
+  // SearchUsers matches usernames containing the query, ignoring case.
+  rpc SearchUsers(SearchUsersRequest) returns (SearchUsersResponse);
+  // GetUsers reads Accounts by id; unknown ids are omitted.
+  rpc GetUsers(GetUsersRequest) returns (GetUsersResponse);
+}
+
+// SearchUsersRequest names a username fragment.
+message SearchUsersRequest {
+  // Username fragment of at least two characters; shorter queries match nothing.
+  string username_query = 1;
+  // Maximum matches; zero selects the default, values above 50 are capped.
+  uint32 limit = 2;
+}
+
+// SearchUsersResponse lists matches ordered by username.
+message SearchUsersResponse {
+  // Matching Accounts.
+  repeated DirectoryUser users = 1;
+}
+
+// GetUsersRequest names Account ids.
+message GetUsersRequest {
+  // Account ids, at most 500.
+  repeated string user_ids = 1;
+}
+
+// GetUsersResponse holds the known Accounts among the requested ids.
+message GetUsersResponse {
+  // Known Accounts; unknown ids are absent.
+  repeated DirectoryUser users = 1;
+}
+
+// DirectoryUser is one Account's directory entry, as GitHub last reported it.
+message DirectoryUser {
+  // Account id stored by other contexts as user_id.
+  string user_id = 1;
+  // GitHub login.
+  string username = 2;
+  // Verified primary GitHub email.
+  string email = 3;
+  // GitHub display name.
+  string display_name = 4;
+  // GitHub avatar URL; may be empty.
+  string avatar_url = 5;
+}

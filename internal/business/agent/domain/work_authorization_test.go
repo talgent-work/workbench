@@ -1,0 +1,76 @@
+package domain_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+)
+
+func TestWorkRetainsSelectedAuthorizationAcrossResumeAndRestart(t *testing.T) {
+	for _, restart := range []bool{false, true} {
+		t.Run(map[bool]string{false: "resume", true: "restart"}[restart], func(t *testing.T) {
+			githubID, otherID := uuid.NewString(), uuid.NewString()
+			input := domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(),
+				WorkModel:   domain.WorkModelSelection{ConfigurationID: "default"},
+				HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}, WorkspaceReference: "workspace",
+				AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner",
+					Available: []domain.PersonalAuthorization{
+						{OwnerUserID: "owner", AuthorizationID: githubID, Provider: "github", Service: "github"},
+						{OwnerUserID: "owner", AuthorizationID: otherID, Provider: "other", Service: "other"},
+					}},
+			}
+			port := &executionPort{}
+			admit := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
+			work, err := domain.NewAgentWork(t.Context(), input, admit, port)
+			require.NoError(t, err)
+			// Every authorization usable at creation is selected; there is no per-service exclusion.
+			want := domain.WorkAuthorizationSelection{OwnerUserID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: githubID, Provider: "github", Service: "github"}, {AuthorizationID: otherID, Provider: "other", Service: "other"}}}
+			require.Equal(t, want, work.AuthorizationSelection)
+			require.Equal(t, want, port.starts[0].AuthorizationSelection)
+			// Neither caller-owned facts nor execution adapter snapshots own Work state.
+			input.AuthorizationInput.Available[0].AuthorizationID = uuid.NewString()
+			port.starts[0].AuthorizationSelection.Authorizations[0].AuthorizationID = uuid.NewString()
+			require.NoError(t, work.ConfirmPrepared(context.Background(), time.Now(), nil))
+			require.NoError(t, work.ConfirmStarted(context.Background(), time.Now(), nil))
+			if restart {
+				require.NoError(t, work.RecordExit(t.Context(), domain.HarnessExit{ExitCode: 1}, port))
+			} else {
+				require.NoError(t, work.Stop(t.Context(), "stop", port))
+				require.NoError(t, work.RecordExit(t.Context(), domain.HarnessExit{}, port))
+			}
+			require.NoError(t, work.ConfirmComputeReclaimed())
+			if restart {
+				require.NoError(t, work.Restart(t.Context(), admit, port))
+			} else {
+				require.NoError(t, work.Resume(t.Context(), admit, port))
+			}
+			require.Equal(t, want, work.AuthorizationSelection)
+			require.Equal(t, want, port.starts[1].AuthorizationSelection)
+		})
+	}
+}
+
+func TestWorkRejectsAuthorizationFactsForAnotherHuman(t *testing.T) {
+	for _, input := range []domain.WorkAuthorizationInput{
+		{OwnerUserID: "starter", Available: []domain.PersonalAuthorization{{OwnerUserID: "starter", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}},
+		{OwnerUserID: "owner", Available: []domain.PersonalAuthorization{{OwnerUserID: "another-owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}},
+		{Available: []domain.PersonalAuthorization{{OwnerUserID: "owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}},
+	} {
+		id := uuid.NewString()
+		port := &executionPort{}
+		work, err := domain.NewAgentWork(t.Context(), domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
+			ID: uuid.NewString(), AgentID: id, WorkspaceReference: "workspace",
+			WorkModel:   domain.WorkModelSelection{ConfigurationID: "default"},
+			HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}, AuthorizationInput: input,
+		}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: id, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, port)
+		require.ErrorIs(t, err, domain.ErrInvalidWork)
+		require.Nil(t, work)
+		require.Empty(t, port.starts)
+	}
+}

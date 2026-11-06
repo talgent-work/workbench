@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package talgent.storage.events.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/storage/events/v1;storageeventsv1";
+
+// FileKind tells an Attachment from an Artifact.
+enum FileKind {
+  // Unspecified kind; never published.
+  FILE_KIND_UNSPECIFIED = 0;
+  // An input file of the space's owner.
+  FILE_KIND_ATTACHMENT = 1;
+  // A file a Work Agent published.
+  FILE_KIND_ARTIFACT = 2;
+}
+
+// FileOperation is how a file in a File Space changed.
+enum FileOperation {
+  // Unspecified operation; never published.
+  FILE_OPERATION_UNSPECIFIED = 0;
+  // A file was created at a free name: an Attachment uploaded or an Artifact
+  // published.
+  FILE_OPERATION_CREATED = 1;
+  // A file's content was replaced at its name.
+  FILE_OPERATION_REPLACED = 2;
+  // An Attachment moved to a new name.
+  FILE_OPERATION_RENAMED = 3;
+  // A file was deleted.
+  FILE_OPERATION_DELETED = 4;
+}
+
+// FileChanged is the File Change Published Fact: one committed change of a
+// file in a File Space, published best-effort. It names the space
+// only by its opaque owner identity, which each subscriber claims or ignores,
+// and names the file but carries no content. Exactly one of actor_user_id and
+// actor_work_id is set.
+message FileChanged {
+  // Unique identity of this publication and of the change.
+  string event_id = 1;
+  // Time the change was committed.
+  google.protobuf.Timestamp occurred_at = 2;
+  // Owner of the File Space, as its caller named it.
+  string owner = 3;
+  // Attachment or Artifact.
+  FileKind kind = 4;
+  // The file's name after the change; for a deletion, the name it had.
+  string name = 5;
+  // The former name of a renamed Attachment; empty otherwise.
+  string previous_name = 6;
+  // How the file changed.
+  FileOperation operation = 7;
+  // The person who made the change.
+  string actor_user_id = 8;
+  // The Work whose Agent made the change.
+  string actor_work_id = 9;
+}

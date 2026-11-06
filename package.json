@@ -1,0 +1,38 @@
+{
+  "name": "talgent-workbench",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint"
+  },
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10.14.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@anthropic-ai/claude-code"
+    ],
+    "overrides": {
+      "@anthropic-ai/sdk": "0.93.0",
+      "@babel/core": "7.29.6",
+      "@opentelemetry/core": "2.8.0",
+      "@protobufjs/utf8": "1.1.1",
+      "baseline-browser-mapping@<2.11.0": "2.11.0",
+      "brace-expansion@<1.1.21": "1.1.21",
+      "brace-expansion@>=3.0.0 <5.0.12": "5.0.12",
+      "browserslist@<4.28.7": "4.28.7",
+      "fast-uri": "3.1.9",
+      "js-yaml": "4.3.2",
+      "katex@<0.18.2": "0.18.11",
+      "nanoid": "3.3.18",
+      "postcss": "8.5.26",
+      "protobufjs": "7.6.5",
+      "source-map-js@<1.2.2": "1.2.2",
+      "undici": "7.30.1",
+      "zod@>=4.0.0 <4.6.6": "4.6.6"
+    }
+  }
+}

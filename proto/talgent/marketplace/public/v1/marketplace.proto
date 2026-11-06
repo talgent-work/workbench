@@ -1,0 +1,488 @@
+syntax = "proto3";
+
+package talgent.marketplace.public.v1;
+
+import "google/protobuf/struct.proto";
+import "talgent/marketplace/public/v1/connections.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1;marketplacepublicv1";
+
+// MarketplaceService publishes catalog metadata and the authenticated user's
+// personal installation commands. No public request accepts an owner identity.
+service MarketplaceService {
+  // BeginProviderAuthorization manages the authenticated user's personal connection.
+  rpc BeginProviderAuthorization(BeginProviderAuthorizationRequest) returns (BeginProviderAuthorizationResponse);
+  // CompleteProviderAuthorization manages the authenticated user's personal connection.
+  rpc CompleteProviderAuthorization(CompleteProviderAuthorizationRequest) returns (CompleteProviderAuthorizationResponse);
+  // GetProviderConnectionState manages the authenticated user's personal connection.
+  rpc GetProviderConnectionState(GetProviderConnectionStateRequest) returns (GetProviderConnectionStateResponse);
+  // ListAccessibleRepositories lists repositories last observed as reachable under the user's authorization.
+  rpc ListAccessibleRepositories(ListAccessibleRepositoriesRequest) returns (ListAccessibleRepositoriesResponse);
+  // GetProviderAccess describes the accounts, repositories and permissions the authorization last reached.
+  rpc GetProviderAccess(GetProviderAccessRequest) returns (GetProviderAccessResponse);
+  // RefreshProviderAccess observes the authorization's reach now and returns it.
+  rpc RefreshProviderAccess(RefreshProviderAccessRequest) returns (RefreshProviderAccessResponse);
+
+  // List configured personal authorization references, including inactive ones.
+  rpc ListPersonalAuthorizations(ListPersonalAuthorizationsRequest) returns (ListPersonalAuthorizationsResponse);
+  // Ask the Provider to revoke the authenticated user's personal authorization.
+  rpc CancelPersonalAuthorization(CancelPersonalAuthorizationRequest) returns (CancelPersonalAuthorizationResponse);
+  // Browse synchronized plugin releases.
+  rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse);
+  // Read the currently selected immutable release for a slug.
+  rpc GetPlugin(GetPluginRequest) returns (GetPluginResponse);
+  // List the authenticated user's personal installations.
+  rpc ListInstalledPlugins(ListInstalledPluginsRequest) returns (ListInstalledPluginsResponse);
+  // Read one personal installation including manual configuration.
+  rpc GetInstalledPlugin(GetInstalledPluginRequest) returns (GetInstalledPluginResponse);
+  // Install a personal plugin; repeating preserves existing choices.
+  rpc InstallPlugin(InstallPluginRequest) returns (InstallPluginResponse);
+  // Include a personal installation in future default selections.
+  rpc EnablePlugin(EnablePluginRequest) returns (EnablePluginResponse);
+  // Exclude a personal installation while retaining its configuration.
+  rpc DisablePlugin(DisablePluginRequest) returns (DisablePluginResponse);
+  // Set typed manual values after validation.
+  rpc SetPluginConfiguration(SetPluginConfigurationRequest) returns (SetPluginConfigurationResponse);
+  // Delete manual choices after validation.
+  rpc DeletePluginConfiguration(DeletePluginConfigurationRequest) returns (DeletePluginConfigurationResponse);
+  // Remove a personal installation and its manual configuration.
+  rpc UninstallPlugin(UninstallPluginRequest) returns (UninstallPluginResponse);
+  // Browse the platform Connector catalog with the user's personal status.
+  rpc ListConnectors(ListConnectorsRequest) returns (ListConnectorsResponse);
+  // Read one catalog Connector with the Plugins that use it.
+  rpc GetConnector(GetConnectorRequest) returns (GetConnectorResponse);
+  // List required Connectors and the user's personal installations.
+  rpc ListInstalledConnectors(ListInstalledConnectorsRequest) returns (ListInstalledConnectorsResponse);
+  // Install a catalog Connector; Provider authorization is not required.
+  rpc InstallConnector(InstallConnectorRequest) returns (InstallConnectorResponse);
+  // Include an installed Connector in future default selections.
+  rpc EnableConnector(EnableConnectorRequest) returns (EnableConnectorResponse);
+  // Exclude an installed Connector while keeping the installation.
+  rpc DisableConnector(DisableConnectorRequest) returns (DisableConnectorResponse);
+  // Remove a personal Connector installation; authorization is unaffected.
+  rpc UninstallConnector(UninstallConnectorRequest) returns (UninstallConnectorResponse);
+}
+
+// ListPersonalAuthorizationsRequest uses only the authenticated user's identity.
+message ListPersonalAuthorizationsRequest {}
+
+// The owner comes exclusively from trusted authentication context.
+message CancelPersonalAuthorizationRequest {
+  // Stable personal authorization reference.
+  string authorization_id = 1;
+}
+
+// Success means the Provider confirmed revocation, or it was already recorded.
+message CancelPersonalAuthorizationResponse {
+  // Retained reference with its confirmed current state; contains no credentials.
+  PersonalAuthorization authorization = 1;
+}
+
+// PersonalAuthorization contains no credential or runtime access grant.
+message PersonalAuthorization {
+  // Supported credential-proxy targets usable independently of any CLI identity.
+  repeated string supported_targets = 1;
+  // Stable reference preserved across reauthorization.
+  string id = 2;
+  // External service provider identifier.
+  string provider = 3;
+  // Current authorization state; selection does not imply successful access.
+  string status = 4;
+}
+
+// ListPersonalAuthorizationsResponse retains configured references in all states.
+message ListPersonalAuthorizationsResponse {
+  // Personal records owned by the authenticated user.
+  repeated PersonalAuthorization authorizations = 1;
+}
+
+// PluginRelease is the published catalog value.
+message PluginRelease {
+  // Logical plugin identity.
+  string slug = 1;
+  // Selected catalog source.
+  string source = 2;
+  // Explicit immutable release version.
+  string version = 3;
+  // Human-readable plugin description.
+  string description = 4;
+  // Frozen package retrieval reference.
+  string retrieval_ref = 5;
+  // Standard native marketplace entry for this exact release.
+  bytes native_entry = 6;
+  // Parsed Skill declarations.
+  repeated SkillComponent skills = 7;
+  // Parsed startup Agent declarations.
+  repeated AgentComponent agents = 8;
+  // Parsed MCP server declarations.
+  repeated MCPComponent mcp_servers = 9;
+  // Typed user configuration declarations.
+  map<string, ParameterDeclaration> parameters = 10;
+}
+
+// SkillComponent is the published declaration of one Skill.
+message SkillComponent {
+  // Native Skill name.
+  string name = 1;
+  // Declared description.
+  string description = 2;
+  // Native invocation argument hint.
+  string argument_hint = 3;
+}
+
+// AgentComponent is the published declaration of one Agent.
+message AgentComponent {
+  // Native startup Agent name.
+  string name = 1;
+  // Declared description.
+  string description = 2;
+}
+
+// MCPComponent is the published catalog value.
+message MCPComponent {
+  // Marketplace-validated relationship, independent of personal authorization.
+  ConnectorProviderRelationship relationship = 1;
+  // MCP server name.
+  string name = 2;
+  // Native MCP server JSON declaration.
+  bytes definition = 3;
+}
+
+// ParameterDeclaration is the published catalog value.
+message ParameterDeclaration {
+  // A default exists even when Sensitive prevents returning its value.
+  bool has_default = 1;
+  // Native value type: string, number, boolean, directory, or file.
+  string type = 2;
+  // Configuration label.
+  string title = 3;
+  // Configuration help.
+  string description = 4;
+  // Whether an effective value is required.
+  bool required = 5;
+  // Whether the value requires secret handling.
+  bool sensitive = 6;
+  // Whether a string list is accepted.
+  bool multiple = 7;
+  // Default used when no manual value exists. Sensitive values are withheld
+  // from ordinary queries; consult has_default to distinguish that case.
+  google.protobuf.Value default = 8;
+  // Allowed string options when constrained.
+  repeated string options = 9;
+  // Optional inclusive numeric lower bound.
+  optional double min = 10;
+  // Optional inclusive numeric upper bound.
+  optional double max = 11;
+}
+
+// InstalledPlugin is the published catalog value.
+message InstalledPlugin {
+  // Configured names whose values are withheld from ordinary queries.
+  repeated string redacted_parameters = 1;
+  // Stable logical plugin reference.
+  string slug = 2;
+  // Whether included in future default selections.
+  bool enabled = 3;
+  // Explicit manual values, never materialized defaults. Ordinary responses
+  // omit Sensitive values and identify their names in redacted_parameters.
+  google.protobuf.Struct configuration = 4;
+  // Concurrency token required for mutations.
+  uint32 version = 5;
+}
+
+// ListPluginsRequest is the published request.
+message ListPluginsRequest {
+  // Optional component classification: skill, agent, or mcp.
+  string component_type = 1;
+  // Exclusive slug cursor from the prior page.
+  string cursor = 2;
+  // Page size, default 50, maximum 100.
+  uint32 page_size = 3;
+}
+
+// ListPluginsResponse is the published response.
+message ListPluginsResponse {
+  // Selected releases, summarized for browsing.
+  repeated PluginSummary plugins = 1;
+  // Cursor for the next page, empty at the end.
+  string next_cursor = 2;
+}
+
+// PluginSummary is what a catalog list shows of one selected release.
+message PluginSummary {
+  // Logical plugin identity.
+  string slug = 1;
+  // Selected catalog source.
+  string source = 2;
+  // Explicit immutable release version.
+  string version = 3;
+  // Human-readable plugin description.
+  string description = 4;
+  // Standard native marketplace entry for this exact release.
+  bytes native_entry = 5;
+  // Number of Skills the release declares.
+  uint32 skill_count = 6;
+  // Number of startup Agents the release declares.
+  uint32 agent_count = 7;
+  // Number of MCP servers the release declares.
+  uint32 mcp_server_count = 8;
+  // Typed user configuration declarations, which decide whether installing
+  // needs settings first.
+  map<string, ParameterDeclaration> parameters = 9;
+}
+
+// GetPluginRequest is the published request.
+message GetPluginRequest {
+  // Plugin slug.
+  string slug = 1;
+}
+
+// GetPluginResponse is the published response.
+message GetPluginResponse {
+  // Selected immutable release.
+  PluginRelease plugin = 1;
+}
+
+// ListInstalledPluginsRequest is the published request.
+message ListInstalledPluginsRequest {
+  // Exclusive slug cursor from the prior page.
+  string cursor = 1;
+  // Page size, default 50, maximum 100.
+  uint32 page_size = 2;
+}
+
+// ListInstalledPluginsResponse is the published response.
+message ListInstalledPluginsResponse {
+  // This user's installations.
+  repeated InstalledPlugin plugins = 1;
+  // Cursor for the next page, empty at the end.
+  string next_cursor = 2;
+}
+
+// GetInstalledPluginRequest is the published request.
+message GetInstalledPluginRequest {
+  // Plugin slug.
+  string slug = 1;
+}
+
+// GetInstalledPluginResponse is the published response.
+message GetInstalledPluginResponse {
+  // Current personal installation after the operation.
+  InstalledPlugin plugin = 1;
+}
+
+// InstallPluginRequest is the published request.
+message InstallPluginRequest {
+  // Plugin slug.
+  string slug = 1;
+  // Explicit typed manual values.
+  google.protobuf.Struct configuration = 2;
+}
+
+// InstallPluginResponse is the published response.
+message InstallPluginResponse {
+  // Current personal installation after the operation.
+  InstalledPlugin plugin = 1;
+}
+
+// EnablePluginRequest is the published request.
+message EnablePluginRequest {
+  // Plugin slug.
+  string slug = 1;
+  // Version read before this mutation; stale values are rejected.
+  uint32 version = 2;
+}
+
+// EnablePluginResponse is the published response.
+message EnablePluginResponse {
+  // Current personal installation after the operation.
+  InstalledPlugin plugin = 1;
+}
+
+// DisablePluginRequest is the published request.
+message DisablePluginRequest {
+  // Plugin slug.
+  string slug = 1;
+  // Version read before this mutation; stale values are rejected.
+  uint32 version = 2;
+}
+
+// DisablePluginResponse is the published response.
+message DisablePluginResponse {
+  // Current personal installation after the operation.
+  InstalledPlugin plugin = 1;
+}
+
+// SetPluginConfigurationRequest is the published request.
+message SetPluginConfigurationRequest {
+  // Plugin slug.
+  string slug = 1;
+  // Version read before this mutation; stale values are rejected.
+  uint32 version = 2;
+  // Manual values to set; omitted fields remain unchanged.
+  google.protobuf.Struct values = 3;
+}
+
+// SetPluginConfigurationResponse is the published response.
+message SetPluginConfigurationResponse {
+  // Current personal installation after the operation.
+  InstalledPlugin plugin = 1;
+}
+
+// DeletePluginConfigurationRequest is the published request.
+message DeletePluginConfigurationRequest {
+  // Plugin slug.
+  string slug = 1;
+  // Version read before this mutation; stale values are rejected.
+  uint32 version = 2;
+  // Manual parameter names to delete.
+  repeated string names = 3;
+}
+
+// DeletePluginConfigurationResponse is the published response.
+message DeletePluginConfigurationResponse {
+  // Current personal installation after the operation.
+  InstalledPlugin plugin = 1;
+}
+
+// UninstallPluginRequest is the published request.
+message UninstallPluginRequest {
+  // Plugin slug.
+  string slug = 1;
+  // Version read before this mutation; stale values are rejected.
+  uint32 version = 2;
+}
+
+// UninstallPluginResponse is the published response.
+message UninstallPluginResponse {}
+
+// ConnectorProviderRelationship publishes non-secret verified registration facts.
+message ConnectorProviderRelationship {
+  // Independent Connector identity; absent for unregistered declarations.
+  string connector_id = 1;
+  // Explicit registered Provider.
+  string provider = 2;
+  // Validated supported outbound target contract.
+  string target = 3;
+  // Required authentication contract.
+  string authentication = 4;
+  // supported or unavailable.
+  string status = 5;
+  // Safe diagnostic such as relationship_not_registered or relationship_ambiguous.
+  string reason = 6;
+  // Catalog Connector name addressing the same endpoint; empty without one.
+  string connector_name = 7;
+}
+
+// Connector is one platform catalog entry with the user's personal status.
+message Connector {
+  // Stable public catalog reference.
+  string name = 1;
+  // Catalog description.
+  string description = 2;
+  // Catalog browsing category.
+  string category = 3;
+  // Platform-required entries are always enabled and cannot be installed.
+  bool required = 4;
+  // always_enabled, enabled, disabled or not_installed.
+  string status = 5;
+  // Concurrency token for personal changes; zero without an installation.
+  uint32 installation_version = 6;
+  // Declared Provider; empty when no personal authorization is used.
+  string provider = 7;
+  // connected, not_connected or reconnect_required; empty without a Provider.
+  string provider_connection = 8;
+  // False for a withdrawn entry that remains installed.
+  bool offered = 9;
+}
+
+// ConnectorPlugin is a catalog Plugin whose MCP declaration addresses a Connector.
+message ConnectorPlugin {
+  // Plugin slug.
+  string slug = 1;
+  // Plugin description.
+  string description = 2;
+}
+
+// ListConnectorsRequest uses only the authenticated user's identity.
+message ListConnectorsRequest {}
+
+// ListConnectorsResponse contains every offered catalog entry.
+message ListConnectorsResponse {
+  // Catalog entries ordered by name.
+  repeated Connector connectors = 1;
+}
+
+// GetConnectorRequest selects one catalog entry.
+message GetConnectorRequest {
+  // Catalog Connector name.
+  string name = 1;
+}
+
+// GetConnectorResponse describes one catalog entry and its related Plugins.
+message GetConnectorResponse {
+  // The catalog entry.
+  Connector connector = 1;
+  // Catalog Plugins whose MCP declarations address this entry.
+  repeated ConnectorPlugin plugins = 2;
+}
+
+// ListInstalledConnectorsRequest uses only the authenticated user's identity.
+message ListInstalledConnectorsRequest {}
+
+// ListInstalledConnectorsResponse contains required entries and installations.
+message ListInstalledConnectorsResponse {
+  // Required entries and personal installations ordered by name.
+  repeated Connector connectors = 1;
+}
+
+// InstallConnectorRequest installs one catalog entry; repeating keeps it.
+message InstallConnectorRequest {
+  // Catalog Connector name.
+  string name = 1;
+}
+
+// InstallConnectorResponse returns the entry after installation.
+message InstallConnectorResponse {
+  // Current entry.
+  Connector connector = 1;
+}
+
+// EnableConnectorRequest changes a personal installation.
+message EnableConnectorRequest {
+  // Catalog Connector name.
+  string name = 1;
+  // Installation version read before this mutation; stale values are rejected.
+  uint32 version = 2;
+}
+
+// EnableConnectorResponse returns the entry after the change.
+message EnableConnectorResponse {
+  // Current entry.
+  Connector connector = 1;
+}
+
+// DisableConnectorRequest changes a personal installation.
+message DisableConnectorRequest {
+  // Catalog Connector name.
+  string name = 1;
+  // Installation version read before this mutation; stale values are rejected.
+  uint32 version = 2;
+}
+
+// DisableConnectorResponse returns the entry after the change.
+message DisableConnectorResponse {
+  // Current entry.
+  Connector connector = 1;
+}
+
+// UninstallConnectorRequest removes a personal installation.
+message UninstallConnectorRequest {
+  // Catalog Connector name.
+  string name = 1;
+  // Installation version read before this mutation; stale values are rejected.
+  uint32 version = 2;
+}
+
+// UninstallConnectorResponse confirms removal.
+message UninstallConnectorResponse {}

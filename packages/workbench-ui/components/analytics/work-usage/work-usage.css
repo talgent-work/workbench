@@ -1,0 +1,48 @@
+/* Work Token Usage reader. Bars tell call kinds apart with
+   low-saturation hues blended into the surface, so both themes stay quiet. */
+.wu-totals { margin-bottom: 16px; }
+.wu-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wu-empty { padding-block: 16px; font-size: 13px; color: var(--muted); }
+.wu-turns { display: grid; margin-top: 8px; border-top: 1px solid var(--separator); }
+.wu-turns>li { border-bottom: 1px solid var(--separator); }
+.wu-turn { width: 100%; justify-content: flex-start; gap: 12px; font-variant-numeric: tabular-nums; }
+.wu-turn-time { flex: 1; text-align: start; font-weight: 500; }
+.wu-turn-duration { min-width: 72px; text-align: end; color: var(--muted); }
+.wu-turn-tokens { min-width: 56px; text-align: end; }
+.wu-earlier { margin-top: 12px; }
+
+.wu-timeline { padding: 4px 0 16px 28px; }
+.wu-axis { position: relative; display: flex; justify-content: space-between; margin-left: 180px; padding-bottom: 6px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wu-break { position: absolute; bottom: 0; width: 8px; height: 10px; transform: translateX(-50%) skewX(-20deg); border-inline: 1px solid var(--muted); background: var(--surface); }
+.wu-calls { display: grid; gap: 2px; }
+.wu-call { display: grid; width: 100%; height: auto; min-height: 30px; grid-template-columns: 172px minmax(0,1fr) 96px; gap: 8px; align-items: center; padding-inline: 4px; font-size: 12px; text-align: start; }
+.wu-call-name { display: flex; gap: 6px; min-width: 0; }
+.wu-call-name>span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wu-call-metric { text-align: end; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wu-muted { color: var(--muted); }
+.wu-track { position: relative; height: 12px; border-radius: 3px; background: var(--default); }
+.wu-bar { position: absolute; top: 2px; height: 8px; border-radius: 2px; }
+.wu-bar, .wu-bar-swatch { background: color-mix(in oklch,var(--wu-hue) 78%,var(--surface)); }
+.wu-timeline [data-kind="model"] { --wu-hue: oklch(0.6 0.07 255); }
+.wu-timeline [data-kind="tool"] { --wu-hue: oklch(0.62 0.06 170); }
+.wu-timeline [data-kind="mcp"] { --wu-hue: oklch(0.6 0.07 305); }
+.wu-timeline [data-kind="agent"] { --wu-hue: oklch(0.66 0.07 70); }
+/* A wait on the person is hatched so that it is not read as work. */
+:is(.wu-bar, .wu-bar-swatch)[data-kind="wait"] { background: repeating-linear-gradient(135deg,color-mix(in oklch,var(--warning) 70%,var(--surface)) 0 3px,transparent 3px 6px); }
+.wu-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 10px 180px; font-size: 11px; color: var(--muted); }
+.wu-legend>li { display: inline-flex; align-items: center; gap: 6px; }
+.wu-bar-swatch { display: block; width: 10px; height: 8px; border-radius: 2px; }
+
+.wu-card { display: grid; gap: 6px; max-width: 300px; padding: 10px 12px; font-size: 12px; }
+.wu-card-title { font-size: 13px; font-weight: 600; }
+.wu-summary { overflow-wrap: anywhere; }
+.wu-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px 16px; }
+.wu-facts dt { color: var(--muted); }
+.wu-facts dd { font-weight: 500; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 740px) {
+  .wu-timeline { padding-left: 0; }
+  .wu-axis, .wu-legend { margin-left: 0; }
+  .wu-call { grid-template-columns: minmax(0,1fr) 88px; }
+  .wu-track { grid-column: 1 / -1; grid-row: 2; }
+}

@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package talgent.trace.private.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/trace/private/v1;traceprivatev1";
+
+// ProjectAccessService is the Project access decision Observability asks of
+// the context owning Project membership. Observability defines it and that
+// context implements it; the delegated reader travels in the trusted
+// service-delegation headers, never in the request.
+service ProjectAccessService {
+  // DecideProjectAccess admits the delegated reader to a Project's
+  // observations. PERMISSION_DENIED and NOT_FOUND are refusals;
+  // UNAUTHENTICATED means the calling identity was not accepted; any other
+  // code is an outage to retry.
+  rpc DecideProjectAccess(DecideProjectAccessRequest) returns (DecideProjectAccessResponse);
+}
+
+// DecideProjectAccessRequest names the Project.
+message DecideProjectAccessRequest {
+  // Project whose observations are read.
+  string project_id = 1;
+}
+
+// DecideProjectAccessResponse confirms the reader is admitted.
+message DecideProjectAccessResponse {}

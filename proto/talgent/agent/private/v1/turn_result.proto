@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package talgent.agent.private.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1;agentprivatev1";
+
+// WorkTurnResultService supplies the turn results of a Work's root message
+// stream to authenticated internal consumers. It gives them no control of the
+// Work's lifecycle.
+service WorkTurnResultService {
+  // ListWorkTurnResults lists every turn result of the Work's root stream in
+  // order, the last one marked. Subagents' internal results are excluded.
+  rpc ListWorkTurnResults(ListWorkTurnResultsRequest) returns (ListWorkTurnResultsResponse);
+}
+
+// ListWorkTurnResultsRequest identifies the Work.
+message ListWorkTurnResultsRequest {
+  // Work identity.
+  string work_id = 1;
+}
+
+// WorkTurnResult is one turn's result text.
+message WorkTurnResult {
+  // One-based position in the root stream.
+  int32 order = 1;
+  // Result text as the Harness reported it.
+  string text = 2;
+  // True for the Work's last turn result.
+  bool last = 3;
+  // Time the turn ended.
+  google.protobuf.Timestamp occurred_at = 4;
+  // Message identity of the result in the stream.
+  string message_id = 5;
+}
+
+// ListWorkTurnResultsResponse lists the results.
+message ListWorkTurnResultsResponse {
+  // Turn results, oldest first.
+  repeated WorkTurnResult results = 1;
+}

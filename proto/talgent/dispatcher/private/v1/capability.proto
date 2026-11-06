@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package talgent.dispatcher.private.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1;dispatcherprivatev1";
+
+// GetCapabilitiesRequest addresses the current native connection by Work.
+message GetCapabilitiesRequest {
+  // Work whose Harness candidates are requested.
+  string work_id = 1;
+}
+
+// GetCapabilitiesResponse contains the latest complete native report.
+message GetCapabilitiesResponse {
+  // Distinguishes no report from a reported empty set.
+  bool observed = 1;
+  // Native commands, including callable Skills.
+  repeated NativeCommand commands = 2;
+}
+
+// NativeCommand carries completion metadata from the Harness protocol.
+message NativeCommand {
+  // Invocation name without the slash prefix.
+  string name = 1;
+  // Native description.
+  string description = 2;
+  // Native argument guidance.
+  string argument_hint = 3;
+}

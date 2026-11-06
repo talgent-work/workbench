@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package talgent.account.public.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/account/public/v1;accountpublicv1";
+
+// SessionService tells the browser who is signed in, from the identity the
+// gateway verified; it reads and changes nothing else.
+service SessionService {
+  // GetCurrentSession reads the signed-in person's identity.
+  rpc GetCurrentSession(GetCurrentSessionRequest) returns (GetCurrentSessionResponse);
+}
+
+// GetCurrentSessionRequest reads the caller's own identity.
+message GetCurrentSessionRequest {}
+
+// GetCurrentSessionResponse is the signed-in person.
+message GetCurrentSessionResponse {
+  // The person's Account.
+  CurrentSession session = 1;
+}
+
+// CurrentSession is the signed-in person's identity.
+message CurrentSession {
+  // Account id.
+  string user_id = 1;
+  // Username.
+  string username = 2;
+  // Display name.
+  string display_name = 3;
+  // Primary email.
+  string primary_email = 4;
+  // Avatar URL.
+  string avatar_url = 5;
+  // Roles.
+  repeated string roles = 6;
+}

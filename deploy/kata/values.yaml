@@ -1,0 +1,28 @@
+# Fixed upstream installer. Only explicitly selected, KVM-verified nodes receive Kata.
+deploymentMode: job
+k8sDistribution: k3s
+nodeSelector:
+  talgent.io/kata-install: "true"
+tolerations:
+  - operator: Exists
+job:
+  parallelism: 1
+image:
+  reference: quay.io/kata-containers/kata-deploy
+  tag: "4.1.0@sha256:f6009f18a602fc3b7a5439c5c3674b9dc083bb4a7ff78b4fbb0bb8c9e0b55b5f"
+shims:
+  disableAll: true
+  qemu-runtime-rs:
+    enabled: true
+    # Upstream starts virtiofsd with one request thread, which serializes every
+    # guest file operation; on JuiceFS each close waits for its object upload,
+    # so parallel writers inside a sandbox gained nothing (#397).
+    dropIn: |
+      [hypervisor.qemu]
+      virtio_fs_extra_args = ["--thread-pool-size=16", "-o", "announce_submounts"]
+defaultShim:
+  amd64: qemu-runtime-rs
+runtimeClasses:
+  enabled: true
+  createDefault: false
+  overheadEnabled: true

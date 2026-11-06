@@ -1,0 +1,22 @@
+# Dependencies are installed inside the image, never copied from the host.
+**/node_modules
+# Agent worktrees and local tool caches: no image reads them.
+.claude
+.pnpm-store
+.heroui-docs
+web
+docs
+.github
+*.md
+dispatcher
+file
+issue
+sandbox
+streamgateway
+supervisor
+trace
+!plugins/**/*.md
+
+marketplace
+.marketplace-publish
+.tmp-marketplace-read-probe

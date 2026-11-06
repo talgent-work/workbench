@@ -1,0 +1,79 @@
+/* Streamdown renders utility classes from its own bundle: beside this package
+   in the workspace, and as its sibling once installed from the registry. */
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+@source "../../../streamdown/dist/*.js";
+@source "../../../@streamdown/code/dist/*.js";
+
+@theme inline {
+  --color-primary: var(--foreground);
+  --color-muted-foreground: var(--foreground);
+  --color-sidebar: var(--surface-secondary);
+}
+
+/* Adapt Streamdown's document theme to HeroUI without changing UI tokens.
+ * Streamdown uses `muted` for a surface; HeroUI uses it for secondary text. */
+.app-markdown {
+  --muted: var(--surface-secondary);
+  --background: var(--surface);
+  min-width: 0;
+  max-width: 100%;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.75;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+  line-break: strict;
+}
+
+.app-markdown > :first-child { margin-top: 0; }
+.app-markdown > :last-child { margin-bottom: 0; }
+.app-markdown :is(h1, h2, h3, h4, h5, h6) { line-height: 1.4; }
+:is(.app-markdown, .app-markdown-inline) [data-streamdown="inline-code"] {
+  border: 1px solid var(--separator);
+  background: color-mix(in oklab, var(--foreground) 9%, var(--surface));
+  font-size: .9em;
+  box-decoration-break: clone;
+}
+/* A code block is one framed box. Streamdown's header row (language label)
+ * and outer card double the frame and add a row, so they are dropped; the copy
+ * control floats in the box's corner while the block is hovered or focused. */
+.app-markdown [data-streamdown="code-block"] { position: relative; gap: 0; padding: 0; border: 0; border-radius: var(--radius); background: none; }
+.app-markdown [data-streamdown="code-block-header"] { display: none; }
+.app-markdown [data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) { position: absolute; top: 6px; right: 6px; margin: 0; height: auto; opacity: 0; transition: opacity .15s; }
+.app-markdown [data-streamdown="code-block"]:is(:hover, :focus-within) > div:has(> [data-streamdown="code-block-actions"]) { opacity: 1; }
+.app-markdown [data-streamdown="code-block-body"] { padding: 12px 14px; border-radius: var(--radius); font-size: 13px; line-height: 1.6; }
+.app-markdown .task-list-item { list-style: none; }
+.app-markdown [data-streamdown="blockquote"] { font-style: normal; }
+:is(.app-markdown, .app-markdown-inline) [data-streamdown="link"] { text-underline-offset: 3px; }
+.app-markdown :is(pre, code) { line-break: auto; }
+.app-markdown [data-streamdown="table-wrapper"] { min-width: 0; max-width: 100%; }
+/* Inherited `anywhere` lets the table squeeze columns until words split
+ * ("Rea|d"); cells keep whole words and the wrapper scrolls instead. */
+.app-markdown :is(th, td) { overflow-wrap: break-word; }
+
+@media (max-width: 640px) {
+  .app-markdown :is(th, td) { overflow-wrap: anywhere; white-space: normal; }
+  .app-markdown :is(th, td) code { white-space: normal; word-break: break-word; }
+}
+
+/* Inline Markdown takes the type of the line it sits in. */
+.app-markdown-inline { overflow-wrap: anywhere; }
+@media (hover: none) {
+  .app-markdown [data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) { opacity: 1; }
+}
+
+/* A source listing wraps long lines under a hanging indent, so the counter
+ * still numbers logical lines and continuations stay clear of the gutter,
+ * which is as wide as the last line number (--line-gutter, in ch). */
+.app-code-listing [data-streamdown="code-block-body"] { overflow-x: hidden; }
+.app-code-listing [data-streamdown="code-block-body"] :is(pre, code) { white-space: pre-wrap; overflow-wrap: anywhere; }
+.app-code-listing pre code > span { padding-left: calc(var(--line-gutter, 2ch) + 1rem); text-indent: calc(-1 * (var(--line-gutter, 2ch) + 1rem)); }
+.app-code-listing pre code > span::before { width: var(--line-gutter, 2ch); margin-right: 1rem; text-indent: 0; }
+
+/* A stored document shown inside a page: its headings sit below the page
+   title around it. */
+.app-markdown-document h1 { font-size: 18px; margin-top: 20px; }
+.app-markdown-document h2 { font-size: 16px; margin-top: 18px; }
+.app-markdown-document h3 { font-size: 15px; }

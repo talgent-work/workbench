@@ -1,0 +1,6 @@
+/* One quiet line where a private conversation would be; status and Progress
+   stay in the context card. */
+.wca-unavailable { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0; padding: 30vh 16px 0; color: var(--foreground); font-size: 15px; text-align: center; text-wrap: balance; }
+/* The line is the panel's message, so it reads in the text color; --muted
+   measures 4.44:1 on the page background. The icon stays quiet. */
+.wca-unavailable svg { flex-shrink: 0; color: var(--muted); }

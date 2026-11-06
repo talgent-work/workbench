@@ -1,0 +1,19 @@
+.pv-plain { margin: 0; padding: 12px 14px; border-radius: var(--radius); background: var(--surface-secondary); font-family: var(--font-mono); font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pv-inline-tools { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.pv-svg { display: grid; gap: 12px; min-width: 0; }
+.pv-svg > img { display: block; max-width: 100%; max-height: 70vh; width: auto; height: auto; margin-inline: auto; object-fit: contain; }
+/* A previewed Markdown file reads as a document, not a card, with its
+   headings scaled below the reading area's own title. */
+.pv-markdown-document { min-width: 0; max-width: 100%; overflow: auto; }
+.pv-markdown-document h1 { font-size: 24px; }
+.pv-markdown-document h2 { font-size: 17px; margin-top: 28px; }
+.pv-markdown-document h3 { font-size: 15px; }
+.pv-html { position: relative; min-width: 0; }
+.pv-html > iframe { display: block; width: 100%; min-height: 100vh; border: 1px solid var(--separator); border-radius: var(--radius); background: var(--background); }
+.pv-html > .button { position: absolute; top: 8px; right: 8px; }
+.pv-diff { margin: 0; padding-block: 8px; border: 1px solid var(--separator); border-radius: var(--radius); background: var(--background); font-family: var(--font-mono); font-size: 12px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pv-diff > span { display: block; padding-inline: 12px; color: var(--muted); }
+.pv-diff > [data-diff-line="added"] { background: color-mix(in oklab, var(--success) 10%, transparent); color: var(--success); }
+.pv-diff > [data-diff-line="removed"] { background: color-mix(in oklab, var(--danger) 10%, transparent); color: var(--danger); }
+.pv-alert { margin-bottom: 16px; align-items: center; }
+.pv-actions { display: flex; gap: 8px; }

@@ -1,0 +1,47 @@
+[
+  {
+    "type": "assistant",
+    "parent_tool_use_id": null,
+    "message": {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "probe-tool-8",
+          "name": "TodoWrite",
+          "input": {
+            "todos": [
+              {
+                "content": "Verify Work",
+                "status": "in_progress",
+                "activeForm": "Verifying Work"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "user",
+    "parent_tool_use_id": null,
+    "message": {
+      "content": [
+        {
+          "tool_use_id": "probe-tool-8",
+          "type": "tool_result",
+          "content": "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable"
+        }
+      ]
+    },
+    "tool_use_result": {
+      "oldTodos": [],
+      "newTodos": [
+        {
+          "content": "Verify Work",
+          "status": "in_progress",
+          "activeForm": "Verifying Work"
+        }
+      ]
+    }
+  }
+]

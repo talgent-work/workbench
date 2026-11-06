@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package talgent.agent.public.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1;agentpublicv1";
+
+// SubAgent is one SubAgent the main Agent of the Work's current Harness
+// process delegated to, with the state the Harness last reported.
+message SubAgent {
+  // The Harness's identity of the delegation.
+  string id = 1;
+  // SubAgent type, such as Explore or Plan; empty when the Harness names none.
+  string type = 2;
+  // The delegated task's description.
+  string task = 3;
+  // One of running, completed, failed or stopped.
+  string status = 4;
+}

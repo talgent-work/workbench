@@ -1,0 +1,46 @@
+# The public tree: every tracked file of the Workbench's tree, by kind. Paths
+# are relative to the tree's root.
+#
+#   core <path>     the Workbench's code; check-leaks.py applies every rule to it
+#   public <path>   build, deployment and generated files that ship with it
+#
+# check-leaks.py reports a file of the tree that is neither.
+
+core cmd
+core configs
+core internal
+core pkg
+core proto
+core apps
+core packages
+core plugins
+core deploy/k3s/workbench
+core docs
+core README.md
+
+public gen
+public deploy/execd
+public deploy/juicefs
+public deploy/kata
+public deploy/middleware
+public deploy/opensandbox
+public deploy/sandbox
+public scripts
+public test
+public .github
+public .githooks
+public .dockerignore
+public .gitattributes
+public .gitignore
+public Dockerfile
+public LICENSE
+public Makefile
+public buf.gen.yaml
+public buf.yaml
+public doc.go
+public go.mod
+public go.sum
+public package.json
+public pnpm-lock.yaml
+public pnpm-workspace.yaml
+public tsconfig.base.json

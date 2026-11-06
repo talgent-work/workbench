@@ -1,0 +1,95 @@
+name: Auto Tag
+
+on:
+  # Release merged code even when the PR head commit contains [skip ci].
+  pull_request_target:
+    branches:
+    - master
+    types: [ closed ]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-tag
+  cancel-in-progress: false
+
+jobs:
+  auto-tag:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      new_tag: ${{ steps.autotag.outputs.new_tag }}
+    steps:
+    # The checks run from master: the merge commit may predate the scripts.
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    # GitHub also marks a PR merged when another branch carried its commits
+    # into master; only a PR merged into master itself is released.
+    - name: Check the pull request itself was merged into master
+      id: merged
+      env:
+        MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+      run: |
+        if bash scripts/ci/released-merge.sh "$MERGE_SHA" origin/master; then
+          echo "release=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "Merge commit $MERGE_SHA is not on master's first-parent history; not released."
+        fi
+
+    # The bump follows only the head branch prefix (scripts/ci/next-version.sh);
+    # the tag lands on the merge commit, read with the script from master.
+    - name: Tag the release
+      if: steps.merged.outputs.release == 'true'
+      id: autotag
+      env:
+        HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+      run: |
+        tag=$(bash scripts/ci/next-version.sh "$HEAD_BRANCH")
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git tag -a "$tag" -m "Release: $tag" "$MERGE_SHA"
+        git push origin "refs/tags/$tag"
+        echo "Released $tag from $HEAD_BRANCH at $MERGE_SHA."
+        echo "new_tag=$tag" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: auto-tag
+    if: needs.auto-tag.outputs.new_tag != ''
+    runs-on: ubuntu-latest
+    steps:
+    - uses: softprops/action-gh-release@v3
+      with:
+        draft: false
+        prerelease: false
+        tag_name: ${{ needs.auto-tag.outputs.new_tag }}
+        generate_release_notes: true
+
+  # The npm packages ship at every release, so their version is the release's.
+  publish-npm:
+    needs: auto-tag
+    if: needs.auto-tag.outputs.new_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+    - name: Publish the npm packages at the release tag
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ needs.auto-tag.outputs.new_tag }}
+      run: gh workflow run publish-npm.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+
+  docker-build:
+    needs: auto-tag
+    if: needs.auto-tag.outputs.new_tag != ''
+    uses: ./.github/workflows/docker-build.yml
+    # Builds what changed since the previous release; the other images receive
+    # the new tag from the previous release's images.
+    with:
+      tag: ${{ needs.auto-tag.outputs.new_tag }}
+    permissions:
+      contents: read
+      packages: write

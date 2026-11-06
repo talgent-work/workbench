@@ -1,0 +1,260 @@
+/* Composition only. Component appearance comes from HeroUI and the official Theme Builder export. */
+.p-app { min-height: 100dvh; display: grid; grid-template-columns: auto minmax(0,1fr); }
+/* Never taller than the window: pages that size the sidebar to their grid row
+   (the Work page) would otherwise let a long Recent list push the account
+   footer off screen; the Recent list scrolls instead. */
+.p-sidebar { position: sticky; top: 0; width: 252px; height: 100dvh; max-height: 100dvh; padding: 8px 0 8px 8px; }
+.p-sidebar[data-collapsed="true"] { width: 72px; }
+/* The shared nav and account footer sit tight against Recent; the header keeps
+   its wider break from the navigation through its own margin. */
+.p-sidebar-shell { display: flex; flex-direction: column; height: 100%; padding: 12px 12px 4px; gap: 8px; }
+.p-sidebar[data-collapsed="true"] .p-sidebar-shell { align-items: center; padding: 12px 8px 4px; gap: 8px; }
+.p-sidebar-header { display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; width: 100%; margin-bottom: 8px; }
+.p-sidebar-scroll { display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0; width: 100%; overflow-y: auto; }
+.p-sidebar-scroll>* { flex-shrink: 0; }
+.p-sidebar[data-collapsed="true"] .p-sidebar-header,.p-sidebar[data-collapsed="true"] .p-sidebar-scroll { align-items: center; gap: 12px; }
+.p-sidebar[data-collapsed="true"] .p-sidebar-header { margin-bottom: 4px; }
+.p-sidebar-brand { display: flex; align-items: center; justify-content: space-between; gap: 4px; flex-shrink: 0; }
+.p-brand-lockup { display: flex; align-items: center; gap: 0; }
+.p-brand-button { width: 40px; height: 40px; padding: 0; flex-shrink: 0; }
+.p-brand-icon { display: block; width: 32px; height: 32px; flex-shrink: 0; }
+.p-brand-name { width: 84px; height: 40px; margin-inline-start: -15px; }
+/* Avatar centred on the nav icon column and name on the nav label column. */
+.p-sidebar-account { width: 100%; justify-content: start; padding-inline-start: 6px; gap: 10px; }
+.p-sidebar-account-name { flex: 1; min-width: 0; text-align: start; }
+.p-sidebar-menu { width: 248px; max-width: calc(100vw - 24px); }
+.p-sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
+.p-sidebar-nav>* { flex-shrink: 0; }
+.p-nav-item { justify-content: start; width: 100%; gap: 16px; }
+.p-nav-label { flex: 1; display: flex; }
+.p-sidebar-footer { width: 100%; display: flex; flex-direction: column; gap: 4px; margin-top: auto; flex-shrink: 0; }
+.p-sidebar[data-collapsed="true"] .p-sidebar-footer { align-items: center; }
+
+.p-session-label { flex: 1; min-width: 0; }
+.p-session-title { display: block; }
+.p-session-list { gap: 2px; }
+.p-session-item>.chip { color: var(--muted); background: transparent; }
+/* A Work waiting on the person's answer is the one row that asks for them. */
+.p-session-item[data-waiting]>.chip { color: var(--warning); }
+.p-session-item { height: 36px; gap: 6px; padding-inline-end: 8px; }
+.p-session-item[data-actions-visible="true"],.p-drawer-navigation .p-session-item { padding-inline-end: 40px; }
+.p-session-action[data-visible="false"]>button { display: none; }
+.p-drawer-navigation .p-session-action[data-visible="false"]>button { display: inline-flex; }
+@media (pointer: coarse) {
+  .p-session-action[data-visible="false"]>button { display: inline-flex; }
+  .p-session-item { padding-inline-end: 40px; }
+}
+.p-session-rows { position: relative; }
+.p-session-actions { position: absolute; inset-block-start: 4px; inset-inline-end: 8px; display: flex; flex-direction: column; gap: 2px; }
+.p-session-action { display: flex; align-items: center; height: 36px; }
+.p-more-navigation { display: flex; flex-direction: column; gap: 4px; padding-block: 4px; padding-inline: 16px 0; }
+.p-session-tooltip { max-width: min(280px,calc(100vw - 24px)); }
+.p-sessions-popover { width: 304px; max-width: calc(100vw - 24px); }
+.p-sidebar-empty { padding: 8px; }
+.p-sidebar-drawer { width: 288px; max-width: calc(100vw - 24px); }
+.p-drawer-navigation { display: flex; flex-direction: column; gap: 16px; height: 100%; min-height: 0; }
+.p-body,.p-grow { min-width: 0; }
+.p-grow { flex: 1; display: grid; overflow-wrap: anywhere; }
+.p-topbar { position: sticky; top: 0; z-index: 20; background: var(--background); min-height: var(--topbar-height); display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 16px; padding: 4px 24px 4px 4px; }
+.p-location { flex-wrap: wrap; min-width: 0; }
+.p-page-actions { margin-inline-start: auto; }
+.p-breadcrumb,.p-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.p-mobile-toggle { display: none; }
+.p-page { width: 100%; margin-inline: auto; padding: 16px 24px 32px 4px; }
+html:has(.p-app) { scroll-padding-top: 72px; }
+@media (max-width: 740px) { html:has(.p-app) { scroll-padding-top: 120px; } }
+.p-setup-heading { display: grid; gap: 6px; }
+.p-caption { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.p-spaced { margin-top: 24px; }
+.p-spaced-bottom { margin-bottom: 24px; }
+.p-work-heading { padding: 16px 24px; display: grid; gap: 12px; }
+.p-title-row { display: flex; align-items: baseline; gap: 12px; }
+.p-work-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.p-work-layout { display: grid; grid-template-columns: minmax(0, 1fr); min-height: calc(100dvh - 282px); }
+.p-work-layout.p-show-context { grid-template-columns: minmax(0, 1fr) 280px; }
+.p-work-main { min-width: 0; display: flex; flex-direction: column; }
+.p-start-stage { width: 100%; max-width: 740px; margin-inline: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+.p-start-description { max-width: 440px; }
+.p-start-composer { width: 100%; }
+.p-config-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.p-composer-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-top: 16px; }
+.p-error:empty { display: none; }
+.p-check-list { display: grid; gap: 12px; }
+.p-check-list li { display: flex; align-items: flex-start; gap: 8px; }
+.p-start-symbol { display: grid; place-items: center; }
+.p-stepper { width: 100%; max-width: 440px; display: grid; gap: 16px; margin-block: 8px; }
+.p-stepper li { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.p-preparation { align-items: center; padding-block: 32px; }
+.p-conversation { padding: 24px; max-width: 860px; width: 100%; margin-inline: auto; display: grid; gap: 24px; flex: 1; }
+.p-message-author { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.p-message-author time { margin-inline-start: auto; }
+.p-human-message { margin-inline-start: 24px; overflow-wrap: anywhere; }
+.p-agent-message { display: grid; gap: 16px; }
+.p-tool-summary,.p-live-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.p-code-note { margin-block: 16px; overflow-wrap: anywhere; }
+.p-reply-zone { padding: 0 24px 24px; }
+.p-reply-composer { max-width: 780px; margin-inline: auto; }
+.p-resume-bar { margin-block: 16px; }
+.p-section { margin-block: 24px; }
+.p-section-title { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+.p-activity-line { display: flex; align-items: start; gap: 12px; margin-block: 20px; }
+.p-activity-line>div { display: grid; gap: 8px; }
+.p-document-link { margin-top: 20px; }
+.p-document-link>span { display: grid; gap: 4px; }
+.p-list-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+.p-search { flex: 1; min-width: 180px; }
+.p-picker { min-width: 0; }
+.p-list-toolbar>.p-picker { min-width: 165px; }
+.p-empty { padding: 48px 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.p-detail-grid { display: grid; grid-template-columns: minmax(0,1fr) 256px; gap: 20px; }
+.p-prose { max-width: 68ch; display: grid; gap: 16px; }
+.p-prose ol { padding-inline-start: 24px; }
+.p-detail-properties { display: flex; flex-direction: column; align-items: start; gap: 20px; }
+.p-settings form { max-width: 660px; }
+.p-settings section { display: grid; gap: 20px; margin-bottom: 24px; }
+.p-connection { max-width: 660px; }
+.p-connection>span { display: grid; gap: 4px; }
+.p-plugin-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 24px; }
+.p-feedback { position: fixed; z-index: 45; bottom: 16px; left: 50%; transform: translateX(-50%); width: min(620px,calc(100vw - 32px)); }
+.p-stack { display: flex; flex-direction: column; gap: 20px; }
+.p-state-json { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; }
+.p-trace-event { display: flex; gap: 12px; padding: 12px 0; }
+.p-trace-event small { margin-inline-start: auto; }
+.p-session-history { display: flex; flex-direction: column; gap: 4px; }
+.p-history-heading { display: flex; align-items: center; min-height: 32px; padding-inline: 12px; }
+
+/* Analytics marks carry data colors in SVG. Containers use unmodified HeroUI cards. */
+.p-analytics { display: flex; flex-direction: column; gap: 16px; }
+.p-analytics>.p-section-title { margin-bottom: 0; }
+.p-metric-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
+.p-token-metrics { grid-template-columns: repeat(5,minmax(0,1fr)); }
+.p-metric-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.p-distribution-grid,.p-ranking-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.p-trace-charts { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; }
+.p-trace-distributions { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.p-plot-card { min-width: 0; }
+.p-plot-card .p-section-title { margin-bottom: 0; }
+.p-chart-legend { display: flex; flex-wrap: wrap; gap: 8px; }
+.p-time-plot { position: relative; height: 190px; margin-left: 42px; }
+.p-time-plot>svg { width: 100%; height: 100%; overflow: visible; }
+.p-y-axis { position: absolute; left: -42px; top: 0; width: 36px; height: 100%; }
+.p-y-axis>span { position: absolute; left: 0; transform: translateY(-50%); }
+.p-x-axis { position: relative; height: 32px; margin: 0 0 12px 42px; }
+.p-x-axis>p>span { display: block; }
+.p-x-axis>p { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.p-chart-empty { display: grid; place-items: center; height: 190px; }
+.p-distribution { display: flex; align-items: center; justify-content: center; padding: 16px 0; }
+.p-donut { position: relative; width: 152px; height: 152px; flex-shrink: 0; }
+.p-donut>svg { width: 100%; height: 100%; }
+.p-donut-total { pointer-events: none; position: absolute; inset: 0; display: grid; place-items: center; }
+.p-ranking { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; }
+.p-ranking li { display: flex; align-items: center; gap: 8px; }
+.p-ranking li>p:last-child { margin-inline-start: auto; flex-shrink: 0; }
+.p-ranking li>p:not(:last-child) { min-width: 0; flex: 1; }
+.p-card-meta { gap: 8px; flex-wrap: wrap; }
+.p-card-meta>span:last-child { margin-inline-start: auto; }
+.p-detail-properties { align-self: start; }
+.p-settings form { display: grid; gap: 20px; }
+.p-form-fields { display: grid; gap: 20px; }
+.p-connection-row { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+.p-connection-row>span { display: grid; gap: 4px; }
+
+@media (max-width: 1200px) {
+  .p-plugin-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 1000px) {
+  .p-work-layout.p-show-context { grid-template-columns: minmax(0,1fr); }
+  .p-detail-grid { grid-template-columns: minmax(0,1fr); }
+  .p-overview-grid,.p-lower-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 740px) {
+  .p-app { display: block;  }
+  .p-sidebar { display: none; }
+  .p-mobile-toggle { display: inline-flex; }
+  .p-topbar { padding: 12px; gap: 8px; }
+  .p-breadcrumb { gap: 4px; flex-wrap: nowrap; }
+  .p-page { padding: 20px 16px; }
+  .p-work-heading { padding: 16px; }
+  .p-title-row { align-items: start; flex-direction: column; gap: 4px; }
+  .p-start-stage,.p-conversation { padding: 20px 16px; }
+  .p-reply-zone { padding-inline: 16px; }
+  .p-human-message { margin-inline-start: 0; }
+  .p-chart { grid-template-columns: 1fr; }
+  .p-feedback { bottom: 16px; }
+}
+
+@media (max-width: 1200px) {
+  .p-distribution-grid,.p-trace-distributions { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .p-ranking-grid { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 1000px) {
+  .p-trace-charts { grid-template-columns: 1fr; }
+  .p-metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 740px) {
+  .p-distribution-grid,.p-trace-distributions { grid-template-columns: 1fr; }
+  .p-metric-grid { gap: 8px; }
+  .p-metric-label { flex-wrap: wrap; }
+}
+.p-actions>[role="radiogroup"] { flex-shrink: 0; }
+
+.p-sessions-popover .p-history-list { max-height: 340px; overflow-y: auto; }
+
+.p-dashboard-topbar { grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); }
+/* HeroUI's 4px tab-list inset makes Tabs 40px; fit them to the topbar control height. */
+.p-topbar .tabs__list { height: var(--topbar-control-height); padding: 2px; }
+/* The single-row desktop topbar owns its height; slot content cannot stretch it. Narrower layouts wrap rows. */
+@media (min-width: 1101px) { .p-topbar { height: var(--topbar-height); } }
+.p-metric-value { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.p-metric-trend { display: inline-flex; }
+@media (max-width: 1100px) {
+  .p-topbar { grid-template-columns: minmax(0,1fr) auto; }
+  .p-topbar .p-breadcrumb { grid-column: 1; grid-row: 1; }
+  .p-perspective-tabs,.p-page-actions { grid-column: 1 / -1; }
+  .p-perspective-tabs { width: fit-content; }
+  .p-page-actions:empty { display: none; }
+}
+
+.p-series-label { display: inline-flex; align-items: center; gap: 6px; }
+.p-series-dot { display: inline-flex; width: 8px; height: 8px; flex-shrink: 0; }
+.p-ranking li>svg { flex-shrink: 0; }
+/* Custom SVG chart marks only; HeroUI components retain their original motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .p-donut-slice { transition: stroke-width 150ms ease-out, opacity 150ms ease-out; }
+}
+.p-series-dot>svg { width: 8px; height: 8px; margin: 0; }
+.p-donut-legend { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; }
+
+/* Hover cards read like the Work context card's Token Usage list. */
+.p-chart-hover-tip { display: grid; gap: 8px; min-width: 200px; max-width: 320px; }
+.p-chart-hover-interval { white-space: nowrap; }
+.p-chart-hover-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 13px; font-weight: 500; }
+.p-chart-hover-head strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+.p-chart-hover-values { display: grid; gap: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.p-chart-hover-values>div { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.p-chart-hover-values dt { color: var(--muted); }
+.p-chart-hover-values dd { font-weight: 500; }
+
+.p-signed-out { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+
+/* Dashboard chart surfaces on the shared workspace canvas. */
+#dashboard-report :is(.p-plot-card, .p-distribution-grid > .card, .p-trace-distributions > .card, .p-ranking-grid > .card) {
+  border: 1px solid var(--separator);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.04), 0 6px 16px rgb(0 0 0 / 0.03);
+}
+
+#dashboard-report :is(.p-plot-card, .p-distribution-grid > .card, .p-trace-distributions > .card, .p-ranking-grid > .card) > .card__header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in oklab, var(--separator) 65%, transparent);
+}
+
+/* A page whose content scrolls inside itself (marked .p-fill) fills the
+   screen: the page stops scrolling, and the marked content takes the height
+   left under the topbar, as the Work message flow does. */
+#root:has(.p-fill) { height: 100dvh; display: flex; flex-direction: column; }
+#root:has(.p-fill) > [role="status"] { flex-shrink: 0; }
+.p-app:has(.p-fill) { flex: 1; min-height: 0; overflow: hidden; }
+.p-app:has(.p-fill) > :is(.p-sidebar, .pr-divider, .pr-reader:not([data-fullscreen="true"])) { height: 100%; }
+.p-body:has(.p-fill) { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.p-body:has(.p-fill) > .p-topbar { flex-shrink: 0; }
+.p-page:has(.p-fill) { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-bottom: 0; }

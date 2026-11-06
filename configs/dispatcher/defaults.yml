@@ -1,0 +1,44 @@
+logger:
+  level: "${LOG_LEVEL:info}"
+  output: "${LOG_OUTPUT:console}"
+
+http:
+  addr: "${DISPATCHER_HTTP_ADDR::8083}"
+
+grpc_addr: "${DISPATCHER_GRPC_ADDR:127.0.0.1:8083}"
+
+instance_id: "${DISPATCHER_INSTANCE_ID:}"
+
+redis:
+  addr: "${REDIS_ADDR:127.0.0.1:6379}"
+  password: "${REDIS_PASSWORD:}"
+  db: ${REDIS_DB:0}
+
+clickhouse:
+  dsn: "${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}"
+
+kafka:
+  brokers:
+    - "${KAFKA_BROKER:127.0.0.1:9092}"
+
+integration-messages:
+  consumer_group: "${KAFKA_CONSUMER_GROUP:dispatcher-service}"
+
+nats:
+  url: "${NATS_URL:nats://localhost:4222}"
+
+# Replica liveness and takeover: each replica refreshes its liveness every
+# heartbeat, and survivors take over the Works of a replica whose liveness
+# expired after ttl.
+ownership:
+  ttl: "6s"
+  heartbeat: "2s"
+  scan: "3s"
+  snapshot-ttl: "168h"
+
+agent-feedback:
+  addr: "${AGENT_FEEDBACK_ADDR:http://controlplane:8080}"
+  token: "${AGENT_FEEDBACK_TOKEN:}"
+
+native-execution:
+  control-token: "${DISPATCHER_EXECUTION_CONTROL_TOKEN:}"

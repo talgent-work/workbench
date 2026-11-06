@@ -1,0 +1,14 @@
+/* The Agent color tints the tile and inks the glyph, legible in both themes. */
+.agent-icon {
+  --agent-icon-radius: calc(var(--agent-icon-size) * 0.27);
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--agent-icon-size);
+  height: var(--agent-icon-size);
+  border-radius: var(--agent-icon-radius);
+  background: color-mix(in oklab, var(--agent-ink) 14%, var(--surface));
+  color: color-mix(in oklab, var(--agent-ink) 85%, var(--foreground));
+}
+
+.agent-color-swatch { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; color: #fff; }

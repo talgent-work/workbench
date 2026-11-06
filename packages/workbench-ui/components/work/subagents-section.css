@@ -1,0 +1,31 @@
+/* The Work context card's Agents section. */
+.sa-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 10px 0 2px; list-style: none; }
+.sa-row>li { display: flex; animation: sa-in 200ms cubic-bezier(0.2, 0, 0, 1); }
+.sa-row>li[data-leaving] { animation: sa-out 200ms cubic-bezier(0.4, 0, 1, 1) forwards; }
+@keyframes sa-in { from { opacity: 0; transform: scale(.6); } }
+@keyframes sa-out { to { opacity: 0; transform: scale(.6); } }
+
+.sa-trigger { display: inline-flex; padding: 3px; border-radius: 10px; cursor: default; }
+.sa-trigger:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.sa-avatar { position: relative; display: inline-flex; }
+.sa-avatar .agent-icon { transition: opacity 200ms, filter 200ms; }
+/* The one moving mark: an orbit while a SubAgent runs. */
+.sa-avatar[data-status="running"]::after { content: ""; position: absolute; inset: -3px; border: 1.5px solid transparent; border-top-color: var(--success); border-inline-end-color: var(--success); border-radius: 10px; pointer-events: none; animation: sa-orbit 1.8s linear infinite; }
+@keyframes sa-orbit { to { transform: rotate(360deg); } }
+.sa-avatar[data-status="completed"] .agent-icon,
+.sa-avatar[data-status="stopped"] .agent-icon { opacity: .42; filter: grayscale(.6); }
+.sa-trigger:hover .agent-icon, .sa-trigger:focus-visible .agent-icon { opacity: 1; filter: none; }
+.sa-badge { position: absolute; right: -4px; bottom: -4px; z-index: 1; display: inline-grid; place-items: center; padding: 2px; border-radius: 999px; background: var(--surface); }
+.sa-badge[data-tone="danger"], .sa-tip-status[data-tone="danger"] { color: var(--danger); }
+.sa-badge[data-tone="muted"] { color: var(--muted); }
+
+.sa-tip { display: grid; gap: 6px; max-width: 260px; }
+.sa-tip-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.sa-tip-status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+.sa-tip-status[data-tone="success"] { color: var(--success); }
+.sa-tip p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--foreground); word-break: normal; overflow-wrap: break-word; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-row>li, .sa-avatar[data-status="running"]::after { animation: none; }
+  .sa-row>li[data-leaving] { animation: none; visibility: hidden; }
+}

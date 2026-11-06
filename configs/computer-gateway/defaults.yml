@@ -1,0 +1,23 @@
+logger:
+  level: "${LOG_LEVEL:info}"
+  output: "${LOG_OUTPUT:console}"
+
+http:
+  addr: "${COMPUTER_GATEWAY_HTTP_ADDR::8085}"
+
+redis:
+  addr: "${REDIS_ADDR:127.0.0.1:6379}"
+  password: "${REDIS_PASSWORD:}"
+  db: 0
+
+gateway:
+  computer-address: "${COMPUTER_ADDR:http://127.0.0.1:8080}"
+  control-token: "${COMPUTER_CONTROL_TOKEN:}"
+  # This replica's name and the address peers forward a Computer's calls to.
+  replica: "${POD_NAME:computer-gateway}"
+  endpoint: "${POD_IP:127.0.0.1}:8085"
+  # The platform release this deployment runs (X.Y.Z): the Target Version every
+  # Managed Computer should run, served at GET /computer/v1/release as its single
+  # source, from which the Computers page builds its install command; empty
+  # outside a release.
+  release-version: "${TALGENT_RELEASE_VERSION:}"

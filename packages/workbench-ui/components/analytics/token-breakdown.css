@@ -1,0 +1,13 @@
+.token-breakdown { display: grid; gap: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.token-breakdown>div { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.token-breakdown dt { display: flex; align-items: center; gap: 7px; color: var(--muted); }
+.token-breakdown i { display: block; width: 6px; height: 6px; border-radius: 2px; }
+/* The hit-rate ring sits in the swatch column; 8px so its fill stays legible. */
+.token-hit-mark { flex-shrink: 0; margin-inline: -1px; fill: none; stroke-width: 2; stroke: var(--default); }
+.token-hit-mark [data-filled] { stroke: var(--foreground); }
+.token-breakdown dd { font-weight: 500; }
+/* Category tones, shared with any bar of the same categories. */
+[data-token-tone="input"] { background: var(--foreground); }
+[data-token-tone="cacheRead"] { background: color-mix(in oklch,var(--foreground) 52%,var(--surface)); }
+[data-token-tone="cacheWrite"] { background: color-mix(in oklch,var(--foreground) 32%,var(--surface)); }
+[data-token-tone="output"] { background: color-mix(in oklch,var(--foreground) 17%,var(--surface)); }

@@ -1,0 +1,38 @@
+/* Floating interaction cards share the accepted PromptBar's width and bottom anchor. */
+.stream-panel:has(> .wm-scroll) > .wi-dock { position: absolute; inset-inline: 0; bottom: 0; z-index: 20; width: min(var(--wpb-panel-width), calc(100% - 2 * var(--wpb-panel-gutter))); margin-inline: auto; }
+.wi-dock > .wpb-conversation { width: 100%; }
+.wi-card { padding: 12px 14px; border: 1px solid color-mix(in oklch, var(--separator) 55%, transparent); border-radius: 20px; background: var(--surface); box-shadow: 0 4px 24px rgb(0 0 0 / 3%); max-height: calc(100dvh - 200px); overflow-y: auto; }
+.wi-heading { display: flex; align-items: center; justify-content: space-between; min-height: 24px; padding-inline: 2px; color: var(--muted); font-size: 14px; }
+.wi-heading > span, .wi-heading nav { display: flex; align-items: center; gap: 9px; }
+.wi-heading nav { gap: 3px; }
+.wi-heading nav .button { width: 24px; min-width: 24px; height: 24px; color: var(--muted); }
+.wi-count { min-width: 46px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.wi-card h3 { margin: 8px 2px; font-size: 15px; font-weight: 600; line-height: 1.5; outline: none; }
+.wi-choices { display: flex; flex-direction: column; gap: 2px; margin-inline: -4px; }
+.wi-choice { display: flex; position: relative; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 10px; font-size: 15px; line-height: 1.5; cursor: pointer; }
+.wi-choice:hover, .wi-choice[data-selected="true"] { background: var(--surface-secondary); }
+.wi-choice:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
+.wi-choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.wi-choice-number { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; height: 24px; border-radius: 50%; border: 1px solid color-mix(in oklch, var(--separator) 65%, transparent); background: var(--surface-secondary); color: var(--muted); font-size: 14px; }
+.wi-choice-arrow { margin-left: auto; flex-shrink: 0; color: var(--muted); opacity: 0; }
+.wi-choice:hover .wi-choice-arrow, .wi-choice[data-selected="true"] .wi-choice-arrow { opacity: 1; }
+.wi-question-footer { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.wi-custom { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; }
+.wi-custom input { width: 100%; min-width: 0; background: transparent; padding-block: 6px; font-size: 15px; outline: none; }
+.wi-custom input::placeholder { color: color-mix(in oklch, var(--muted) 55%, var(--surface)); }
+.wi-custom:focus-within { border-radius: 6px; outline: 2px solid var(--focus); outline-offset: 3px; }
+.wi-card footer .button { border-radius: 999px; flex-shrink: 0; font-size: 14px; }
+.wi-command { margin: 12px 2px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
+.wi-approval-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+.wi-approval-footer kbd { padding: 0 5px; border-radius: 4px; background: var(--surface-secondary); font-size: 12px; }
+@media (max-width: 740px) { .wi-card { padding: 10px 12px; border-radius: 18px; } .wi-question-footer { flex-wrap: wrap; justify-content: flex-end; } .wi-custom { flex-basis: 100%; margin-bottom: 4px; } }
+
+.wi-feedback { margin: 8px 2px 0; color: var(--muted); font-size: 13px; }
+.wi-card .wm-tool-detail pre { max-height: 120px; }
+
+.wi-notices { display: grid; gap: 8px; margin-top: 8px; }
+
+/* Compact Work notices have one text row beside their indicator and action. */
+.wi-dock .alert { align-items: center; }
+.wi-dock .alert__content { height: auto; min-width: 0; justify-content: center; }
+.wi-dock .alert > :is(.alert__indicator, .button) { flex-shrink: 0; }

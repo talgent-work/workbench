@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Deploys a k3s kustomization of the Workbench: the base or an overlay of it,
+# with the deployment's environment (lib/environment.sh). It ensures the
+# Workbench's credentials and schemas, deploys OpenSandbox and the Collector,
+# then applies everything the kustomization renders.
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+NS="${TALGENT_NAMESPACE:-talgent}"
+SKIP_DB_BOOTSTRAP="${TALGENT_SKIP_DB_BOOTSTRAP:-0}"
+SKIP_CLICKHOUSE_MIGRATION="${TALGENT_SKIP_CLICKHOUSE_MIGRATION:-0}"
+ACCOUNT_OAUTH_SECRET="account-github-oauth"
+ACCOUNT_MASTER_KEY_SECRET="account-master-key"
+CLICKHOUSE_AUTH_SECRET="clickhouse-auth"
+MYSQL_AUTH_SECRET="mysql-auth"
+
+# shellcheck source=lib/environment.sh
+source "${ROOT_DIR}/scripts/deploy/lib/environment.sh"
+
+if [[ $# -ne 1 || ! -f "$1/kustomization.yaml" ]]; then
+  echo "usage: $(basename "$0") <kustomization directory>" >&2
+  exit 2
+fi
+KUSTOMIZATION="$1"
+
+if [ "${NS}" != "talgent" ]; then
+  echo "TALGENT_NAMESPACE=${NS} is not supported; current MVP manifests are fixed to namespace talgent" >&2
+  exit 1
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "${work}"' EXIT
+# Resolved once: the render and the database bootstrap use the same values.
+resolve_k3s_environment "${KUSTOMIZATION}" "${work}/environment.env"
+export TALGENT_ENVIRONMENT_FILE="${work}/environment.env"
+export_environment "${TALGENT_ENVIRONMENT_FILE}"
+
+kubectl create namespace "${NS}" --dry-run=client -o yaml | kubectl apply -f -
+rendered="${work}/rendered.yaml"
+"${ROOT_DIR}/scripts/deploy/render-k3s.sh" "${KUSTOMIZATION}" > "${rendered}"
+
+secret_data_value() {
+  local secret="$1" key="$2"
+  kubectl -n "${NS}" get secret "${secret}" -o "jsonpath={.data.${key}}" 2>/dev/null || true
+}
+
+# Account signs in through the login GitHub OAuth App (not the Marketplace
+# Provider App). Its credentials come from the environment or an existing Secret.
+ensure_account_oauth_secret() {
+  if [[ -n "${ACCOUNT_GITHUB_CLIENT_ID:-}" || -n "${ACCOUNT_GITHUB_CLIENT_SECRET:-}" ]]; then
+    if [[ -z "${ACCOUNT_GITHUB_CLIENT_ID:-}" || -z "${ACCOUNT_GITHUB_CLIENT_SECRET:-}" ]]; then
+      echo "both ACCOUNT_GITHUB_CLIENT_ID and ACCOUNT_GITHUB_CLIENT_SECRET are required for ${ACCOUNT_OAUTH_SECRET}" >&2
+      exit 1
+    fi
+    kubectl -n "${NS}" create secret generic "${ACCOUNT_OAUTH_SECRET}" \
+      "--from-literal=client-id=${ACCOUNT_GITHUB_CLIENT_ID}" \
+      "--from-literal=client-secret=${ACCOUNT_GITHUB_CLIENT_SECRET}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "ensured ${ACCOUNT_OAUTH_SECRET} from ACCOUNT_GITHUB_CLIENT_ID/ACCOUNT_GITHUB_CLIENT_SECRET" >&2
+    return
+  fi
+  if [[ -n "$(secret_data_value "${ACCOUNT_OAUTH_SECRET}" client-id)" && -n "$(secret_data_value "${ACCOUNT_OAUTH_SECRET}" client-secret)" ]]; then
+    echo "${ACCOUNT_OAUTH_SECRET} already exists" >&2
+    return
+  fi
+  echo "missing ${ACCOUNT_OAUTH_SECRET}; create it with client-id/client-secret of the login GitHub OAuth App or export ACCOUNT_GITHUB_CLIENT_ID and ACCOUNT_GITHUB_CLIENT_SECRET before applying k3s manifests" >&2
+  exit 1
+}
+
+# The master key seals Account's signing keys. It is generated once; replacing
+# it makes stored keys unreadable, so an existing key is never overwritten.
+ensure_account_master_key() {
+  if [[ -n "$(secret_data_value "${ACCOUNT_MASTER_KEY_SECRET}" master-key)" ]]; then
+    echo "${ACCOUNT_MASTER_KEY_SECRET} already exists" >&2
+    return
+  fi
+  kubectl -n "${NS}" create secret generic "${ACCOUNT_MASTER_KEY_SECRET}" \
+    "--from-literal=master-key=$(head -c 32 /dev/urandom | base64 | tr -d '\n')" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo "generated ${ACCOUNT_MASTER_KEY_SECRET}" >&2
+}
+
+# ensure_password_secret SECRET VARIABLE: the service account password of a
+# store, which the service configurations read as an env var so it never
+# enters a manifest. It comes from VARIABLE or an existing Secret.
+ensure_password_secret() {
+  local secret="$1" variable="$2"
+  if [[ -n "${!variable:-}" ]]; then
+    kubectl -n "${NS}" create secret generic "${secret}" \
+      "--from-literal=talgent-password=${!variable}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "ensured ${secret} from ${variable}" >&2
+    return
+  fi
+  if [[ -n "$(secret_data_value "${secret}" talgent-password)" ]]; then
+    echo "${secret} already exists" >&2
+    return
+  fi
+  echo "missing ${secret}; export ${variable} with the service account password before applying k3s manifests" >&2
+  exit 1
+}
+
+ensure_account_oauth_secret
+ensure_account_master_key
+ensure_password_secret "${CLICKHOUSE_AUTH_SECRET}" CLICKHOUSE_TALGENT_PASSWORD
+ensure_password_secret "${MYSQL_AUTH_SECRET}" MYSQL_PASSWORD
+
+"${ROOT_DIR}/scripts/deploy/bootstrap-native-control.sh"
+
+# The namespace budget precedes every Pod, OpenSandbox's included.
+kubectl apply -f "${rendered}" -l app.kubernetes.io/name=agent-capacity
+
+if [[ "${SKIP_DB_BOOTSTRAP}" != "1" ]]; then
+  "${ROOT_DIR}/scripts/deploy/bootstrap-mysql.sh"
+else
+  echo "skip MySQL schema bootstrap because TALGENT_SKIP_DB_BOOTSTRAP=1" >&2
+fi
+
+if [[ "${SKIP_CLICKHOUSE_MIGRATION}" != "1" ]]; then
+  "${ROOT_DIR}/scripts/deploy/bootstrap-clickhouse.sh"
+else
+  echo "skip ClickHouse migration because TALGENT_SKIP_CLICKHOUSE_MIGRATION=1" >&2
+fi
+
+"${ROOT_DIR}/scripts/deploy/apply-opensandbox.sh" "${rendered}"
+kubectl apply -f "${rendered}"
+kubectl -n "${NS}" rollout status deployment/controlplane --timeout=180s

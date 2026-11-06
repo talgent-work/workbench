@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package talgent.agent.public.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1;agentpublicv1";
+
+// GetAgentSoulRequest names the Agent whose Soul is read.
+message GetAgentSoulRequest {
+  // AgentDefinition identity.
+  string agent_id = 1;
+}
+
+// GetAgentSoulResponse carries the Agent's Soul.
+message GetAgentSoulResponse {
+  // Persona and working style, at most 8000 characters; empty when unset.
+  string soul = 1;
+}
+
+// ChangeAgentSoulRequest replaces the Agent's Soul.
+message ChangeAgentSoulRequest {
+  // AgentDefinition identity.
+  string agent_id = 1;
+  // Persona and working style, at most 8000 characters; empty clears it.
+  string soul = 2;
+}
+
+// ChangeAgentSoulResponse carries the Soul as saved.
+message ChangeAgentSoulResponse {
+  // The saved Soul.
+  string soul = 1;
+}

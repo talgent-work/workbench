@@ -1,0 +1,69 @@
+name: Go Cache
+
+# CI does not run on master, and Actions caches are scoped by ref: a
+# branch restores only its own caches and those of master. Without this
+# workflow every new branch compiles Go tests with -race from scratch.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  # Cache pruning reads whether each pull request is still open.
+  pull-requests: read
+
+concurrency:
+  group: go-cache
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # job must match the CI job id that restores the cache.
+        include:
+        - job: test
+          target: test-compile
+        - job: integration-test
+          target: test-integration-compile
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: actions/setup-go@v6
+      id: go
+      with:
+        go-version-file: go.mod
+        cache: false
+
+    # Same key layout as ci.yml so branch restore-keys match this master entry.
+    - name: Cache Go test dependencies and build outputs
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ matrix.job }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+        restore-keys: |
+          go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ matrix.job }}-${{ hashFiles('go.mod', 'go.sum') }}-
+          go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ matrix.job }}-
+
+    - name: Compile test binaries
+      # /tmp on the runner is a 4G tmpfs; a cold -race compile overflows it.
+      env:
+        TMPDIR: ${{ runner.temp }}
+      run: make ${{ matrix.target }}
+
+  prune:
+    needs: warm
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Prune superseded and closed pull request caches
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: bash scripts/ci/prune-actions-caches.sh

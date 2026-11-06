@@ -1,0 +1,188 @@
+syntax = "proto3";
+
+package talgent.marketplace.public.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1;marketplacepublicv1";
+
+// ProviderAuthorization describes a provider authorization owned by a user.
+message ProviderAuthorization {
+  // Stable personal authorization reference, preserved by reauthorization.
+  string id = 1;
+  // Current personal authorization lifecycle state.
+  string status = 2;
+  // provider field.
+  string provider = 3;
+  // provider account id field.
+  string provider_account_id = 4;
+  // provider login field.
+  string provider_login = 5;
+  // owner user id field.
+  string owner_user_id = 6;
+}
+
+// BeginProviderAuthorizationRequest starts provider authorization for the actor.
+message BeginProviderAuthorizationRequest {
+  // provider field.
+  string provider = 1;
+  // redirect uri field.
+  string redirect_uri = 2;
+}
+
+// BeginProviderAuthorizationResponse returns the URL the browser should open.
+message BeginProviderAuthorizationResponse {
+  // authorization url field.
+  string authorization_url = 1;
+}
+
+// CompleteProviderAuthorizationRequest completes provider authorization.
+message CompleteProviderAuthorizationRequest {
+  // provider field.
+  string provider = 1;
+  // oauth code field.
+  string code = 2;
+  // state field.
+  string state = 3;
+  // redirect uri field.
+  string redirect_uri = 4;
+}
+
+// CompleteProviderAuthorizationResponse returns the stored authorization summary.
+message CompleteProviderAuthorizationResponse {
+  // authorization field.
+  ProviderAuthorization authorization = 1;
+}
+
+// GetProviderConnectionStateRequest is the request for provider connection state.
+message GetProviderConnectionStateRequest {
+  // provider field.
+  string provider = 1;
+}
+
+// GetProviderConnectionStateResponse is the response for provider connection state.
+message GetProviderConnectionStateResponse {
+  // state field.
+  ProviderConnectionState state = 1;
+}
+
+// ProviderConnectionState describes the authenticated actor's provider connection.
+message ProviderConnectionState {
+  // Stable personal authorization reference; empty when no authorization exists.
+  string authorization_id = 1;
+  // provider field.
+  string provider = 2;
+  // status field.
+  string status = 3;
+  // provider account id field.
+  string provider_account_id = 4;
+  // provider login field.
+  string provider_login = 5;
+  // can list repositories field.
+  bool can_list_repositories = 6;
+  // recommended action field.
+  string recommended_action = 7;
+  // reason code field.
+  string reason_code = 8;
+  // reason message field.
+  string reason_message = 9;
+  // access token expires at unix ms field.
+  int64 access_token_expires_at_unix_ms = 10;
+  // refresh token expires at unix ms field.
+  int64 refresh_token_expires_at_unix_ms = 11;
+  // last checked at unix ms field.
+  int64 last_checked_at_unix_ms = 12;
+  // last failure code field.
+  string last_failure_code = 13;
+}
+
+// ListAccessibleRepositoriesRequest selects repositories reachable under the
+// authenticated user's current Provider authorization.
+message ListAccessibleRepositoriesRequest {
+  // Provider identity; empty means github.
+  string provider = 1;
+}
+
+// ListAccessibleRepositoriesResponse is the union of every installation the
+// authorization reached when last observed; the Provider is not asked.
+message ListAccessibleRepositoriesResponse {
+  // Repositories ordered by name.
+  repeated AccessibleRepository repositories = 1;
+}
+
+// AccessibleRepository is a repository last observed as reachable for checkout.
+// The Provider still decides the checkout itself.
+message AccessibleRepository {
+  // Stable external repository identity, such as github:123.
+  string id = 1;
+  // Provider identity.
+  string provider = 2;
+  // Owner-qualified repository name.
+  string name = 3;
+  // HTTPS clone URL.
+  string clone_url = 4;
+  // Browser URL.
+  string web_url = 5;
+  // Default branch.
+  string default_branch = 6;
+}
+
+// GetProviderAccessRequest selects the Provider whose access is described.
+message GetProviderAccessRequest {
+  // Provider identity; empty means github.
+  string provider = 1;
+}
+
+// GetProviderAccessResponse describes what the user's authorization reached when
+// last observed. Reading it never asks the Provider.
+message GetProviderAccessResponse {
+  // Current connection state.
+  ProviderConnectionState state = 1;
+  // Accounts and organizations last observed as reached, only while connected.
+  repeated ProviderAccount accounts = 2;
+  // Granted permissions, or those that connecting will request; empty when the
+  // Provider does not report them.
+  repeated ProviderPermission permissions = 3;
+  // Provider page where the user adds or changes reachable accounts and repositories.
+  string manage_url = 4;
+  // The requested observation failed; the last observed reach is shown and the
+  // connection state remains authoritative.
+  bool access_unavailable = 5;
+  // When the reach was last observed, in Unix milliseconds; 0 when never.
+  int64 observed_at_unix_ms = 6;
+}
+
+// RefreshProviderAccessRequest asks to observe the Provider's reach now.
+message RefreshProviderAccessRequest {
+  // Provider identity; empty means github.
+  string provider = 1;
+}
+
+// RefreshProviderAccessResponse is the reach after the observation; when the
+// observation failed, the last observed reach with access_unavailable set.
+message RefreshProviderAccessResponse {
+  // The access description, as GetProviderAccess returns it.
+  GetProviderAccessResponse access = 1;
+}
+
+// ProviderAccount is one personal account or organization the authorization reaches.
+message ProviderAccount {
+  // Account login.
+  string login = 1;
+  // User or Organization.
+  string type = 2;
+  // Avatar image URL.
+  string avatar_url = 3;
+  // all or selected repositories.
+  string repository_selection = 4;
+  // Reachable repositories under this account, ordered by name.
+  repeated AccessibleRepository repositories = 5;
+  // Provider page for changing this account's access.
+  string settings_url = 6;
+}
+
+// ProviderPermission is one permission name and its access level.
+message ProviderPermission {
+  // Permission name, such as contents.
+  string name = 1;
+  // Access level, such as read or write.
+  string access = 2;
+}

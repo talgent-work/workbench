@@ -1,0 +1,241 @@
+syntax = "proto3";
+
+package talgent.agent.public.v1;
+
+import "google/protobuf/timestamp.proto";
+import "talgent/agent/public/v1/harness.proto";
+import "talgent/agent/public/v1/model.proto";
+import "talgent/agent/public/v1/work.proto";
+import "talgent/agent/public/v1/work_start_options.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1;agentpublicv1";
+
+// PersonalWorkService is a person's own use of their Agent: the Personal
+// Works they start for themselves, which have no Subject and no Project,
+// their sharing, and the person's Personal Library. Every operation acts for
+// the authenticated person under their own employee definition, which Agent
+// establishes on its first need.
+service PersonalWorkService {
+  // GetPersonalWorkStartOptions lists what a new Personal Work may start
+  // with under the person's employee definition.
+  rpc GetPersonalWorkStartOptions(GetPersonalWorkStartOptionsRequest) returns (GetPersonalWorkStartOptionsResponse);
+  // ListPersonalWorkStartRepositories lists the repositories the person may
+  // check out in a new Personal Work.
+  rpc ListPersonalWorkStartRepositories(ListPersonalWorkStartRepositoriesRequest) returns (ListPersonalWorkStartRepositoriesResponse);
+  // StartPersonalWork starts a new Personal Work with its own File Space and
+  // admits its first input. A repeated request identity returns the Work it
+  // started.
+  rpc StartPersonalWork(StartPersonalWorkRequest) returns (StartPersonalWorkResponse);
+  // ListPersonalWorks lists the person's Personal Works, closed ones
+  // included, most recently updated first.
+  rpc ListPersonalWorks(ListPersonalWorksRequest) returns (ListPersonalWorksResponse);
+  // ChangePersonalWorkTitle replaces a Personal Work's display title.
+  rpc ChangePersonalWorkTitle(ChangePersonalWorkTitleRequest) returns (ChangePersonalWorkTitleResponse);
+  // SearchShareReaders finds people in the User Directory a Personal Work
+  // may be shared with.
+  rpc SearchShareReaders(SearchShareReadersRequest) returns (SearchShareReadersResponse);
+  // GetShareReaders shows the people in the User Directory by identity.
+  rpc GetShareReaders(GetShareReadersRequest) returns (GetShareReadersResponse);
+  // GrantPersonalWorkShare lets one person in the User Directory read a
+  // Personal Work, which stays private.
+  rpc GrantPersonalWorkShare(GrantPersonalWorkShareRequest) returns (GrantPersonalWorkShareResponse);
+  // ListLibraryFiles is the person's Personal Library: the Artifacts of their
+  // Personal Works and of the Works they hold a Work Share in, closed ones
+  // included, drawn from the 500 most recently updated of those Works.
+  rpc ListLibraryFiles(ListLibraryFilesRequest) returns (ListLibraryFilesResponse);
+}
+
+// GetPersonalWorkStartOptionsRequest is the authenticated person's.
+message GetPersonalWorkStartOptionsRequest {}
+
+// GetPersonalWorkStartOptionsResponse is what a new Personal Work may start with.
+message GetPersonalWorkStartOptionsResponse {
+  // The options.
+  GetWorkStartOptionsResponse options = 1;
+}
+
+// ListPersonalWorkStartRepositoriesRequest is the authenticated person's.
+message ListPersonalWorkStartRepositoriesRequest {}
+
+// ListPersonalWorkStartRepositoriesResponse lists the repositories.
+message ListPersonalWorkStartRepositoriesResponse {
+  // The repositories.
+  WorkStartRepositories repositories = 1;
+}
+
+// StartPersonalWorkRequest is a new Personal Work and its first input.
+message StartPersonalWorkRequest {
+  // Caller-chosen UUID identifying this start; repeating it returns its Work.
+  string request_id = 1;
+  // The first input, from which the display title starts.
+  string initial_message = 2;
+  // Optional repository checkouts.
+  repeated RepositorySelection repository_selections = 3;
+  // Creation-only differences from the employee definition.
+  CreationCapabilities creation_capabilities = 4;
+  // Model captured once; absence selects the machine's Claude login on a
+  // Managed Computer and the first provided Model Configuration elsewhere.
+  WorkModelSelection model = 5;
+  // Initial Harness effort setting; empty uses its deployment default.
+  string thinking_level = 6;
+  // The Computer the Work runs on for its life: a Cloud or one of the
+  // person's own Managed Computers; empty runs it on the first Cloud.
+  string computer_id = 7;
+  // The Harness choices, admitted only on a Managed Computer.
+  HarnessChoice harness = 8;
+}
+
+// StartPersonalWorkResponse identifies the started Work; its readiness is
+// observed through AgentWorkService.
+message StartPersonalWorkResponse {
+  // The Personal Work.
+  string work_id = 1;
+}
+
+// ListPersonalWorksRequest pages the person's Personal Works.
+message ListPersonalWorksRequest {
+  // At most this many, 1 to 100; zero means 50.
+  uint32 limit = 1;
+}
+
+// PersonalWorkSummary is one Personal Work as its owner's list shows it.
+message PersonalWorkSummary {
+  // The Work.
+  string work_id = 1;
+  // Its display title.
+  string title = 2;
+  // Its Work State.
+  string state = 3;
+  // Its Turn waits for the person's answer.
+  bool waiting = 4;
+  // When it was started.
+  google.protobuf.Timestamp created_at = 5;
+  // When it last changed.
+  google.protobuf.Timestamp updated_at = 6;
+  // The origin of its current Disconnection; absent while it is observed.
+  google.protobuf.Timestamp disconnected_since = 7;
+  // Why it stopped, when it is Stopped: "disconnected" after its Computer
+  // stayed unreachable past the Disconnection timeout.
+  string state_reason = 8;
+}
+
+// ListPersonalWorksResponse lists the Personal Works, most recently updated first.
+message ListPersonalWorksResponse {
+  // The Works.
+  repeated PersonalWorkSummary works = 1;
+}
+
+// ChangePersonalWorkTitleRequest names the Work and its new title.
+message ChangePersonalWorkTitleRequest {
+  // The owner's Personal Work.
+  string work_id = 1;
+  // New title, 1 to 200 characters on one line.
+  string title = 2;
+}
+
+// ChangePersonalWorkTitleResponse confirms the title.
+message ChangePersonalWorkTitleResponse {
+  // The title now shown.
+  string title = 1;
+}
+
+// DirectoryUser is one person in the User Directory.
+message DirectoryUser {
+  // Account identity.
+  string user_id = 1;
+  // Login handle.
+  string username = 2;
+  // Display name.
+  string display_name = 3;
+  // Avatar image URL.
+  string avatar_url = 4;
+}
+
+// SearchShareReadersRequest searches the User Directory.
+message SearchShareReadersRequest {
+  // Part of a username.
+  string query = 1;
+  // At most this many, 1 to 20; zero means 10.
+  uint32 limit = 2;
+}
+
+// SearchShareReadersResponse lists matching people.
+message SearchShareReadersResponse {
+  // The people.
+  repeated DirectoryUser users = 1;
+}
+
+// GetShareReadersRequest names people by identity.
+message GetShareReadersRequest {
+  // Account identities, at most 100.
+  repeated string user_ids = 1;
+}
+
+// GetShareReadersResponse shows the people the directory knows.
+message GetShareReadersResponse {
+  // The people; an unknown identity is absent.
+  repeated DirectoryUser users = 1;
+}
+
+// GrantPersonalWorkShareRequest names the owner's Work and the reader.
+message GrantPersonalWorkShareRequest {
+  // The owner's Personal Work.
+  string work_id = 1;
+  // A person in the User Directory.
+  string reader_user_id = 2;
+}
+
+// GrantPersonalWorkShareResponse confirms the reader holds a Work Share.
+message GrantPersonalWorkShareResponse {}
+
+// ListLibraryFilesRequest searches and narrows the Personal Library.
+message ListLibraryFilesRequest {
+  // Part of a file name, case-insensitive; empty matches every file.
+  string name_query = 1;
+  // Only this Work's files, when set.
+  string work_id = 2;
+  // Only files added at or after this time, when set.
+  google.protobuf.Timestamp added_after = 3;
+  // Only files added before this time, when set.
+  google.protobuf.Timestamp added_before = 4;
+}
+
+// LibraryFile is one Artifact in the Personal Library.
+message LibraryFile {
+  // The Work that published it.
+  string work_id = 1;
+  // That Work's display title; empty for a Work with a Project.
+  string work_title = 2;
+  // File name, unique within its Work's Artifacts.
+  string name = 3;
+  // Size in bytes.
+  int64 size_bytes = 4;
+  // Media type.
+  string content_type = 5;
+  // When it was added or last replaced.
+  google.protobuf.Timestamp added_at = 6;
+  // Who shared its Work with the person; empty for the person's own Work.
+  string shared_by_user_id = 7;
+}
+
+// LibraryWork is one Work whose Artifacts the Personal Library holds.
+message LibraryWork {
+  // The Work.
+  string work_id = 1;
+  // Its display title; empty for a Work with a Project.
+  string title = 2;
+  // Who shared it with the person; empty for the person's own Work.
+  string shared_by_user_id = 3;
+  // Whether it is a Personal Work, whose page lists its files; a Work with a
+  // Project keeps its files in the Project's spaces.
+  bool personal = 4;
+}
+
+// ListLibraryFilesResponse lists the matching files, most recently added
+// first, and every Work the Library draws from.
+message ListLibraryFilesResponse {
+  // The files.
+  repeated LibraryFile files = 1;
+  // The Works, for narrowing by Work.
+  repeated LibraryWork works = 2;
+}

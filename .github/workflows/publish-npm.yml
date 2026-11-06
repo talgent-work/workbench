@@ -1,0 +1,74 @@
+name: Publish npm packages
+
+# Publishes the Workbench's npm packages at a release, each at the release's
+# version: @talgent-work/computer, @talgent-work/workbench-contracts and
+# @talgent-work/workbench-ui. Auto Tag runs it on the vX.Y.Z tag it just
+# pushed (a tag pushed with the workflow token starts no workflow by itself);
+# running it again by hand on a released tag publishes what npm lacks.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Resolve the release version from the tag
+      id: release
+      env:
+        REF_TYPE: ${{ github.ref_type }}
+        REF_NAME: ${{ github.ref_name }}
+      run: |
+        if [ "$REF_TYPE" != "tag" ] || ! [[ "$REF_NAME" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+          echo "::error::Run this workflow on a vX.Y.Z release tag, not ${REF_TYPE} ${REF_NAME}."
+          exit 1
+        fi
+        echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/checkout@v6
+
+    - uses: pnpm/action-setup@v6
+      with:
+        version: 10.14.0
+        run_install: false
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: "24"
+        cache: pnpm
+        registry-url: https://registry.npmjs.org
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    # Every package takes the release's version; pnpm publish replaces the
+    # workspace: dependency of workbench-ui on the contracts with it.
+    - name: Build at the release version
+      env:
+        VERSION: ${{ steps.release.outputs.version }}
+      run: |
+        for dir in apps/computer gen/ts packages/workbench-ui; do
+          (cd "$dir" && npm version "$VERSION" --no-git-tag-version --allow-same-version)
+        done
+        pnpm --filter @talgent-work/computer run build
+        pnpm --filter @talgent-work/workbench-contracts run build
+        pnpm --filter @talgent-work/workbench-ui run typecheck
+
+    - name: Publish
+      env:
+        VERSION: ${{ steps.release.outputs.version }}
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      run: |
+        for package in @talgent-work/computer @talgent-work/workbench-contracts @talgent-work/workbench-ui; do
+          if [ "$(npm view "${package}@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "${package}@${VERSION} is already published."
+            continue
+          fi
+          pnpm --filter "${package}" publish --access public --no-git-checks
+        done

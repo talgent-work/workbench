@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package talgent.agent.public.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1;agentpublicv1";
+
+// GetWorkPluginResultsRequest identifies an authorized Work.
+message GetWorkPluginResultsRequest {
+  // Work retaining the fixed selection.
+  string work_id = 1;
+}
+
+// GetWorkPluginResultsResponse contains every selected plugin, including those
+// without observations. These projections do not determine Work lifecycle.
+message GetWorkPluginResultsResponse {
+  // Results in the Work's retained selection order.
+  repeated WorkPluginResult plugins = 1;
+}
+
+// WorkPluginResult separates native installation from actual Harness loading.
+// No parameter values, credentials, local paths or raw diagnostics are exposed.
+message WorkPluginResult {
+  // Logical identity retained by the Work.
+  string slug = 1;
+  // Fixed release version, not the current catalog version.
+  string release_version = 2;
+  // Original catalog source retained by the Work.
+  string source = 3;
+  // Observed installation outcome.
+  PluginPreparationStatus installation = 4;
+  // Safe installation failure code; empty unless installation failed.
+  string installation_reason = 5;
+  // Observed loading outcome, independent of installation feedback order.
+  PluginPreparationStatus loading = 6;
+  // Safe loading failure code; empty unless loading failed.
+  string loading_reason = 7;
+  // Time of the latest stored observation; absent before any feedback.
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+// PluginPreparationStatus is an observation, not an execution gate.
+enum PluginPreparationStatus {
+  // No outcome has been observed for this stage.
+  PLUGIN_PREPARATION_STATUS_UNSPECIFIED = 0;
+  // This stage succeeded.
+  PLUGIN_PREPARATION_STATUS_SUCCEEDED = 1;
+  // This stage failed or the complete loading inventory omitted the plugin.
+  PLUGIN_PREPARATION_STATUS_FAILED = 2;
+}

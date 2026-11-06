@@ -1,0 +1,57 @@
+fullnameOverride: opensandbox
+namespaceOverride: talgent
+imagePullSecrets:
+  - name: ghcr-pull
+server:
+  image:
+    repository: sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server
+    tag: v0.2.2@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb
+  # The chart default (4Gi/1 CPU requests) far exceeds this server's use; it
+  # idles near 120Mi, and its requests count toward the agent-executions quota.
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  podAnnotations:
+    talgent.io/runtime-config-sha256: TALGENT_RUNTIME_CONFIG_SHA256
+  env:
+    - name: OPENSANDBOX_SERVER_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: opensandbox-api
+          key: api-key
+  volumeMounts:
+    - name: workload-template
+      mountPath: /etc/opensandbox/talgent.batchsandbox.yaml
+      subPath: talgent.batchsandbox.yaml
+      readOnly: true
+  volumes:
+    - name: workload-template
+      configMap:
+        name: opensandbox-workload-template
+configToml: |
+  [server]
+  host = "0.0.0.0"
+  port = 80
+  [runtime]
+  type = "kubernetes"
+  execd_image = "ghcr.io/talgent-work/workbench-execd@sha256:2e71df9ea1f2b23b0a32f31f252de7b84a0d10e9c27e3c4961a1f3fa6990d72b"
+  [egress]
+  image = "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress:v1.1.7@sha256:db7345d567b0970f384b8e3fa7a93a71b7f43d4b16bb2009de34096e9a87b3b5"
+  mode = "dns+nft"
+  readiness_timeout_seconds = 60.0
+  [kubernetes]
+  kubeconfig_path = ""
+  namespace = "talgent"
+  workload_provider = "batchsandbox"
+  sandbox_create_timeout_seconds = 300
+  # The informer cache stopped following BatchSandbox status on this cluster:
+  # a create waited on a stale "pending allocation" until its timeout deleted a
+  # sandbox that was already Ready (E2E of #458, 2026-11-03). Reads go to the
+  # API server instead; the server polls one sandbox at a time, so the load is
+  # small. Re-enable only after verifying the cache follows status updates.
+  informer_enabled = false
+  batchsandbox_template_file = "/etc/opensandbox/talgent.batchsandbox.yaml"

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Refuses a push while the tree carries what the public Workbench tree must
+# not (scripts/public-tree/check-leaks.py). Enable with `make install-hooks`.
+set -euo pipefail
+
+exec python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/public-tree/check-leaks.py"

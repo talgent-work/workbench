@@ -1,0 +1,95 @@
+/* Page geometry, brand artwork, scrollbars and the app shell. */
+
+/* HeroUI's inline span needs a layout box for its size to constrain the SVG. */
+.spinner {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* Page geometry and readable document content; HeroUI owns component appearance. */
+:root {
+  color-scheme: light;
+  --background: oklch(97.2% 0 0);
+  --brand-foreground: #18181b;
+  /* Shared topbar geometry: one row on desktop, controls no taller than a HeroUI Button. */
+  --topbar-height: 44px;
+  --topbar-control-height: 36px;
+}
+
+/* Approved brand artwork; component states remain owned by HeroUI. */
+.p-brand-icon, .p-brand-name { background: var(--brand-foreground); }
+.p-brand-icon { mask: url('/assets/brand/talgent-mark.png') center / 32px 32px no-repeat; }
+.p-brand-name { mask: url('/assets/brand/talgent-lettering.png') center calc(50% + 3px) / 84px auto no-repeat; }
+
+html {
+  scroll-behavior: smooth;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* One scrollbar everywhere: a 12px grab area (thinner than Windows' 17px
+   default) whose thumb draws 6px and widens to 8px under the pointer.
+   Engines with ::-webkit-scrollbar (Chromium, Safari) take the custom gutter;
+   setting scrollbar-width/scrollbar-color on an element switches Chromium back
+   to its standard scrollbar, so only Firefox gets those. A scroller that hides
+   its bar declares scrollbar-width: none, which still wins.
+   Overlay backdrops are excluded for the reason HeroUI disabled its own global
+   scrollbar rule (@heroui/styles base.css): backdrop clicks stop closing them.
+   :where() keeps these at zero specificity so any scroller can override.
+   HeroUI scrollers (Dropdown, Select, Modal, Table, ScrollShadow) apply its
+   `scrollbar` utility, which reads --scrollbar-width/--scrollbar-color; those
+   are reset to auto where the custom gutter exists, and HeroUI's thin default
+   is kept for Firefox with this thumb color. */
+:root, [data-theme] { --scrollbar-thumb: color-mix(in oklab, var(--foreground) 22%, transparent); }
+@supports selector(::-webkit-scrollbar) {
+  :root, [data-theme] { --scrollbar-width: auto; --scrollbar-color: auto; }
+}
+:where(:not(.modal__backdrop, .alert-dialog__backdrop))::-webkit-scrollbar { width: 12px; height: 12px; }
+:where(:not(.modal__backdrop, .alert-dialog__backdrop))::-webkit-scrollbar-track, :where(:not(.modal__backdrop, .alert-dialog__backdrop))::-webkit-scrollbar-corner { background: transparent; }
+:where(:not(.modal__backdrop, .alert-dialog__backdrop))::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  min-width: 32px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb) padding-box;
+}
+:where(:not(.modal__backdrop, .alert-dialog__backdrop))::-webkit-scrollbar-thumb:hover { border-width: 2px; background-color: color-mix(in oklab, var(--foreground) 38%, transparent); }
+:where(:not(.modal__backdrop, .alert-dialog__backdrop))::-webkit-scrollbar-thumb:active { border-width: 2px; background-color: color-mix(in oklab, var(--foreground) 50%, transparent); }
+@supports not selector(::-webkit-scrollbar) {
+  :where(:not(.modal__backdrop, .alert-dialog__backdrop)) { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+}
+
+body {
+  min-width: 0;
+  min-height: 100dvh;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+[role="button"],
+select,
+label:has(input[type="file"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.app-shell[data-sidebar-state="collapsed"] {
+  grid-template-columns: 72px minmax(0, 1fr);
+}

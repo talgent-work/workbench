@@ -1,0 +1,172 @@
+# OTel Collector: receives native Claude telemetry from sandboxes, Managed
+# Works' native Claude telemetry and service metrics over OTLP HTTP, and writes
+# them to ClickHouse (CLICKHOUSE_ADDR of workbench-environment) as the
+# CLICKHOUSE_USER account.
+#
+# scripts/deploy/apply-opensandbox.sh applies these objects (selected by their
+# app.kubernetes.io/name label) before the sandbox NetworkPolicy, which needs
+# this Service's ClusterIP. It also creates the otelcol-config ConfigMap from
+# configs/otelcol/config.yaml (the only copy of the pipeline);
+# scripts/deploy/render-k3s.sh stamps its hash below so a config change rolls
+# the Pods.
+#
+# Stateless: every batch goes straight to ClickHouse, so replicas only add
+# availability. Starting point, not capacity-tested.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: talgent
+  labels:
+    app.kubernetes.io/name: otel-collector
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: talgent
+  labels:
+    app.kubernetes.io/name: otel-collector
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: otel-collector
+  ports:
+    - name: otlp-http
+      protocol: TCP
+      port: 4318
+      targetPort: otlp-http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: talgent
+  labels:
+    app.kubernetes.io/name: otel-collector
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector
+      annotations:
+        talgent.io/otelcol-config-sha256: TALGENT_OTELCOL_CONFIG_SHA256
+    spec:
+      serviceAccountName: otel-collector
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: otel-collector
+          # Official image, pinned by index digest; the image CMD already reads
+          # /etc/otelcol-contrib/config.yaml.
+          image: otel/opentelemetry-collector-contrib:0.150.1@sha256:a516c26968aa1feb5e5fc0562e3338ea13755cb4f373603226bcc4e276374ad0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: otlp-http
+              containerPort: 4318
+            - name: health
+              containerPort: 13133
+          envFrom:
+            - configMapRef:
+                name: workbench-environment
+          env:
+            - name: CLICKHOUSE_ENDPOINT
+              value: "tcp://$(CLICKHOUSE_ADDR)"
+            - name: CLICKHOUSE_USERNAME
+              value: "$(CLICKHOUSE_USER)"
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-auth
+                  key: talgent-password
+            - name: CLICKHOUSE_DATABASE
+              value: "talgent_trace"
+          readinessProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # memory_limiter takes 75% of this limit.
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol-contrib
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: otelcol-config
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: otel-collector
+  namespace: talgent
+  labels:
+    app.kubernetes.io/name: otel-collector
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+---
+# Only sandboxes and controlplane send telemetry, controlplane its own and
+# that of Managed Works it attributed (the computer route's
+# computer-telemetry rule); the Collector only reaches ClickHouse's native
+# port and DNS. A deployment narrows the egress to its ClickHouse address.
+# Kubelet probes are allowed by the policy implementation regardless of these
+# rules.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector-isolation
+  namespace: talgent
+  labels:
+    app.kubernetes.io/name: otel-collector
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: batch-sandbox.sandbox.opensandbox.io/name
+                operator: Exists
+        - podSelector:
+            matchLabels:
+              app: controlplane
+      ports:
+        - protocol: TCP
+          port: 4318
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 9000
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

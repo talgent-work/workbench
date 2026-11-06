@@ -1,0 +1,70 @@
+# Talgent Workbench on Kubernetes: the base every deployment builds on.
+#
+# The base names no environment. ConfigMap workbench-environment holds every
+# value of one: the services read it as environment variables, and the
+# replacements below copy the values that live inside resource specs (route
+# hostnames, the issuer web-auth validates, the NAS export). environment.env
+# holds placeholders only; scripts/deploy/render-k3s.sh renders a deployment
+# with its real environment, read from the cluster's ConfigMap or from a file
+# outside the repository, and scripts/deploy/apply-k3s.sh applies it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - workbench.yaml
+  - agent-capacity.yaml
+  - otel-collector.yaml
+  - gotenberg.yaml
+# The core services read their environment from this ConfigMap; their
+# configuration names each value as ${NAME}.
+configMapGenerator:
+  - name: workbench-environment
+    namespace: talgent
+    envs:
+      - environment.env
+    # scripts/deploy/apply-opensandbox.sh applies it ahead of the Collector.
+    options:
+      labels:
+        app.kubernetes.io/name: workbench-environment
+generatorOptions:
+  disableNameSuffixHash: true
+replacements:
+  - source:
+      kind: ConfigMap
+      name: workbench-environment
+      fieldPath: data.WORKBENCH_HOST
+    targets:
+      - select:
+          kind: HTTPRoute
+          name: workbench-web|web-api|auth|computer
+        fieldPaths:
+          - spec.hostnames.0
+  - source:
+      kind: ConfigMap
+      name: workbench-environment
+      fieldPath: data.ACCOUNT_ISSUER
+    targets:
+      - select:
+          kind: SecurityPolicy
+          name: web-auth
+        fieldPaths:
+          - spec.jwt.providers.0.issuer
+  - source:
+      kind: ConfigMap
+      name: workbench-environment
+      fieldPath: data.NAS_SERVER
+    targets:
+      - select:
+          kind: PersistentVolume
+          name: talgent-nas-root
+        fieldPaths:
+          - spec.csi.volumeAttributes.server
+  - source:
+      kind: ConfigMap
+      name: workbench-environment
+      fieldPath: data.NAS_SHARE
+    targets:
+      - select:
+          kind: PersistentVolume
+          name: talgent-nas-root
+        fieldPaths:
+          - spec.csi.volumeAttributes.share

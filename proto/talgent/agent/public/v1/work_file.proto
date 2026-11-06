@@ -1,0 +1,294 @@
+syntax = "proto3";
+
+package talgent.agent.public.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1;agentpublicv1";
+
+// WorkFileService serves the files of a Work's File Space. A Personal Work's
+// owner uploads, renames and deletes its Attachments and deletes its
+// Artifacts until the Work is Closed, and manages Share Links at any time;
+// the owner and its Work Share holders read. Of a Work with a Subject or a
+// Project, whose files its caller governs, only the Artifacts are read here,
+// by its owner and Work Share holders, as the Personal Library shows them.
+service WorkFileService {
+  // ListWorkFiles lists a Personal Work's Attachments and Artifacts.
+  rpc ListWorkFiles(ListWorkFilesRequest) returns (ListWorkFilesResponse);
+  // CreateWorkAttachmentUpload issues the link through which one Attachment
+  // is created or replaced.
+  rpc CreateWorkAttachmentUpload(CreateWorkAttachmentUploadRequest) returns (CreateWorkAttachmentUploadResponse);
+  // RenameWorkAttachment moves an Attachment to a free name.
+  rpc RenameWorkAttachment(RenameWorkAttachmentRequest) returns (RenameWorkAttachmentResponse);
+  // DeleteWorkFile deletes an Attachment or an Artifact.
+  rpc DeleteWorkFile(DeleteWorkFileRequest) returns (DeleteWorkFileResponse);
+  // CreateWorkFileAccessLink issues a short-lived link to read one file.
+  rpc CreateWorkFileAccessLink(CreateWorkFileAccessLinkRequest) returns (CreateWorkFileAccessLinkResponse);
+  // CreateWorkFileShareLink creates a Share Link to one file.
+  rpc CreateWorkFileShareLink(CreateWorkFileShareLinkRequest) returns (CreateWorkFileShareLinkResponse);
+  // StopWorkFileSharing revokes every Share Link to one file.
+  rpc StopWorkFileSharing(StopWorkFileSharingRequest) returns (StopWorkFileSharingResponse);
+  // GetWorkFilePreview tells how one file is shown.
+  rpc GetWorkFilePreview(GetWorkFilePreviewRequest) returns (GetWorkFilePreviewResponse);
+  // RequestWorkFilePreview asks for a file's Preview Copy to be rendered.
+  rpc RequestWorkFilePreview(RequestWorkFilePreviewRequest) returns (RequestWorkFilePreviewResponse);
+}
+
+// WorkFileKind is where a file sits in its File Space.
+enum WorkFileKind {
+  // WORK_FILE_KIND_UNSPECIFIED value.
+  WORK_FILE_KIND_UNSPECIFIED = 0;
+  // A file a person uploaded for the Work to read.
+  WORK_FILE_KIND_ATTACHMENT = 1;
+  // A file the Work published.
+  WORK_FILE_KIND_ARTIFACT = 2;
+}
+
+// WorkFileAccessDisposition is how an access link opens its file.
+enum WorkFileAccessDisposition {
+  // WORK_FILE_ACCESS_DISPOSITION_UNSPECIFIED value; downloads.
+  WORK_FILE_ACCESS_DISPOSITION_UNSPECIFIED = 0;
+  // Saved as a file.
+  WORK_FILE_ACCESS_DISPOSITION_DOWNLOAD = 1;
+  // Shown inline.
+  WORK_FILE_ACCESS_DISPOSITION_PREVIEW = 2;
+}
+
+// WorkFileShareLink is one active Share Link.
+message WorkFileShareLink {
+  // Unguessable token.
+  string token = 1;
+  // Public URL.
+  string url = 2;
+  // Who created it.
+  string created_by_user_id = 3;
+  // When it was created.
+  google.protobuf.Timestamp created_at = 4;
+}
+
+// WorkFile is one file of a Work's File Space.
+message WorkFile {
+  // The Work.
+  string work_id = 1;
+  // Attachment or Artifact.
+  WorkFileKind kind = 2;
+  // File name, unique within its kind.
+  string name = 3;
+  // Size in bytes.
+  int64 size_bytes = 4;
+  // Media type.
+  string content_type = 5;
+  // Last time the content changed.
+  google.protobuf.Timestamp updated_at = 6;
+  // Who uploaded an Attachment.
+  string uploader_user_id = 7;
+  // Active Share Links; only the owner sees them.
+  repeated WorkFileShareLink share_links = 8;
+}
+
+// ListWorkFilesRequest names the Work.
+message ListWorkFilesRequest {
+  // A Personal Work the person may read.
+  string work_id = 1;
+}
+
+// ListWorkFilesResponse lists Attachments first, then Artifacts, by name.
+message ListWorkFilesResponse {
+  // The files.
+  repeated WorkFile files = 1;
+}
+
+// CreateWorkAttachmentUploadRequest describes the intended write.
+message CreateWorkAttachmentUploadRequest {
+  // The owner's Personal Work.
+  string work_id = 1;
+  // Attachment name.
+  string name = 2;
+  // Replace the Attachment of that name instead of creating one.
+  bool replace = 3;
+  // Declared media type.
+  string content_type = 4;
+}
+
+// CreateWorkAttachmentUploadResponse is the upload link.
+message CreateWorkAttachmentUploadResponse {
+  // PUT the content here.
+  string upload_url = 1;
+  // Time the link stops working.
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// RenameWorkAttachmentRequest names the Attachment and its new name.
+message RenameWorkAttachmentRequest {
+  // The owner's Personal Work.
+  string work_id = 1;
+  // Current name.
+  string name = 2;
+  // New, free name.
+  string new_name = 3;
+}
+
+// RenameWorkAttachmentResponse acknowledges the rename.
+message RenameWorkAttachmentResponse {}
+
+// DeleteWorkFileRequest names the file.
+message DeleteWorkFileRequest {
+  // The owner's Personal Work.
+  string work_id = 1;
+  // Attachment or Artifact.
+  WorkFileKind kind = 2;
+  // File name.
+  string name = 3;
+}
+
+// DeleteWorkFileResponse acknowledges the deletion.
+message DeleteWorkFileResponse {}
+
+// CreateWorkFileAccessLinkRequest names the file.
+message CreateWorkFileAccessLinkRequest {
+  // A Work the person may read the file of.
+  string work_id = 1;
+  // Attachment or Artifact.
+  WorkFileKind kind = 2;
+  // File name.
+  string name = 3;
+  // How the link opens it.
+  WorkFileAccessDisposition disposition = 4;
+}
+
+// CreateWorkFileAccessLinkResponse is the link.
+message CreateWorkFileAccessLinkResponse {
+  // Absolute URL.
+  string access_url = 1;
+  // Time the link stops working.
+  google.protobuf.Timestamp expires_at = 2;
+  // The same link as a path.
+  string access_path = 3;
+}
+
+// CreateWorkFileShareLinkRequest names the file.
+message CreateWorkFileShareLinkRequest {
+  // The owner's Personal Work.
+  string work_id = 1;
+  // Attachment or Artifact.
+  WorkFileKind kind = 2;
+  // File name.
+  string name = 3;
+}
+
+// CreateWorkFileShareLinkResponse is the new link.
+message CreateWorkFileShareLinkResponse {
+  // The link.
+  WorkFileShareLink share_link = 1;
+}
+
+// StopWorkFileSharingRequest names the file.
+message StopWorkFileSharingRequest {
+  // The owner's Personal Work.
+  string work_id = 1;
+  // Attachment or Artifact.
+  WorkFileKind kind = 2;
+  // File name.
+  string name = 3;
+}
+
+// StopWorkFileSharingResponse acknowledges the revocation.
+message StopWorkFileSharingResponse {}
+
+// GetWorkFilePreviewRequest names the file.
+message GetWorkFilePreviewRequest {
+  // A Work the person may read the file of.
+  string work_id = 1;
+  // Attachment or Artifact.
+  WorkFileKind kind = 2;
+  // File name.
+  string name = 3;
+}
+
+// GetWorkFilePreviewResponse tells how the file is shown.
+message GetWorkFilePreviewResponse {
+  // The preview.
+  WorkFilePreview preview = 1;
+}
+
+// RequestWorkFilePreviewRequest names the file.
+message RequestWorkFilePreviewRequest {
+  // A Work the person may read the file of.
+  string work_id = 1;
+  // Attachment or Artifact.
+  WorkFileKind kind = 2;
+  // File name.
+  string name = 3;
+}
+
+// RequestWorkFilePreviewResponse is the preview after the request.
+message RequestWorkFilePreviewResponse {
+  // The preview.
+  WorkFilePreview preview = 1;
+}
+
+// WorkFilePreviewMode is how a file is shown.
+enum WorkFilePreviewMode {
+  // WORK_FILE_PREVIEW_MODE_UNSPECIFIED value.
+  WORK_FILE_PREVIEW_MODE_UNSPECIFIED = 0;
+  // Not shown; refusal says why. The original still downloads.
+  WORK_FILE_PREVIEW_MODE_REFUSED = 1;
+  // Its Preview Copy is shown.
+  WORK_FILE_PREVIEW_MODE_PREVIEW_COPY = 2;
+  // A Preview Copy must be rendered first.
+  WORK_FILE_PREVIEW_MODE_RENDER = 3;
+  // The original is shown as it is.
+  WORK_FILE_PREVIEW_MODE_DIRECT = 4;
+  // The original's beginning is shown.
+  WORK_FILE_PREVIEW_MODE_TRUNCATED = 5;
+}
+
+// WorkFilePreviewDisplay is what the shown bytes are.
+enum WorkFilePreviewDisplay {
+  // WORK_FILE_PREVIEW_DISPLAY_UNSPECIFIED value.
+  WORK_FILE_PREVIEW_DISPLAY_UNSPECIFIED = 0;
+  // Text.
+  WORK_FILE_PREVIEW_DISPLAY_TEXT = 1;
+  // PDF.
+  WORK_FILE_PREVIEW_DISPLAY_PDF = 2;
+  // An image.
+  WORK_FILE_PREVIEW_DISPLAY_IMAGE = 3;
+}
+
+// WorkFilePreviewRefusal is why a file is not shown.
+enum WorkFilePreviewRefusal {
+  // WORK_FILE_PREVIEW_REFUSAL_UNSPECIFIED value.
+  WORK_FILE_PREVIEW_REFUSAL_UNSPECIFIED = 0;
+  // Its type is not previewed.
+  WORK_FILE_PREVIEW_REFUSAL_UNSUPPORTED = 1;
+  // Its content is not what its type says.
+  WORK_FILE_PREVIEW_REFUSAL_STRUCTURE_MISMATCH = 2;
+  // It is encrypted.
+  WORK_FILE_PREVIEW_REFUSAL_ENCRYPTED = 3;
+  // It exceeds the preview limit.
+  WORK_FILE_PREVIEW_REFUSAL_TOO_LARGE = 4;
+  // It is corrupt.
+  WORK_FILE_PREVIEW_REFUSAL_CORRUPT = 5;
+  // The converter refused it.
+  WORK_FILE_PREVIEW_REFUSAL_CONVERTER_REFUSED = 6;
+  // Its rendering exceeds the preview limit.
+  WORK_FILE_PREVIEW_REFUSAL_RENDERING_TOO_LARGE = 7;
+}
+
+// WorkFilePreview is how a file is shown.
+message WorkFilePreview {
+  // Mode.
+  WorkFilePreviewMode mode = 1;
+  // What the shown bytes are.
+  WorkFilePreviewDisplay display = 2;
+  // Why a refused file is not shown.
+  WorkFilePreviewRefusal refusal = 3;
+  // Shown length of a truncated file, or the limit a too large file exceeds.
+  int64 limit_bytes = 4;
+  // URL for one inline read of the shown bytes; empty when none are shown.
+  string access_url = 5;
+  // Time the link stops working.
+  google.protobuf.Timestamp expires_at = 6;
+  // With mode RENDER: a rendering of the content is queued or running.
+  bool rendering = 7;
+}

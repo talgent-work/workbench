@@ -1,0 +1,27 @@
+/* Slash completion and in-text Skill highlight, shared by Start Work and
+   the running composer. */
+:root { --sk-skill-hue: oklch(55% 0.075 210); }
+.sk-muted { color: var(--muted); }
+.sk-slash { display: grid; gap: 1px; max-height: min(360px, 45dvh); overflow: hidden auto; }
+.sk-slash-row { display: grid; grid-template-columns: 16px minmax(0, max-content) minmax(0, 1fr) 14px; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 10px; font-size: 13px; cursor: pointer; }
+.sk-slash-row[aria-selected="true"] { background: color-mix(in oklch, var(--foreground) 6%, transparent); }
+.sk-slash-name { overflow: hidden; text-overflow: ellipsis; font-weight: 500; white-space: nowrap; }
+.sk-slash-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.sk-slash-heading { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; padding: 8px 10px 4px; font-size: 11px; font-weight: 500; color: var(--muted); background: var(--surface); }
+.sk-slash-heading span { font-variant-numeric: tabular-nums; font-weight: 400; }
+.sk-slash-empty { padding: 8px 10px; font-size: 13px; color: var(--muted); }
+/* One floating surface in both composers: above a running Work's composer, under Start Work's. */
+.sk-menu-float { display: grid; padding: 6px; border-radius: 16px; background: var(--surface); border: 1px solid var(--separator); box-shadow: 0 10px 30px -12px oklch(0 0 0 / 0.15); }
+.sk-menu-under { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20; }
+
+/* The textarea draws only the caret; the mirror draws the text. */
+textarea[data-skill-highlight="true"] { position: relative; z-index: 1; color: transparent !important; caret-color: var(--foreground); background: transparent; }
+textarea[data-skill-highlight="true"]::placeholder { color: var(--field-placeholder, var(--muted)); }
+textarea[data-skill-highlight="true"]::selection { color: transparent; background: color-mix(in oklch, var(--accent) 22%, transparent); }
+.sk-mirror { position: absolute; overflow: hidden; white-space: pre-wrap; overflow-wrap: break-word; color: var(--foreground); pointer-events: none; box-sizing: border-box; }
+.sk-mark { color: color-mix(in oklch, var(--sk-skill-hue) 85%, var(--foreground)); background: color-mix(in oklch, var(--sk-skill-hue) 14%, transparent); border-radius: 6px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.sk-ghost { color: var(--muted); opacity: 0.7; }
+@media (max-width: 740px) {
+  .sk-slash-row { grid-template-columns: 16px minmax(0, 1fr) 14px; }
+  .sk-slash-desc { display: none; }
+}

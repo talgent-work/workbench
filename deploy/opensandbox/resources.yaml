@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opensandbox-workload-template
+  namespace: talgent
+data:
+  talgent.batchsandbox.yaml: |
+    spec:
+      replicas: 1
+      template:
+        spec:
+          runtimeClassName: kata-qemu-runtime-rs
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: ghcr-pull
+          securityContext:
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault

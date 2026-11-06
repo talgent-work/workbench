@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package talgent.computer.private.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1;computerprivatev1";
+
+// ConnectionService is Computer's contract for the Computer Gateway, which
+// holds each Managed Computer's one outbound connection.
+service ConnectionService {
+  // Authenticate resolves a Computer Credential to its Managed Computer, or
+  // answers why Computer refuses it. Only a refusal in the answer refuses
+  // the credential: an error, a control token Computer does not accept
+  // included, means the credential was not checked.
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+  // ReportReachable records that the Computer is reachable now through a
+  // connection, with the versions its machine reports.
+  rpc ReportReachable(ReportReachableRequest) returns (ReportReachableResponse);
+  // ReportUnreachable records that the platform lost reach of the Computer.
+  rpc ReportUnreachable(ReportUnreachableRequest) returns (ReportUnreachableResponse);
+  // RotateCredential issues the successor of the current Computer
+  // Credential its connected machine presented. Until the machine confirms
+  // it, either credential authenticates. A successor issued to another
+  // connection and still reserved for it is FailedPrecondition; a credential
+  // that is not the current one is Unauthenticated; a removed Computer is
+  // PermissionDenied.
+  rpc RotateCredential(RotateCredentialRequest) returns (RotateCredentialResponse);
+  // ConfirmCredential makes the successor the machine saved its current
+  // Computer Credential; the replaced one stays valid for a bounded overlap.
+  // Confirming it again does nothing; an unknown credential is
+  // Unauthenticated, a removed Computer PermissionDenied.
+  rpc ConfirmCredential(ConfirmCredentialRequest) returns (ConfirmCredentialResponse);
+}
+
+// RotateCredentialRequest names the connected Computer and the credential
+// its connection presented.
+message RotateCredentialRequest {
+  // The connected Computer.
+  string computer_id = 1;
+  // The Computer Credential its machine presented.
+  string credential = 2;
+}
+
+// RotateCredentialResponse is the successor, which exists in this answer
+// only.
+message RotateCredentialResponse {
+  // The successor Computer Credential.
+  string credential = 1;
+  // When it expires, in Unix milliseconds.
+  int64 expires_at_unix_ms = 2;
+}
+
+// ConfirmCredentialRequest names the successor the machine saved.
+message ConfirmCredentialRequest {
+  // The connected Computer.
+  string computer_id = 1;
+  // The successor Computer Credential its machine saved.
+  string credential = 2;
+}
+
+// ConfirmCredentialResponse acknowledges the confirmation.
+message ConfirmCredentialResponse {}
+
+// AuthenticateRequest carries the machine's credential.
+message AuthenticateRequest {
+  // The Computer Credential the machine presents.
+  string credential = 1;
+}
+
+// AuthenticateResponse is the authenticated Computer, or why Computer
+// refuses the credential.
+message AuthenticateResponse {
+  // The Computer the credential belongs to; empty when it is refused.
+  string computer_id = 1;
+  // The credential is current, expires soon enough to be rotated over the
+  // connection, and no successor is reserved for another connection.
+  bool rotation_due = 2;
+  // Why Computer refuses the credential; unspecified when it accepts it.
+  CredentialRefusal refusal = 3;
+}
+
+// CredentialRefusal is why Computer refuses a Computer Credential, for good.
+enum CredentialRefusal {
+  // The credential is accepted.
+  CREDENTIAL_REFUSAL_UNSPECIFIED = 0;
+  // The credential is unknown, expired or revoked.
+  CREDENTIAL_REFUSAL_REJECTED = 1;
+  // The credential belongs to a removed Computer.
+  CREDENTIAL_REFUSAL_COMPUTER_REMOVED = 2;
+}
+
+// ReportedVersions are the versions a machine reports.
+message ReportedVersions {
+  // Its Talgent Computer release.
+  string talgent_computer = 1;
+  // Its Claude Code release; empty when unknown.
+  string claude_code = 2;
+}
+
+// ReportReachableRequest names the connected Computer.
+message ReportReachableRequest {
+  // The connected Computer.
+  string computer_id = 1;
+  // The versions its machine reports.
+  ReportedVersions versions = 2;
+  // Its machine reports that it can provide Claude Code's sandbox.
+  bool claude_code_sandbox = 3;
+}
+
+// ReportReachableResponse acknowledges the report with what the machine is
+// told on connecting.
+message ReportReachableResponse {
+  // The oldest Talgent Computer release, X.Y.Z, that may take a run; empty
+  // when every release may.
+  string minimum_version = 1;
+  // The platform reconciles the machine on each connection before anything
+  // starts there; the
+  // machine holds back its starts only when told so.
+  bool reconciles = 2;
+}
+
+// ReportUnreachableRequest names the Computer whose connection ended.
+message ReportUnreachableRequest {
+  // The Computer that lost its connection.
+  string computer_id = 1;
+  // When reach was lost, in Unix milliseconds.
+  int64 since_unix_ms = 2;
+}
+
+// ReportUnreachableResponse acknowledges the report.
+message ReportUnreachableResponse {}

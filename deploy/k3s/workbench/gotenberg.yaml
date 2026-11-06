@@ -1,0 +1,174 @@
+# Gotenberg converts office Attachments and Artifacts to Preview Copies for
+# Storage when a reader first opens them. Only the LibreOffice
+# route is used, so the -libreoffice variant runs: the same LibreOffice and
+# CJK fonts as the full image, without Chromium. The official image is pinned
+# by index digest and pulled directly; no Talgent build. After changing the
+# image, clear Storage's preview directory for the new rendering to apply at
+# once; otherwise old renderings lapse within 30 days.
+#
+# Starting point, not capacity-tested: 1 instance (single-node demo, no HA),
+# one LibreOffice process converting one document at a time. Scale conversions with replicas
+# here together with Storage's preview worker concurrency.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gotenberg
+  namespace: talgent
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gotenberg-config
+  namespace: talgent
+data:
+  # One conversion's budget. Storage's HTTP client waits slightly longer
+  # so a server-side timeout surfaces as a recognizable 503.
+  API_TIMEOUT: "60s"
+  # Backstop only: Storage enforces the source-size limit before upload.
+  # Assumes its 20 MiB office source limit (storage.preview.office-source-bytes);
+  # change the two together.
+  API_BODY_LIMIT: "25MB"
+  API_DISABLE_DOWNLOAD_FROM: "true"
+  WEBHOOK_DISABLE: "true"
+  # Only /forms/libreoffice/convert, /health and /version stay reachable.
+  PDFENGINES_DISABLE_ROUTES: "true"
+  LIBREOFFICE_AUTO_START: "true"
+  # 1 = only the running conversion; a second concurrent request gets 429,
+  # which Storage retries.
+  LIBREOFFICE_MAX_QUEUE_SIZE: "1"
+  # Upstream default, stated explicitly: recycle soffice every 10 conversions.
+  LIBREOFFICE_RESTART_AFTER: "10"
+  # Documents must not fetch linked content; egress is also denied below.
+  LIBREOFFICE_DENY_LIST: ".+"
+  PROMETHEUS_DISABLE_COLLECT: "true"
+  GOTENBERG_HIDE_BANNER: "true"
+  # Longer than API_TIMEOUT so in-flight conversions finish on SIGTERM.
+  GOTENBERG_GRACEFUL_SHUTDOWN_DURATION: "65s"
+  LOG_LEVEL: "info"
+  LOG_STD_FORMAT: "json"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gotenberg
+  namespace: talgent
+  labels:
+    app.kubernetes.io/name: gotenberg
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: gotenberg
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gotenberg
+  namespace: talgent
+  labels:
+    app.kubernetes.io/name: gotenberg
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gotenberg
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gotenberg
+    spec:
+      serviceAccountName: gotenberg
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # preStop lets endpoints drain; graceful shutdown (65s) then finishes
+      # the in-flight conversion.
+      terminationGracePeriodSeconds: 80
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: gotenberg
+          image: gotenberg/gotenberg:8.37.0-libreoffice@sha256:c85f019d6ae4927714507254331cc0ed72da7b619ee798e3a45de01f54372c12
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: gotenberg-config
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 10
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # Memory-backed /tmp counts toward the memory limit.
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: "2", memory: 2Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gotenberg
+  namespace: talgent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gotenberg
+---
+# Only controlplane (Storage) reaches the API; Gotenberg makes no outbound
+# connection at all (no DNS either). Kubelet probes from the node are allowed
+# by the policy implementation regardless of these rules.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gotenberg-isolation
+  namespace: talgent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: gotenberg
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: controlplane
+      ports:
+        - port: 3000
+          protocol: TCP
+  egress: []

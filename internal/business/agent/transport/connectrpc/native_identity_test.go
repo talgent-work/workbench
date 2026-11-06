@@ -1,0 +1,114 @@
+package connectrpc_test
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
+
+	"connectrpc.com/connect"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
+	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentmodule "github.com/talgent-work/workbench/internal/business/agent"
+	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+)
+
+// sandboxCredentials stands in for execution infrastructure: one credential per
+// live sandbox of a Work, revoked when that sandbox is retired.
+type sandboxCredentials struct{ live map[string]string }
+
+func (c *sandboxCredentials) VerifyWorkCredential(_ context.Context, workID, credential string) error {
+	if issued, found := c.live[workID]; !found || issued != credential {
+		return errors.New("credential rejected")
+	}
+	return nil
+}
+
+// The credential of an earlier process's sandbox is revoked
+// with that sandbox; only the current sandbox's credential authenticates.
+func TestWorkCredentialAuthenticatesOnlyTheCurrentLiveSandbox(t *testing.T) {
+	ctx := context.Background()
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{}})
+	require.NoError(t, err)
+	session, err := domain.NewAgentWork(context.Background(), domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agent.ID, WorkspaceReference: "authorized-workspace", HomeBinding: domain.HomeBinding{OwnerID: "authorized-home", Namespace: "project"}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, &rpcExecution{})
+	require.NoError(t, err)
+	repo := &rpcSessions{items: map[string]*domain.AgentWork{}}
+	require.NoError(t, repo.Save(ctx, session))
+	credentials := &sandboxCredentials{live: map[string]string{session.ID: "first-sandbox-credential"}}
+	app := &application.Application{Queries: application.Queries{VerifyWorkCredential: query.NewVerifyWorkCredentialHandler(&rpcAgents{items: map[string]*domain.AgentDefinition{agent.ID: agent}}, repo, credentials, application.AssembleWorkIdentity, awaitingResponse)}}
+	mux := http.NewServeMux()
+	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "integration", FeedbackToken: "feedback"}, slog.Default(), nil)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL)
+	first := &agentprivatev1.VerifyWorkCredentialRequest{WorkId: session.ID, Credential: "first-sandbox-credential"}
+	_, err = client.VerifyWorkCredential(ctx, authenticated(first, "feedback"))
+	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err), "a process credential does not authenticate an integration caller")
+	verified, err := client.VerifyWorkCredential(ctx, authenticated(first, "integration"))
+	require.NoError(t, err)
+	require.Equal(t, "owner", verified.Msg.SubjectId, "a person's Agent acts for its Owner")
+	require.Equal(t, session.ID, verified.Msg.WorkId)
+	require.Equal(t, agent.ID, verified.Msg.AgentId)
+	require.Equal(t, "authorized-workspace", verified.Msg.WorkspaceReference)
+	require.Equal(t, "project", verified.Msg.ProjectId)
+	require.Equal(t, "case", verified.Msg.GetSubject().GetKind())
+	require.Equal(t, "case", verified.Msg.GetSubject().GetId())
+	require.Equal(t, "work", verified.Msg.Purpose)
+	_, err = client.VerifyWorkCredential(ctx, authenticated(&agentprivatev1.VerifyWorkCredentialRequest{WorkId: session.ID, Credential: first.Credential, RequireActing: true}, "integration"))
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a Work not yet Working does not act")
+	for _, invalid := range []*agentprivatev1.VerifyWorkCredentialRequest{
+		{WorkId: session.ID, Credential: "forged"},
+		{WorkId: "other-work", Credential: first.Credential},
+	} {
+		_, err = client.VerifyWorkCredential(ctx, authenticated(invalid, "integration"))
+		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	}
+	// The earlier sandbox is retired and a resumed process runs in a new one.
+	credentials.live[session.ID] = "second-sandbox-credential"
+	_, err = client.VerifyWorkCredential(ctx, authenticated(first, "integration"))
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "an earlier sandbox's credential grants nothing")
+	_, err = client.VerifyWorkCredential(ctx, authenticated(&agentprivatev1.VerifyWorkCredentialRequest{WorkId: session.ID, Credential: "second-sandbox-credential"}, "integration"))
+	require.NoError(t, err)
+}
+
+func TestInvalidWorkCredentialDoesNotReadWorkData(t *testing.T) {
+	handler := query.NewVerifyWorkCredentialHandler(nil, nil, &sandboxCredentials{}, application.AssembleWorkIdentity, awaitingResponse)
+	_, err := handler.Handle(context.Background(), query.VerifyWorkCredential{WorkID: "private-work", Credential: "forged"})
+	require.Error(t, err)
+}
+
+// awaitingResponse reports every Work as awaiting its person's response; it
+// is read only for a Working Work.
+func awaitingResponse(context.Context, string) (bool, error) { return true, nil }
+
+// An action is admitted while the Work acts: Working, its person's required
+// response resolved. A reply resolving within moments lets it through; one
+// that stays unresolved is refused.
+func TestWorkCredentialForAnActionRequiresTheWorkToAct(t *testing.T) {
+	ctx := context.Background()
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{}})
+	require.NoError(t, err)
+	session, err := domain.NewAgentWork(ctx, domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agent.ID, WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "home", Namespace: "personal"}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, &rpcExecution{})
+	require.NoError(t, err)
+	session.State = domain.WorkWorking
+	repo := &rpcSessions{items: map[string]*domain.AgentWork{}}
+	require.NoError(t, repo.Save(ctx, session))
+	verify := func(awaiting func(context.Context, string) (bool, error)) error {
+		handler := query.NewVerifyWorkCredentialHandler(&rpcAgents{items: map[string]*domain.AgentDefinition{agent.ID: agent}}, repo, &sandboxCredentials{live: map[string]string{session.ID: "credential"}}, application.AssembleWorkIdentity, awaiting)
+		_, err := handler.Handle(ctx, query.VerifyWorkCredential{WorkID: session.ID, Credential: "credential", RequireActing: true})
+		return err
+	}
+	require.NoError(t, verify(func(context.Context, string) (bool, error) { return false, nil }))
+	reads := 0
+	require.NoError(t, verify(func(context.Context, string) (bool, error) { reads++; return reads < 3, nil }), "a reply resolving within moments")
+	require.ErrorIs(t, verify(awaitingResponse), domain.ErrWorkNotActing, "a Work awaiting its person does not act")
+}

@@ -1,0 +1,37 @@
+package query
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+)
+
+// WorkOrigin exposes retained attribution without imposing execution admission.
+type WorkOrigin struct {
+	WorkID, AgentID, Purpose string
+	Subject                  domain.WorkSubject
+	ProjectID                string
+	// StartedBy is who started the Work, a fact; its Agent Owners are its
+	// definition's Owners. StartedAt is when the Work was created.
+	StartedBy string
+	StartedAt time.Time
+}
+
+type WorkOriginQueryRepository interface {
+	GetWorkOrigin(context.Context, string) (WorkOrigin, error)
+}
+
+type GetWorkOriginHandler struct{ repository WorkOriginQueryRepository }
+
+func NewGetWorkOriginHandler(repository WorkOriginQueryRepository) *GetWorkOriginHandler {
+	return &GetWorkOriginHandler{repository: repository}
+}
+
+func (h *GetWorkOriginHandler) Handle(ctx context.Context, sessionID string) (WorkOrigin, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return WorkOrigin{}, domain.ErrInvalidWork
+	}
+	return h.repository.GetWorkOrigin(ctx, sessionID)
+}

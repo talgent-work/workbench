@@ -1,0 +1,88 @@
+//go:build integration
+
+package infrastructure_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
+	"github.com/talgent-work/workbench/internal/testsupport/computertest"
+)
+
+// closingBuffer commits a permanent close while an input is being handed
+// off, after acceptance read the Work and before it commits.
+type closingBuffer struct {
+	*commandtest.InputBuffer
+	during func()
+}
+
+func (b closingBuffer) BufferInput(ctx context.Context, workID string, input command.ExecutionInput) (command.InputHandOff, error) {
+	handOff, err := b.InputBuffer.BufferInput(ctx, workID, input)
+	if b.during != nil {
+		b.during()
+	}
+	return handOff, err
+}
+
+func runningInputSession(t *testing.T) (workCreationFixture, string) {
+	t.Helper()
+	f, id := stoppedContinuationSession(t)
+	ctx := context.Background()
+	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(startupAuthority{}), factory, f.sessions, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	require.NoError(t, err)
+	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
+		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
+	}
+	return f, ref
+}
+
+// An input handed off while a close stops the Work is accepted.
+func TestInputAcceptanceAndPermanentCloseShareOneOrder(t *testing.T) {
+	ctx := context.Background()
+	f, ref := runningInputSession(t)
+	buffer := closingBuffer{InputBuffer: &commandtest.InputBuffer{}}
+	// The close read the buffer before the input was appended, so it saw
+	// nothing pending, and its stop commits after the append.
+	closeSession := command.NewCloseWorkHandler(f.sessions, infrastructure.NewWorkAuthorizer(f.db), infrastructure.NewExecutionRequestsFactory(executionPort{}), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+	buffer.during = func() {
+		require.NoError(t, closeSession.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: ref, RequestID: uuid.NewString()}))
+	}
+	inputs := command.NewInputAcceptance(f.sessions, f.sessions, buffer)
+	input := command.ExecutionInput{ID: uuid.NewString(), Text: "late input"}
+	require.NoError(t, acceptance(inputs.AcceptInput(ctx, ref, input)), "input that lost to the stop before a close is accepted")
+	require.Zero(t, buffer.Dropped, "the buffer is dropped once the Work enters Closing")
+	work, err := f.sessions.Get(ctx, ref)
+	require.NoError(t, err)
+	require.Equal(t, domain.WorkStopping, work.State)
+	buffer.during = nil
+	require.NoError(t, acceptance(inputs.AcceptInput(ctx, ref, command.ExecutionInput{ID: uuid.NewString(), Text: "after close"})), "a Work keeping a close admits input until Closing drops it")
+}
+
+// Accepting input commits the Work against the version the acceptance read;
+// a stale version commits nothing.
+func TestAcceptanceCommitsTheWorkAgainstItsVersion(t *testing.T) {
+	f, ref := runningInputSession(t)
+	ctx := context.Background()
+	stale, err := f.sessions.Get(ctx, ref)
+	require.NoError(t, err)
+	current, err := f.sessions.Get(ctx, ref)
+	require.NoError(t, err)
+	require.NoError(t, current.AcceptInput(false))
+	require.NoError(t, f.sessions.CommitAcceptance(ctx, current))
+	require.NoError(t, stale.AcceptInput(false))
+	require.ErrorIs(t, f.sessions.CommitAcceptance(ctx, stale), domain.ErrConcurrentModification)
+}
+
+// acceptance is the error of accepting an input, whatever the hand-off.
+func acceptance(_ command.InputHandOff, err error) error { return err }

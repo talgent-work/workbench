@@ -1,0 +1,230 @@
+# syntax=docker/dockerfile:1.7
+ARG NODE_VERSION=24
+FROM node:${NODE_VERSION}-bookworm-slim AS native-claude
+
+# The native protocol and shared project HOME behavior are verified against this
+# version. Install outside HOME so mounting a persistent HOME cannot hide the CLI.
+RUN npm install --prefix /opt/talgent-claude --global --omit=dev \
+        @anthropic-ai/claude-code@2.1.266 \
+    && /opt/talgent-claude/bin/claude --version \
+        | grep -Fx '2.1.266 (Claude Code)' \
+    && npm cache clean --force
+
+FROM node:${NODE_VERSION}-bookworm-slim
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG PIP_TRUSTED_HOST=
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
+ARG PLAYWRIGHT_DOWNLOAD_HOST=
+ARG USERNAME=talgent
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+ARG GO_VERSION=1.26.6
+ARG GO_DOWNLOAD_BASE=https://go.dev/dl
+ARG GITHUB_MCP_VERSION=1.12.2
+# Official immutable Linux x86_64 release; the sandbox build targets linux/amd64.
+ARG GITHUB_MCP_SHA256=95843162759da2c31dde082dd145be35db82164594796c294414b69790c2290e
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    TZ=Asia/Shanghai \
+    PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    USERNAME=${USERNAME} \
+    NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY} \
+    npm_config_registry=${NPM_CONFIG_REGISTRY} \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    GOPATH=/home/${USERNAME}/go \
+    GOPROXY=https://proxy.golang.org,direct \
+    GO111MODULE=on \
+    CGO_ENABLED=0 \
+    PATH=/usr/local/go/bin:/home/${USERNAME}/go/bin:${PATH}
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN set -eux; \
+    rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; \
+    printf "Types: deb\nURIs: %s\nSuites: bookworm bookworm-updates\nComponents: main contrib non-free non-free-firmware\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\nURIs: %s\nSuites: bookworm-security\nComponents: main contrib non-free non-free-firmware\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n" \
+        "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" > /etc/apt/sources.list.d/debian.sources; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        diffutils \
+        dnsutils \
+        file \
+        fontconfig \
+        fonts-dejavu \
+        fonts-liberation \
+        fonts-noto-cjk \
+        fonts-noto-core \
+        gh \
+        git \
+        git-lfs \
+        gnupg \
+        gosu \
+        gzip \
+        iproute2 \
+        iputils-ping \
+        jq \
+        less \
+        libreoffice-calc \
+        libreoffice-impress \
+        libreoffice-writer \
+        locales \
+        lsof \
+        libnss3-tools \
+        make \
+        nano \
+        openssh-client \
+        patch \
+        poppler-utils \
+        procps \
+        psmisc \
+        python3 \
+        python3-pip \
+        python3-setuptools \
+        python3-venv \
+        python3-wheel \
+        qpdf \
+        ripgrep \
+        rsync \
+        sqlite3 \
+        tar \
+        tesseract-ocr \
+        tesseract-ocr-chi-sim \
+        tesseract-ocr-eng \
+        tini \
+        tree \
+        tzdata \
+        unzip \
+        vim-tiny \
+        wget \
+        xz-utils \
+        zip \
+        zstd; \
+    locale-gen C.UTF-8; \
+    curl -fsSL "${GO_DOWNLOAD_BASE}/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz; \
+    rm -rf /usr/local/go; \
+    tar -C /usr/local -xzf /tmp/go.tar.gz; \
+    rm -f /tmp/go.tar.gz; \
+    mkdir -p /etc/pip; \
+    { \
+        printf "[global]\nindex-url = %s\n" "${PIP_INDEX_URL}"; \
+        if [ -n "${PIP_TRUSTED_HOST}" ]; then printf "trusted-host = %s\n" "${PIP_TRUSTED_HOST}"; fi; \
+        printf "disable-pip-version-check = true\nno-cache-dir = true\n"; \
+    } > /etc/pip.conf; \
+    npm config set registry "${NPM_CONFIG_REGISTRY}"; \
+    npm config set fund false; \
+    npm config set audit false; \
+    npm install -g \
+        @playwright/test \
+        docx \
+        eslint \
+        mammoth \
+        pdf-lib \
+        pdfjs-dist \
+        pnpm@10.14.0 \
+        pptxgenjs \
+        prettier \
+        ts-node \
+        typescript \
+        xlsx; \
+    pnpm config set registry "${NPM_CONFIG_REGISTRY}"; \
+    if [ -n "${PLAYWRIGHT_DOWNLOAD_HOST}" ]; then \
+        PLAYWRIGHT_DOWNLOAD_HOST="${PLAYWRIGHT_DOWNLOAD_HOST}" npx playwright install --with-deps chromium \
+            || env -u PLAYWRIGHT_DOWNLOAD_HOST npx playwright install --with-deps chromium; \
+    else \
+        npx playwright install --with-deps chromium; \
+    fi; \
+    chmod -R 755 /ms-playwright; \
+    python3 -m pip install --break-system-packages \
+        beautifulsoup4 \
+        click \
+        httpx \
+        lxml \
+        odfpy \
+        openpyxl \
+        pandas \
+        pdf2image \
+        pdfplumber \
+        pillow \
+        pydantic \
+        pymupdf \
+        pypdf \
+        pypdfium2 \
+        pyxlsb \
+        pytest \
+        python-docx \
+        python-dotenv \
+        python-pptx \
+        pytesseract \
+        reportlab \
+        requests \
+        rich \
+        ruff \
+        tqdm \
+        typer \
+        xlrd \
+        xlsxwriter; \
+    if getent group "${USER_GID}" >/dev/null; then \
+        existing_group="$(getent group "${USER_GID}" | cut -d: -f1)"; \
+        if [ "${existing_group}" != "${USERNAME}" ]; then groupmod --new-name "${USERNAME}" "${existing_group}"; fi; \
+    else \
+        groupadd --gid "${USER_GID}" "${USERNAME}"; \
+    fi; \
+    if getent passwd "${USER_UID}" >/dev/null; then \
+        existing_user="$(getent passwd "${USER_UID}" | cut -d: -f1)"; \
+        if [ "${existing_user}" != "${USERNAME}" ]; then usermod --login "${USERNAME}" --home "/home/${USERNAME}" --move-home "${existing_user}"; fi; \
+        usermod --gid "${USER_GID}" --shell /bin/bash "${USERNAME}"; \
+    else \
+        useradd --uid "${USER_UID}" --gid "${USER_GID}" -m -s /bin/bash "${USERNAME}"; \
+    fi; \
+    mkdir -p /workspace "${GOPATH}" "/home/${USERNAME}/.config/pip"; \
+    { \
+        printf "[global]\nindex-url = %s\n" "${PIP_INDEX_URL}"; \
+        if [ -n "${PIP_TRUSTED_HOST}" ]; then printf "trusted-host = %s\n" "${PIP_TRUSTED_HOST}"; fi; \
+        printf "disable-pip-version-check = true\nno-cache-dir = true\n"; \
+    } > "/home/${USERNAME}/.config/pip/pip.conf"; \
+    printf "export GOPATH=/home/%s/go\nexport GOPROXY=%s\nexport GO111MODULE=on\nexport CGO_ENABLED=0\nexport PATH=\"/usr/local/go/bin:/home/%s/go/bin:\${PATH}\"\n" \
+        "${USERNAME}" "${GOPROXY}" "${USERNAME}" > /etc/profile.d/talgent-go.sh; \
+    chmod 0644 /etc/profile.d/talgent-go.sh; \
+    chown -R "${USER_UID}:${USER_GID}" /workspace /ms-playwright "${GOPATH}" "/home/${USERNAME}/.config"; \
+    gosu "${USERNAME}" env HOME="/home/${USERNAME}" npm config set registry "${NPM_CONFIG_REGISTRY}"; \
+    gosu "${USERNAME}" env HOME="/home/${USERNAME}" npm config set fund false; \
+    gosu "${USERNAME}" env HOME="/home/${USERNAME}" npm config set audit false; \
+    gosu "${USERNAME}" env HOME="/home/${USERNAME}" pnpm config set registry "${NPM_CONFIG_REGISTRY}"; \
+    gosu "${USERNAME}" env HOME="/home/${USERNAME}" go env -w GOPROXY="${GOPROXY}"; \
+    gosu "${USERNAME}" env HOME="/home/${USERNAME}" python3 -c 'import docx; import pptx; import pypdf; import fitz; import pdfplumber; import pypdfium2; import pdf2image; import reportlab; import pytesseract; import pandas; import xlrd; import pyxlsb; import odf; from PIL import Image; print("python office deps ok")'; \
+    npm cache clean --force; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /root/.cache/pip /root/.npm /tmp/* /var/tmp/*
+
+# A native stdio process uses only the public token placeholder in its environment.
+# Actual GitHub credentials are supplied by the trusted outbound proxy.
+RUN curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
+        "https://github.com/github/github-mcp-server/releases/download/v${GITHUB_MCP_VERSION}/github-mcp-server_Linux_x86_64.tar.gz" \
+        -o /tmp/github-mcp-server.tar.gz \
+    && printf '%s  %s\n' "${GITHUB_MCP_SHA256}" /tmp/github-mcp-server.tar.gz | sha256sum --check \
+    && tar -xzf /tmp/github-mcp-server.tar.gz -C /usr/local/bin github-mcp-server \
+    && chmod 0755 /usr/local/bin/github-mcp-server \
+    && github-mcp-server --version | grep -Fx "Version: ${GITHUB_MCP_VERSION}" \
+    && rm /tmp/github-mcp-server.tar.gz
+
+WORKDIR /workspace
+COPY --from=native-claude /opt/talgent-claude /opt/talgent-claude
+ENV HOME=/home/${USERNAME} \
+    CURL_CA_BUNDLE=/opt/opensandbox/merged-ca-certificates.pem \
+    GIT_SSL_CAINFO=/opt/opensandbox/merged-ca-certificates.pem \
+    NODE_PATH=/usr/local/lib/node_modules \
+    DISABLE_AUTOUPDATER=1 \
+    PATH=/opt/talgent-claude/bin:${PATH}
+USER ${USERNAME}
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/bin/bash"]

@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package talgent.computer.events.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1;computereventsv1";
+
+// ComputerRemoved is a Published Fact: its owner removed a Managed Computer.
+// Its credential is revoked for good and every Desk on it has left, which
+// confirms the loss of every Work's execution environment on it. It is
+// published best effort after the removal commits and keyed by the Computer;
+// Agent also reads whether the Computer of each Work it holds a run for was
+// removed, so a lost fact only delays applying the loss.
+message ComputerRemoved {
+  // Unique identity of this publication.
+  string event_id = 1;
+  // When the removal was committed.
+  google.protobuf.Timestamp occurred_at = 2;
+  // The removed Managed Computer.
+  string computer_id = 3;
+}

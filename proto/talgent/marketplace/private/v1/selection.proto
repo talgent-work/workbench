@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package talgent.marketplace.private.v1;
+
+import "talgent/marketplace/public/v1/marketplace.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1;marketplaceprivatev1";
+
+// SelectionService supplies startup values only to trusted Agent services.
+// These methods are never exposed through the public gateway or agent tools.
+service SelectionService {
+  // ReadPersonalPlugins includes Sensitive values for the delegated owner.
+  rpc ReadPersonalPlugins(ReadPersonalPluginsRequest) returns (ReadPersonalPluginsResponse);
+  // ResolvePlugin includes retained defaults for authorized Work execution.
+  rpc ResolvePlugin(ResolvePluginRequest) returns (ResolvePluginResponse);
+  // ReadConnectorSelection supplies the catalog and the delegated owner's enabled installations.
+  rpc ReadConnectorSelection(ReadConnectorSelectionRequest) returns (ReadConnectorSelectionResponse);
+}
+
+// ReadPersonalPluginsRequest selects an owner-scoped page.
+message ReadPersonalPluginsRequest {
+  // Exclusive slug cursor.
+  string cursor = 1;
+  // Maximum page size, at most 100.
+  uint32 page_size = 2;
+}
+
+// ReadPersonalPluginsResponse is trusted startup input, never a UI response.
+message ReadPersonalPluginsResponse {
+  // Owner's installations including protected manual values.
+  repeated talgent.marketplace.public.v1.InstalledPlugin plugins = 1;
+  // Empty when no subsequent page exists.
+  string next_cursor = 2;
+}
+
+// ResolvePluginRequest selects the current coherent publication.
+message ResolvePluginRequest {
+  // Logical Plugin slug.
+  string slug = 1;
+}
+
+// ResolvePluginResponse contains execution metadata and parameter defaults.
+message ResolvePluginResponse {
+  // Complete selected release.
+  talgent.marketplace.public.v1.PluginRelease plugin = 1;
+}
+
+// ReadConnectorSelectionRequest uses only the delegated owner.
+message ReadConnectorSelectionRequest {}
+
+// ReadConnectorSelectionResponse is trusted startup input, never a UI response.
+message ReadConnectorSelectionResponse {
+  // Every catalog entry with its offer status and non-secret configuration.
+  repeated CatalogConnector connectors = 1;
+  // Identities of the owner's enabled installations.
+  repeated string enabled_connector_ids = 2;
+}
+
+// CatalogConnector is a catalog entry's native, credential-free configuration.
+message CatalogConnector {
+  // Stable catalog identity.
+  string id = 1;
+  // Native MCP server name.
+  string name = 2;
+  // Included in every Work; cannot be removed.
+  bool required = 3;
+  // Only offered entries may be selected for a new Work.
+  bool offered = 4;
+  // work_identity or provider_authorization.
+  string authentication = 5;
+  // Native transport: empty or stdio for processes, http for remote servers.
+  string type = 6;
+  // Remote endpoint for http servers.
+  string url = 7;
+  // Process command for stdio servers.
+  string command = 8;
+  // Process arguments without issued credentials.
+  repeated string arguments = 9;
+  // Environment placeholders; never real credentials.
+  map<string, string> environment = 10;
+  // Header placeholders; never real credentials.
+  map<string, string> headers = 11;
+  // Declared Provider for provider_authorization entries.
+  string provider = 12;
+  // Supported credential target contract.
+  string target = 13;
+  // Provider authentication contract, such as credential_proxy.
+  string provider_authentication = 14;
+}
