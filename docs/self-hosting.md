@@ -90,7 +90,7 @@ The services reach these over the network; their addresses go into the environme
 | Store | Requirements |
 |---|---|
 | MySQL 8.0 | A service account (`MYSQL_USER`) that may create the three databases, or owns them if you create them. |
-| Redis 7 | Task queues and Dispatcher state that must survive restarts: `appendonly yes` and `maxmemory-policy noeviction`. The base's controlplane and Computer Gateway configuration set no Redis password; use a Redis they reach without one, or add the password to those ConfigMaps. |
+| Redis 7 | Task queues and Dispatcher state that must survive restarts: `appendonly yes` and `maxmemory-policy noeviction`. A password, if it has one, goes in Secret `redis-auth` ([section 4](#4-secrets)). |
 | Kafka | One broker address (`KAFKA_BROKER`); topics in [section 6](#kafka-topics). |
 | NATS 2.10 | Core NATS; no JetStream. |
 | ClickHouse | A service account (`CLICKHOUSE_USER`) and, for schema changes, a migration account; see [section 6](#clickhouse). |
@@ -168,6 +168,7 @@ You provide:
 |---|---|---|
 | `mysql-auth` | `talgent-password` | Password of `MYSQL_USER`. `apply-k3s.sh` writes it from `MYSQL_PASSWORD` when set, and refuses to deploy when neither exists. |
 | `clickhouse-auth` | `talgent-password` | Password of `CLICKHOUSE_USER`, from `CLICKHOUSE_TALGENT_PASSWORD` likewise. |
+| `redis-auth` (optional) | `password` | The Redis password every service connects with. `apply-k3s.sh` writes it from `REDIS_PASSWORD` when set; without it the services connect with none. After changing it, restart controlplane, dispatcher and computer-gateway (and an overlay's services that use Redis). |
 | `account-github-oauth` | `client-id`, `client-secret` | The GitHub OAuth App people sign in with: callback `<WORKBENCH_ORIGIN>/auth/github/callback`; it asks for `read:user user:email`. `apply-k3s.sh` writes it from `ACCOUNT_GITHUB_CLIENT_ID` and `ACCOUNT_GITHUB_CLIENT_SECRET` (both or neither), and refuses to deploy when neither exists. |
 | `agent-model-configurations` | `configurations.yml` | The Model Configurations, [section 5](#5-models). controlplane does not start without at least one. |
 | `talgent-juicefs-secret` | `name`, `metaurl`, `storage`, `bucket`, `access-key`, `secret-key`, optional `format-options` | The JuiceFS CSI driver's volume Secret: the file system name, the metadata Redis URL, `s3`, the bucket URL and its credentials. On first mount the driver formats an empty volume with these. |

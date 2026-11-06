@@ -15,6 +15,7 @@ ACCOUNT_OAUTH_SECRET="account-github-oauth"
 ACCOUNT_MASTER_KEY_SECRET="account-master-key"
 CLICKHOUSE_AUTH_SECRET="clickhouse-auth"
 MYSQL_AUTH_SECRET="mysql-auth"
+REDIS_AUTH_SECRET="redis-auth"
 
 # shellcheck source=lib/environment.sh
 source "${ROOT_DIR}/scripts/deploy/lib/environment.sh"
@@ -82,16 +83,23 @@ ensure_account_master_key() {
   echo "generated ${ACCOUNT_MASTER_KEY_SECRET}" >&2
 }
 
+# write_secret_from SECRET KEY VARIABLE: create or replace SECRET holding
+# VARIABLE's value under KEY.
+write_secret_from() {
+  local secret="$1" key="$2" variable="$3"
+  kubectl -n "${NS}" create secret generic "${secret}" \
+    "--from-literal=${key}=${!variable}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo "ensured ${secret} from ${variable}" >&2
+}
+
 # ensure_password_secret SECRET VARIABLE: the service account password of a
 # store, which the service configurations read as an env var so it never
 # enters a manifest. It comes from VARIABLE or an existing Secret.
 ensure_password_secret() {
   local secret="$1" variable="$2"
   if [[ -n "${!variable:-}" ]]; then
-    kubectl -n "${NS}" create secret generic "${secret}" \
-      "--from-literal=talgent-password=${!variable}" \
-      --dry-run=client -o yaml | kubectl apply -f -
-    echo "ensured ${secret} from ${variable}" >&2
+    write_secret_from "${secret}" talgent-password "${variable}"
     return
   fi
   if [[ -n "$(secret_data_value "${secret}" talgent-password)" ]]; then
@@ -102,10 +110,19 @@ ensure_password_secret() {
   exit 1
 }
 
+# Redis may run without a password: the services read REDIS_PASSWORD from the
+# optional Secret redis-auth, which REDIS_PASSWORD sets when given.
+ensure_redis_auth_secret() {
+  if [[ -n "${REDIS_PASSWORD:-}" ]]; then
+    write_secret_from "${REDIS_AUTH_SECRET}" password REDIS_PASSWORD
+  fi
+}
+
 ensure_account_oauth_secret
 ensure_account_master_key
 ensure_password_secret "${CLICKHOUSE_AUTH_SECRET}" CLICKHOUSE_TALGENT_PASSWORD
 ensure_password_secret "${MYSQL_AUTH_SECRET}" MYSQL_PASSWORD
+ensure_redis_auth_secret
 
 bash "${ROOT_DIR}/scripts/deploy/bootstrap-native-control.sh"
 

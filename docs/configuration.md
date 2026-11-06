@@ -64,7 +64,7 @@ contracts, and on `native-api.addr` for Agents.
 | `account-mysql.dsn` | `${ACCOUNT_MYSQL_DSN:talgent@tcp(127.0.0.1:3306)/talgent_account?…}` | `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_ADDR`, `ACCOUNT_MYSQL_DATABASE` |
 | `execution-mysql.dsn` (Agent) | `${EXECUTION_MYSQL_DSN:…/talgent_agent?…}` | likewise with `AGENT_MYSQL_DATABASE` |
 | `workbench-mysql.dsn` (Storage, Marketplace, Computer) | `${WORKBENCH_MYSQL_DSN:…/talgent_workbench?…}` | likewise with `WORKBENCH_MYSQL_DATABASE` |
-| `redis` | `${REDIS_ADDR:127.0.0.1:6379}`, `${REDIS_PASSWORD:}`, db 0 | `REDIS_ADDR`; password `""` |
+| `redis` | `${REDIS_ADDR:127.0.0.1:6379}`, `${REDIS_PASSWORD:}`, db 0 | `REDIS_ADDR` |
 | `kafka.brokers` | `${KAFKA_BROKER:127.0.0.1:9092}` | `KAFKA_BROKER` |
 | `nats.url` | `${NATS_URL:nats://localhost:4222}` | `NATS_URL` |
 | `clickhouse.dsn` (Work message streams) | `${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}` | `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_ADDR` |
@@ -250,7 +250,7 @@ for a machine connected to another replica; Talgent Computer reconnects to any o
 | Key | Default | Base | Meaning |
 |---|---|---|---|
 | `http.addr` | `${COMPUTER_GATEWAY_HTTP_ADDR::8085}` | `:8085` | Listen address |
-| `redis` | `${REDIS_ADDR:127.0.0.1:6379}`, `${REDIS_PASSWORD:}`, db 0 | password `""` | Which replica holds each machine |
+| `redis` | `${REDIS_ADDR:127.0.0.1:6379}`, `${REDIS_PASSWORD:}`, db 0 | | Which replica holds each machine |
 | `gateway.computer-address` | `${COMPUTER_ADDR:http://127.0.0.1:8080}` | `http://controlplane:8080` | Required. Computer's connection contract |
 | `gateway.control-token` | `${COMPUTER_CONTROL_TOKEN:}` | | Required |
 | `gateway.replica`, `gateway.endpoint` | `${POD_NAME:computer-gateway}`, `${POD_IP:127.0.0.1}:8085` | | Required. This replica's name and the address peers forward to |
@@ -294,6 +294,7 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
 | `TALGENT_NAMESPACE` | all | Must be `talgent` |
 | `TALGENT_SKIP_DB_BOOTSTRAP`, `TALGENT_SKIP_CLICKHOUSE_MIGRATION` | `apply-k3s.sh` | `1` skips the MySQL schema or the ClickHouse projections |
 | `MYSQL_PASSWORD`, `CLICKHOUSE_TALGENT_PASSWORD` | `apply-k3s.sh`, `bootstrap-mysql.sh` | Service account passwords; written to Secrets `mysql-auth`, `clickhouse-auth` |
+| `REDIS_PASSWORD` | `apply-k3s.sh` | The Redis password, written to the optional Secret `redis-auth` when set |
 | `ACCOUNT_GITHUB_CLIENT_ID`, `ACCOUNT_GITHUB_CLIENT_SECRET` | `apply-k3s.sh` | Written to Secret `account-github-oauth` |
 | `TALGENT_EXECD_IMAGE` | `apply-opensandbox.sh` | Another execd image than the pinned one |
 | `CLICKHOUSE_ADDR`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_MIGRATION_USER`, `CLICKHOUSE_MIGRATION_PASSWORD`, `CLICKHOUSE_MIGRATION_SQL`, `CLICKHOUSE_CONTAINER` | `bootstrap-clickhouse.sh` | Defaults `127.0.0.1:9000`, `talgent_trace`, `default`, empty, `deploy/middleware/init/clickhouse/002-talgent.sql`, none |

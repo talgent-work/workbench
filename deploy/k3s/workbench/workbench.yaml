@@ -200,7 +200,7 @@ data:
       addr: :8085
     redis:
       addr: ${REDIS_ADDR}
-      password: ""
+      password: ${REDIS_PASSWORD:}
       db: 0
     gateway:
       computer-address: http://controlplane:8080
@@ -504,7 +504,7 @@ data:
     redis:
       addr: ${REDIS_ADDR}
       db: 0
-      password: ""
+      password: ${REDIS_PASSWORD:}
 kind: ConfigMap
 metadata:
   name: controlplane-config
@@ -754,6 +754,14 @@ spec:
           ports:
             - containerPort: 8083
           env:
+            # Every process reads the Redis password from one Secret; without
+            # it they connect with none.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+                  optional: true
             - name: CLICKHOUSE_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -878,6 +886,14 @@ spec:
           ports:
             - containerPort: 8085
           env:
+            # Every process reads the Redis password from one Secret; without
+            # it they connect with none.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+                  optional: true
             - name: POD_NAME
               valueFrom:
                 fieldRef:
@@ -1074,6 +1090,14 @@ spec:
             - configMapRef:
                 name: workbench-environment
           env:
+            # Every process reads the Redis password from one Secret; without
+            # it they connect with none.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+                  optional: true
             - name: CLICKHOUSE_PASSWORD
               valueFrom:
                 secretKeyRef:
