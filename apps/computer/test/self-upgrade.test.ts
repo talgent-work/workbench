@@ -120,7 +120,9 @@ test('a new version that does not come online in time goes back to the previous 
   const { upgrade, recordFile, restarts, clock } = await setup('0.2.0', npm)
   writeRecord(recordFile, { pending: { from: '0.1.0', to: '0.2.0', deadline: clock.now + 20, starts: 0 }, failed: {} })
   assert.equal(await upgrade.start(), 'run')
-  await new Promise((resolve) => setTimeout(resolve, 60))
+  // The deadline is a real timer: on a busy runner it and the rollback after
+  // it take longer than their 20 ms, so wait for the restart they end in.
+  for (const giveUp = Date.now() + 5000; restarts() === 0 && Date.now() < giveUp;) await new Promise((resolve) => setTimeout(resolve, 10))
   assert.deepEqual(npm.installs, ['0.1.0'])
   assert.equal(restarts(), 1)
   const record = readRecord(recordFile)
