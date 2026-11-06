@@ -135,7 +135,7 @@ func newMachineFiles(t *testing.T) (*machineFiles, *ManagedComputers, *ManagedWo
 	}
 	server := httptest.NewServer(machine)
 	t.Cleanup(server.Close)
-	machines, err := NewManagedComputers(server.Client(), server.URL, managedGatewayAddress, managedContentAddress, managedTelemetryAddress, "control", &managedPlace{})
+	machines, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
 	links, err := NewWorkspaceFileLinks("/api/v1/agent/workspace-files", "control", time.Now)
 	require.NoError(t, err)
@@ -167,7 +167,7 @@ func TestManagedInputsHandTheMachineTheWholeListOfAttachments(t *testing.T) {
 // identity to, so the content address must be there.
 func TestManagedComputersNeedTheContentAddressOnTheGatewaysOrigin(t *testing.T) {
 	for _, address := range []string{"", "https://elsewhere.example/computer/v1/storage/content", "http://workbench.example/computer/v1/storage/content", "https://workbench.example", "https://workbench.example/c?x=1"} {
-		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", managedGatewayAddress, address, managedTelemetryAddress, "control", &managedPlace{})
+		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: address, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 		require.Error(t, err, address)
 	}
 }
@@ -306,7 +306,7 @@ func TestAStalledWorkFileReadFails(t *testing.T) {
 	}))
 	defer server.Close()
 	defer close(release)
-	machines, err := NewManagedComputers(server.Client(), server.URL, managedGatewayAddress, managedContentAddress, managedTelemetryAddress, "control", &managedPlace{})
+	machines, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
 	machines.fileIdle = 200 * time.Millisecond
 	spec := managedSpecification{ComputerID: managedComputerID, AccessToken: "execd-token"}

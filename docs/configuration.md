@@ -159,7 +159,8 @@ How Agent reaches Computer and Managed Computers.
 | `address`, `token` | `${COMPUTER_ADDRESS:http://127.0.0.1:8080}`, `${COMPUTER_CONTROL_TOKEN:}` | | Computer's admission contract |
 | `relay-address` | `${COMPUTER_RELAY_ADDRESS:}` | `http://computer-gateway.talgent.svc.cluster.local:8085` | The Computer Gateway's relay; empty leaves Managed Computers unreachable. The keys below are required with it. |
 | `mcp-address` | `${COMPUTER_MCP_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/mcp` | HTTPS address of the platform Connector a Managed Work calls |
-| `content-address` | `${COMPUTER_CONTENT_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/storage/content` | Where a Managed Computer downloads its Works' inputs; same origin as `mcp-address` |
+| `content-address` | `${COMPUTER_CONTENT_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api/v1/storage/content` | Where a Managed Computer downloads its Works' inputs, Storage's Access Links; same origin as `mcp-address` |
+| `api-address` | `${COMPUTER_API_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api` | HTTPS address of the native API a Managed Work calls; same origin as `mcp-address`. Empty, Managed Works get no native API |
 | `workspace-file-address` | `${AGENT_WORKSPACE_FILE_ADDRESS:/api/v1/agent/workspace-files}` | | Where a browser reads a Managed Work's files |
 | `telemetry-address` | `${COMPUTER_TELEMETRY_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/otel` | HTTPS address a Managed Work's Claude Code sends telemetry to |
 | `telemetry-collector-address` | `${COMPUTER_TELEMETRY_COLLECTOR_ADDRESS:}` | `http://otel-collector:4318` | The Collector controlplane forwards that telemetry to |

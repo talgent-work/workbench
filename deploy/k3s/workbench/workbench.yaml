@@ -266,10 +266,16 @@ data:
       # deployment with a platform Connector adds, on the origin Talgent
       # Computer connects to.
       mcp-address: "${WORKBENCH_ORIGIN}/computer/v1/mcp"
-      # Where the same Connector serves Access Links on that origin, from which
-      # a Managed Computer downloads its Works' inputs: the computer route's
-      # computer-content rule.
-      content-address: "${WORKBENCH_ORIGIN}/computer/v1/storage/content"
+      # Where a Managed Work calls the native API directly, through its
+      # local proxy: the computer route's computer-api rule. Empty, as where
+      # Agents reach the platform only through a Gateway, gives Managed Works
+      # none.
+      api-address: "${WORKBENCH_ORIGIN}/computer/v1/api"
+      # Where Storage's Access Links are served on that origin, from which a
+      # Managed Computer downloads its Works' inputs: the native API's, through
+      # the computer-api rule. A deployment whose Agents reach the platform
+      # only through a Gateway names the Gateway's instead.
+      content-address: "${WORKBENCH_ORIGIN}/computer/v1/api/v1/storage/content"
       # Where a reader's browser reaches Agent's links to a Managed Work's
       # files: the web-api route's agent-workspace-file rule.
       workspace-file-address: "${AGENT_WORKSPACE_FILE_ADDRESS:/api/v1/agent/workspace-files}"
@@ -1044,9 +1050,9 @@ spec:
       port: 8084
       targetPort: 8084
 ---
-# Only sandboxes reach the controlplane's native API, which admits each call
-# by its Work credential; its business port stays open to the cluster as
-# before. The rule names the Pods' port, as the CNI sees the backend.
+# Only Works reach the controlplane's native API, which admits each call by
+# its Work credential: sandboxes, and Managed Works through the Envoy
+# Gateway; its business port stays open to the cluster. The rule names the Pods' port, as the CNI sees the backend.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -1066,6 +1072,14 @@ spec:
             matchExpressions:
               - key: batch-sandbox.sandbox.opensandbox.io/name
                 operator: Exists
+      ports:
+        - port: 8081
+          protocol: TCP
+    # Managed Works, through the computer route's computer-api rule.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: envoy-gateway-system
       ports:
         - port: 8081
           protocol: TCP
@@ -1974,6 +1988,47 @@ spec:
       backendRefs:
         - name: controlplane
           port: 8080
+    # A Managed Work calls the controlplane's native API here, through
+    # Talgent Computer's local proxy, which adds its Work credential and
+    # Space Token, as a sandbox's Credential Proxy does in the cluster. The
+    # native API admits each call by that credential, so no JWT policy
+    # targets it; every other internal trust header is stripped. An overlay
+    # whose Agents reach the platform only through a Gateway removes it.
+    - name: computer-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /computer/v1/api
+      timeouts:
+        request: 300s
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - x-talgent-authenticated-by
+              - x-talgent-issuer
+              - x-talgent-subject
+              - x-talgent-username
+              - x-talgent-email
+              - x-talgent-display-name
+              - x-talgent-avatar-url
+              - x-talgent-roles
+              - x-talgent-service-id
+              - x-talgent-delegated-user-id
+              - x-talgent-delegated-actor-id
+              - x-talgent-gateway-token
+              - x-talgent-reader-admission
+              - x-talgent-runtime-instance-id
+              - x-talgent-runtime-purpose
+              - x-talgent-runtime-owner-ref
+      backendRefs:
+        - name: controlplane
+          port: 8081
     # The connection lives as long as the machine stays up.
     - name: computer-connection
       matches:
@@ -2076,6 +2131,37 @@ spec:
                   type: Distinct
           limit:
             requests: 120
+            unit: Minute
+        - limit:
+            requests: 6000
+            unit: Minute
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: computer-api-rate-limit
+  namespace: talgent
+spec:
+  # Each Managed Work's native API calls, its input downloads among them, are
+  # limited on their own, by the Work identity its local proxy or Talgent
+  # Computer adds. A shared ceiling above them bounds
+  # requests with made-up identities, each of which the native API checks
+  # against the Work's live run. The native API bounds each request's size.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: computer
+      sectionName: computer-api
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-talgent-work-id
+                  type: Distinct
+          limit:
+            requests: 300
             unit: Minute
         - limit:
             requests: 6000

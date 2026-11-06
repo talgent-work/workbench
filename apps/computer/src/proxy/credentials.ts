@@ -12,6 +12,9 @@ export interface WorkCredentials {
   // Absent for a Work on the machine's own Claude login.
   model?: { baseUrl: string; key: string }
   gateway: { url: string; workId: string; workCredential: string; spaceToken?: string }
+  // Where the Work's native API calls go, with the gateway's identity; absent
+  // where Works reach the platform only through the Gateway.
+  api?: { url: string }
 }
 
 // Its message names the invalid field, never a value.
@@ -99,9 +102,10 @@ const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
 export function parseCredentials(body: unknown): WorkCredentials {
   if (!isObject(body)) throw new InvalidCredentialsError('body must be an object')
-  const { model, gateway } = body
+  const { model, gateway, api } = body
   const result: WorkCredentials = { gateway: parseGateway(gateway) }
   if (model !== undefined && model !== null) result.model = parseModel(model)
+  if (api !== undefined && api !== null) result.api = parseApi(api, result.gateway.url)
   return result
 }
 
@@ -113,6 +117,15 @@ function parseModel(model: unknown): NonNullable<WorkCredentials['model']> {
     throw new InvalidCredentialsError('model.base_url must be an https URL')
   }
   return { baseUrl: url.href, key: headerValue(model.key, 'model.key') }
+}
+
+// The native API lies on the gateway's origin, the only one the Work's
+// identity is sent to.
+function parseApi(api: unknown, gatewayUrl: string): NonNullable<WorkCredentials['api']> {
+  if (!isObject(api)) throw new InvalidCredentialsError('api must be an object')
+  const url = parseUrl(api.url, 'api.url')
+  if (url.origin !== new URL(gatewayUrl).origin) throw new InvalidCredentialsError('api.url must lie on gateway.url\'s origin')
+  return { url: url.href }
 }
 
 function parseGateway(gateway: unknown): WorkCredentials['gateway'] {

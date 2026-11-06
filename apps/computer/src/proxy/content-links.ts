@@ -1,6 +1,6 @@
 import { Transform, pipeline, type TransformCallback } from 'node:stream'
 import { relayAsIs, type ResponseRelay } from './forward.ts'
-import { readHead } from './publication.ts'
+import { readHead } from './request-body.ts'
 
 // Storage content links: the platform Connector answers a Managed Work's file
 // link tools with links to <origin>/computer/v1/storage/content?<token>,

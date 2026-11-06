@@ -5,7 +5,7 @@ description: Publish, replace or delete this Work's Artifacts and search or down
 
 # Using the platform API
 
-Talgent's API for this Work answers at `$TALGENT_API_ADDRESS`. When the Work has the `talgent` MCP server's Artifact and Library tools, use those; this skill is for a Work without them. When `$TALGENT_API_ADDRESS` is unset or empty, as on a Managed Computer, the Work cannot reach the platform this way: tell your owner that publishing and the Library are unavailable here.
+Talgent's API for this Work answers at `$TALGENT_API_ADDRESS`. When the Work has the `talgent` MCP server's Artifact and Library tools, use those; this skill is for a Work without them. When `$TALGENT_API_ADDRESS` is unset or empty, the Work cannot reach the platform this way: tell your owner that publishing and the Library are unavailable here.
 
 ## Calling it
 
@@ -17,7 +17,7 @@ curl -sS -X POST "$TALGENT_API_ADDRESS/talgent.storage.private.v1.ArtifactServic
   -d '{"name": "report.pdf", "path": "dist/report.pdf"}'
 ```
 
-The sandbox adds this Work's identity and credentials to every request it sends there. Send only `Content-Type` and the body. A success answers HTTP 200 with a JSON body; a refusal answers another status with `{"code": "...", "message": "..."}`.
+The Work's environment adds its identity and credentials to every request sent there. Send only `Content-Type` and the body. A success answers HTTP 200 with a JSON body; a refusal answers another status with `{"code": "...", "message": "..."}`.
 
 ## Artifacts of this Work
 

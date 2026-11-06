@@ -36,6 +36,9 @@ type ManagedComputers struct {
 	gateway string
 	// content is where the machine downloads an Access Link.
 	content string
+	// api is where the machine's local proxy sends its Works' native API
+	// calls; empty when Managed Works have none.
+	api string
 	// telemetry is where a run's Harness sends its OTLP telemetry.
 	telemetry string
 	token     string
@@ -44,28 +47,41 @@ type ManagedComputers struct {
 	fileIdle time.Duration
 }
 
+// ManagedAddresses are the platform's public addresses a Managed Computer
+// reaches: Gateway, the platform Connector's HTTPS address, for its local
+// proxy; Content, where the same origin serves Access Links, for its Works'
+// inputs; API, where the same origin serves the native API, for its Works'
+// direct calls, or empty for none; and Telemetry, the platform's HTTPS OTLP
+// endpoint, for its Harness's telemetry.
+type ManagedAddresses struct {
+	Gateway, Content, API, Telemetry string
+}
+
 // NewManagedComputers reaches the machines through the relay and gives them
-// gatewayAddress, the platform Connector's public HTTPS address, for their
-// local proxy, contentAddress, where the same origin serves Access Links
-// on that origin, for their inputs, and telemetryAddress, the platform's
-// public HTTPS OTLP endpoint, for their Harness's telemetry.
-func NewManagedComputers(client *http.Client, relayAddress, gatewayAddress, contentAddress, telemetryAddress, controlToken string, computers command.ComputerDescriptionPort) (*ManagedComputers, error) {
+// the platform's public addresses.
+func NewManagedComputers(client *http.Client, relayAddress string, addresses ManagedAddresses, controlToken string, computers command.ComputerDescriptionPort) (*ManagedComputers, error) {
 	relay, err := url.Parse(relayAddress)
 	if client == nil || computers == nil || err != nil || relay.Host == "" || (relay.Scheme != "http" && relay.Scheme != "https") || relay.User != nil || relay.RawQuery != "" || relay.Fragment != "" || strings.TrimSpace(controlToken) == "" {
 		return nil, errors.New("agent: HTTP client, Computer lookup, HTTP(S) relay address and control token are required for Managed Computers")
 	}
-	gateway, err := url.Parse(gatewayAddress)
+	gateway, err := url.Parse(addresses.Gateway)
 	// The machine reaches it over the internet with the Work credential.
 	if err != nil || gateway.Scheme != "https" || gateway.Host == "" || gateway.User != nil || gateway.RawQuery != "" || gateway.Fragment != "" {
 		return nil, errors.New("agent: the platform Connector's public HTTPS address is required for Managed Computers")
 	}
-	content, err := url.Parse(contentAddress)
-	// Talgent Computer downloads only from the origin of the platform
-	// Connector it sends the Work's identity to.
-	if err != nil || content.Scheme != gateway.Scheme || content.Host != gateway.Host || content.User != nil || content.RawQuery != "" || content.Fragment != "" || strings.Trim(content.Path, "/") == "" {
-		return nil, errors.New("agent: the platform Connector's public content address, on its origin, is required for Managed Computers")
+	// Talgent Computer sends the Work's identity only to that origin, for its
+	// inputs and its direct calls alike.
+	content, ok := onOrigin(gateway, addresses.Content)
+	if !ok {
+		return nil, errors.New("agent: the public content address, on the platform Connector's origin, is required for Managed Computers")
 	}
-	telemetry, err := url.Parse(telemetryAddress)
+	api := ""
+	if addresses.API != "" {
+		if api, ok = onOrigin(gateway, addresses.API); !ok {
+			return nil, errors.New("agent: the native API's public address must lie on the platform Connector's origin")
+		}
+	}
+	telemetry, err := url.Parse(addresses.Telemetry)
 	// The machine sends it its telemetry token over the internet.
 	if err != nil || telemetry.Scheme != "https" || telemetry.Host == "" || telemetry.User != nil || telemetry.RawQuery != "" || telemetry.Fragment != "" {
 		return nil, errors.New("agent: the platform's public HTTPS telemetry address is required for Managed Computers")
@@ -73,7 +89,17 @@ func NewManagedComputers(client *http.Client, relayAddress, gatewayAddress, cont
 	h := *client
 	// Redirects would carry the control or execd token to another endpoint.
 	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &ManagedComputers{http: &h, relay: relay, gateway: strings.TrimRight(gateway.String(), "/"), content: strings.TrimRight(content.String(), "/"), telemetry: strings.TrimRight(telemetry.String(), "/"), token: controlToken, computers: computers, fileIdle: workFileIdle}, nil
+	return &ManagedComputers{http: &h, relay: relay, gateway: strings.TrimRight(gateway.String(), "/"), content: content, api: api, telemetry: strings.TrimRight(telemetry.String(), "/"), token: controlToken, computers: computers, fileIdle: workFileIdle}, nil
+}
+
+// onOrigin is address without a trailing slash when it names a path on
+// origin's scheme and host, with no credentials, query or fragment.
+func onOrigin(origin *url.URL, address string) (string, bool) {
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Scheme != origin.Scheme || parsed.Host != origin.Host || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || strings.Trim(parsed.Path, "/") == "" {
+		return "", false
+	}
+	return strings.TrimRight(parsed.String(), "/"), true
 }
 
 // managedSpecification is the recorded environment of a Managed allocation,
@@ -90,8 +116,13 @@ type managedSpecification struct {
 	// with, where the local proxy sends the Work's model requests; empty on
 	// the machine's own Claude login. A Work with one opens its environment
 	// with model_proxy.
-	ModelEndpoint string            `json:"modelEndpoint,omitempty"`
-	Environment   map[string]string `json:"environment"`
+	ModelEndpoint string `json:"modelEndpoint,omitempty"`
+	// APIAddress is the native API's public address the start was realized
+	// with; empty where the platform serves Managed Works none. A Work with
+	// one opens its environment with platform_api and is delivered it as
+	// its api credential, so both always agree.
+	APIAddress  string            `json:"apiAddress,omitempty"`
+	Environment map[string]string `json:"environment"`
 	// Telemetry is absent from allocations registered before Managed runs
 	// reported telemetry; their runs report none.
 	Telemetry *managedTelemetry `json:"telemetry,omitempty"`
@@ -166,13 +197,15 @@ var errWorkUnknown = errors.New("agent: the Managed Computer holds nothing of th
 func (m *ManagedComputers) open(ctx context.Context, spec managedSpecification, workID string) error {
 	// A Work on a Model Configuration has its model reached through the
 	// local proxy always, delivered or not, so it never falls back to the
-	// machine's own Claude login.
+	// machine's own Claude login. With PlatformAPI the machine points the
+	// Work's TALGENT_API_ADDRESS at its local proxy.
 	body, err := json.Marshal(struct {
 		AccessToken string            `json:"access_token"`
 		Environment map[string]string `json:"environment"`
 		ModelProxy  bool              `json:"model_proxy,omitempty"`
+		PlatformAPI bool              `json:"platform_api,omitempty"`
 		Telemetry   *machineTelemetry `json:"telemetry,omitempty"`
-	}{spec.AccessToken, spec.Environment, spec.ModelEndpoint != "", spec.machineTelemetry()})
+	}{spec.AccessToken, spec.Environment, spec.ModelEndpoint != "", spec.APIAddress != "", spec.machineTelemetry()})
 	if err != nil {
 		return oops.Wrap(err)
 	}

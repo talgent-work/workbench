@@ -8,12 +8,14 @@ import { InvalidTelemetryError, parseTelemetry, type WorkTelemetry } from './tel
 // A Work's environment on this machine: its root directory, the execd access
 // token every call of the Work presents (kept as a hash), the variables
 // every process of the Work gets, and whether its model is a platform Model
-// Configuration its processes reach only through the local proxy, and where
-// its Claude Code sends its telemetry. It lives as long as the Work does.
+// Configuration its processes reach only through the local proxy, whether it
+// calls the platform's native API through the local proxy, and where its
+// Claude Code sends its telemetry. It lives as long as the Work does.
 export interface WorkEnvironment {
   root: string
   environment: Record<string, string>
   modelProxy: boolean
+  platformApi: boolean
   telemetry?: WorkTelemetry
 }
 
@@ -22,6 +24,10 @@ interface StoredWork {
   environment: Record<string, string>
   // Absent in records written before it existed.
   modelProxy?: boolean
+  // Absent from the records of a Talgent Computer upgraded in place while
+  // its Works live, which predates platform_api; the Work's next environment
+  // PUT writes it.
+  platformApi?: boolean
   // Kept as sent: every process of the Work is given the token. Absent from
   // a platform that sends none.
   telemetry?: WorkTelemetry
@@ -55,12 +61,12 @@ export class Works {
 
   // Opens or updates the Work's environment and answers its root.
   async put(workId: string, body: unknown): Promise<string> {
-    const { accessToken, environment, modelProxy, telemetry } = parseEnvironment(body)
+    const { accessToken, environment, modelProxy, platformApi, telemetry } = parseEnvironment(body)
     const root = this.root(workId)
     await mkdir(root, { recursive: true, mode: 0o700 })
     await chmod(root, 0o700)
     await mkdir(this.recordsDir, { recursive: true, mode: 0o700 })
-    const stored: StoredWork = { tokenSha256: sha256(accessToken), environment, modelProxy, telemetry }
+    const stored: StoredWork = { tokenSha256: sha256(accessToken), environment, modelProxy, platformApi, telemetry }
     writeJsonAtomic(join(this.recordsDir, `${workId}.json`), stored)
     this.cache.set(workId, stored)
     return root
@@ -104,7 +110,7 @@ export class Works {
     const expected = Buffer.from(stored.tokenSha256, 'hex')
     const presented = Buffer.from(sha256(token), 'hex')
     if (token === '' || !timingSafeEqual(expected, presented)) return { kind: 'denied' }
-    const work: WorkEnvironment = { root: this.root(workId), environment: stored.environment, modelProxy: stored.modelProxy === true }
+    const work: WorkEnvironment = { root: this.root(workId), environment: stored.environment, modelProxy: stored.modelProxy === true, platformApi: stored.platformApi === true }
     if (stored.telemetry !== undefined) work.telemetry = stored.telemetry
     return { kind: 'ok', work }
   }
@@ -125,11 +131,12 @@ export class Works {
   }
 }
 
-function parseEnvironment(body: unknown): { accessToken: string; environment: Record<string, string>; modelProxy: boolean; telemetry?: WorkTelemetry } {
+function parseEnvironment(body: unknown): { accessToken: string; environment: Record<string, string>; modelProxy: boolean; platformApi: boolean; telemetry?: WorkTelemetry } {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new InvalidEnvironmentError('body must be an object')
-  const { access_token: accessToken, environment = {}, model_proxy: modelProxy = false, telemetry: rawTelemetry } = body as Record<string, unknown>
+  const { access_token: accessToken, environment = {}, model_proxy: modelProxy = false, platform_api: platformApi = false, telemetry: rawTelemetry } = body as Record<string, unknown>
   if (typeof accessToken !== 'string' || accessToken.trim() === '') throw new InvalidEnvironmentError('access_token required')
   if (typeof modelProxy !== 'boolean') throw new InvalidEnvironmentError('model_proxy must be a boolean')
+  if (typeof platformApi !== 'boolean') throw new InvalidEnvironmentError('platform_api must be a boolean')
   if (typeof environment !== 'object' || environment === null || Array.isArray(environment)) {
     throw new InvalidEnvironmentError('environment must be an object')
   }
@@ -147,7 +154,7 @@ function parseEnvironment(body: unknown): { accessToken: string; environment: Re
     if (error instanceof InvalidTelemetryError) throw new InvalidEnvironmentError(error.message)
     throw error
   }
-  return { accessToken, environment: result, modelProxy, telemetry }
+  return { accessToken, environment: result, modelProxy, platformApi, telemetry }
 }
 
 // Removes a directory tree, read-only parts included: the Work's inputs

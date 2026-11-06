@@ -88,6 +88,7 @@ func (m ManagedEnvironment) specify(ctx context.Context, request domain.StartExe
 	if err := spec.attachTelemetry(ctx, request, m.machines.telemetry, rand.Text()); err != nil {
 		return environmentSpecification{}, err
 	}
+	spec.APIAddress = m.machines.api
 	document, err := json.Marshal(spec)
 	if err != nil {
 		return environmentSpecification{}, oops.Wrap(err)

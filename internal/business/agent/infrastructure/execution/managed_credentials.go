@@ -15,8 +15,9 @@ import (
 // them outside every Work root and gives them to no process: its local proxy
 // adds them to the requests a run's processes send through it.
 // The Work credential, with the Space Token of the Work's input source, goes
-// only to the platform Connector, and a Model Configuration key only to its
-// Model Template's endpoint. Provider credentials stay with the platform.
+// only to the platform Connector and the native API on its origin, and a
+// Model Configuration key only to its Model Template's endpoint. Provider
+// credentials stay with the platform.
 
 // workCredentials is the body of the relay's credentials PUT. It carries
 // secrets: it is never logged, recorded or echoed.
@@ -24,6 +25,13 @@ type workCredentials struct {
 	// Model is absent on the machine's own Claude login.
 	Model   *workModelCredential  `json:"model,omitempty"`
 	Gateway workGatewayCredential `json:"gateway"`
+	// API is where the Work's native API calls go, with the Gateway's
+	// identity; absent when Managed Works have no direct API.
+	API *workAPICredential `json:"api,omitempty"`
+}
+
+type workAPICredential struct {
+	URL string `json:"url"`
 }
 
 type workModelCredential struct {
@@ -84,6 +92,9 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record allocationRecord
 		return deliveredCredentials{}, err
 	}
 	credentials := workCredentials{Gateway: workGatewayCredential{URL: m.machines.gateway, WorkID: record.SessionID, WorkCredential: spec.WorkCredential, SpaceToken: admitted.InputSource.SpaceToken}}
+	if spec.APIAddress != "" {
+		credentials.API = &workAPICredential{URL: spec.APIAddress}
+	}
 	model := renewalCredential(m.models, admitted.WorkModel, spec.ModelEndpoint)
 	keep := false
 	if !admitted.WorkModel.MachineLogin {

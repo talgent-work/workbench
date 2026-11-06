@@ -157,6 +157,7 @@ test('credentials are validated, kept 0600 outside every Work root, and DELETE f
     { gateway, model: { base_url: 'https://u:p@vendor.example/a', key: KEY } },
     { gateway, model: { base_url: 'https://vendor.example/a', key: '' } },
     { gateway, model: 'x' },
+    { gateway, api: { url: 'https://other.example/computer/v1/api' } },
   ]) {
     const answer = await deliver(body)
     assert.equal(answer.status, 400, JSON.stringify(body))
@@ -188,6 +189,13 @@ test('a run reaches the model only through the proxy; neither its environment no
   }
   const record = await readFile(join(processes.dir('w-1', id), 'proxy-token.json'), 'utf8')
   assert.ok(!record.includes(token), 'only the token hash is kept')
+})
+
+test('a Work the platform serves the native API to calls it through the proxy with its run token', async () => {
+  assert.equal((await service.request({ workId: 'w-api', method: 'PUT', path: '/', token: '', body: { access_token: 'tok', platform_api: true } })).status, 200)
+  const { env } = await runEnv('w-api')
+  assert.equal(env.TALGENT_API_ADDRESS, `${proxy.origin()}/w/w-api/api/${env.TALGENT_PROXY_TOKEN}`)
+  assert.equal((await runEnv('w-1')).env.TALGENT_API_ADDRESS, undefined, 'a Work without it reaches the platform otherwise')
 })
 
 test("a run's telemetry goes to the platform with its Work's token, never where the machine points its own", async () => {

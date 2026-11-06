@@ -126,12 +126,18 @@ func NewHandler(controlplane http.Handler, gatewayToken string, verifier authn.N
 			r.Header.Del(authn.HeaderSpaceToken)
 		}
 		// Native credentials are the only accepted identity. Reject trusted headers
-		// before a general business interceptor can interpret their claims.
+		// before a general business interceptor can interpret their claims. The
+		// headers Envoy adds on the public route a Managed Work calls through
+		// carry no identity; they are dropped unread.
 		for key := range r.Header {
 			lower := strings.ToLower(key)
+			if strings.HasPrefix(lower, "x-envoy-") {
+				r.Header.Del(key)
+				continue
+			}
 			native := lower == strings.ToLower(authn.HeaderNativeWorkID) || lower == strings.ToLower(authn.HeaderNativeCredential) ||
 				(spaceTokens[r.URL.Path] && lower == strings.ToLower(authn.HeaderSpaceToken))
-			if (!native && strings.HasPrefix(lower, "x-talgent-")) || lower == "authorization" || lower == "cookie" || strings.HasPrefix(lower, "x-envoy-") {
+			if (!native && strings.HasPrefix(lower, "x-talgent-")) || lower == "authorization" || lower == "cookie" {
 				writeError(w, r, connect.CodeUnauthenticated, "native process credentials are the only accepted identity")
 				return
 			}

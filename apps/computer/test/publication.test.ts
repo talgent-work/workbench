@@ -5,7 +5,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import type { IncomingMessage } from 'node:http'
 import { PassThrough } from 'node:stream'
-import { completeRequest, MAX_REQUEST_BYTES, readHead, MAX_SOURCE_BYTES, UNHELD_REQUEST_BYTES, type Completion } from '../src/proxy/publication.ts'
+import { completeRequest, type Completion } from '../src/proxy/publication.ts'
+import { MAX_REQUEST_BYTES, MAX_SOURCE_BYTES, UNHELD_REQUEST_BYTES } from '../src/proxy/publication-source.ts'
+import { readHead } from '../src/proxy/request-body.ts'
 import { LocalProxy } from '../src/proxy/server.ts'
 import { send, Upstream } from './support/upstream.ts'
 import { posixModes } from './support/platform.ts'
@@ -110,11 +112,18 @@ test('a call that cannot be completed is answered with a JSON-RPC error and neve
   await mkdir(join(root, 'inputs'))
   await writeFile(join(root, 'inputs', 'brief.md'), 'input')
   await symlink(join(root, 'inputs', 'brief.md'), join(root, 'out', 'brief-link.md'))
+  await symlink(join(root, 'out', 'report.md'), join(root, 'out', 'report-link.md'))
+  await mkdir(join(root, 'knowledge'))
+  await writeFile(join(root, 'knowledge', 'notes.md'), 'knowledge')
+  // As on a Cloud: one regular file of the Work, reached without symbolic
+  // links, outside the directories the Work only reads.
   const refused: [string, RegExp][] = [
     ['out/huge.bin', /larger than 64 MiB/],
-    ...[...(posixModes ? ['locked.md'] : []), '../outside.md', '/workspace/../outside.md', join(dir, 'outside.md'), 'escape.md', 'out', '/workspace', '', 'missing.md', '/etc/hostname']
-      .map((path): [string, RegExp] => [path, /no readable file/]),
-    ...['inputs/brief.md', '/workspace/inputs/brief.md', 'out/brief-link.md'].map((path): [string, RegExp] => [path, /under inputs\//]),
+    ['missing.md', /names no file/],
+    ...[...(posixModes ? ['locked.md'] : []), '../outside.md', '/workspace/../outside.md', join(dir, 'outside.md'), 'escape.md', 'out', '/workspace', '', '/etc/hostname', 'out/brief-link.md', 'out/report-link.md']
+      .map((path): [string, RegExp] => [path, /not one regular file/]),
+    ...['inputs/brief.md', '/workspace/inputs/brief.md'].map((path): [string, RegExp] => [path, /under inputs\//]),
+    ['knowledge/notes.md', /under knowledge\//],
   ]
   for (const [sourcePath, reason] of refused) {
     const { status, answer, seen } = await post(JSON.stringify(call(7, 'publish_artifact', { source_path: sourcePath, source_content: 'eA==' })))

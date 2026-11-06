@@ -61,7 +61,8 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	f.relay.mu.Unlock()
 	require.True(t, modelProxy, "a Model Configuration's model is always reached through the local proxy")
 	require.JSONEq(t, `{"model":{"base_url":"https://model.example/anthropic","key":"`+fixtureModelKey+`"},
-		"gateway":{"url":"`+managedGatewayAddress+`","work_id":"`+input.WorkID+`","work_credential":"`+spec.WorkCredential+`","space_token":"space-token"}}`, delivered)
+		"gateway":{"url":"`+managedGatewayAddress+`","work_id":"`+input.WorkID+`","work_credential":"`+spec.WorkCredential+`","space_token":"space-token"},
+		"api":{"url":"`+managedAPIAddress+`"}}`, delivered)
 	require.Equal(t, modelCredential{Key: fixtureModelKey}.digest(), record.ModelCredentialDigest)
 	require.Zero(t, record.CredentialsExpireAt, "nothing delivered expires")
 	require.Equal(t, "fixture-primary", environment["ANTHROPIC_DEFAULT_OPUS_MODEL"], "the Model Template's environment reaches the Work")

@@ -247,6 +247,25 @@ func TestAWorkReachesANativeAPIWithoutAGatewayDirectly(t *testing.T) {
 	}, forwarded, "a Space Token travels only with Artifact commands")
 }
 
+// A Managed Work calls the native API through the public route, whose Envoy
+// adds headers of its own: they carry no identity and are dropped unread,
+// while a trusted identity header the caller adds is still refused.
+func TestAManagedWorkReachesTheNativeAPIThroughThePublicRoute(t *testing.T) {
+	var envoy []string
+	controlplane := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		envoy = append(envoy, r.Header.Get("X-Envoy-External-Address"))
+		w.WriteHeader(http.StatusOK)
+	})
+	h, err := nativeapi.NewHandler(controlplane, "", verifier{interactive: true}, calls, nativeapi.ReadProcedures{Procedures: reads, Verifier: verifier{interactive: true}})
+	require.NoError(t, err)
+	routed := map[string]string{authn.HeaderNativeWorkID: "work", authn.HeaderNativeCredential: "secret", "X-Envoy-External-Address": "198.51.100.7", "X-Envoy-Expected-Rq-Timeout-Ms": "300000"}
+	require.Equal(t, http.StatusOK, post(h, reads[0], routed).Code)
+	require.Equal(t, []string{""}, envoy, "Envoy's headers never reach the product")
+	routed["X-Talgent-Subject"] = "someone-else"
+	require.Equal(t, http.StatusUnauthorized, post(h, reads[0], routed).Code)
+	require.Len(t, envoy, 1)
+}
+
 // The Gateway learns whose Work a credential is as soon as the sandbox is
 // live, before the Work's first turn, so it can list tools and give the
 // session its start context; nothing else is served that early.

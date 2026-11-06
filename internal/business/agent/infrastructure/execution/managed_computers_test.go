@@ -49,6 +49,9 @@ const managedContentAddress = "https://workbench.example/computer/v1/storage/con
 // managedTelemetryAddress is the platform's public OTLP endpoint.
 const managedTelemetryAddress = "https://workbench.example/computer/v1/otel"
 
+// managedAPIAddress is where the same origin serves the native API.
+const managedAPIAddress = "https://workbench.example/computer/v1/api"
+
 // inputFiles is Storage's File Space Contract for Managed Works' inputs:
 // owners by input source, and each owner's Attachments.
 type inputFiles struct {
@@ -245,7 +248,7 @@ func TestManagedComputersReachTheWorkThroughTheRelay(t *testing.T) {
 	server := httptest.NewServer(relay)
 	defer server.Close()
 	place := &managedPlace{}
-	managed, err := NewManagedComputers(server.Client(), server.URL, managedGatewayAddress, managedContentAddress, managedTelemetryAddress, "control", place)
+	managed, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", place)
 	require.NoError(t, err)
 	spec, err := managedSpecificationFor(managedRequest(), fixtureModels(), "execd-token", "work-credential")
 	require.NoError(t, err)
@@ -340,7 +343,7 @@ func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 	_, err = cloudOnly.authority(allocationRecord{Realization: "kubernetes"})
 	require.Error(t, err)
 
-	machines, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", managedGatewayAddress, managedContentAddress, managedTelemetryAddress, "control", &managedPlace{})
+	machines, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
 	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, nil, NewHeldWorks(nil, nil), &inputFiles{}, time.Minute, nil)
 	require.Error(t, err, "the Managed realization needs the Model Configurations")
@@ -370,7 +373,7 @@ func TestManagedComputersDeliverAndForgetTheWorksCredentials(t *testing.T) {
 	relay := &relayFixture{}
 	server := httptest.NewServer(relay)
 	defer server.Close()
-	managed, err := NewManagedComputers(server.Client(), server.URL, managedGatewayAddress, managedContentAddress, managedTelemetryAddress, "control", &managedPlace{})
+	managed, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
 	spec, err := managedSpecificationFor(managedRequest(), fixtureModels(), "execd-token", "work-credential")
 	require.NoError(t, err)
@@ -403,7 +406,45 @@ func TestManagedComputersDeliverAndForgetTheWorksCredentials(t *testing.T) {
 // credential, so only an HTTPS address is accepted.
 func TestManagedComputersNeedTheGatewaysPublicHTTPSAddress(t *testing.T) {
 	for _, address := range []string{"", "http://workbench.example/computer/v1/mcp", "https://user@workbench.example/mcp", "https://workbench.example/mcp?x=1", "/computer/v1/mcp"} {
-		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", address, managedContentAddress, managedTelemetryAddress, "control", &managedPlace{})
+		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: address, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+		require.Error(t, err, address)
+	}
+}
+
+// A Managed Work gets the native API where the platform serves it, and
+// keeps what its start was realized with: the environment's platform_api
+// and the delivered api credential both follow the recorded start, not a
+// replica's current configuration.
+func TestManagedWorksGetTheNativeAPIOnlyWhereItIsServed(t *testing.T) {
+	ctx := context.Background()
+	relay := &relayFixture{}
+	server := httptest.NewServer(relay)
+	defer server.Close()
+	started := func(machines *ManagedComputers) managedSpecification {
+		input := managedRequest()
+		specified, err := ManagedEnvironment{machines: machines, models: fixtureModels()}.specify(ctx, input, testMounts, owner(input), "execd-token", "work-credential")
+		require.NoError(t, err)
+		spec, err := decodeManagedSpecification(allocationRecord{SpecificationJSON: specified.document})
+		require.NoError(t, err)
+		return spec
+	}
+	with, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, API: managedAPIAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+	require.NoError(t, err)
+	without, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+	require.NoError(t, err)
+
+	served := started(with)
+	require.Equal(t, managedAPIAddress, served.APIAddress)
+	require.NoError(t, without.open(ctx, served, "session"))
+	require.Equal(t, true, relay.environment["platform_api"], "the start was realized with the native API")
+
+	unserved := started(without)
+	require.Empty(t, unserved.APIAddress)
+	require.NoError(t, with.open(ctx, unserved, "session"))
+	require.NotContains(t, relay.environment, "platform_api")
+
+	for _, address := range []string{"https://other.example/computer/v1/api", "http://workbench.example/computer/v1/api", "https://workbench.example/", "https://workbench.example/api?x=1"} {
+		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, API: address, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 		require.Error(t, err, address)
 	}
 }
@@ -430,3 +471,4 @@ func TestManagedModelDigestFollowsTheCurrentKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, digest)
 }
+

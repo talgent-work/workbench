@@ -242,8 +242,10 @@ export class ExecdService {
 
   // The machine's environment, then the Work's, then what Talgent Computer
   // owns: the machine's HOME, the Work root, the bundled Claude Code first on
-  // PATH, the run's way to the local proxy and, when the platform named it,
-  // where its telemetry goes, in place of the machine's. A Work on a Model
+  // PATH, the run's way to the local proxy and, when the platform named them,
+  // the platform's native API through the proxy and where its telemetry goes,
+  // in place of the machine's. The API address carries the run's token in
+  // its path, as a plain HTTP client presents nothing else. A Work on a Model
   // Configuration reaches its model only through the proxy, with the run's
   // token, whether or not its credentials were delivered yet: it never falls
   // back to the machine's own login.
@@ -251,12 +253,14 @@ export class ExecdService {
     const { baseEnv, home, claudeBinDir: bin, proxyOrigin, platform = process.platform } = this.options
     const proxyUrl = `${proxyOrigin()}/w/${workId}`
     const model = work.modelProxy ? { ANTHROPIC_BASE_URL: `${proxyUrl}/model`, ANTHROPIC_AUTH_TOKEN: proxyToken } : {}
+    const api = work.platformApi ? { TALGENT_API_ADDRESS: `${proxyUrl}/api/${proxyToken}` } : {}
     const env = mergeEnvironment(platform, baseEnv, work.environment, {
       HOME: home,
       TALGENT_WORK_ROOT: work.root,
       TALGENT_PROXY_URL: proxyUrl,
       TALGENT_PROXY_TOKEN: proxyToken,
       ...model,
+      ...api,
     })
     if (bin !== undefined) prependPath(env, bin, platform)
     if (work.modelProxy) deleteVariable(env, 'ANTHROPIC_API_KEY', platform)

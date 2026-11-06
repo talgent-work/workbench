@@ -154,7 +154,7 @@ func newManagedComputers(cfg ComputerConfig, computers command.ComputerDescripti
 	if strings.TrimSpace(cfg.RelayAddress) == "" {
 		return nil, nil
 	}
-	return execution.NewManagedComputers(relayClient(), cfg.RelayAddress, cfg.MCPAddress, cfg.ContentAddress, cfg.TelemetryAddress, cfg.Token, computers)
+	return execution.NewManagedComputers(relayClient(), cfg.RelayAddress, execution.ManagedAddresses{Gateway: cfg.MCPAddress, Content: cfg.ContentAddress, API: cfg.APIAddress, Telemetry: cfg.TelemetryAddress}, cfg.Token, computers)
 }
 
 // relayResponseTimeout bounds the wait for the relay's response headers; a

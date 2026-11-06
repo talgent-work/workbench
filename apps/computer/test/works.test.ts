@@ -21,7 +21,7 @@ test('opening an environment creates a private Work root and stores only a token
   const record = await readFile(join(dir, 'state', 'works', 'w-1.json'), 'utf8')
   assert.ok(!record.includes('secret-token'))
   if (posixModes) assert.equal((await stat(join(dir, 'state', 'works', 'w-1.json'))).mode & 0o777, 0o600)
-  assert.deepEqual(await works.authorize('w-1', 'secret-token'), { kind: 'ok', work: { root, environment: { A: '1' }, modelProxy: false } })
+  assert.deepEqual(await works.authorize('w-1', 'secret-token'), { kind: 'ok', work: { root, environment: { A: '1' }, modelProxy: false, platformApi: false } })
 })
 
 test('every call must present the Work token; unknown Works are unknown', async () => {

@@ -20,7 +20,7 @@ func TestAManagedRunReportsTelemetryLikeACloudRun(t *testing.T) {
 	relay := &relayFixture{}
 	server := httptest.NewServer(relay)
 	defer server.Close()
-	machines, err := NewManagedComputers(server.Client(), server.URL, managedGatewayAddress, managedContentAddress, managedTelemetryAddress, "control", &managedPlace{})
+	machines, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
 	environment := ManagedEnvironment{machines: machines, models: fixtureModels()}
 	input := managedRequest()
@@ -67,7 +67,7 @@ func TestAManagedRunReportsTelemetryLikeACloudRun(t *testing.T) {
 // Talgent Computer sends its telemetry token over the internet only.
 func TestManagedComputersRequireAnHTTPSTelemetryAddress(t *testing.T) {
 	for _, address := range []string{"", "http://workbench.example/computer/v1/otel", "https://user@workbench.example/otel", "https://workbench.example/otel?x=1"} {
-		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", managedGatewayAddress, managedContentAddress, address, "control", &managedPlace{})
+		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: address}, "control", &managedPlace{})
 		require.Error(t, err, address)
 	}
 }

@@ -247,6 +247,7 @@ agent-computer:
   # The platform Connector's public HTTPS address a Managed Computer's local
   # proxy reaches; required with relay-address.
   mcp-address: "${COMPUTER_MCP_ADDRESS:}"
+  api-address: "${COMPUTER_API_ADDRESS:}"
   # Where the same Connector serves Access Links on its public origin, from
   # which a Managed Computer downloads its Works' inputs; required with
   # relay-address.
