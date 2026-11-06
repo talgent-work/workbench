@@ -81,7 +81,7 @@ var Module = fx.Module("domain.agent",
 	// Agent's Domain Events stops before the dispatcher drains.
 	fx.Invoke(registerDomainEventLifecycle),
 	fx.Invoke(fx.Annotate(RegisterRPCHandlers, fx.ParamTags(``, ``, ``, ``, `optional:"true"`))),
-	fx.Invoke(registerPersonalWorkHandlers),
+	fx.Invoke(RegisterPersonalWorkHandlers),
 	fx.Provide(fx.Annotate(newFileSpaces, fx.As(new(personalwork.FileSpaces))), fx.Private),
 	fx.Provide(fx.Annotate(userdirectory.NewClient, fx.As(new(personalwork.UserDirectory))), fx.Private),
 	fx.Provide(personalwork.New, fx.Private),
@@ -207,10 +207,10 @@ var AgentLibraryProcedures = []string{
 	agentpublicv1connect.WorkFileServiceCreateWorkFileAccessLinkProcedure,
 }
 
-// registerPersonalWorkHandlers mounts a person's own Works and their files for
+// RegisterPersonalWorkHandlers mounts a person's own Works and their files for
 // the gateway-asserted person, and the Library reads for an Agent acting for
 // its Work's owner.
-func registerPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.PersonalWorks, native *nativeauth.LiveWorkClient, logger *slog.Logger) {
+func RegisterPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.PersonalWorks, native *nativeauth.LiveWorkClient, logger *slog.Logger) {
 	options := connect.WithInterceptors(connectlog.NewInterceptor(logger), authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{
 		Enabled: true, NativeProcessVerifier: native, NativeProcedures: AgentLibraryProcedures,
 	}))

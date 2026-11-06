@@ -46,8 +46,9 @@ func (p Person) self() string {
 }
 
 // libraryReader is whom a Library read is for: the person asking for
-// themselves, or the owner of the Personal Work whose Agent asks. The Agent
-// of any other Work reads no one's Library.
+// themselves, or the owner of the Work without a Project, of the work
+// purpose, whose Agent asks. The Agent of any other Work reads no one's
+// Library.
 func (p Person) libraryReader() string {
 	if p.Agent != nil && (p.Agent.ProjectID != "" || p.Agent.Purpose != domain.EmployeeWorkPurpose) {
 		return ""

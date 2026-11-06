@@ -21,6 +21,8 @@ type ownedWork struct {
 	definition *domain.AgentDefinition
 }
 
+// loadWork loads a Work for a reader of its files: the person, or the Agent
+// reading its owner's Library.
 func (p *PersonalWorks) loadWork(ctx context.Context, person Person, workID string) (ownedWork, error) {
 	if person.libraryReader() == "" {
 		return ownedWork{}, access.ErrAccessDenied
@@ -53,8 +55,12 @@ func (p *PersonalWorks) ListFiles(ctx context.Context, person Person, workID str
 	return files, nil
 }
 
-// changeableWork admits the owner's change to a Personal Work's files.
+// changeableWork admits the owner's change to a Personal Work's files; an
+// Agent changes none.
 func (p *PersonalWorks) changeableWork(ctx context.Context, person Person, workID string) (*domain.AgentWork, error) {
+	if person.self() == "" {
+		return nil, access.ErrAccessDenied
+	}
 	owned, err := p.loadWork(ctx, person, workID)
 	if err != nil {
 		return nil, err
@@ -112,7 +118,12 @@ func (p *PersonalWorks) StopSharing(ctx context.Context, person Person, file Wor
 	return p.files.RevokeShareLinks(ctx, owner, file.Kind, file.Name, person.UserID)
 }
 
+// sharingOwner admits the owner's sharing of a Personal Work's file; an Agent
+// shares none.
 func (p *PersonalWorks) sharingOwner(ctx context.Context, person Person, workID string) (string, error) {
+	if person.self() == "" {
+		return "", access.ErrAccessDenied
+	}
 	owned, err := p.loadWork(ctx, person, workID)
 	if err != nil {
 		return "", err
@@ -145,8 +156,12 @@ func (p *PersonalWorks) FilePreview(ctx context.Context, person Person, file Wor
 
 // readableOwner admits the person to read one file and names its File
 // Space's owner: the Work itself for a Personal Work, otherwise the owner its
-// input source resolves to.
+// input source resolves to. An Agent reads its owner's Library, which holds
+// Artifacts only.
 func (p *PersonalWorks) readableOwner(ctx context.Context, person Person, file WorkFile) (string, error) {
+	if person.Agent != nil && file.Kind != FileKindArtifact {
+		return "", ErrFileNotFound
+	}
 	owned, err := p.loadWork(ctx, person, file.WorkID)
 	if err != nil {
 		return "", err

@@ -38,14 +38,15 @@ type Library struct {
 // Subject or a Project contributes only the Artifacts it published itself:
 // its File Space may hold its caller's other Works' files.
 func (p *PersonalWorks) Library(ctx context.Context, person Person, filter LibraryFilter) (Library, error) {
-	if person.libraryReader() == "" {
+	reader := person.libraryReader()
+	if reader == "" {
 		return Library{}, access.ErrAccessDenied
 	}
-	agentID, _, err := p.employeeDefinition(ctx, person)
+	agentID, _, err := p.app.FindEmployeeAgent(ctx, reader)
 	if err != nil {
 		return Library{}, err
 	}
-	works, err := p.works.ListLibraryWorks(ctx, person.UserID, agentID, maxLibraryWorks)
+	works, err := p.works.ListLibraryWorks(ctx, reader, agentID, maxLibraryWorks)
 	if err != nil || len(works) == 0 {
 		return Library{}, err
 	}

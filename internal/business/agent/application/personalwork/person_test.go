@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A person reads their own Library; the Agent of their Personal Work reads it
-// for them; the Agent of a Work with a Project, or of another purpose, reads
+// A person reads their own Library; the Agent of their Work without a
+// Project reads it for them; the Agent of a Work with a Project, or of another purpose, reads
 // no one's. An Agent asks nothing else for anyone.
 func TestWhomALibraryReadIsFor(t *testing.T) {
 	person := Person{UserID: "u1"}
