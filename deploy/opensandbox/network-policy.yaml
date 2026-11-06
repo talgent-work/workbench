@@ -54,9 +54,9 @@ spec:
         - protocol: TCP
           port: 53
     # A sandbox reaches the platform through the controlplane's native API,
-    # which admits each call by its Work credential, and the Talgent MCP
-    # Gateway where one is deployed; the rules name the Pods' ports, as the
-    # CNI sees the backend.
+    # which admits each call by its Work credential; the rule names the Pod's
+    # port, as the CNI sees the backend. A deployment that adds a platform
+    # service for sandboxes opens it with a NetworkPolicy of its own.
     - to:
         - podSelector:
             matchLabels:
@@ -64,13 +64,6 @@ spec:
       ports:
         - protocol: TCP
           port: 8081
-    - to:
-        - podSelector:
-            matchLabels:
-              app: mcp-gateway
-      ports:
-        - protocol: TCP
-          port: 8080
     - to:
         - ipBlock:
             cidr: TALGENT_OTLP_SERVICE_CIDR

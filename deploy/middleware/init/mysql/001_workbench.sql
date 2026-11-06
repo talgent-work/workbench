@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `account` (
 CREATE TABLE IF NOT EXISTS `agent_definition` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'AgentDefinition UUIDv7 identity',
   `purpose` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Internal definition purpose within its usage scope',
-  `owners` json NOT NULL DEFAULT (json_array()) COMMENT 'Agent Owners of every Work of the definition: the person, or the Project''s Owner for the PM Coordinator',
+  `owners` json NOT NULL DEFAULT (json_array()) COMMENT 'Agent Owners of every Work of the definition',
   `scope_kind` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Business-authorized usage scope kind',
   `scope_ref` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Business-authorized usage scope reference',
   `home_owner_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Definition-authorized persistent HOME owner',
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `thinking_level` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Retained Work thinking effort; empty uses Harness default',
   `permission_mode` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'A Managed Work''s Harness permission mode, the one its Harness last reported; empty for a Cloud Work, which bypasses permission prompts',
   `context_ref` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Harness Session reference kept across process restarts',
-  `workspace_ref` varchar(512) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Session Workspace reference; empty for a Work without one, such as the PM Coordinator''s',
+  `workspace_ref` varchar(512) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Session Workspace reference; empty for a Work without one',
   `input_source` varchar(512) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Opaque read-only Work input source fixed at creation; empty means none',
   `input_space_token` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Space Token issued with the input source, handed to the sandbox Credential Vault for publication',
   `read_only_mounts` json NOT NULL DEFAULT (json_array()) COMMENT 'Caller-supplied read-only mounts fixed at creation: opaque space references and the names they appear under',
@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `disconnected_since` bigint NOT NULL DEFAULT '0' COMMENT 'Origin of the current Disconnection in Unix milliseconds, when the platform lost observation of the Work''s execution environment; zero while observed',
   `reach_resume_due` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Input awaiting the Work''s Managed Computer while it was away (a Resume refused as unreachable, or a stop beyond reach with input buffered), resumed once on its reconnection; cleared by every admitted start',
   `stop_request` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Current stop request correlation',
-  `end_request` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Retained end intent awaiting readiness',
+  `end_request` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Retained end request awaiting readiness',
   `failure_reason` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Observed failure diagnostic without context erasure',
   `visibility_public` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Message stream is public within the Work''s Project; otherwise private',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic aggregate version',
@@ -303,7 +303,7 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
   KEY `idx_allocation_label` (`allocation_label`),
   KEY `idx_input_owner_deleted_at` (`input_owner`, `deleted_at`),
   KEY `idx_authorization_ids` ((CAST(`authorization_ids` AS CHAR(36) ARRAY)))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent infrastructure durable external allocation intents';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent infrastructure durable external allocation records';
 
 CREATE TABLE IF NOT EXISTS `execution_removal` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Sandbox allocation identity',

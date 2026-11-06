@@ -16,7 +16,7 @@ shims:
     enabled: true
     # Upstream starts virtiofsd with one request thread, which serializes every
     # guest file operation; on JuiceFS each close waits for its object upload,
-    # so parallel writers inside a sandbox gained nothing (#397).
+    # so parallel writers inside a sandbox gained nothing.
     dropIn: |
       [hypervisor.qemu]
       virtio_fs_extra_args = ["--thread-pool-size=16", "-o", "announce_submounts"]

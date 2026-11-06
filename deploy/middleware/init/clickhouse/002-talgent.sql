@@ -6,7 +6,7 @@ SELECT throwIf(countIf(database = 'talgent_trace' AND name IN ('otel_traces', 'o
 -- Native evidence is written by the official Collector (7-day TTL).
 -- Measurement facts contain no input/output body and expire after 30 days.
 -- Service accounts are provisioned by operators outside this schema migration
--- (see deploy/DEPLOYMENT.md), and XML-defined users reject SQL GRANT statements.
+-- (see docs/self-hosting.md), and XML-defined users reject SQL GRANT statements.
 CREATE DATABASE IF NOT EXISTS talgent_messages;
 
 CREATE OR REPLACE FUNCTION talgent_log_evidence_id AS (trace_id, event_time, body, attrs) ->

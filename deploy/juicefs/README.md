@@ -8,7 +8,7 @@
 
 ## 一致的备份点
 
-1. 通过产品 API 停止所有执行并等待匹配退出和环境回收。停止 orchestra（Orchestrator 的新协调输入与 Intent 文件写入）、controlplane 的写入及其他文件写入方；停止期间不再创建或启动 Session。保存业务数据库备份，使 Work、Work Subject 和文件引用与文件系统恢复点一致；需要恢复会话时，同一停写窗口还须备份 NAS 上的 HOME 和 workspace（见部署说明的存储布局）。
+1. 通过产品 API 停止所有执行并等待匹配退出和环境回收。停止 controlplane 及部署中其他服务的写入（数据库与文件）；停止期间不再创建或启动 Session。保存业务数据库备份，使 Work、Work Subject 和文件引用与文件系统恢复点一致；需要恢复会话时，同一停写窗口还须备份 NAS 上的 HOME 和 workspace（见部署说明的存储布局）。
 2. 在能连接元数据 Redis 和对象存储的运维环境使用固定 JuiceFS 1.3.1 客户端，执行下面的元数据备份。然后在保持停止写入的窗口内将**整个卷的对象前缀**复制到备份位置；不能用挂载目录中的可见文件副本替代 JuiceFS 元数据和对象备份。HOME 与 workspace 位于 NAS，不在这个 JuiceFS 恢复点内。
 3. 将元数据二进制、校验文件、对象副本和业务数据库备份作为一个恢复点保存到另一台机器或独立存储。单独安全保管对象存储密钥。
 
@@ -41,8 +41,8 @@ juicefs mount -d --no-usage-report "$JUICEFS_META_URL" /mnt/talgent-recovered
 
 ## 恢复验收
 
-通过 Intent 文件入口重新下载附件原件和已发布制品，比较备份前后完整字节；恢复 NAS 后通过 Work 入口读取工作文件。以 UID/GID 1000 的新 OpenSandbox/execd 工作负载实际 Resume 原会话，确认原生推理请求包含此前对话并能继续输入；另验证空会话/缺失历史的原生失败没有变为新上下文。
+通过产品的文件下载入口重新下载附件原件和已发布制品，比较备份前后完整字节；恢复 NAS 后通过 Work 入口读取工作文件。以 UID/GID 1000 的新 OpenSandbox/execd 工作负载实际 Resume 原会话，确认原生推理请求包含此前对话并能继续输入；另验证空会话/缺失历史的原生失败没有变为新上下文。
 
-NAS 恢复覆盖完整 HOME 的历史、配置、Plugin、共享记忆及其他资产。每个 AgentDefinition 的 Works 共享其 HOME，员工跨项目共享个人 HOME，项目 Agent 按 Project 和用途拥有 HOME；具体归属见 Storage 模型。用挂载后的内容验证，不能仅比较 Namespace 或容器内路径。停止和关闭 Work 保留 HOME，关闭后的回收只删除对应 Work 工作区。
+NAS 恢复覆盖完整 HOME 的历史、配置、Plugin、共享记忆及其他资产。HOME 按所有者划分，每个 AgentDefinition 的 Works 共享其 HOME；按部署中每个 HOME 的所有者逐一验证。用挂载后的内容验证，不能仅比较 Namespace 或容器内路径。停止和关闭 Work 保留 HOME，关闭后的回收只删除对应 Work 工作区。
 
 官方依据：[Redis 运维](https://juicefs.com/docs/community/redis_best_practices/)、[元数据备份恢复](https://juicefs.com/docs/community/metadata_dump_load/)、[元数据引擎](https://juicefs.com/docs/community/databases_for_metadata/)。恢复后按部署验证检查产品入口；历史恢复执行结果只适用于其当时的代码、存储布局和环境。

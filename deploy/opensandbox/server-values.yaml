@@ -50,7 +50,7 @@ configToml: |
   sandbox_create_timeout_seconds = 300
   # The informer cache stopped following BatchSandbox status on this cluster:
   # a create waited on a stale "pending allocation" until its timeout deleted a
-  # sandbox that was already Ready (E2E of #458, 2026-11-03). Reads go to the
+  # sandbox that was already Ready (seen in an E2E run, 2026-11-03). Reads go to the
   # API server instead; the server polls one sandbox at a time, so the load is
   # small. Re-enable only after verifying the cache follows status updates.
   informer_enabled = false
