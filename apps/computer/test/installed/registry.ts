@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 
-// A stand-in npm registry for the @talgent-work scope: it serves the packument
-// of @talgent-work/computer and each release's tarball, with the sha512
+// A stand-in npm registry for the @talgent scope: it serves the packument
+// of @talgent/computer and each release's tarball, with the sha512
 // integrity npm checks every download against. A release may declare the
 // integrity of other bytes than it serves, which npm must refuse.
 
@@ -25,7 +25,7 @@ export class Registry {
       if (release === undefined) return void response.writeHead(404).end()
       return void response.writeHead(200, { 'Content-Type': 'application/octet-stream' }).end(release.tarball)
     }
-    if (decodeURIComponent(url.pathname).toLowerCase() !== '/@talgent-work/computer') return void response.writeHead(404).end()
+    if (decodeURIComponent(url.pathname).toLowerCase() !== '/@talgent/computer') return void response.writeHead(404).end()
     const versions: Record<string, unknown> = {}
     for (const [version, release] of this.releases) {
       const declared = release.declared ?? release.tarball
@@ -39,7 +39,7 @@ export class Registry {
         },
       }
     }
-    response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ name: '@talgent-work/computer', 'dist-tags': { latest: [...this.releases.keys()][0] }, versions }))
+    response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ name: '@talgent/computer', 'dist-tags': { latest: [...this.releases.keys()][0] }, versions }))
   })
 
   async listen(): Promise<void> {

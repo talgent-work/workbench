@@ -4,8 +4,8 @@ The Agent Workbench's pages, components, hooks, clients and styles. Every web ap
 Workbench uses it; each app mounts the pages in its own shell through `EntryShellContext`
 (`components/shell/entry-shell.ts`).
 
-An app imports modules by path, such as `@talgent-work/workbench-ui/lib/client`, its stylesheet
-right after Tailwind (`@import "@talgent-work/workbench-ui/styles/workbench.css"`), and its Vite
+An app imports modules by path, such as `@talgent/workbench-ui/lib/client`, its stylesheet
+right after Tailwind (`@import "@talgent/workbench-ui/styles/workbench.css"`), and its Vite
 settings from `vite-preset.ts`: the public icons, bundle splitting, test environment and the
 dev proxy to the core. Test support for apps is in `test-support/`.
 

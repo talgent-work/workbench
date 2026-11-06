@@ -5,15 +5,15 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ModelVendor } from "@talgent-work/workbench-contracts/agent/public/v1/model_pb";
-import { PermissionMode } from "@talgent-work/workbench-contracts/agent/public/v1/harness_pb";
-import { UsableComputerKind } from "@talgent-work/workbench-contracts/computer/public/v1/computer_pb";
-import { WorkFileKind } from "@talgent-work/workbench-contracts/agent/public/v1/work_file_pb";
-import { personalPathsAt } from "@talgent-work/workbench-ui/components/shell/entry-shell";
+import { ModelVendor } from "@talgent/workbench-contracts/agent/public/v1/model_pb";
+import { PermissionMode } from "@talgent/workbench-contracts/agent/public/v1/harness_pb";
+import { UsableComputerKind } from "@talgent/workbench-contracts/computer/public/v1/computer_pb";
+import { WorkFileKind } from "@talgent/workbench-contracts/agent/public/v1/work_file_pb";
+import { personalPathsAt } from "@talgent/workbench-ui/components/shell/entry-shell";
 import WorkbenchRoutes from "../workbench-routes";
-import { recorder, resetServices, services, userId } from "@talgent-work/workbench-ui/test-support/backend";
+import { recorder, resetServices, services, userId } from "@talgent/workbench-ui/test-support/backend";
 
-vi.mock("@talgent-work/workbench-ui/lib/transport", async () => (await import("@talgent-work/workbench-ui/test-support/backend")).transportModule);
+vi.mock("@talgent/workbench-ui/lib/transport", async () => (await import("@talgent/workbench-ui/test-support/backend")).transportModule);
 
 const minutesAgo = (minutes: number) => timestampFromDate(new Date(Date.now() - minutes * 60_000));
 const works = [

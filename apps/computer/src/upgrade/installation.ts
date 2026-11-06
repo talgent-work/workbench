@@ -4,7 +4,7 @@ import { posix, win32 } from 'node:path'
 // Where npm installed this Talgent Computer, so that it upgrades itself
 // with the npm next to the node that runs it, into the same prefix.
 
-export const COMPUTER_PACKAGE = '@talgent-work/computer'
+export const COMPUTER_PACKAGE = '@talgent/computer'
 
 export interface Installation {
   // The node that runs Talgent Computer, and npm's own program next to it.
@@ -30,8 +30,8 @@ export interface InstallationProbe {
 // cannot upgrade itself: it runs from a checkout, no npm is beside node, or
 // its user cannot write the prefix (one installed with sudo, say), where
 // every install would fail with EACCES.
-// A global install lives at <prefix>/lib/node_modules/@talgent-work/computer, on
-// Windows at <prefix>\node_modules\@talgent-work\computer.
+// A global install lives at <prefix>/lib/node_modules/@talgent/computer, on
+// Windows at <prefix>\node_modules\@talgent\computer.
 export function findInstallation(probe: InstallationProbe): Installation | { unavailable: string } {
   const platform = probe.platform ?? process.platform
   const exists = probe.exists ?? existsSync
@@ -40,7 +40,7 @@ export function findInstallation(probe: InstallationProbe): Installation | { una
   const root = path.resolve(probe.packageRoot)
   const scope = path.dirname(root)
   const nodeModules = path.dirname(scope)
-  if (path.basename(root) !== 'computer' || path.basename(scope) !== '@talgent-work' || path.basename(nodeModules) !== 'node_modules') {
+  if (path.basename(root) !== 'computer' || path.basename(scope) !== '@talgent' || path.basename(nodeModules) !== 'node_modules') {
     return { unavailable: `it runs from ${root}, not from an "npm install -g ${COMPUTER_PACKAGE}"` }
   }
   let prefix = path.dirname(nodeModules)

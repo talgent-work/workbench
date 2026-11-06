@@ -1,5 +1,5 @@
-import { AppShell } from "@talgent-work/workbench-ui/components/shell/app-shell";
-import type { PageLayoutProps } from "@talgent-work/workbench-ui/components/shell/entry-shell";
+import { AppShell } from "@talgent/workbench-ui/components/shell/app-shell";
+import type { PageLayoutProps } from "@talgent/workbench-ui/components/shell/entry-shell";
 import { WorkbenchSidebar } from "./workbench-sidebar";
 
 /** Talgent Workbench's page frame: the shell with the Workbench sidebar. */

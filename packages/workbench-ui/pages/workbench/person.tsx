@@ -1,5 +1,5 @@
 import { Avatar, Label } from "@heroui/react";
-import type { DirectoryUser } from "@talgent-work/workbench-contracts/agent/public/v1/personal_work_pb";
+import type { DirectoryUser } from "@talgent/workbench-contracts/agent/public/v1/personal_work_pb";
 import { avatarInitial, personName, safeAvatarUrl } from "../../lib/user-display";
 
 /** A person of the User Directory: avatar, name and username. */

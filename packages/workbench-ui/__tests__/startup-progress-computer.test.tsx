@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { render, screen } from "@testing-library/react";
-import { StartupProgressSchema, StartupStageSchema } from "@talgent-work/workbench-contracts/agent/public/v1/startup_pb";
-import { WorkStartupRequestSchema } from "@talgent-work/workbench-contracts/agent/public/v1/work_pb";
+import { StartupProgressSchema, StartupStageSchema } from "@talgent/workbench-contracts/agent/public/v1/startup_pb";
+import { WorkStartupRequestSchema } from "@talgent/workbench-contracts/agent/public/v1/work_pb";
 import { describe, expect, it } from "vitest";
 import { StartupProgressPanel } from "../components/session/startup-progress";
 

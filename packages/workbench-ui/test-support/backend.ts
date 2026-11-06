@@ -1,13 +1,13 @@
 import type { DescService } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport, type ConnectRouter, type HandlerContext } from "@connectrpc/connect";
-import { AgentWorkService } from "@talgent-work/workbench-contracts/agent/public/v1/work_pb";
-import { PersonalWorkService } from "@talgent-work/workbench-contracts/agent/public/v1/personal_work_pb";
-import { WorkFileService } from "@talgent-work/workbench-contracts/agent/public/v1/work_file_pb";
-import { SessionService } from "@talgent-work/workbench-contracts/account/public/v1/session_pb";
-import { ComputerService } from "@talgent-work/workbench-contracts/computer/public/v1/computer_pb";
-import { MarketplaceService } from "@talgent-work/workbench-contracts/marketplace/public/v1/marketplace_pb";
-import { StreamGatewayService } from "@talgent-work/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
-import { TraceQueryService } from "@talgent-work/workbench-contracts/trace/public/v1/trace_pb";
+import { AgentWorkService } from "@talgent/workbench-contracts/agent/public/v1/work_pb";
+import { PersonalWorkService } from "@talgent/workbench-contracts/agent/public/v1/personal_work_pb";
+import { WorkFileService } from "@talgent/workbench-contracts/agent/public/v1/work_file_pb";
+import { SessionService } from "@talgent/workbench-contracts/account/public/v1/session_pb";
+import { ComputerService } from "@talgent/workbench-contracts/computer/public/v1/computer_pb";
+import { MarketplaceService } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import { StreamGatewayService } from "@talgent/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
+import { TraceQueryService } from "@talgent/workbench-contracts/trace/public/v1/trace_pb";
 import { vi } from "vitest";
 
 // The single frontend test boundary: pages render through the real
@@ -46,7 +46,7 @@ export function routeCoreServices(router: ConnectRouter) {
 
 export const testTransport = createRouterTransport(routeCoreServices);
 
-/** Stands in for lib/transport: vi.mock("@talgent-work/workbench-ui/lib/transport", ...). */
+/** Stands in for lib/transport: vi.mock("@talgent/workbench-ui/lib/transport", ...). */
 export const transportModule = { transport: testTransport, streamTransport: testTransport, traceTransport: testTransport };
 
 export const userId = "e6c7e756-007d-5236-a492-7f4b9be0b2e8";

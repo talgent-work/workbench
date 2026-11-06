@@ -33,12 +33,12 @@ await registry.listen()
 const gateway = new Gateway({ workId: 'work-1', accessToken: TOKEN })
 await gateway.listen()
 // npm keeps the person's own configuration and cache under the scratch
-// home; only the @talgent-work scope comes from the stand-in registry, through a
+// home; only the @talgent scope comes from the stand-in registry, through a
 // global configuration file, which a shell passes on as no variable named
 // with "@" would be.
 const npmConfig = (key: string) => execFileSync('npm', ['config', 'get', key], { encoding: 'utf8', shell: windows }).trim()
 const globalConfig = join(scratch, 'npmrc')
-await writeFile(globalConfig, `@talgent-work:registry=${registry.origin}/\n`)
+await writeFile(globalConfig, `@talgent:registry=${registry.origin}/\n`)
 // npm run hands its own configuration to scripts as npm_config_*; the
 // machine's npm reads only what is set here.
 const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)))
@@ -99,18 +99,18 @@ async function nextRelease(version: string): Promise<Buffer> {
   assert.equal(bundle.split(inlined).length, 2, 'the bundle inlines its version once')
   await writeFile(join(stage, 'dist', 'computer.mjs'), bundle.replace(inlined, `version: ${JSON.stringify(version)},`))
   execFileSync('npm', ['pack', '--pack-destination', scratch], { cwd: stage, shell: windows, stdio: 'ignore' })
-  return readFile(join(scratch, `talgent-work-computer-${version}.tgz`))
+  return readFile(join(scratch, `talgent-computer-${version}.tgz`))
 }
 
 try {
-  const packed = await readFile(new URL(`talgent-work-computer-${manifest.version}.tgz`, packageDir))
+  const packed = await readFile(new URL(`talgent-computer-${manifest.version}.tgz`, packageDir))
   registry.releases.set(manifest.version, { manifest, tarball: packed })
   const upgraded = await nextRelease(next)
   registry.releases.set(next, { manifest, tarball: upgraded })
   // Declared bytes no cache holds, so npm downloads and checks the tarball.
   registry.releases.set(corrupt, { manifest, tarball: upgraded, declared: Buffer.from(`not the ${corrupt} tarball`) })
   // Asynchronously, as this process serves the registry npm reads.
-  const installing = spawn('npm', ['install', '--global', '--prefix', prefix, '--no-audit', '--no-fund', `@talgent-work/computer@${manifest.version}`], { env, shell: windows, stdio: 'inherit' })
+  const installing = spawn('npm', ['install', '--global', '--prefix', prefix, '--no-audit', '--no-fund', `@talgent/computer@${manifest.version}`], { env, shell: windows, stdio: 'inherit' })
   assert.equal(await within(exited(installing), 600_000, 'npm install'), 0)
 
   assert.equal(await within(exited(command(`register --server ${gateway.origin} --name upgrade-check`)), 60_000, 'register'), 0, Buffer.concat(log).toString())

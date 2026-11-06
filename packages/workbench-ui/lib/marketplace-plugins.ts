@@ -1,4 +1,4 @@
-import type { PluginRelease } from "@talgent-work/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import type { PluginRelease } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
 
 /** What presenting a Plugin needs; a full release and a catalog summary both carry it. */
 export type PresentablePlugin = Pick<PluginRelease, "slug" | "source" | "nativeEntry">;

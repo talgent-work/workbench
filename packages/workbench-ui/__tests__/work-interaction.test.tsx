@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { create } from "@bufbuild/protobuf";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MessageDetailFormat, PendingInteractionSchema, UnifiedMessageKind, UnifiedMessageSchema } from "@talgent-work/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { MessageDetailFormat, PendingInteractionSchema, UnifiedMessageKind, UnifiedMessageSchema } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
 import { afterEach, expect, it, vi } from "vitest";
 import { WorkInteraction } from "../components/work/work-interaction";
 

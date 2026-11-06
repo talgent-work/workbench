@@ -114,24 +114,24 @@ pnpm-install:
 	pnpm install --frozen-lockfile
 
 gen-ts-rebuild:
-	pnpm --filter @talgent-work/workbench-contracts run rebuild
+	pnpm --filter @talgent/workbench-contracts run rebuild
 
 gen-ts-test-runtime:
-	pnpm --filter @talgent-work/workbench-contracts run test:runtime
+	pnpm --filter @talgent/workbench-contracts run test:runtime
 
 frontend-typecheck:
-	pnpm --filter @talgent-work/workbench-contracts run build
-	pnpm -r --parallel --stream --filter '!@talgent-work/workbench-contracts' run typecheck
+	pnpm --filter @talgent/workbench-contracts run build
+	pnpm -r --parallel --stream --filter '!@talgent/workbench-contracts' run typecheck
 
 frontend-test:
 	pnpm -r --parallel --stream run test
 
 frontend-build:
-	pnpm --filter @talgent-work/workbench-contracts run build
-	pnpm -r --parallel --stream --filter '!@talgent-work/workbench-contracts' run build
+	pnpm --filter @talgent/workbench-contracts run build
+	pnpm -r --parallel --stream --filter '!@talgent/workbench-contracts' run build
 
 frontend-lint:
-	pnpm --filter @talgent-work/workbench-ui --filter @talgent-work/workbench-web --filter @talgent-work/computer run lint
+	pnpm --filter @talgent/workbench-ui --filter @talgent/workbench-web --filter @talgent/computer run lint
 
 # lint
 lint:

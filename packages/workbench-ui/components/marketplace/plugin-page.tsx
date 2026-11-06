@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Alert, Button, Card, Chip, Dropdown, Label, Link as HeroLink, Switch } from "@heroui/react";
-import type { InstalledPlugin, PluginRelease } from "@talgent-work/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import type { InstalledPlugin, PluginRelease } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
 import { ChevronRight, Lock, MoreHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useInstalledPlugins, usePluginActions } from "../../lib/marketplace-catalog";

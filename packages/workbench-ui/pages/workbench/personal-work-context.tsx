@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { Alert, Button } from "@heroui/react";
-import { WorkFileKind, type WorkFile } from "@talgent-work/workbench-contracts/agent/public/v1/work_file_pb";
+import { WorkFileKind, type WorkFile } from "@talgent/workbench-contracts/agent/public/v1/work_file_pb";
 import { Plus } from "lucide-react";
 import { AttachmentConflictDialog, FileSection, type FileRow } from "../../components/files/file-section";
 import { useReadingArea } from "../../components/shell/reading-context";

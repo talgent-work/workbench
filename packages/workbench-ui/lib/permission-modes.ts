@@ -1,4 +1,4 @@
-import { PermissionMode } from "@talgent-work/workbench-contracts/agent/public/v1/harness_pb";
+import { PermissionMode } from "@talgent/workbench-contracts/agent/public/v1/harness_pb";
 
 // How much a Managed Work's Harness asks before it acts, as the person picks
 // it at start and while the Work runs. A Cloud Work has no permission mode.

@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from "@bufbuild/protobuf";
-import type { InstalledPlugin, ParameterDeclaration } from "@talgent-work/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import type { InstalledPlugin, ParameterDeclaration } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
 
 // Form values are text as typed; they become typed manual values only after
 // validation against the release's declarations. Blank means "not set here",

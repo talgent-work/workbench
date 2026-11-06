@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { UnifiedMessageKind, type UnifiedMessage } from "@talgent-work/workbench-contracts/dispatcher/public/v1/unified_message_pb";
-import type { StreamDiagnosticFrame, WorkStateFrame, WatchStreamResponse } from "@talgent-work/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
+import { UnifiedMessageKind, type UnifiedMessage } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import type { StreamDiagnosticFrame, WorkStateFrame, WatchStreamResponse } from "@talgent/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
 import { useWorkStreamSource } from "../lib/work-stream-source";
 
 interface WorkStreamOptions {

@@ -4,7 +4,7 @@ import { Alert, Button, Chip, Disclosure, Skeleton, Tooltip } from "@heroui/reac
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { Download, RefreshCw } from "lucide-react";
-import type { Span } from "@talgent-work/workbench-contracts/trace/public/v1/trace_pb";
+import type { Span } from "@talgent/workbench-contracts/trace/public/v1/trace_pb";
 import { traceClient } from "../../../lib/client";
 import { formatCompactTokenCount, traceMetricKinds } from "../../../lib/trace-view-model";
 import { cacheHitRate, formatHitRate, tokenCategories, tokenTotal, tokenUsageFromMeasurements } from "../../../lib/token-usage";

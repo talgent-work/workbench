@@ -4,7 +4,7 @@ import type { CallOptions } from "@connectrpc/connect";
 import {
   GetMessageDetailRequestSchema, GetToolDetailRequestSchema, ListMessagesBySessionRequestSchema, WatchStreamRequestSchema,
   type GetMessageDetailResponse, type GetToolDetailResponse, type ListMessagesBySessionResponse, type WatchStreamResponse,
-} from "@talgent-work/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
+} from "@talgent/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
 import { streamClient } from "./client";
 
 /** Where a Work's message stream is read from: Streamgateway for its owner

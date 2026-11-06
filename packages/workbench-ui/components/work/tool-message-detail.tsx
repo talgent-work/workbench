@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button } from "@heroui/react";
-import { MessageDetailFormat } from "@talgent-work/workbench-contracts/dispatcher/public/v1/unified_message_pb";
-import type { GetMessageDetailResponse } from "@talgent-work/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
+import { MessageDetailFormat } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import type { GetMessageDetailResponse } from "@talgent/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
 import { useWorkStreamSource } from "../../lib/work-stream-source";
 
 export const detailPageSize = 16384;

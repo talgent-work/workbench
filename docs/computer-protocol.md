@@ -50,7 +50,7 @@ output kept; contact before then changes nothing. Both values change together: A
 `FENCE_AFTER_MS` (`apps/computer/src/fence.ts`).
 
 The service also answers `GET <origin>/computer/v1/release` with `{"version":"X.Y.Z"}`: the platform
-release the deployment runs, at which `@talgent-work/computer` is published to npm, or `""` when the
+release the deployment runs, at which `@talgent/computer` is published to npm, or `""` when the
 deployment is no release. It is the platform's Target Version, the release every Managed Computer
 should run, and the single source of it: the Computers page builds the install command from it, and
 every `welcome` announces the same release as `target_version`.
@@ -107,7 +107,7 @@ When `target_version` is a release other than its own version, Talgent Computer 
 upgrade at a time, holding `<data dir>/state/upgrade.lock` so that no two of its processes install or
 change the record at once:
 
-1. It runs `npm install --global --prefix <prefix> @talgent-work/computer@<target>` with the npm beside the
+1. It runs `npm install --global --prefix <prefix> @talgent/computer@<target>` with the npm beside the
    node that runs it, `<prefix>` being the global prefix it was installed under. npm checks the download
    against the sha512 integrity the registry publishes and refuses a mismatch (`EINTEGRITY`). npm runs
    detached, so an interrupt typed at the terminal never cuts an install short.

@@ -24,30 +24,30 @@ async function scratch(): Promise<string> {
 test('a global install upgrades with the npm beside its node into its own prefix', () => {
   const npm = '/opt/node/lib/node_modules/npm/bin/npm-cli.js'
   assert.deepEqual(findInstallation({
-    packageRoot: '/home/a/.npm-global/lib/node_modules/@talgent-work/computer', node: '/opt/node/bin/node', program: '/home/a/.npm-global/bin/talgent-computer',
+    packageRoot: '/home/a/.npm-global/lib/node_modules/@talgent/computer', node: '/opt/node/bin/node', program: '/home/a/.npm-global/bin/talgent-computer',
     platform: 'linux', exists: (path) => path === npm, writable: () => true,
   }), { node: '/opt/node/bin/node', npmCli: npm, prefix: '/home/a/.npm-global', program: '/home/a/.npm-global/bin/talgent-computer' })
 
   const windowsNpm = 'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js'
   assert.deepEqual(findInstallation({
-    packageRoot: 'C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@talgent-work\\computer', node: 'C:\\Program Files\\nodejs\\node.exe', program: 'C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@talgent-work\\computer\\dist\\talgent-computer.mjs',
+    packageRoot: 'C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@talgent\\computer', node: 'C:\\Program Files\\nodejs\\node.exe', program: 'C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@talgent\\computer\\dist\\talgent-computer.mjs',
     platform: 'win32', exists: (path) => path === windowsNpm, writable: () => true,
-  }), { node: 'C:\\Program Files\\nodejs\\node.exe', npmCli: windowsNpm, prefix: 'C:\\Users\\a\\AppData\\Roaming\\npm', program: 'C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@talgent-work\\computer\\dist\\talgent-computer.mjs' })
+  }), { node: 'C:\\Program Files\\nodejs\\node.exe', npmCli: windowsNpm, prefix: 'C:\\Users\\a\\AppData\\Roaming\\npm', program: 'C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@talgent\\computer\\dist\\talgent-computer.mjs' })
 
   // npm upgraded into the same prefix serves when none is beside node.
   const prefixNpm = '/usr/local/lib/node_modules/npm/bin/npm-cli.js'
-  assert.equal((findInstallation({ packageRoot: '/usr/local/lib/node_modules/@talgent-work/computer', node: '/usr/bin/node', program: 'p', platform: 'linux', exists: (path) => path === prefixNpm, writable: () => true }) as Installation).npmCli, prefixNpm)
+  assert.equal((findInstallation({ packageRoot: '/usr/local/lib/node_modules/@talgent/computer', node: '/usr/bin/node', program: 'p', platform: 'linux', exists: (path) => path === prefixNpm, writable: () => true }) as Installation).npmCli, prefixNpm)
 })
 
 test('a checkout, a local install or a node without npm cannot upgrade itself', () => {
   const always = () => true
-  assert.match((findInstallation({ packageRoot: '/src/talgent/apps/computer', node: '/usr/bin/node', program: 'p', platform: 'linux', exists: always }) as { unavailable: string }).unavailable, /not from an "npm install -g @talgent-work\/computer"/)
-  assert.match((findInstallation({ packageRoot: '/project/node_modules/@talgent-work/computer', node: '/usr/bin/node', program: 'p', platform: 'linux', exists: always }) as { unavailable: string }).unavailable, /not in a global npm prefix/)
-  assert.match((findInstallation({ packageRoot: '/usr/lib/node_modules/@talgent-work/computer', node: '/usr/bin/node', program: 'p', platform: 'linux', exists: () => false }) as { unavailable: string }).unavailable, /no npm is installed next to \/usr\/bin\/node/)
+  assert.match((findInstallation({ packageRoot: '/src/talgent/apps/computer', node: '/usr/bin/node', program: 'p', platform: 'linux', exists: always }) as { unavailable: string }).unavailable, /not from an "npm install -g @talgent\/computer"/)
+  assert.match((findInstallation({ packageRoot: '/project/node_modules/@talgent/computer', node: '/usr/bin/node', program: 'p', platform: 'linux', exists: always }) as { unavailable: string }).unavailable, /not in a global npm prefix/)
+  assert.match((findInstallation({ packageRoot: '/usr/lib/node_modules/@talgent/computer', node: '/usr/bin/node', program: 'p', platform: 'linux', exists: () => false }) as { unavailable: string }).unavailable, /no npm is installed next to \/usr\/bin\/node/)
 })
 
 test('a prefix this user cannot write, as one installed with sudo, cannot upgrade itself', () => {
-  const probe = { packageRoot: '/usr/lib/node_modules/@talgent-work/computer', node: '/usr/bin/node', program: 'p', platform: 'linux' as const, exists: () => true }
+  const probe = { packageRoot: '/usr/lib/node_modules/@talgent/computer', node: '/usr/bin/node', program: 'p', platform: 'linux' as const, exists: () => true }
   assert.match((findInstallation({ ...probe, writable: (dir) => dir !== '/usr/lib/node_modules' }) as { unavailable: string }).unavailable, /this user cannot write \/usr\/lib\/node_modules, where npm installs it/)
   assert.match((findInstallation({ ...probe, writable: (dir) => dir !== '/usr/bin' }) as { unavailable: string }).unavailable, /cannot write \/usr\/bin/)
 })
@@ -66,7 +66,7 @@ if (version === '6.6.6') {
   process.stderr.write('npm error code EINTEGRITY\\nnpm error sha512-abc integrity checksum failed when using sha512\\n')
   process.exit(1)
 }
-const dist = join(prefix, 'lib', 'node_modules', '@talgent-work', 'computer', 'dist')
+const dist = join(prefix, 'lib', 'node_modules', '@talgent', 'computer', 'dist')
 mkdirSync(dist, { recursive: true })
 writeFileSync(join(dist, 'talgent-computer.mjs'), 'process.stdout.write(' + JSON.stringify(version + '\\n') + ')\\n')
 `
@@ -76,7 +76,7 @@ async function fakeInstallation(): Promise<{ installation: Installation; log: st
   const npmCli = join(dir, 'npm-cli.cjs')
   await writeFile(npmCli, FAKE_NPM)
   const prefix = join(dir, 'prefix')
-  const program = join(prefix, 'lib', 'node_modules', '@talgent-work', 'computer', 'dist', 'talgent-computer.mjs')
+  const program = join(prefix, 'lib', 'node_modules', '@talgent', 'computer', 'dist', 'talgent-computer.mjs')
   const log = join(dir, 'npm.log')
   await writeFile(log, '')
   process.env.FAKE_NPM_LOG = log
@@ -88,9 +88,9 @@ test('npm installs the release into the prefix and the installed command answers
   const npm = new NpmInstaller(installation)
   await npm.install('0.2.0')
   assert.equal(await npm.installedVersion(), '0.2.0')
-  assert.deepEqual(JSON.parse((await readFile(log, 'utf8')).trim()), ['install', '--global', '--prefix', installation.prefix, '--no-audit', '--no-fund', '@talgent-work/computer@0.2.0'])
+  assert.deepEqual(JSON.parse((await readFile(log, 'utf8')).trim()), ['install', '--global', '--prefix', installation.prefix, '--no-audit', '--no-fund', '@talgent/computer@0.2.0'])
 
-  await assert.rejects(npm.install('6.6.6'), /npm install @talgent-work\/computer@6\.6\.6 failed \(exit 1\): code EINTEGRITY; sha512-abc integrity checksum failed/)
+  await assert.rejects(npm.install('6.6.6'), /npm install @talgent\/computer@6\.6\.6 failed \(exit 1\): code EINTEGRITY; sha512-abc integrity checksum failed/)
   assert.equal(await npm.installedVersion(), '0.2.0', 'a refused download leaves the installed release')
 })
 

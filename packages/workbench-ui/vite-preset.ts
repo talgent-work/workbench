@@ -30,7 +30,7 @@ const escaped = (name: string) => name.replace(/[.]/g, String.raw`\.`).replaceAl
 export function build(app: { groups?: ChunkGroup[]; lazy?: string[] } = {}): UserConfig["build"] {
   // This package splits like an app's own sources, also when installed from
   // the registry.
-  const lazy = [".pnpm/", "@talgent-work/workbench-ui/", ...(app.lazy ?? []), ...lazyLibraries].map(escaped);
+  const lazy = [".pnpm/", "@talgent/workbench-ui/", ...(app.lazy ?? []), ...lazyLibraries].map(escaped);
   return {
     rollupOptions: {
       output: {
@@ -38,7 +38,7 @@ export function build(app: { groups?: ChunkGroup[]; lazy?: string[] } = {}): Use
           groups: [
             { name: "react-runtime", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 40 },
             { name: "router-query", test: /node_modules[\\/](react-router|react-router-dom|@tanstack)[\\/]/, priority: 35 },
-            { name: "connect-runtime", test: /node_modules[\\/](@bufbuild|@connectrpc|@talgent-work[\\/][\w-]+-contracts)[\\/]|gen[\\/]ts[\\/]dist[\\/]/, priority: 30 },
+            { name: "connect-runtime", test: /node_modules[\\/](@bufbuild|@connectrpc|@talgent[\\/][\w-]+-contracts)[\\/]|gen[\\/]ts[\\/]dist[\\/]/, priority: 30 },
             {
               name: "markdown-highlight",
               test: /node_modules[\\/](react-markdown|react-syntax-highlighter|refractor|remark-gfm|unified|micromark|mdast-util-|hast-util-|property-information|vfile)[\\/]/,

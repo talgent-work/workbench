@@ -1,6 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
-import { UnifiedMessageKind, UnifiedMessageSchema } from "@talgent-work/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { UnifiedMessageKind, UnifiedMessageSchema } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
 import { expect, it } from "vitest";
 import { WorkConversation } from "../lib/work-conversation";
 

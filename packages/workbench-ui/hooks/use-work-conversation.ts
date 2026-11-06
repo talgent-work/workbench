@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import type { MessageHistoryCursor, WorkStateFrame } from "@talgent-work/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
-import { ContentBlockType, UnifiedMessageKind, type UnifiedMessage } from "@talgent-work/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import type { MessageHistoryCursor, WorkStateFrame } from "@talgent/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
+import { ContentBlockType, UnifiedMessageKind, type UnifiedMessage } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
 import { useWorkStreamSource } from "../lib/work-stream-source";
 import { WorkConversation } from "../lib/work-conversation";
 import { compareMessageCursor, useWorkStream } from "./use-work-stream";

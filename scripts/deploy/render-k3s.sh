@@ -44,7 +44,7 @@ fi
 find "${work}/tree" -name environment.env -exec cp "${work}/environment.env" {} \;
 
 # A vX.Y.Z tag deploys that platform release; the Computer Gateway tells the
-# Computers page which @talgent-work/computer to install. Any other tag is no
+# Computers page which @talgent/computer to install. Any other tag is no
 # release.
 release_version=""
 if [[ "${TAG}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then

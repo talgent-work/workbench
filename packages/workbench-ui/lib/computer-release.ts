@@ -23,7 +23,7 @@ export function useComputerRelease() {
  * it running as the person's background service. */
 export function installCommands(origin: string, version: string): string[] {
   return [
-    `npm install -g @talgent-work/computer${version === "" ? "" : `@${version}`}`,
+    `npm install -g @talgent/computer${version === "" ? "" : `@${version}`}`,
     `talgent-computer register --server ${origin}`,
     "talgent-computer service install",
   ];

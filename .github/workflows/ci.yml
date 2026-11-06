@@ -188,13 +188,13 @@ jobs:
         cache: pnpm
 
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile --filter @talgent-work/computer...
+      run: pnpm install --frozen-lockfile --filter @talgent/computer...
 
     - name: Test
-      run: pnpm --filter @talgent-work/computer test
+      run: pnpm --filter @talgent/computer test
 
     - name: Build
-      run: pnpm --filter @talgent-work/computer run build
+      run: pnpm --filter @talgent/computer run build
 
     # A runner has no login session, so its user's systemd manager runs only
     # once lingering is on, as on a person's machine that keeps the service
@@ -212,7 +212,7 @@ jobs:
       working-directory: apps/computer
       run: |
         npm pack
-        npm install -g ./talgent-work-computer-*.tgz
+        npm install -g ./talgent-computer-*.tgz
         npm run test:installed
 
   integration-test:
@@ -273,9 +273,9 @@ jobs:
         EXECD_BINARY: ${{ runner.temp }}/execd
       run: |
         corepack enable
-        pnpm install --frozen-lockfile --filter @talgent-work/computer...
-        pnpm --filter @talgent-work/computer run build
-        pnpm --filter @talgent-work/computer test
+        pnpm install --frozen-lockfile --filter @talgent/computer...
+        pnpm --filter @talgent/computer run build
+        pnpm --filter @talgent/computer test
         TALGENT_COMPUTER_PROGRAM="$PWD/apps/computer/dist/talgent-computer.mjs" make test-native-computer
 
   # A contract package only grows within its version: every package except

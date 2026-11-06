@@ -1,6 +1,6 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { WorkFileAccessDisposition, WorkFileKind, type WorkFile } from "@talgent-work/workbench-contracts/agent/public/v1/work_file_pb";
+import { WorkFileAccessDisposition, WorkFileKind, type WorkFile } from "@talgent/workbench-contracts/agent/public/v1/work_file_pb";
 import { useCurrentUser } from "./account-service";
 import { workFileClient } from "./client";
 import { NameTakenError } from "./name-taken-error";

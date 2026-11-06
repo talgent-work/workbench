@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MessageDetailFormat } from "@talgent-work/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { MessageDetailFormat } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
 import { afterEach, expect, it, vi } from "vitest";
 import { ToolMessageDetail } from "../components/work/tool-message-detail";
 import { ToolReadingContent } from "../components/work/tool-reading-content";

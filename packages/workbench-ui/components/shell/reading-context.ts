@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
-import type { WorkFile } from "@talgent-work/workbench-contracts/agent/public/v1/work_file_pb";
+import type { WorkFile } from "@talgent/workbench-contracts/agent/public/v1/work_file_pb";
 import type { ToolPreview } from "../work/work-message-flow";
 
 /** What the reading area can show, by kind. `label` names what the reading

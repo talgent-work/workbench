@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Spinner } from "@heroui/react";
 import { Check, ChevronDown, CircleAlert, Cloud, Monitor, RotateCcw, Square, X } from "lucide-react";
-import type { StartupProgress } from "@talgent-work/workbench-contracts/agent/public/v1/startup_pb";
-import type { WorkStartupRequest } from "@talgent-work/workbench-contracts/agent/public/v1/work_pb";
-import type { WorkModelOption } from "@talgent-work/workbench-contracts/agent/public/v1/model_pb";
+import type { StartupProgress } from "@talgent/workbench-contracts/agent/public/v1/startup_pb";
+import type { WorkStartupRequest } from "@talgent/workbench-contracts/agent/public/v1/work_pb";
+import type { WorkModelOption } from "@talgent/workbench-contracts/agent/public/v1/model_pb";
 import { modelVendors } from "../../lib/model-vendors";
 import type { WorkComputer } from "../../lib/computer-service";
 import "./startup-progress.css";

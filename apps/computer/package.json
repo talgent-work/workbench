@@ -1,5 +1,5 @@
 {
-  "name": "@talgent-work/computer",
+  "name": "@talgent/computer",
   "version": "0.1.0",
   "description": "Talgent Computer: registers a machine as a Managed Computer and keeps it connected.",
   "license": "Apache-2.0",

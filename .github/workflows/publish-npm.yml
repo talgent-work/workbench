@@ -1,15 +1,19 @@
 name: Publish npm packages
 
 # Publishes the Workbench's npm packages at a release, each at the release's
-# version: @talgent-work/computer, @talgent-work/workbench-contracts and
-# @talgent-work/workbench-ui. Auto Tag runs it on the vX.Y.Z tag it just
+# version: @talgent/computer, @talgent/workbench-contracts and
+# @talgent/workbench-ui. Auto Tag runs it on the vX.Y.Z tag it just
 # pushed (a tag pushed with the workflow token starts no workflow by itself);
 # running it again by hand on a released tag publishes what npm lacks.
 on:
   workflow_dispatch:
 
+# npm Trusted Publishing: each package trusts this workflow of
+# talgent-work/workbench, and npm exchanges the run's OIDC token for the
+# publish. No npm token is stored.
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: publish-npm-${{ github.ref }}
@@ -42,7 +46,10 @@ jobs:
       with:
         node-version: "24"
         cache: pnpm
-        registry-url: https://registry.npmjs.org
+
+    # Trusted Publishing needs npm 11.5.1 or newer.
+    - name: Install an npm that publishes with OIDC
+      run: npm install -g npm@^11.5.1
 
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
@@ -56,19 +63,23 @@ jobs:
         for dir in apps/computer gen/ts packages/workbench-ui; do
           (cd "$dir" && npm version "$VERSION" --no-git-tag-version --allow-same-version)
         done
-        pnpm --filter @talgent-work/computer run build
-        pnpm --filter @talgent-work/workbench-contracts run build
-        pnpm --filter @talgent-work/workbench-ui run typecheck
+        pnpm --filter @talgent/computer run build
+        pnpm --filter @talgent/workbench-contracts run build
+        pnpm --filter @talgent/workbench-ui run typecheck
 
+    # pnpm packs each package, replacing workspace: dependencies with the
+    # release's version; npm publishes the tarball through Trusted Publishing.
     - name: Publish
       env:
         VERSION: ${{ steps.release.outputs.version }}
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       run: |
-        for package in @talgent-work/computer @talgent-work/workbench-contracts @talgent-work/workbench-ui; do
+        packed="$(mktemp -d)"
+        for package in @talgent/computer @talgent/workbench-contracts @talgent/workbench-ui; do
           if [ "$(npm view "${package}@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
             echo "${package}@${VERSION} is already published."
             continue
           fi
-          pnpm --filter "${package}" publish --access public --no-git-checks
+          rm -f "${packed}"/*.tgz
+          pnpm --filter "${package}" pack --pack-destination "${packed}"
+          npm publish "${packed}"/*.tgz --access public
         done

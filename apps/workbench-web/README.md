@@ -9,7 +9,7 @@ in the Workbench's own shell.
 
 From the repository root, install the workspace with `pnpm install --frozen-lockfile` and
 generate the contracts with `make generate`, then run
-`pnpm --filter @talgent-work/workbench-web dev` and open `http://localhost:3000`. The dev server
+`pnpm --filter @talgent/workbench-web dev` and open `http://localhost:3000`. The dev server
 proxies `/api` and `/auth` to a local `controlplane` on port 8080 and `/computer/` to a local
 Computer Gateway on port 8085. To sign in locally, register a GitHub OAuth App whose callback
 URL is `http://localhost:3000/auth/github/callback` and give the controlplane its client id

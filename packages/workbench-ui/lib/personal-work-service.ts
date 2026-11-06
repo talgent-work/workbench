@@ -1,7 +1,7 @@
 import { timestampDate, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { useRef } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DirectoryUser, LibraryFile, LibraryWork, PersonalWorkSummary } from "@talgent-work/workbench-contracts/agent/public/v1/personal_work_pb";
+import type { DirectoryUser, LibraryFile, LibraryWork, PersonalWorkSummary } from "@talgent/workbench-contracts/agent/public/v1/personal_work_pb";
 import { useCurrentUser } from "./account-service";
 import { agentWorkQueryKey } from "./agent-work-service";
 import { agentWorkClient, personalWorkClient } from "./client";

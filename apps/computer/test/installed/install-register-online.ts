@@ -1,6 +1,6 @@
 // Install, register and online, on the machine this runs on, with the
 // talgent-computer command npm installed from the package tarball:
-//   npm pack && npm install -g ./talgent-work-computer-<version>.tgz
+//   npm pack && npm install -g ./talgent-computer-<version>.tgz
 //   node test/installed/install-register-online.ts
 // It registers against a stand-in Gateway that approves the device code,
 // connects, and runs one Work process through the machine's process host.

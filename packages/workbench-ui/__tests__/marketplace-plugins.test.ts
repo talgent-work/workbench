@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { PluginReleaseSchema } from "@talgent-work/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import { PluginReleaseSchema } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
 import { describe, expect, it } from "vitest";
 import { pluginPresentation } from "../lib/marketplace-plugins";
 

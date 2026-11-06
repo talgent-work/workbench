@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Alert, Button, Card, Dropdown, Label, Switch, Tooltip } from "@heroui/react";
-import type { Connector } from "@talgent-work/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import type { Connector } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
 import { ChevronRight, KeyRound, Lock, MoreHorizontal, Plus } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { installStatusLabel, pluginStatus, connectorStatus, useConnector, useConnectorActions, useConnectors, useInstalledPlugins, usePluginCatalog } from "../../lib/marketplace-catalog";

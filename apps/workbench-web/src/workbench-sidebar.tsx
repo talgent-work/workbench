@@ -2,12 +2,12 @@ import { useMemo } from "react";
 import { Button, Popover, Separator } from "@heroui/react";
 import { Box, ChartColumn, History, Library, Plus } from "lucide-react";
 import { useLocation } from "react-router-dom";
-import type { ShellSidebarProps } from "@talgent-work/workbench-ui/components/shell/app-shell";
-import { WorkHistory, type WorkHistorySource } from "@talgent-work/workbench-ui/components/work/work-history";
-import { AccountMenu } from "@talgent-work/workbench-ui/components/shell/account-menu";
-import { SidebarHeader, SidebarLink, type SidebarItem } from "@talgent-work/workbench-ui/components/shell/sidebar-parts";
-import { personalPathsAt } from "@talgent-work/workbench-ui/components/shell/entry-shell";
-import { personalWorksKey, usePersonalWorks } from "@talgent-work/workbench-ui/lib/personal-work-service";
+import type { ShellSidebarProps } from "@talgent/workbench-ui/components/shell/app-shell";
+import { WorkHistory, type WorkHistorySource } from "@talgent/workbench-ui/components/work/work-history";
+import { AccountMenu } from "@talgent/workbench-ui/components/shell/account-menu";
+import { SidebarHeader, SidebarLink, type SidebarItem } from "@talgent/workbench-ui/components/shell/sidebar-parts";
+import { personalPathsAt } from "@talgent/workbench-ui/components/shell/entry-shell";
+import { personalWorksKey, usePersonalWorks } from "@talgent/workbench-ui/lib/personal-work-service";
 
 const paths = personalPathsAt("");
 const items: SidebarItem[] = [

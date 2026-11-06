@@ -1,5 +1,5 @@
 import { Alert } from "@heroui/react";
-import type { ToolOutputPreview as Preview } from "@talgent-work/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import type { ToolOutputPreview as Preview } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
 import { DiffView, SourcePreview, TextPreview } from "../preview/text-preview";
 
 /**

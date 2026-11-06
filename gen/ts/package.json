@@ -1,5 +1,5 @@
 {
-  "name": "@talgent-work/workbench-contracts",
+  "name": "@talgent/workbench-contracts",
   "version": "0.0.0",
   "description": "The Talgent Workbench's contracts, generated for TypeScript.",
   "license": "Apache-2.0",

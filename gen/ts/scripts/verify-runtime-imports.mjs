@@ -34,5 +34,5 @@ for (const file of jsFiles) {
     .slice(0, -3)
     .split(sep)
     .join("/");
-  await import(`@talgent-work/workbench-contracts/${subpath}`);
+  await import(`@talgent/workbench-contracts/${subpath}`);
 }

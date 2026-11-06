@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Button, Checkbox, Description, Label, ListBox, Popover, SearchField, Switch } from "@heroui/react";
-import type { WorkStartRepository } from "@talgent-work/workbench-contracts/agent/public/v1/work_start_options_pb";
+import type { WorkStartRepository } from "@talgent/workbench-contracts/agent/public/v1/work_start_options_pb";
 import { AlertTriangle, Bot, Cloud, GitBranch, Server, Shield } from "lucide-react";
 import type { UsableComputer } from "../../lib/computer-service";
 import { permissionModeOption } from "../../lib/permission-modes";

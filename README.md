@@ -31,7 +31,7 @@ Product introduction: [talgent.work](https://talgent.work).
   out.
 - **Models.** The deployment offers its choice of models: any vendor endpoint Claude Code can
   use, each with its own key, which people pick from when they start a Work.
-- **Computers.** Register your own machine with Talgent Computer (`@talgent-work/computer` on
+- **Computers.** Register your own machine with Talgent Computer (`@talgent/computer` on
   npm; macOS, Linux and Windows) and run your Works there, with the machine's own Claude login
   and files.
 - **Sign-in** with GitHub.
@@ -83,10 +83,10 @@ Credential Proxy adds; the core runtime plugin (`plugins/talgent-runtime`) teach
 | `cmd/` | The four Go services |
 | `internal/` | Bounded contexts and shared infrastructure |
 | `pkg/` | What a service built on the Workbench uses: service assembly and test kits |
-| `proto/`, `gen/` | Contracts (ConnectRPC) and the code generated from them; `gen/ts` is `@talgent-work/workbench-contracts` |
+| `proto/`, `gen/` | Contracts (ConnectRPC) and the code generated from them; `gen/ts` is `@talgent/workbench-contracts` |
 | `apps/workbench-web/` | The web app |
 | `apps/computer/` | Talgent Computer |
-| `packages/workbench-ui/` | The pages and components the web app is built from (`@talgent-work/workbench-ui`) |
+| `packages/workbench-ui/` | The pages and components the web app is built from (`@talgent/workbench-ui`) |
 | `plugins/talgent-runtime/` | The core runtime plugin every Work loads |
 | `configs/` | Each process's default configuration |
 | `deploy/` | Kubernetes base, schemas, sandbox and execd images, OpenSandbox and Kata assets |
@@ -121,8 +121,8 @@ Images build with `scripts/deploy/build-and-push-images.sh` (see the
 ## Releases
 
 Every merge to the main branch is a release `vX.Y.Z`. That one version names the Go module, the
-npm packages (`@talgent-work/workbench-ui`, `@talgent-work/workbench-contracts`,
-`@talgent-work/computer`), the images `ghcr.io/talgent-work/workbench-*`, the Kubernetes base with
+npm packages (`@talgent/workbench-ui`, `@talgent/workbench-contracts`,
+`@talgent/computer`), the images `ghcr.io/talgent-work/workbench-*`, the Kubernetes base with
 its schema, and the core runtime plugin.
 
 ## Contributing

@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { create } from "@bufbuild/protobuf";
-import { ContentBlockSchema, ContentBlockType, ActionPayloadSchema, InteractionPayloadSchema, InteractionPhase, PermissionPayloadSchema, MessageDetailFormat, ObservationPayloadSchema, PermissionPhase, UnifiedMessageKind, UnifiedMessageSchema } from "@talgent-work/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { ContentBlockSchema, ContentBlockType, ActionPayloadSchema, InteractionPayloadSchema, InteractionPhase, PermissionPayloadSchema, MessageDetailFormat, ObservationPayloadSchema, PermissionPhase, UnifiedMessageKind, UnifiedMessageSchema } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
 import { afterEach, expect, it, vi } from "vitest";
 import { WorkMessageFlow } from "../components/work/work-message-flow";
 import { useWorkConversation } from "../hooks/use-work-conversation";

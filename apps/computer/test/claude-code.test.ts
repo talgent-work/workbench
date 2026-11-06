@@ -42,7 +42,7 @@ const linux = { platform: 'linux' as const, arch: 'x64', musl: false }
 test('the bundled executable is copied to its version\'s directory, whether or not its install script ran', async () => {
   const copiesDir = join(dir, 'data', 'claude-code')
   const { executable } = await installAt(dir, '2.1.266')
-  const packageRoot = join(dir, 'node_modules', '@talgent-work', 'computer')
+  const packageRoot = join(dir, 'node_modules', '@talgent', 'computer')
   await mkdir(packageRoot, { recursive: true })
   const { run, runs } = recording()
   assert.deepEqual(await prepareClaudeCode({ copiesDir, packageRoot, run, ...linux }), { binDir: join(copiesDir, '2.1.266'), version: '2.1.266' })
@@ -57,7 +57,7 @@ test('the bundled executable is copied to its version\'s directory, whether or n
 
 test('a nested package wins over a hoisted one, and a musl or Windows machine takes its own executable', async () => {
   await installAt(dir, '2.1.1')
-  const packageRoot = join(dir, 'node_modules', '@talgent-work', 'computer')
+  const packageRoot = join(dir, 'node_modules', '@talgent', 'computer')
   await installAt(packageRoot, '2.1.266', 'linux-arm64-musl')
   const { run } = recording()
   const copiesDir = join(dir, 'copies')

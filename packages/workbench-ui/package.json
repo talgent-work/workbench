@@ -1,5 +1,5 @@
 {
-  "name": "@talgent-work/workbench-ui",
+  "name": "@talgent/workbench-ui",
   "version": "0.0.0",
   "description": "The Talgent Workbench's pages and components, published as TypeScript source for web apps built with Vite.",
   "license": "Apache-2.0",
@@ -58,7 +58,7 @@
     "@heroui/styles": "^3.1.0",
     "@streamdown/code": "1.1.1",
     "@streamdown/mermaid": "1.0.3",
-    "@talgent-work/workbench-contracts": "workspace:*",
+    "@talgent/workbench-contracts": "workspace:*",
     "@tanstack/react-query": "^5.99.0",
     "lucide-react": "^1.8.0",
     "react": "^19.2.4",

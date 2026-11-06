@@ -12,7 +12,7 @@ import (
 var releaseVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // Release answers which platform release this deployment runs: the Target
-// Version every Managed Computer should run, the version of @talgent-work/computer
+// Version every Managed Computer should run, the version of @talgent/computer
 // the Computers page tells a person to install. GET /computer/v1/release is
 // the single source of the Target Version; whatever upgrades a Managed
 // Computer reads it there. It is public, as the npm package is.

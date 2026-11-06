@@ -16,7 +16,7 @@ import { posixOnly } from './support/platform.ts'
 
 const SPEC: ServiceSpec = {
   program: '/opt/node 24/bin/node',
-  args: ['/usr/lib/node_modules/@talgent-work/computer/dist/talgent-computer.mjs', 'run'],
+  args: ['/usr/lib/node_modules/@talgent/computer/dist/talgent-computer.mjs', 'run'],
   env: { PATH: '/opt/homebrew/bin:/usr/bin', XDG_CONFIG_HOME: '/home/a/.config', XDG_DATA_HOME: '/home/a/.local/share' },
   workingDir: '/home/a',
   logFile: '/home/a/.local/share/talgent-computer/logs/service.log',
@@ -59,7 +59,7 @@ test('the service runs plain "run" with this installation\'s node, program, PATH
 
 test('systemd keeps the run going, except after a run that ended for good, and leaves Work processes alone', () => {
   const unit = systemdUnit({ ...SPEC, env: { PATH: '/a$b%c"d' } })
-  assert.match(unit, /^ExecStart="\/opt\/node 24\/bin\/node" "\/usr\/lib\/node_modules\/@talgent-work\/computer\/dist\/talgent-computer.mjs" "run"$/m)
+  assert.match(unit, /^ExecStart="\/opt\/node 24\/bin\/node" "\/usr\/lib\/node_modules\/@talgent\/computer\/dist\/talgent-computer.mjs" "run"$/m)
   assert.match(unit, /^Environment="PATH=\/a\$\$b%%c\\"d"$/m)
   assert.match(unit, /^Restart=on-failure$/m)
   assert.match(unit, /^RestartPreventExitStatus=3 4 5 7$/m)
@@ -106,7 +106,7 @@ test('a failing platform tool fails the install with its own words', async () =>
 test('launchd runs the agent at load, restarts it after failures, and writes its output to the log file', () => {
   const plist = launchAgentPlist({ ...SPEC, env: { PATH: '/a&b' } })
   assert.match(plist, /<key>Label<\/key>\n {2}<string>work.talgent.computer<\/string>/)
-  assert.match(plist, /<string>\/opt\/node 24\/bin\/node<\/string>\n {4}<string>\/usr\/lib\/node_modules\/@talgent-work\/computer\/dist\/talgent-computer.mjs<\/string>\n {4}<string>run<\/string>/)
+  assert.match(plist, /<string>\/opt\/node 24\/bin\/node<\/string>\n {4}<string>\/usr\/lib\/node_modules\/@talgent\/computer\/dist\/talgent-computer.mjs<\/string>\n {4}<string>run<\/string>/)
   assert.match(plist, /<key>PATH<\/key>\n {4}<string>\/a&amp;b<\/string>/)
   assert.match(plist, /<key>SuccessfulExit<\/key>\n {4}<false\/>/)
   assert.match(plist, /<key>StandardErrorPath<\/key>\n {2}<string>\/home\/a\/.local\/share\/talgent-computer\/logs\/service.log<\/string>/)
@@ -156,7 +156,7 @@ test('the Windows wrapper reruns the command after a failure, stops after one th
   const script = wrapperScript({ ...SPEC, env: { PATH: 'C:\\50%\\bin' } })
   const lines = script.split('\r\n')
   assert.ok(lines.includes('set "PATH=C:\\50%%\\bin"'))
-  assert.ok(lines.includes('"/opt/node 24/bin/node" "/usr/lib/node_modules/@talgent-work/computer/dist/talgent-computer.mjs" "run" >> "/home/a/.local/share/talgent-computer/logs/service.log" 2>&1'))
+  assert.ok(lines.includes('"/opt/node 24/bin/node" "/usr/lib/node_modules/@talgent/computer/dist/talgent-computer.mjs" "run" >> "/home/a/.local/share/talgent-computer/logs/service.log" 2>&1'))
   for (const code of [0, 3, 4, 5, 7]) assert.ok(lines.includes(`if %code%==${code} exit /b 0`))
   assert.equal(lines.at(-2), 'goto run')
 })

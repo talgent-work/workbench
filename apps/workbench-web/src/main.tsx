@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./app.css";
 import App from "./app";
-import { installStaleBuildReload } from "@talgent-work/workbench-ui/lib/stale-build-reload";
+import { installStaleBuildReload } from "@talgent/workbench-ui/lib/stale-build-reload";
 
 installStaleBuildReload();
 

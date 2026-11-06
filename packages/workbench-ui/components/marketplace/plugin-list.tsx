@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, Dropdown, Label, Tooltip } from "@heroui/react";
-import type { InstalledPlugin, PluginSummary } from "@talgent-work/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import type { InstalledPlugin, PluginSummary } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
 import { AlertTriangle, ChevronRight, Lock, MoreHorizontal, Plus } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useInstalledPlugins, usePluginActions, usePluginCatalog } from "../../lib/marketplace-catalog";

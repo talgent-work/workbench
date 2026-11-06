@@ -1,7 +1,7 @@
-import type { StartupProgress } from "@talgent-work/workbench-contracts/agent/public/v1/startup_pb";
-import type { WorkStartupRequest } from "@talgent-work/workbench-contracts/agent/public/v1/work_pb";
-import type { WorkModelOption, WorkModelSelection } from "@talgent-work/workbench-contracts/agent/public/v1/model_pb";
-import { PermissionMode } from "@talgent-work/workbench-contracts/agent/public/v1/harness_pb";
+import type { StartupProgress } from "@talgent/workbench-contracts/agent/public/v1/startup_pb";
+import type { WorkStartupRequest } from "@talgent/workbench-contracts/agent/public/v1/work_pb";
+import type { WorkModelOption, WorkModelSelection } from "@talgent/workbench-contracts/agent/public/v1/model_pb";
+import { PermissionMode } from "@talgent/workbench-contracts/agent/public/v1/harness_pb";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { Alert, Button } from "@heroui/react";
