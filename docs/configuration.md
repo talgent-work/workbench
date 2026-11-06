@@ -130,7 +130,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `network-deny` | `[]` | Further egress targets denied beside the private ranges and all IPv6 |
 | `opensandbox.address`, `opensandbox.api-key` | `${OPENSANDBOX_ADDRESS:http://opensandbox:80}`, `${OPENSANDBOX_API_KEY:}` | The OpenSandbox Server; base key: Secret `opensandbox-api` |
 | `native.binary` | `claude` | The Claude Code command in the sandbox image |
-| `image` | `${AGENT_NATIVE_IMAGE:}` | The sandbox image; base: `ghcr.io/talgent-work/talgent-sandbox:<tag>`, set when rendered |
+| `image` | `${AGENT_NATIVE_IMAGE:}` | The sandbox image; base: `ghcr.io/talgent-work/sandbox:<tag>`, set when rendered |
 | `requests`, `limits` | `cpu: 250m`, `memory: 512Mi`; `cpu: "2"`, `memory: 2Gi` | The sandbox container's resources |
 | `environment.TALGENT_API_ADDRESS` | `${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent.svc.cluster.local}` | The platform API a sandbox calls, on the standard port: the only kind its Credential Proxy adds the Work credential to |
 | `environment.OTEL_EXPORTER_OTLP_ENDPOINT` | `${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}` | Where Claude Code sends its telemetry |

@@ -117,12 +117,8 @@ jobs:
             [ -f "apps/${svc}/Dockerfile" ] && TS_SERVICES+=("$svc")
           done
 
-          # Every image is ghcr.io/talgent-work/talgent-<service>, as in
+          # Every image is ghcr.io/talgent-work/<service>, as in
           # scripts/deploy/lib/images.sh.
-          image_name() {
-            printf 'talgent-%s' "$1"
-          }
-
           # Build matrix entries: {name, image, dockerfile, build_args}.
           MATRIX=()
           SANDBOX_REQUIRED=false
@@ -179,8 +175,8 @@ jobs:
           add_go() {
             local dockerfile="Dockerfile"
             [ -f "deploy/$1/Dockerfile" ] && dockerfile="deploy/$1/Dockerfile"
-            MATRIX+=("$(jq -nc --arg n "$1" --arg i "$(image_name "$1")" --arg f "$dockerfile" \
-              '{name: $n, image: $i, dockerfile: $f, build_args: ("SERVICE=" + $n)}')")
+            MATRIX+=("$(jq -nc --arg n "$1" --arg f "$dockerfile" \
+              '{name: $n, dockerfile: $f, build_args: ("SERVICE=" + $n)}')")
           }
           # Inputs a Go service's image takes beyond its Go packages: its own
           # deploy/<service>/ directory.
@@ -188,7 +184,7 @@ jobs:
             printf 'deploy/%s/' "$1"
           }
           add_execd() {
-            MATRIX+=("$(jq -nc --arg i "$(image_name execd)" '{name: "execd", image: $i, dockerfile: "deploy/execd/Dockerfile", build_args: ""}')")
+            MATRIX+=("$(jq -nc '{name: "execd", dockerfile: "deploy/execd/Dockerfile", build_args: ""}')")
           }
           # A TS service's inputs: its own apps/<service>/ directory and those of
           # the workspace packages it depends on, transitively, such as
@@ -213,8 +209,8 @@ jobs:
             done
           }
           add_ts() {
-            MATRIX+=("$(jq -nc --arg n "$1" --arg i "$(image_name "$1")" \
-              '{name: $n, image: $i, dockerfile: ("apps/" + $n + "/Dockerfile"), build_args: ""}')")
+            MATRIX+=("$(jq -nc --arg n "$1" \
+              '{name: $n, dockerfile: ("apps/" + $n + "/Dockerfile"), build_args: ""}')")
           }
           service_exists() {
             local svc="$1"
@@ -363,9 +359,9 @@ jobs:
             $SANDBOX_REQUIRED && BUILT+="sandbox "
             for svc in sandbox execd "${GO_SERVICES[@]}" "${TS_SERVICES[@]}"; do
               case "$BUILT" in *" $svc "*) continue ;; esac
-              if docker buildx imagetools inspect "ghcr.io/talgent-work/$(image_name "$svc"):${PREV_TAG}" >/dev/null 2>&1; then
+              if docker buildx imagetools inspect "ghcr.io/talgent-work/${svc}:${PREV_TAG}" >/dev/null 2>&1; then
                 echo "Unchanged since ${PREV_TAG}: $svc — reusing its image"
-                REUSE+=("$(image_name "$svc")")
+                REUSE+=("$svc")
               else
                 echo "Unchanged since ${PREV_TAG} but its image is missing: $svc — building"
                 add_service "$svc"
@@ -414,7 +410,7 @@ jobs:
         id: base
         run: |
           hash=$(cat deploy/sandbox/Dockerfile.base .dockerignore | sha256sum | cut -d' ' -f1)
-          echo "tag=ghcr.io/talgent-work/talgent-sandbox-base:env-$hash" >> "$GITHUB_OUTPUT"
+          echo "tag=ghcr.io/talgent-work/sandbox-base:env-$hash" >> "$GITHUB_OUTPUT"
       - name: Build changed sandbox environment
         id: build
         if: needs.detect-changes.outputs.sandbox_base_required == 'true'
@@ -470,7 +466,7 @@ jobs:
           platforms: linux/amd64
           outputs: type=registry
           build-args: SANDBOX_BASE_IMAGE=${{ needs.sandbox-base.outputs.image }}
-          tags: ghcr.io/talgent-work/talgent-sandbox:${{ needs.image-tag.outputs.tag }}
+          tags: ghcr.io/talgent-work/sandbox:${{ needs.image-tag.outputs.tag }}
           cache-from: type=gha,scope=sandbox
           cache-to: type=gha,mode=max,scope=sandbox,ignore-error=true
 
@@ -514,7 +510,7 @@ jobs:
           platforms: linux/amd64
           outputs: type=registry
           build-args: ${{ matrix.build_args }}
-          tags: ghcr.io/talgent-work/${{ matrix.image }}:${{ needs.image-tag.outputs.tag }}
+          tags: ghcr.io/talgent-work/${{ matrix.name }}:${{ needs.image-tag.outputs.tag }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=min,scope=${{ matrix.name }},ignore-error=true
 

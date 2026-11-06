@@ -337,7 +337,7 @@ data:
         api-key: ${OPENSANDBOX_API_KEY:}
       native:
         binary: claude
-      image: ghcr.io/talgent-work/talgent-sandbox:v0.15.6
+      image: ghcr.io/talgent-work/sandbox:v0.15.6
       requests:
         cpu: "250m"
         memory: "512Mi"
@@ -746,7 +746,7 @@ spec:
             value: "2"
       containers:
         - name: dispatcher
-          image: ghcr.io/talgent-work/talgent-dispatcher:v0.15.6
+          image: ghcr.io/talgent-work/dispatcher:v0.15.6
           envFrom:
             - configMapRef:
                 name: workbench-environment
@@ -870,7 +870,7 @@ spec:
             value: "1"
       containers:
         - name: computer-gateway
-          image: ghcr.io/talgent-work/talgent-computer-gateway:v0.15.6
+          image: ghcr.io/talgent-work/computer-gateway:v0.15.6
           envFrom:
             - configMapRef:
                 name: workbench-environment
@@ -962,7 +962,7 @@ spec:
             value: "2"
       containers:
         - name: streamgateway
-          image: ghcr.io/talgent-work/talgent-streamgateway:v0.15.6
+          image: ghcr.io/talgent-work/streamgateway:v0.15.6
           envFrom:
             - configMapRef:
                 name: workbench-environment
@@ -1208,7 +1208,7 @@ spec:
                 secretKeyRef:
                   name: account-github-oauth
                   key: client-secret
-          image: ghcr.io/talgent-work/talgent-controlplane:v0.15.6
+          image: ghcr.io/talgent-work/controlplane:v0.15.6
           imagePullPolicy: IfNotPresent
           # Envoy drops a terminating Pod from its endpoints a few seconds after
           # Kubernetes signals it; keep serving through that window. Then
@@ -1327,7 +1327,7 @@ spec:
             value: "2"
       containers:
         - name: workbench-web
-          image: ghcr.io/talgent-work/talgent-workbench-web:v0.15.6
+          image: ghcr.io/talgent-work/workbench-web:v0.15.6
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

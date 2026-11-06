@@ -3,12 +3,12 @@
 # the images they build.
 
 REGISTRY="${TALGENT_REGISTRY:-ghcr.io/talgent-work}"
-# Every image of ghcr.io/talgent-work is talgent-<name>, whichever product
-# builds it. The Workbench's own images take TAG; any other an overlay deploys
-# belongs to another product's release and takes OVERLAY_TAG.
+# Every image of ghcr.io/talgent-work is named after its service or web app,
+# whichever product builds it. The Workbench's own images take TAG; any other
+# an overlay deploys belongs to another product's release and takes
+# OVERLAY_TAG.
 WORKBENCH_IMAGES=(
-  talgent-controlplane talgent-dispatcher talgent-streamgateway talgent-computer-gateway
-  talgent-workbench-web talgent-execd talgent-sandbox talgent-sandbox-base
+  controlplane dispatcher streamgateway computer-gateway workbench-web execd sandbox sandbox-base
 )
 TAG="${TALGENT_IMAGE_TAG:-v0.15.6}"
 OVERLAY_TAG="${TALGENT_OVERLAY_IMAGE_TAG:-}"
@@ -21,16 +21,11 @@ push_image() {
   fi
 }
 
-# image_name NAME prints the image of a service or web app named NAME.
-image_name() {
-  printf 'talgent-%s' "$1"
-}
-
 # build_service SERVICE builds a Go service's image, from the service's own
 # deploy/<service>/Dockerfile when it has one.
 build_service() {
   local svc="$1" image dockerfile=Dockerfile
-  image="${REGISTRY}/$(image_name "${svc}"):${TAG}"
+  image="${REGISTRY}/${svc}:${TAG}"
   [[ -f "deploy/${svc}/Dockerfile" ]] && dockerfile="deploy/${svc}/Dockerfile"
   docker build -f "${dockerfile}" --build-arg "SERVICE=${svc}" -t "${image}" .
   push_image "${image}"
@@ -40,7 +35,7 @@ build_service() {
 # image is named after the directory, as in CI.
 build_web_app() {
   local app="$1" image
-  image="${REGISTRY}/$(image_name "${app}"):${TAG}"
+  image="${REGISTRY}/${app}:${TAG}"
   docker build -f "apps/${app}/Dockerfile" -t "${image}" .
   push_image "${image}"
 }
