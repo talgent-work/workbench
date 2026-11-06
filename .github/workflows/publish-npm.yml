@@ -69,6 +69,9 @@ jobs:
 
     # pnpm packs each package, replacing workspace: dependencies with the
     # release's version; npm publishes the tarball through Trusted Publishing.
+    # Every release is latest: @talgent/computer carries 0.30.x from before the
+    # Workbench's own versions began at 0.1.0, and npm applies latest to a
+    # lower version only when told.
     - name: Publish
       env:
         VERSION: ${{ steps.release.outputs.version }}
@@ -81,5 +84,5 @@ jobs:
           fi
           rm -f "${packed}"/*.tgz
           pnpm --filter "${package}" pack --pack-destination "${packed}"
-          npm publish "${packed}"/*.tgz --access public
+          npm publish "${packed}"/*.tgz --access public --tag latest
         done
