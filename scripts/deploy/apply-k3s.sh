@@ -6,6 +6,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# The other scripts run through bash: a Workbench an overlay reads from the Go
+# module cache has no executable files.
 NS="${TALGENT_NAMESPACE:-talgent}"
 SKIP_DB_BOOTSTRAP="${TALGENT_SKIP_DB_BOOTSTRAP:-0}"
 SKIP_CLICKHOUSE_MIGRATION="${TALGENT_SKIP_CLICKHOUSE_MIGRATION:-0}"
@@ -37,7 +39,7 @@ export_environment "${TALGENT_ENVIRONMENT_FILE}"
 
 kubectl create namespace "${NS}" --dry-run=client -o yaml | kubectl apply -f -
 rendered="${work}/rendered.yaml"
-"${ROOT_DIR}/scripts/deploy/render-k3s.sh" "${KUSTOMIZATION}" > "${rendered}"
+bash "${ROOT_DIR}/scripts/deploy/render-k3s.sh" "${KUSTOMIZATION}" > "${rendered}"
 
 secret_data_value() {
   local secret="$1" key="$2"
@@ -105,23 +107,23 @@ ensure_account_master_key
 ensure_password_secret "${CLICKHOUSE_AUTH_SECRET}" CLICKHOUSE_TALGENT_PASSWORD
 ensure_password_secret "${MYSQL_AUTH_SECRET}" MYSQL_PASSWORD
 
-"${ROOT_DIR}/scripts/deploy/bootstrap-native-control.sh"
+bash "${ROOT_DIR}/scripts/deploy/bootstrap-native-control.sh"
 
 # The namespace budget precedes every Pod, OpenSandbox's included.
 kubectl apply -f "${rendered}" -l app.kubernetes.io/name=agent-capacity
 
 if [[ "${SKIP_DB_BOOTSTRAP}" != "1" ]]; then
-  "${ROOT_DIR}/scripts/deploy/bootstrap-mysql.sh"
+  bash "${ROOT_DIR}/scripts/deploy/bootstrap-mysql.sh"
 else
   echo "skip MySQL schema bootstrap because TALGENT_SKIP_DB_BOOTSTRAP=1" >&2
 fi
 
 if [[ "${SKIP_CLICKHOUSE_MIGRATION}" != "1" ]]; then
-  "${ROOT_DIR}/scripts/deploy/bootstrap-clickhouse.sh"
+  bash "${ROOT_DIR}/scripts/deploy/bootstrap-clickhouse.sh"
 else
   echo "skip ClickHouse migration because TALGENT_SKIP_CLICKHOUSE_MIGRATION=1" >&2
 fi
 
-"${ROOT_DIR}/scripts/deploy/apply-opensandbox.sh" "${rendered}"
+bash "${ROOT_DIR}/scripts/deploy/apply-opensandbox.sh" "${rendered}"
 kubectl apply -f "${rendered}"
 kubectl -n "${NS}" rollout status deployment/controlplane --timeout=180s
