@@ -16,8 +16,8 @@ export const MAX_SOURCE_BYTES = 64 * 1024 * 1024
 export const MAX_REQUEST_BYTES = base64Length(MAX_SOURCE_BYTES) + 1024 * 1024
 // A request body is read this far before it waits for a completion slot.
 export const UNHELD_REQUEST_BYTES = 1024 * 1024
-// The Work's read-only inputs and Project Knowledge, which a publication
-// never reads from.
+// The directories a Work only reads, which a publication never reads
+// from.
 const RESERVED_DIRS = ['inputs', 'knowledge']
 
 // Requests completed at a time, over both routes, each holding up to a
