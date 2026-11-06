@@ -45,11 +45,11 @@ func validateStartRequest(request domain.StartExecutionRequest) error {
 type allocationRequest struct {
 	RepositorySelection     domain.WorkRepositorySelection
 	AuthorizationSelection  domain.WorkAuthorizationSelection
-	ThinkingLevel           string `json:",omitempty"`
-	WorkModel               allocationWorkModel
+	ThinkingLevel           string
+	WorkModel               domain.WorkModelSelection
 	AgentID                 string
 	WorkID                  string
-	Capabilities            allocationCapabilities
+	Capabilities            domain.CapabilitySnapshot
 	HarnessSessionReference string
 	ContextMode             domain.ContextMode
 	WorkspaceReference      string
@@ -58,52 +58,20 @@ type allocationRequest struct {
 	// stored as the Work itself stores it (agent_session), in the same
 	// trusted database; it admits writes into this one File Space only, and
 	// only alongside a current Work credential.
-	InputSource     domain.WorkInputSource `json:",omitzero"`
-	ReadOnlyMounts  []domain.ReadOnlyMount `json:",omitempty"`
+	InputSource     domain.WorkInputSource
+	ReadOnlyMounts  []domain.ReadOnlyMount
 	HomeBinding     domain.HomeBinding
 	TraceAttributes map[string]string
 }
 
-// allocationWorkModel is the stored model choice of a start. The machine's
-// own login is left out while off, so every start that does not choose it
-// keeps the fingerprint it had before a Work could; otherwise a live
-// allocation registered by an earlier release would conflict with its own
-// repeated registration.
-type allocationWorkModel struct {
-	ConfigurationID string
-	MachineLogin    bool `json:",omitempty"`
-}
-
-// allocationCapabilities is the stored capability snapshot of a start. The
-// sandbox is left out while off, so every start that does not ask for it
-// keeps the fingerprint it had before a Work could; otherwise a live
-// allocation registered by an earlier release would conflict with its own
-// repeated registration.
-type allocationCapabilities struct {
-	Prompt       string
-	StartupAgent string
-	Plugins      []domain.SelectedPlugin
-	Connectors   []domain.SelectedConnector
-	Sandbox      bool `json:",omitempty"`
-}
-
-func allocationCapabilitiesFrom(snapshot domain.CapabilitySnapshot) allocationCapabilities {
-	snapshot = snapshot.Clone()
-	return allocationCapabilities{Prompt: snapshot.Prompt, StartupAgent: snapshot.StartupAgent, Plugins: snapshot.Plugins, Connectors: snapshot.Connectors, Sandbox: snapshot.Sandbox}
-}
-
-func (c allocationCapabilities) snapshot() domain.CapabilitySnapshot {
-	return domain.CapabilitySnapshot{Prompt: c.Prompt, StartupAgent: c.StartupAgent, Plugins: c.Plugins, Connectors: c.Connectors, Sandbox: c.Sandbox}
-}
-
 func allocationRequestFromStart(request domain.StartExecutionRequest) allocationRequest {
-	return allocationRequest{RepositorySelection: request.RepositorySelection, AuthorizationSelection: request.AuthorizationSelection, ThinkingLevel: request.ThinkingLevel, WorkModel: allocationWorkModel(request.WorkModel), AgentID: request.AgentID, WorkID: request.WorkID,
-		Capabilities: allocationCapabilitiesFrom(request.Capabilities), HarnessSessionReference: request.HarnessSessionReference, ContextMode: request.ContextMode, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, HomeBinding: request.HomeBinding, TraceAttributes: request.TraceAttributes}
+	return allocationRequest{RepositorySelection: request.RepositorySelection, AuthorizationSelection: request.AuthorizationSelection, ThinkingLevel: request.ThinkingLevel, WorkModel: request.WorkModel, AgentID: request.AgentID, WorkID: request.WorkID,
+		Capabilities: request.Capabilities.Clone(), HarnessSessionReference: request.HarnessSessionReference, ContextMode: request.ContextMode, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, HomeBinding: request.HomeBinding, TraceAttributes: request.TraceAttributes}
 }
 
 func (r allocationRequest) start() domain.StartExecutionRequest {
-	return domain.StartExecutionRequest{RepositorySelection: r.RepositorySelection, AuthorizationSelection: r.AuthorizationSelection, ThinkingLevel: r.ThinkingLevel, WorkModel: domain.WorkModelSelection(r.WorkModel), AgentID: r.AgentID, WorkID: r.WorkID,
-		Capabilities: r.Capabilities.snapshot(), HarnessSessionReference: r.HarnessSessionReference, ContextMode: r.ContextMode, WorkspaceReference: r.WorkspaceReference, InputSource: r.InputSource, ReadOnlyMounts: r.ReadOnlyMounts, HomeBinding: r.HomeBinding, TraceAttributes: r.TraceAttributes}
+	return domain.StartExecutionRequest{RepositorySelection: r.RepositorySelection, AuthorizationSelection: r.AuthorizationSelection, ThinkingLevel: r.ThinkingLevel, WorkModel: r.WorkModel, AgentID: r.AgentID, WorkID: r.WorkID,
+		Capabilities: r.Capabilities, HarnessSessionReference: r.HarnessSessionReference, ContextMode: r.ContextMode, WorkspaceReference: r.WorkspaceReference, InputSource: r.InputSource, ReadOnlyMounts: r.ReadOnlyMounts, HomeBinding: r.HomeBinding, TraceAttributes: r.TraceAttributes}
 }
 
 // JSON arrays lose their native typed representation at the storage boundary.

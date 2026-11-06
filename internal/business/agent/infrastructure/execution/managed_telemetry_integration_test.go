@@ -32,7 +32,7 @@ func TestAManagedRunsTelemetryTokenAttributesOnlyThatRun(t *testing.T) {
 	require.NoError(t, err)
 	spec, err := decodeManagedSpecification(record)
 	require.NoError(t, err)
-	require.NotNil(t, spec.Telemetry)
+	require.NotEmpty(t, spec.Telemetry.Token)
 	token := spec.Telemetry.Token
 	require.NotEmpty(t, token)
 

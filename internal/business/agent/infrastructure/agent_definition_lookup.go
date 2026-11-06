@@ -80,5 +80,5 @@ WHERE s.deleted_at = 0 AND s.id IN (` + placeholders + `)`
 }
 
 func appearanceView(row agentDefinitionDO) query.AgentAppearanceView {
-	return query.AgentAppearanceView{AgentID: row.ID, Appearance: domain.AgentAppearance{Name: row.AgentName, Icon: agentIconFromRecord(row.IconGlyph, row.IconColor)}}
+	return query.AgentAppearanceView{AgentID: row.ID, Appearance: domain.AgentAppearance{Name: row.AgentName, Icon: domain.AgentIcon{Glyph: row.IconGlyph, Color: row.IconColor}}}
 }

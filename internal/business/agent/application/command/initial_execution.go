@@ -77,9 +77,8 @@ type InitialExecutionRequest struct {
 	Prepared, Submitted, InputPrepared bool
 	// InputBuffered records that the initial task input was accepted into the
 	// Work's input buffer, ahead of any later input and before the Harness
-	// starts. It keeps the key of the delivery it replaced, which
-	// it implies, so retained requests read alike.
-	InputBuffered              bool `json:"InputDelivered"`
+	// starts.
+	InputBuffered              bool
 	Rejected, CleanupConfirmed bool
 	Version                    int
 }

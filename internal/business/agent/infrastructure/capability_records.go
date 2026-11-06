@@ -2,32 +2,25 @@ package infrastructure
 
 import (
 	"encoding/json"
-	"errors"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 )
 
 type definitionCapabilitiesRecord struct {
-	Format          int      `json:"format"`
 	Prompt          string   `json:"prompt"`
 	StartupAgent    string   `json:"startup_agent"`
 	RequiredPlugins []string `json:"required_plugins"`
 }
 
 type snapshotRecord struct {
-	Format       int                    `json:"format"`
 	Prompt       string                 `json:"prompt"`
 	StartupAgent string                 `json:"startup_agent"`
 	Plugins      []selectedPluginRecord `json:"plugins"`
 	Connectors   []connectorRecord      `json:"connectors"`
-	// Sandbox is left out while false, so a snapshot without the sandbox
-	// keeps its encoding.
-	Sandbox bool `json:"sandbox,omitempty"`
+	Sandbox      bool                   `json:"sandbox,omitempty"`
 }
 
-// connectorRecord keeps the keys of earlier required-only records, so retained
-// Talgent Connector selections keep decoding for Resume and Restart.
 type connectorRecord struct {
 	ID                     string            `json:"id"`
 	Name                   string            `json:"name"`
@@ -67,7 +60,6 @@ type skillRecord struct {
 	ArgumentHint string `json:"argument_hint"`
 }
 
-// Snapshots retained by earlier releases also hold "content"; it is ignored.
 type agentComponentRecord struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -79,16 +71,13 @@ type mcpRecord struct {
 }
 
 func encodeCapabilities(value domain.CapabilityConfiguration) (string, error) {
-	return encode(definitionCapabilitiesRecord{Format: 1, Prompt: value.Prompt, StartupAgent: value.StartupAgent, RequiredPlugins: value.RequiredPlugins})
+	return encode(definitionCapabilitiesRecord{Prompt: value.Prompt, StartupAgent: value.StartupAgent, RequiredPlugins: value.RequiredPlugins})
 }
 
 func decodeCapabilities(body string) (domain.CapabilityConfiguration, error) {
 	var record definitionCapabilitiesRecord
 	if err := json.Unmarshal([]byte(body), &record); err != nil {
 		return domain.CapabilityConfiguration{}, err
-	}
-	if record.Format != 1 {
-		return domain.CapabilityConfiguration{}, errors.New("agent: definition capabilities require migration")
 	}
 	value := domain.CapabilityConfiguration{Prompt: record.Prompt, StartupAgent: record.StartupAgent, RequiredPlugins: record.RequiredPlugins}
 	return value, value.Validate()
@@ -97,7 +86,7 @@ func decodeCapabilities(body string) (domain.CapabilityConfiguration, error) {
 func encodeCapabilitySnapshot(value domain.CapabilitySnapshot) (string, error) {
 	// Preserve nil versus empty collections: the execution allocation fingerprints
 	// the retained request, so a storage round trip must not change its encoding.
-	record := snapshotRecord{Format: 1, Prompt: value.Prompt, StartupAgent: value.StartupAgent, Sandbox: value.Sandbox}
+	record := snapshotRecord{Prompt: value.Prompt, StartupAgent: value.StartupAgent, Sandbox: value.Sandbox}
 	if value.Connectors != nil {
 		record.Connectors = make([]connectorRecord, 0, len(value.Connectors))
 	}
@@ -138,9 +127,6 @@ func decodeCapabilitySnapshot(body string) (domain.CapabilitySnapshot, error) {
 	var record snapshotRecord
 	if err := json.Unmarshal([]byte(body), &record); err != nil {
 		return domain.CapabilitySnapshot{}, err
-	}
-	if record.Format != 1 {
-		return domain.CapabilitySnapshot{}, errors.New("agent: Work capabilities require migration")
 	}
 	value := domain.CapabilitySnapshot{Prompt: record.Prompt, StartupAgent: record.StartupAgent, Sandbox: record.Sandbox}
 	if record.Connectors != nil {

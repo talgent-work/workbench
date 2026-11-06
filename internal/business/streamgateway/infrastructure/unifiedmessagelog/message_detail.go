@@ -74,7 +74,11 @@ func (r *ClickHouseReader) GetToolDetail(ctx context.Context, request query.Tool
 		if kind == "UNIFIED_MESSAGE_KIND_ACTION" {
 			result.Input, result.ToolName, offset = detail, toolName, request.InputOffset
 		} else {
-			result.Output, result.Preview = detail, toolPreviewFromJSON(previewJSON)
+			preview, err := toolPreviewFromJSON(previewJSON)
+			if err != nil {
+				return query.ToolDetail{}, oops.With("operation", "tool.detail.preview").Wrap(err)
+			}
+			result.Output, result.Preview = detail, preview
 		}
 		detail.NextOffset = min(offset, detail.TotalLength) + uint32(utf8.RuneCountInString(detail.Text))
 	}
@@ -89,16 +93,15 @@ func (r *LazyClickHouseReader) GetToolDetail(ctx context.Context, request query.
 	return NewClickHouseReader(conn).GetToolDetail(ctx, request)
 }
 
-// toolPreviewFromJSON reads a stored preview; a row written before previews
-// existed, or one that no longer parses, has none and shows the original
-// output only.
-func toolPreviewFromJSON(raw string) *query.ToolOutputPreview {
+// toolPreviewFromJSON reads a stored preview; an observation without one
+// shows the original output only.
+func toolPreviewFromJSON(raw string) (*query.ToolOutputPreview, error) {
 	if raw == "" {
-		return nil
+		return nil, nil
 	}
 	var stored dispatcherpublicv1.ToolOutputPreview
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(raw), &stored); err != nil {
-		return nil
+		return nil, err
 	}
 	preview := &query.ToolOutputPreview{
 		ToolName: stored.GetToolName(), FilePath: stored.GetFilePath(), Content: stored.GetContent(),
@@ -111,5 +114,5 @@ func toolPreviewFromJSON(raw string) *query.ToolOutputPreview {
 			Lines: append([]string(nil), hunk.GetLines()...),
 		})
 	}
-	return preview
+	return preview, nil
 }

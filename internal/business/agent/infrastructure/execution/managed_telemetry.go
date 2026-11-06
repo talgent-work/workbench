@@ -42,7 +42,7 @@ func (s *managedSpecification) attachTelemetry(ctx context.Context, request doma
 		return err
 	}
 	telemetryEnvironment(ctx, s.Environment, attributes)
-	s.Telemetry = &managedTelemetry{Endpoint: endpoint, Token: token, Attributes: attributes}
+	s.Telemetry = managedTelemetry{Endpoint: endpoint, Token: token, Attributes: attributes}
 	return nil
 }
 
@@ -52,11 +52,8 @@ type machineTelemetry struct {
 	Token    string `json:"token"`
 }
 
-func (s managedSpecification) machineTelemetry() *machineTelemetry {
-	if s.Telemetry == nil {
-		return nil
-	}
-	return &machineTelemetry{Endpoint: s.Telemetry.Endpoint, Token: s.Telemetry.Token}
+func (s managedSpecification) machineTelemetry() machineTelemetry {
+	return machineTelemetry{Endpoint: s.Telemetry.Endpoint, Token: s.Telemetry.Token}
 }
 
 // TelemetryAttributions authenticates a Managed run's telemetry by its
@@ -91,7 +88,7 @@ func (t *TelemetryAttributions) RunTelemetryAttribution(ctx context.Context, wor
 		return nil, err
 	}
 	issued := spec.Telemetry
-	if issued == nil || issued.Token == "" || subtle.ConstantTimeCompare([]byte(issued.Token), []byte(token)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(issued.Token), []byte(token)) != 1 {
 		return nil, query.ErrTelemetryTokenRejected
 	}
 	return maps.Clone(issued.Attributes), nil

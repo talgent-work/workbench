@@ -22,8 +22,7 @@ export interface WorkEnvironment {
 interface StoredWork {
   tokenSha256: string
   environment: Record<string, string>
-  // Absent in records written before it existed.
-  modelProxy?: boolean
+  modelProxy: boolean
   // Absent from the records of a Talgent Computer upgraded in place while
   // its Works live, which predates platform_api; the Work's next environment
   // PUT writes it.
@@ -110,7 +109,7 @@ export class Works {
     const expected = Buffer.from(stored.tokenSha256, 'hex')
     const presented = Buffer.from(sha256(token), 'hex')
     if (token === '' || !timingSafeEqual(expected, presented)) return { kind: 'denied' }
-    const work: WorkEnvironment = { root: this.root(workId), environment: stored.environment, modelProxy: stored.modelProxy === true, platformApi: stored.platformApi === true }
+    const work: WorkEnvironment = { root: this.root(workId), environment: stored.environment, modelProxy: stored.modelProxy, platformApi: stored.platformApi === true }
     if (stored.telemetry !== undefined) work.telemetry = stored.telemetry
     return { kind: 'ok', work }
   }

@@ -32,11 +32,7 @@ func TestStoredCapabilitySnapshotRestoresTypedValuesAndReleaseDeclarations(t *te
 	require.Error(t, err, "mixed arrays must remain invalid at the storage boundary")
 }
 
-func TestLegacyCapabilitiesRequireExplicitMigration(t *testing.T) {
-	_, err := decodeCapabilitySnapshot(`{"prompt":"old","plugins":[{"name":"review"}]}`)
-	require.ErrorContains(t, err, "require migration")
-	_, err = decodeCapabilities(`{"plugins":[{"name":"review","configuration":{"mode":"old"}}]}`)
-	require.ErrorContains(t, err, "require migration")
+func TestStoredDefinitionCapabilitiesRoundTrip(t *testing.T) {
 	definition := domain.CapabilityConfiguration{Prompt: "Base", RequiredPlugins: []string{"review"}}
 	encoded, err := encodeCapabilities(definition)
 	require.NoError(t, err)

@@ -177,17 +177,13 @@ func TestSandboxRefusesMissingOrMisScopedGrants(t *testing.T) {
 }
 
 // The stored start keeps the input source, so a credential delivery after a
-// restart still hands the Space Token to the Vault; a start without one
-// stores what it stored before.
+// restart still hands the Space Token to the Vault.
 func TestStoredStartKeepsItsInputSource(t *testing.T) {
 	encoded, err := canonicalRequest(withInputs(request()))
 	require.NoError(t, err)
 	decoded, err := decodeStartRequest(encoded)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkInputSource{Reference: "file-space/case-1", SpaceToken: "space-token"}, decoded.InputSource)
-	plain, err := canonicalRequest(request())
-	require.NoError(t, err)
-	require.NotContains(t, string(plain), "InputSource")
 }
 
 // A platform address the Credential Proxy cannot match is refused at start,

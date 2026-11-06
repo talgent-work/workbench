@@ -92,7 +92,7 @@ func readAttributes(fd int) (application.FileAttributes, error) {
 		case err == nil:
 			values[key] = string(buf[:n])
 		case errors.Is(err, unix.ENODATA):
-			// The attribute was never written, as for an older file.
+			// An empty value is never written.
 		default:
 			return application.FileAttributes{}, err
 		}

@@ -111,6 +111,7 @@ func TestManagedEnvironmentHoldsNoMountsVaultHomeOrPlatformCredentials(t *testin
 	require.Equal(t, map[string]string{"TALGENT_WORK_ID": "session", "DISABLE_AUTOUPDATER": "1"}, spec.Environment,
 		"the machine supplies HOME, PATH and the Work root; no model, CA, proxy placeholder or Work credential reaches it")
 	require.Equal(t, "work-credential", spec.WorkCredential, "the Work credential is issued and kept on the platform")
+	require.NoError(t, spec.attachTelemetry(context.Background(), managedRequest(), managedTelemetryAddress, "telemetry-token-fixture"))
 	encoded, err := json.Marshal(spec)
 	require.NoError(t, err)
 	decoded, err := decodeManagedSpecification(allocationRecord{SpecificationJSON: encoded})
@@ -375,7 +376,7 @@ func TestManagedComputersDeliverAndForgetTheWorksCredentials(t *testing.T) {
 	defer server.Close()
 	managed, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
-	spec, err := managedSpecificationFor(managedRequest(), fixtureModels(), "execd-token", "work-credential")
+	spec, err := startedSpecification(managedRequest())
 	require.NoError(t, err)
 	credentials := workCredentials{Model: &workModelCredential{BaseURL: "https://model.example/anthropic", Key: "model-key"},
 		Gateway: workGatewayCredential{URL: managed.gateway, WorkID: "session", WorkCredential: "work-credential", SpaceToken: "space"}}
@@ -455,7 +456,7 @@ func TestManagedModelDigestFollowsTheCurrentKey(t *testing.T) {
 	record := func(model domain.WorkModelSelection) allocationRecord {
 		input := managedRequest()
 		input.WorkModel = model
-		spec, err := managedSpecificationFor(input, fixtureModels(), "execd-token", "work-credential")
+		spec, err := startedSpecification(input)
 		require.NoError(t, err)
 		document, err := json.Marshal(spec)
 		require.NoError(t, err)
@@ -472,3 +473,12 @@ func TestManagedModelDigestFollowsTheCurrentKey(t *testing.T) {
 	require.Empty(t, digest)
 }
 
+// startedSpecification is the specification a start records, as
+// ManagedEnvironment.specify builds it, telemetry included.
+func startedSpecification(request domain.StartExecutionRequest) (managedSpecification, error) {
+	spec, err := managedSpecificationFor(request, fixtureModels(), "execd-token", "work-credential")
+	if err != nil {
+		return spec, err
+	}
+	return spec, spec.attachTelemetry(context.Background(), request, managedTelemetryAddress, "telemetry-token-fixture")
+}

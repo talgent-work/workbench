@@ -135,7 +135,7 @@ func agentDefinitionFromDO(row *agentDefinitionDO) (*domain.AgentDefinition, err
 	if err := json.Unmarshal([]byte(row.Owners), &owners); err != nil {
 		return nil, oops.Wrap(err)
 	}
-	agent := &domain.AgentDefinition{Owners: owners, AgentName: row.AgentName, Icon: agentIconFromRecord(row.IconGlyph, row.IconColor), Purpose: row.Purpose, UsageScope: domain.UsageScope{Kind: row.ScopeKind, Reference: row.ScopeRef}, HomeBinding: domain.HomeBinding{OwnerID: row.HomeOwnerID, Namespace: row.HomeNamespace}, Visibility: domain.VisibilityRule{Public: row.VisibilityPublic}, ID: row.ID, Capabilities: capabilities, Soul: row.Soul, Version: row.Version}
+	agent := &domain.AgentDefinition{Owners: owners, AgentName: row.AgentName, Icon: domain.AgentIcon{Glyph: row.IconGlyph, Color: row.IconColor}, Purpose: row.Purpose, UsageScope: domain.UsageScope{Kind: row.ScopeKind, Reference: row.ScopeRef}, HomeBinding: domain.HomeBinding{OwnerID: row.HomeOwnerID, Namespace: row.HomeNamespace}, Visibility: domain.VisibilityRule{Public: row.VisibilityPublic}, ID: row.ID, Capabilities: capabilities, Soul: row.Soul, Version: row.Version}
 	return agent, agent.Validate()
 }
 
@@ -167,7 +167,7 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	}
 	var process *harnessProcessRecord
 	if current := session.HarnessProcess; current != nil {
-		process = &harnessProcessRecord{PhaseSequence: current.PhaseSequence, WorkProgressSequence: current.WorkProgressSequence, ContextMode: string(current.ContextMode), DeskID: current.DeskID, DeskWaiting: current.DeskWaiting, SeatedAt: seatedAtRecord(current.SeatedAt), StartWithdrawn: current.StartWithdrawn, Soul: current.Soul, Prepared: current.Prepared, Started: current.Started, IdleSince: current.IdleSince, WaitingSince: current.WaitingSince, StartingSince: current.StartingSince, Exited: current.Exited, ComputeReclaimed: current.ComputeReclaimed, EnvironmentLost: current.EnvironmentLost, StartRejected: current.StartRejected, StartAbandoned: current.StartAbandoned, Unreached: current.Unreached, Turn: turnObservationRecord{Sequence: current.Turn.Sequence, Active: current.Turn.Active, Completed: current.Turn.Completed}, SubAgentsSequence: current.SubAgentsSequence, PermissionModeSequence: current.PermissionModeSequence}
+		process = &harnessProcessRecord{PhaseSequence: current.PhaseSequence, WorkProgressSequence: current.WorkProgressSequence, ContextMode: string(current.ContextMode), DeskID: current.DeskID, DeskWaiting: current.DeskWaiting, SeatedAt: current.SeatedAt, StartWithdrawn: current.StartWithdrawn, Soul: current.Soul, Prepared: current.Prepared, Started: current.Started, IdleSince: current.IdleSince, WaitingSince: current.WaitingSince, StartingSince: current.StartingSince, Exited: current.Exited, ComputeReclaimed: current.ComputeReclaimed, EnvironmentLost: current.EnvironmentLost, StartRejected: current.StartRejected, StartAbandoned: current.StartAbandoned, Unreached: current.Unreached, Turn: turnObservationRecord{Sequence: current.Turn.Sequence, Active: current.Turn.Active, Completed: current.Turn.Completed}, SubAgentsSequence: current.SubAgentsSequence, PermissionModeSequence: current.PermissionModeSequence}
 		for _, agent := range current.SubAgents {
 			process.SubAgents = append(process.SubAgents, subAgentRecord{ID: agent.ID, Type: agent.Type, Task: agent.Task, Status: string(agent.Status)})
 		}
@@ -264,7 +264,7 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	}
 	session.HomeBinding = domain.HomeBinding{OwnerID: row.HomeOwnerID, Namespace: row.HomeNamespace}
 	if current != nil {
-		session.HarnessProcess = &domain.HarnessProcess{PhaseSequence: current.PhaseSequence, WorkProgressSequence: current.WorkProgressSequence, ContextMode: domain.ContextMode(current.ContextMode), DeskID: current.DeskID, DeskWaiting: current.DeskWaiting, SeatedAt: current.seatedAt(), StartWithdrawn: current.StartWithdrawn, Soul: current.Soul, Prepared: current.Prepared, Started: current.Started, IdleSince: current.IdleSince, WaitingSince: current.WaitingSince, StartingSince: current.StartingSince, Exited: current.Exited, ComputeReclaimed: current.ComputeReclaimed, EnvironmentLost: current.EnvironmentLost, StartRejected: current.StartRejected, StartAbandoned: current.StartAbandoned, Unreached: current.Unreached, Turn: domain.TurnObservation{Sequence: current.Turn.Sequence, Active: current.Turn.Active, Completed: current.Turn.Completed}, SubAgentsSequence: current.SubAgentsSequence, PermissionModeSequence: current.PermissionModeSequence}
+		session.HarnessProcess = &domain.HarnessProcess{PhaseSequence: current.PhaseSequence, WorkProgressSequence: current.WorkProgressSequence, ContextMode: domain.ContextMode(current.ContextMode), DeskID: current.DeskID, DeskWaiting: current.DeskWaiting, SeatedAt: current.SeatedAt, StartWithdrawn: current.StartWithdrawn, Soul: current.Soul, Prepared: current.Prepared, Started: current.Started, IdleSince: current.IdleSince, WaitingSince: current.WaitingSince, StartingSince: current.StartingSince, Exited: current.Exited, ComputeReclaimed: current.ComputeReclaimed, EnvironmentLost: current.EnvironmentLost, StartRejected: current.StartRejected, StartAbandoned: current.StartAbandoned, Unreached: current.Unreached, Turn: domain.TurnObservation{Sequence: current.Turn.Sequence, Active: current.Turn.Active, Completed: current.Turn.Completed}, SubAgentsSequence: current.SubAgentsSequence, PermissionModeSequence: current.PermissionModeSequence}
 		for _, agent := range current.SubAgents {
 			session.HarnessProcess.SubAgents = append(session.HarnessProcess.SubAgents, domain.SubAgent{ID: agent.ID, Type: agent.Type, Task: agent.Task, Status: domain.SubAgentStatus(agent.Status)})
 		}
@@ -304,34 +304,6 @@ func decodeWorkProgress(value string) (*workProgressRecord, error) {
 		return nil, oops.Wrap(err)
 	}
 	return result, nil
-}
-
-// agentIconFromRecord reads a definition stored before icons existed, whose
-// icon columns are empty, as the default icon.
-func agentIconFromRecord(glyph, color string) domain.AgentIcon {
-	if glyph == "" && color == "" {
-		return domain.DefaultAgentIcon
-	}
-	return domain.AgentIcon{Glyph: glyph, Color: color}
-}
-
-func seatedAtRecord(at time.Time) *time.Time {
-	if at.IsZero() {
-		return nil
-	}
-	return &at
-}
-
-// seatedAt is when the stored start was seated; a record written before a
-// start could wait for its Desk was seated when it entered Starting.
-func (r *harnessProcessRecord) seatedAt() time.Time {
-	if r.SeatedAt != nil {
-		return r.SeatedAt.UTC()
-	}
-	if r.DeskWaiting || r.StartWithdrawn {
-		return time.Time{}
-	}
-	return r.StartingSince
 }
 
 // unixMillis stores an optional time; zero stays zero.

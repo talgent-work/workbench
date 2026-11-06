@@ -123,9 +123,7 @@ type managedSpecification struct {
 	// its api credential, so both always agree.
 	APIAddress  string            `json:"apiAddress,omitempty"`
 	Environment map[string]string `json:"environment"`
-	// Telemetry is absent from allocations registered before Managed runs
-	// reported telemetry; their runs report none.
-	Telemetry *managedTelemetry `json:"telemetry,omitempty"`
+	Telemetry   managedTelemetry  `json:"telemetry"`
 }
 
 // decodeManagedSpecification reads a Managed allocation's recorded
@@ -135,8 +133,13 @@ func decodeManagedSpecification(record allocationRecord) (managedSpecification, 
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
 		return spec, oops.With("operation", "decode_managed_spec").Wrap(err)
 	}
-	if spec.ComputerID == "" || spec.AccessToken == "" {
-		return spec, domain.ErrExecutionRequest
+	for _, required := range []struct {
+		field  string
+		absent bool
+	}{{"computer", spec.ComputerID == ""}, {"access_token", spec.AccessToken == ""}, {"telemetry_token", spec.Telemetry.Token == ""}} {
+		if required.absent {
+			return spec, oops.With("operation", "decode_managed_spec", "missing", required.field).Wrap(domain.ErrExecutionRequest)
+		}
 	}
 	return spec, nil
 }
@@ -204,7 +207,7 @@ func (m *ManagedComputers) open(ctx context.Context, spec managedSpecification, 
 		Environment map[string]string `json:"environment"`
 		ModelProxy  bool              `json:"model_proxy,omitempty"`
 		PlatformAPI bool              `json:"platform_api,omitempty"`
-		Telemetry   *machineTelemetry `json:"telemetry,omitempty"`
+		Telemetry   machineTelemetry  `json:"telemetry"`
 	}{spec.AccessToken, spec.Environment, spec.ModelEndpoint != "", spec.APIAddress != "", spec.machineTelemetry()})
 	if err != nil {
 		return oops.Wrap(err)

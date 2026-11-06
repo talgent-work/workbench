@@ -36,7 +36,7 @@ func TestAManagedRunReportsTelemetryLikeACloudRun(t *testing.T) {
 	require.NoError(t, err)
 	spec, err := decodeManagedSpecification(allocationRecord{SpecificationJSON: specified.document})
 	require.NoError(t, err)
-	require.NotNil(t, spec.Telemetry)
+	require.NotEmpty(t, spec.Telemetry.Token)
 	require.NoError(t, machines.open(ctx, spec, "session"))
 
 	env := relay.environment["environment"].(map[string]any)

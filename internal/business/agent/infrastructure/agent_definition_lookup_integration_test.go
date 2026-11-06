@@ -77,9 +77,8 @@ func TestDefinitionPurposeLookupPreservesScopeAndConcurrentUniqueness(t *testing
 }
 
 // Intent (real): a caller's lists and comments show many Agents; one read by
-// employee returns only employee-scoped work definitions, one read by Work
-// returns each Work's definition, and a definition stored before icons shows
-// the default icon.
+// employee returns only employee-scoped work definitions, and one read by
+// Work returns each Work's definition.
 func TestAgentAppearancesReadEmployeeWorkAgentsAndWorkAgents(t *testing.T) {
 	ctx := context.Background()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
