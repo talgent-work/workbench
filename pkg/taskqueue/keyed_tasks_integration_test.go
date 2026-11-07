@@ -13,6 +13,7 @@ import (
 
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -21,9 +22,8 @@ import (
 // allowed it still runs a third time. The provider checks exhaustion before
 // failure, so a task needs at least one retry for this to apply.
 func TestKeyedTaskPendingAndRetryLater(t *testing.T) {
-	addr, cleanup := startRedis(t)
-	defer cleanup()
-	cfg := Config{RedisAddr: addr, WorkerConcurrency: 1, QueueName: DefaultQueueName, RetryDelayMin: Duration(100 * time.Millisecond), RetryDelayMax: Duration(200 * time.Millisecond)}
+	addr, db := middlewaretest.RedisDB(t)
+	cfg := Config{RedisAddr: addr, RedisDB: db, WorkerConcurrency: 1, QueueName: DefaultQueueName, RetryDelayMin: Duration(100 * time.Millisecond), RetryDelayMax: Duration(200 * time.Millisecond), taskCheckInterval: testTaskCheckInterval}
 	lc := fxtest.NewLifecycle(t)
 	var attempts atomic.Int32
 	release := make(chan struct{})
@@ -47,7 +47,7 @@ func TestKeyedTaskPendingAndRetryLater(t *testing.T) {
 	task, err := componenttaskqueue.New(testTaskDefinition, []byte("{}"), componenttaskqueue.WithID("content-1"))
 	require.NoError(t, err)
 	require.NoError(t, enqueuer.Enqueue(t.Context(), task, componenttaskqueue.WithMaxRetry(1), componenttaskqueue.WithDeadline(time.Now().Add(time.Minute))))
-	require.Eventually(t, func() bool { return attempts.Load() >= 3 }, 15*time.Second, 50*time.Millisecond, "retry-later attempts are not failures, so they run again")
+	require.Eventually(t, func() bool { return attempts.Load() >= 3 }, 15*time.Second, 10*time.Millisecond, "retry-later attempts are not failures, so they run again")
 	pending, err = tasks.Pending(DefaultQueueName, "content-1")
 	require.NoError(t, err)
 	require.True(t, pending, "a running task holds its key")
@@ -55,5 +55,5 @@ func TestKeyedTaskPendingAndRetryLater(t *testing.T) {
 	require.Eventually(t, func() bool {
 		pending, err := tasks.Pending(DefaultQueueName, "content-1")
 		return err == nil && !pending
-	}, 10*time.Second, 50*time.Millisecond, "a completed task holds nothing")
+	}, 10*time.Second, 10*time.Millisecond, "a completed task holds nothing")
 }

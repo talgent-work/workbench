@@ -66,6 +66,10 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.NoError(t, err)
 		now := time.Now()
 		p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, func() time.Time { return now }, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+		// A short attempt bound expires quickly. The batch outlives it by far
+		// but expires before submitPending's own per-attempt bound, so only the
+		// provisioning's own attempt expiry leaves the batch alive.
+		p.attemptTimeout = 100 * time.Millisecond
 		input := request()
 		input.WorkID = "provider-timeout"
 		require.NoError(t, p.Register(ctx, input, testMounts))
@@ -73,7 +77,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.NoError(t, err)
 		require.True(t, found)
 		now = now.Add(time.Second)
-		batch, cancel := context.WithTimeout(ctx, 3*reconciliationAttemptTimeout)
+		batch, cancel := context.WithTimeout(ctx, reconciliationAttemptTimeout/2)
 		defer cancel()
 		require.ErrorIs(t, submitPending(batch, p), context.DeadlineExceeded)
 		require.NoError(t, batch.Err(), "per-attempt expiry must leave the batch alive for persistence and later obligations")

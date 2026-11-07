@@ -2,7 +2,8 @@ name: Go Cache
 
 # CI does not run on master, and Actions caches are scoped by ref: a
 # branch restores only its own caches and those of master. Without this
-# workflow every new branch compiles Go tests with -race from scratch.
+# workflow every new branch compiles from scratch. A branch saves its own only
+# for a go.mod or go.sum master has no cache of (.github/actions/go-cache).
 on:
   push:
     branches: [master]
@@ -24,12 +25,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # job must match the CI job id that restores the cache.
+        # name is the cache CI's job restores; targets compile what that job
+        # compiles, with its flags. The test job also compiles the images'
+        # binaries, which a release compiles from the same cache.
         include:
-        - job: test
-          target: test-compile
-        - job: integration-test
-          target: test-integration-compile
+        - name: test
+          targets: test-compile image-binaries
+        - name: integration-test
+          targets: test-integration-compile
     steps:
     - uses: actions/checkout@v6
 
@@ -39,23 +42,25 @@ jobs:
         go-version-file: go.mod
         cache: false
 
-    # Same key layout as ci.yml so branch restore-keys match this master entry.
-    - name: Cache Go test dependencies and build outputs
-      uses: actions/cache@v5
+    - uses: ./.github/actions/go-cache
+      id: go-cache
+      with:
+        name: ${{ matrix.name }}
+        go-version: ${{ steps.go.outputs.go-version }}
+
+    - name: Compile
+      # /tmp on the runner is a 4G tmpfs; a cold -race compile overflows it.
+      env:
+        TMPDIR: ${{ runner.temp }}
+      run: make ${{ matrix.targets }}
+
+    - name: Save the Go caches
+      uses: actions/cache/save@v5
       with:
         path: |
           ~/go/pkg/mod
           ~/.cache/go-build
-        key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ matrix.job }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
-        restore-keys: |
-          go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ matrix.job }}-${{ hashFiles('go.mod', 'go.sum') }}-
-          go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ matrix.job }}-
-
-    - name: Compile test binaries
-      # /tmp on the runner is a 4G tmpfs; a cold -race compile overflows it.
-      env:
-        TMPDIR: ${{ runner.temp }}
-      run: make ${{ matrix.target }}
+        key: ${{ steps.go-cache.outputs.key }}
 
   prune:
     needs: warm

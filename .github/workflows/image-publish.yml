@@ -1,0 +1,201 @@
+name: Image Publish
+
+# Packages and pushes the images Image Build (image-build.yml) selected. Its
+# caller runs it only after everything the images must pass: CI after all of
+# its checks, so a failing check publishes no image and advances no baseline.
+#
+# The Go images and the web app's compile nothing: each takes the binaries
+# (artifact image-binaries, BINARY=prebuilt) or the web app (artifact
+# web-dist, DIST=prebuilt) built before it. execd and the sandbox compile
+# nothing of ours and build as they are.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      current_ref:
+        required: true
+        type: string
+      matrix:
+        required: true
+        type: string
+      sandbox_required:
+        required: false
+        type: string
+        default: 'false'
+      sandbox_base_required:
+        required: false
+        type: string
+        default: 'false'
+      reuse:
+        required: true
+        type: string
+      previous_tag:
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # One job for every image of the matrix: each only copies what was built
+  # into its base image. It runs even with nothing to publish, so its caller
+  # sees a success it can record as the branch's baseline.
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        if: inputs.matrix != '[]'
+        with:
+          ref: ${{ inputs.current_ref }}
+
+      - uses: actions/download-artifact@v4
+        if: contains(inputs.matrix, 'SERVICE=')
+        with:
+          name: image-binaries
+          path: bin/
+
+      - uses: actions/download-artifact@v4
+        if: contains(inputs.matrix, '"dockerfile":"apps/')
+        with:
+          name: web-dist
+          path: apps/workbench-web/dist/
+
+      - uses: docker/login-action@v4
+        if: inputs.matrix != '[]'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify shared HOME bootstrap with real NSS
+        if: contains(inputs.matrix, '"name":"execd"')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libnss3-tools
+          docker build -f deploy/execd/Dockerfile -t talgent-execd:nss-check .
+          python3 deploy/execd/verify-nss-bootstrap.py talgent-execd:nss-check
+
+      - name: Package and push
+        if: inputs.matrix != '[]'
+        env:
+          MATRIX: ${{ inputs.matrix }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # Artifacts do not keep the executable bit.
+          if [ -d bin ]; then chmod +x bin/*; fi
+          while IFS='|' read -r name dockerfile build_args; do
+            image="ghcr.io/talgent-work/${name}:${TAG}"
+            args=(--build-arg BINARY=prebuilt --build-arg DIST=prebuilt --platform linux/amd64 -f "$dockerfile" -t "$image")
+            [ -n "$build_args" ] && args+=(--build-arg "$build_args")
+            echo "::group::${image}"
+            docker build "${args[@]}" .
+            docker push "$image"
+            echo "::endgroup::"
+          done < <(jq -r '.[] | "\(.name)|\(.dockerfile)|\(.build_args)"' <<< "$MATRIX")
+
+  sandbox-base:
+    if: inputs.sandbox_required == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.resolve.outputs.image }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.current_ref }}
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Name the sandbox environment
+        id: base
+        run: |
+          hash=$(cat deploy/sandbox/Dockerfile.base .dockerignore | sha256sum | cut -d' ' -f1)
+          echo "tag=ghcr.io/talgent-work/sandbox-base:env-$hash" >> "$GITHUB_OUTPUT"
+      - name: Build changed sandbox environment
+        id: build
+        if: inputs.sandbox_base_required == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/sandbox/Dockerfile.base
+          platforms: linux/amd64
+          outputs: type=registry
+          tags: ${{ steps.base.outputs.tag }}
+          cache-from: type=gha,scope=sandbox-base
+          cache-to: type=gha,mode=max,scope=sandbox-base,ignore-error=true
+      - name: Pin sandbox environment digest
+        id: resolve
+        env:
+          BASE_TAG: ${{ steps.base.outputs.tag }}
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          digest="$BUILT_DIGEST"
+          if [ -z "$digest" ]; then
+            digest=$(docker buildx imagetools inspect "$BASE_TAG" --format '{{json .Manifest}}' | jq -er '.digest')
+          fi
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image=$BASE_TAG@$digest" >> "$GITHUB_OUTPUT"
+
+  build-sandbox:
+    needs: sandbox-base
+    if: inputs.sandbox_required == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.current_ref }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push sandbox
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/sandbox/Dockerfile
+          platforms: linux/amd64
+          outputs: type=registry
+          build-args: SANDBOX_BASE_IMAGE=${{ needs.sandbox-base.outputs.image }}
+          tags: ghcr.io/talgent-work/sandbox:${{ inputs.tag }}
+          cache-from: type=gha,scope=sandbox
+          cache-to: type=gha,mode=max,scope=sandbox,ignore-error=true
+
+  # Gives the release tag to images that did not change since the previous
+  # release, without rebuilding them.
+  retag:
+    if: inputs.reuse != '[]' && inputs.reuse != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        name: ${{ fromJson(inputs.reuse) }}
+    steps:
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the previous release's image
+        env:
+          IMAGE: ghcr.io/talgent-work/${{ matrix.name }}
+          TAG: ${{ inputs.tag }}
+          PREVIOUS: ${{ inputs.previous_tag }}
+        run: docker buildx imagetools create --tag "$IMAGE:$TAG" "$IMAGE:$PREVIOUS"

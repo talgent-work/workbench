@@ -15,17 +15,21 @@ import (
 
 	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
 	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/storage/domain"
 	"github.com/talgent-work/workbench/pkg/authn"
 	"github.com/talgent-work/workbench/pkg/storagepath"
 )
 
+// sentContentBound stands in for the 64 MiB bound, which costs seconds to
+// send and store; TestTheSentContentBoundIs64MiB pins the production bound.
+const sentContentBound = 64 << 10
+
 // A Work on a Managed Computer has no Session Workspace: it publishes and
-// replaces an Artifact with the content it sent, up to 64 MiB, through the
-// Artifact commands; larger content is refused before anything is written.
-// It deletes its Artifact with its Space Token alone.
+// replaces an Artifact with the content it sent, up to the bound, through the
+// Artifact commands, whose message admits content at the bound; larger
+// content is refused before anything is written. It deletes its Artifact
+// with its Space Token alone.
 func TestAWorkWithoutAWorkspacePublishesTheContentItSent(t *testing.T) {
-	f := newFixture(t)
+	f := newFixtureWith(t, func(config *Config) { config.sentContentBytes = sentContentBound })
 	space := f.open("case-1")
 	mux := http.NewServeMux()
 	mux.Handle(artifactServiceHandler(f.app))
@@ -51,10 +55,10 @@ func TestAWorkWithoutAWorkspacePublishesTheContentItSent(t *testing.T) {
 	_, err := client.CreateArtifact(t.Context(), request(&storageprivatev1.CreateArtifactRequest{Name: "report.bin", Path: "dist/report.bin"}))
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "a workspace file needs the Work's workspace")
 
-	largest := bytes.Repeat([]byte{7}, domain.MaxSentContentBytes)
+	largest := bytes.Repeat([]byte{7}, sentContentBound)
 	created, err := client.CreateArtifact(t.Context(), request(&storageprivatev1.CreateArtifactRequest{Name: "report.bin", Content: largest}))
 	require.NoError(t, err)
-	require.Equal(t, int64(domain.MaxSentContentBytes), created.Msg.GetOutcome().GetArtifact().GetSizeBytes())
+	require.Equal(t, int64(sentContentBound), created.Msg.GetOutcome().GetArtifact().GetSizeBytes())
 	require.Equal(t, largest, stored())
 
 	replace := connect.NewRequest(&storageprivatev1.ReplaceArtifactRequest{Name: "report.bin", Content: []byte("final")})
@@ -64,7 +68,7 @@ func TestAWorkWithoutAWorkspacePublishesTheContentItSent(t *testing.T) {
 	require.Equal(t, []byte("final"), stored())
 
 	_, err = client.CreateArtifact(t.Context(), request(&storageprivatev1.CreateArtifactRequest{Name: "big.bin", Content: append(largest, 0)}))
-	require.Error(t, err, "content above 64 MiB is refused")
+	require.Error(t, err, "content above the bound is refused")
 	require.NotContains(t, f.files("case-1"), "artifact/big.bin")
 
 	deletion := connect.NewRequest(&storageprivatev1.DeleteArtifactRequest{Name: "report.bin"})

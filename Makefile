@@ -1,4 +1,7 @@
-.PHONY: generate check-generate check-breaking build test test-compile test-integration test-native test-native-computer test-integration-compile print-unit-packages print-integration-packages lint clean pnpm-install gen-ts-rebuild gen-ts-test-runtime frontend-typecheck frontend-test frontend-build frontend-lint check-leaks install-hooks
+# Recipes pipe go test into scripts/test/case-budget.py and need pipefail.
+SHELL := bash
+
+.PHONY: generate check-generate check-breaking build image-binaries test test-scripts test-go test-compile test-integration test-integration-compile print-unit-packages print-integration-packages lint clean pnpm-install gen-ts-rebuild gen-ts-test-runtime frontend-typecheck frontend-test frontend-build frontend-lint check-leaks install-hooks
 
 UNIT_TEST_DIRS = $(shell find . -name '*_test.go' \
 	-not -path './cmd/*' \
@@ -29,6 +32,10 @@ INTEGRATION_PACKAGES := $(INTEGRATION_PACKAGES_$(INTEGRATION_GROUP))
 ifeq ($(strip $(INTEGRATION_PACKAGES)),)
 $(error Unknown INTEGRATION_GROUP: $(INTEGRATION_GROUP))
 endif
+
+# The longest a test case may take, in seconds (docs/development.md);
+# scripts/test/case-budget.py fails a Go run over it.
+CASE_BUDGET_SECONDS := 3
 
 # Flags that select compiled test code. The *-compile targets reuse them so the
 # Go build cache they fill on master is the one pull request test runs restore.
@@ -62,8 +69,17 @@ build:
 	go build ./cmd/streamgateway
 	go build ./cmd/computer-gateway
 
-# Run tests
-test:
+# The static binaries of the Go images, in bin/<service>; CI packages them
+# into the images, which then compile nothing (BINARY=prebuilt).
+IMAGE_SERVICES ?= controlplane dispatcher streamgateway computer-gateway
+
+image-binaries:
+	bash scripts/image-binaries.sh bin $(IMAGE_SERVICES)
+
+test: test-scripts test-go
+
+# CI, build, release and deployment script tests; CI runs them beside the Go tests.
+test-scripts:
 	bash test/test-target-selection-test.sh
 	bash test/docker-build-workflow-test.sh
 	bash test/prune-actions-caches-test.sh
@@ -73,7 +89,10 @@ test:
 	bash test/marketplace-sync-test.sh
 	bash test/pre-push-leak-check-test.sh
 	bash test/k3s-render-test.sh
-	TALGENT_TEST_SERVICES=nats bash scripts/test/with-middleware.sh go test -p=4 $(UNIT_TEST_FLAGS) $(UNIT_PACKAGES)
+
+test-go:
+	set -o pipefail; TALGENT_TEST_SERVICES=nats bash scripts/test/with-middleware.sh go test -json -p=4 $(UNIT_TEST_FLAGS) $(UNIT_PACKAGES) \
+		| python3 scripts/test/case-budget.py $(CASE_BUDGET_SECONDS)
 
 # Compile, without running, the test binaries of test / test-integration to
 # seed the Go build cache (.github/workflows/go-cache.yml). Packages compile
@@ -91,26 +110,14 @@ print-integration-packages:
 	@printf '%s\n' $(INTEGRATION_PACKAGES)
 
 # One middleware set and initialized schema pool shared by up to four packages.
-# Optional native runtime cases also require their binaries.
+# The test binaries compile while the middleware starts; the tests wait for
+# that compilation (the process $$0) instead of compiling the same packages
+# beside it.
 test-integration:
-	bash scripts/test/with-middleware.sh go test $(INTEGRATION_TEST_FLAGS) -count=1 -p=4 -timeout=10m $(INTEGRATION_PACKAGES)
-
-# The packages whose cases drive the real Claude Code and execd. CI runs those
-# cases, named TestNative (pkg/nativetest), as the unprivileged user the
-# sandbox runs them as, after the root run above skipped them; the packages'
-# other cases ran there already.
-NATIVE_INTEGRATION_PACKAGES := ./internal/business/agent/infrastructure/execution ./internal/business/dispatcher \
-	./internal/business/trace/infrastructure/clickhouse ./internal/pkg/execd
-
-test-native:
-	test -n "$$CLAUDE_BINARY" && test -n "$$EXECD_BINARY"
-	bash scripts/test/with-middleware.sh go test $(INTEGRATION_TEST_FLAGS) -count=1 -p=4 -timeout=10m -run '^TestNative' $(NATIVE_INTEGRATION_PACKAGES)
-
-# The Dispatcher's native cases again, through the Computer Gateway against a
-# real Talgent Computer (apps/computer, built), as a Managed Computer runs them.
-test-native-computer:
-	test -n "$$CLAUDE_BINARY" && test -n "$$TALGENT_COMPUTER_PROGRAM"
-	bash scripts/test/with-middleware.sh go test $(INTEGRATION_TEST_FLAGS) -count=1 -timeout=10m -run '^TestNative' ./internal/business/dispatcher
+	set -o pipefail; $(MAKE) --no-print-directory test-integration-compile & \
+	bash scripts/test/with-middleware.sh bash -c 'while kill -0 "$$0" 2>/dev/null; do sleep 1; done; exec "$$@"' "$$!" \
+		go test -json $(INTEGRATION_TEST_FLAGS) -count=1 -p=4 -timeout=10m $(INTEGRATION_PACKAGES) \
+		| python3 scripts/test/case-budget.py $(CASE_BUDGET_SECONDS)
 
 pnpm-install:
 	pnpm install --frozen-lockfile
@@ -152,3 +159,4 @@ install-hooks:
 # Clean build artifacts
 clean:
 	rm -f controlplane dispatcher streamgateway computer-gateway
+	rm -rf bin

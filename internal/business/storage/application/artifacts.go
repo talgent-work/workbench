@@ -40,7 +40,7 @@ func (a *Application) PublishArtifact(ctx context.Context, source ArtifactSource
 	if source.sent() && strings.TrimSpace(source.WorkspaceReference) != "" {
 		return SpaceFile{}, domain.ErrSentContentWithWorkspace
 	}
-	if len(source.Content) > domain.MaxSentContentBytes {
+	if len(source.Content) > a.sentContentLimit {
 		return SpaceFile{}, domain.ErrInvalidPublicationSource
 	}
 	space, err := a.tokenSpace(ctx, source.SpaceToken, writer)

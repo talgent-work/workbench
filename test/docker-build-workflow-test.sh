@@ -2,7 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-WORKFLOW="${ROOT_DIR}/.github/workflows/docker-build.yml"
+WORKFLOW="${ROOT_DIR}/.github/workflows/image-build.yml"
+PUBLISH="${ROOT_DIR}/.github/workflows/image-publish.yml"
+CI="${ROOT_DIR}/.github/workflows/ci.yml"
 BUILD_SCRIPT="${ROOT_DIR}/scripts/deploy/build-and-push-images.sh"
 
 fail() {
@@ -14,6 +16,14 @@ assert_contains() {
   local needle="$1"
   local label="$2"
   if ! grep -Fq "${needle}" "${WORKFLOW}"; then
+    fail "${label}: expected ${needle}"
+  fi
+}
+
+assert_publishes() {
+  local needle="$1"
+  local label="$2"
+  if ! grep -Fq "${needle}" "${PUBLISH}"; then
     fail "${label}: expected ${needle}"
   fi
 }
@@ -43,24 +53,45 @@ for trigger in '    branches-ignore: [master]' '  workflow_dispatch:'; do
   fi
 done
 assert_file_not_contains "${ROOT_DIR}/.github/workflows/ci.yml" '  pull_request:' "PR creation must not trigger CI"
-if grep -Eq '^  (push|pull_request|workflow_dispatch):' "${WORKFLOW}"; then
-  fail "build workflow must only run through its caller"
+if grep -Eq '^  (push|pull_request|workflow_dispatch):' "${WORKFLOW}" "${PUBLISH}"; then
+  fail "image workflows must only run through their callers"
 fi
-if ! grep -Fq '    needs: [generate, test, frontend, integration-test, breaking, image-baseline]' "${ROOT_DIR}/.github/workflows/ci.yml"; then
-  fail "image build must depend on all checks"
+# Selection runs beside the checks and publishes nothing; publication waits for
+# every check, so a failing check publishes no image and advances no baseline.
+if ! grep -Fq '    needs: [generate, image-baseline]' "${CI}" ||
+   ! grep -Fq '    needs: [images, test, frontend, integration-test, breaking]' "${CI}" ||
+   ! grep -Fq '    needs: publish' "${CI}"; then
+  fail "images publish only after all checks, and the baseline only after they publish"
 fi
+assert_file_not_contains "${WORKFLOW}" 'packages: write' "selection cannot publish"
+# The Go and web images compile nothing: CI's test and frontend jobs build what
+# they take, a release builds it in Image Build, both with the same make targets.
+for build in 'run: make image-binaries' 'run: make frontend-build'; do
+  grep -Fq "$build" "${CI}" || fail "CI's checks build the images' inputs: $build"
+  grep -Fq "$build" "${WORKFLOW}" || fail "a release builds the images' inputs: $build"
+done
+grep -Fq "if: inputs.compile && needs.detect-changes.outputs.go == 'true'" "${WORKFLOW}" || fail "a release compiles the selected Go images"
+grep -Fq "if: inputs.compile && needs.detect-changes.outputs.web == 'true'" "${WORKFLOW}" || fail "a release builds the selected web app"
+grep -Fq '      compile: false' "${CI}" || fail "CI takes what its checks built"
+assert_publishes 'args=(--build-arg BINARY=prebuilt --build-arg DIST=prebuilt' "publication packages prebuilt inputs"
+assert_publishes 'docker push "$image"' "publication pushes each image"
+for dockerfile in Dockerfile deploy/controlplane/Dockerfile; do
+  grep -Fq 'FROM ${BINARY} AS binary' "${ROOT_DIR}/${dockerfile}" || fail "${dockerfile} takes the CI binary"
+  grep -Fq 'bash scripts/image-binaries.sh /out' "${ROOT_DIR}/${dockerfile}" || fail "${dockerfile} compiles from source as CI does"
+done
+grep -Fq 'FROM ${DIST} AS dist' "${ROOT_DIR}/apps/workbench-web/Dockerfile" || fail "the web image takes the CI build"
+assert_publishes "if: contains(inputs.matrix, '\"name\":\"execd\"')" "execd's shared HOME bootstrap is verified before it is published"
 
 # Native Sandbox is a released workload image. No Executor base-image chain remains.
-assert_contains 'build-args: SANDBOX_BASE_IMAGE=${{ needs.sandbox-base.outputs.image }}' "sandbox environment digest"
+assert_publishes 'build-args: SANDBOX_BASE_IMAGE=${{ needs.sandbox-base.outputs.image }}' "sandbox environment digest"
 assert_file_not_contains "${BUILD_SCRIPT}" "talgent-executor" "retired Executor image build"
 assert_contains 'sandbox_required: ${{ steps.changed.outputs.sandbox_required }}' "sandbox output"
-assert_contains 'build-sandbox:' "independent sandbox job"
-assert_contains "needs.detect-changes.outputs.sandbox_required == 'true'" "sandbox job condition"
-assert_contains 'file: deploy/sandbox/Dockerfile' "sandbox Dockerfile build"
-assert_contains 'tags: ghcr.io/talgent-work/sandbox:${{ needs.image-tag.outputs.tag }}' "sandbox image tag"
-assert_file_not_contains "${WORKFLOW}" '      - build-sandbox' "service matrix must not wait for sandbox"
-assert_file_not_contains "${WORKFLOW}" 'needs.build-sandbox.result' "service matrix must not depend on sandbox results"
-assert_contains 'outputs: type=registry' "builds publish directly to registry"
+assert_publishes 'build-sandbox:' "independent sandbox job"
+assert_publishes "if: inputs.sandbox_required == 'true'" "sandbox job condition"
+assert_publishes 'file: deploy/sandbox/Dockerfile' "sandbox Dockerfile build"
+assert_publishes 'tags: ghcr.io/talgent-work/sandbox:${{ inputs.tag }}' "sandbox image tag"
+assert_file_not_contains "${PUBLISH}" '    needs: [sandbox-base, build-sandbox]' "service images must not wait for sandbox"
+assert_file_not_contains "${PUBLISH}" 'needs.build-sandbox.result' "service images must not depend on sandbox results"
 
 
 # Intent: the caller accepts sandbox as a selectable service, so service
@@ -80,7 +111,7 @@ if ! grep -Fxq 'build_web_app workbench-web' "${BUILD_SCRIPT}"; then
   fail "the local image build must build the web app"
 fi
 # Every image is named after its service.
-assert_contains 'tags: ghcr.io/talgent-work/${{ matrix.name }}:${{ needs.image-tag.outputs.tag }}' "service image tag"
+assert_publishes 'image="ghcr.io/talgent-work/${name}:${TAG}"' "service image tag"
 
 # Intent: web image builds no longer receive SPA OIDC provider build arguments;
 # browser sign-in is served by Account at runtime.
@@ -95,7 +126,7 @@ import json, os, shlex, subprocess, tempfile
 from pathlib import Path
 body = Path(os.environ["WORKFLOW"]).read_text()
 a = body.index("        run: |", body.index("      - name: Detect changed services"))
-b = body.index("\n  sandbox-base:", a)
+b = body.rindex("\n\n", a, body.index("\n  go-binaries:", a))  # the job after selection and its comment
 script = "\n".join(line[10:] for line in body[a:b].splitlines()[1:])
 script = script.replace("${{ github.event.repository.default_branch || 'master' }}", "master")
 subprocess.run(["bash", "-n"], input=script, text=True, check=True)
@@ -158,6 +189,9 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
                 assert "Comparing HEAD..HEAD" in result.stdout, result.stdout
             names = {entry["name"] for entry in json.loads(values["matrix"])}
             assert "executor" not in names, names
+            # What a release compiles before packaging follows the selection.
+            assert values["go"] == str(bool(names & {"controlplane", "dispatcher", "streamgateway", "computer-gateway"})).lower(), (name, values)
+            assert values["web"] == str("workbench-web" in names).lower(), (name, values)
             if build_all == "true":
                 assert names == {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web", "execd"}, names
             if expected is not None:
@@ -173,7 +207,7 @@ import json, os, shlex, subprocess, tempfile
 from pathlib import Path
 body = Path(os.environ["WORKFLOW"]).read_text()
 a = body.index("        run: |", body.index("      - name: Detect changed services"))
-b = body.index("\n  sandbox-base:", a)
+b = body.rindex("\n\n", a, body.index("\n  go-binaries:", a))  # the job after selection and its comment
 script = "\n".join(line[10:] for line in body[a:b].splitlines()[1:])
 script = script.replace("${{ github.event.repository.default_branch || 'master' }}", "master")
 script = script.replace('go run ./scripts/ci/substantive "$1" "$2"', 'cat')

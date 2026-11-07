@@ -33,7 +33,7 @@ type replicas struct {
 
 func startReplicas(t *testing.T) *replicas {
 	t.Helper()
-	return startReplicasIdle(t, testFileIdle)
+	return startReplicasIdle(t, FileIdle)
 }
 
 // startReplicasIdle starts replicas whose file reads wait fileIdle for each
@@ -174,8 +174,13 @@ var machineFiles = map[string][]byte{
 	"empty.txt": {}, "broken.bin": []byte("part"), "stalled.bin": []byte("part"),
 }
 
-// machineChunk is the piece of a file read Talgent Computer sends in one frame.
-const machineChunk = 64 << 10
+// machineChunk is the piece of a file read the fake machine sends in one
+// frame. The Gateway bounds a read's bytes by fileWindow and its frames by
+// streamBacklog, never a frame's size, so a piece smaller than Talgent
+// Computer's keeps every file many frames long while the tests move few
+// bytes; fileWindow/machineChunk stays below streamBacklog, as the window
+// assumes of any machine.
+const machineChunk = 8 << 10
 
 // numbered is n bytes that tell any piece out of place.
 func numbered(n int) []byte {
@@ -186,10 +191,10 @@ func numbered(n int) []byte {
 	return content
 }
 
-// testFileIdle is the relay's file idle bound in these tests: long enough
-// that a slow, race-instrumented runner never pauses past it between frames,
-// short enough that a stalled read still ends within its test's bound.
-const testFileIdle = 2 * time.Second
+// stallFileIdle is the file idle bound of the replicas that only serve a
+// stalled read: no frame follows the first, so no pause of a slow runner can
+// end the read early, and the read ends well within its test's bound.
+const stallFileIdle = 100 * time.Millisecond
 
 // serveFileRead answers a file read stream as Talgent Computer does: raw
 // bytes in binary frames within the credited window, then stream_close
@@ -371,9 +376,13 @@ func TestTheRelayReadsAWorksFiles(t *testing.T) {
 
 		_, _, err = get(server, "/files/content?path=broken.bin", "token")
 		require.Error(t, err, "a read that fails after data is not a whole file")
-
+	}
+	// Under the production idle bound a stalled read would hold the test
+	// for FileIdle; replicas with a short bound show it ends all the same.
+	stalling := startReplicasIdle(t, stallFileIdle)
+	for _, server := range []*httptest.Server{stalling.a, stalling.b} {
 		started := time.Now()
-		_, _, err = get(server, "/files/content?path=stalled.bin", "token")
+		_, _, err := get(server, "/files/content?path=stalled.bin", "token")
 		require.Error(t, err, "a read the machine stops sending is aborted, not held open")
 		require.Less(t, time.Since(started), 5*time.Second)
 	}
@@ -382,10 +391,7 @@ func TestTheRelayReadsAWorksFiles(t *testing.T) {
 // A file read follows its reader's pace: a reader far slower than the
 // machine still takes a file many times what a pipe may hold, whole.
 func TestTheRelayPacesAFileReadToItsReader(t *testing.T) {
-	// The production idle bound: this long read under the race detector,
-	// beside other packages' tests, may pause past the short test bound,
-	// which only the stalled read needs.
-	r := startReplicasIdle(t, FileIdle)
+	r := startReplicas(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	for _, server := range []*httptest.Server{r.a, r.b} {
@@ -404,7 +410,7 @@ func TestTheRelayPacesAFileReadToItsReader(t *testing.T) {
 				break
 			}
 			require.NoError(t, err)
-			time.Sleep(time.Millisecond)
+			time.Sleep(100 * time.Microsecond)
 		}
 		_ = response.Body.Close()
 		require.True(t, bytes.Equal(machineFiles["huge.bin"], body.Bytes()), "the file arrives whole and in order")

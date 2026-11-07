@@ -21,10 +21,7 @@ func NewPeriodicTaskScheduler(
 	logger *slog.Logger,
 	in PeriodicTaskIn,
 ) (componenttaskqueue.PeriodicTaskScheduler, error) {
-	scheduler := taskasynq.NewRedisScheduler(redisConn(cfg), &asynq.SchedulerOpts{
-		Logger:              taskasynq.NewLogger(logger),
-		EnqueueErrorHandler: logRefusedEnqueue(logger),
-	})
+	scheduler := taskasynq.NewRedisScheduler(redisConn(cfg), schedulerOpts(logger))
 	registered := 0
 	for _, periodic := range in.PeriodicTasks {
 		if err := scheduler.RegisterPeriodicTask(periodic); err != nil {
@@ -39,6 +36,13 @@ func NewPeriodicTaskScheduler(
 
 	appendRunnerLifecycle(lc, scheduler)
 	return scheduler, nil
+}
+
+func schedulerOpts(logger *slog.Logger) *asynq.SchedulerOpts {
+	return &asynq.SchedulerOpts{
+		Logger:              taskasynq.NewLogger(logger),
+		EnqueueErrorHandler: logRefusedEnqueue(logger),
+	}
 }
 
 func logPeriodicTaskRegistered(logger *slog.Logger, periodic componenttaskqueue.PeriodicTask) {

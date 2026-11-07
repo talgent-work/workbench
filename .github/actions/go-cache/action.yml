@@ -1,0 +1,65 @@
+name: Go cache
+description: >
+  Restores the Go module and build caches of one compilation (a CI job's
+  tests, the image binaries). Go Cache (go-cache.yml) saves them on every
+  master push; a branch only restores them, and saves its own only when its
+  go.mod or go.sum has none yet (save-key), so each push does not upload the
+  whole cache again.
+
+inputs:
+  name:
+    description: The compilation; its flags must match what Go Cache warms under the same name.
+    required: true
+  go-version:
+    description: The Go version setup-go installed.
+    required: true
+
+outputs:
+  key:
+    description: This commit's key, which Go Cache saves on master.
+    value: ${{ steps.key.outputs.key }}
+  save-key:
+    description: The key a branch saves under; empty when a cache of this go.mod and go.sum was restored.
+    value: ${{ steps.save.outputs.key }}
+
+runs:
+  using: composite
+  steps:
+  - name: Name the cache
+    id: key
+    shell: bash
+    env:
+      PREFIX: go-${{ runner.os }}-${{ runner.arch }}-${{ inputs.go-version }}-${{ inputs.name }}-
+      MODULE: ${{ hashFiles('go.mod', 'go.sum') }}
+      SHA: ${{ github.sha }}
+    run: |
+      echo "any=${PREFIX}" >> "$GITHUB_OUTPUT"
+      echo "module=${PREFIX}${MODULE}-" >> "$GITHUB_OUTPUT"
+      echo "key=${PREFIX}${MODULE}-${SHA}" >> "$GITHUB_OUTPUT"
+
+  - name: Restore the Go caches
+    id: restore
+    uses: actions/cache/restore@v5
+    with:
+      path: |
+        ~/go/pkg/mod
+        ~/.cache/go-build
+      key: ${{ steps.key.outputs.key }}
+      restore-keys: |
+        ${{ steps.key.outputs.module }}
+        ${{ steps.key.outputs.any }}
+
+  - name: Decide whether this branch saves
+    id: save
+    shell: bash
+    env:
+      MATCHED: ${{ steps.restore.outputs.cache-matched-key }}
+      MODULE: ${{ steps.key.outputs.module }}
+      KEY: ${{ steps.key.outputs.key }}
+    run: |
+      if [[ -n "$MATCHED" && "$MATCHED" == "$MODULE"* ]]; then
+        echo "Restored $MATCHED; nothing to save."
+      else
+        echo "No cache of this go.mod and go.sum; saving $KEY after the job."
+        echo "key=$KEY" >> "$GITHUB_OUTPUT"
+      fi

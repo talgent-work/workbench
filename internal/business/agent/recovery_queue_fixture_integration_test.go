@@ -19,9 +19,12 @@ import (
 // Retries are fast so failure paths settle within a test's patience.
 func recoveryQueues(t *testing.T) fx.Option {
 	t.Helper()
-	address := recoveryRedis(t)
+	redis := recoveryRedis(t)
 	queue := func(name string, workers int) pkgtaskqueue.Config {
-		return pkgtaskqueue.Config{RedisAddr: address, QueueName: name, WorkerConcurrency: workers, RetryDelayMin: pkgtaskqueue.Duration(50 * time.Millisecond), RetryDelayMax: pkgtaskqueue.Duration(500 * time.Millisecond), ShutdownTimeout: pkgtaskqueue.Duration(5 * time.Second)}
+		return pkgtaskqueue.Config{RedisAddr: redis.address, RedisDB: redis.db, QueueName: name, WorkerConcurrency: workers, RetryDelayMin: pkgtaskqueue.Duration(50 * time.Millisecond), RetryDelayMax: pkgtaskqueue.Duration(500 * time.Millisecond), ShutdownTimeout: pkgtaskqueue.Duration(5 * time.Second)}.
+			// Idle workers poll every second by default; each recovery hop and each
+			// restart would wait out that poll.
+			WithTaskCheckInterval(10 * time.Millisecond)
 	}
 	return fx.Options(
 		// Sweep often, so an obligation no event wakes settles within a test.
@@ -37,17 +40,24 @@ func recoveryQueues(t *testing.T) fx.Option {
 
 var recoveryRedisByTest sync.Map
 
-// recoveryRedis holds the shared Redis once per test, which may compose the
-// recovery module again to simulate a restart.
-func recoveryRedis(t *testing.T) string {
+// leasedRedis is the logical database of the shared Redis a test holds.
+type leasedRedis struct {
+	address string
+	db      int
+}
+
+// recoveryRedis holds a database of the shared Redis once per test, which may
+// compose the recovery module again to simulate a restart.
+func recoveryRedis(t *testing.T) leasedRedis {
 	t.Helper()
-	if address, ok := recoveryRedisByTest.Load(t); ok {
-		return address.(string)
+	if leased, ok := recoveryRedisByTest.Load(t); ok {
+		return leased.(leasedRedis)
 	}
-	address := middlewaretest.Redis(t)
-	recoveryRedisByTest.Store(t, address)
+	var leased leasedRedis
+	leased.address, leased.db = middlewaretest.RedisDB(t)
+	recoveryRedisByTest.Store(t, leased)
 	t.Cleanup(func() { recoveryRedisByTest.Delete(t) })
-	return address
+	return leased
 }
 
 // noEnvironments stands in for execution integration where a test controls

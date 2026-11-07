@@ -1,11 +1,23 @@
-name: Docker Build
+name: Image Build
 
+# Selects which images a change builds; Image Publish (image-publish.yml)
+# packages and pushes them.
+#
+# The Go images and the web app's compile nothing: they take the binaries and
+# the web app built outside them. CI builds those in its test and frontend
+# jobs, beside the tests that reuse the same environment, and passes
+# compile: false; a release runs no tests and compiles them here, with the same
+# make targets.
 on:
   workflow_call:
     inputs:
       tag:
         required: false
         type: string
+      compile:
+        required: false
+        type: boolean
+        default: true
       build_all:
         required: false
         type: boolean
@@ -19,9 +31,25 @@ on:
         type: string
         default: ''
 
+    outputs:
+      tag:
+        value: ${{ jobs.image-tag.outputs.tag }}
+      current_ref:
+        value: ${{ jobs.image-tag.outputs.current_ref }}
+      matrix:
+        value: ${{ jobs.detect-changes.outputs.matrix }}
+      sandbox_required:
+        value: ${{ jobs.detect-changes.outputs.sandbox_required }}
+      sandbox_base_required:
+        value: ${{ jobs.detect-changes.outputs.sandbox_base_required }}
+      reuse:
+        value: ${{ jobs.detect-changes.outputs.reuse }}
+      previous_tag:
+        value: ${{ jobs.detect-changes.outputs.previous_tag }}
+
 permissions:
   contents: read
-  packages: write
+  packages: read
 
 jobs:
   image-tag:
@@ -70,6 +98,8 @@ jobs:
       sandbox_base_required: ${{ steps.changed.outputs.sandbox_base_required }}
       reuse: ${{ steps.changed.outputs.reuse }}
       previous_tag: ${{ steps.changed.outputs.previous_tag }}
+      go: ${{ steps.changed.outputs.go }}
+      web: ${{ steps.changed.outputs.web }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -383,186 +413,78 @@ jobs:
           echo "reuse=$(printf '%s\n' "${REUSE[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
           if [ ${#MATRIX[@]} -eq 0 ]; then
             echo "matrix=[]" >> "$GITHUB_OUTPUT"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "web=false" >> "$GITHUB_OUTPUT"
             echo "No services to build"
           else
             JSON=$(printf '%s\n' "${MATRIX[@]}" | jq -sc .)
             echo "matrix=$JSON" >> "$GITHUB_OUTPUT"
+            echo "go=$(jq -r 'any(.build_args | startswith("SERVICE="))' <<< "$JSON")" >> "$GITHUB_OUTPUT"
+            echo "web=$(jq -r 'any(.dockerfile | startswith("apps/"))' <<< "$JSON")" >> "$GITHUB_OUTPUT"
             echo "Matrix: $JSON"
           fi
 
-  sandbox-base:
+  # A release's Go binaries, as CI's test job compiles them (make
+  # image-binaries), from the cache that job restores.
+  go-binaries:
     needs: [image-tag, detect-changes]
-    if: needs.detect-changes.outputs.sandbox_required == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.resolve.outputs.image }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.image-tag.outputs.current_ref }}
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Name the sandbox environment
-        id: base
-        run: |
-          hash=$(cat deploy/sandbox/Dockerfile.base .dockerignore | sha256sum | cut -d' ' -f1)
-          echo "tag=ghcr.io/talgent-work/sandbox-base:env-$hash" >> "$GITHUB_OUTPUT"
-      - name: Build changed sandbox environment
-        id: build
-        if: needs.detect-changes.outputs.sandbox_base_required == 'true'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: deploy/sandbox/Dockerfile.base
-          platforms: linux/amd64
-          outputs: type=registry
-          tags: ${{ steps.base.outputs.tag }}
-          cache-from: type=gha,scope=sandbox-base
-          cache-to: type=gha,mode=max,scope=sandbox-base,ignore-error=true
-      - name: Pin sandbox environment digest
-        id: resolve
-        env:
-          BASE_TAG: ${{ steps.base.outputs.tag }}
-          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          set -euo pipefail
-          digest="$BUILT_DIGEST"
-          if [ -z "$digest" ]; then
-            digest=$(docker buildx imagetools inspect "$BASE_TAG" --format '{{json .Manifest}}' | jq -er '.digest')
-          fi
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "image=$BASE_TAG@$digest" >> "$GITHUB_OUTPUT"
-
-  build-sandbox:
-    needs:
-      - image-tag
-      - detect-changes
-      - sandbox-base
-    if: needs.detect-changes.result == 'success' && needs.detect-changes.outputs.sandbox_required == 'true'
+    if: inputs.compile && needs.detect-changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.image-tag.outputs.current_ref }}
 
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
+      - uses: actions/setup-go@v6
+        id: go
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          go-version-file: go.mod
+          cache: false
 
-      - name: Build and push sandbox
-        uses: docker/build-push-action@v7
+      - uses: ./.github/actions/go-cache
         with:
-          context: .
-          file: deploy/sandbox/Dockerfile
-          platforms: linux/amd64
-          outputs: type=registry
-          build-args: SANDBOX_BASE_IMAGE=${{ needs.sandbox-base.outputs.image }}
-          tags: ghcr.io/talgent-work/sandbox:${{ needs.image-tag.outputs.tag }}
-          cache-from: type=gha,scope=sandbox
-          cache-to: type=gha,mode=max,scope=sandbox,ignore-error=true
+          name: test
+          go-version: ${{ steps.go.outputs.go-version }}
 
-  build:
-    needs:
-      - image-tag
-      - detect-changes
-    if: needs.detect-changes.result == 'success' && needs.detect-changes.outputs.matrix != '[]'
+      - name: Compile the image binaries
+        run: make image-binaries
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-binaries
+          path: bin/
+          retention-days: 1
+          if-no-files-found: error
+
+  # A release's web app, as CI's frontend job builds it (make frontend-build).
+  web-dist:
+    needs: [image-tag, detect-changes]
+    if: inputs.compile && needs.detect-changes.outputs.web == 'true'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.image-tag.outputs.current_ref }}
 
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
+      - uses: pnpm/action-setup@v6
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          version: 10.14.0
+          run_install: false
 
-      - name: Verify shared HOME bootstrap with real NSS
-        if: matrix.name == 'execd'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libnss3-tools
-          docker build -f deploy/execd/Dockerfile -t talgent-execd:nss-check .
-          python3 deploy/execd/verify-nss-bootstrap.py talgent-execd:nss-check
-
-      # A runner starts with empty cache mounts, so a Go service compiled from
-      # scratch every time. Its module and build caches persist in the Actions
-      # cache per service and go.sum; buildkit-cache-dance moves them into the
-      # builder's cache mounts and, after a miss, back out to be saved.
-      - name: Restore the Go caches
-        if: startsWith(matrix.build_args, 'SERVICE=')
-        id: go-cache
-        uses: actions/cache@v5
+      - uses: actions/setup-node@v6
         with:
-          path: go-cache
-          key: docker-go-${{ matrix.name }}-${{ hashFiles('go.sum') }}
-          restore-keys: docker-go-${{ matrix.name }}-
+          node-version: "24"
+          cache: pnpm
 
-      - name: Move the Go caches into the builder
-        if: startsWith(matrix.build_args, 'SERVICE=')
-        uses: reproducible-containers/buildkit-cache-dance@v3.4.0
+      - name: Install dependencies
+        run: make pnpm-install
+
+      - name: Build
+        run: make frontend-build
+
+      - uses: actions/upload-artifact@v4
         with:
-          cache-map: |
-            {
-              "go-cache/mod": "/go/pkg/mod",
-              "go-cache/build": "/root/.cache/go-build"
-            }
-          skip-extraction: ${{ steps.go-cache.outputs.cache-hit }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64
-          outputs: type=registry
-          build-args: ${{ matrix.build_args }}
-          tags: ghcr.io/talgent-work/${{ matrix.name }}:${{ needs.image-tag.outputs.tag }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=min,scope=${{ matrix.name }},ignore-error=true
-
-  # Gives the release tag to images that did not change since the previous
-  # release, without rebuilding them.
-  retag:
-    needs:
-      - image-tag
-      - detect-changes
-    if: needs.detect-changes.result == 'success' && needs.detect-changes.outputs.reuse != '[]'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        name: ${{ fromJson(needs.detect-changes.outputs.reuse) }}
-    steps:
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Tag the previous release's image
-        env:
-          IMAGE: ghcr.io/talgent-work/${{ matrix.name }}
-          TAG: ${{ needs.image-tag.outputs.tag }}
-          PREVIOUS: ${{ needs.detect-changes.outputs.previous_tag }}
-        run: docker buildx imagetools create --tag "$IMAGE:$TAG" "$IMAGE:$PREVIOUS"
+          name: web-dist
+          path: apps/workbench-web/dist/
+          retention-days: 1
+          if-no-files-found: error

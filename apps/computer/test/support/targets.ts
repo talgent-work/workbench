@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { RECONNECT_BASE_ENV } from '../../src/backoff.ts'
 import { ExecdClient } from './execd-client.ts'
 import { Gateway, type GatewayOptions } from './gateway.ts'
 
@@ -13,9 +14,12 @@ export interface Target {
   client: ExecdClient
   // A working directory for test processes.
   cwd: string
-  // Kills the serving process and starts a new one over the same state;
-  // only Talgent Computer, whose processes survive it, offers it.
-  restart?: () => Promise<void>
+  // Where cwd lies on this machine, for a test to hand its processes files.
+  hostCwd: string
+  // Kills the serving process and starts a new one over the same state,
+  // running whileDown in between; only Talgent Computer, whose processes
+  // survive it, offers it.
+  restart?: (whileDown?: () => Promise<void>) => Promise<void>
   // Drops the connection to the serving process and waits until it
   // reconnected; only Talgent Computer, which dials out, offers it.
   drop?: () => Promise<void>
@@ -44,6 +48,7 @@ export async function execdTarget(binary: string): Promise<Target> {
     name: 'execd',
     client,
     cwd: root,
+    hostCwd: root,
     close: async () => {
       await stop(daemon)
       await rm(root, { recursive: true, force: true })
@@ -69,7 +74,9 @@ export async function computerTarget(
     credential: 'machine-credential',
     credentialExpiresAt: null,
   }))
-  const env = { ...process.env, ...options.machineEnv, XDG_CONFIG_HOME: join(root, 'config'), XDG_DATA_HOME: join(root, 'data') }
+  // Reconnections after a drop or a restart take milliseconds, not the
+  // seconds a machine backs off for in production.
+  const env = { ...process.env, [RECONNECT_BASE_ENV]: '10', ...options.machineEnv, XDG_CONFIG_HOME: join(root, 'config'), XDG_DATA_HOME: join(root, 'data') }
   const logs: Buffer[] = []
   const launch = () => {
     const child = spawn(process.execPath, [MAIN, 'run'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -85,13 +92,16 @@ export async function computerTarget(
     dataDir: join(root, 'data', 'talgent-computer'),
     client: new ExecdClient(gateway.execdBase, TOKEN),
     cwd: '/workspace/conformance',
-    restart: async () => {
+    // The Work's /workspace is its root; known once the Work is open.
+    get hostCwd() { return join(gateway.workRoot, 'conformance') },
+    restart: async (whileDown) => {
       // The Gateway may see the connection close only after the process
       // exited; until then it still answers for the old connection.
       const gone = gateway.disconnected()
       machine.kill('SIGKILL')
       await new Promise((resolve) => machine.once('exit', resolve))
       await gone
+      await whileDown?.()
       machine = launch()
       await withTimeout(gateway.connected(), 15_000, () => Buffer.concat(logs).toString())
     },
@@ -140,6 +150,15 @@ export async function eventually(check: () => Promise<boolean>, timeoutMs = 10_0
     }
     if (Date.now() > deadline) throw new Error('condition not met in time')
     await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}
+
+export async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
   }
 }
 

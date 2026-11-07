@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { output, Pipe, type Frame } from './support/execd-client.ts'
 import { posixOnly } from './support/platform.ts'
-import { computerTarget, eventually, execdTarget, type Target } from './support/targets.ts'
+import { computerTarget, eventually, execdTarget, exists, type Target } from './support/targets.ts'
 
 // execd's pipe semantics, run against OpenSandbox execd itself when
 // EXECD_BINARY names it, and always against Talgent Computer relayed through
@@ -160,14 +162,17 @@ for (const { name, open } of targets) {
     })
 
     test('a process survives a restart of its server', { skip: name === 'execd' }, async () => {
-      const id = await create('echo before; sleep 1; echo during; read x; echo "after-$x"')
+      // Released only while no server runs, it then writes "during" and
+      // marks that it did.
+      const id = await create('echo before; while [ ! -e released ]; do sleep 0.02; done; echo during; : > said; read x; echo "after-$x"')
       const one = await attach(id, 0)
       await one.until((_frame, seen) => output(seen, 'stdout') === 'before\n')
-      const printed = Date.now()
-      await target.restart?.()
+      await target.restart?.(async () => {
+        await writeFile(join(target.hostCwd, 'released'), '')
+        await eventually(async () => exists(join(target.hostCwd, 'said')))
+      })
       assert.equal((await target.client.status(id)).running, true)
       // Output written while nobody served the process is kept for replay.
-      await new Promise((resolve) => setTimeout(resolve, Math.max(0, printed + 1500 - Date.now())))
       const two = await target.client.attachWhenFree(id, 7)
       assert.deepEqual(await two.until((frame) => frame.type === 'connected'), [
         { type: 'replay', offset: 7, data: 'during\n' },
@@ -189,7 +194,7 @@ for (const { name, open } of targets) {
       const since = Buffer.byteLength(seen)
       await target.drop?.()
       // Output keeps coming while the client is away.
-      await new Promise((resolve) => setTimeout(resolve, 300))
+      await eventually(async () => ((await target.client.status(id)).offset ?? 0) > since)
       assert.equal((await target.client.status(id)).running, true, 'no fence within the timeout')
       const two = await target.client.attachWhenFree(id, since)
       const replayed = await two.until((frame) => frame.type === 'connected')

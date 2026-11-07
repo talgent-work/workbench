@@ -57,9 +57,9 @@ export const test: InlineConfig = {
   globals: true,
   environment: "jsdom",
   setupFiles: fileURLToPath(new URL("./test-support/setup.ts", import.meta.url)),
-  // Most tests render whole routes, which takes seconds; the 5s default
-  // failed them at random whenever the machine was busy.
-  testTimeout: 20_000,
+  // A case takes at most 3s; one that needs longer is simulating a user, which
+  // the browser verifies instead.
+  testTimeout: 3_000,
   // Vitest defaults to one worker per CPU minus one, which runs serially on
   // the 2-vCPU CI runner; two workers there cut the suite by about 15%.
   maxWorkers: Math.max(2, availableParallelism() - 1),

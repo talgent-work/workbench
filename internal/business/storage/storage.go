@@ -78,6 +78,10 @@ type Config struct {
 	// WorkspaceListEntries bounds the entries one workspace directory lists;
 	// zero means 1000, a conservative starting point.
 	WorkspaceListEntries int `json:"workspace-list-entries" yaml:"workspace-list-entries" toml:"workspace-list-entries"`
+	// sentContentBytes bounds the content a Work without a Session Workspace
+	// sends; zero means domain.MaxSentContentBytes. It is unexported because
+	// only tests lower it, to exercise the bound without sending 64 MiB.
+	sentContentBytes int
 }
 
 // MountConfig names the claims sandboxes mount.
@@ -194,7 +198,7 @@ func assemble(config Config, spaces domain.FileSpaceRepository, rendering Render
 		Enqueuer:       rendering.Enqueuer,
 		FileChanges:    fileChanges,
 	}
-	return application.NewApplication(spaces, ports, application.LinkLifetimes{Access: access, Upload: upload}, config.Preview.settings(), application.WorkspaceSettings{ListEntries: config.WorkspaceListEntries}, logger), nil
+	return application.NewApplication(spaces, ports, application.LinkLifetimes{Access: access, Upload: upload}, config.Preview.settings(), application.WorkspaceSettings{ListEntries: config.WorkspaceListEntries, SentContentBytes: config.sentContentBytes}, logger), nil
 }
 
 // artifactMessageOverhead is the room an Artifact command takes beside its
@@ -230,7 +234,7 @@ func registerHandlers(app *application.Application, config Config, mux *http.Ser
 // publication carries at most the content a Work sends, with room for the
 // rest of its message.
 func artifactServiceHandler(app *application.Application, options ...connect.HandlerOption) (string, http.Handler) {
-	options = append(options, connect.WithReadMaxBytes(domain.MaxSentContentBytes+artifactMessageOverhead))
+	options = append(options, connect.WithReadMaxBytes(app.SentContentLimit()+artifactMessageOverhead))
 	return storageprivatev1connect.NewArtifactServiceHandler(storageconnect.NewArtifactHandler(app), options...)
 }
 

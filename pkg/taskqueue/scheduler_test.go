@@ -1,13 +1,16 @@
 package taskqueue
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
+	"github.com/hibiken/asynq"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -45,6 +48,36 @@ func TestNewPeriodicTaskScheduler_AcceptsComponentPeriodicTasks(t *testing.T) {
 	}
 	if scheduler == nil {
 		t.Fatal("scheduler should be provided")
+	}
+}
+
+// A periodic enqueue the provider refuses, such as one whose key an earlier,
+// unprocessed fire still holds, is logged with its task type, queue and cause:
+// asynq otherwise drops the error and the periodic task stops without a trace.
+// The scheduler's options are checked rather than a live fire, because asynq
+// fires at most once a second and calling the handler is asynq's own contract.
+func TestPeriodicSchedulerLogsRefusedEnqueue(t *testing.T) {
+	for name, tc := range map[string]struct {
+		opts  []asynq.Option
+		queue string
+	}{
+		"named queue":   {opts: []asynq.Option{asynq.Unique(time.Minute), asynq.Queue("maintenance")}, queue: "maintenance"},
+		"default queue": {opts: []asynq.Option{asynq.Unique(time.Minute)}, queue: "default"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			handler := schedulerOpts(slog.New(slog.NewTextHandler(&logs, nil))).EnqueueErrorHandler
+			if handler == nil {
+				t.Fatal("the scheduler has no handler for refused enqueues")
+			}
+			handler(asynq.NewTask("taskqueue.periodic.v1", nil), tc.opts, asynq.ErrDuplicateTask)
+			line := logs.String()
+			for _, part := range []string{"level=ERROR", `msg="periodic task enqueue failed"`, "task_type=taskqueue.periodic.v1", "queue=" + tc.queue, asynq.ErrDuplicateTask.Error()} {
+				if !strings.Contains(line, part) {
+					t.Fatalf("refused enqueue log lacks %q: %s", part, line)
+				}
+			}
+		})
 	}
 }
 
