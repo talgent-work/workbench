@@ -2,6 +2,7 @@ package connectserver
 
 import (
 	"context"
+	"net/http"
 	"regexp"
 	"runtime/debug"
 	"sync"
@@ -19,8 +20,9 @@ const contractsModule = "github.com/talgent-work/contracts"
 // release is a release tag: no pre-release, pseudo-version or build suffix.
 var release = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
-// builtContractsVersion is the contracts release of this binary.
-var builtContractsVersion = sync.OnceValue(func() string {
+// BuiltContractsVersion is the contracts release of this binary, or "" when
+// its build names none.
+var BuiltContractsVersion = sync.OnceValue(func() string {
 	info, _ := debug.ReadBuildInfo()
 	return ContractsVersion(info)
 })
@@ -62,4 +64,59 @@ func NewContractsVersionInterceptor(version string) connect.ServerInterceptor {
 			return next(ctx, spec, stream)
 		}
 	}
+}
+
+// NewContractsVersionHandler answers every response of next with version in
+// ContractsVersionHeader, for a listener that answers some requests outside
+// a Connect server, such as a native API's own refusals. A response that
+// already carries it, from a Connect server behind next, keeps its own. An
+// empty version sends no header.
+func NewContractsVersionHandler(version string, next http.Handler) http.Handler {
+	if version == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(&versionWriter{ResponseWriter: w, version: version}, r)
+	})
+}
+
+// versionWriter adds the version header when the response's header is
+// written, after the handler has set its own.
+type versionWriter struct {
+	http.ResponseWriter
+	version string
+	written bool
+}
+
+func (w *versionWriter) stamp() {
+	if w.written {
+		return
+	}
+	w.written = true
+	if w.Header().Get(ContractsVersionHeader) == "" {
+		w.Header().Set(ContractsVersionHeader, w.version)
+	}
+}
+
+func (w *versionWriter) WriteHeader(code int) {
+	w.stamp()
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *versionWriter) Write(b []byte) (int, error) {
+	w.stamp()
+	return w.ResponseWriter.Write(b)
+}
+
+// Flush keeps streaming responses streaming.
+func (w *versionWriter) Flush() {
+	w.stamp()
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (w *versionWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
