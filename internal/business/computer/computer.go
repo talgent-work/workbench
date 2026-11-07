@@ -66,8 +66,8 @@ type CloudConfig struct {
 	// Capacity is the room the platform gives its runs: requests.cpu,
 	// requests.memory and pods.
 	Capacity map[string]string `json:"capacity" yaml:"capacity" toml:"capacity"`
-	// Namespace and QuotaName locate the cluster's execution quota, which
-	// services share with runs.
+	// Namespace and QuotaName locate the cluster's execution quota, in the
+	// namespace where sandboxes run and which holds only them.
 	Namespace string `json:"namespace" yaml:"namespace" toml:"namespace"`
 	QuotaName string `json:"quota-name" yaml:"quota-name" toml:"quota-name"`
 	// Demand is everything the quota charges for one run's Pod; its requests

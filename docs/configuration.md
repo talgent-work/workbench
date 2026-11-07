@@ -122,7 +122,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `sandbox-namespace` | `${K8S_NAMESPACE:talgent}` | Required. Where sandboxes are created |
+| `sandbox-namespace` | `${SANDBOX_NAMESPACE:talgent-sandbox}` | Required. Where sandboxes are created; the namespace holds only them |
 | `credential-transport` | `encrypted-network` | How credentials reach a sandbox's Vault: `https`, or `encrypted-network` (plain HTTP inside a cluster whose pod network is encrypted) |
 | `models.templates-path` | `${MODEL_TEMPLATES_PATH:/etc/talgent/models/templates.yml}` | Model Templates; base: ConfigMap `agent-models` |
 | `models.configurations-path` | `${MODEL_CONFIGURATIONS_PATH:/etc/talgent/model-configurations/configurations.yml}` | Model Configurations with their keys; base: Secret `agent-model-configurations`. At least one is required. |
@@ -132,8 +132,8 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `native.binary` | `claude` | The Claude Code command in the sandbox image |
 | `image` | `${AGENT_NATIVE_IMAGE:}` | The sandbox image; base: `ghcr.io/talgent-work/sandbox:<tag>`, set when rendered |
 | `requests`, `limits` | `cpu: 250m`, `memory: 512Mi`; `cpu: "2"`, `memory: 2Gi` | The sandbox container's resources |
-| `environment.TALGENT_API_ADDRESS` | `${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent.svc.cluster.local}` | The platform API a sandbox calls, on the standard port: the only kind its Credential Proxy adds the Work credential to |
-| `environment.OTEL_EXPORTER_OTLP_ENDPOINT` | `${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}` | Where Claude Code sends its telemetry |
+| `environment.TALGENT_API_ADDRESS` | `${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}` | The platform API a sandbox calls, on the standard port: the only kind its Credential Proxy adds the Work credential to |
+| `environment.OTEL_EXPORTER_OTLP_ENDPOINT` | `${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}` | Where Claude Code sends its telemetry |
 | `dispatcher.address`, `dispatcher.token` | `${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}`, `${DISPATCHER_EXECUTION_CONTROL_TOKEN:}` | Dispatcher, which drives each run |
 
 ### computer
@@ -147,7 +147,7 @@ Where Works run: this cluster's Cloud and people's Managed Computers.
 | `minimum-version` | `${COMPUTER_MINIMUM_VERSION:}` | Oldest Talgent Computer release (`X.Y.Z`) that may take a run; empty admits all. Set only a release published to npm, at or below the Computer Gateway's `release-version`. |
 | `cloud.id`, `cloud.name` | `${COMPUTER_CLOUD_ID:01a19bc3-075a-7c57-b42b-7fdf73b611ed}`, `${COMPUTER_CLOUD_NAME:Talgent Cloud}` | The Cloud's identity, which Works keep for good, and its name |
 | `cloud.capacity` | `requests.cpu: "8"`, `requests.memory: 12Gi`, `pods: "64"` | The room runs get; keep it with ResourceQuota `agent-executions` |
-| `cloud.namespace`, `cloud.quota-name` | `${K8S_NAMESPACE:talgent}`, `agent-executions` | The ResourceQuota each admission checks |
+| `cloud.namespace`, `cloud.quota-name` | `${SANDBOX_NAMESPACE:talgent-sandbox}`, `agent-executions` | The ResourceQuota each admission checks; it must be in the sandboxes' namespace, so it counts only their Pods |
 | `cloud.demand` | requests 600m CPU and 960Mi, limits 2250m and 2368Mi, 1 Pod | Everything the quota charges for one run: the sandbox container, its egress sidecar and the Kata RuntimeClass overhead |
 
 ### agent-computer

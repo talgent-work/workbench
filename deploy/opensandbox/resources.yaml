@@ -12,6 +12,15 @@ data:
           runtimeClassName: kata-qemu-runtime-rs
           restartPolicy: Never
           automountServiceAccountToken: false
+          # Any name with a dot is tried as absolute first, so an internet
+          # hostname takes one query instead of first failing through the
+          # cluster's search domains. The platform addresses a sandbox gets
+          # are service.namespace; their absolute query fails and falls back
+          # to the search domains.
+          dnsConfig:
+            options:
+              - name: ndots
+                value: "1"
           imagePullSecrets:
             - name: ghcr-pull
           securityContext:
