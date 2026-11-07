@@ -1,0 +1,37 @@
+# SANDBOX_NATIVE_API_ACCESS=disabled: sandboxes do not reach controlplane's
+# native API. No policy lets them out to it, no Service port leads them there,
+# and controlplane gives them no address for it. A deployment that sends
+# sandboxes to another platform service adds its own policy in
+# talgent-sandbox and names that service in a controlplane profile.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - patch: |-
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: sandbox-native-api
+        namespace: talgent-sandbox
+  # The test fails the render if the port moves.
+  - target:
+      kind: Service
+      name: controlplane
+    patch: |-
+      - op: test
+        path: /spec/ports/2/name
+        value: agent
+      - op: remove
+        path: /spec/ports/2
+  - target:
+      kind: Deployment
+      name: controlplane
+    patch: |-
+      - op: test
+        path: /spec/template/spec/containers/0/name
+        value: controlplane
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: NATIVE_PLATFORM_API_ADDRESS
+          value: ""
