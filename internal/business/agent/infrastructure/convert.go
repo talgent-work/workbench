@@ -1,82 +1,16 @@
 package infrastructure
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 
 	"github.com/samber/oops"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 )
-
-func workCreationToDO(request command.WorkCreationRequest) (workCreationDO, error) {
-	initial := request.Creation.InitialExecution
-	if uuid.Validate(request.ID) != nil || initial == nil || initial.CreationRequestID != request.ID || initial.RequestID != request.ID || initial.WorkID != "" || initial.SubjectID != request.Creation.SubjectID || initial.WorkspaceReference != request.Creation.WorkspaceReference || request.WorkID != "" || request.Canceled || request.BindingConfirmed {
-		return workCreationDO{}, command.ErrWorkCreationConflict
-	}
-	payload, err := encode(request.Creation)
-	if err != nil {
-		return workCreationDO{}, err
-	}
-	digest, err := subjectDigest(request.Creation.AgentID, request.Creation.Subject)
-	if err != nil {
-		return workCreationDO{}, err
-	}
-	return workCreationDO{ID: request.ID, SubjectDigest: digest, RequestData: payload, Pending: true}, nil
-}
-
-// cancelledCreationData marks an identity cancelled before Agent received its
-// request; it carries no creation.
-const cancelledCreationData = "{}"
-
-func workCreationFromDO(row workCreationDO) (command.WorkCreationRequest, error) {
-	if row.RequestData == cancelledCreationData {
-		if !row.Canceled || row.SessionID != "" {
-			return command.WorkCreationRequest{}, command.ErrWorkCreationConflict
-		}
-		return command.WorkCreationRequest{ID: row.ID, Canceled: true}, nil
-	}
-	var creation command.CreateWork
-	if err := json.Unmarshal([]byte(row.RequestData), &creation); err != nil {
-		return command.WorkCreationRequest{}, oops.Wrap(err)
-	}
-	for i := range creation.CapabilityDifferences.Plugins {
-		choice := &creation.CapabilityDifferences.Plugins[i]
-		choice.Configuration = pluginconfig.FromJSON(choice.Configuration)
-	}
-	if _, err := workCreationToDO(command.WorkCreationRequest{ID: row.ID, Creation: creation}); err != nil {
-		return command.WorkCreationRequest{}, err
-	}
-	if (row.Canceled && row.SessionID != "") || (row.BindingConfirmed && row.SessionID == "") {
-		return command.WorkCreationRequest{}, command.ErrWorkCreationConflict
-	}
-	return command.WorkCreationRequest{ID: row.ID, WorkID: row.SessionID, Creation: creation, Canceled: row.Canceled, BindingConfirmed: row.BindingConfirmed}, nil
-}
-
-// subjectDigest correlates a creation request with the Work its definition
-// holds for the same Subject, without interpreting the Subject; a request
-// without a Subject correlates by its own identity and has none.
-func subjectDigest(agentID string, subject domain.WorkSubject) (string, error) {
-	if !subject.Present() {
-		return "", nil
-	}
-	data, err := json.Marshal(struct {
-		Agent   string
-		Subject domain.WorkSubject
-	}{agentID, subject})
-	if err != nil {
-		return "", oops.Wrap(err)
-	}
-	digest := sha256.Sum256(data)
-	return hex.EncodeToString(digest[:]), nil
-}
 
 func initialExecutionRequestFromDO(row initialExecutionRequestDO) (command.InitialExecutionRequest, error) {
 	var request command.InitialExecutionRequest
@@ -157,6 +91,10 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	if err != nil {
 		return nil, err
 	}
+	initial, err := encodeInitialTaskInput(session.InitialTaskInput)
+	if err != nil {
+		return nil, err
+	}
 	authorizations, err := encodeWorkAuthorization(session.AuthorizationSelection)
 	if err != nil {
 		return nil, err
@@ -195,7 +133,7 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	if err != nil {
 		return nil, err
 	}
-	row := &agentWorkDO{ReadOnlyMounts: readOnlyMounts, DisplayTitle: session.DisplayTitle, ProjectRef: session.ProjectID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, RepositorySelection: repositories, AuthorizationSelection: authorizations, TaskExecutionBegun: session.TaskExecutionBegun, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, WorkspaceRef: session.WorkspaceReference, InputSource: session.InputSource.Reference, InputSpaceToken: session.InputSource.SpaceToken, StartingContext: starting, HomeOwnerID: session.HomeBinding.OwnerID, HomeNamespace: session.HomeBinding.Namespace, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
+	row := &agentWorkDO{ReadOnlyMounts: readOnlyMounts, DisplayTitle: session.DisplayTitle, ProjectRef: session.ProjectID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, RepositorySelection: repositories, InitialTaskInput: initial, AuthorizationSelection: authorizations, TaskExecutionBegun: session.TaskExecutionBegun, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, WorkspaceRef: session.WorkspaceReference, InputSource: session.InputSource.Reference, InputSpaceToken: session.InputSource.SpaceToken, StartingContext: starting, HomeOwnerID: session.HomeBinding.OwnerID, HomeNamespace: session.HomeBinding.Namespace, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
 	if session.Subject.Present() {
 		kind, id := string(session.Subject.Kind), session.Subject.ID
 		row.SubjectKind, row.SubjectID = &kind, &id
@@ -233,6 +171,10 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	if err != nil {
 		return nil, err
 	}
+	initial, err := decodeInitialTaskInput(row.InitialTaskInput)
+	if err != nil {
+		return nil, err
+	}
 	authorizations, err := decodeWorkAuthorization(row.AuthorizationSelection)
 	if err != nil {
 		return nil, err
@@ -241,7 +183,7 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	if err := json.Unmarshal([]byte(row.HarnessProcess), &current); err != nil {
 		return nil, oops.Wrap(err)
 	}
-	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, RepositorySelection: repositories, AuthorizationSelection: authorizations, TaskExecutionBegun: row.TaskExecutionBegun, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, WorkspaceReference: row.WorkspaceRef, InputSource: domain.WorkInputSource{Reference: row.InputSource, SpaceToken: row.InputSpaceToken}, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
+	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, RepositorySelection: repositories, InitialTaskInput: initial, AuthorizationSelection: authorizations, TaskExecutionBegun: row.TaskExecutionBegun, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, WorkspaceReference: row.WorkspaceRef, InputSource: domain.WorkInputSource{Reference: row.InputSource, SpaceToken: row.InputSpaceToken}, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
 	if err := json.Unmarshal([]byte(row.TraceAttributes), &session.TraceAttributes); err != nil {
 		return nil, err
 	}
@@ -272,8 +214,10 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	return session, session.Validate()
 }
 
-func sessionPreparationFromRequest(request command.InitialExecutionRequest) query.WorkPreparation {
-	result := query.WorkPreparation{ThinkingLevel: request.ThinkingLevel, WorkID: request.WorkID, RequestID: request.RequestID, SubjectID: request.SubjectID, WorkBranch: request.WorkBranch, InputID: request.Input.ID, Input: request.Input.Text, Prepared: request.Prepared, Submitted: request.Submitted, InputPrepared: request.InputPrepared, InputBuffered: request.InputBuffered, Rejected: request.Rejected}
+// sessionPreparationFromRequest reads a first start's preparation; its
+// initial task input is buffered once its Work no longer holds it.
+func sessionPreparationFromRequest(request command.InitialExecutionRequest, inputBuffered bool) query.WorkPreparation {
+	result := query.WorkPreparation{ThinkingLevel: request.ThinkingLevel, WorkID: request.WorkID, RequestID: request.RequestID, SubjectID: request.SubjectID, WorkBranch: request.WorkBranch, InputID: request.Input.ID, Input: request.Input.Text, Prepared: request.Prepared, Submitted: request.Submitted, InputPrepared: request.InputPrepared, InputBuffered: inputBuffered, Rejected: request.Rejected}
 	for _, c := range request.Checkouts {
 		result.Checkouts = append(result.Checkouts, query.PreparedCheckout{Provider: c.Provider, RepoID: c.RepoID, RepoName: c.RepoName, CloneURL: c.CloneURL, WebURL: c.WebURL, DefaultBranch: c.DefaultBranch, BaseBranch: c.BaseBranch, WorkBranch: c.WorkBranch, TargetPath: c.TargetPath, AccessID: c.AccessID})
 	}

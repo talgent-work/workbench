@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
@@ -66,18 +65,18 @@ type DeliverWorkInput struct {
 }
 
 type DeliverWorkInputHandler struct {
-	initial  InitialExecutionReader
 	sessions domain.AgentWorkRepository
 	access   access.WorkAuthorizer
 	inputs   WorkInputs
 }
 
-func NewDeliverWorkInputHandler(sessions domain.AgentWorkRepository, access access.WorkAuthorizer, inputs WorkInputs, initial InitialExecutionReader) *DeliverWorkInputHandler {
-	return &DeliverWorkInputHandler{sessions: sessions, access: access, inputs: inputs, initial: initial}
+func NewDeliverWorkInputHandler(sessions domain.AgentWorkRepository, access access.WorkAuthorizer, inputs WorkInputs) *DeliverWorkInputHandler {
+	return &DeliverWorkInputHandler{sessions: sessions, access: access, inputs: inputs}
 }
 
 // Deliver accepts the input and reports how the Work's buffer received it,
-// so a caller retrying a delivery learns when the input already settled.
+// so a caller retrying a delivery learns when the input already settled. A
+// Work's initial task input not handed off yet goes into the buffer first.
 func (h *DeliverWorkInputHandler) Deliver(ctx context.Context, request DeliverWorkInput) (InputHandOff, error) {
 	if err := h.access.AuthorizeWork(ctx, request.SubjectID, request.WorkID); err != nil {
 		return "", err
@@ -91,15 +90,6 @@ func (h *DeliverWorkInputHandler) Deliver(ctx context.Context, request DeliverWo
 	}
 	if err := request.Input.Validate(); err != nil {
 		return "", err
-	}
-	initial, err := h.initial.Get(ctx, request.WorkID)
-	if err != nil && !errors.Is(err, ErrInitialExecutionNotFound) {
-		return "", err
-	}
-	// A rejected initial preparation failed its start; once that start was
-	// ended, a later running start accepts ordinary input.
-	if err == nil && !initial.InputBuffered && !(initial.Rejected && (initial.RejectionApplied || initial.CleanupConfirmed)) {
-		return "", ErrInitialExecutionPending
 	}
 	return h.inputs.AcceptInput(ctx, request.WorkID, request.Input)
 }

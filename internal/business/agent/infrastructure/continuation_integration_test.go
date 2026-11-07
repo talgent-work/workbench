@@ -36,15 +36,15 @@ func stoppedContinuationSession(t *testing.T) (workCreationFixture, string) {
 	t.Helper()
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
-	id, err := create.Handle(ctx, f.request.Creation)
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
+	id, err := create.Handle(ctx, f.request)
 	require.NoError(t, err)
-	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id))
-	require.NoError(t, f.requests.CompleteWorkCreation(ctx, f.request.ID))
+	// The Work recovery its creation wakes hands off its initial task input.
+	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 	run := newRuns(t, f.db, f.sessions)
 	run.ready(ctx, id)
 	// A normal exit follows an admitted stop (Lifecycle observation).
-	require.NoError(t, command.NewStopWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionsOf(f.db)).Handle(ctx, command.WorkControl{SubjectID: f.request.Creation.SubjectID, WorkID: id, RequestID: uuid.NewString()}))
+	require.NoError(t, command.NewStopWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionsOf(f.db)).Handle(ctx, command.WorkControl{SubjectID: f.request.SubjectID, WorkID: id, RequestID: uuid.NewString()}))
 	run.exit(ctx, id)
 	run.release(ctx, id)
 	s, err := f.sessions.Get(ctx, id)
@@ -91,8 +91,7 @@ func TestContinuationCapacityRejectionNeverReentersAdmissionWithoutExplicitRetry
 	require.Equal(t, before.HarnessSessionReference, retained.HarnessSessionReference)
 	request.RequestID = uuid.NewString()
 	require.NoError(t, handler.Handle(ctx, request))
-	admitted, found, err := f.sessions.FindAdmittedStart(ctx, request.RequestID)
-	require.NoError(t, err)
+	admitted, found := admittedStart(t, f.sessions, request.RequestID)
 	require.True(t, found)
 	require.Equal(t, agentquery.AdmittedStart{WorkID: id, Kind: agentquery.StartKindResume}, admitted)
 	require.Len(t, starts, 1)
@@ -159,7 +158,7 @@ func TestContinuationRecoversRejectionWithoutRequestingCapacity(t *testing.T) {
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.NoError(t, session.Resume(domain.StartAdmission{AdmittedAt: time.Now(), AgentID: session.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}))
-	require.ErrorIs(t, sessions.CommitStart(ctx, session, agentquery.AdmittedStart{WorkID: id, Kind: agentquery.StartKindResume}, request.RequestID), command.ErrStartRequestCanceled)
+	require.ErrorIs(t, sessions.CommitStart(ctx, session, agentquery.StartRequest{ID: request.RequestID, Kind: agentquery.StartKindResume, WorkID: id}), command.ErrStartRequestCanceled)
 	actual, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, actual.State)
@@ -170,8 +169,8 @@ type lostContinuationAdmission struct {
 	lost bool
 }
 
-func (r *lostContinuationAdmission) CommitStart(ctx context.Context, s *domain.AgentWork, start agentquery.AdmittedStart, requestID string) error {
-	err := r.AgentWorkRepository.CommitStart(ctx, s, start, requestID)
+func (r *lostContinuationAdmission) CommitStart(ctx context.Context, s *domain.AgentWork, request agentquery.StartRequest) error {
+	err := r.AgentWorkRepository.CommitStart(ctx, s, request)
 	if err == nil && r.lost {
 		r.lost = false
 		return errContinuationAckLost
@@ -201,7 +200,7 @@ func TestContinuationObservationResolvesAcceptedAdmissionAfterLostResponse(t *te
 	view, err = receipts.GetWorkContinuation(ctx, id)
 	require.NoError(t, err)
 	require.False(t, view.Pending)
-	recovery := command.NewRecoverWorkHandler(time.Now, f.sessions, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil)
+	recovery := command.NewRecoverWorkHandler(time.Now, f.sessions, &commandtest.InputBuffer{}, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil)
 	require.NoError(t, recovery.Handle(ctx, id))
 	require.Empty(t, starts, "the start was admitted by the lost commit, not again")
 	intended := requireStartIntended(t, f.sessions, id)
@@ -248,11 +247,9 @@ func TestContinuationRetainsOriginalRequestBeforeAnyAdmission(t *testing.T) {
 	retry := request
 	retry.RequestID = uuid.NewString()
 	require.NoError(t, h.Handle(ctx, retry))
-	_, found, err := f.sessions.FindAdmittedStart(ctx, request.RequestID)
-	require.NoError(t, err)
+	_, found := admittedStart(t, f.sessions, request.RequestID)
 	require.True(t, found, "an explicit retry resumes the original unresolved request")
-	_, found, err = f.sessions.FindAdmittedStart(ctx, retry.RequestID)
-	require.NoError(t, err)
+	_, found = admittedStart(t, f.sessions, retry.RequestID)
 	require.False(t, found)
 	require.Equal(t, 1, capacity.calls)
 	require.False(t, readStartup().ContinuationPending)
@@ -303,7 +300,7 @@ func TestContinuationConcurrentReservationAndIdentityCollision(t *testing.T) {
 	ids, err = stores[0].ListPendingContinuations(ctx, id, 100)
 	require.NoError(t, err)
 	require.Empty(t, ids)
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
 	otherID, err := create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: before.ProjectID})
 	require.NoError(t, err)
 	otherBefore, err := f.sessions.Get(ctx, otherID)

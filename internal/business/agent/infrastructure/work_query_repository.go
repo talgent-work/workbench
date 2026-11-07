@@ -25,15 +25,17 @@ func NewWorkQueryRepository(db *xorm.Engine) *WorkQueryRepository {
 }
 
 type workViewRow struct {
-	WorkProgress          string  `xorm:"work_progress"`
-	ModelConfigurationID  string  `xorm:"model_configuration_id"`
-	ModelMachineLogin     bool    `xorm:"model_machine_login"`
-	PermissionMode        string  `xorm:"permission_mode"`
-	ComputerID            string  `xorm:"computer_id"`
-	Capabilities          string  `xorm:"capabilities"`
-	Version               int     `xorm:"version"`
-	EndRequest            string  `xorm:"end_request"`
-	InitialID             string  `xorm:"initial_id"`
+	WorkProgress         string `xorm:"work_progress"`
+	ModelConfigurationID string `xorm:"model_configuration_id"`
+	ModelMachineLogin    bool   `xorm:"model_machine_login"`
+	PermissionMode       string `xorm:"permission_mode"`
+	ComputerID           string `xorm:"computer_id"`
+	Capabilities         string `xorm:"capabilities"`
+	Version              int    `xorm:"version"`
+	EndRequest           string `xorm:"end_request"`
+	InitialID            string `xorm:"initial_id"`
+	// InitialTaskInput is the Work's initial task input not handed off yet.
+	InitialTaskInput      string  `xorm:"initial_task_input"`
 	InitialData           string  `xorm:"initial_data"`
 	InitialVersion        int     `xorm:"initial_version"`
 	ContinuationVersion   int     `xorm:"continuation_version"`
@@ -80,7 +82,7 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
 	found, err := tx.SQL(`SELECT s.id,s.model_configuration_id,s.model_machine_login,s.permission_mode,s.computer_id,s.capabilities,s.subject_kind,s.subject_id,s.project_ref,
  `+agentOwnerColumn+` AS agent_owner,s.started_by,s.state,s.harness_process,s.work_progress,
  s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at,s.version,s.end_request,
- s.visibility_public,s.reach_resume_due,
+ s.visibility_public,s.reach_resume_due,s.initial_task_input,
  COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at DESC, r.id DESC LIMIT 1),'') AS start_request_id,
  COALESCE(i.request_id,'') AS initial_id, COALESCE(i.request_data,'') AS initial_data, COALESCE(i.version,0) AS initial_version,
  COALESCE(c.version,0) AS continuation_version, COALESCE(c.rejection,'') AS continuation_rejection,
@@ -223,8 +225,10 @@ func startupFromRows(row workViewRow, sandboxReady, recovering bool, executionUp
 	if err := json.Unmarshal([]byte(row.HarnessProcess), &process); err != nil {
 		return nil, oops.Wrap(err)
 	}
-	f := query.StartupFacts{RequestID: initial.RequestID, Initial: initial.RequestID != "", State: string(sessionStates[row.State]), InputPrepared: initial.InputPrepared, InputBuffered: initial.InputBuffered, Rejected: initial.Rejected, Recovering: initial.RecoveryPending, Reason: initial.FailureReason, EndRequested: row.EndRequest != ""}
-	f.InputPending = initial.RequestID != "" && !initial.InputBuffered
+	// The initial task input is buffered once the Work no longer holds it.
+	inputBuffered := initial.RequestID != "" && row.InitialTaskInput == ""
+	f := query.StartupFacts{RequestID: initial.RequestID, Initial: initial.RequestID != "", State: string(sessionStates[row.State]), InputPrepared: initial.InputPrepared, InputBuffered: inputBuffered, Rejected: initial.Rejected, Recovering: initial.RecoveryPending, Reason: initial.FailureReason, EndRequested: row.EndRequest != ""}
+	f.InputPending = initial.RequestID != "" && !inputBuffered
 	if process != nil {
 		f.RequestID = row.StartRequestID
 		f.Admitted = true
@@ -255,7 +259,7 @@ func startupFromRows(row workViewRow, sandboxReady, recovering bool, executionUp
 		f.State = ""
 		f.EndRequested = false
 		f.Initial = false
-		f.InputPending = initial.RequestID != "" && !initial.InputBuffered && !initial.Rejected
+		f.InputPending = initial.RequestID != "" && !inputBuffered && !initial.Rejected
 		f.Recovering = false
 		f.Rejected = row.ContinuationRejection != ""
 		f.Reason = row.ContinuationRejection

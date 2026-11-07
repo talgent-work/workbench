@@ -4,6 +4,7 @@ package agent_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -147,9 +148,25 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 	}
 }
 
-// Reconstruct the production module after association acknowledgement but before
-// its creation-to-initial-preparation handoff. No user RPC drives recovery.
-func TestModuleRestartCompletesConfirmedCreationHandoff(t *testing.T) {
+// lostCreationAnswer commits a creation and loses its answer, so nothing
+// continues the new Work but recovery.
+type lostCreationAnswer struct {
+	command.AgentWorkRepository
+}
+
+var errCreationAnswerLost = errors.New("creation answer lost after the commit")
+
+func (r lostCreationAnswer) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
+	if err := r.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
+		return err
+	}
+	return errCreationAnswerLost
+}
+
+// Reconstruct the production module after a creation committed but before
+// anything continued it. No user RPC drives recovery: it starts the first
+// start and hands the initial task input to the input buffer.
+func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 	dsn := mysqltest.Database(t)
 	db, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
@@ -158,19 +175,22 @@ func TestModuleRestartCompletesConfirmedCreationHandoff(t *testing.T) {
 	defer cancel()
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	records := infrastructure.NewWorkCreationRequests(db, time.Now)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"employee"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "employee", Namespace: "personal"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
 	initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-342", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Recover retained explicit creation"}}
-	request, err := command.NewWorkCreationRequest(command.CreateWork{RequestID: initial.RequestID, SubjectID: "employee", AgentID: definition.ID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), InitialExecution: &initial})
-	require.NoError(t, err)
-	request, err = records.RetainWorkCreation(ctx, request)
-	require.NoError(t, err)
+	request := command.CreateWork{RequestID: initial.RequestID, SubjectID: "employee", AgentID: definition.ID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), InitialExecution: &initial}
 	port := &sessionCommandRecorder{}
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{})).Handle(ctx, request.Creation)
+	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), sessions, auth, models)
+	_, err = command.NewCreateWorkHandler(time.Now, agents, lostCreationAnswer{sessions}, auth, models, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{}), prepare).Handle(ctx, request)
+	require.ErrorIs(t, err, errCreationAnswerLost)
+	record, found, err := sessions.FindStartRequest(ctx, request.RequestID)
 	require.NoError(t, err)
-	require.NoError(t, records.ConfirmWorkCreation(ctx, request.ID, id))
+	require.True(t, found)
+	id := record.WorkID
+	require.Empty(t, launches(t, db), "nothing continued the creation before recovery")
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
@@ -190,11 +210,7 @@ func TestModuleRestartCompletesConfirmedCreationHandoff(t *testing.T) {
 		defer release()
 		require.NoError(t, app.Stop(stop))
 	})
-	records = infrastructure.NewWorkCreationRequests(db, time.Now)
-	require.Eventually(t, func() bool {
-		pending, err := records.ListPendingWorkCreations(ctx, "", 100)
-		return err == nil && len(pending) == 0 && len(launches(t, db)) > 0
-	}, 10*time.Second, 20*time.Millisecond, "recovery begins the admitted start's execution whose Domain Event the handoff lost")
+	require.Eventually(t, func() bool { return len(launches(t, db)) > 0 }, 10*time.Second, 20*time.Millisecond, "recovery begins the admitted start's execution whose Domain Event the lost answer took with it")
 	for _, start := range launches(t, db) {
 		require.Equal(t, id, start.WorkID)
 	}
@@ -203,9 +219,13 @@ func TestModuleRestartCompletesConfirmedCreationHandoff(t *testing.T) {
 	require.Equal(t, initial.Input, retained.Input)
 	require.True(t, retained.Submitted)
 	require.Eventually(t, func() bool {
-		retained, err := infrastructure.NewInitialExecutionRequests(db, time.Now).Get(ctx, id)
-		return err == nil && retained.InputBuffered
-	}, 10*time.Second, 20*time.Millisecond, "the initial input is buffered without waiting for the Harness")
+		work, err := infrastructure.NewAgentWorkRepository(db, time.Now).Get(ctx, id)
+		if err != nil {
+			return false
+		}
+		_, pending := work.PendingInitialTaskInput()
+		return !pending
+	}, 10*time.Second, 20*time.Millisecond, "the initial task input is handed off without waiting for the Harness")
 	buffered, err := port.ReadBuffer(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, []string{initial.Input.ID}, buffered.InputIDs)

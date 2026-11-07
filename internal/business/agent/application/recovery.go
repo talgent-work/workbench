@@ -133,10 +133,6 @@ func (r *Recovery) WakeContinuation(ctx context.Context, workID string) error {
 	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverContinuation(workID))
 }
 
-func (r *Recovery) WakeWorkCreation(ctx context.Context, requestID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverWorkCreation(requestID))
-}
-
 func (r *Recovery) WakeInitialExecution(ctx context.Context, workID string) error {
 	return r.enqueue(ctx, preparationAttemptTimeout)(agenttask.NewPrepareInitialExecution(workID))
 }
@@ -274,16 +270,6 @@ func (r *Recovery) RecoverContinuation(ctx context.Context, workID string) error
 	return r.app.Commands.ResumeWork.Recover(ctx, workID)
 }
 
-// RecoverWorkCreation settles a retained creation request; a cancelled or
-// rejected request is a settled outcome, not a failure to retry.
-func (r *Recovery) RecoverWorkCreation(ctx context.Context, requestID string) error {
-	err := r.app.Commands.CreateRequestedWork.Recover(ctx, requestID)
-	if errors.Is(err, command.ErrWorkCreationCanceled) || errors.Is(err, command.ErrInitialExecutionRejected) {
-		return nil
-	}
-	return err
-}
-
 // PrepareInitialExecution advances the first start's preparation and input
 // delivery. A first start waiting for readiness or for its next admitted start
 // is woken again by that Work's commit; a Work without a first-start
@@ -307,7 +293,6 @@ func (r *Recovery) Sweep(ctx context.Context) error {
 		sweep(ctx, r.lookups.ListOutstandingExecutions, r.WakeExecution, identity),
 		sweep(ctx, pageOf(queries.ListRecoveryWorks.Handle), r.wakeWorkOnly, identity),
 		sweep(ctx, pageOf(queries.ListPendingContinuations.Handle), r.WakeContinuation, identity),
-		sweep(ctx, pageOf(queries.ListWorkCreationRecovery.Handle), r.WakeWorkCreation, identity),
 		sweep(ctx, pageOf(queries.ListInitialExecutionRecovery.Handle), r.WakeInitialExecution, identity),
 		r.app.Commands.ReconcileDesks.Handle(ctx),
 	)

@@ -51,7 +51,7 @@ func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *agentp
 		if err := h.application.AdmitCallerCreation(subjectFromProto(creation.GetSubject()), creation.GetProjectId()); err != nil {
 			return nil, mapAgentError(err)
 		}
-		workID, err = h.application.Commands.CreateRequestedWork.Handle(ctx, command.CreateWork{
+		workID, err = h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{
 			StartingUserID: creation.GetStartingUserId(),
 			SubjectID:      input.SubjectID, InitialExecution: &input, WorkModel: workModelFromProto(creation.GetModel()),
 			AgentID: creation.GetAgentId(), WorkspaceReference: creation.GetWorkspaceReference(), InputSource: domain.WorkInputSource{Reference: creation.GetInputSource(), SpaceToken: creation.GetInputSpaceToken()},

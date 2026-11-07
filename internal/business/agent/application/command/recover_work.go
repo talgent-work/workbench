@@ -9,21 +9,31 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// RecoverWorkHandler advances retained execution obligations. It never admits
-// a new start or chooses a fresh execution context.
+// RecoverWorkHandler advances retained execution obligations and hands off a
+// pending initial task input. It never admits a new start or chooses a fresh
+// execution context.
 type RecoverWorkHandler struct {
 	reach       *ComputerReachHandler
 	now         func() time.Time
 	sessions    domain.AgentWorkRepository
 	buffer      RunningHarnessPort
+	inputs      WorkInputs
 	settlements integrationmessage.Publisher
 }
 
-func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, buffer RunningHarnessPort, settlements integrationmessage.Publisher, reach *ComputerReachHandler) *RecoverWorkHandler {
-	return &RecoverWorkHandler{reach: reach, now: now, sessions: sessions, buffer: buffer, settlements: settlements}
+func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, buffer RunningHarnessPort, inputs WorkInputs, settlements integrationmessage.Publisher, reach *ComputerReachHandler) *RecoverWorkHandler {
+	return &RecoverWorkHandler{reach: reach, now: now, sessions: sessions, buffer: buffer, inputs: inputs, settlements: settlements}
 }
 
+// Handle hands off the Work's pending initial task input, whose commit may
+// have outlived its creation's answer, and advances its execution
+// obligations; neither failure holds back the other.
 func (h *RecoverWorkHandler) Handle(ctx context.Context, sessionID string) error {
+	handOff := h.inputs.HandOffInitialTaskInput(ctx, sessionID)
+	return errors.Join(handOff, h.recover(ctx, sessionID))
+}
+
+func (h *RecoverWorkHandler) recover(ctx context.Context, sessionID string) error {
 	session, err := h.sessions.Get(ctx, sessionID)
 	if err != nil {
 		return err

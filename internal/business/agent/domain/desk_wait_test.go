@@ -75,7 +75,7 @@ func TestStoppingOrClosingAQueuedFirstStartClosesTheWork(t *testing.T) {
 	for name, withdraw := range map[string]func(*domain.AgentWork) error{
 		"stop": func(w *domain.AgentWork) error { return w.Stop("withdraw", true) },
 		"close": func(w *domain.AgentWork) error {
-			return w.Close("withdraw", domain.ClosureFacts{StartupPending: true, StartQueued: true})
+			return w.Close("withdraw", domain.ClosureFacts{StartQueued: true})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

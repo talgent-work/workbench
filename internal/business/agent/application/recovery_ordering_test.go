@@ -94,9 +94,9 @@ func abandonedStart(t *testing.T) *recoveryWorld {
 	coordination := command.NewExecutionCoordination(time.Now, w.works, executions, &commandtest.Computers{}, w.harness)
 	app := &application.Application{Commands: application.Commands{
 		ExecutionCoordination:  coordination,
-		RecoverWork:            command.NewRecoverWorkHandler(time.Now, w.works, w.harness, settlements, nil),
+		RecoverWork:            command.NewRecoverWorkHandler(time.Now, w.works, w.harness, command.NewInputAcceptance(w.works, w.harness), settlements, nil),
 		ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, w.works, executions, coordination, w.harness, settlements),
-		CloseWork:              command.NewCloseWorkHandler(w.works, nil, executions, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, w.harness.InputBuffer),
+		CloseWork:              command.NewCloseWorkHandler(w.works, nil, executions, commandtest.NoClosureObligations{}, w.harness.InputBuffer),
 	}}
 	w.recovery = application.NewRecovery(app, nil, executions, nil, nil, nil, nil)
 	return w

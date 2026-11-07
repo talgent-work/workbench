@@ -60,13 +60,6 @@ message RecoverContinuationTaskV1 {
   string work_id = 1;
 }
 
-// RecoverWorkCreationTaskV1 asks Agent to settle one retained Work creation
-// request after admission uncertainty.
-message RecoverWorkCreationTaskV1 {
-  // Original Work creation request identity.
-  string request_id = 1;
-}
-
 // PrepareInitialExecutionTaskV1 asks Agent to prepare and deliver one Work's
 // initial execution under its Startup Deadline.
 message PrepareInitialExecutionTaskV1 {

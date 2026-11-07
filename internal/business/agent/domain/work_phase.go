@@ -145,6 +145,9 @@ func (s *AgentWork) accept(replay, answers bool) error {
 	if err := s.AdmitInput(); err != nil {
 		return err
 	}
+	if s.InitialTaskInput != nil {
+		return ErrInitialTaskInputPending
+	}
 	// Input for a Work that is not running, or whose process end is already
 	// requested, waits in the buffer for the next start; its task begins when
 	// a Harness reads it.

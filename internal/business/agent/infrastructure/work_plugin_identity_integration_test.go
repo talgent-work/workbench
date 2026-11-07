@@ -4,6 +4,7 @@ package infrastructure_test
 
 import (
 	"context"
+	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"testing"
 	"time"
 
@@ -19,23 +20,16 @@ import (
 	"xorm.io/xorm"
 )
 
-func TestRecoveredCreationRetainsPersonalOwner(t *testing.T) {
+// A creation answered through another connection keeps its represented
+// human's personal capabilities.
+func TestCreationRetainsPersonalOwner(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
-	f.request.Creation.StartingUserID = "owner"
-	_, err := f.requests.RetainWorkCreation(t.Context(), f.request)
-	require.NoError(t, err)
 	otherDB, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = otherDB.Close() })
-	requests := infrastructure.NewWorkCreationRequests(otherDB, time.Now)
-	retained, err := requests.GetWorkCreation(t.Context(), f.request.ID)
-	require.NoError(t, err)
-	require.Equal(t, "owner", retained.Creation.StartingUserID)
-	require.Equal(t, "owner", retained.Creation.SubjectID)
 	works := infrastructure.NewAgentWorkRepository(otherDB, time.Now)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(otherDB)),
-		creationModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
-	id, err := handler.Handle(t.Context(), retained.Creation)
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(otherDB)), deploymentModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(otherDB, deploymentModels()))
+	id, err := handler.Handle(t.Context(), f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
@@ -56,13 +50,13 @@ func (*identityCatalog) ListPersonalPlugins(_ context.Context, user string) ([]d
 
 func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
-	agent, err := f.agents.Get(t.Context(), f.request.Creation.AgentID)
+	agent, err := f.agents.Get(t.Context(), f.request.AgentID)
 	require.NoError(t, err)
 	selectedID, otherID := uuid.NewString(), uuid.NewString()
 	input := domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 		Admission:          domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true},
 		WorkModel:          domain.WorkModelSelection{ConfigurationID: "fixture"},
-		WorkspaceReference: "workspace", Subject: f.request.Creation.Subject, ProjectID: f.request.Creation.ProjectID,
+		WorkspaceReference: "workspace", Subject: f.request.Subject, ProjectID: f.request.ProjectID,
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner", Available: []domain.PersonalAuthorization{
 			{OwnerUserID: "owner", AuthorizationID: selectedID, Provider: "github", Service: "github"},
 			{OwnerUserID: "owner", AuthorizationID: otherID, Provider: "other", Service: "other"},
@@ -72,7 +66,7 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 	require.NoError(t, err)
 	require.True(t, created)
 	require.NoError(t, f.sessions.RegisterWork(t.Context(), work, command.WorkRegistration{
-		SubjectID: "owner", RequestID: uuid.NewString(), DefinitionVersion: agent.Version,
+		SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}, DefinitionVersion: agent.Version,
 	}))
 	retained, err := f.sessions.Get(t.Context(), work.ID)
 	require.NoError(t, err)

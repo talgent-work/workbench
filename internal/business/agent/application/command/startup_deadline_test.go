@@ -94,7 +94,7 @@ func TestRestartCountsItsOwnStartupDeadline(t *testing.T) {
 	w.exit(t, 0)
 	w.release(t)
 
-	sessions.starts = map[string]query.AdmittedStart{}
+	sessions.requests = map[string]query.StartRequest{}
 	_, err := restartHandler(sessions, agents, capacityCheck{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID})
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, sessions.session.State)

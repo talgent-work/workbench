@@ -44,7 +44,7 @@ func controlRequest(ctx context.Context) context.Context {
 // the Project; the caller composes its own facts and authorizes them.
 func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	const owner = "123456789012345680"
-	f := newWorkDefinitionFixtureWithConcurrency(t, owner, 0)
+	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
 	principal := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	reader := infrastructure.NewWorkQueryRepository(f.db)
@@ -59,7 +59,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
 	project := uuid.NewString()
 	makeSession := func(projectID, key string, stopped bool) string {
-		creation := f.request.Creation
+		creation := f.request
 		preparation := *creation.InitialExecution
 		preparation.RequestID, preparation.Input.ID = uuid.NewString(), uuid.NewString()
 		preparation.WorkBranch = "talgent/" + key
@@ -67,22 +67,18 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 		creation.RequestID = preparation.RequestID
 		creation.WorkspaceReference = uuid.NewString()
 		creation.Subject, creation.ProjectID = domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, projectID
-		retained, e := command.NewWorkCreationRequest(creation)
+		id, e := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels())).Handle(ctx, creation)
 		require.NoError(t, e)
-		retained, e = f.requests.RetainWorkCreation(ctx, retained)
-		require.NoError(t, e)
-		id, e := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{})).Handle(ctx, retained.Creation)
-		require.NoError(t, e)
-		require.NoError(t, f.requests.ConfirmWorkCreation(ctx, retained.ID, id))
 		if stopped {
 			request, e := initial.Get(ctx, id)
 			require.NoError(t, e)
-			request.Submitted, request.InputPrepared, request.InputBuffered = true, true, true
+			request.Submitted, request.InputPrepared = true, true
 			require.NoError(t, initial.Save(ctx, request))
+			require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 			for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 				require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id}))
 			}
-			require.NoError(t, command.NewStopWorkHandler(f.sessions, principal, feedback.executions).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: id, RequestID: uuid.NewString()}))
+			require.NoError(t, command.NewStopWorkHandler(f.sessions, principal, executionsOf(f.db)).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: id, RequestID: uuid.NewString()}))
 			feedback.exit(ctx, id)
 			feedback.release(ctx, id)
 		}
@@ -167,7 +163,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 
 	// An older archived Work remains discoverable even when newer live Works fill
 	// the requested page. Filtering must precede LIMIT.
-	require.NoError(t, command.NewCloseWorkHandler(f.sessions, principal, feedback.executions, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, infrastructure.NewContinuationRequests(f.db, time.Now), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: first, RequestID: uuid.NewString()}))
+	require.NoError(t, command.NewCloseWorkHandler(f.sessions, principal, executionsOf(f.db), infrastructure.NewContinuationRequests(f.db, time.Now), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: first, RequestID: uuid.NewString()}))
 	_, err = f.db.Exec("UPDATE agent_session SET updated_at=500 WHERE id=?", first)
 	require.NoError(t, err)
 	archived, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{AgentOwner: owner, ProjectId: project, Recent: true, Limit: 1, Archived: proto.Bool(true)})
@@ -185,7 +181,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 
 	// Populate Works outside this Project to distinguish indexed access from a
 	// coincidentally cheap scan of the initial few rows.
-	insertStartingWorks(t, f.db, f.request.Creation.AgentID, owner, 128, 1000, uuid.NewString)
+	insertStartingWorks(t, f.db, f.request.AgentID, owner, 128, 1000, uuid.NewString)
 	_, err = f.db.Exec("ANALYZE TABLE agent_session,agent_definition")
 	require.NoError(t, err)
 	capture := &workListSQLCapture{}

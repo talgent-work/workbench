@@ -16,42 +16,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// The first start's initial task input is buffered under its identity ahead of
-// any later input, without waiting for the Harness, which starts only after
-// checkout and reads it first.
-func TestInitialInputIsBufferedFirstUnderItsIdentity(t *testing.T) {
-	ctx := context.Background()
-	_, sessions := startupStores(t)
-	store := &initialRequestStore{}
-	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, nil, agentquery.ModelConfigurations{})
-	input := command.PrepareWorkExecution{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-338", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "first task\n保留原文"}}
-	input.WorkspaceReference = sessions.session.WorkspaceReference
-	store.request = command.InitialExecutionRequest{PrepareWorkExecution: input, Version: 1, Submitted: true}
-	_, err := prepare.Handle(ctx, input)
-	require.NoError(t, err)
-	received := &commandtest.InputBuffer{}
-	messaging := command.NewInputAcceptance(sessions, received)
-	ordinary := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, messaging, store)
-	ordinaryInput := command.DeliverWorkInput{SubjectID: "owner", WorkID: input.WorkID, Input: command.ExecutionInput{ID: uuid.NewString(), Text: "follow-up"}}
-	require.ErrorIs(t, deliveryErr(ordinary.Deliver(ctx, ordinaryInput)), command.ErrInitialExecutionPending, "later input waits for the initial input")
-
-	recover := command.NewRecoverInitialExecutionHandler(store, sessions, prepare, messaging)
-	store.deliverySaveErr = errors.New("database unavailable after the hand-off")
-	require.ErrorIs(t, recover.Handle(ctx, input.WorkID), store.deliverySaveErr)
-	store.deliverySaveErr = nil
-	require.ErrorIs(t, recover.Handle(ctx, input.WorkID), command.ErrInitialExecutionPending, "the first start still owes its checkout")
-	require.Equal(t, []command.ExecutionInput{input.Input}, received.Inputs, "the initial input buffered once, before the Harness is ready")
-	require.Equal(t, domain.WorkStarting, sessions.session.State, "buffering never starts the Work")
-
-	require.NoError(t, command.NewRecordRepositoryCheckoutsHandler(store).Handle(ctx, command.RecordRepositoryCheckouts{WorkID: input.WorkID}))
-	require.NoError(t, recover.Handle(ctx, input.WorkID))
-	receipt, err := store.Get(ctx, input.WorkID)
-	require.NoError(t, err)
-	require.True(t, receipt.FirstStartRecovered())
-	require.NoError(t, deliveryErr(ordinary.Deliver(ctx, ordinaryInput)))
-	require.Equal(t, []command.ExecutionInput{input.Input, ordinaryInput.Input}, received.Inputs, "later input follows the initial input")
-}
-
 func TestRejectedPreparationEndsTheStartAndFencesItsRequest(t *testing.T) {
 	ctx := context.Background()
 	agents, sessions := startupStores(t)
@@ -59,14 +23,13 @@ func TestRejectedPreparationEndsTheStartAndFencesItsRequest(t *testing.T) {
 	input.WorkspaceReference = sessions.session.WorkspaceReference
 	// A definitive preparation rejection after the start was admitted.
 	store := &initialRequestStore{request: command.InitialExecutionRequest{PrepareWorkExecution: input, Version: 1, Submitted: true, Prepared: true, Rejected: true, StartFailed: true, FailureReason: "Repository preparation was rejected. Check the configuration before retrying."}}
-	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, nil, agentquery.ModelConfigurations{})
+	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, agentquery.ModelConfigurations{})
 	w := worldOver(t, sessions)
 	w.ready(t)
 	failure := errors.New("database unavailable")
 	sessions.saveErr = failure
-	recover := command.NewRecoverInitialExecutionHandler(store, sessions, prepare, nil)
+	recover := command.NewRecoverInitialExecutionHandler(store, sessions, prepare)
 	require.ErrorIs(t, recover.Handle(ctx, input.WorkID), failure)
-	require.False(t, store.request.InputBuffered)
 	require.False(t, store.request.CleanupConfirmed)
 	require.False(t, store.request.RejectionApplied, "the rejection is applied only with the Work's end")
 	require.Equal(t, domain.WorkWorking, sessions.session.State)
@@ -96,7 +59,7 @@ func TestRejectedPreparationEndsTheStartAndFencesItsRequest(t *testing.T) {
 	require.NoError(t, recover.Handle(ctx, input.WorkID))
 	require.Equal(t, domain.WorkWorking, sessions.session.State, "old cleanup cannot fail a later explicit execution")
 	delivered := &commandtest.InputBuffer{}
-	ordinary := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, delivered), store)
+	ordinary := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, delivered))
 	require.NoError(t, deliveryErr(ordinary.Deliver(ctx, command.DeliverWorkInput{SubjectID: "owner", WorkID: input.WorkID, Input: command.ExecutionInput{ID: uuid.NewString(), Text: "explicit fresh input"}})))
 	require.Equal(t, "explicit fresh input", delivered.Inputs[0].Text)
 	require.Equal(t, input.Input, store.request.Input)

@@ -30,7 +30,6 @@ const (
 	SyncInputsType              taskqueue.TaskType = "agent.allocation.sync-inputs.v1"
 	RecoverWorkType             taskqueue.TaskType = "agent.work.recover.v1"
 	RecoverContinuationType     taskqueue.TaskType = "agent.continuation.recover.v1"
-	RecoverWorkCreationType     taskqueue.TaskType = "agent.work-creation.recover.v1"
 	PrepareInitialExecutionType taskqueue.TaskType = "agent.initial-execution.prepare.v1"
 	SweepRecoveryType           taskqueue.TaskType = "agent.recovery.sweep.v1"
 	// RequestWorkspaceReclamationType delivers a Closed Work's one request to
@@ -68,10 +67,6 @@ func NewRecoverWork(workID string) (taskqueue.Task, error) {
 
 func NewRecoverContinuation(workID string) (taskqueue.Task, error) {
 	return keyed(RecoverContinuationType, RecoveryQueue, "continuation", workID, &agenttaskv1.RecoverContinuationTaskV1{WorkId: workID})
-}
-
-func NewRecoverWorkCreation(requestID string) (taskqueue.Task, error) {
-	return keyed(RecoverWorkCreationType, RecoveryQueue, "creation", requestID, &agenttaskv1.RecoverWorkCreationTaskV1{RequestId: requestID})
 }
 
 func NewPrepareInitialExecution(workID string) (taskqueue.Task, error) {

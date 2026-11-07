@@ -67,8 +67,8 @@ func (r *committedWorks) Save(ctx context.Context, session *domain.AgentWork) er
 	r.committed(ctx, session)
 	return nil
 }
-func (r *committedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error {
-	if err := r.AgentWorkRepository.CommitStart(ctx, work, start, requestID); err != nil {
+func (r *committedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
+	if err := r.AgentWorkRepository.CommitStart(ctx, work, request); err != nil {
 		return err
 	}
 	r.committed(ctx, work)
@@ -124,39 +124,4 @@ func newCommittedContinuations(db *xorm.Engine, now func() time.Time, updates *w
 	r := infrastructure.NewContinuationRequests(db, now)
 	r.ProgressCommitted = updates.continuationCommitted
 	return r
-}
-
-// committedCreations wakes a retained Work creation request's recovery after
-// each change, so an interrupted creation settles without waiting for the sweep.
-type committedCreations struct {
-	*infrastructure.WorkCreationRequests
-	wake func(context.Context, string)
-}
-
-func newCommittedCreations(db *xorm.Engine, now func() time.Time) *committedCreations {
-	return &committedCreations{WorkCreationRequests: infrastructure.NewWorkCreationRequests(db, now)}
-}
-
-func (r *committedCreations) RetainWorkCreation(ctx context.Context, request command.WorkCreationRequest) (command.WorkCreationRequest, error) {
-	retained, err := r.WorkCreationRequests.RetainWorkCreation(ctx, request)
-	if err == nil {
-		wake(ctx, r.wake, retained.ID)
-	}
-	return retained, err
-}
-
-func (r *committedCreations) CancelWorkCreation(ctx context.Context, id string) (command.WorkCreationRequest, error) {
-	canceled, err := r.WorkCreationRequests.CancelWorkCreation(ctx, id)
-	if err == nil {
-		wake(ctx, r.wake, id)
-	}
-	return canceled, err
-}
-
-func (r *committedCreations) ConfirmWorkCreation(ctx context.Context, id, sessionID string) error {
-	err := r.WorkCreationRequests.ConfirmWorkCreation(ctx, id, sessionID)
-	if err == nil {
-		wake(ctx, r.wake, id)
-	}
-	return err
 }

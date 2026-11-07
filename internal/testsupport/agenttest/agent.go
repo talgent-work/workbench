@@ -127,18 +127,17 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	lookup := infrastructure.NewAgentDefinitionLookup(db)
 	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
-	requests := infrastructure.NewWorkCreationRequests(db, time.Now)
 	queries := infrastructure.NewWorkQueryRepository(db)
 	start := startCatalog{catalog: catalog, connections: repositories}
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}))
-	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), works, authorizer, requests, models)
+	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), works, authorizer, models)
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
 	views := query.NewModelOptionViews(queries, models)
 	app := &application.Application{
 		RecentRepositories: queries, Catalog: start, Definitions: definitions, DefinitionLookup: lookup,
 		Works: works, WorkPrincipals: authorizer, WorkViews: views, Models: models,
 		Commands: application.Commands{
 			EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup),
-			CreateRequestedWork:   command.NewCreateRequestedWorkHandler(requests, create, prepare),
+			CreateWork:            create,
 		},
 		Queries: application.Queries{
 			GetWorkPreparation: query.NewGetWorkPreparationHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), authorizer),
@@ -270,8 +269,8 @@ func (w startedWorks) RegisterWork(ctx context.Context, work *domain.AgentWork, 
 	return nil
 }
 
-func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error {
-	if err := w.AgentWorkRepository.CommitStart(ctx, work, start, requestID); err != nil {
+func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, start query.StartRequest) error {
+	if err := w.AgentWorkRepository.CommitStart(ctx, work, start); err != nil {
 		return err
 	}
 	w.started(work)

@@ -85,11 +85,6 @@ func (m *workMessaging) DropBuffer(context.Context, string) error { return nil }
 func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
-	retained, err := initial.Get(ctx, id)
-	require.NoError(t, err)
-	retained.InputBuffered = true
-	require.NoError(t, initial.Save(ctx, retained))
 	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	feedback := newRuns(t, f.db, f.sessions)
@@ -101,7 +96,7 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 		principals := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 		admitted := command.NewInputAcceptance(sessions, messaging)
-		input := command.NewDeliverWorkInputHandler(sessions, principals, admitted, infrastructure.NewInitialExecutionRequests(db, time.Now))
+		input := command.NewDeliverWorkInputHandler(sessions, principals, admitted)
 		reply := command.NewRespondWorkInteractionHandler(sessions, principals, admitted)
 		app := &application.Application{Commands: application.Commands{SendMessage: command.NewSendWorkMessageHandler(principals, input), ReplyToInteraction: command.NewReplyToWorkInteractionHandler(principals, reply)}}
 		handler := connecttest.Handler(func(s *connect.Server) {

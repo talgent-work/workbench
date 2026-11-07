@@ -62,7 +62,7 @@ func reachOver(w *world, now func() time.Time, place command.ComputerPort) *comm
 
 // recoverOver is the Work's recovery over its Computer reach.
 func recoverOver(w *world, now func() time.Time, reach *command.ComputerReachHandler) *command.RecoverWorkHandler {
-	return command.NewRecoverWorkHandler(now, w.works, w.harness, w.settlements, reach)
+	return command.NewRecoverWorkHandler(now, w.works, w.harness, command.NewInputAcceptance(w.works, w.harness), w.settlements, reach)
 }
 
 // A Presence change records and ends the Disconnection of each Work running

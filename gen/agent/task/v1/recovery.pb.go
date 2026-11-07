@@ -397,53 +397,6 @@ func (x *RecoverContinuationTaskV1) GetWorkId() string {
 	return ""
 }
 
-// RecoverWorkCreationTaskV1 asks Agent to settle one retained Work creation
-// request after admission uncertainty.
-type RecoverWorkCreationTaskV1 struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Original Work creation request identity.
-	RequestId     string `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RecoverWorkCreationTaskV1) Reset() {
-	*x = RecoverWorkCreationTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RecoverWorkCreationTaskV1) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RecoverWorkCreationTaskV1) ProtoMessage() {}
-
-func (x *RecoverWorkCreationTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RecoverWorkCreationTaskV1.ProtoReflect.Descriptor instead.
-func (*RecoverWorkCreationTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *RecoverWorkCreationTaskV1) GetRequestId() string {
-	if x != nil {
-		return x.RequestId
-	}
-	return ""
-}
-
 // PrepareInitialExecutionTaskV1 asks Agent to prepare and deliver one Work's
 // initial execution under its Startup Deadline.
 type PrepareInitialExecutionTaskV1 struct {
@@ -456,7 +409,7 @@ type PrepareInitialExecutionTaskV1 struct {
 
 func (x *PrepareInitialExecutionTaskV1) Reset() {
 	*x = PrepareInitialExecutionTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[9]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -468,7 +421,7 @@ func (x *PrepareInitialExecutionTaskV1) String() string {
 func (*PrepareInitialExecutionTaskV1) ProtoMessage() {}
 
 func (x *PrepareInitialExecutionTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[9]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -481,7 +434,7 @@ func (x *PrepareInitialExecutionTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareInitialExecutionTaskV1.ProtoReflect.Descriptor instead.
 func (*PrepareInitialExecutionTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{9}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PrepareInitialExecutionTaskV1) GetWorkId() string {
@@ -501,7 +454,7 @@ type SweepRecoveryTaskV1 struct {
 
 func (x *SweepRecoveryTaskV1) Reset() {
 	*x = SweepRecoveryTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[10]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -513,7 +466,7 @@ func (x *SweepRecoveryTaskV1) String() string {
 func (*SweepRecoveryTaskV1) ProtoMessage() {}
 
 func (x *SweepRecoveryTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[10]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -526,7 +479,7 @@ func (x *SweepRecoveryTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepRecoveryTaskV1.ProtoReflect.Descriptor instead.
 func (*SweepRecoveryTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{10}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{9}
 }
 
 // RequestWorkspaceReclamationTaskV1 delivers a Closed Work's one Workspace
@@ -543,7 +496,7 @@ type RequestWorkspaceReclamationTaskV1 struct {
 
 func (x *RequestWorkspaceReclamationTaskV1) Reset() {
 	*x = RequestWorkspaceReclamationTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[11]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -555,7 +508,7 @@ func (x *RequestWorkspaceReclamationTaskV1) String() string {
 func (*RequestWorkspaceReclamationTaskV1) ProtoMessage() {}
 
 func (x *RequestWorkspaceReclamationTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[11]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -568,7 +521,7 @@ func (x *RequestWorkspaceReclamationTaskV1) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use RequestWorkspaceReclamationTaskV1.ProtoReflect.Descriptor instead.
 func (*RequestWorkspaceReclamationTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{11}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RequestWorkspaceReclamationTaskV1) GetWorkId() string {
@@ -605,10 +558,7 @@ const file_agent_task_v1_recovery_proto_rawDesc = "" +
 	"\x11RecoverWorkTaskV1\x12\x17\n" +
 	"\awork_id\x18\x01 \x01(\tR\x06workId\"4\n" +
 	"\x19RecoverContinuationTaskV1\x12\x17\n" +
-	"\awork_id\x18\x01 \x01(\tR\x06workId\":\n" +
-	"\x19RecoverWorkCreationTaskV1\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\"8\n" +
+	"\awork_id\x18\x01 \x01(\tR\x06workId\"8\n" +
 	"\x1dPrepareInitialExecutionTaskV1\x12\x17\n" +
 	"\awork_id\x18\x01 \x01(\tR\x06workId\"\x15\n" +
 	"\x13SweepRecoveryTaskV1\"m\n" +
@@ -628,7 +578,7 @@ func file_agent_task_v1_recovery_proto_rawDescGZIP() []byte {
 	return file_agent_task_v1_recovery_proto_rawDescData
 }
 
-var file_agent_task_v1_recovery_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_agent_task_v1_recovery_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_agent_task_v1_recovery_proto_goTypes = []any{
 	(*ReconcileAllocationTaskV1)(nil),         // 0: agent.task.v1.ReconcileAllocationTaskV1
 	(*PrepareAllocationTaskV1)(nil),           // 1: agent.task.v1.PrepareAllocationTaskV1
@@ -638,10 +588,9 @@ var file_agent_task_v1_recovery_proto_goTypes = []any{
 	(*ObserveSandboxTaskV1)(nil),              // 5: agent.task.v1.ObserveSandboxTaskV1
 	(*RecoverWorkTaskV1)(nil),                 // 6: agent.task.v1.RecoverWorkTaskV1
 	(*RecoverContinuationTaskV1)(nil),         // 7: agent.task.v1.RecoverContinuationTaskV1
-	(*RecoverWorkCreationTaskV1)(nil),         // 8: agent.task.v1.RecoverWorkCreationTaskV1
-	(*PrepareInitialExecutionTaskV1)(nil),     // 9: agent.task.v1.PrepareInitialExecutionTaskV1
-	(*SweepRecoveryTaskV1)(nil),               // 10: agent.task.v1.SweepRecoveryTaskV1
-	(*RequestWorkspaceReclamationTaskV1)(nil), // 11: agent.task.v1.RequestWorkspaceReclamationTaskV1
+	(*PrepareInitialExecutionTaskV1)(nil),     // 8: agent.task.v1.PrepareInitialExecutionTaskV1
+	(*SweepRecoveryTaskV1)(nil),               // 9: agent.task.v1.SweepRecoveryTaskV1
+	(*RequestWorkspaceReclamationTaskV1)(nil), // 10: agent.task.v1.RequestWorkspaceReclamationTaskV1
 }
 var file_agent_task_v1_recovery_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -662,7 +611,7 @@ func file_agent_task_v1_recovery_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_task_v1_recovery_proto_rawDesc), len(file_agent_task_v1_recovery_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

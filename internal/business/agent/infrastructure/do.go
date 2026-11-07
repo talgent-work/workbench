@@ -19,22 +19,6 @@ type workStateHistoryDO struct {
 
 func (workStateHistoryDO) TableName() string { return "agent_session_state_history" }
 
-type workCreationDO struct {
-	SubjectDigest    string `xorm:"subject_digest"`
-	ID               string `xorm:"id pk"`
-	SessionID        string `xorm:"session_id"`
-	RequestData      string `xorm:"request_data"`
-	BindingConfirmed bool   `xorm:"binding_confirmed"`
-	Canceled         bool   `xorm:"canceled"`
-	Pending          bool   `xorm:"pending"`
-	Version          int    `xorm:"version"`
-	CreatedAt        int64  `xorm:"created_at"`
-	UpdatedAt        int64  `xorm:"updated_at"`
-	DeletedAt        int64  `xorm:"deleted_at"`
-}
-
-func (workCreationDO) TableName() string { return "agent_session_creation_request" }
-
 type initialExecutionRequestDO struct {
 	ID          string `xorm:"id pk"`
 	RequestID   string `xorm:"request_id"`
@@ -78,8 +62,11 @@ type agentWorkDO struct {
 	ThinkingLevel          string `xorm:"thinking_level varchar(32)"`
 	PermissionMode         string `xorm:"permission_mode varchar(32)"`
 	WorkProgress           string `xorm:"work_progress mediumtext"`
-	ModelConfigurationID   string `xorm:"model_configuration_id varchar(128)"`
-	ModelMachineLogin      bool   `xorm:"model_machine_login"`
+	// InitialTaskInput is the JSON of the initial task input the Work still
+	// holds; empty once handed off or for a Work created without one.
+	InitialTaskInput     string `xorm:"initial_task_input mediumtext"`
+	ModelConfigurationID string `xorm:"model_configuration_id varchar(128)"`
+	ModelMachineLogin    bool   `xorm:"model_machine_login"`
 	// SubjectKind and SubjectID are NULL for a Work without a Subject, so the
 	// unique index binds only Works with one.
 	SubjectKind     *string `xorm:"subject_kind varchar(32)"`
@@ -176,13 +163,15 @@ type turnObservationRecord struct {
 	Completed bool  `json:"completed"`
 }
 
-// startRequestDO retains start-request correlation: an admitted or canceled
-// caller request, never a process run.
+// startRequestDO is the record of one caller request identity for a Work
+// creation, Resume or Restart: admitted, refused or cancelled, never a
+// process run.
 type startRequestDO struct {
 	CreationScope string `xorm:"creation_scope varchar(64)"`
 	ID            string `xorm:"id pk varchar(36)"`
 	SessionID     string `xorm:"session_id varchar(36)"`
 	Kind          string `xorm:"kind varchar(16)"`
+	Fingerprint   string `xorm:"fingerprint varchar(64)"`
 	Canceled      bool   `xorm:"canceled"`
 	Version       int    `xorm:"'version'"`
 	CreatedAt     int64  `xorm:"created_at"`

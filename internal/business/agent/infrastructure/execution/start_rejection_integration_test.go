@@ -41,7 +41,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "retained task capabilities"}}, admission)
 	require.NoError(t, err)
 	input := command.PrepareWorkExecution{WorkID: work.ID, SubjectID: "owner", WorkspaceReference: work.WorkspaceReference, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-368", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "original input"}}
-	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, RequestID: input.RequestID, InitialExecution: &input}))
+	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: query.StartRequest{ID: input.RequestID, Kind: query.StartKindStart, WorkID: work.ID}, InitialExecution: &input}))
 	require.NoError(t, coordination.BeginExecution(ctx, work.ID), "waiting preparation must not suppress the execution's beginning")
 	reconcile := func(id string) error {
 		_, err := steps.handler.Reconcile(ctx, id, false)
@@ -79,7 +79,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	admission.AdmittedAt = time.Now()
 	require.NoError(t, work.Restart(admission))
 	restartID := uuid.NewString()
-	require.NoError(t, works.CommitStart(ctx, work, query.AdmittedStart{WorkID: work.ID, Kind: query.StartKindRestart}, restartID))
+	require.NoError(t, works.CommitStart(ctx, work, query.StartRequest{ID: restartID, Kind: query.StartKindRestart, WorkID: work.ID}))
 	after, err := initial.Get(ctx, work.ID)
 	require.NoError(t, err)
 	require.False(t, after.Rejected)

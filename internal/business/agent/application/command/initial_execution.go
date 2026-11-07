@@ -39,8 +39,6 @@ type RepositoryCheckoutResult struct {
 type PrepareWorkExecution struct {
 	// Initial Harness setting, independent of the Session's fixed capabilities.
 	ThinkingLevel string
-	// Set by Agent's creation workflow, never supplied by the public input API.
-	CreationRequestID string
 	// WorkspaceReference is the Session Workspace reference the creating
 	// caller named, part of its creation correlation; filled by Agent before
 	// retaining the request, even for a Work that keeps no Session Workspace.
@@ -75,12 +73,8 @@ type InitialExecutionRequest struct {
 	// InputPrepared records that every planned repository ended checked out or
 	// not checked out, as reported by the Work's own preparation process.
 	Prepared, Submitted, InputPrepared bool
-	// InputBuffered records that the initial task input was accepted into the
-	// Work's input buffer, ahead of any later input and before the Harness
-	// starts.
-	InputBuffered              bool
-	Rejected, CleanupConfirmed bool
-	Version                    int
+	Rejected, CleanupConfirmed         bool
+	Version                            int
 }
 
 type InitialExecutionReader interface {
@@ -93,10 +87,10 @@ type InitialExecutionRequests interface {
 }
 
 // FirstStartRecovered reports that the first start owes nothing more to its
-// recovery: its initial task input is buffered and its repository checkout
-// ended. The Work's own lifecycle carries the rest of the start.
+// recovery: its repository checkout ended. The Work's own lifecycle carries
+// the rest of the start, its initial task input included.
 func (r InitialExecutionRequest) FirstStartRecovered() bool {
-	return r.InputBuffered && r.InputPrepared
+	return r.InputPrepared
 }
 
 // RetryPreparation reopens only a rejected first start's preparation.

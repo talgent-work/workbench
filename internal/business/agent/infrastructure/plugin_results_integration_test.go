@@ -43,7 +43,7 @@ func (a pluginResultAccess) AuthorizeWork(_ context.Context, actor, workID strin
 
 func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	db, definitions, works, definition := startingCreationDatabase(t)
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}))
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
 	id, err := create.Handle(t.Context(), creationInput(definition.ID, "plugin-results"))
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), id)

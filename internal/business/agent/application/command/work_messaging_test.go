@@ -46,7 +46,7 @@ func TestInputCommandPreservesPayloadAndRejectsInvalidDelivery(t *testing.T) {
 	ctx := context.Background()
 	_, sessions := runningMessagingSession(t)
 	control, received := dispatcherBuffer(t)
-	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control), &initialRequestStore{})
+	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control))
 	input := command.ExecutionInput{ID: "f28f3171-1268-4f97-b7d2-1ac831099012", Text: "  exact task\n下一步  "}
 	request := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: input}
 	for _, invalid := range []command.ExecutionInput{{ID: "invalid", Text: "task"}, {ID: input.ID, Text: " \n\t"}} {
@@ -120,7 +120,8 @@ func runningMessagingWorld(t *testing.T, purpose string) (*startupAgentStore, *w
 	t.Helper()
 	ctx := context.Background()
 	agents, sessions := startupStoresForPurpose(t, purpose)
-	sessions.starts = map[string]query.AdmittedStart{uuid.NewString(): {WorkID: sessions.session.ID, Kind: query.StartKindStart}}
+	requestID := uuid.NewString()
+	sessions.requests = map[string]query.StartRequest{requestID: {ID: requestID, WorkID: sessions.session.ID, Kind: query.StartKindStart}}
 	w := worldOver(t, sessions)
 	w.launch(t, "process")
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
@@ -136,7 +137,7 @@ func TestOrdinaryInputEntryDelegatesWaitingWork(t *testing.T) {
 	sessions := w.works
 	require.NoError(t, w.feedback().Handle(ctx, command.ExecutionFeedback{ProcessID: "process", ObservationSequence: 1000, RequiredInteractionIDs: []string{"coordinator-question"}, Kind: command.UserInteractionRequired, WorkID: sessions.session.ID, InteractionID: "coordinator-question"}))
 	control, received := dispatcherBuffer(t)
-	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control), &initialRequestStore{})
+	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control))
 	input := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: command.ExecutionInput{ID: uuid.NewString(), Text: "accepted business handoff"}}
 	require.NoError(t, deliveryErr(handler.Deliver(ctx, input)))
 	select {

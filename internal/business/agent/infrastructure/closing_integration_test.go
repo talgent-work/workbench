@@ -43,7 +43,7 @@ func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	reportReleased(t, failed)
 	require.NoError(t, f.sessions.Save(ctx, failed))
 	closeRequestID := uuid.NewString()
-	require.NoError(t, command.NewCloseWorkHandler(f.sessions, authorization, feedback.executions, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: closeRequestID}))
+	require.NoError(t, command.NewCloseWorkHandler(f.sessions, authorization, feedback.executions, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: closeRequestID}))
 	pending, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosing, pending.State)

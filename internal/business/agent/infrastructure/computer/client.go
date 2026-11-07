@@ -95,6 +95,15 @@ func (c *Client) AdmitRun(ctx context.Context, run command.RunAdmission) (comman
 	response, err := c.admission.AdmitRun(authorized(ctx, c.token), &computerprivatev1.AdmitRunRequest{
 		ComputerId: run.ComputerID, DeskId: run.DeskID, WorkId: run.WorkID, WorkOwnerId: run.WorkOwnerID, StarterId: run.StarterID, Sandbox: run.Sandbox,
 	})
+	switch connect.CodeOf(err) {
+	case connect.CodeFailedPrecondition:
+		// Computer refuses a Desk identity whose Desk already left.
+		return command.ComputerAnswer{}, oops.Wrap(errors.Join(command.ErrDeskUnavailable, err))
+	case connect.CodeAlreadyExists:
+		// The Desk identity belongs to another run: the request identity names
+		// another start than its first one.
+		return command.ComputerAnswer{}, oops.Wrap(errors.Join(command.ErrStartRequestConflict, err))
+	}
 	if err != nil {
 		return command.ComputerAnswer{}, callError(err)
 	}

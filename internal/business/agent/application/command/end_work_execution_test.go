@@ -22,7 +22,7 @@ func continueWork(t *testing.T, agents *startupAgentStore, sessions *feedbackSes
 	t.Helper()
 	requestID := uuid.NewString()
 	if sessions.session.State == domain.WorkStarting {
-		sessions.starts = map[string]query.AdmittedStart{requestID: {WorkID: sessions.session.ID, Kind: query.StartKindStart}}
+		sessions.requests = map[string]query.StartRequest{requestID: {ID: requestID, WorkID: sessions.session.ID, Kind: query.StartKindStart}}
 		return requestID
 	}
 	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: requestID}))
@@ -31,7 +31,7 @@ func continueWork(t *testing.T, agents *startupAgentStore, sessions *feedbackSes
 
 // recoverWork is the Work recovery sweep over the world's ports.
 func recoverWork(w *world) *command.RecoverWorkHandler {
-	return command.NewRecoverWorkHandler(w.now, w.works, w.harness, w.settlements, nil)
+	return command.NewRecoverWorkHandler(w.now, w.works, w.harness, command.NewInputAcceptance(w.works, w.harness), w.settlements, nil)
 }
 
 func TestEndStartingExecutionRetainsStopUntilReadyAndPreservesConversation(t *testing.T) {

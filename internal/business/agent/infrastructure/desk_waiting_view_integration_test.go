@@ -31,7 +31,7 @@ func TestWorkViewShowsDeskWaitingUntilTheExecutionIsSeated(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}).Handle(ctx, f.request.Creation)
+	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}, creationPreparation(f.db, creationModels())).Handle(ctx, f.request)
 	require.NoError(t, err)
 	views := infrastructure.NewWorkQueryRepository(f.db)
 	deskWaiting := func() bool {
@@ -62,7 +62,7 @@ func TestRecoveryListsAWithdrawnStartUntilItsExecutionRetires(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}).Handle(ctx, f.request.Creation)
+	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}, creationPreparation(f.db, creationModels())).Handle(ctx, f.request)
 	require.NoError(t, err)
 	run := newRuns(t, f.db, f.sessions)
 	require.True(t, run.latest(ctx, id).Queued())

@@ -35,7 +35,7 @@ func TestRestartCommitsWorkAndStartRequestBeforeExecution(t *testing.T) {
 	admitted, err := restartHandler(sessions, agents, capacityCheck{}).Handle(context.Background(), command.StartWork{RequestID: requestID, SubjectID: "owner", WorkID: sessions.session.ID})
 	require.NoError(t, err)
 	require.True(t, admitted)
-	require.Contains(t, sessions.starts, requestID, "the start request is committed with the Work")
+	require.Contains(t, sessions.requests, requestID, "the start request is committed with the Work")
 	starts := sessions.admittedStarts()
 	require.Len(t, starts, 1)
 	require.Equal(t, sessions.session.ID, starts[0].WorkID)
@@ -53,7 +53,7 @@ func TestRestartCapacityRejectionDoesNotPersistOrScheduleExecution(t *testing.T)
 	_, err := restartHandler(sessions, agents, capacityCheck{err: domain.ErrCapacityUnavailable}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessions.session.ID})
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
 	require.Zero(t, sessions.saves)
-	require.Empty(t, sessions.starts)
+	require.Empty(t, admittedRequests(sessions))
 	require.Empty(t, sessions.admittedStarts())
 	require.Equal(t, domain.WorkFailed, sessions.session.State)
 }
@@ -257,7 +257,7 @@ func TestRecoveryBeginsAnAdmittedStartWithoutNewAdmissionOrContext(t *testing.T)
 	launch := w.execution(t).Launch
 	launch.ComputerName, launch.PreparationBound = "", time.Time{}
 	require.Equal(t, original, launch)
-	require.Empty(t, sessions.starts, "recovery must not admit a new request")
+	require.Empty(t, admittedRequests(sessions), "recovery must not admit a new request")
 	require.Equal(t, domain.WorkStarting, sessions.session.State)
 }
 
@@ -270,7 +270,7 @@ func TestResumeAfterFirstStartContinuesTheSameConversation(t *testing.T) {
 	launches := []domain.LaunchSpecification{sessions.session.LaunchSpecification()}
 	handler := resumeHandler(sessions, agents, capacityCheck{})
 	first := command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: originalID}
-	sessions.starts = map[string]query.AdmittedStart{first.RequestID: {WorkID: originalID, Kind: query.StartKindStart}}
+	sessions.requests = map[string]query.StartRequest{first.RequestID: {ID: first.RequestID, WorkID: originalID, Kind: query.StartKindStart}}
 	require.Equal(t, domain.ContextFresh, launches[0].ContextMode)
 	require.ErrorIs(t, handler.Handle(ctx, first), command.ErrStartRequestConflict, "Resume never adopts the first start's request")
 	require.Empty(t, sessions.admittedStarts(), "a first start is admitted by creation, never by Resume")
@@ -282,7 +282,7 @@ func TestResumeAfterFirstStartContinuesTheSameConversation(t *testing.T) {
 	require.NoError(t, agents.agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "New definition instructions"}))
 	second := command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: originalID}
 	require.NoError(t, handler.Handle(ctx, second))
-	require.Equal(t, query.StartKindResume, sessions.starts[second.RequestID].Kind)
+	require.Equal(t, query.StartKindResume, sessions.requests[second.RequestID].Kind)
 	require.Len(t, sessions.admittedStarts(), 1)
 	launches = append(launches, sessions.session.LaunchSpecification())
 	require.Equal(t, domain.ContextContinue, launches[1].ContextMode)
@@ -305,7 +305,7 @@ func TestResumeDoesNotRestartFailedOrClosedConversations(t *testing.T) {
 			require.ErrorIs(t, err, domain.ErrWorkTransition)
 			require.Empty(t, sessions.admittedStarts())
 			require.Zero(t, sessions.saves)
-			require.Empty(t, sessions.starts)
+			require.Empty(t, admittedRequests(sessions))
 			require.Equal(t, harnessSession, sessions.session.HarnessSessionReference)
 		})
 	}
@@ -324,4 +324,17 @@ func failedStartupStores(t *testing.T) (*startupAgentStore, *feedbackSessionStor
 	require.Equal(t, domain.WorkFailed, sessions.session.State)
 	require.False(t, sessions.session.HoldsProcess())
 	return agents, sessions
+}
+
+// admittedStarts are the start requests the store committed with a start.
+func admittedRequests(sessions *feedbackSessionStore) map[string]query.StartRequest {
+	sessions.mu.Lock()
+	defer sessions.mu.Unlock()
+	admitted := map[string]query.StartRequest{}
+	for id, record := range sessions.requests {
+		if record.Admitted() {
+			admitted[id] = record
+		}
+	}
+	return admitted
 }

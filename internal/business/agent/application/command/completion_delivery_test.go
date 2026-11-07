@@ -22,7 +22,7 @@ func TestCloseStopsARunningWorkAndClosesItOnceStopped(t *testing.T) {
 	require.NoError(t, sessions.session.ObserveTurn(domain.TurnObservation{Sequence: 1, Completed: true}, false, false, time.Now()))
 	facts := &completionFacts{}
 	buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{{ID: uuid.NewString(), Text: "still buffered"}}}
-	handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, &initialRequestStore{}, facts, facts, buffer)
+	handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, facts, buffer)
 	request := command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString()}
 	require.ErrorIs(t, handler.Handle(ctx, request), domain.ErrWorkTransition, "buffered input is not discarded")
 	require.Equal(t, domain.WorkWorking, sessions.session.State)
@@ -56,24 +56,23 @@ func TestCloseStopsARunningWorkAndClosesItOnceStopped(t *testing.T) {
 }
 
 func TestCloseRefusesOutstandingWorkButNotUnknownFacts(t *testing.T) {
-	for _, stage := range []string{"startup", "continuation", "initial input", "unknown"} {
+	for _, stage := range []string{"continuation", "initial task input", "unknown"} {
 		t.Run(stage, func(t *testing.T) {
 			_, sessions := runningMessagingSession(t)
 			require.NoError(t, sessions.session.ObserveTurn(domain.TurnObservation{Sequence: 1, Completed: true}, false, false, time.Now()))
 			facts := &completionFacts{}
-			initial := &initialRequestStore{}
 			failure := errors.New("startup unavailable")
 			switch stage {
-			case "startup":
-				facts.startup.CreationPending = true
 			case "continuation":
 				facts.continuation.Pending = true
-			case "initial input":
-				initial.request.WorkID = sessions.session.ID
+			case "initial task input":
+				initial, err := domain.NewInitialTaskInput(uuid.NewString(), "first task")
+				require.NoError(t, err)
+				sessions.session.InitialTaskInput = &initial
 			case "unknown":
 				facts.err = failure
 			}
-			handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, initial, facts, facts, &commandtest.InputBuffer{})
+			handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, facts, &commandtest.InputBuffer{})
 			err := handler.Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString()})
 			if stage == "unknown" {
 				require.ErrorIs(t, err, failure)
@@ -95,12 +94,12 @@ func TestCloseDropsTheBufferedInputOfAFailedWork(t *testing.T) {
 	input := command.ExecutionInput{ID: uuid.NewString(), Text: "still buffered"}
 	buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{input}}
 	facts := &completionFacts{}
-	handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, &initialRequestStore{}, facts, facts, buffer)
+	handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, facts, buffer)
 	require.NoError(t, handler.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString()}))
 	require.Equal(t, domain.WorkClosing, sessions.session.State)
 
 	settlements := &commandtest.InputSettlements{}
-	recover := command.NewRecoverWorkHandler(time.Now, sessions, buffer, settlements, nil)
+	recover := command.NewRecoverWorkHandler(time.Now, sessions, buffer, command.NewInputAcceptance(sessions, buffer), settlements, nil)
 	require.NoError(t, recover.Handle(ctx, sessions.session.ID))
 	require.Empty(t, buffer.Inputs, "the buffered input is dropped")
 	require.Len(t, settlements.Reported, 1)
@@ -218,16 +217,12 @@ func (r *closingRace) Save(ctx context.Context, work *domain.AgentWork) error {
 }
 
 type completionFacts struct {
-	startup      query.WorkStartup
 	continuation query.WorkContinuation
 	err          error
 }
 
-func (f *completionFacts) GetWorkStartup(context.Context, string) (query.WorkStartup, error) {
-	return f.startup, f.err
-}
 func (f *completionFacts) GetWorkContinuation(context.Context, string) (query.WorkContinuation, error) {
-	return f.continuation, nil
+	return f.continuation, f.err
 }
 func (*completionFacts) ListPendingContinuations(context.Context, string, int) ([]string, error) {
 	return nil, nil

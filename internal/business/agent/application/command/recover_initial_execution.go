@@ -11,20 +11,16 @@ type RecoverInitialExecutionHandler struct {
 	requests    InitialExecutionRequests
 	sessions    domain.AgentWorkRepository
 	preparation *PrepareWorkExecutionHandler
-	inputs      WorkInputs
 }
 
-func NewRecoverInitialExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, preparation *PrepareWorkExecutionHandler, inputs WorkInputs) *RecoverInitialExecutionHandler {
-	return &RecoverInitialExecutionHandler{requests: requests, sessions: sessions, preparation: preparation, inputs: inputs}
+func NewRecoverInitialExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, preparation *PrepareWorkExecutionHandler) *RecoverInitialExecutionHandler {
+	return &RecoverInitialExecutionHandler{requests: requests, sessions: sessions, preparation: preparation}
 }
 
 func (h *RecoverInitialExecutionHandler) Handle(ctx context.Context, sessionID string) (result error) {
 	defer func() { recordPreparationRecovery(ctx, h.requests, sessionID, result) }()
 	request, err := h.requests.Get(ctx, sessionID)
 	if err != nil {
-		return err
-	}
-	if err := h.preparation.requireCreationConfirmation(ctx, request); err != nil {
 		return err
 	}
 	session, err := h.sessions.Get(ctx, sessionID)
@@ -51,32 +47,12 @@ func (h *RecoverInitialExecutionHandler) Handle(ctx context.Context, sessionID s
 	if request, err = h.requests.Get(ctx, sessionID); err != nil {
 		return err
 	}
-	if !request.InputBuffered {
-		if request, err = h.bufferInitialInput(ctx, request); err != nil {
-			return err
-		}
-	}
 	if request.InputPrepared {
 		return nil
 	}
 	// Checkout outcomes are reported by the preparation that owns them.
 	// A ready Harness does not establish whether those outcomes committed.
 	return ErrInitialExecutionPending
-}
-
-// bufferInitialInput accepts the first start's initial task input into the
-// Work's input buffer ahead of any later input, which waits until it is
-// buffered; the Harness, started only after checkout, reads it first (ADR
-// 0037).
-func (h *RecoverInitialExecutionHandler) bufferInitialInput(ctx context.Context, request InitialExecutionRequest) (InitialExecutionRequest, error) {
-	if _, err := h.inputs.AcceptInput(ctx, request.WorkID, request.Input); err != nil {
-		return request, err
-	}
-	request.InputBuffered = true
-	if err := h.requests.Save(ctx, request); err != nil {
-		return request, err
-	}
-	return h.requests.Get(ctx, request.WorkID)
 }
 
 // A failed preparation is durable before its start is ended. Recovery applies

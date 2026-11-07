@@ -12,12 +12,23 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
+)
+
+var (
+	// ErrWorkCreationConflict refuses a repeated creation request identity
+	// that carries other content than its original request.
+	ErrWorkCreationConflict = fmt.Errorf("%w: Work creation request has different immutable content", ErrStartRequestConflict)
+	// ErrWorkCreationCanceled answers a creation request identity its caller
+	// cancelled, or that a definitive refusal settled: it creates nothing.
+	ErrWorkCreationCanceled = fmt.Errorf("%w: Work creation request was cancelled", ErrStartRequestCanceled)
 )
 
 type CreateWork struct {
 	RequestID string
 	WorkModel domain.WorkModelSelection
-	// InitialExecution is committed with a newly registered Session.
+	// InitialExecution carries the new Work's initial task input and first
+	// start's repository preparation.
 	InitialExecution *PrepareWorkExecution
 	AgentID          string
 	SubjectID        string
@@ -37,7 +48,8 @@ type CreateWork struct {
 	// the same definition; a reused Work keeps its own.
 	StartingContext *domain.StartingContextSource
 	// WorkID, when supplied, is the identity the caller allocated; a Personal
-	// Work's File Space is opened under it before the Work exists.
+	// Work's File Space is opened under it before the Work exists. Otherwise
+	// the creation request identity names the Work.
 	WorkID string
 	// DisplayTitle is a Personal Work's initial display title.
 	DisplayTitle string
@@ -50,10 +62,11 @@ type CreateWork struct {
 }
 
 // WorkRegistration is the creation request a new Work is registered with:
-// its caller's request identity and creation correlation, the definition
-// revision used for its creation and its retained initial input.
+// its request record, its creation correlation, the definition revision used
+// for its creation and its first start's preparation.
 type WorkRegistration struct {
-	SubjectID, RequestID string
+	SubjectID string
+	Request   query.StartRequest
 	// WorkspaceReference is the one the creating caller named, part of its
 	// creation correlation even for a Work that keeps no Session Workspace.
 	WorkspaceReference string
@@ -61,6 +74,12 @@ type WorkRegistration struct {
 	InitialExecution   *PrepareWorkExecution
 }
 
+// CreateWorkHandler creates at most one Work per caller request identity: it
+// derives the Work and its first Desk from that identity, asks the Computer
+// for admission, and commits the Work with its request record in one
+// transaction. A repeat returns the original outcome, a definitive refusal
+// settles the record, and a request its caller cancelled creates nothing.
+// The caller owns the identity, its admission and its recovery.
 type CreateWorkHandler struct {
 	now           func() time.Time
 	catalog       StartCatalogPort
@@ -69,192 +88,169 @@ type CreateWorkHandler struct {
 	agents        domain.AgentDefinitionRepository
 	sessions      AgentWorkRepository
 	authorization access.WorkAuthorizer
+	prepare       *PrepareWorkExecutionHandler
 }
 
-func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog StartCatalogPort, computers ComputerPort) *CreateWorkHandler {
-	return &CreateWorkHandler{now: now, catalog: catalog, computers: computers, agents: agents, sessions: sessions, authorization: authorization, models: models}
+func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog StartCatalogPort, computers ComputerPort, prepare *PrepareWorkExecutionHandler) *CreateWorkHandler {
+	return &CreateWorkHandler{now: now, catalog: catalog, computers: computers, agents: agents, sessions: sessions, authorization: authorization, models: models, prepare: prepare}
 }
+
+// creationAttempts bounds retries after a competing change of the
+// definition or of the request's own Work between reading and committing.
+const creationAttempts = 8
 
 func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (string, error) {
-	if request.InitialExecution != nil {
-		if err := validateInitialPreparation(*request.InitialExecution); err != nil {
-			return "", err
-		}
+	request, err := normalizeCreation(request)
+	if err != nil {
+		return "", err
 	}
-	if request.InitialExecution != nil {
-		if request.RequestID != "" && request.RequestID != request.InitialExecution.RequestID {
-			return "", ErrStartRequestConflict
-		}
-		request.RequestID = request.InitialExecution.RequestID
+	fingerprint, err := requestFingerprint(request)
+	if err != nil {
+		return "", err
 	}
-	if uuid.Validate(request.RequestID) != nil {
-		return "", query.ErrInvalidStartRequest
-	}
-	for range 8 {
+	for range creationAttempts {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
 		// Read on every attempt: a competing creation of the same request
-		// identity that won registration is found here and reused.
-		accepted, admitted, err := h.sessions.FindAdmittedStart(ctx, request.RequestID)
+		// identity that committed first is found here.
+		record, found, err := h.sessions.FindStartRequest(ctx, request.RequestID)
 		if err != nil {
 			return "", err
 		}
-		if admitted && accepted.Kind != query.StartKindStart {
-			return "", ErrStartRequestConflict
-		}
-		agent, err := h.agents.Get(ctx, request.AgentID)
-		if err != nil {
-			return "", err
-		}
-		if owner := agent.PersonalAuthorizationOwner(); request.StartingUserID != "" && owner != request.StartingUserID {
-			return "", access.ErrAccessDenied
-		}
-		attributes := agent.WorkTraceAttributes(request.TraceAttributes)
-		// Reuse precedes all personal/catalog reads. A retry of an existing binding
-		// cannot absorb new defaults, releases, or capability choices.
-		existing, err := h.reusableWork(ctx, agent, request.Subject, accepted, admitted)
-		if err != nil {
-			return "", err
-		}
-		if admitted && (existing == nil || existing.ID != accepted.WorkID) {
-			return "", ErrStartRequestConflict
-		}
-		if existing != nil {
-			if err := h.authorization.AuthorizeWork(ctx, request.SubjectID, existing.ID); err != nil {
-				return "", err
-			}
-			return existing.ID, nil
-		}
-		// Personal capabilities and authorizations belong to the represented human.
-		catalogUser := request.StartingUserID
-		if catalogUser == "" {
-			catalogUser = request.SubjectID
-		}
-		capabilities, err := resolveStartupCapabilities(ctx, h.catalog, catalogUser, request.StartingUserID, domain.StartupCapabilityInput{
-			BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: domain.WithRequiredPlugins(agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.Capabilities.StartupAgent,
-			Prompt: request.CapabilityDifferences.Prompt, StartupAgent: request.CapabilityDifferences.StartupAgent, Plugins: request.CapabilityDifferences.Plugins,
-			ConnectorChoices: request.CapabilityDifferences.Connectors,
-		})
-		if err != nil {
-			return "", err
-		}
-		// Every authorization usable at creation is selected, independently of
-		// Plugin and Connector choices.
-		authorizationInput := domain.WorkAuthorizationInput{OwnerUserID: agent.PersonalAuthorizationOwner()}
-		if authorizationInput.OwnerUserID != "" {
-			authorizationInput.Available, err = h.catalog.ListPersonalAuthorizations(ctx, authorizationInput.OwnerUserID)
+		if found {
+			workID, err := repeatedCreation(record, fingerprint)
 			if err != nil {
 				return "", err
 			}
+			return h.created(ctx, request, workID)
 		}
-		repositories, err := h.repositoryInput(ctx, agent.PersonalAuthorizationOwner(), request.InitialExecution)
-		if err != nil {
-			return "", err
-		}
-		// A named Model Configuration that is not provided is refused for that
-		// reason, whatever the Computer, before Computer is asked.
-		if named := request.WorkModel; named.ConfigurationID != "" {
-			if _, provided := h.models.Option(named); !provided {
-				return h.reuseAfterRejection(ctx, agent, request, domain.ErrModelConfigurationWithdrawn)
-			}
-		}
-		computer, err := workComputer(ctx, h.computers, request.SubjectID, request.ComputerID)
-		if err != nil {
-			return h.reuseAfterRejection(ctx, agent, request, err)
-		}
-		managed := !computer.Cloud
-		// A Computer the definition's Works may not run on is refused
-		// before a run is seated there.
-		if err := agent.AdmitComputer(managed); err != nil {
-			return h.reuseAfterRejection(ctx, agent, request, err)
-		}
-		model := h.workModel(request.WorkModel, managed)
-		if err := model.Validate(); err != nil {
-			return "", err
-		}
-		harness, err := request.Harness.On(managed)
-		if err != nil {
-			return "", err
-		}
-		if err := model.AdmitOn(managed); err != nil {
-			return "", err
-		}
-		_, provided := h.models.Option(model)
-		available := model.Available(provided)
-		_, thinking, _ := h.models.ThinkingLevels(model)
-		// A configuration that is not provided is refused by admission with
-		// that reason; its thinking levels are not consulted.
-		if available && request.InitialExecution != nil {
-			if err := validateInitialThinkingLevel(h.models, model, request.InitialExecution.ThinkingLevel); err != nil {
-				return "", err
-			}
-			if request.InitialExecution.ThinkingLevel != "" {
-				thinking = request.InitialExecution.ThinkingLevel
-			}
-		}
-		// Definition and Computer admission are consulted only for an
-		// available model; admission refuses a withdrawn Model Configuration
-		// first.
-		admission := domain.StartAdmission{AdmittedAt: h.now(), AgentID: agent.ID, ModelConfigurationProvided: provided, Soul: agent.Soul}
-		workID := request.WorkID
-		if workID == "" {
-			workID = uuid.Must(uuid.NewV7()).String()
-		}
-		if available {
-			seat, err := admitRun(ctx, h.computers, RunAdmission{ComputerID: computer.ID, WorkID: workID, WorkOwnerID: agent.WorkPrincipal(), StarterID: request.SubjectID, Sandbox: harness.Sandbox})
-			if err != nil {
-				return h.reuseAfterRejection(ctx, agent, request, err)
-			}
-			admission.DefinitionAdmitted, admission.Seat = true, seat
-		}
-		facts, err := h.creationFacts(ctx, agent, request)
-		if err != nil {
-			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
-			return "", err
-		}
-		work, created, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, Harness: harness, Subject: request.Subject, ProjectID: request.ProjectID, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, Capabilities: capabilities, TraceAttributes: attributes, ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle}, facts)
-		if err != nil {
-			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
-			return "", err
-		}
-
-		if !created {
-			// Another creation established this Work; its run holds its own Desk.
-			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
-			if err := h.authorization.AuthorizeWork(ctx, request.SubjectID, work.ID); err != nil {
-				return "", err
-			}
-			return work.ID, nil
-		}
-
-		var initial *PrepareWorkExecution
-		if request.InitialExecution != nil {
-			retained := *request.InitialExecution
-			retained.SubjectID = request.SubjectID
-			retained.WorkID = work.ID
-			retained.WorkspaceReference = request.WorkspaceReference
-			if err := (InitialExecutionRequest{PrepareWorkExecution: retained}).AdmitRepositoryPreparation(work); err != nil {
-				h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
-				return "", err
-			}
-			initial = &retained
-		}
-		err = h.sessions.RegisterWork(ctx, work, WorkRegistration{SubjectID: request.SubjectID, RequestID: request.RequestID, WorkspaceReference: request.WorkspaceReference, DefinitionVersion: agent.Version, InitialExecution: initial})
-		if err != nil {
-			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
-		}
+		workID, err := h.create(ctx, request, fingerprint)
 		if errors.Is(err, domain.ErrConcurrentModification) {
 			continue
 		}
-		if err != nil {
-			return "", err
+		if err != nil && definitiveCreationFailure(err) {
+			return h.settle(ctx, request, fingerprint, err)
 		}
-		// The start's execution begins once the Work commits; an initial
-		// execution's preparation holds its creation back until it is ready.
-		return work.ID, nil
+		return workID, err
 	}
 	return "", domain.ErrConcurrentModification
+}
+
+// Cancel settles an unanswered request identity for its caller: it returns the
+// Work the request already created, or fences the identity so a delayed
+// repeat creates nothing.
+func (h *CreateWorkHandler) Cancel(ctx context.Context, requestID string) (string, error) {
+	if uuid.Validate(requestID) != nil {
+		return "", query.ErrInvalidStartRequest
+	}
+	record, err := h.sessions.RecordCreation(ctx, query.StartRequest{ID: requestID, Kind: query.StartKindStart, Canceled: true})
+	if err != nil {
+		return "", err
+	}
+	if !record.OfCreation() {
+		return "", ErrStartRequestConflict
+	}
+	return record.WorkID, nil
+}
+
+// Outcome reports a creation request identity's record without advancing it:
+// its Work or its definitive cancellation. found is false for an identity
+// Agent has not recorded, or one that names another operation.
+func (h *CreateWorkHandler) Outcome(ctx context.Context, requestID string) (query.StartRequest, bool, error) {
+	if uuid.Validate(requestID) != nil {
+		return query.StartRequest{}, false, query.ErrInvalidStartRequest
+	}
+	record, found, err := h.sessions.FindStartRequest(ctx, requestID)
+	if err != nil || !found || !record.OfCreation() {
+		return query.StartRequest{}, false, err
+	}
+	return record, true, nil
+}
+
+// normalizeCreation validates a creation request and completes its initial
+// execution with the creation's correlation.
+func normalizeCreation(request CreateWork) (CreateWork, error) {
+	if initial := request.InitialExecution; initial != nil {
+		if strings.TrimSpace(request.SubjectID) == "" {
+			return request, access.ErrAccessDenied
+		}
+		if initial.WorkID != "" {
+			return request, domain.ErrInvalidWork
+		}
+		if err := validateInitialPreparation(*initial); err != nil {
+			return request, err
+		}
+		if request.RequestID != "" && request.RequestID != initial.RequestID {
+			return request, ErrStartRequestConflict
+		}
+		completed := *initial
+		completed.SubjectID, completed.WorkspaceReference = request.SubjectID, request.WorkspaceReference
+		request.RequestID, request.InitialExecution = initial.RequestID, &completed
+	}
+	if uuid.Validate(request.RequestID) != nil {
+		return request, query.ErrInvalidStartRequest
+	}
+	return request, nil
+}
+
+// repeatedCreation answers a creation request identity already recorded.
+func repeatedCreation(record query.StartRequest, fingerprint string) (string, error) {
+	if err := AnswerRetained(record, query.StartRequest{ID: record.ID, Kind: query.StartKindStart, Fingerprint: fingerprint}); err != nil {
+		return "", err
+	}
+	return record.WorkID, nil
+}
+
+// created answers the Work this request created or reused: an authorized
+// caller receives it, and a request carrying an initial execution continues
+// that Work's first start preparation.
+func (h *CreateWorkHandler) created(ctx context.Context, request CreateWork, workID string) (string, error) {
+	if request.InitialExecution == nil {
+		if err := h.authorization.AuthorizeWork(ctx, request.SubjectID, workID); err != nil {
+			return "", err
+		}
+		return workID, nil
+	}
+	initial := *request.InitialExecution
+	initial.WorkID = workID
+	return h.prepare.Handle(ctx, initial)
+}
+
+// reused answers a request whose Subject's Work already existed and records
+// that outcome on its request identity, so a repeat, the creation outcome
+// query and a late cancellation all find the Work it answered.
+func (h *CreateWorkHandler) reused(ctx context.Context, request CreateWork, fingerprint, workID string) (string, error) {
+	id, err := h.created(ctx, request, workID)
+	if err != nil {
+		return "", err
+	}
+	outcome := query.StartRequest{ID: request.RequestID, Kind: query.StartKindStart, WorkID: workID, Fingerprint: fingerprint}
+	record, err := h.sessions.RecordCreation(ctx, outcome)
+	if err != nil {
+		return "", err
+	}
+	if err := AnswerRetained(record, outcome); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// settle records a definitive refusal on the request identity, so a repeat
+// answers cancelled rather than retrying, unless a Work already won it.
+func (h *CreateWorkHandler) settle(ctx context.Context, request CreateWork, fingerprint string, cause error) (string, error) {
+	record, err := h.sessions.RecordCreation(ctx, query.StartRequest{ID: request.RequestID, Kind: query.StartKindStart, Fingerprint: fingerprint, Canceled: true})
+	if err != nil {
+		return "", errors.Join(cause, err)
+	}
+	if record.Admitted() && record.Kind == query.StartKindStart {
+		return h.created(ctx, request, record.WorkID)
+	}
+	return "", errors.Join(cause, ErrWorkCreationCanceled)
+}
+
+func definitiveCreationFailure(err error) bool {
+	return errors.Is(err, domain.ErrCapacityUnavailable) || domain.RefusedByComputer(err) || errors.Is(err, ErrDeskUnavailable) || errors.Is(err, domain.ErrModelConfigurationWithdrawn) || errors.Is(err, pluginconfig.ErrInvalidConfiguration) || errors.Is(err, access.ErrAccessDenied) || errors.Is(err, domain.ErrAgentDefinitionNotFound) || errors.Is(err, domain.ErrInvalidWork) || errors.Is(err, domain.ErrInvalidWorkSubject) || errors.Is(err, domain.ErrInvalidCapabilities)
 }
 
 // workModel is the model a new Work retains: the requested one, or, with none
@@ -271,73 +267,6 @@ func (h *CreateWorkHandler) workModel(requested domain.WorkModelSelection, manag
 		return option.Selection
 	}
 	return requested
-}
-
-// reusableWork is the Work a request returns instead of creating one: the
-// definition's Work for its Subject, or, without a Subject, the Work its own
-// request identity already started.
-func (h *CreateWorkHandler) reusableWork(ctx context.Context, agent *domain.AgentDefinition, subject domain.WorkSubject, accepted query.AdmittedStart, admitted bool) (*domain.AgentWork, error) {
-	if subject.Present() || !admitted || accepted.WorkID == "" {
-		return h.subjectWork(ctx, agent, subject)
-	}
-	return h.sessions.Get(ctx, accepted.WorkID)
-}
-
-// subjectWork is the definition's Work of the Subject, nil when it has none
-// or the request names no Subject.
-func (h *CreateWorkHandler) subjectWork(ctx context.Context, agent *domain.AgentDefinition, subject domain.WorkSubject) (*domain.AgentWork, error) {
-	if !subject.Present() {
-		return agent.ReuseWork(subject, nil)
-	}
-	found, err := h.sessions.FindBySubject(ctx, agent.ID, subject)
-	if err != nil {
-		return nil, err
-	}
-	return agent.ReuseWork(subject, found)
-}
-
-// creationFacts loads the Works a creation supplies to its definition: the
-// Subject's Work and the source Work of a requested starting context.
-func (h *CreateWorkHandler) creationFacts(ctx context.Context, agent *domain.AgentDefinition, request CreateWork) (domain.WorkCreationFacts, error) {
-	var facts domain.WorkCreationFacts
-	if request.Subject.Present() {
-		found, err := h.sessions.FindBySubject(ctx, agent.ID, request.Subject)
-		if err != nil {
-			return facts, err
-		}
-		facts.SubjectWork = found
-	}
-	if source := request.StartingContext; source != nil && strings.TrimSpace(source.WorkID) != "" {
-		found, err := h.sessions.Get(ctx, strings.TrimSpace(source.WorkID))
-		if err != nil && !errors.Is(err, domain.ErrWorkNotFound) {
-			return facts, err
-		}
-		facts.SourceWork = found
-	}
-	return facts, nil
-}
-
-// A competing creation may establish this binding after our first lookup but
-// before admission is refused. Reusing that Work needs no new capacity.
-func (h *CreateWorkHandler) reuseAfterRejection(ctx context.Context, agent *domain.AgentDefinition, request CreateWork, rejection error) (string, error) {
-	work, err := h.subjectWork(ctx, agent, request.Subject)
-	if err != nil {
-		return "", err
-	}
-	if work == nil {
-		return "", rejection
-	}
-	accepted, found, err := h.sessions.FindAdmittedStart(ctx, request.RequestID)
-	if err != nil {
-		return "", err
-	}
-	if found && (accepted.Kind != query.StartKindStart || accepted.WorkID != work.ID) {
-		return "", ErrStartRequestConflict
-	}
-	if err := h.authorization.AuthorizeWork(ctx, request.SubjectID, work.ID); err != nil {
-		return "", err
-	}
-	return work.ID, nil
 }
 
 func validateInitialThinkingLevel(models query.ModelConfigurations, model domain.WorkModelSelection, level string) error {

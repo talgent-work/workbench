@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
+	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -72,7 +73,7 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	require.NoError(t, err)
 	f.works, f.steps = works, newExecutionSteps(t, p, connections, unread{}, nil, f.now)
 	f.coordination = command.NewExecutionCoordination(f.now, works, f.steps.executions, f.steps.desks, f.steps.harness)
-	f.recovery = command.NewRecoverWorkHandler(f.now, works, f.steps.harness, &commandtest.InputSettlements{}, nil)
+	f.recovery = command.NewRecoverWorkHandler(f.now, works, f.steps.harness, command.NewInputAcceptance(works, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil)
 
 	definitions := infrastructure.NewAgentDefinitionRepository(db, f.now)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Fixture Agent", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
@@ -85,7 +86,7 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	admission.AdmittedAt = f.now()
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"}}, admission)
 	require.NoError(t, err)
-	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, RequestID: uuid.NewString()}))
+	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}}))
 	f.workID = work.ID
 	require.NoError(t, f.coordination.BeginExecution(ctx, work.ID))
 

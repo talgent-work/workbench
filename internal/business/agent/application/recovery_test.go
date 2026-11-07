@@ -123,9 +123,6 @@ func (l idList) ListWorkIDs(_ context.Context, after string, limit int) ([]strin
 func (l idList) ListPendingContinuations(_ context.Context, after string, limit int) ([]string, error) {
 	return page(l, after, limit), nil
 }
-func (l idList) ListPendingWorkCreations(_ context.Context, after string, limit int) ([]string, error) {
-	return page(l, after, limit), nil
-}
 func (l idList) ListPendingInitialExecutions(_ context.Context, after string, limit int) ([]string, error) {
 	return page(l, after, limit), nil
 }
@@ -208,20 +205,18 @@ func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
 	app := &application.Application{Queries: application.Queries{
 		ListRecoveryWorks:            query.NewListRecoveryWorksHandler(works),
 		ListPendingContinuations:     query.NewListPendingContinuationsHandler(idList{"work-2"}),
-		ListWorkCreationRecovery:     query.NewListWorkCreationRecoveryHandler(idList{"request-1"}),
 		ListInitialExecutionRecovery: query.NewListInitialExecutionRecoveryHandler(idList{"work-1"}),
 	}}
 	f := newRecoveryFixture(app, executionLookups{outstanding: executions}, nil)
 	app.Commands.ReconcileDesks = command.NewReconcileDesksHandler(time.Now, &computertest.Admission{}, &recoveredWorks{}, f.executions)
 	require.NoError(t, f.recovery.Sweep(context.Background()))
 	// Each outstanding execution's reconciliation decides its own steps.
-	require.Len(t, f.enqueuer.keys, 250+2+1+1+1)
+	require.Len(t, f.enqueuer.keys, 250+2+1+1)
 	require.Contains(t, f.enqueuer.keys, "agent:allocation:execution-000")
 	require.Contains(t, f.enqueuer.keys, "agent:allocation:execution-249")
 	require.Contains(t, f.enqueuer.keys, "agent:work:work-1")
 	require.Contains(t, f.enqueuer.keys, "agent:work:work-2")
 	require.Contains(t, f.enqueuer.keys, "agent:continuation:work-2")
-	require.Contains(t, f.enqueuer.keys, "agent:creation:request-1")
 	require.Contains(t, f.enqueuer.keys, "agent:initial-execution:work-1")
 }
 

@@ -33,7 +33,7 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 	db, definitions, works, agent := startingCreationDatabase(t)
 	paused := &pausedRegistration{AgentWorkRepository: works, reached: make(chan struct{}), release: make(chan struct{})}
 	execution := &creationExecution{AgentWorkRepository: paused, db: db}
-	create := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}))
+	create := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
 	request := creationInput(agent.ID, "canceled")
 	request.InitialExecution = &command.PrepareWorkExecution{RequestID: request.RequestID, WorkBranch: "talgent/" + "TAL-368", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "original input"}}
 	result := make(chan error, 1)
@@ -63,8 +63,7 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 		require.NoError(t, db.SQL("SELECT COUNT(*) FROM "+table).Find(&rows))
 		require.Equal(t, []int{0}, rows, "cancellation must roll back Work and initial input together")
 	}
-	_, found, err := works.FindAdmittedStart(t.Context(), request.RequestID)
-	require.NoError(t, err)
+	_, found := admittedStart(t, works, request.RequestID)
 	require.False(t, found)
 	// A reconstructed adapter and connection replay the lost cancellation reply.
 	reopened, err := xorm.NewEngine("mysql", db.DataSourceName())
@@ -90,7 +89,7 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 	// A new explicit request identity remains eligible; no auto retry was queued.
 	request.RequestID = uuid.NewString()
 	request.InitialExecution.RequestID = request.RequestID
-	fresh := command.NewCreateWorkHandler(time.Now, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}))
+	fresh := command.NewCreateWorkHandler(time.Now, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
 	id, err := fresh.Handle(t.Context(), request)
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), id)
@@ -103,13 +102,12 @@ func TestCancelWorkRegistrationRecoversCommittedCreation(t *testing.T) {
 	lost := errors.New("registration response lost after commit")
 	registrar := &lostRegistrationReply{AgentWorkRepository: works, err: lost}
 	execution := &creationExecution{AgentWorkRepository: registrar, db: db}
-	create := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}))
+	create := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
 	request := creationInput(agent.ID, "committed")
 	id, err := create.Handle(t.Context(), request)
 	require.ErrorIs(t, err, lost)
 	require.Empty(t, id)
-	admitted, found, err := works.FindAdmittedStart(t.Context(), request.RequestID)
-	require.NoError(t, err)
+	admitted, found := admittedStart(t, works, request.RequestID)
 	require.True(t, found)
 	original, err := works.Get(t.Context(), admitted.WorkID)
 	require.NoError(t, err)

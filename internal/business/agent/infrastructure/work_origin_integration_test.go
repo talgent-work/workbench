@@ -49,14 +49,14 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: purpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: purpose}, HomeBinding: domain.HomeBinding{OwnerID: purpose, Namespace: "personal"}})
 		require.NoError(t, err)
 		require.NoError(t, agents.Save(ctx, definition))
-		id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{})).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkspaceReference: "workspace-" + purpose})
+		id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkspaceReference: "workspace-" + purpose})
 		require.NoError(t, err)
 		ids[purpose], definitions[purpose] = id, definition.ID
 	}
 	feedback := newRuns(t, db, sessions)
 	feedback.exit(ctx, ids["work"])
 	feedback.release(ctx, ids["work"])
-	require.NoError(t, command.NewCloseWorkHandler(sessions, auth, feedback.executions, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: ids["work"], RequestID: "close"}))
+	require.NoError(t, command.NewCloseWorkHandler(sessions, auth, feedback.executions, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: ids["work"], RequestID: "close"}))
 	require.NoError(t, db.Close())
 	origins := infrastructure.NewWorkQueryRepository(open())
 	app := &application.Application{Queries: application.Queries{GetWorkOrigin: query.NewGetWorkOriginHandler(origins), ResolveWorkStarts: query.NewResolveWorkStartsHandler(origins)}}

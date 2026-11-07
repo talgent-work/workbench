@@ -48,8 +48,8 @@ func (w startedWorks) RegisterWork(ctx context.Context, work *domain.AgentWork, 
 	return nil
 }
 
-func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error {
-	if err := w.AgentWorkRepository.CommitStart(ctx, work, start, requestID); err != nil {
+func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
+	if err := w.AgentWorkRepository.CommitStart(ctx, work, request); err != nil {
 		return err
 	}
 	w.started(work)

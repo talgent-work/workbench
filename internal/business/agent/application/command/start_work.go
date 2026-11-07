@@ -13,8 +13,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-var ErrStartRequestCanceled = errors.New("agent: start request canceled")
-
 type StartWork struct {
 	ThinkingLevel string
 	RequestID     string
@@ -82,6 +80,10 @@ func (h workStartup) admit(ctx context.Context, request StartWork, begin startBe
 	if err := request.admitObservedVersion(session); err != nil {
 		return false, err
 	}
+	start, err := request.record(kind(session))
+	if err != nil {
+		return false, err
+	}
 	// Definition and capacity admission are consulted only for an available
 	// model; admission refuses a withdrawn Model Configuration first.
 	_, provided := h.models.Option(session.WorkModel)
@@ -94,32 +96,44 @@ func (h workStartup) admit(ctx context.Context, request StartWork, begin startBe
 	admission := domain.StartAdmission{AdmittedAt: h.now(), AgentID: agent.ID, ModelConfigurationProvided: provided, Soul: agent.Soul, CurrentPlugins: current}
 	if session.WorkModel.Available(provided) {
 		// Only a Work that may start now asks its Computer for room.
-		if err := admitStartKind(session, kind(session)); err != nil {
+		if err := admitStartKind(session, start.Kind); err != nil {
 			return false, err
 		}
 		// A sandboxed Work is admitted only where the sandbox is provided:
 		// the platform never runs it without (Agent model: Managed sandbox).
-		seat, err := admitRun(ctx, h.computers, RunAdmission{ComputerID: session.ComputerID, WorkID: session.ID, WorkOwnerID: agent.WorkPrincipal(), StarterID: request.SubjectID, Sandbox: session.CapabilitySnapshot.Sandbox})
+		// The request names its Desk, so a repeat asks for the same one.
+		seat, err := admitRun(ctx, h.computers, RunAdmission{ComputerID: session.ComputerID, DeskID: requestedDeskID(request.RequestID), WorkID: session.ID, WorkOwnerID: agent.WorkPrincipal(), StarterID: request.SubjectID, Sandbox: session.CapabilitySnapshot.Sandbox})
+		if errors.Is(err, ErrDeskUnavailable) {
+			// Its Desk left without a committed start: this request identity
+			// can no longer start.
+			return false, errors.Join(ErrStartRequestCanceled, err)
+		}
 		if err != nil {
-			return false, h.refused(ctx, session, kind(session), err)
+			return false, h.refused(ctx, session, start.Kind, err)
 		}
 		admission.DefinitionAdmitted, admission.Seat = true, seat
 	}
-	start := query.AdmittedStart{WorkID: session.ID, Kind: kind(session)}
 	if err := begin(session, admission); err != nil {
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return false, err
 	}
 	// The start's execution begins only once the Work and its start request
-	// commit.
-	if err := h.sessions.CommitStart(ctx, session, start, request.RequestID); err != nil {
-		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
+	// commit together.
+	if err := h.sessions.CommitStart(ctx, session, start); err != nil {
+		if errors.Is(err, ErrStartRequestCanceled) || errors.Is(err, ErrStartRequestConflict) {
+			// This request can never start: its Desk is not needed.
+			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
+			return false, err
+		}
 		if errors.Is(err, domain.ErrConcurrentModification) {
 			// A concurrent retry of this request may have won.
 			if found, lookupErr := h.admitted(ctx, request, acceptedKinds); lookupErr != nil || found {
 				return found, lookupErr
 			}
 		}
+		// A commit that did not land leaves its Desk for the repeat, which
+		// asks for the same one; the open-Desk reconciliation vacates it if
+		// none follows.
 		return false, err
 	}
 	return true, nil
@@ -140,19 +154,46 @@ func (h workStartup) refused(ctx context.Context, session *domain.AgentWork, kin
 }
 
 // admitted reports whether this request was already admitted for the Work,
-// making a repeated request idempotent.
+// making a repeated request idempotent. A request recorded for another Work,
+// operation or content is a conflict, and a cancelled one never starts.
 func (h workStartup) admitted(ctx context.Context, request StartWork, acceptedKinds []query.StartKind) (bool, error) {
-	accepted, found, err := h.sessions.FindAdmittedStart(ctx, request.RequestID)
+	record, found, err := h.sessions.FindStartRequest(ctx, request.RequestID)
 	if err != nil || !found {
 		return false, err
 	}
-	if accepted.WorkID != request.WorkID || !slices.Contains(acceptedKinds, accepted.Kind) {
-		return false, ErrStartRequestConflict
+	// The repeat names the operation its record admitted when this handler
+	// accepts that operation; any other recorded operation is a conflict.
+	kind := acceptedKinds[0]
+	if slices.Contains(acceptedKinds, record.Kind) {
+		kind = record.Kind
+	}
+	repeat, err := request.record(kind)
+	if err != nil {
+		return false, err
+	}
+	if err := AnswerRetained(record, repeat); err != nil {
+		return false, err
 	}
 	return true, nil
 }
 
-var ErrStartRequestConflict = errors.New("agent: start request identity belongs to another operation")
+// record is the start-request record this request commits with its start.
+func (request StartWork) record(kind query.StartKind) (query.StartRequest, error) {
+	fingerprint, err := request.fingerprint(kind)
+	if err != nil {
+		return query.StartRequest{}, err
+	}
+	return query.StartRequest{ID: request.RequestID, Kind: kind, WorkID: request.WorkID, Fingerprint: fingerprint}, nil
+}
+
+// fingerprint digests what the caller asked for; a repeat carries the same.
+func (request StartWork) fingerprint(kind query.StartKind) (string, error) {
+	return requestFingerprint(struct {
+		Kind                             query.StartKind
+		SubjectID, WorkID, ThinkingLevel string
+		ExpectedVersion                  *int
+	}{kind, request.SubjectID, request.WorkID, request.ThinkingLevel, request.ExpectedVersion})
+}
 
 // admitStartKind refuses a start the Work cannot begin now.
 func admitStartKind(work *domain.AgentWork, kind query.StartKind) error {

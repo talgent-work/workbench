@@ -55,7 +55,7 @@ func TestClosingReportsTheInputsItDropped(t *testing.T) {
 	settlements := &commandtest.InputSettlements{}
 	harness := commandtest.NewHarness()
 	harness.InputBuffer = buffer
-	recover := command.NewRecoverWorkHandler(time.Now, sessions, harness, settlements, nil)
+	recover := command.NewRecoverWorkHandler(time.Now, sessions, harness, command.NewInputAcceptance(sessions, harness), settlements, nil)
 
 	settlements.Err = errors.New("bus down")
 	require.ErrorIs(t, recover.Handle(ctx, sessions.session.ID), settlements.Err)

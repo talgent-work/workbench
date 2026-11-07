@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -100,10 +98,16 @@ func workComputer(ctx context.Context, computers ComputerPort, personID, chosen 
 	return UsableComputer{}, ErrComputerUnavailable
 }
 
-// admitRun asks the Work's Computer to admit one run: it is seated, or
-// waits in the Computer's line when the Computer queues a run while full.
+// ErrDeskUnavailable reports that the Desk identity a request asks for
+// cannot seat it: that Desk already left, its run never having committed,
+// so the request can no longer start.
+var ErrDeskUnavailable = errors.New("agent: the request's Desk already left")
+
+// admitRun asks the Work's Computer to admit one run under the Desk its
+// request names: it is seated, or waits in the Computer's line when the
+// Computer queues a run while full. A repeated Desk identity is answered with
+// that Desk's current answer.
 func admitRun(ctx context.Context, computers ComputerPort, run RunAdmission) (domain.ComputerSeat, error) {
-	run.DeskID = uuid.Must(uuid.NewV7()).String()
 	answer, err := computers.AdmitRun(ctx, run)
 	if err != nil {
 		return domain.ComputerSeat{}, err

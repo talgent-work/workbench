@@ -33,8 +33,8 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
 	models := query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deepseek"}, Name: "DeepSeek", Vendor: "deepseek", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "max"}, query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "glm"}, Name: "GLM 5.3", Vendor: "zhipu"})
-	create, _ := creationCoordinator(f.db, f.requests, &creationCapacity{}, &registrationResources{}, nil, models, &personalStartupCatalog{})
-	id, err := create.Handle(ctx, f.request.Creation)
+	create, _ := creationCoordinator(f.db, &creationCapacity{}, nil, models, &personalStartupCatalog{})
+	id, err := create.Handle(ctx, f.request)
 	require.NoError(t, err)
 	requireStartIntended(t, f.sessions, id)
 	thinking := &workThinking{}

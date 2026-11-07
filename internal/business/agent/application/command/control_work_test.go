@@ -17,8 +17,8 @@ func TestControlDeniesUnauthorizedCallerBeforeAccessingSession(t *testing.T) {
 	access := sessionAccess{err: denied}
 	request := command.WorkControl{SubjectID: "other-user", WorkID: "private-session", RequestID: "stop"}
 	require.ErrorIs(t, command.NewStopWorkHandler(nil, access, nil).Handle(context.Background(), request), denied)
-	require.ErrorIs(t, command.NewCloseWorkHandler(nil, access, nil, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request), denied)
-	require.ErrorIs(t, deliveryErr(command.NewDeliverWorkInputHandler(nil, access, nil, nil).Deliver(context.Background(), command.DeliverWorkInput{SubjectID: "other-user", WorkID: "private-session", Input: command.ExecutionInput{Text: "message"}})), denied)
+	require.ErrorIs(t, command.NewCloseWorkHandler(nil, access, nil, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request), denied)
+	require.ErrorIs(t, deliveryErr(command.NewDeliverWorkInputHandler(nil, access, nil).Deliver(context.Background(), command.DeliverWorkInput{SubjectID: "other-user", WorkID: "private-session", Input: command.ExecutionInput{Text: "message"}})), denied)
 	require.ErrorIs(t, command.NewRespondWorkInteractionHandler(nil, access, nil).Handle(context.Background(), command.RespondWorkInteraction{SubjectID: "other-user", WorkID: "private-session"}), denied)
 }
 
@@ -43,7 +43,7 @@ func TestStopKeepsItsExitRequestForRecovery(t *testing.T) {
 func TestCloseAcceptanceDoesNotWaitForExecutionControl(t *testing.T) {
 	session := stoppingSession(t)
 	store := &feedbackSessionStore{session: session}
-	err := command.NewCloseWorkHandler(store, sessionAccess{}, &commandtest.Executions{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
+	err := command.NewCloseWorkHandler(store, sessionAccess{}, &commandtest.Executions{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopping, store.session.State, "a stopping Work closes once it has stopped")
 	require.Equal(t, "close", store.session.CloseRequestReference)
@@ -66,7 +66,7 @@ func TestControlPersistsBeforeRequestingAnExit(t *testing.T) {
 			if closeSession {
 				store := &feedbackSessionStore{session: stoppingSession(t)}
 				request.WorkID = store.session.ID
-				require.NoError(t, command.NewCloseWorkHandler(store, sessionAccess{}, &commandtest.Executions{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request))
+				require.NoError(t, command.NewCloseWorkHandler(store, sessionAccess{}, &commandtest.Executions{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request))
 				require.Empty(t, store.stopRequests(), "the kept close is applied by recovery")
 				return
 			}
