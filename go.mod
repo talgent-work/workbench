@@ -14,7 +14,6 @@ require (
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/coder/websocket v1.8.14
 	github.com/gabriel-vasile/mimetype v1.4.13
-	github.com/go-chi/chi/v5 v5.4.0
 	github.com/go-jimu/components v0.12.1
 	github.com/go-jimu/contrib/message/kafka v0.5.1
 	github.com/go-jimu/contrib/taskqueue/asynq v0.5.1
