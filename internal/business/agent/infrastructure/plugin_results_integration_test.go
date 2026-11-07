@@ -20,6 +20,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
@@ -42,7 +43,7 @@ func (a pluginResultAccess) AuthorizeWork(_ context.Context, actor, workID strin
 
 func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	db, definitions, works, definition := startingCreationDatabase(t)
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, infrastructure.NewWorkAuthorizer(db), creationModels(), &creationCatalog{}, creationConnections{}, works, computertest.Checked(&initialCreationCapacity{}), infrastructure.NewExecutionRequestsFactory(&creationExecution{db: db}))
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), &creationExecution{db: db})
 	id, err := create.Handle(t.Context(), creationInput(definition.ID, "plugin-results"))
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), id)

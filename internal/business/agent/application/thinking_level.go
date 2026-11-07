@@ -9,12 +9,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// ExecutionThinkingPort forwards a setting to the admitted Harness. Native
-// effect timing belongs to the Harness; AgentWork retains accepted settings.
-type ExecutionThinkingPort interface {
-	SetThinkingLevel(context.Context, string, string) error
-}
-
 type SetThinkingLevel struct{ ActorUserID, WorkID, Level string }
 
 func (a *Application) GetThinkingLevel(ctx context.Context, input ControlWork) (string, error) {
@@ -46,7 +40,7 @@ func (a *Application) SetThinkingLevel(ctx context.Context, input SetThinkingLev
 		if level == "" {
 			level = defaultLevel
 		}
-		if err := a.Thinking.SetThinkingLevel(ctx, session.ID, level); err != nil {
+		if err := a.Harness.SetThinkingLevel(ctx, session.ID, level); err != nil {
 			return err
 		}
 		return a.retainThinkingLevel(ctx, session, level)

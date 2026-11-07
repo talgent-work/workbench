@@ -9,7 +9,6 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 
 	"github.com/google/uuid"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 
 	"github.com/stretchr/testify/require"
 
@@ -19,7 +18,7 @@ import (
 )
 
 func feedbackHandler(store *feedbackSessionStore, processes command.ProcessObservationPort, port domain.ExecutionPort) *command.ApplyExecutionFeedbackHandler {
-	return command.NewApplyExecutionFeedbackHandler(time.Now, store, processes, infrastructure.NewExecutionRequestsFactory(port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	return command.NewApplyExecutionFeedbackHandler(time.Now, store, processes, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 }
 
 // Intent (real): the exit fact of the current process is acknowledged on its
@@ -245,7 +244,7 @@ func TestReadyProcessIsIdleOnlyWhenNothingIsComing(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &feedbackSessionStore{session: resumed(t)}
-			handler := command.NewApplyExecutionFeedbackHandler(time.Now, store, exitedProcess(), infrastructure.NewExecutionRequestsFactory(&feedbackPort{}), &commandtest.InputBuffer{Inputs: tc.buffered}, &commandtest.InputSettlements{})
+			handler := command.NewApplyExecutionFeedbackHandler(time.Now, store, exitedProcess(), &feedbackPort{}, &commandtest.InputBuffer{Inputs: tc.buffered}, &commandtest.InputSettlements{})
 			for _, kind := range tc.order {
 				require.NoError(t, handler.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: store.session.ID}))
 			}

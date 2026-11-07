@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"xorm.io/xorm"
@@ -37,7 +38,7 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	agent, err = agents.Get(ctx, agent.ID)
 	require.NoError(t, err)
 	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
-	capabilities, err := command.ResolveStartupCapabilities(ctx, &repositoryCatalog{}, "owner", domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: agent.Capabilities.RequiredPlugins, DefaultStartupAgent: agent.Capabilities.StartupAgent})
+	capabilities, err := command.ResolveStartupCapabilities(ctx, commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), "owner", domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: agent.Capabilities.RequiredPlugins, DefaultStartupAgent: agent.Capabilities.StartupAgent})
 	require.NoError(t, err)
 	subject := domain.WorkSubject{Kind: "case", ID: "Work-A"}
 	creation, isNew, err := agent.CreateWork(ctx, domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-a"}, sessions, executionPort{})

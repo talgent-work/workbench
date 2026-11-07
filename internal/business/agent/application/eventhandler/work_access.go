@@ -19,22 +19,17 @@ type WorkAccessWithdrawal struct {
 	RetainedReaderIDs []string
 }
 
-// WorkAccessWithdrawalPort delivers withdrawals to the message-stream readers.
-type WorkAccessWithdrawalPort interface {
-	PublishWorkAccessWithdrawal(context.Context, WorkAccessWithdrawal) error
-}
-
 // WorkAccessWithdrawals realizes "End revoked stream access" for
 // WorkShareRevoked and WorkMadePrivate.
 type WorkAccessWithdrawals struct {
-	port   WorkAccessWithdrawalPort
+	stream LiveStreamPort
 	logger *slog.Logger
 }
 
 var _ domainevent.Handler = (*WorkAccessWithdrawals)(nil)
 
-func NewWorkAccessWithdrawals(port WorkAccessWithdrawalPort, logger *slog.Logger) *WorkAccessWithdrawals {
-	return &WorkAccessWithdrawals{port: port, logger: logger}
+func NewWorkAccessWithdrawals(stream LiveStreamPort, logger *slog.Logger) *WorkAccessWithdrawals {
+	return &WorkAccessWithdrawals{stream: stream, logger: logger}
 }
 
 func (*WorkAccessWithdrawals) Listening() []domainevent.Kind {
@@ -53,7 +48,7 @@ func (h *WorkAccessWithdrawals) Handle(ctx context.Context, event domainevent.Ev
 	}
 	// A lost withdrawal leaves an already open stream running until it
 	// reconnects, where admission is decided again from current facts.
-	if err := h.port.PublishWorkAccessWithdrawal(ctx, withdrawal); err != nil {
+	if err := h.stream.PublishWorkAccessWithdrawal(ctx, withdrawal); err != nil {
 		h.logger.WarnContext(ctx, "publish Work access withdrawal failed", slog.String("agent_work_id", withdrawal.WorkID), slog.Any("error", err))
 	}
 }

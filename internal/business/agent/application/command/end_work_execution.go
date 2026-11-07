@@ -22,12 +22,12 @@ type EndWorkExecution struct {
 }
 
 type EndWorkExecutionHandler struct {
-	control    sessionControl
-	admissions StartAdmissions
+	control sessionControl
+	starts  AgentWorkRepository
 }
 
-func NewEndWorkExecutionHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution ExecutionRequestsFactory, admissions StartAdmissions) *EndWorkExecutionHandler {
-	return &EndWorkExecutionHandler{control: sessionControl{sessions: sessions, access: authorization, execution: execution}, admissions: admissions}
+func NewEndWorkExecutionHandler(sessions AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort) *EndWorkExecutionHandler {
+	return &EndWorkExecutionHandler{control: sessionControl{sessions: sessions, access: authorization, execution: execution}, starts: sessions}
 }
 
 func (h *EndWorkExecutionHandler) Handle(ctx context.Context, request EndWorkExecution) error {
@@ -40,7 +40,7 @@ func (h *EndWorkExecutionHandler) Handle(ctx context.Context, request EndWorkExe
 	if strings.TrimSpace(request.RequestID) == "" || len(request.RequestID) > 128 {
 		return domain.ErrInvalidWork
 	}
-	canceled, err := h.admissions.CancelStart(ctx, request.WorkID, request.StartRequestID)
+	canceled, err := h.starts.CancelStart(ctx, request.WorkID, request.StartRequestID)
 	if err != nil || canceled {
 		return err
 	}

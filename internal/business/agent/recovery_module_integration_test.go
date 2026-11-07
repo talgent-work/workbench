@@ -14,7 +14,8 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 
 	"connectrpc.com/connect/v2"
@@ -58,12 +59,12 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(func() kubernetes.Interface { return kube }),
-			fx.Provide(func() command.InputBufferPort { return port }),
+			fx.Provide(func() command.RunningHarnessPort { return port }),
 		}
 		if recover {
 			// Use the production recovery registration, query and handlers. Only
 			// execution delivery is controlled; native transport has its own tests.
-			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() application.ExecutionEnvironmentRecovery { return noEnvironments{} }),
+			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return noEnvironments{} }),
 				fx.Provide(func() domain.ExecutionPort { return port }),
 			)
 		} else {
@@ -161,7 +162,7 @@ func TestModuleRestartCompletesConfirmedCreationHandoff(t *testing.T) {
 	request, err = records.RetainWorkCreation(ctx, request)
 	require.NoError(t, err)
 	port := &sessionCommandRecorder{}
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, infrastructure.NewWorkAuthorizer(db), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), modulePluginCatalog{}, authorizationcatalogtest.Empty{}, sessions, computertest.Checked(moduleAvailableCapacity{}), infrastructure.NewExecutionRequestsFactory(port)).Handle(ctx, request.Creation)
+	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{}), port).Handle(ctx, request.Creation)
 	require.NoError(t, err)
 	require.NoError(t, records.ConfirmWorkCreation(ctx, request.ID, id))
 	require.NoError(t, db.Close())
@@ -169,13 +170,13 @@ func TestModuleRestartCompletesConfirmedCreationHandoff(t *testing.T) {
 	require.NoError(t, err)
 	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
-	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() application.ExecutionEnvironmentRecovery { return noEnvironments{} }), fx.NopLogger,
+	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return noEnvironments{} }), fx.NopLogger,
 		storageStub(),
 		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota) }),
 		fx.Provide(func() domain.ExecutionPort { return port }),
-		fx.Provide(func() command.InputBufferPort { return port }),
+		fx.Provide(func() command.RunningHarnessPort { return port }),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(ctx))

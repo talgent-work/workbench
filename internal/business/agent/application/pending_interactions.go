@@ -3,21 +3,11 @@ package application
 import (
 	"context"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-type PendingInteraction struct {
-	ID, ToolCallID, ToolName, Prompt string
-	CanAlwaysAllow, ReplySubmitted   bool
-	QuestionInputJSON, TurnID        string
-	Agent                            *string
-}
-
-type PendingInteractionsPort interface {
-	ListPendingInteractions(ctx context.Context, workID string) ([]PendingInteraction, error)
-}
-
-func (a *Application) ListPendingInteractions(ctx context.Context, input ControlWork) ([]PendingInteraction, error) {
+func (a *Application) ListPendingInteractions(ctx context.Context, input ControlWork) ([]command.PendingInteraction, error) {
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
 		return nil, err
 	}
@@ -33,5 +23,5 @@ func (a *Application) ListPendingInteractions(ctx context.Context, input Control
 		return nil, domain.ErrExecutionUnobserved
 	}
 	// Dispatcher answers ReplySubmitted from the Work's input buffer.
-	return a.Interactions.ListPendingInteractions(ctx, input.WorkID)
+	return a.Harness.ListPendingInteractions(ctx, input.WorkID)
 }

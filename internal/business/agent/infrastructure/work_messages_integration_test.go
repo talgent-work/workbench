@@ -17,6 +17,7 @@ import (
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -39,6 +40,7 @@ type workReplyDelivery struct {
 	response  command.InteractionResponse
 }
 type workMessaging struct {
+	command.RunningHarnessPort
 	mu      sync.Mutex
 	inputs  []workInputDelivery
 	replies []workReplyDelivery
@@ -88,8 +90,8 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 	require.NoError(t, err)
 	retained.InputBuffered = true
 	require.NoError(t, initial.Save(ctx, retained))
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(startupAuthority{}), factory, f.sessions, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	factory := executionPort{}
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), factory, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
@@ -97,9 +99,9 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 	}
 	messaging := &workMessaging{}
 	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
-		principals := infrastructure.NewWorkAuthorizer(db)
+		principals := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-		admitted := command.NewInputAcceptance(sessions, sessions, messaging)
+		admitted := command.NewInputAcceptance(sessions, messaging)
 		input := command.NewDeliverWorkInputHandler(sessions, principals, admitted, infrastructure.NewInitialExecutionRequests(db, time.Now))
 		reply := command.NewRespondWorkInteractionHandler(sessions, principals, admitted)
 		app := &application.Application{Commands: application.Commands{SendMessage: command.NewSendWorkMessageHandler(principals, input), ReplyToInteraction: command.NewReplyToWorkInteractionHandler(principals, reply)}}

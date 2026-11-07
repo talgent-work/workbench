@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -44,8 +45,8 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 		require.Equal(t, domain.StopReasonWaitingTimeout, durable.StopReason)
 		require.Equal(t, requestID, durable.StopRequestReference, "request must be committed before external stop")
 	}}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, infrastructure.NewWorkAuthorizer(db), creationModels(), &creationCatalog{}, creationConnections{}, sessions, computertest.Checked(startupAuthority{}), factory).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID, WorkspaceReference: "workspace"})
+	factory := port
+	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID, WorkspaceReference: "workspace"})
 	require.NoError(t, err)
 	feedback := func(kind command.ExecutionFeedbackKind, interaction, stop string) error {
 		return command.NewApplyExecutionFeedbackHandler(clock, sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}).Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id, InteractionID: interaction, ObservationSequence: 1000, RequiredInteractionIDs: []string{interaction}})
@@ -109,7 +110,7 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, durable.State)
 	originalContext := durable.HarnessSessionReference
-	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, infrastructure.NewWorkAuthorizer(db), computertest.Checked(startupAuthority{}), factory, sessions, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
+	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), factory, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
 	require.NoError(t, err)
 	durable, err = sessions.Get(ctx, id)
 	require.NoError(t, err)

@@ -11,23 +11,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// CancelWorkRegistration carries the original creation correlation supplied by
-// an authenticated business caller, before it knows the resulting Work ID.
-// The caller owns authorization of this scope, as with CreateWork.
-type CancelWorkRegistration struct {
-	RequestID, SubjectID, AgentID, WorkspaceReference string
-	Subject                                           domain.WorkSubject
-	ProjectID                                         string
-}
-
-// WorkRegistrationCancellationPort serializes cancellation with initial Work
-// admission. Empty means this request cannot create a Work; otherwise it returns
-// the already admitted Work without changing its lifecycle.
-type WorkRegistrationCancellationPort interface {
-	CancelWorkRegistration(context.Context, CancelWorkRegistration) (string, error)
-}
-
-func (a *Application) CancelWorkRegistration(ctx context.Context, request CancelWorkRegistration) (string, error) {
+func (a *Application) CancelWorkRegistration(ctx context.Context, request command.CancelWorkRegistration) (string, error) {
 	if uuid.Validate(request.RequestID) != nil {
 		return "", query.ErrInvalidStartRequest
 	}
@@ -40,7 +24,7 @@ func (a *Application) CancelWorkRegistration(ctx context.Context, request Cancel
 	if err := request.Subject.Validate(); err != nil {
 		return "", err
 	}
-	id, err := a.RegistrationCancellation.CancelWorkRegistration(ctx, request)
+	id, err := a.Works.CancelWorkRegistration(ctx, request)
 	if err != nil || id == "" {
 		return "", err
 	}

@@ -21,7 +21,7 @@ import (
 )
 
 // cloudComputers describes every Computer as a Cloud.
-type cloudComputers struct{}
+type cloudComputers struct{ command.ComputerPort }
 
 func (cloudComputers) DescribeComputer(context.Context, string) (command.ComputerDescription, error) {
 	return command.ComputerDescription{}, nil
@@ -29,7 +29,10 @@ func (cloudComputers) DescribeComputer(context.Context, string) (command.Compute
 
 // managedPlace describes every Computer as a Managed Computer, removed when
 // asked.
-type managedPlace struct{ removed bool }
+type managedPlace struct {
+	command.ComputerPort
+	removed bool
+}
 
 func (m *managedPlace) DescribeComputer(context.Context, string) (command.ComputerDescription, error) {
 	return command.ComputerDescription{Managed: true, Name: managedComputerName, Removed: m.removed}, nil

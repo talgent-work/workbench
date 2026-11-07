@@ -12,12 +12,15 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 )
 
+// listedInteractions lists the Harness's pending interactions over a test's
+// input buffer.
 type listedInteractions struct {
-	pending []application.PendingInteraction
+	*commandtest.InputBuffer
+	pending []command.PendingInteraction
 	err     error
 }
 
-func (l listedInteractions) ListPendingInteractions(context.Context, string) ([]application.PendingInteraction, error) {
+func (l listedInteractions) ListPendingInteractions(context.Context, string) ([]command.PendingInteraction, error) {
 	return l.pending, l.err
 }
 
@@ -27,22 +30,22 @@ func TestRequiredResponseMatchesPendingInteractionsWithBufferedReplies(t *testin
 	ctx := context.Background()
 	answered := &commandtest.InputBuffer{Replies: []command.InteractionResponse{{InteractionID: "a"}}}
 	for name, c := range map[string]struct {
-		pending  []application.PendingInteraction
+		pending  []command.PendingInteraction
 		required bool
 	}{
 		"none pending":   {},
-		"all answered":   {pending: []application.PendingInteraction{{ID: "a"}}},
-		"one unanswered": {pending: []application.PendingInteraction{{ID: "a"}, {ID: "b"}}, required: true},
+		"all answered":   {pending: []command.PendingInteraction{{ID: "a"}}},
+		"one unanswered": {pending: []command.PendingInteraction{{ID: "a"}, {ID: "b"}}, required: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			required, err := application.NewRequiredResponseReader(listedInteractions{pending: c.pending}, answered)(ctx, "work")
+			required, err := application.NewRequiredResponseReader(listedInteractions{InputBuffer: answered, pending: c.pending})(ctx, "work")
 			require.NoError(t, err)
 			require.Equal(t, c.required, required)
 		})
 	}
 	unavailable := errors.New("dispatcher unavailable")
-	_, err := application.NewRequiredResponseReader(listedInteractions{err: unavailable}, answered)(ctx, "work")
+	_, err := application.NewRequiredResponseReader(listedInteractions{InputBuffer: answered, err: unavailable})(ctx, "work")
 	require.ErrorIs(t, err, unavailable)
-	_, err = application.NewRequiredResponseReader(listedInteractions{pending: []application.PendingInteraction{{ID: "b"}}}, &commandtest.InputBuffer{Err: unavailable})(ctx, "work")
+	_, err = application.NewRequiredResponseReader(listedInteractions{InputBuffer: &commandtest.InputBuffer{Err: unavailable}, pending: []command.PendingInteraction{{ID: "b"}}})(ctx, "work")
 	require.ErrorIs(t, err, unavailable)
 }

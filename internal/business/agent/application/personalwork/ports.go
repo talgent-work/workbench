@@ -101,10 +101,10 @@ type FilePreview struct {
 	Rendering  bool
 }
 
-// FileSpaces is Storage's File Space Contract and Owner File Query as Agent
+// FileSpacePort reaches Storage's File Space Contract and Owner File Query as Agent
 // uses them. Agent names a Personal Work's File Space by the Work's identity;
 // other Works' spaces it knows only by their input sources.
-type FileSpaces interface {
+type FileSpacePort interface {
 	OpenFileSpace(ctx context.Context, owner string) (domain.WorkInputSource, error)
 	// ResolveOwners names the owner of each input source's File Space, in
 	// order; an unknown one resolves to "".
@@ -127,9 +127,9 @@ type DirectoryUser struct {
 	UserID, Username, DisplayName, AvatarURL string
 }
 
-// UserDirectory is Account's User Directory: everyone in the deployment's
+// UserDirectoryPort reaches Account's User Directory: everyone in the deployment's
 // one enterprise, the scope a Work without a Project is shared within.
-type UserDirectory interface {
+type UserDirectoryPort interface {
 	SearchUsers(ctx context.Context, query string, limit int) ([]DirectoryUser, error)
 	GetUsers(ctx context.Context, userIDs []string) ([]DirectoryUser, error)
 }

@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 type reachableRepositories struct {
+	command.StartCatalogPort
 	repositories []domain.AccessibleRepository
 	err          error
 }
@@ -29,7 +31,7 @@ func TestRecentRepositoriesAreTheOwnersStillReachableOnesMostRecentFirst(t *test
 	for _, id := range []string{"a", "b", "c", "d", "e", "f", "g"} {
 		reachable = append(reachable, domain.AccessibleRepository{OwnerUserID: "owner", Provider: "github", RepoID: "github:" + id, RepoName: "acme/" + id, DefaultBranch: "main"})
 	}
-	app := &Application{RepositoryOptions: reachableRepositories{repositories: reachable},
+	app := &Application{Catalog: reachableRepositories{repositories: reachable},
 		RecentRepositories: recentRepositories{"github:g", "github:lost", "github:a", "github:f", "github:e", "github:d", "github:c"}}
 	options, err := app.ListWorkStartRepositories(t.Context(), "owner")
 	require.NoError(t, err)
@@ -39,7 +41,7 @@ func TestRecentRepositoriesAreTheOwnersStillReachableOnesMostRecentFirst(t *test
 }
 
 func TestRepositoryDiscoveryFailureKeepsStartupPossible(t *testing.T) {
-	app := &Application{RepositoryOptions: reachableRepositories{err: errors.New("github unavailable")}, RecentRepositories: recentRepositories{"github:a"}}
+	app := &Application{Catalog: reachableRepositories{err: errors.New("github unavailable")}, RecentRepositories: recentRepositories{"github:a"}}
 	options, err := app.ListWorkStartRepositories(t.Context(), "owner")
 	require.NoError(t, err)
 	require.True(t, options.RepositoriesUnavailable)
@@ -48,7 +50,7 @@ func TestRepositoryDiscoveryFailureKeepsStartupPossible(t *testing.T) {
 }
 
 func TestRepositoryDiscoveryNeedsAnOwner(t *testing.T) {
-	app := &Application{RepositoryOptions: reachableRepositories{}, RecentRepositories: recentRepositories{}}
+	app := &Application{Catalog: reachableRepositories{}, RecentRepositories: recentRepositories{}}
 	_, err := app.ListWorkStartRepositories(t.Context(), " ")
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
 }

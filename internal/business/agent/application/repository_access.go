@@ -23,10 +23,6 @@ type RepositoryCredentialMaterial struct {
 	ExpiresAt          time.Time
 }
 
-type RepositoryCredentialPort interface {
-	SupplyRepositoryCredential(context.Context, RepositoryCredentialRequest) (RepositoryCredentialMaterial, error)
-}
-
 type RepositoryAccessReference struct {
 	AccessID, RepositoryID, CloneURL, AuthorizationID string
 }
@@ -52,10 +48,10 @@ type RepositoryAccessResult struct {
 type RepositoryAccess struct {
 	works    domain.AgentWorkRepository
 	requests command.InitialExecutionReader
-	supply   RepositoryCredentialPort
+	supply   CredentialSupplyPort
 }
 
-func NewRepositoryAccess(works domain.AgentWorkRepository, requests command.InitialExecutionReader, supply RepositoryCredentialPort) *RepositoryAccess {
+func NewRepositoryAccess(works domain.AgentWorkRepository, requests command.InitialExecutionReader, supply CredentialSupplyPort) *RepositoryAccess {
 	return &RepositoryAccess{works: works, requests: requests, supply: supply}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -38,14 +39,14 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	// registration boundary without requiring native UID ownership in this test.
 	environment, err := NewEnvironment(resources, dispatcher, directoryMounts{root: t.TempDir()}, cloudComputers{})
 	require.NoError(t, err)
-	factory := infrastructure.NewExecutionRequestsFactory(environment)
+	factory := environment
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Fixture Agent", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
 	require.NoError(t, err)
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	require.NoError(t, definitions.Save(ctx, definition))
 	definition, err = definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
-	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "retained task capabilities"}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, factory())
+	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "retained task capabilities"}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, commandtest.Hold(factory))
 	require.NoError(t, err)
 	works := infrastructure.NewAgentWorkRepository(db, time.Now)
 	input := command.PrepareWorkExecution{WorkID: work.ID, SubjectID: "owner", WorkspaceReference: work.WorkspaceReference, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-368", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "original input"}}
@@ -72,7 +73,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.Equal(t, domain.ProcessStartRejected, observation.State)
 	work, err = works.Get(ctx, work.ID)
 	require.NoError(t, err)
-	outbound := factory()
+	outbound := commandtest.Hold(factory)
 	require.NoError(t, work.ReconcileProcess(ctx, observation.ProcessObservation, outbound))
 	require.NoError(t, works.Save(ctx, work))
 	require.NoError(t, outbound.Send(ctx))
@@ -91,7 +92,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.NoError(t, works.Save(ctx, work))
 	work, err = works.Get(ctx, work.ID)
 	require.NoError(t, err)
-	require.NoError(t, work.Restart(ctx, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, factory()))
+	require.NoError(t, work.Restart(ctx, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, commandtest.Hold(factory)))
 	restartID := uuid.NewString()
 	require.NoError(t, works.CommitStart(ctx, work, query.AdmittedStart{WorkID: work.ID, Kind: query.StartKindRestart}, restartID))
 	after, err := initial.Get(ctx, work.ID)

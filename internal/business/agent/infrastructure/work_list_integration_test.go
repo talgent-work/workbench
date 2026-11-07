@@ -20,6 +20,7 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -45,7 +46,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	const owner = "123456789012345680"
 	f := newWorkDefinitionFixtureWithConcurrency(t, owner, 0)
 	ctx := context.Background()
-	principal := infrastructure.NewWorkAuthorizer(f.db)
+	principal := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	reader := infrastructure.NewWorkQueryRepository(f.db)
 	app := &application.Application{WorkViews: reader, Queries: application.Queries{ListWorks: query.NewListWorksHandler(reader)}}
 	api := connecttest.Handler(func(s *connect.Server) {
@@ -54,7 +55,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	server := httptest.NewServer(api)
 	defer server.Close()
 	client := agentprivatev1connect.NewWorkFactsServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
+	factory := executionPort{}
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
 	project := uuid.NewString()
@@ -71,7 +72,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 		require.NoError(t, e)
 		retained, e = f.requests.RetainWorkCreation(ctx, retained)
 		require.NoError(t, e)
-		id, e := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, principal, creationModels(), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), factory).Handle(ctx, retained.Creation)
+		id, e := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory).Handle(ctx, retained.Creation)
 		require.NoError(t, e)
 		require.NoError(t, f.requests.ConfirmWorkCreation(ctx, retained.ID, id))
 		if stopped {
@@ -93,7 +94,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	second := makeSession(project, "TAL-2", true)
 	other := makeSession(uuid.NewString(), "OTHER-1", true)
 	starting := makeSession(project, "TAL-3", false)
-	continued, err := continuedRef(second, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, principal, computertest.Checked(startupAuthority{}), factory, f.sessions, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: owner, WorkID: second, RequestID: uuid.NewString()}))
+	continued, err := continuedRef(second, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, principal, computertest.Checked(startupAuthority{}), factory, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: owner, WorkID: second, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted, command.UserInteractionRequired} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: continued, InteractionID: "list-question", ObservationSequence: 1000, RequiredInteractionIDs: []string{"list-question"}}))

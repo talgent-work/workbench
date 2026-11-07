@@ -8,11 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 type thinkingStore struct {
+	command.AgentWorkRepository
 	work    domain.AgentWork
 	saveErr error
 	saves   int
@@ -48,6 +50,7 @@ func (a *thinkingAccess) AuthorizeWork(_ context.Context, subject, _ string) err
 }
 
 type thinkingHarness struct {
+	command.RunningHarnessPort
 	calls []string
 	err   error
 }
@@ -62,7 +65,7 @@ func thinkingApplication() (*application.Application, *thinkingStore, *thinkingA
 	store := &thinkingStore{work: domain.AgentWork{ID: "work", State: domain.WorkWorking, ThinkingLevel: "low", WorkModel: model, HarnessProcess: &domain.HarnessProcess{}}}
 	auth := &thinkingAccess{}
 	harness := &thinkingHarness{}
-	return &application.Application{Works: store, WorkPrincipals: auth, Thinking: harness, Models: query.NewModelConfigurations(query.WorkModelOption{Selection: model, ThinkingLevels: []string{"low", "high"}, DefaultThinkingLevel: "high"})}, store, auth, harness
+	return &application.Application{Works: store, WorkPrincipals: auth, Harness: harness, Models: query.NewModelConfigurations(query.WorkModelOption{Selection: model, ThinkingLevels: []string{"low", "high"}, DefaultThinkingLevel: "high"})}, store, auth, harness
 }
 
 func TestThinkingLevelReadSurvivesWorkLifecycle(t *testing.T) {
@@ -70,7 +73,7 @@ func TestThinkingLevelReadSurvivesWorkLifecycle(t *testing.T) {
 		t.Run(string(state), func(t *testing.T) {
 			app, store, auth, harness := thinkingApplication()
 			store.work.State = state
-			app.Thinking = nil // Reading must not contact an execution, even if it is unavailable.
+			app.Harness = nil // Reading must not contact an execution, even if it is unavailable.
 			level, err := app.GetThinkingLevel(context.Background(), application.ControlWork{ActorUserID: "reader", WorkID: "work"})
 			require.NoError(t, err)
 			require.Equal(t, "low", level)

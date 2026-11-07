@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
 
@@ -89,12 +88,11 @@ func failedStart(t *testing.T) *recoveredWorks {
 }
 
 func recoveryOf(works *recoveredWorks, execution domain.ExecutionPort, processes command.ProcessObservationPort) *application.Recovery {
-	requests := infrastructure.NewExecutionRequestsFactory(execution)
 	buffer, settlements := &commandtest.InputBuffer{}, &commandtest.InputSettlements{}
 	app := &application.Application{Commands: application.Commands{
-		RecoverWork:            command.NewRecoverWorkHandler(time.Now, works, requests, buffer, settlements, nil, nil),
-		ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, works, processes, requests, buffer, settlements),
-		CloseWork:              command.NewCloseWorkHandler(works, nil, requests, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, buffer),
+		RecoverWork:            command.NewRecoverWorkHandler(time.Now, works, execution, buffer, settlements, nil, nil),
+		ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, works, processes, execution, buffer, settlements),
+		CloseWork:              command.NewCloseWorkHandler(works, nil, execution, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, buffer),
 	}}
 	return application.NewRecovery(app, nil, nil, nil, nil)
 }

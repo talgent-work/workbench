@@ -13,7 +13,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -27,7 +29,7 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	catalog := &creationCatalog{}
 	capacity := &initialCreationCapacity{err: domain.ErrCapacityUnavailable}
 	execution := &creationExecution{db: db}
-	handler := command.NewCreateWorkHandler(time.Now, definitions, works, works, infrastructure.NewWorkAuthorizer(db), creationModels(), catalog, creationConnections{}, works, computertest.Checked(capacity), infrastructure.NewExecutionRequestsFactory(execution))
+	handler := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), execution)
 	request := creationInput(agent.ID, "first")
 	workID, err := handler.Handle(t.Context(), request)
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
@@ -66,7 +68,7 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 	db, definitions, works, agent := startingCreationDatabase(t)
 	port := &creationExecution{db: db}
-	winner := command.NewCreateWorkHandler(time.Now, definitions, works, works, infrastructure.NewWorkAuthorizer(db), creationModels(), &creationCatalog{}, creationConnections{}, works, computertest.Checked(&initialCreationCapacity{}), infrastructure.NewExecutionRequestsFactory(port))
+	winner := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), port)
 	winning := creationInput(agent.ID, "same-subject")
 	var winnerID string
 	// The winner commits the same Subject after the loser's lookup, and the
@@ -76,7 +78,7 @@ func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 		winnerID, err = winner.Handle(t.Context(), winning)
 		return err
 	}, err: domain.ErrCapacityUnavailable}
-	loser := command.NewCreateWorkHandler(time.Now, definitions, works, works, infrastructure.NewWorkAuthorizer(db), creationModels(), &creationCatalog{}, creationConnections{}, works, computertest.Checked(capacity), infrastructure.NewExecutionRequestsFactory(port))
+	loser := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(capacity), port)
 	reused, err := loser.Handle(t.Context(), creationInput(agent.ID, "same-subject"))
 	require.NoError(t, err)
 	require.Equal(t, winnerID, reused)

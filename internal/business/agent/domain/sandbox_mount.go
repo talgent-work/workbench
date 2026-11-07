@@ -1,7 +1,5 @@
 package domain
 
-import "context"
-
 // MountGrant is where Storage placed a space and its access mode, opaque to
 // Agent: Agent only decides where it appears in the sandbox.
 type MountGrant struct {
@@ -28,12 +26,6 @@ type SandboxMountRequest struct {
 	WorkspaceReference string
 	InputSource        WorkInputSource
 	ReadOnlyMounts     []ReadOnlyMount
-}
-
-// SandboxMountPort obtains from Storage the Mount Grants of a start; Storage
-// decides whether each space is created or reused and where it lives.
-type SandboxMountPort interface {
-	AcquireMounts(ctx context.Context, request SandboxMountRequest) (SandboxMounts, error)
 }
 
 // MountRequest names the spaces of this start: the definition's HOME owner,

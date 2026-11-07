@@ -13,7 +13,9 @@ import (
 	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
@@ -30,9 +32,8 @@ type Client struct {
 }
 
 var (
-	_ domain.SandboxMountPort                = (*Client)(nil)
-	_ application.WorkspaceReclamationSender = (*Client)(nil)
-	_ application.WorkspaceViewPort          = (*Client)(nil)
+	_ command.SandboxMountPort    = (*Client)(nil)
+	_ execution.StorageWorkspaces = (*Client)(nil)
 )
 
 func NewClient(httpClient connecthttp.HTTPClient, config Config) (*Client, error) {

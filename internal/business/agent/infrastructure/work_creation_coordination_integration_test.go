@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 
 	"github.com/google/uuid"
@@ -25,16 +27,16 @@ func (c *creationCapacity) AdmitRoom(context.Context) error { return c.err }
 
 // creationCoordinator uses production coordination, registration, preparation
 // and recovery storage; only execution delivery and catalogs are fixtures.
-func creationCoordinator(db *xorm.Engine, records command.WorkCreationRequests, capacity computertest.RoomCheck, resources *registrationResources, starts *[]domain.StartExecutionRequest, registrar command.WorkRegistrar, options agentquery.ModelConfigurations, catalog command.PluginCatalogPort) (*command.CreateRequestedWorkHandler, *command.RecoverInitialExecutionHandler) {
+func creationCoordinator(db *xorm.Engine, records command.WorkCreationRequests, capacity computertest.RoomCheck, resources *registrationResources, starts *[]domain.StartExecutionRequest, registrar command.AgentWorkRepository, options agentquery.ModelConfigurations, catalog commandtest.PluginCatalog) (*command.CreateRequestedWorkHandler, *command.RecoverInitialExecutionHandler) {
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	auth := infrastructure.NewWorkAuthorizer(db)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	if registrar == nil {
 		registrar = sessions
 	}
 	initial := infrastructure.NewInitialExecutionRequests(db, time.Now)
-	execution := infrastructure.NewExecutionRequestsFactory(startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { *starts = append(*starts, r); return nil }})
-	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, options, catalog, creationConnections{}, sessions, computertest.Checked(capacity), execution)
+	execution := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { *starts = append(*starts, r); return nil }}
+	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, options, commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), execution)
 	prepare := command.NewPrepareWorkExecutionHandler(initial, sessions, auth, execution, records, options)
 	return command.NewCreateRequestedWorkHandler(records, create, prepare), command.NewRecoverInitialExecutionHandler(initial, sessions, prepare, resources, execution)
 }
@@ -45,7 +47,7 @@ func TestWorkCreationCoordinatorRecoversOriginalRegisteredSession(t *testing.T) 
 			f := newWorkCreationFixture(t)
 			ctx := context.Background()
 			lost := errors.New("acknowledgement lost")
-			registrar := registrationLostAcknowledgement{WorkRegistrar: f.sessions, err: lost}
+			registrar := registrationLostAcknowledgement{AgentWorkRepository: f.sessions, err: lost}
 			resources := &registrationResources{}
 			var starts []domain.StartExecutionRequest
 			handler, _ := creationCoordinator(f.db, f.requests, startupAuthority{}, resources, &starts, registrar, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})

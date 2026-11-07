@@ -16,7 +16,7 @@ func TestServiceAccessResultsPreserveOwnerAndReturnIndependentObservations(t *te
 	f := newRepositoryAccessFixture(t)
 	authorization := &thinkingAccess{}
 	reader := &serviceObservationReader{results: []query.ServiceAccessObservation{{Service: "github", Target: "github-api", Status: "unavailable", Reason: "revoked"}}}
-	app := &application.Application{Works: repositoryWorkStore{f}, WorkPrincipals: authorization, ServiceAccessResults: reader}
+	app := &application.Application{Works: repositoryWorkStore{f: f}, WorkPrincipals: authorization, ServiceAccessResults: reader}
 	result, err := app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorUserID: "viewer", WorkID: f.work.ID})
 	require.NoError(t, err)
 	require.Equal(t, "owner", result.OwnerUserID)
@@ -33,7 +33,7 @@ func TestServiceAccessResultsDoNotHideAccessOrStorageFailures(t *testing.T) {
 	f := newRepositoryAccessFixture(t)
 	authorization := &thinkingAccess{err: access.ErrAccessDenied}
 	reader := &serviceObservationReader{err: errors.New("storage unavailable")}
-	app := &application.Application{Works: repositoryWorkStore{f}, WorkPrincipals: authorization, ServiceAccessResults: reader}
+	app := &application.Application{Works: repositoryWorkStore{f: f}, WorkPrincipals: authorization, ServiceAccessResults: reader}
 	_, err := app.GetWorkServiceAccess(t.Context(), application.ControlWork{WorkID: " "})
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
 	_, err = app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorUserID: "outsider", WorkID: f.work.ID})

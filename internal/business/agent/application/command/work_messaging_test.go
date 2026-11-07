@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
@@ -48,7 +47,7 @@ func TestInputCommandPreservesPayloadAndRejectsInvalidDelivery(t *testing.T) {
 	ctx := context.Background()
 	_, sessions := runningMessagingSession(t)
 	control, received := dispatcherBuffer(t)
-	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, control), &initialRequestStore{})
+	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control), &initialRequestStore{})
 	input := command.ExecutionInput{ID: "f28f3171-1268-4f97-b7d2-1ac831099012", Text: "  exact task\n下一步  "}
 	request := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: input}
 	for _, invalid := range []command.ExecutionInput{{ID: "invalid", Text: "task"}, {ID: input.ID, Text: " \n\t"}} {
@@ -66,7 +65,7 @@ func TestInputCommandPreservesPayloadAndRejectsInvalidDelivery(t *testing.T) {
 	default:
 		t.Fatal("successful hand-off did not reach Dispatcher")
 	}
-	require.NoError(t, command.NewStopWorkHandler(sessions, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(controlPort{})).Handle(ctx,
+	require.NoError(t, command.NewStopWorkHandler(sessions, sessionAccess{}, controlPort{}).Handle(ctx,
 		command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: "stop"}))
 	request.Input.ID = uuid.NewString()
 	require.NoError(t, deliveryErr(handler.Deliver(ctx, request)), "a stopping Work keeps input for its next start")
@@ -77,7 +76,7 @@ func TestReplyEntryMapsResponseAndChecksIdentity(t *testing.T) {
 	ctx := context.Background()
 	_, sessions := runningMessagingSession(t)
 	control, received := dispatcherBuffer(t)
-	handler := command.NewRespondWorkInteractionHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, control))
+	handler := command.NewRespondWorkInteractionHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control))
 	response := command.InteractionResponse{InteractionID: "old-question", Allow: true, AlwaysAllow: true, Reason: "owner answer", UpdatedInputJSON: `{"answer":"proceed"}`}
 	request := command.RespondWorkInteraction{SubjectID: "owner", WorkID: sessions.session.ID, Response: response}
 	require.NoError(t, handler.Handle(ctx, request))
@@ -114,7 +113,7 @@ func runningMessagingSessionForPurpose(t *testing.T, purpose string) (*startupAg
 	ctx := context.Background()
 	agents, sessions := startupStoresForPurpose(t, purpose)
 	sessions.starts = map[string]query.AdmittedStart{uuid.NewString(): {WorkID: sessions.session.ID, Kind: query.StartKindStart}}
-	factory := infrastructure.NewExecutionRequestsFactory(&startupPort{})
+	factory := &startupPort{}
 	require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutorPrepared, WorkID: sessions.session.ID}))
@@ -125,10 +124,10 @@ func runningMessagingSessionForPurpose(t *testing.T, purpose string) (*startupAg
 func TestOrdinaryInputEntryDelegatesWaitingWork(t *testing.T) {
 	ctx := context.Background()
 	_, sessions := runningMessagingSessionForPurpose(t, "intent_coordinator")
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), infrastructure.NewExecutionRequestsFactory(controlPort{}), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), controlPort{}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", ObservationSequence: 1000, RequiredInteractionIDs: []string{"coordinator-question"}, Kind: command.UserInteractionRequired, WorkID: sessions.session.ID, InteractionID: "coordinator-question"}))
 	control, received := dispatcherBuffer(t)
-	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, control), &initialRequestStore{})
+	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control), &initialRequestStore{})
 	input := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: command.ExecutionInput{ID: uuid.NewString(), Text: "accepted business handoff"}}
 	require.NoError(t, deliveryErr(handler.Deliver(ctx, input)))
 	select {

@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 // A settled input is reported to whoever delivered it, by its identity and
@@ -24,7 +23,7 @@ func TestASettledInputIsReportedWithItsOutcome(t *testing.T) {
 	input := command.ExecutionInput{ID: uuid.NewString(), Text: "Patrol Round"}
 	buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{input}}
 	settlements := &commandtest.InputSettlements{}
-	handler := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), infrastructure.NewExecutionRequestsFactory(&feedbackPort{}), buffer, settlements)
+	handler := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), &feedbackPort{}, buffer, settlements)
 
 	buffer.Settle(input.ID)
 	require.NoError(t, handler.Handle(ctx, command.ExecutionFeedback{Kind: command.InputSettled, WorkID: sessions.session.ID, ProcessID: "process", InputID: input.ID, InputOutcome: command.InputAbandoned}))
@@ -52,7 +51,7 @@ func TestClosingReportsTheInputsItDropped(t *testing.T) {
 	first, second := command.ExecutionInput{ID: uuid.NewString(), Text: "one"}, command.ExecutionInput{ID: uuid.NewString(), Text: "two"}
 	buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{first, second}}
 	settlements := &commandtest.InputSettlements{}
-	recover := command.NewRecoverWorkHandler(time.Now, sessions, infrastructure.NewExecutionRequestsFactory(&startupPort{}), buffer, settlements, nil, nil)
+	recover := command.NewRecoverWorkHandler(time.Now, sessions, &startupPort{}, buffer, settlements, nil, nil)
 
 	settlements.Err = errors.New("bus down")
 	require.ErrorIs(t, recover.Handle(ctx, sessions.session.ID), settlements.Err)

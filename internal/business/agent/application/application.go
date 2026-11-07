@@ -57,23 +57,17 @@ type Queries struct {
 }
 
 type Application struct {
-	RepositoryOptions        query.AccessibleRepositoriesPort
-	RecentRepositories       query.RecentRepositoryReader
-	Services                 *ServiceAccess
-	Repositories             *RepositoryAccess
-	RegistrationCancellation WorkRegistrationCancellationPort
-	WorkPrincipals           access.WorkAuthorizer
-	Capabilities             WorkCapabilitiesPort
-	PluginResults            PluginResults
-	ServiceAccessResults     query.ServiceAccessReader
-	Plugins                  command.PluginCatalogPort
-	Works                    domain.AgentWorkRepository
-	Thinking                 ExecutionThinkingPort
-	Permissions              ExecutionPermissionPort
-	Turns                    TurnControlPort
-	Interactions             PendingInteractionsPort
-	// WorkspaceViews serves workspace browsing; Storage owns the view.
-	WorkspaceViews   WorkspaceViewPort
+	RecentRepositories   query.RecentRepositoryReader
+	Services             *ServiceAccess
+	Repositories         *RepositoryAccess
+	WorkPrincipals       access.WorkAuthorizer
+	Harness              command.RunningHarnessPort
+	PluginResults        PluginResults
+	ServiceAccessResults query.ServiceAccessReader
+	Catalog              command.StartCatalogPort
+	Works                command.AgentWorkRepository
+	// Workspaces serves workspace browsing; Storage owns a Cloud Work's view.
+	Workspaces       WorkspacePort
 	Models           query.ModelConfigurations
 	Definitions      domain.AgentDefinitionRepository
 	DefinitionLookup query.AgentDefinitionLookup
@@ -86,20 +80,14 @@ type Application struct {
 func NewApplication(
 	repositories *RepositoryAccess,
 	services *ServiceAccess,
-	registrationCancellation WorkRegistrationCancellationPort,
 	workPrincipals access.WorkAuthorizer,
-	capabilities WorkCapabilitiesPort,
+	harness command.RunningHarnessPort,
 	pluginResults PluginResults,
 	serviceAccessResults query.ServiceAccessReader,
-	plugins command.PluginCatalogPort,
-	repositoryOptions query.AccessibleRepositoriesPort,
+	catalog command.StartCatalogPort,
 	recentRepositories query.RecentRepositoryReader,
-	sessions domain.AgentWorkRepository,
-	thinking ExecutionThinkingPort,
-	permissions ExecutionPermissionPort,
-	turns TurnControlPort,
-	interactions PendingInteractionsPort,
-	workspaceViews WorkspaceViewPort,
+	sessions command.AgentWorkRepository,
+	workspaces WorkspacePort,
 	models query.ModelConfigurations,
 	definitions domain.AgentDefinitionRepository,
 	definitionLookup query.AgentDefinitionLookup,
@@ -145,20 +133,19 @@ func NewApplication(
 	pendingContinuation *query.ListPendingContinuationsHandler,
 	reconcileDesks *command.ReconcileDesksHandler,
 ) *Application {
-	return &Application{Repositories: repositories, Services: services, RegistrationCancellation: registrationCancellation, WorkPrincipals: workPrincipals,
-		Capabilities:         capabilities,
+	return &Application{Repositories: repositories, Services: services, WorkPrincipals: workPrincipals,
+		Harness:              harness,
 		PluginResults:        pluginResults,
 		ServiceAccessResults: serviceAccessResults,
-		Plugins:              plugins,
-		RepositoryOptions:    repositoryOptions,
+		Catalog:              catalog,
 		RecentRepositories:   recentRepositories,
-		Works:                sessions, Thinking: thinking, Permissions: permissions, Turns: turns, Interactions: interactions,
-		WorkspaceViews:   workspaceViews,
-		Models:           models,
-		Definitions:      definitions,
-		DefinitionLookup: definitionLookup,
-		WorkViews:        sessionViews,
-		Logger:           logger,
+		Works:                sessions,
+		Workspaces:           workspaces,
+		Models:               models,
+		Definitions:          definitions,
+		DefinitionLookup:     definitionLookup,
+		WorkViews:            sessionViews,
+		Logger:               logger,
 		Commands: Commands{
 			EnsureAgentDefinition:   ensure,
 			ChangeAgentAppearance:   appearance,

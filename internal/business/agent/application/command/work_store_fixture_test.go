@@ -12,6 +12,7 @@ import (
 // feedbackSessionStore holds one Work and its start-request records, standing
 // in for the AgentWork repository and its start admissions.
 type feedbackSessionStore struct {
+	command.AgentWorkRepository
 	mu       sync.Mutex
 	session  *domain.AgentWork
 	saves    int
@@ -20,12 +21,7 @@ type feedbackSessionStore struct {
 	canceled map[string]bool
 }
 
-var _ command.StartAdmissions = (*feedbackSessionStore)(nil)
-var _ command.InputAcceptances = (*feedbackSessionStore)(nil)
-
-func (s *feedbackSessionStore) CommitAcceptance(ctx context.Context, work *domain.AgentWork) error {
-	return s.Save(ctx, work)
-}
+var _ command.AgentWorkRepository = (*feedbackSessionStore)(nil)
 
 func (s *feedbackSessionStore) Get(context.Context, string) (*domain.AgentWork, error) {
 	copy := *s.session

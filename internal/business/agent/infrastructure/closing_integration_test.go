@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -22,10 +23,10 @@ func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
 	port := &recoveryExecutionPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
-	authorization := infrastructure.NewWorkAuthorizer(f.db)
+	factory := port
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), factory, f.sessions, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, observedProcess{State: domain.ProcessRunning}, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {

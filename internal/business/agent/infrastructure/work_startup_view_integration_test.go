@@ -15,6 +15,7 @@ import (
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -38,9 +39,9 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, starts, 1)
 	thinking := &workThinking{}
-	owners := infrastructure.NewWorkAuthorizer(f.db)
+	owners := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	views := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(f.db), models)
-	app := &application.Application{Works: f.sessions, Thinking: thinking, WorkPrincipals: owners, WorkViews: views, Models: models, Queries: application.Queries{
+	app := &application.Application{Works: f.sessions, Harness: thinking, WorkPrincipals: owners, WorkViews: views, Models: models, Queries: application.Queries{
 		GetWork:     query.NewGetWorkHandler(f.agents, f.sessions, owners, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
 		GetWorkView: query.NewGetWorkViewHandler(owners, views),
 	}}
@@ -110,6 +111,7 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 }
 
 type workThinking struct {
+	command.RunningHarnessPort
 	ref    string
 	levels []string
 }

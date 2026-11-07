@@ -9,7 +9,6 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 
 	"github.com/google/uuid"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -29,7 +28,7 @@ func TestRestartCommitsWorkAndStartRequestBeforeExecution(t *testing.T) {
 		require.Equal(t, sessions.session.ID, request.WorkID)
 		return nil
 	}}
-	admitted, err := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: requestID, SubjectID: "owner", WorkID: sessions.session.ID})
+	admitted, err := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: requestID, SubjectID: "owner", WorkID: sessions.session.ID})
 	require.NoError(t, err)
 	require.True(t, admitted)
 	require.Equal(t, 1, port.calls)
@@ -40,7 +39,7 @@ func TestRestartCommitsWorkAndStartRequestBeforeExecution(t *testing.T) {
 func TestRestartCapacityRejectionDoesNotPersistOrScheduleExecution(t *testing.T) {
 	agents, sessions := failedStartupStores(t)
 	port := &startupPort{}
-	_, err := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{err: domain.ErrCapacityUnavailable}, infrastructure.NewExecutionRequestsFactory(port), sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessions.session.ID})
+	_, err := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{err: domain.ErrCapacityUnavailable}, port, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessions.session.ID})
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
 	require.Zero(t, sessions.saves)
 	require.Empty(t, sessions.starts)
@@ -52,7 +51,7 @@ func TestRestartDeliveryFailureRetainsAdmission(t *testing.T) {
 	agents, sessions := failedStartupStores(t)
 	failure := errors.New("dispatcher unavailable")
 	port := &startupPort{start: func(domain.StartExecutionRequest) error { return failure }}
-	admitted, err := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessions.session.ID})
+	admitted, err := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessions.session.ID})
 	require.ErrorIs(t, err, failure)
 	require.ErrorIs(t, err, domain.ErrExecutionRequest)
 	require.True(t, admitted, "execution recovery owns the undelivered start")
@@ -64,7 +63,7 @@ func TestRestartCommitFailureDoesNotStartExecution(t *testing.T) {
 	failure := errors.New("connection lost during save")
 	sessions.saveErr = failure
 	port := &startupPort{}
-	admitted, err := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessions.session.ID})
+	admitted, err := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessions.session.ID})
 	require.ErrorIs(t, err, failure)
 	require.False(t, admitted)
 	require.Zero(t, port.calls)
@@ -73,7 +72,7 @@ func TestRestartCommitFailureDoesNotStartExecution(t *testing.T) {
 func TestRepeatedRestartRequestIsIdempotent(t *testing.T) {
 	agents, sessions := failedStartupStores(t)
 	port := &startupPort{}
-	handler := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	handler := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessions.session.ID}
 	for range 2 {
 		admitted, err := handler.Handle(context.Background(), request)
@@ -81,14 +80,14 @@ func TestRepeatedRestartRequestIsIdempotent(t *testing.T) {
 		require.True(t, admitted)
 	}
 	require.Equal(t, 1, port.calls, "a response retry cannot start another process")
-	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	err := resume.Handle(context.Background(), request)
 	require.ErrorIs(t, err, command.ErrStartRequestConflict, "one request identity cannot select another operation")
 }
 
 func TestRestartAuthorizationPrecedesRepositoryAccess(t *testing.T) {
 	denied := errors.New("denied")
-	_, err := command.NewRestartWorkHandler(time.Now, nil, nil, sessionAccess{err: denied}, computertest.Checked(nil), nil, nil, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String()})
+	_, err := command.NewRestartWorkHandler(time.Now, nil, nil, sessionAccess{err: denied}, computertest.Checked(nil), nil, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String()})
 	require.ErrorIs(t, err, denied)
 }
 
@@ -121,9 +120,9 @@ func TestResumeAndRestartRetainCapabilitiesAndHarnessSession(t *testing.T) {
 			}}
 			request := command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: session.ID}
 			if restart {
-				_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
+				_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			} else {
-				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
+				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			}
 			require.NoError(t, err)
 			require.Equal(t, 1, port.calls)
@@ -149,9 +148,9 @@ func TestResumeAndRestartRejectAWithdrawnModelConfiguration(t *testing.T) {
 			request := command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: session.ID}
 			var err error
 			if restart {
-				_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, provided, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
+				_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, provided, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			} else {
-				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, &continuationRequests{}, provided, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
+				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, &continuationRequests{}, provided, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			}
 			require.ErrorIs(t, err, domain.ErrModelConfigurationWithdrawn)
 			require.Equal(t, state, sessions.session.State, "the Work keeps its state")
@@ -198,6 +197,7 @@ func (s *startupAgentStore) Save(_ context.Context, agent *domain.AgentDefinitio
 // capacityCheck is the Work's Computer: it seats every run, or rejects it
 // with err. Its starter may use its one Cloud and the others listed.
 type capacityCheck struct {
+	command.ComputerPort
 	err    error
 	others []command.UsableComputer
 }
@@ -246,7 +246,7 @@ func TestRecoveryResendsAdmittedStartupWithoutNewAdmissionOrContext(t *testing.T
 		original = request
 		return errors.New("connection lost before delivery")
 	}}
-	delivery := infrastructure.NewExecutionRequestsFactory(port)()
+	delivery := commandtest.Hold(port)
 	_, err := sessions.session.RecoverExecution(context.Background(), delivery)
 	require.NoError(t, err)
 	err = delivery.Send(context.Background())
@@ -255,7 +255,7 @@ func TestRecoveryResendsAdmittedStartupWithoutNewAdmissionOrContext(t *testing.T
 		require.Equal(t, original, request)
 		return nil
 	}
-	handler := command.NewRecoverWorkHandler(time.Now, sessions, infrastructure.NewExecutionRequestsFactory(port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
+	handler := command.NewRecoverWorkHandler(time.Now, sessions, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
 	require.NoError(t, handler.Handle(context.Background(), sessions.session.ID))
 	require.Equal(t, 2, port.calls)
 	require.Empty(t, sessions.starts, "recovery must not admit a new request")
@@ -270,10 +270,10 @@ func TestResumeAfterFirstStartContinuesTheSameConversation(t *testing.T) {
 	originalID, harnessSession := sessions.session.ID, sessions.session.HarnessSessionReference
 	var launches []domain.StartExecutionRequest
 	port := &startupPort{start: func(request domain.StartExecutionRequest) error { launches = append(launches, request); return nil }}
-	handler := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	handler := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	first := command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: originalID}
 	sessions.starts = map[string]query.AdmittedStart{first.RequestID: {WorkID: originalID, Kind: query.StartKindStart}}
-	require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, infrastructure.NewExecutionRequestsFactory(port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, originalID))
+	require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, originalID))
 	require.Equal(t, domain.ContextFresh, launches[0].ContextMode)
 	require.ErrorIs(t, handler.Handle(ctx, first), command.ErrStartRequestConflict, "Resume never adopts the first start's request")
 	require.Len(t, launches, 1, "a first start is admitted by creation, never by Resume")
@@ -304,7 +304,7 @@ func TestResumeDoesNotRestartFailedOrClosedConversations(t *testing.T) {
 			sessions.session.State = state
 			harnessSession := sessions.session.HarnessSessionReference
 			port := &startupPort{}
-			handler := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+			handler := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 			err := handler.Handle(context.Background(), command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID})
 			require.ErrorIs(t, err, domain.ErrWorkTransition)
 			require.Zero(t, port.calls)

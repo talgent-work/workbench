@@ -11,6 +11,8 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 
 	"github.com/google/uuid"
@@ -87,8 +89,8 @@ func TestWorkCreationCancellationAndRegistration(t *testing.T) {
 			unpause := func() { release.Do(func() { close(resume) }) }
 			defer unpause()
 			lost := errors.New("registration acknowledgement lost")
-			registrar := creationBarrierRegistrar{WorkRegistrar: f.sessions, afterCommit: registeredFirst, entered: entered, resume: resume, lost: lost}
-			create := command.NewCreateWorkHandler(time.Now, f.agents, registrar, f.sessions, infrastructure.NewWorkAuthorizer(f.db), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+			registrar := creationBarrierRegistrar{AgentWorkRepository: f.sessions, afterCommit: registeredFirst, entered: entered, resume: resume, lost: lost}
+			create := command.NewCreateWorkHandler(time.Now, f.agents, registrar, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 			result := make(chan error, 1)
 			go func() { _, err := create.Handle(ctx, f.request.Creation); result <- err }()
 			select {
@@ -121,7 +123,7 @@ func TestWorkCreationCancellationAndRegistration(t *testing.T) {
 				require.Equal(t, domain.WorkStarting, actual.State)
 				require.True(t, actual.HoldsProcess())
 				require.Equal(t, []string{actual.ID}, pending)
-				require.NoError(t, infrastructure.NewWorkAuthorizer(other).AuthorizeWork(ctx, "owner", actual.ID))
+				require.NoError(t, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(other)).AuthorizeWork(ctx, "owner", actual.ID))
 				require.NoError(t, requests.ConfirmWorkCreation(ctx, f.request.ID, actual.ID))
 				require.NoError(t, requests.CompleteWorkCreation(ctx, f.request.ID))
 			} else {
@@ -139,7 +141,7 @@ func TestWorkCreationCancellationAndRegistration(t *testing.T) {
 }
 
 type creationBarrierRegistrar struct {
-	command.WorkRegistrar
+	command.AgentWorkRepository
 	afterCommit bool
 	entered     chan struct{}
 	resume      chan struct{}
@@ -148,7 +150,7 @@ type creationBarrierRegistrar struct {
 
 func (r creationBarrierRegistrar) RegisterWork(ctx context.Context, s *domain.AgentWork, registration command.WorkRegistration) error {
 	if r.afterCommit {
-		if err := r.WorkRegistrar.RegisterWork(ctx, s, registration); err != nil {
+		if err := r.AgentWorkRepository.RegisterWork(ctx, s, registration); err != nil {
 			return err
 		}
 	}
@@ -161,7 +163,7 @@ func (r creationBarrierRegistrar) RegisterWork(ctx context.Context, s *domain.Ag
 	if r.afterCommit {
 		return r.lost
 	}
-	return r.WorkRegistrar.RegisterWork(ctx, s, registration)
+	return r.AgentWorkRepository.RegisterWork(ctx, s, registration)
 }
 
 // Association confirmation is a prerequisite of initial preparation, including
@@ -170,7 +172,7 @@ func (r creationBarrierRegistrar) RegisterWork(ctx context.Context, s *domain.Ag
 func TestWorkCreationConfirmationGatesInitialRecovery(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	id, err := create.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	require.NoError(t, f.db.Close())
@@ -178,7 +180,7 @@ func TestWorkCreationConfirmationGatesInitialRecovery(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth := infrastructure.NewWorkAuthorizer(db)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	receipts := infrastructure.NewInitialExecutionRequests(db, time.Now)
 	creations := infrastructure.NewWorkCreationRequests(db, time.Now)
 	pending, err := creations.ListPendingWorkCreations(ctx, "", 100)
@@ -189,7 +191,7 @@ func TestWorkCreationConfirmationGatesInitialRecovery(t *testing.T) {
 	require.Equal(t, f.request.ID, retained.CreationRequestID)
 	resources := &registrationResources{}
 	var starts []domain.StartExecutionRequest
-	requests := infrastructure.NewExecutionRequestsFactory(startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }})
+	requests := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }}
 	prepare := command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, requests, creations, agentquery.ModelConfigurations{})
 	recover := command.NewRecoverInitialExecutionHandler(receipts, sessions, prepare, resources, requests)
 	require.ErrorIs(t, recover.Handle(ctx, id), command.ErrInitialExecutionPending)
@@ -231,7 +233,7 @@ func TestWorkCreationRegistrationRollbackAllowsCancellation(t *testing.T) {
 	ctx := context.Background()
 	_, err := f.db.Exec(`CREATE TRIGGER reject_creation_input BEFORE INSERT ON agent_initial_execution_request FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='creation input write failed'`)
 	require.NoError(t, err)
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	_, err = create.Handle(ctx, f.request.Creation)
 	require.ErrorContains(t, err, "creation input write failed")
 	retained, err := f.requests.GetWorkCreation(ctx, f.request.ID)
@@ -311,7 +313,7 @@ func TestWorkCreationConfirmationRejectsForeignSession(t *testing.T) {
 			case "project":
 				creation.ProjectID = uuid.NewString()
 			}
-			create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+			create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 			id, err := create.Handle(ctx, creation)
 			require.NoError(t, err)
 			require.ErrorIs(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id), command.ErrWorkCreationConflict)
@@ -332,7 +334,7 @@ func TestWorkCreationConfirmationRejectsForeignSession(t *testing.T) {
 func TestWorksWithoutSubjectAreCreatedPerRequest(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
 	ctx := context.Background()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	startups := infrastructure.NewExecutionQueryRepository(f.db)
 	mounts := []domain.ReadOnlyMount{{Name: "reference", Reference: "space-1"}}
 	personal := func() command.WorkCreationRequest {
@@ -371,7 +373,7 @@ func TestWorksWithoutSubjectAreCreatedPerRequest(t *testing.T) {
 // competingRegistration lets another creation of the same request register
 // first, as a concurrent repeat would.
 type competingRegistration struct {
-	command.WorkRegistrar
+	command.AgentWorkRepository
 	compete func()
 }
 
@@ -381,7 +383,7 @@ func (r *competingRegistration) RegisterWork(ctx context.Context, work *domain.A
 		r.compete = nil
 		compete()
 	}
-	return r.WorkRegistrar.RegisterWork(ctx, work, registration)
+	return r.AgentWorkRepository.RegisterWork(ctx, work, registration)
 }
 
 // A concurrent repeat of a request without a Subject that loses registration
@@ -389,8 +391,8 @@ func (r *competingRegistration) RegisterWork(ctx context.Context, work *domain.A
 func TestAConcurrentRepeatWithoutSubjectReturnsTheWinnersWork(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
 	ctx := context.Background()
-	handler := func(registrar command.WorkRegistrar) *command.CreateWorkHandler {
-		return command.NewCreateWorkHandler(time.Now, f.agents, registrar, f.sessions, infrastructure.NewWorkAuthorizer(f.db), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	handler := func(registrar command.AgentWorkRepository) *command.CreateWorkHandler {
+		return command.NewCreateWorkHandler(time.Now, f.agents, registrar, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	}
 	initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), Input: command.ExecutionInput{ID: uuid.NewString(), Text: "my own work"}}
 	request, err := command.NewWorkCreationRequest(command.CreateWork{StartingUserID: "owner", RequestID: initial.RequestID, AgentID: f.request.Creation.AgentID, SubjectID: "owner", WorkID: uuid.NewString(), WorkspaceReference: uuid.NewString(), InitialExecution: &initial})
@@ -399,7 +401,7 @@ func TestAConcurrentRepeatWithoutSubjectReturnsTheWinnersWork(t *testing.T) {
 	require.NoError(t, err)
 
 	var winner string
-	registrar := &competingRegistration{WorkRegistrar: f.sessions}
+	registrar := &competingRegistration{AgentWorkRepository: f.sessions}
 	registrar.compete = func() {
 		winner, err = handler(f.sessions).Handle(ctx, retained.Creation)
 		require.NoError(t, err)

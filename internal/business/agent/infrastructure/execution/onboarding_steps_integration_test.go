@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -85,7 +84,7 @@ func (f *onboardingFixture) authorityCalls() int {
 	return f.lifecycle.requests
 }
 
-func (f *onboardingFixture) step(t *testing.T) application.AllocationStep {
+func (f *onboardingFixture) step(t *testing.T) command.AllocationStep {
 	t.Helper()
 	statuses, err := f.recovery.ListOutstandingAllocations(context.Background(), "", 100)
 	require.NoError(t, err)
@@ -100,25 +99,25 @@ func (f *onboardingFixture) step(t *testing.T) application.AllocationStep {
 func TestSweepNamesOnlyTheMissingOnboardingStep(t *testing.T) {
 	f := newOnboarding(t)
 	before := f.authorityCalls()
-	require.Equal(t, application.AllocationReconcile, f.step(t), "a sandbox not yet delivered")
+	require.Equal(t, command.AllocationReconcile, f.step(t), "a sandbox not yet delivered")
 	f.at(t, "sandbox_ready = 1")
-	require.Equal(t, application.AllocationPrepare, f.step(t), "a delivered sandbox not yet prepared")
+	require.Equal(t, command.AllocationPrepare, f.step(t), "a delivered sandbox not yet prepared")
 	f.at(t, "plugins_prepared = 1, process_id = 'process-1'")
 	f.delivered(t)
-	require.Equal(t, application.AllocationReconnect, f.step(t), "a running process whose stream nobody reads")
+	require.Equal(t, command.AllocationReconnect, f.step(t), "a running process whose stream nobody reads")
 	f.owners.reading = StreamReading{ProcessID: "process-0"}
-	require.Equal(t, application.AllocationReconnect, f.step(t), "Dispatcher reads an earlier process")
+	require.Equal(t, command.AllocationReconnect, f.step(t), "Dispatcher reads an earlier process")
 	f.owners.reading = StreamReading{ProcessID: "process-1"}
-	require.Equal(t, application.AllocationSettled, f.step(t), "a connected Work needs nothing")
+	require.Equal(t, command.AllocationSettled, f.step(t), "a connected Work needs nothing")
 	f.at(t, "credentials_expire_at = 1")
-	require.Equal(t, application.AllocationDeliver, f.step(t), "a delivery past its declared expiry is fetched once more")
+	require.Equal(t, command.AllocationDeliver, f.step(t), "a delivery past its declared expiry is fetched once more")
 	f.at(t, "credentials_expire_at = 0")
-	require.Equal(t, application.AllocationSettled, f.step(t), "a delivery that does not expire waits for change facts")
+	require.Equal(t, command.AllocationSettled, f.step(t), "a delivery that does not expire waits for change facts")
 	f.at(t, "model_credential_digest = 'rotated-away'")
-	require.Equal(t, application.AllocationDeliver, f.step(t), "a rotated model key reaches the running Work")
+	require.Equal(t, command.AllocationDeliver, f.step(t), "a rotated model key reaches the running Work")
 	f.delivered(t)
 	f.at(t, "process_exited = 1")
-	require.Equal(t, application.AllocationSettled, f.step(t), "an exited process is not reconnected")
+	require.Equal(t, command.AllocationSettled, f.step(t), "an exited process is not reconnected")
 	require.Equal(t, before, f.authorityCalls(), "the sweep never asks the environment authority")
 	f.lifecycle.vault.mu.Lock()
 	require.Nil(t, f.lifecycle.vault.state, "the sweep never touches the Vault")
@@ -135,11 +134,11 @@ func TestObservedSandboxDeletionLosesTheEnvironment(t *testing.T) {
 	f.owners.reading = StreamReading{ProcessID: "process-1", Endpoint: "http://192.0.2.8:44772"}
 	step, err := f.recovery.ObserveSandbox(ctx, f.record.ID)
 	require.NoError(t, err)
-	require.Equal(t, application.AllocationSettled, step, "a running sandbox at the read endpoint needs nothing")
+	require.Equal(t, command.AllocationSettled, step, "a running sandbox at the read endpoint needs nothing")
 	f.owners.reading.Endpoint = "http://192.0.2.9:44772"
 	step, err = f.recovery.ObserveSandbox(ctx, f.record.ID)
 	require.NoError(t, err)
-	require.Equal(t, application.AllocationReconnect, step, "a moved endpoint is connected again")
+	require.Equal(t, command.AllocationReconnect, step, "a moved endpoint is connected again")
 	require.Empty(t, f.feedback.requests)
 
 	f.lifecycle.mu.Lock()
@@ -147,7 +146,7 @@ func TestObservedSandboxDeletionLosesTheEnvironment(t *testing.T) {
 	f.lifecycle.mu.Unlock()
 	step, err = f.recovery.ObserveSandbox(ctx, f.record.ID)
 	require.NoError(t, err)
-	require.Equal(t, application.AllocationSettled, step)
+	require.Equal(t, command.AllocationSettled, step)
 	require.Len(t, f.feedback.requests, 1)
 	require.Equal(t, command.EnvironmentLost, f.feedback.requests[0].Kind)
 	retired, _, err := f.recovery.provisioning.get(ctx, f.record.ID)
@@ -178,7 +177,7 @@ func TestSweepWakesTheDrainOfAStoppedWork(t *testing.T) {
 	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
 	f.owners.reading = StreamReading{ProcessID: "process-1"}
 	f.recovery.connections.credentials.works.sessions = stoppingSession{}
-	require.Equal(t, application.AllocationReconcile, f.step(t))
+	require.Equal(t, command.AllocationReconcile, f.step(t))
 	before := f.authorityCalls()
 	require.NoError(t, f.recovery.PrepareAllocation(context.Background(), f.record.ID))
 	require.Equal(t, before, f.authorityCalls(), "a stopping Work is never prepared")

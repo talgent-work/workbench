@@ -21,7 +21,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -36,12 +35,12 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	permissions := &rpcAuthorization{}
 	port := &rpcExecution{}
 	processes := &rpcProcesses{observation: domain.ProcessObservation{State: domain.ProcessPending}}
-	requests := infrastructure.NewExecutionRequestsFactory(port)
+	requests := port
 	app := &application.Application{Definitions: agents, Works: sessions,
 		Commands: application.Commands{
-			CreateWork:             command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, permissions, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), rpcPluginCatalog{}, authorizationcatalogtest.Empty{}, sessions, capacity, requests),
-			ResumeWork:             command.NewResumeWorkHandler(time.Now, sessions, agents, permissions, capacity, requests, sessions, &rpcContinuations{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
-			RestartWork:            command.NewRestartWorkHandler(time.Now, sessions, agents, permissions, capacity, requests, sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			CreateWork:             command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, permissions, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(rpcPluginCatalog{}, authorizationcatalogtest.Empty{}), capacity, requests),
+			ResumeWork:             command.NewResumeWorkHandler(time.Now, sessions, agents, permissions, capacity, requests, &rpcContinuations{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			RestartWork:            command.NewRestartWorkHandler(time.Now, sessions, agents, permissions, capacity, requests, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			StopWork:               command.NewStopWorkHandler(sessions, permissions, requests),
 			CloseWork:              command.NewCloseWorkHandler(sessions, permissions, requests, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}),
 			DeliverInput:           command.NewDeliverWorkInputHandler(sessions, permissions, port, rpcInitialInputs{}),

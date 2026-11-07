@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -79,15 +80,15 @@ type ProcessObservationPort interface {
 }
 
 type ApplyExecutionFeedbackHandler struct {
-	buffer      InputBufferPort
-	settlements InputSettlements
+	buffer      RunningHarnessPort
+	settlements integrationmessage.Publisher
 	sessions    domain.AgentWorkRepository
 	processes   ProcessObservationPort
-	execution   ExecutionRequestsFactory
+	execution   domain.ExecutionPort
 	now         func() time.Time
 }
 
-func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, processes ProcessObservationPort, execution ExecutionRequestsFactory, buffer InputBufferPort, settlements InputSettlements) *ApplyExecutionFeedbackHandler {
+func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, processes ProcessObservationPort, execution domain.ExecutionPort, buffer RunningHarnessPort, settlements integrationmessage.Publisher) *ApplyExecutionFeedbackHandler {
 	return &ApplyExecutionFeedbackHandler{now: now, sessions: sessions, processes: processes, execution: execution, buffer: buffer, settlements: settlements}
 }
 
@@ -153,7 +154,7 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 		}
 		observation.ObservedAt = h.now()
 	}
-	requests := h.execution()
+	requests := deferExecution(h.execution)
 	switch feedback.Kind {
 	case ExecutorPrepared:
 		if err = session.ConfirmPrepared(ctx, h.now(), requests); err == nil {
@@ -231,7 +232,7 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 	if err := h.sessions.Save(ctx, session); err != nil {
 		return err
 	}
-	if err := requests.Send(ctx); err != nil {
+	if err := requests.send(ctx); err != nil {
 		return err
 	}
 	return h.reportSettlement(ctx, feedback)
@@ -242,7 +243,7 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 // loss has lasted the Disconnection timeout. The report names the current
 // process, and a return ends only the loss it follows, never a later one. A
 // Managed Work's Disconnection follows its Computer's Presence instead.
-func (h *ApplyExecutionFeedbackHandler) applyAttachment(ctx context.Context, session *domain.AgentWork, feedback ExecutionFeedback, requests ExecutionRequests) (bool, error) {
+func (h *ApplyExecutionFeedbackHandler) applyAttachment(ctx context.Context, session *domain.AgentWork, feedback ExecutionFeedback, requests *deferredExecution) (bool, error) {
 	if session.OnManagedComputer() {
 		return false, nil
 	}
@@ -268,7 +269,7 @@ func (h *ApplyExecutionFeedbackHandler) reportSettlement(ctx context.Context, fe
 	if feedback.Kind != InputSettled || feedback.InputOutcome == "" || strings.TrimSpace(feedback.InputID) == "" {
 		return nil
 	}
-	return h.settlements.Settled(ctx, InputSettlement{WorkID: feedback.WorkID, InputID: feedback.InputID, Outcome: feedback.InputOutcome, At: h.now()})
+	return publishInputSettlement(ctx, h.settlements, InputSettlement{WorkID: feedback.WorkID, InputID: feedback.InputID, Outcome: feedback.InputOutcome, At: h.now()})
 }
 
 // recordIdleness supplies the current accepted-input fact after readiness or

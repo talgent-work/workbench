@@ -9,7 +9,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 func retainedPreparation(sessions *feedbackSessionStore) *initialRequestStore {
@@ -21,7 +20,7 @@ func TestPreparationUsesOnlyRetainedCreationRequest(t *testing.T) {
 	_, sessions := startupStores(t)
 	store := retainedPreparation(sessions)
 	port := &startupPort{}
-	handler := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port), nil, agentquery.ModelConfigurations{})
+	handler := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, port, nil, agentquery.ModelConfigurations{})
 	input := store.request.PrepareWorkExecution
 	unsupported := input
 	unsupported.ThinkingLevel = "not-a-harness-level"
@@ -51,7 +50,7 @@ func TestPreparationCannotInventInitialRequest(t *testing.T) {
 	_, sessions := startupStores(t)
 	input := retainedPreparation(sessions).request.PrepareWorkExecution
 	port := &startupPort{}
-	handler := command.NewPrepareWorkExecutionHandler(&initialRequestStore{}, sessions, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port), nil, agentquery.ModelConfigurations{})
+	handler := command.NewPrepareWorkExecutionHandler(&initialRequestStore{}, sessions, sessionAccess{}, port, nil, agentquery.ModelConfigurations{})
 	_, err := handler.Handle(t.Context(), input)
 	require.ErrorIs(t, err, command.ErrInitialExecutionNotFound)
 	require.Zero(t, port.calls)
@@ -64,7 +63,7 @@ func TestPreparationForClosedSessionDoesNotAcquireResources(t *testing.T) {
 	require.NoError(t, sessions.session.Close(context.Background(), "already-closed", domain.ClosureFacts{}, &startupPort{}))
 	store := retainedPreparation(sessions)
 	port := &startupPort{}
-	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port), nil, agentquery.ModelConfigurations{})
+	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, port, nil, agentquery.ModelConfigurations{})
 	_, err := prepare.Handle(t.Context(), store.request.PrepareWorkExecution)
 	require.ErrorIs(t, err, domain.ErrWorkTransition)
 	require.Equal(t, domain.WorkClosed, sessions.session.State)

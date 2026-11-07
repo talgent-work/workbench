@@ -7,10 +7,12 @@ import (
 
 	domainevent "github.com/go-jimu/components/ddd/event"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
+	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 	"xorm.io/xorm"
 )
 
@@ -25,16 +27,21 @@ type committedWorks struct {
 }
 
 type workStateUpdates struct {
-	reader    query.WorkViewReader
-	publisher *infrastructure.WorkStateNATSPublisher
-	logger    *slog.Logger
+	reader query.WorkViewReader
+	stream eventhandler.LiveStreamPort
+	logger *slog.Logger
 	// Recovery wakes are wired by RecoveryModule; without it a commit only
 	// publishes its live frame.
 	wakeWork, wakeInitialExecution, wakeContinuation func(context.Context, string)
 }
 
-func newWorkStateUpdates(reader query.WorkViewReader, publisher *infrastructure.WorkStateNATSPublisher, logger *slog.Logger) *workStateUpdates {
-	return &workStateUpdates{reader: reader, publisher: publisher, logger: logger}
+func newWorkStateUpdates(reader query.WorkViewReader, stream eventhandler.LiveStreamPort, logger *slog.Logger) *workStateUpdates {
+	return &workStateUpdates{reader: reader, stream: stream, logger: logger}
+}
+
+// newLiveStreamPublisher frames a Work's state as a reader's admission does.
+func newLiveStreamPublisher(conn *pkgnats.LazyConn) (eventhandler.LiveStreamPort, error) {
+	return infrastructure.NewLiveStreamPublisher(conn, connectrpc.WorkStateFrame)
 }
 func newCommittedWorks(db *xorm.Engine, now func() time.Time, updates *workStateUpdates, events domainevent.Dispatcher) *committedWorks {
 	return &committedWorks{AgentWorkRepository: infrastructure.NewAgentWorkRepository(db, now), workStateUpdates: updates, events: events}
@@ -58,13 +65,6 @@ func (r *committedWorks) Save(ctx context.Context, session *domain.AgentWork) er
 		return err
 	}
 	r.committed(ctx, session)
-	return nil
-}
-func (r *committedWorks) CommitAcceptance(ctx context.Context, work *domain.AgentWork) error {
-	if err := r.AgentWorkRepository.CommitAcceptance(ctx, work); err != nil {
-		return err
-	}
-	r.committed(ctx, work)
 	return nil
 }
 func (r *committedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error {
@@ -108,7 +108,7 @@ func (r *workStateUpdates) publish(ctx context.Context, id string) {
 	defer cancel()
 	state, err := r.reader.GetWorkView(ctx, id)
 	if err == nil {
-		err = r.publisher.PublishWorkState(ctx, connectrpc.WorkStateFrame(state))
+		err = r.stream.PublishWorkState(ctx, state)
 	}
 	if err != nil {
 		r.logger.WarnContext(ctx, "publish committed Session state failed", slog.String("agent_work_id", id), slog.Any("error", err))

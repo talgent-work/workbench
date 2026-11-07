@@ -63,10 +63,7 @@ type Client struct {
 	logger    *slog.Logger
 }
 
-var (
-	_ command.ComputerAdmissionPort   = (*Client)(nil)
-	_ command.ComputerDescriptionPort = (*Client)(nil)
-)
+var _ command.ComputerPort = (*Client)(nil)
 
 func NewClient(httpClient connecthttp.HTTPClient, config Config, logger *slog.Logger) (*Client, error) {
 	if strings.TrimSpace(config.Address) == "" || strings.TrimSpace(config.Token) == "" {

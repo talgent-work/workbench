@@ -11,7 +11,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 // Computer Removed fails every Work running on the Computer, from what
@@ -22,7 +21,7 @@ func TestComputerRemovedLosesTheEnvironmentOfItsWorks(t *testing.T) {
 	sessions := managedWorking(t)
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, Reachable: true}}
 	port := &feedbackPort{}
-	reach := command.NewComputerReachHandler(time.Now, sessions, place, computerWorks{id: sessions.session.ID}, infrastructure.NewExecutionRequestsFactory(port), nil, &commandtest.InputBuffer{}, nil)
+	reach := command.NewComputerReachHandler(time.Now, sessions, place, computerWorks{id: sessions.session.ID}, port, nil, &commandtest.InputBuffer{}, nil)
 
 	require.NoError(t, reach.ComputerRemoved(ctx, sessions.session.ComputerID))
 	require.Equal(t, domain.WorkWorking, sessions.session.State, "a Computer that is not removed loses nothing")
@@ -46,7 +45,7 @@ func TestRecoveryAppliesAMissedComputerRemoval(t *testing.T) {
 	ctx := context.Background()
 	sessions := managedWorking(t)
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, Removed: true}}
-	factory := infrastructure.NewExecutionRequestsFactory(&feedbackPort{})
+	factory := &feedbackPort{}
 	reach := command.NewComputerReachHandler(time.Now, sessions, place, computerWorks{id: sessions.session.ID}, factory, nil, &commandtest.InputBuffer{}, nil)
 	recover := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
 

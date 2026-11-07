@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
@@ -27,7 +26,7 @@ func modelHandler(t *testing.T, store *sessionStore, port *startupPort) (*domain
 	require.NoError(t, err)
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: deploymentModel, ThinkingLevels: []string{"low"}, DefaultThinkingLevel: "low"})
 	computers := capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}
-	return agent, command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, models, emptyPluginCatalog{}, authorizationcatalogtest.Empty{}, store, computers, infrastructure.NewExecutionRequestsFactory(port))
+	return agent, command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computers, port)
 }
 
 func modelCreation(agentID, computerID string, model domain.WorkModelSelection, thinking string) command.CreateWork {
@@ -86,7 +85,7 @@ func TestThePMCoordinatorRunsOnlyOnACloud(t *testing.T) {
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: deploymentModel, ThinkingLevels: []string{"low"}, DefaultThinkingLevel: "low"})
 	for computer, refused := range map[string]bool{managedComputer: true, "": false} {
 		store, seats := &sessionStore{}, &seatCount{capacityCheck: capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}}
-		handler := command.NewCreateWorkHandler(time.Now, agentStore{coordinator}, store, store, store, models, emptyPluginCatalog{}, authorizationcatalogtest.Empty{}, store, seats, infrastructure.NewExecutionRequestsFactory(&startupPort{}))
+		handler := command.NewCreateWorkHandler(time.Now, agentStore{coordinator}, store, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), seats, &startupPort{})
 		_, err := handler.Handle(t.Context(), modelCreation(coordinator.ID, computer, deploymentModel, ""))
 		if !refused {
 			require.NoError(t, err)
@@ -160,9 +159,9 @@ func TestAMachineLoginWorkResumesAndRestartsWithNoModelConfiguration(t *testing.
 			none := agentquery.NewModelConfigurations()
 			request := command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: session.ID}
 			if restart {
-				_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, none, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
+				_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, none, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			} else {
-				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(port), sessions, &continuationRequests{}, none, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
+				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, port, &continuationRequests{}, none, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			}
 			require.NoError(t, err)
 			require.Equal(t, domain.WorkStarting, sessions.session.State)
@@ -189,7 +188,7 @@ func TestAManagedWorkIsCreatedWithoutProviderAuthorizedConnectors(t *testing.T) 
 	require.NoError(t, err)
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: deploymentModel, ThinkingLevels: []string{"low"}, DefaultThinkingLevel: "low"})
 	computers := capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, models, githubCatalog{}, authorizationcatalogtest.Empty{}, store, computers, infrastructure.NewExecutionRequestsFactory(&startupPort{}))
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, models, commandtest.StartCatalog(githubCatalog{}, authorizationcatalogtest.Empty{}), computers, &startupPort{})
 	creation := modelCreation(agent.ID, managedComputer, domain.MachineLoginModel(), "")
 	creation.CapabilityDifferences.Connectors = []domain.ConnectorChoice{{Name: "github", Include: true}}
 	_, err = handler.Handle(t.Context(), creation)

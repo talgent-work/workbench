@@ -11,11 +11,11 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 // presencePlace is Computer's description of the Work's Computer.
 type presencePlace struct {
+	command.ComputerPort
 	description command.ComputerDescription
 	err         error
 	reads       int
@@ -63,7 +63,7 @@ func TestPresenceChangesRecordAndEndTheDisconnectionOfRunningWorks(t *testing.T)
 	lost := time.Now()
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, UnreachableSince: lost}}
 	port := &feedbackPort{}
-	reach := command.NewComputerReachHandler(time.Now, sessions, place, computerWorks{id: sessions.session.ID}, infrastructure.NewExecutionRequestsFactory(port), nil, &commandtest.InputBuffer{}, nil)
+	reach := command.NewComputerReachHandler(time.Now, sessions, place, computerWorks{id: sessions.session.ID}, port, nil, &commandtest.InputBuffer{}, nil)
 
 	require.NoError(t, reach.PresenceChanged(ctx, sessions.session.ComputerID))
 	require.Equal(t, domain.WorkWorking, sessions.session.State)
@@ -96,7 +96,7 @@ func TestRecoveryStopsAManagedWorkBeyondReach(t *testing.T) {
 	require.NoError(t, err)
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, Reachable: true}}
 	port := &feedbackPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
+	factory := port
 	clock := &testClock{at: time.Now().Add(domain.DisconnectionTimeout + time.Minute)}
 	reach := command.NewComputerReachHandler(clock.now, sessions, place, computerWorks{id: sessions.session.ID}, factory, nil, &commandtest.InputBuffer{}, nil)
 	recover := command.NewRecoverWorkHandler(clock.now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
@@ -124,7 +124,7 @@ func TestANewerLossAfterAnUnseenReturnRestartsTheDisconnection(t *testing.T) {
 	first := time.Now()
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, UnreachableSince: first}}
 	clock := &testClock{at: first}
-	reach := command.NewComputerReachHandler(clock.now, sessions, place, computerWorks{id: sessions.session.ID}, infrastructure.NewExecutionRequestsFactory(&feedbackPort{}), nil, &commandtest.InputBuffer{}, nil)
+	reach := command.NewComputerReachHandler(clock.now, sessions, place, computerWorks{id: sessions.session.ID}, &feedbackPort{}, nil, &commandtest.InputBuffer{}, nil)
 	require.NoError(t, reach.PresenceChanged(ctx, sessions.session.ComputerID))
 	require.Equal(t, first.UTC(), sessions.session.DisconnectedSince)
 
@@ -148,7 +148,7 @@ func TestRecoveriesShareARecentPresenceRead(t *testing.T) {
 	sessions := managedWorking(t)
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, Reachable: true}}
 	clock := &testClock{at: time.Now()}
-	factory := infrastructure.NewExecutionRequestsFactory(&feedbackPort{})
+	factory := &feedbackPort{}
 	reach := command.NewComputerReachHandler(clock.now, sessions, place, computerWorks{id: sessions.session.ID}, factory, nil, &commandtest.InputBuffer{}, nil)
 	recover := command.NewRecoverWorkHandler(clock.now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
 
@@ -173,7 +173,7 @@ func TestAnUnreadablePresenceHoldsBackNoOtherRecovery(t *testing.T) {
 	unavailable := errors.New("computer unavailable")
 	place := &presencePlace{err: unavailable}
 	port := &turnCancelPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
+	factory := port
 	reach := command.NewComputerReachHandler(time.Now, sessions, place, computerWorks{id: sessions.session.ID}, factory, nil, &commandtest.InputBuffer{}, nil)
 	recover := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
 

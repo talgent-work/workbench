@@ -66,11 +66,10 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
 			fx.Provide(func() domain.ExecutionPort { return port }),
 			fx.Decorate(func(command.ProcessObservationPort) command.ProcessObservationPort { return processes }),
-			fx.Provide(func() command.InputBufferPort { return port }),
-			fx.Decorate(func(application.PendingInteractionsPort) application.PendingInteractionsPort { return port }),
+			fx.Provide(func() command.RunningHarnessPort { return port }),
 		}
 		if recover {
-			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() application.ExecutionEnvironmentRecovery { return noEnvironments{} }))
+			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return noEnvironments{} }))
 		}
 		runtime := fx.New(options...)
 		require.NoError(t, runtime.Err())
@@ -114,7 +113,7 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	observer, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	origin := time.Now().Add(-31 * time.Minute).UTC().Truncate(time.Millisecond)
-	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return origin }, infrastructure.NewAgentWorkRepository(observer, time.Now), unusedExecutionPort{}, infrastructure.NewExecutionRequestsFactory(port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return origin }, infrastructure.NewAgentWorkRepository(observer, time.Now), unusedExecutionPort{}, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	// A Turn ending at origin leaves the Work idle since then.
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ObservationSequence: 1, Kind: command.TurnStarted, WorkID: ref, ProcessID: "process"}))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ObservationSequence: 2, Kind: command.TurnFinished, WorkID: ref, ProcessID: "process", TurnCompleted: false}))

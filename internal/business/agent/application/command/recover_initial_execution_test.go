@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 // The first start's initial task input is buffered under its identity ahead of
@@ -24,7 +23,7 @@ func TestInitialInputIsBufferedFirstUnderItsIdentity(t *testing.T) {
 	ctx := context.Background()
 	_, sessions := startupStores(t)
 	store := &initialRequestStore{}
-	factory := infrastructure.NewExecutionRequestsFactory(&startupPort{})
+	factory := &startupPort{}
 	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, factory, nil, agentquery.ModelConfigurations{})
 	input := command.PrepareWorkExecution{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-338", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "first task\n保留原文"}}
 	input.WorkspaceReference = sessions.session.WorkspaceReference
@@ -32,7 +31,7 @@ func TestInitialInputIsBufferedFirstUnderItsIdentity(t *testing.T) {
 	_, err := prepare.Handle(ctx, input)
 	require.NoError(t, err)
 	received := &commandtest.InputBuffer{}
-	messaging := command.NewInputAcceptance(sessions, sessions, received)
+	messaging := command.NewInputAcceptance(sessions, received)
 	ordinary := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, messaging, store)
 	ordinaryInput := command.DeliverWorkInput{SubjectID: "owner", WorkID: input.WorkID, Input: command.ExecutionInput{ID: uuid.NewString(), Text: "follow-up"}}
 	require.ErrorIs(t, deliveryErr(ordinary.Deliver(ctx, ordinaryInput)), command.ErrInitialExecutionPending, "later input waits for the initial input")
@@ -58,7 +57,7 @@ func TestRejectedPreparationEndsTheStartAndFencesItsRequest(t *testing.T) {
 	ctx := context.Background()
 	agents, sessions := startupStores(t)
 	port := &startupPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
+	factory := port
 	input := command.PrepareWorkExecution{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-338", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "retained rejected input"}}
 	input.WorkspaceReference = sessions.session.WorkspaceReference
 	// A definitive preparation rejection after the start was admitted.
@@ -88,14 +87,14 @@ func TestRejectedPreparationEndsTheStartAndFencesItsRequest(t *testing.T) {
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{Kind: command.ComputeReclaimed, WorkID: sessions.session.ID}))
 	// An explicit Resume can permit later input after normal stop. The rejected
 	// original input remains retained, and recovery cannot send it to that execution.
-	err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, factory, sessions, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: input.WorkID, RequestID: uuid.NewString()})
+	err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, factory, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: input.WorkID, RequestID: uuid.NewString()})
 	require.NoError(t, err)
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutorPrepared, WorkID: sessions.session.ID}))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.AgentStarted, WorkID: sessions.session.ID}))
 	require.NoError(t, recover.Handle(ctx, input.WorkID))
 	require.Equal(t, domain.WorkWorking, sessions.session.State, "old cleanup cannot fail a later explicit execution")
 	delivered := &commandtest.InputBuffer{}
-	ordinary := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, delivered), store)
+	ordinary := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, delivered), store)
 	require.NoError(t, deliveryErr(ordinary.Deliver(ctx, command.DeliverWorkInput{SubjectID: "owner", WorkID: input.WorkID, Input: command.ExecutionInput{ID: uuid.NewString(), Text: "explicit fresh input"}})))
 	require.Equal(t, "explicit fresh input", delivered.Inputs[0].Text)
 	require.Equal(t, input.Input, store.request.Input)

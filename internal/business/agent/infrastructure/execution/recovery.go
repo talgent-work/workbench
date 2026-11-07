@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/samber/oops"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 )
 
 // StreamReading is the process, and its endpoint, whose stream Dispatcher has
@@ -34,8 +34,6 @@ type EnvironmentRecovery struct {
 	owners       StreamOwners
 }
 
-var _ application.ExecutionEnvironmentRecovery = (*EnvironmentRecovery)(nil)
-
 func NewEnvironmentRecovery(provisioning *Provisioning, connections *NativeConnections, reclaimer *Reclaimer, owners StreamOwners) (*EnvironmentRecovery, error) {
 	if provisioning == nil || connections == nil || reclaimer == nil || owners == nil {
 		return nil, errors.New("agent: provisioning, connections, reclaimer and stream owners are required for environment recovery")
@@ -50,17 +48,17 @@ func NewEnvironmentRecovery(provisioning *Provisioning, connections *NativeConne
 // removed. A connected allocation needs no call to the
 // environment authority. Each failure is retried by the caller without
 // blocking other allocations.
-func (r *EnvironmentRecovery) ReconcileAllocation(ctx context.Context, allocationID string) (application.AllocationStep, error) {
+func (r *EnvironmentRecovery) ReconcileAllocation(ctx context.Context, allocationID string) (command.AllocationStep, error) {
 	p := r.provisioning
 	record, found, err := p.get(ctx, allocationID)
 	if err != nil || !found {
-		return application.AllocationSettled, err
+		return command.AllocationSettled, err
 	}
 	authority, err := p.authority(record)
 	if err != nil {
-		return application.AllocationSettled, withAllocation(err, record)
+		return command.AllocationSettled, withAllocation(err, record)
 	}
-	next := application.AllocationSettled
+	next := command.AllocationSettled
 	var failures []error
 	switch {
 	case record.DeletedAt == 0 && !record.StartRejected:
@@ -89,29 +87,29 @@ func (r *EnvironmentRecovery) ReconcileAllocation(ctx context.Context, allocatio
 }
 
 // advance takes a live allocation with an environment one step from its facts.
-func (r *EnvironmentRecovery) advance(ctx context.Context, record allocationRecord) (application.AllocationStep, error) {
+func (r *EnvironmentRecovery) advance(ctx context.Context, record allocationRecord) (command.AllocationStep, error) {
 	n := r.connections
 	draining, held, err := r.holding(ctx, record)
 	if err != nil {
-		return application.AllocationSettled, err
+		return command.AllocationSettled, err
 	}
 	if !held {
 		// A run its machine fenced retires here when the Work's own request
 		// to retire it was lost.
 		_, err := retireOutlived(ctx, r.provisioning, record)
-		return application.AllocationSettled, err
+		return command.AllocationSettled, err
 	}
 	switch {
 	case draining:
-		return application.AllocationSettled, n.drain(ctx, record)
+		return command.AllocationSettled, n.drain(ctx, record)
 	case !record.SandboxReady:
 		attempt, release := context.WithTimeout(ctx, reconciliationAttemptTimeout)
 		ready, err := n.deliver(attempt, record)
 		release()
 		if err := r.settle(ctx, record, err); err != nil || !ready {
-			return application.AllocationSettled, err
+			return command.AllocationSettled, err
 		}
-		return application.AllocationPrepare, nil
+		return command.AllocationPrepare, nil
 	}
 	return r.nextStep(ctx, record, false, "")
 }
@@ -120,49 +118,49 @@ func (r *EnvironmentRecovery) advance(ctx context.Context, record allocationReco
 // step a live allocation with an environment needs. It is the one place every path
 // (reconciliation, sandbox observation and the sweep) decides it. An endpoint,
 // when known, is compared with the one Dispatcher reads.
-func (r *EnvironmentRecovery) nextStep(ctx context.Context, record allocationRecord, draining bool, endpoint string) (application.AllocationStep, error) {
+func (r *EnvironmentRecovery) nextStep(ctx context.Context, record allocationRecord, draining bool, endpoint string) (command.AllocationStep, error) {
 	switch {
 	case draining, !record.SandboxReady:
-		return application.AllocationReconcile, nil
+		return command.AllocationReconcile, nil
 	case record.ProcessExited:
-		return application.AllocationSettled, nil
+		return command.AllocationSettled, nil
 	case record.ProcessID == "" || !record.EnvironmentPrepared:
-		return application.AllocationPrepare, nil
+		return command.AllocationPrepare, nil
 	}
 	reading, found, err := r.owners.Reading(ctx, record.SessionID)
 	if err != nil {
-		return application.AllocationSettled, withAllocation(err, record)
+		return command.AllocationSettled, withAllocation(err, record)
 	}
 	if !found || reading.ProcessID != record.ProcessID || (endpoint != "" && reading.Endpoint != endpoint) {
-		return application.AllocationReconnect, nil
+		return command.AllocationReconnect, nil
 	}
 	authority, err := r.provisioning.authority(record)
 	if err != nil {
-		return application.AllocationSettled, withAllocation(err, record)
+		return command.AllocationSettled, withAllocation(err, record)
 	}
 	delivery, delivers := authority.(credentialDelivery)
 	if !delivers {
-		return application.AllocationSettled, nil
+		return command.AllocationSettled, nil
 	}
 	if record.CredentialsExpireAt > 0 && record.CredentialsExpireAt <= r.provisioning.now().UnixMilli() {
 		// A delivery whose declared expiry passed, or that a change marked
 		// due, is fetched once more; its next expiry, or none, is recorded.
-		return application.AllocationDeliver, nil
+		return command.AllocationDeliver, nil
 	}
 	digest, err := delivery.modelDigest(record)
 	if err != nil {
-		return application.AllocationSettled, withAllocation(err, record)
+		return command.AllocationSettled, withAllocation(err, record)
 	}
 	if digest != "" && digest != record.ModelCredentialDigest {
 		// A rotated Model Configuration key reaches running Works.
-		return application.AllocationDeliver, nil
+		return command.AllocationDeliver, nil
 	}
 	if inputs, syncs := authority.(inputDelivery); syncs && inputs.inputsDue(record) {
 		// Inputs a change or a failed attempt left due, or synced longer ago
 		// than the refresh interval, are synced again.
-		return application.AllocationSyncInputs, nil
+		return command.AllocationSyncInputs, nil
 	}
-	return application.AllocationSettled, nil
+	return command.AllocationSettled, nil
 }
 
 // holding reports whether the allocation still backs its Work's Harness
@@ -277,36 +275,36 @@ func (r *EnvironmentRecovery) ReconnectAllocation(ctx context.Context, allocatio
 // a change to one of its sandboxes: the loss of the primary, its endpoint
 // moving away from the one Dispatcher reads, or a surplus sandbox. Anything
 // else continues from the allocation's facts.
-func (r *EnvironmentRecovery) ObserveSandbox(ctx context.Context, allocationID string) (application.AllocationStep, error) {
+func (r *EnvironmentRecovery) ObserveSandbox(ctx context.Context, allocationID string) (command.AllocationStep, error) {
 	p := r.provisioning
 	record, found, err := p.get(ctx, allocationID)
 	if err != nil || !found {
-		return application.AllocationSettled, err
+		return command.AllocationSettled, err
 	}
 	if record.DeletedAt != 0 || record.StartRejected || record.SandboxID == "" || !record.SandboxReady {
-		return application.AllocationReconcile, nil
+		return command.AllocationReconcile, nil
 	}
 	attempt, release := context.WithTimeout(ctx, reconciliationAttemptTimeout)
 	defer release()
 	box, state, err := r.connections.resolve(attempt, record)
 	if err != nil || state == environmentLost {
-		return application.AllocationSettled, withAllocation(err, record)
+		return command.AllocationSettled, withAllocation(err, record)
 	}
 	authority, err := p.authority(record)
 	if err != nil {
-		return application.AllocationSettled, withAllocation(err, record)
+		return command.AllocationSettled, withAllocation(err, record)
 	}
 	if surplus, ok := authority.(surplusEnvironments); ok {
 		if err := surplus.prune(attempt, record, box); err != nil {
-			return application.AllocationSettled, withAllocation(err, record)
+			return command.AllocationSettled, withAllocation(err, record)
 		}
 	}
 	if state == environmentPending {
-		return application.AllocationSettled, nil
+		return command.AllocationSettled, nil
 	}
 	draining, held, err := r.holding(ctx, record)
 	if err != nil || !held {
-		return application.AllocationSettled, err
+		return command.AllocationSettled, err
 	}
 	return r.nextStep(ctx, record, draining, box.endpoint)
 }
@@ -329,7 +327,7 @@ func (r *EnvironmentRecovery) LiveAllocation(ctx context.Context, workID string)
 // durable facts and Dispatcher's stream ownership: a connected allocation
 // whose stream is read needs nothing. A released allocation is history and
 // is never listed.
-func (r *EnvironmentRecovery) ListOutstandingAllocations(ctx context.Context, after string, limit int) ([]application.AllocationStatus, error) {
+func (r *EnvironmentRecovery) ListOutstandingAllocations(ctx context.Context, after string, limit int) ([]command.AllocationStatus, error) {
 	var ids []string
 	err := r.provisioning.db.Context(ctx).SQL(`SELECT id FROM (
  SELECT id FROM execution_allocation WHERE deleted_at = 0 AND start_rejected = 0 AND id > ?
@@ -352,25 +350,25 @@ func (r *EnvironmentRecovery) ListOutstandingAllocations(ctx context.Context, af
 	}
 	// An allocation whose facts cannot be read now is left to the next sweep;
 	// the others on the page are still judged.
-	statuses := make([]application.AllocationStatus, 0, len(ids))
+	statuses := make([]command.AllocationStatus, 0, len(ids))
 	var failures []error
 	for _, id := range ids {
 		step, err := r.missingStep(ctx, byID[id])
 		failures = append(failures, err)
-		statuses = append(statuses, application.AllocationStatus{AllocationID: id, Step: step})
+		statuses = append(statuses, command.AllocationStatus{AllocationID: id, Step: step})
 	}
 	return statuses, errors.Join(failures...)
 }
 
 // missingStep judges an outstanding allocation from its facts. A record that
 // is not live has only its release outstanding.
-func (r *EnvironmentRecovery) missingStep(ctx context.Context, record allocationRecord) (application.AllocationStep, error) {
+func (r *EnvironmentRecovery) missingStep(ctx context.Context, record allocationRecord) (command.AllocationStep, error) {
 	if record.ID == "" || record.DeletedAt != 0 || record.SandboxID == "" {
-		return application.AllocationReconcile, nil
+		return command.AllocationReconcile, nil
 	}
 	draining, held, err := r.holding(ctx, record)
 	if err != nil || !held {
-		return application.AllocationSettled, err
+		return command.AllocationSettled, err
 	}
 	return r.nextStep(ctx, record, draining, "")
 }

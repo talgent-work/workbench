@@ -18,7 +18,7 @@ var githubRequirements = []application.ServiceRequirement{{Provider: "github", S
 
 func TestServiceAccessUsesCurrentCredentialsWithoutRepositoriesOrPlugins(t *testing.T) {
 	f, supplier := serviceFixture(t, true)
-	app := application.NewServiceAccess(repositoryWorkStore{f}, supplier)
+	app := application.NewServiceAccess(repositoryWorkStore{f: f}, supplier)
 	for _, token := range []string{"initial-token", "renewed-token"} {
 		supplier.token = token
 		result, err := app.Resolve(t.Context(), "owner", f.work.ID, githubRequirements)
@@ -40,7 +40,7 @@ func TestServiceAccessUsesCurrentCredentialsWithoutRepositoriesOrPlugins(t *test
 
 func TestServiceAccessDegradesAndRecoversExistingAuthorization(t *testing.T) {
 	f, supplier := serviceFixture(t, true)
-	app := application.NewServiceAccess(repositoryWorkStore{f}, supplier)
+	app := application.NewServiceAccess(repositoryWorkStore{f: f}, supplier)
 	for _, reason := range []string{"revoked", "reconnect_required", "unavailable"} {
 		supplier.err = &application.ServiceCredentialUnavailable{Reason: reason}
 		result, err := app.Resolve(t.Context(), "owner", f.work.ID, githubRequirements)
@@ -59,7 +59,7 @@ func TestServiceAccessDegradesAndRecoversExistingAuthorization(t *testing.T) {
 
 func TestServiceAccessNeverAddsAnUnselectedAuthorization(t *testing.T) {
 	f, supplier := serviceFixture(t, false)
-	app := application.NewServiceAccess(repositoryWorkStore{f}, supplier)
+	app := application.NewServiceAccess(repositoryWorkStore{f: f}, supplier)
 	for _, token := range []string{"", "new-personal-authorization-token"} {
 		supplier.token = token
 		result, err := app.Resolve(t.Context(), "owner", f.work.ID, githubRequirements)
@@ -73,7 +73,7 @@ func TestServiceAccessNeverAddsAnUnselectedAuthorization(t *testing.T) {
 
 func TestServiceAccessRefusesAnotherOwnerAndLateMaterialAfterStop(t *testing.T) {
 	f, supplier := serviceFixture(t, true)
-	app := application.NewServiceAccess(repositoryWorkStore{f}, supplier)
+	app := application.NewServiceAccess(repositoryWorkStore{f: f}, supplier)
 	_, err := app.Resolve(t.Context(), "starter", f.work.ID, githubRequirements)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 	require.Empty(t, supplier.requests)
@@ -100,6 +100,7 @@ func serviceFixture(t *testing.T, selected bool) (*repositoryAccessFixture, *ser
 }
 
 type serviceSupplier struct {
+	application.CredentialSupplyPort
 	token        string
 	err          error
 	requests     []application.ServiceCredentialRequest

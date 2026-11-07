@@ -25,7 +25,7 @@ import (
 // is; the next failed attempt to attach reports the loss again
 // (ApplyExecutionFeedbackHandler). A run already reclaimed beyond reach
 // completes on its release confirmation and is not observed again.
-func (h *ComputerReachHandler) recoverAttachment(ctx context.Context, work *domain.AgentWork, requests ExecutionRequests) (bool, error) {
+func (h *ComputerReachHandler) recoverAttachment(ctx context.Context, work *domain.AgentWork, requests *deferredExecution) (bool, error) {
 	if !work.Disconnected() || !work.ObservesEnvironment() || work.HarnessProcess.Unreached {
 		return false, nil
 	}

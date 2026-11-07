@@ -10,6 +10,8 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 
 	"github.com/google/uuid"
@@ -32,7 +34,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth := infrastructure.NewWorkAuthorizer(db)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	receipts := infrastructure.NewInitialExecutionRequests(db, time.Now)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
 	require.NoError(t, err)
@@ -40,8 +42,8 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	input := command.PrepareWorkExecution{SubjectID: "owner", RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-338", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Original input\n保留初始请求"}, Selections: []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "release"}}}
 	creation := command.CreateWork{AgentID: definition.ID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project"}
 	lost := errors.New("registration committed; acknowledgement lost")
-	registrar := registrationLostAcknowledgement{WorkRegistrar: sessions, err: lost}
-	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	registrar := registrationLostAcknowledgement{AgentWorkRepository: sessions, err: lost}
+	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	prepare := command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, nil, nil, agentquery.ModelConfigurations{})
 	prepareNew := func(ctx context.Context, creation command.CreateWork, input command.PrepareWorkExecution) (string, error) {
 		creation.SubjectID, creation.InitialExecution = input.SubjectID, &input
@@ -59,7 +61,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.NoError(t, err)
 	agents = infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth = infrastructure.NewWorkAuthorizer(db)
+	auth = access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	receipts = infrastructure.NewInitialExecutionRequests(db, time.Now)
 	pending, err := receipts.ListPendingInitialExecutions(ctx, "", 100)
 	require.NoError(t, err)
@@ -77,8 +79,8 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.True(t, retained.Submitted, "first admission is committed with the original input")
 	resources := &registrationResources{}
 	var starts []domain.StartExecutionRequest
-	requests := infrastructure.NewExecutionRequestsFactory(startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }})
-	create = command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	requests := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }}
+	create = command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	prepare = command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, requests, nil, agentquery.ModelConfigurations{})
 	recover := command.NewRecoverInitialExecutionHandler(receipts, sessions, prepare, resources, requests)
 	require.ErrorIs(t, recover.Handle(ctx, session.ID), command.ErrInitialExecutionPending)
@@ -138,12 +140,12 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 }
 
 type registrationLostAcknowledgement struct {
-	command.WorkRegistrar
+	command.AgentWorkRepository
 	err error
 }
 
 func (r registrationLostAcknowledgement) RegisterWork(ctx context.Context, s *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := r.WorkRegistrar.RegisterWork(ctx, s, registration); err != nil {
+	if err := r.AgentWorkRepository.RegisterWork(ctx, s, registration); err != nil {
 		return err
 	}
 	return r.err

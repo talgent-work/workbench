@@ -12,10 +12,10 @@ type RecoverInitialExecutionHandler struct {
 	sessions    domain.AgentWorkRepository
 	preparation *PrepareWorkExecutionHandler
 	inputs      WorkInputs
-	execution   ExecutionRequestsFactory
+	execution   domain.ExecutionPort
 }
 
-func NewRecoverInitialExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, preparation *PrepareWorkExecutionHandler, inputs WorkInputs, execution ExecutionRequestsFactory) *RecoverInitialExecutionHandler {
+func NewRecoverInitialExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, preparation *PrepareWorkExecutionHandler, inputs WorkInputs, execution domain.ExecutionPort) *RecoverInitialExecutionHandler {
 	return &RecoverInitialExecutionHandler{requests: requests, sessions: sessions, preparation: preparation, inputs: inputs, execution: execution}
 }
 
@@ -100,7 +100,7 @@ func (h *RecoverInitialExecutionHandler) finishRejected(ctx context.Context, req
 		return domain.ErrConcurrentModification
 	}
 	if session.HoldsProcess() {
-		requests := h.execution()
+		requests := deferExecution(h.execution)
 		if session.State == domain.WorkStopping {
 			_, err = session.RecoverExecution(ctx, requests)
 		} else {
@@ -112,7 +112,7 @@ func (h *RecoverInitialExecutionHandler) finishRejected(ctx context.Context, req
 		if err := h.sessions.Save(ctx, session); err != nil {
 			return err
 		}
-		if err := requests.Send(ctx); err != nil {
+		if err := requests.send(ctx); err != nil {
 			return err
 		}
 	}

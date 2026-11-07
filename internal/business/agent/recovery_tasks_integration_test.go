@@ -13,7 +13,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -33,7 +32,7 @@ type failingOnceEnvironments struct {
 	reconciled int
 }
 
-func (e *failingOnceEnvironments) ListOutstandingAllocations(_ context.Context, after string, _ int) ([]application.AllocationStatus, error) {
+func (e *failingOnceEnvironments) ListOutstandingAllocations(_ context.Context, after string, _ int) ([]command.AllocationStatus, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.listed++
@@ -43,14 +42,14 @@ func (e *failingOnceEnvironments) ListOutstandingAllocations(_ context.Context, 
 	if after != "" {
 		return nil, nil
 	}
-	return []application.AllocationStatus{{AllocationID: "allocation-1", Step: application.AllocationReconcile}}, nil
+	return []command.AllocationStatus{{AllocationID: "allocation-1", Step: command.AllocationReconcile}}, nil
 }
 
-func (e *failingOnceEnvironments) ReconcileAllocation(context.Context, string) (application.AllocationStep, error) {
+func (e *failingOnceEnvironments) ReconcileAllocation(context.Context, string) (command.AllocationStep, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.reconciled++
-	return application.AllocationSettled, nil
+	return command.AllocationSettled, nil
 }
 
 func (e *failingOnceEnvironments) reconciledCount() int {
@@ -67,13 +66,13 @@ func TestFailedSweepDoesNotSuppressLaterSweeps(t *testing.T) {
 	require.NoError(t, err)
 	port := &sessionCommandRecorder{}
 	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.NopLogger,
-		fx.Provide(func() application.ExecutionEnvironmentRecovery { return environments }),
+		fx.Provide(func() command.ExecutionEnvironmentPort { return environments }),
 		storageStub(),
 		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
 		fx.Provide(func() domain.ExecutionPort { return port }),
-		fx.Provide(func() command.InputBufferPort { return port }),
+		fx.Provide(func() command.RunningHarnessPort { return port }),
 	)
 	require.NoError(t, app.Err())
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -114,7 +114,7 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token, feedback, checkouts)
 		},
 		execution.NewEnvironments,
-		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.InputBufferPort)), fx.As(new(application.ExecutionThinkingPort)), fx.As(new(application.ExecutionPermissionPort)), fx.As(new(application.PendingInteractionsPort)), fx.As(new(application.TurnControlPort)), fx.As(new(application.WorkCapabilitiesPort))),
+		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.RunningHarnessPort))),
 		newExecutionPort,
 	),
 	fx.Invoke(registerManagedWorkspaceFiles),
@@ -141,7 +141,7 @@ func newDispatcherControl(client *http.Client, cfg ExecutionConfig) (*execution.
 	return execution.NewDispatcherControl(client, cfg.Dispatcher.Address, cfg.Dispatcher.Token), nil
 }
 
-func newExecutionPort(resources *execution.Environments, dispatcher *execution.DispatcherControl, mounts domain.SandboxMountPort, computers command.ComputerDescriptionPort) (domain.ExecutionPort, error) {
+func newExecutionPort(resources *execution.Environments, dispatcher *execution.DispatcherControl, mounts command.SandboxMountPort, computers command.ComputerPort) (domain.ExecutionPort, error) {
 	return execution.NewEnvironment(resources, dispatcher, mounts, computers)
 }
 
@@ -149,7 +149,7 @@ func newExecutionPort(resources *execution.Environments, dispatcher *execution.D
 // relay and gives them the platform Connector's public address. Without a
 // relay address it is nil, and Provisioning fails every step of a Managed
 // allocation rather than run it anywhere else.
-func newManagedComputers(cfg ComputerConfig, computers command.ComputerDescriptionPort) (*execution.ManagedComputers, error) {
+func newManagedComputers(cfg ComputerConfig, computers command.ComputerPort) (*execution.ManagedComputers, error) {
 	if strings.TrimSpace(cfg.RelayAddress) == "" {
 		return nil, nil
 	}
@@ -201,9 +201,10 @@ func newManagedWorkspaces(db *xorm.Engine, machines *execution.ManagedComputers,
 	return execution.NewManagedWorkspaces(db, machines, links, storage)
 }
 
-// registerManagedWorkspaceFiles serves the links to Managed Works' files.
-func registerManagedWorkspaceFiles(mux *http.ServeMux, workspaces *execution.ManagedWorkspaces, works domain.AgentWorkRepository, logger *slog.Logger) error {
-	if workspaces == nil {
+// registerManagedWorkspaceFiles serves the links to Managed Works' files,
+// which only a deployment that reaches Managed Computers issues.
+func registerManagedWorkspaceFiles(mux *http.ServeMux, managed *execution.ManagedWorkspaces, workspaces application.WorkspacePort, works domain.AgentWorkRepository, logger *slog.Logger) error {
+	if managed == nil {
 		return nil
 	}
 	links, err := application.NewWorkspaceFileLinks(works, workspaces)

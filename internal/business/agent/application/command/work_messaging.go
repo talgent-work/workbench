@@ -68,17 +68,6 @@ func (b BufferedInputs) Unanswered(required []string) bool {
 	return false
 }
 
-// InputBufferPort is the Work's input buffer kept by Dispatcher. A hand-off
-// is accepted once buffered; Dispatcher writes it to the Harness and reports
-// how it settled.
-type InputBufferPort interface {
-	BufferInput(ctx context.Context, workID string, input ExecutionInput) (InputHandOff, error)
-	BufferResponse(ctx context.Context, workID string, response InteractionResponse) (InputHandOff, error)
-	ReadBuffer(ctx context.Context, workID string) (BufferedInputs, error)
-	// DropBuffer empties the buffer of a Work entering Closing.
-	DropBuffer(ctx context.Context, workID string) error
-}
-
 // ExecutionInput preserves the caller's delivery identity through retries;
 // its text reaches the Harness exactly as given, never rewritten.
 type ExecutionInput struct {

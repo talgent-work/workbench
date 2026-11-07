@@ -22,7 +22,7 @@ type WorkControl struct {
 type sessionControl struct {
 	sessions  domain.AgentWorkRepository
 	access    access.WorkAuthorizer
-	execution ExecutionRequestsFactory
+	execution domain.ExecutionPort
 }
 
 func (h sessionControl) apply(ctx context.Context, request WorkControl, change func(*domain.AgentWork, context.Context, string, domain.ExecutionPort) error) error {
@@ -36,19 +36,19 @@ func (h sessionControl) apply(ctx context.Context, request WorkControl, change f
 	if request.ExpectedVersion != nil && *request.ExpectedVersion != session.Version {
 		return domain.ErrConcurrentModification
 	}
-	requests := h.execution()
+	requests := deferExecution(h.execution)
 	if err := change(session, ctx, request.RequestID, requests); err != nil {
 		return err
 	}
 	if err := h.sessions.Save(ctx, session); err != nil {
 		return err
 	}
-	return requests.Send(ctx)
+	return requests.send(ctx)
 }
 
 type StopWorkHandler struct{ control sessionControl }
 
-func NewStopWorkHandler(sessions domain.AgentWorkRepository, access access.WorkAuthorizer, execution ExecutionRequestsFactory) *StopWorkHandler {
+func NewStopWorkHandler(sessions domain.AgentWorkRepository, access access.WorkAuthorizer, execution domain.ExecutionPort) *StopWorkHandler {
 	return &StopWorkHandler{control: sessionControl{sessions: sessions, access: access, execution: execution}}
 }
 func (h *StopWorkHandler) Handle(ctx context.Context, request WorkControl) error {

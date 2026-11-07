@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 type currentProcessFacts struct{ command.WorkProcessObservation }
@@ -38,8 +37,8 @@ func TestCurrentProcessRestoresIdlenessAfterLostInputAndReplyFeedback(t *testing
 		ProcessObservation: domain.ProcessObservation{State: domain.ProcessRunning, Ready: true},
 		Turn:               domain.TurnObservation{Sequence: 30, Completed: true}, PhaseSequence: 30,
 	}}
-	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return now }, f.sessions, process, infrastructure.NewExecutionRequestsFactory(executionPort{}), buffer, &commandtest.InputSettlements{})
-	delivery := command.NewInputAcceptance(f.sessions, f.sessions, buffer)
+	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return now }, f.sessions, process, executionPort{}, buffer, &commandtest.InputSettlements{})
+	delivery := command.NewInputAcceptance(f.sessions, buffer)
 	first := command.ExecutionInput{ID: uuid.NewString(), Text: "first task"}
 	require.NoError(t, acceptance(delivery.AcceptInput(ctx, id, first)))
 	require.NoError(t, delivery.AcceptResponse(ctx, id, command.InteractionResponse{InteractionID: "question", Allow: true}))

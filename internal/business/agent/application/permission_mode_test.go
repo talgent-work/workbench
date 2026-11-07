@@ -7,10 +7,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 type permissionHarness struct {
+	command.RunningHarnessPort
 	calls []domain.PermissionMode
 	err   error
 }
@@ -23,7 +25,7 @@ func (h *permissionHarness) SetPermissionMode(_ context.Context, _ string, mode 
 func permissionApplication(mode domain.PermissionMode) (*application.Application, *thinkingStore, *permissionHarness) {
 	store := &thinkingStore{work: domain.AgentWork{ID: "work", StartedBy: "starter", State: domain.WorkWorking, PermissionMode: mode, HarnessProcess: &domain.HarnessProcess{}}}
 	harness := &permissionHarness{}
-	return &application.Application{Works: store, WorkPrincipals: &thinkingAccess{}, Permissions: harness}, store, harness
+	return &application.Application{Works: store, WorkPrincipals: &thinkingAccess{}, Harness: harness}, store, harness
 }
 
 // A running Managed Work's starter switches it at once and is answered the

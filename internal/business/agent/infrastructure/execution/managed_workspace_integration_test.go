@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 )
 
 // managedInputsRefresh is how long synced inputs stay current here.
@@ -83,7 +84,7 @@ func TestManagedWorkReceivesItsCurrentInputs(t *testing.T) {
 	f.recovery.owners = &readingProcess{reading: StreamReading{ProcessID: marked.ProcessID}}
 	step, err := f.recovery.missingStep(ctx, marked)
 	require.NoError(t, err)
-	require.Equal(t, application.AllocationSyncInputs, step, "the sweep finds the due inputs")
+	require.Equal(t, command.AllocationSyncInputs, step, "the sweep finds the due inputs")
 
 	// The machine is away: the inputs stay due for the sweep.
 	f.relay.set(func(m *machineRelay) { m.unreachable = true })
@@ -117,7 +118,7 @@ func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 	require.Positive(t, synced.InputsSyncedAt, "a sync records when it happened")
 	require.Zero(t, synced.InputsDue)
 	f.recovery.owners = &readingProcess{reading: StreamReading{ProcessID: synced.ProcessID}}
-	step := func() application.AllocationStep {
+	step := func() command.AllocationStep {
 		statuses, err := f.recovery.ListOutstandingAllocations(ctx, "", 100)
 		require.NoError(t, err)
 		for _, status := range statuses {
@@ -128,20 +129,20 @@ func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 		t.Fatalf("allocation %s not listed", synced.ID)
 		return 0
 	}
-	require.Equal(t, application.AllocationSettled, step(), "fresh inputs need nothing")
+	require.Equal(t, command.AllocationSettled, step(), "fresh inputs need nothing")
 
 	stale := time.Now().Add(-managedInputsRefresh - time.Minute).UnixMilli()
 	_, err = f.db.Exec(`UPDATE execution_allocation SET inputs_synced_at = ? WHERE id = ?`, stale, synced.ID)
 	require.NoError(t, err)
 	f.inputs.attachments[owner][0].AccessPath = "/v1/storage/content?grant=second"
-	require.Equal(t, application.AllocationSyncInputs, step(), "the sweep syncs inputs older than the refresh interval")
+	require.Equal(t, command.AllocationSyncInputs, step(), "the sweep syncs inputs older than the refresh interval")
 	require.NoError(t, f.recovery.SyncInputs(ctx, synced.ID))
 	require.Equal(t, managedContentAddress+"?grant=second", lastManifest(t, f.relay)[0].URL)
 	refreshed, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.Zero(t, refreshed.InputsDue)
 	require.Greater(t, refreshed.InputsSyncedAt, stale)
-	require.Equal(t, application.AllocationSettled, step())
+	require.Equal(t, command.AllocationSettled, step())
 }
 
 // A start whose inputs cannot be listed still becomes ready: its inputs stay
@@ -172,7 +173,10 @@ func TestAFailingInputsSyncLeavesTheStartReady(t *testing.T) {
 }
 
 // cloudViews stands for Storage's Workspace View of a Cloud Work.
-type cloudViews struct{ reads []string }
+type cloudViews struct {
+	StorageWorkspaces
+	reads []string
+}
 
 func (c *cloudViews) WorkspaceView(_ context.Context, workspace application.ViewedWorkspace, _ string) (application.WorkspaceListing, error) {
 	c.reads = append(c.reads, workspace.WorkID)
@@ -205,7 +209,7 @@ func TestManagedWorkspaceIsReadThroughTheRelay(t *testing.T) {
 	managed, err := NewManagedWorkspaces(f.db, f.provisioning.managed.machines, links, &storageJudge{})
 	require.NoError(t, err)
 	cloud := &cloudViews{}
-	views, err := NewWorkspaceViews(cloud, managed)
+	views, err := NewWorkspaces(cloud, managed)
 	require.NoError(t, err)
 	// A Managed Work has no Session Workspace.
 	workspace := application.ViewedWorkspace{WorkID: input.WorkID}

@@ -16,7 +16,9 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	agentrpc "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
@@ -30,8 +32,8 @@ import (
 func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 	db, definitions, works, agent := startingCreationDatabase(t)
 	execution := &creationExecution{db: db}
-	paused := &pausedRegistration{WorkRegistrar: works, reached: make(chan struct{}), release: make(chan struct{})}
-	create := command.NewCreateWorkHandler(time.Now, definitions, paused, works, infrastructure.NewWorkAuthorizer(db), creationModels(), &creationCatalog{}, creationConnections{}, works, computertest.Checked(&initialCreationCapacity{}), infrastructure.NewExecutionRequestsFactory(execution))
+	paused := &pausedRegistration{AgentWorkRepository: works, reached: make(chan struct{}), release: make(chan struct{})}
+	create := command.NewCreateWorkHandler(time.Now, definitions, paused, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), execution)
 	request := creationInput(agent.ID, "canceled")
 	request.InitialExecution = &command.PrepareWorkExecution{RequestID: request.RequestID, WorkBranch: "talgent/" + "TAL-368", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "original input"}}
 	result := make(chan error, 1)
@@ -88,7 +90,7 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 	// A new explicit request identity remains eligible; no auto retry was queued.
 	request.RequestID = uuid.NewString()
 	request.InitialExecution.RequestID = request.RequestID
-	fresh := command.NewCreateWorkHandler(time.Now, definitions, works, works, infrastructure.NewWorkAuthorizer(db), creationModels(), &creationCatalog{}, creationConnections{}, works, computertest.Checked(&initialCreationCapacity{}), infrastructure.NewExecutionRequestsFactory(execution))
+	fresh := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), execution)
 	id, err := fresh.Handle(t.Context(), request)
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), id)
@@ -100,8 +102,8 @@ func TestCancelWorkRegistrationRecoversCommittedCreation(t *testing.T) {
 	db, definitions, works, agent := startingCreationDatabase(t)
 	execution := &creationExecution{db: db}
 	lost := errors.New("registration response lost after commit")
-	registrar := &lostRegistrationReply{WorkRegistrar: works, err: lost}
-	create := command.NewCreateWorkHandler(time.Now, definitions, registrar, works, infrastructure.NewWorkAuthorizer(db), creationModels(), &creationCatalog{}, creationConnections{}, works, computertest.Checked(&initialCreationCapacity{}), infrastructure.NewExecutionRequestsFactory(execution))
+	registrar := &lostRegistrationReply{AgentWorkRepository: works, err: lost}
+	create := command.NewCreateWorkHandler(time.Now, definitions, registrar, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), execution)
 	request := creationInput(agent.ID, "committed")
 	id, err := create.Handle(t.Context(), request)
 	require.ErrorIs(t, err, lost)
@@ -135,7 +137,7 @@ func TestCancelWorkRegistrationRecoversCommittedCreation(t *testing.T) {
 
 func registrationCancellationClient(t *testing.T, db *xorm.Engine, works *infrastructure.AgentWorkRepository) agentprivatev1connect.AgentServiceClient {
 	t.Helper()
-	app := &application.Application{RegistrationCancellation: works, WorkPrincipals: infrastructure.NewWorkAuthorizer(db), Works: works}
+	app := &application.Application{WorkPrincipals: access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), Works: works}
 	handler := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterAgentServiceHandler(s, agentrpc.NewAgentHandler(app, "control"))
 	})
@@ -154,7 +156,7 @@ func cancellationRPC(ctx context.Context, request command.CreateWork, token stri
 }
 
 type pausedRegistration struct {
-	command.WorkRegistrar
+	command.AgentWorkRepository
 	reached, release chan struct{}
 }
 
@@ -165,16 +167,16 @@ func (p *pausedRegistration) RegisterWork(ctx context.Context, work *domain.Agen
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	return p.WorkRegistrar.RegisterWork(ctx, work, registration)
+	return p.AgentWorkRepository.RegisterWork(ctx, work, registration)
 }
 
 type lostRegistrationReply struct {
-	command.WorkRegistrar
+	command.AgentWorkRepository
 	err error
 }
 
 func (p *lostRegistrationReply) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := p.WorkRegistrar.RegisterWork(ctx, work, registration); err != nil {
+	if err := p.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
 		return err
 	}
 	return p.err

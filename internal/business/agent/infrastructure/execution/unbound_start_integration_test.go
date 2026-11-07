@@ -76,9 +76,8 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	require.NoError(t, err)
 	environment, err := NewEnvironment(resources, dispatcher, directoryMounts{root: t.TempDir()}, cloudComputers{})
 	require.NoError(t, err)
-	requests := infrastructure.NewExecutionRequestsFactory(environment)
 	buffer, settlements := &commandtest.InputBuffer{}, &commandtest.InputSettlements{}
-	feedback := command.NewApplyExecutionFeedbackHandler(f.now, works, observations, requests, buffer, settlements)
+	feedback := command.NewApplyExecutionFeedbackHandler(f.now, works, observations, environment, buffer, settlements)
 	reclaimer, err := NewReclaimer(feedback)
 	require.NoError(t, err)
 	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", feedback, command.NewRecordRepositoryCheckoutsHandler(initial))
@@ -86,12 +85,14 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	allocations, err := NewEnvironmentRecovery(p, connections, reclaimer, unread{})
 	require.NoError(t, err)
 	app := &application.Application{Commands: application.Commands{
-		RecoverWork:            command.NewRecoverWorkHandler(f.now, works, requests, buffer, settlements, nil, nil),
+		RecoverWork:            command.NewRecoverWorkHandler(f.now, works, environment, buffer, settlements, nil, nil),
 		ApplyExecutionFeedback: feedback,
-		CloseWork:              command.NewCloseWorkHandler(works, nil, requests, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, buffer),
+		CloseWork:              command.NewCloseWorkHandler(works, nil, environment, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, buffer),
 	}}
 	f.works, f.provisioning, f.environments, f.allocations = works, p, resources, allocations
-	f.recovery = application.NewRecovery(app, nil, allocations, nil, nil)
+	executionEnvironment, err := NewExecutionEnvironment(allocations, nil)
+	require.NoError(t, err)
+	f.recovery = application.NewRecovery(app, nil, executionEnvironment, nil, nil)
 
 	definitions := infrastructure.NewAgentDefinitionRepository(db, f.now)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Fixture Agent", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
@@ -102,7 +103,7 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	f.admission = domain.StartAdmission{AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
 	admission := f.admission
 	admission.AdmittedAt = f.now()
-	outbound := requests()
+	outbound := commandtest.Hold(environment)
 	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"}}, admission, outbound)
 	require.NoError(t, err)
 	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, RequestID: uuid.NewString()}))
@@ -161,7 +162,7 @@ func (f *unboundStart) recover(t *testing.T) {
 }
 
 // reconcile runs the allocation's recovery as its task would.
-func (f *unboundStart) reconcile(t *testing.T) application.AllocationStep {
+func (f *unboundStart) reconcile(t *testing.T) command.AllocationStep {
 	t.Helper()
 	step, err := f.allocations.ReconcileAllocation(context.Background(), f.allocation(t).ID)
 	require.NoError(t, err)
@@ -238,7 +239,7 @@ func TestAStartWhoseSandboxNeverAppearedIsAbandonedAndReleased(t *testing.T) {
 func TestALostCreateAnswerBindsTheSandboxAndAFailedStartReleasesIt(t *testing.T) {
 	f := newUnboundStart(t, createdUnanswered)
 
-	require.Equal(t, application.AllocationPrepare, f.reconcile(t), "onboarding continues")
+	require.Equal(t, command.AllocationPrepare, f.reconcile(t), "onboarding continues")
 	require.Equal(t, sandboxID, f.allocation(t).SandboxID, "the found sandbox is bound")
 	require.Equal(t, 1, f.creates())
 	require.NoError(t, f.environments.Delete(context.Background(), f.workID))

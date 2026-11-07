@@ -21,6 +21,7 @@ import (
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -48,10 +49,10 @@ func (c *workCapacity) AdmitRoom(context.Context) error {
 func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	auth := infrastructure.NewWorkAuthorizer(f.db)
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{})).Handle(ctx, f.request.Creation)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}).Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
+	factory := executionPort{}
 	capacity := &workCapacity{available: true}
 	ref := id
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
@@ -73,7 +74,7 @@ func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	require.Equal(t, "failed", failed.StartupProgress.Status)
 	require.Equal(t, "workspace", failed.StartupProgress.Stages[2].Stage)
 
-	_, err = workRef(id)(command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, auth, computertest.Checked(capacity), factory, f.sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	_, err = workRef(id)(command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, auth, computertest.Checked(capacity), factory, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	starting, err := reader.GetWorkView(ctx, id)
 	require.NoError(t, err)
@@ -105,23 +106,23 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	const viewer = "123456789012345679"
 	f := newWorkCreationFixtureForSubject(t, owner)
 	ctx := context.Background()
-	auth := infrastructure.NewWorkAuthorizer(f.db)
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{})).Handle(ctx, f.request.Creation)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}).Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id))
 	require.NoError(t, f.requests.CompleteWorkCreation(ctx, f.request.ID))
 	capacity := &workCapacity{available: true}
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
+	factory := executionPort{}
 	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
-		principal := infrastructure.NewWorkAuthorizer(db)
+		principal := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 		definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 		requests := infrastructure.NewContinuationRequests(db, time.Now)
 		reader := infrastructure.NewWorkQueryRepository(db)
 		app := &application.Application{WorkPrincipals: principal, WorkViews: reader, Commands: application.Commands{
 			StopWork:    command.NewStopWorkHandler(sessions, principal, factory),
-			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), factory, sessions, requests, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
-			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), factory, sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), factory, requests, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), factory, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			CloseWork:   command.NewCloseWorkHandler(sessions, principal, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, requests, &commandtest.InputBuffer{}),
 		}, Queries: application.Queries{GetWorkView: query.NewGetWorkViewHandler(principal, reader)}}
 		handler := connecttest.Handler(func(s *connect.Server) {

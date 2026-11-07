@@ -34,16 +34,16 @@ const computerWorksPage = 100
 type ComputerReachHandler struct {
 	now       func() time.Time
 	sessions  domain.AgentWorkRepository
-	computers ComputerDescriptionPort
+	computers ComputerPort
 	works     ComputerWorks
-	execution ExecutionRequestsFactory
+	execution domain.ExecutionPort
 	processes ProcessObservationPort
-	buffer    InputBufferPort
+	buffer    RunningHarnessPort
 	places    presenceReads
 	logger    *slog.Logger
 }
 
-func NewComputerReachHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerDescriptionPort, works ComputerWorks, execution ExecutionRequestsFactory, processes ProcessObservationPort, buffer InputBufferPort, logger *slog.Logger) *ComputerReachHandler {
+func NewComputerReachHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerPort, works ComputerWorks, execution domain.ExecutionPort, processes ProcessObservationPort, buffer RunningHarnessPort, logger *slog.Logger) *ComputerReachHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -153,7 +153,7 @@ func (h *ComputerReachHandler) applyTo(ctx context.Context, workID string, place
 		if err != nil {
 			return err
 		}
-		requests := h.execution()
+		requests := deferExecution(h.execution)
 		var changed bool
 		if changed, err = h.apply(ctx, work, place, requests); err != nil || !changed {
 			return err
@@ -162,7 +162,7 @@ func (h *ComputerReachHandler) applyTo(ctx context.Context, workID string, place
 			if err != nil {
 				return err
 			}
-			return requests.Send(ctx)
+			return requests.send(ctx)
 		}
 	}
 	return err
@@ -173,7 +173,7 @@ func (h *ComputerReachHandler) applyTo(ctx context.Context, workID string, place
 // Managed Work whose run may still be on its machine asks its Computer's
 // Presence, sharing a recent read of its Computer with the other Works on
 // it; a Cloud Work follows Dispatcher's attachment.
-func (h *ComputerReachHandler) recover(ctx context.Context, work *domain.AgentWork, requests ExecutionRequests) (bool, error) {
+func (h *ComputerReachHandler) recover(ctx context.Context, work *domain.AgentWork, requests *deferredExecution) (bool, error) {
 	if h == nil {
 		return false, nil
 	}
@@ -196,7 +196,7 @@ func (h *ComputerReachHandler) recover(ctx context.Context, work *domain.AgentWo
 // apply records or ends the Work's Disconnection from its Computer's
 // Presence, then stops it beyond reach when its Disconnection has lasted the
 // Disconnection timeout.
-func (h *ComputerReachHandler) apply(ctx context.Context, work *domain.AgentWork, place ComputerDescription, requests ExecutionRequests) (bool, error) {
+func (h *ComputerReachHandler) apply(ctx context.Context, work *domain.AgentWork, place ComputerDescription, requests *deferredExecution) (bool, error) {
 	if !work.OnManagedComputer() {
 		return false, nil
 	}

@@ -7,18 +7,15 @@ import (
 	"encoding/json"
 
 	"github.com/samber/oops"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-var _ application.WorkRegistrationCancellationPort = (*AgentWorkRepository)(nil)
-
 // A canceled creation has no Work row to lock. Its original request's unique
 // key also serializes initial registration, which rolls back its Work and input
 // if this receipt won. No Work lifecycle or execution obligation is fabricated.
-func (r *AgentWorkRepository) CancelWorkRegistration(ctx context.Context, request application.CancelWorkRegistration) (string, error) {
+func (r *AgentWorkRepository) CancelWorkRegistration(ctx context.Context, request command.CancelWorkRegistration) (string, error) {
 	scope, err := registrationScope(request.SubjectID, request.AgentID, request.WorkspaceReference, request.Subject, request.ProjectID)
 	if err != nil {
 		return "", err

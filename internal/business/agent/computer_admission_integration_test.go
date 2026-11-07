@@ -25,7 +25,6 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/computer"
@@ -58,13 +57,12 @@ func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
-		fx.Decorate(func(application.PendingInteractionsPort) application.PendingInteractionsPort { return port }),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("1", "4Gi", "64")),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(func() kubernetes.Interface { return kube }),
 		fx.Provide(func() domain.ExecutionPort { return port }),
-		fx.Provide(func() command.InputBufferPort { return port }),
+		fx.Provide(func() command.RunningHarnessPort { return port }),
 		fx.Decorate(func(command.ProcessObservationPort) command.ProcessObservationPort { return processes }),
 	)
 	require.NoError(t, app.Err())
