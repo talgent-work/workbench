@@ -21,3 +21,17 @@ func TestAbandonedAllocation(t *testing.T) {
 	require.False(t, abandoned(allocationRecord{CreatedAt: old, ProcessID: "process"}, now), "a bound process ends by its exit")
 	require.False(t, abandoned(allocationRecord{}, now))
 }
+
+// A live start is abandoned past its deadline once its create was submitted,
+// whether or not the sandbox's identity was learned. One that never submitted
+// a create, a rejected one and a retired one are not.
+func TestAbandonedStart(t *testing.T) {
+	now := time.Now()
+	old := now.Add(-domain.StartupDeadline - abandonmentMargin).UnixMilli()
+	require.True(t, startAbandoned(allocationRecord{CreatedAt: old, Submitted: true}, now), "the sandbox's identity is not needed")
+	require.True(t, startAbandoned(allocationRecord{CreatedAt: old, Submitted: true, SandboxID: "sandbox"}, now))
+	require.False(t, startAbandoned(allocationRecord{CreatedAt: old}, now), "no create was submitted")
+	require.False(t, startAbandoned(allocationRecord{CreatedAt: old, Submitted: true, StartRejected: true}, now), "a rejected start is settled as rejected")
+	require.False(t, startAbandoned(allocationRecord{CreatedAt: old, Submitted: true, DeletedAt: old}, now), "a retired allocation is no longer a start")
+	require.False(t, startAbandoned(allocationRecord{CreatedAt: now.UnixMilli(), Submitted: true}, now), "a start within its deadline waits")
+}
