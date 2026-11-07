@@ -21,7 +21,6 @@ func (s *AgentWork) ObserveTurn(fact TurnObservation, inputPending, requiredResp
 	if !s.processing() {
 		return nil
 	}
-	s.TaskExecutionBegun = true
 	// A position not after the last applied one repeats a replayed stream.
 	if fact.Sequence <= s.HarnessProcess.Turn.Sequence {
 		return nil
@@ -154,7 +153,6 @@ func (s *AgentWork) accept(replay, answers bool) error {
 	if replay || !s.processing() || s.EndRequestReference != "" {
 		return nil
 	}
-	s.TaskExecutionBegun = true
 	s.HarnessProcess.IdleSince = time.Time{}
 	if answers {
 		s.HarnessProcess.WaitingSince = time.Time{}

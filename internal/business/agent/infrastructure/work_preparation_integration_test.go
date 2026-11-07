@@ -44,7 +44,7 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 	require.NotEmpty(t, planned.TargetPath)
 	require.NotEmpty(t, planned.AccessID)
 	require.Equal(t, agentquery.WorkPreparation{WorkID: id, RequestID: f.request.RequestID, SubjectID: "owner", ThinkingLevel: initial.ThinkingLevel,
-		WorkBranch: "talgent/TAL-342", InputID: initial.Input.ID, Input: initial.Input.Text, Prepared: true, Submitted: true,
+		WorkBranch: "talgent/TAL-342", InputID: initial.Input.ID, Input: initial.Input.Text, Submitted: true,
 		Checkouts: []agentquery.PreparedCheckout{{Provider: "github", RepoID: "123", RepoName: "example/project", CloneURL: "https://github.com/example/project.git",
 			WebURL: "https://github.com/example/project", DefaultBranch: "main", BaseBranch: "release", WorkBranch: "talgent/TAL-342", TargetPath: planned.TargetPath, AccessID: planned.AccessID}},
 	}, preparation, "first admission and the original input commit together")

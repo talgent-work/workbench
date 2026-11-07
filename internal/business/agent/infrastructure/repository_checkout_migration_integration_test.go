@@ -80,6 +80,7 @@ func TestRepositoryCheckoutMigrationCarriesOutcomesOntoTheWork(t *testing.T) {
 		require.NoError(t, err)
 	}
 	_, err = conn.ExecContext(ctx, `ALTER TABLE agent_session DROP COLUMN repository_checkouts;
+ALTER TABLE agent_session ADD COLUMN task_execution_begun tinyint(1) NOT NULL DEFAULT '1' AFTER initial_task_input;
 ALTER TABLE execution_allocation DROP COLUMN checkout_results;
 `+previousTables)
 	require.NoError(t, err)
@@ -140,6 +141,9 @@ ALTER TABLE execution_allocation DROP COLUMN checkout_results;
 	var tables int
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('agent_initial_execution_request', 'agent_session_continuation_request')").Scan(&tables))
 	require.Zero(t, tables, "the first-start and continuation tables are dropped")
+	var begun int
+	require.NoError(t, conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_session' AND COLUMN_NAME = 'task_execution_begun'").Scan(&begun))
+	require.Zero(t, begun, "whether a Work's task execution began no longer decides how it restarts")
 	for table, column := range map[string]string{"agent_session": "repository_checkouts", "execution_allocation": "checkout_results"} {
 		shape := "SELECT CONCAT_WS(' ', COLUMN_TYPE, IS_NULLABLE, COALESCE(COLUMN_DEFAULT, ''), COALESCE(CHARACTER_SET_NAME, ''), COALESCE(COLLATION_NAME, ''), COLUMN_COMMENT, ORDINAL_POSITION) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?"
 		var migrated, want string

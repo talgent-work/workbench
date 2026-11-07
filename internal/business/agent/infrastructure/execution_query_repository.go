@@ -19,12 +19,10 @@ func NewExecutionQueryRepository(db *xorm.Engine) *ExecutionQueryRepository {
 	return &ExecutionQueryRepository{db: db}
 }
 
-// GetWorkStartup reads the Work's first-start request facts. A creation is
-// pending while the Work still holds its initial task input, not yet handed
-// off to its input buffer.
 // GetWorkStartup derives a Work's start request identities from its facts:
 // its creation request, its latest Resume or Restart request, whether it
-// still holds its initial task input, and whether it entered Closing.
+// entered Closing, and whether its creation is pending: whether it still
+// holds its initial task input, not yet handed off to its input buffer.
 func (r *ExecutionQueryRepository) GetWorkStartup(ctx context.Context, sessionID string) (query.WorkStartup, error) {
 	var row struct {
 		SessionID         string `xorm:"session_id"`

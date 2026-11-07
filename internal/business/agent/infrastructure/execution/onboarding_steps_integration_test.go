@@ -189,7 +189,8 @@ func (f *onboardingFixture) requestExit(t *testing.T) {
 }
 
 // A stopped Work's credentials are withdrawn and its process asked to exit,
-// and it is never prepared again.
+// and it is never prepared again; until its process exits, nothing retires
+// its execution or deletes its sandbox.
 func TestSweepWakesTheDrainOfAStoppedWork(t *testing.T) {
 	f := newOnboarding(t)
 	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
@@ -199,6 +200,16 @@ func TestSweepWakesTheDrainOfAStoppedWork(t *testing.T) {
 	before := f.authorityCalls()
 	require.NoError(t, f.steps.handler.RunLongStep(context.Background(), f.record.ID))
 	require.Equal(t, before+observationCalls, f.authorityCalls(), "a stopping Work is observed and never prepared")
+
+	// A stop request without an acknowledged exit only asks: the execution
+	// stays unretired and its sandbox is never deleted.
+	_, err := f.steps.handler.Reconcile(context.Background(), f.record.ID)
+	require.NoError(t, err)
+	require.False(t, f.execution(t).Retired(), "a stop request alone retires nothing")
+	f.lifecycle.mu.Lock()
+	defer f.lifecycle.mu.Unlock()
+	require.NotNil(t, f.lifecycle.info, "the stopping Work's sandbox remains")
+	require.Zero(t, f.lifecycle.deletes, "a stop request alone deletes no sandbox")
 }
 
 // A stopping Work whose sandbox is gone drains by learning the loss: the

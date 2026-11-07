@@ -112,17 +112,6 @@ func (r *Executions) Count() int {
 	return len(r.order)
 }
 
-// CommittedKinds lists the kinds of the committed Domain Events.
-func (r *Executions) CommittedKinds() []domain.EventKind {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	kinds := make([]domain.EventKind, 0, len(r.Committed))
-	for _, event := range r.Committed {
-		kinds = append(kinds, event.Kind())
-	}
-	return kinds
-}
-
 func loaded(saved domain.AgentExecution) *domain.AgentExecution {
 	copy := saved
 	copy.Events, copy.PluginResults = domain.NewEventCollection(), slices.Clone(saved.PluginResults)

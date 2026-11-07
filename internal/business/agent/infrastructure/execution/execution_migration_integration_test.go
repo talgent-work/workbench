@@ -66,6 +66,8 @@ func TestExecutionMigrationBackfillsExecutionFacts(t *testing.T) {
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, "ALTER TABLE execution_allocation ADD KEY idx_retired_submitted_updated_at_id (retired, submitted, updated_at, id)")
 	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, "ALTER TABLE execution_allocation MODIFY COLUMN `retired` tinyint unsigned GENERATED ALWAYS AS (`deleted_at` <> 0) VIRTUAL COMMENT 'Indexed retirement predicate for durable late-result observation'")
+	require.NoError(t, err)
 
 	const (
 		released = "00000000-0000-4000-8000-000000000001"
@@ -159,4 +161,9 @@ func TestExecutionMigrationBackfillsExecutionFacts(t *testing.T) {
 	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(indexQuery, "DATABASE()")).Scan(&indexes))
 	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(indexQuery, "?"), current).Scan(&wantIndexes))
 	require.Equal(t, wantIndexes, indexes, "the migrated table has the current schema's indexes")
+	var comment, wantComment string
+	commentQuery := "SELECT COLUMN_COMMENT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'execution_allocation' AND COLUMN_NAME = 'retired'"
+	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(commentQuery, "DATABASE()")).Scan(&comment))
+	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(commentQuery, "?"), current).Scan(&wantComment))
+	require.Equal(t, wantComment, comment, "the retirement predicate no longer describes the late-result watch")
 }

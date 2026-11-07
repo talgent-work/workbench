@@ -4,7 +4,9 @@
 -- creating caller named for checkouts in the Work's repository selection,
 -- and drops the records that tracked how far a Work's first-start
 -- preparation (agent_initial_execution_request) or its continuation
--- (agent_session_continuation_request) got.
+-- (agent_session_continuation_request) got, together with whether a Work's
+-- task execution began (agent_session.task_execution_begun), which only that
+-- first-start preparation read.
 --
 -- When: before deploying the release whose Agent reads
 -- agent_session.repository_checkouts. A Work's recorded checkout outcomes and
@@ -19,8 +21,9 @@
 -- re-wakes every unfinished Work and execution within a minute.
 -- Repeatable: yes. Each step checks the current schema first.
 -- Rollback: recreate agent_initial_execution_request and
--- agent_session_continuation_request from the previous schema file (empty),
--- then roll back the Agent image. The new columns may stay.
+-- agent_session_continuation_request (empty) and
+-- agent_session.task_execution_begun (every row 1) from the previous schema
+-- file, then roll back the Agent image. The new columns may stay.
 -- Removal: delete this script, and the integration test that runs it
 -- (internal/business/agent/infrastructure/repository_checkout_migration_integration_test.go),
 -- once every environment has applied it.
@@ -80,3 +83,10 @@ DEALLOCATE PREPARE step;
 
 DROP TABLE IF EXISTS agent_initial_execution_request;
 DROP TABLE IF EXISTS agent_session_continuation_request;
+
+SET @begun_present = (SELECT COUNT(*) > 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_session' AND COLUMN_NAME = 'task_execution_begun');
+SET @statement = IF(@begun_present, 'ALTER TABLE agent_session DROP COLUMN task_execution_begun', 'DO 0');
+PREPARE step FROM @statement;
+EXECUTE step;
+DEALLOCATE PREPARE step;

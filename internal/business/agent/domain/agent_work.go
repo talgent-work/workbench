@@ -242,9 +242,6 @@ type AgentWork struct {
 	AgentID            string    `validate:"required,uuid"`
 	State              WorkState `validate:"oneof=starting working stopping stopped failed closing closed"`
 	CapabilitySnapshot CapabilitySnapshot
-	// TaskExecutionBegun retains task-input admission or observed Turn activity
-	// across restarts; a Restart before it re-prepares the initial execution.
-	TaskExecutionBegun bool
 	// ComputerID is the Computer chosen at the Work's first start, fixed for
 	// its life; every run of the Work is admitted there.
 	ComputerID              string `validate:"required,uuid"`

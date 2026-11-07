@@ -61,8 +61,8 @@ func (r *WorkQueryRepository) preparations(ctx context.Context, condition string
 	return result, nil
 }
 
-// workPreparationFromRow maps a Work's facts to its first start: prepared and
-// submitted with the Work, its workspace prepared once every selected
+// workPreparationFromRow maps a Work's facts to its first start: submitted with
+// the Work, its workspace prepared once every selected
 // repository has a checkout outcome, and its initial task input buffered once
 // the Work no longer holds it.
 func workPreparationFromRow(row workPreparationRow) (query.WorkPreparation, error) {
@@ -79,7 +79,7 @@ func workPreparationFromRow(row workPreparationRow) (query.WorkPreparation, erro
 		return query.WorkPreparation{}, err
 	}
 	preparation := query.WorkPreparation{ThinkingLevel: row.ThinkingLevel, WorkID: row.ID, RequestID: row.CreationRequestID, SubjectID: row.StartedBy,
-		WorkBranch: selection.WorkBranch, Prepared: true, Submitted: true, InputPrepared: len(checkouts) >= len(selection.Repositories),
+		WorkBranch: selection.WorkBranch, Submitted: true, InputPrepared: len(checkouts) >= len(selection.Repositories),
 		InputBuffered: initial == nil}
 	for _, c := range command.PlanCheckouts(row.ID, selection) {
 		preparation.Checkouts = append(preparation.Checkouts, query.PreparedCheckout{Provider: c.Provider, RepoID: c.RepoID, RepoName: c.RepoName, CloneURL: c.CloneURL, WebURL: c.WebURL,

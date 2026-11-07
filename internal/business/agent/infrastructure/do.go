@@ -47,7 +47,6 @@ type agentWorkDO struct {
 	// checkout outcomes.
 	RepositoryCheckouts    string `xorm:"repository_checkouts json"`
 	AuthorizationSelection string `xorm:"authorization_selection json"`
-	TaskExecutionBegun     bool   `xorm:"task_execution_begun"`
 	ThinkingLevel          string `xorm:"thinking_level varchar(32)"`
 	PermissionMode         string `xorm:"permission_mode varchar(32)"`
 	WorkProgress           string `xorm:"work_progress mediumtext"`

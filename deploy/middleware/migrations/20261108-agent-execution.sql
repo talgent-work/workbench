@@ -58,6 +58,19 @@ PREPARE step FROM @statement;
 EXECUTE step;
 DEALLOCATE PREPARE step;
 
+-- With the late-result watch gone, the retirement predicate only finds retired
+-- executions whose compute release is outstanding.
+SET @comment_stale = (SELECT COUNT(*) > 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'execution_allocation' AND COLUMN_NAME = 'retired'
+    AND COLUMN_COMMENT <> 'Indexed retirement predicate for finding retired executions whose compute release is outstanding');
+SET @statement = IF(@comment_stale,
+  'ALTER TABLE execution_allocation
+     MODIFY COLUMN `retired` tinyint unsigned GENERATED ALWAYS AS (`deleted_at` <> 0) VIRTUAL COMMENT ''Indexed retirement predicate for finding retired executions whose compute release is outstanding''',
+  'DO 0');
+PREPARE step FROM @statement;
+EXECUTE step;
+DEALLOCATE PREPARE step;
+
 -- Every earlier execution served the start admitted when it was registered,
 -- after its Desk was seated.
 UPDATE execution_allocation

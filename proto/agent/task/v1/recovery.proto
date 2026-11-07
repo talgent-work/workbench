@@ -8,8 +8,6 @@ option go_package = "github.com/talgent-work/workbench/gen/agent/task/v1;agentta
 // AgentExecution's current facts call for, and to wake its long step when one
 // is due.
 message ReconcileExecutionTaskV1 {
-  reserved 2;
-  reserved "observe_environments";
   // AgentExecution identity.
   string execution_id = 1;
 }
@@ -40,4 +38,61 @@ message RequestWorkspaceReclamationTaskV1 {
   string work_id = 1;
   // The Work's opaque Session Workspace reference.
   string workspace_reference = 2;
+}
+
+// The task payloads below are retired: their queued tasks are dropped without
+// decoding. They stay because a task contract only grows within its version.
+
+// ReconcileAllocationTaskV1 is a retired payload.
+message ReconcileAllocationTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// PrepareAllocationTaskV1 is a retired payload.
+message PrepareAllocationTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// ReconnectAllocationTaskV1 is a retired payload.
+message ReconnectAllocationTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// DeliverCredentialsTaskV1 is a retired payload.
+message DeliverCredentialsTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// SyncInputsTaskV1 is a retired payload.
+message SyncInputsTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// ObserveSandboxTaskV1 is a retired payload.
+message ObserveSandboxTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// RecoverContinuationTaskV1 is a retired payload.
+message RecoverContinuationTaskV1 {
+  // AgentWork identity owning the continuation request.
+  string work_id = 1;
+}
+
+// RecoverWorkCreationTaskV1 is a retired payload.
+message RecoverWorkCreationTaskV1 {
+  // Original Work creation request identity.
+  string request_id = 1;
+}
+
+// PrepareInitialExecutionTaskV1 is a retired payload.
+message PrepareInitialExecutionTaskV1 {
+  // AgentWork identity owning the initial execution request.
+  string work_id = 1;
 }

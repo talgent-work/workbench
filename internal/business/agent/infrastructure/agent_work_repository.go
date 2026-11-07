@@ -119,7 +119,7 @@ func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.Agen
 	} else {
 		var affected int64
 		affected, err = tx.Where("id = ? AND version = ? AND deleted_at = 0", row.ID, session.Version).
-			Cols("capabilities", "initial_task_input", "repository_checkouts", "task_execution_begun", "thinking_level", "permission_mode", "work_progress", "state", "context_ref", "harness_process", "holds_process", "stop_request", "close_request", "stop_reason", "disconnected_since", "reach_resume_due", "end_request", "failure_reason", "visibility_public", "display_title", "version", "updated_at").Update(row)
+			Cols("capabilities", "initial_task_input", "repository_checkouts", "thinking_level", "permission_mode", "work_progress", "state", "context_ref", "harness_process", "holds_process", "stop_request", "close_request", "stop_reason", "disconnected_since", "reach_resume_due", "end_request", "failure_reason", "visibility_public", "display_title", "version", "updated_at").Update(row)
 		if err == nil && affected != 1 {
 			return domain.ErrConcurrentModification
 		}
