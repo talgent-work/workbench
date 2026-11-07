@@ -1,0 +1,26 @@
+# ADDITIONAL_ENTRY_HOST set: another public entry shares the Workbench's API,
+# sign-in and Managed Computer routes, beside WORKBENCH_HOST, and serves its
+# own pages from elsewhere. One sign-in serves both entries when
+# ACCOUNT_COOKIE_DOMAIN is their parent domain and a controlplane profile
+# lists the entry's origin in account.return-origins.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: HTTPRoute
+      name: web-api|auth|computer
+    patch: |-
+      - op: add
+        path: /spec/hostnames/-
+        value: additional-entry.example.com
+replacements:
+  - source:
+      kind: ConfigMap
+      name: workbench-environment
+      fieldPath: data.ADDITIONAL_ENTRY_HOST
+    targets:
+      - select:
+          kind: HTTPRoute
+          name: web-api|auth|computer
+        fieldPaths:
+          - spec.hostnames.1

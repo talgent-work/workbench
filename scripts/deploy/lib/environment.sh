@@ -103,3 +103,60 @@ export_environment() {
     export "${line%%=*}=${line#*=}"
   done < "$1"
 }
+
+# environment_value KEY FILE... prints KEY's value in the last FILE that sets
+# it, as kustomize merges them.
+environment_value() {
+  local key="$1" file line value="" found=0
+  shift
+  for file in "$@"; do
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      if [[ "${line}" == "${key}="* ]]; then
+        value="${line#*=}"
+        found=1
+      fi
+    done < "${file}"
+  done
+  if [[ "${found}" == "0" ]]; then
+    echo "the environment sets no ${key}" >&2
+    return 1
+  fi
+  printf '%s\n' "${value}"
+}
+
+# k3s_switch_components FILE... prints, one per line, the components of the
+# base's components/ that the deployment switches of the environment FILE...
+# turn on, failing on a value a switch does not take.
+k3s_switch_components() {
+  access_switch_component SANDBOX_NATIVE_API_ACCESS sandbox-without-native-api "$@" || return 1
+  access_switch_component COMPUTER_NATIVE_API_ACCESS computer-without-native-api "$@" || return 1
+  value_switch_component ADDITIONAL_ENTRY_HOST additional-entry-host "$@" || return 1
+  value_switch_component CONTROLPLANE_PROFILE controlplane-profile "$@" || return 1
+}
+
+# value_switch_component KEY COMPONENT FILE... prints COMPONENT when the
+# switch KEY has a value; empty, its default, prints nothing.
+value_switch_component() {
+  local key="$1" component="$2" value
+  shift 2
+  value="$(environment_value "${key}" "$@")" || return 1
+  if [[ -n "${value}" ]]; then
+    printf '%s\n' "${component}"
+  fi
+}
+
+# access_switch_component KEY COMPONENT FILE... prints COMPONENT when the
+# switch KEY is disabled; enabled, its default, prints nothing.
+access_switch_component() {
+  local key="$1" component="$2" value
+  shift 2
+  value="$(environment_value "${key}" "$@")" || return 1
+  case "${value}" in
+    enabled) ;;
+    disabled) printf '%s\n' "${component}" ;;
+    *)
+      echo "${key} is enabled or disabled, not '${value}'" >&2
+      return 1
+      ;;
+  esac
+}
