@@ -36,8 +36,9 @@ const reconcileRounds = 4
 // environment deletion, credential delivery and withdrawal, the connection of
 // its launched process, input sync, the exit signal and its Desk's departure,
 // then confirms a retired execution's release. It never waits for a creation:
-// a submitted one's environment is bound once observed. It reports whether the execution's last decision called for a
-// long step, which RunLongStep takes apart. Every decision observes the
+// a submitted one's environment is bound once observed. It reports whether
+// the execution's last decision called for a long step, which RunLongStep
+// takes apart. Every decision observes the
 // environments carrying the execution's ownership as listed now, so a wake
 // absorbed by a pending reconciliation is observed all the same.
 func (h *ReconcileExecutionHandler) Reconcile(ctx context.Context, executionID string) (bool, error) {

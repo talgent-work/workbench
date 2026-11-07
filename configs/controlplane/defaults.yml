@@ -106,7 +106,8 @@ agent-preparation-taskqueue:
   redis-addr: "${REDIS_ADDR:127.0.0.1:6379}"
   redis-password: "${REDIS_PASSWORD:}"
   redis-db: 0
-  # Each execution's long step (its preparation) and each initial execution
+  # Each execution's long step (its creation's submission, up to the sandbox
+  # creation timeout, or its preparation) and each initial execution
   # preparation hold a worker while they run; lower to 8 once initial
   # execution preparation no longer runs on this queue.
   worker-concurrency: 32

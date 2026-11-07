@@ -14,9 +14,12 @@ import (
 
 // submitting starts the execution's long step, which submits the creation,
 // and returns once the create reached the server; the long step's outcome
-// arrives on the channel.
+// arrives on the channel. A create still waiting when the test ends is
+// abandoned, so the server's close never waits for it.
 func (f *unboundStart) submitting(t *testing.T, ctx context.Context, answer chan struct{}, failure int, code string) <-chan error {
 	t.Helper()
+	ctx, cancel := context.WithCancel(ctx)
+	t.Cleanup(cancel)
 	f.lifecycle.mu.Lock()
 	f.lifecycle.answer, f.lifecycle.failAfterCreate, f.lifecycle.refuseCode = answer, failure, code
 	f.lifecycle.mu.Unlock()
@@ -95,6 +98,7 @@ func TestADefiniteCreateFailureAfterBindingIsObservedAsLoss(t *testing.T) {
 	require.Equal(t, domain.WorkFailed, work.State)
 	require.True(t, work.HarnessProcess.EnvironmentLost)
 	require.False(t, work.HarnessProcess.StartRejected)
+	require.Contains(t, work.FailureReason, "execution environment", "the failure names the execution environment")
 	require.Equal(t, 1, f.creates())
 }
 

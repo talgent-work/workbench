@@ -81,10 +81,14 @@ func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeCon
 // submitted wakes the reconciliation again, as the commit of its submission
 // and answer does, and so the steps that follow.
 func (s *executionSteps) reconcile(ctx context.Context, id string) error {
-	submitted := s.submitted(ctx, id)
-	err := s.once(ctx, id)
-	if submitted || !s.submitted(ctx, id) {
+	before, err := s.submitted(ctx, id)
+	if err != nil {
 		return err
+	}
+	err = s.once(ctx, id)
+	after, lookupErr := s.submitted(ctx, id)
+	if before || !after || lookupErr != nil {
+		return errors.Join(err, lookupErr)
 	}
 	return errors.Join(err, s.once(ctx, id))
 }
@@ -99,9 +103,15 @@ func (s *executionSteps) once(ctx context.Context, id string) error {
 
 // submitted reports whether the execution recorded its creation's
 // submission.
-func (s *executionSteps) submitted(ctx context.Context, id string) bool {
+func (s *executionSteps) submitted(ctx context.Context, id string) (bool, error) {
 	execution, err := s.executions.Get(ctx, id)
-	return err == nil && execution.Creation.Submitted
+	if errors.Is(err, domain.ErrExecutionNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return execution.Creation.Submitted, nil
 }
 
 // shortSteps reconciles one execution, taking only its short steps, as its

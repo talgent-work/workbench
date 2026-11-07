@@ -83,7 +83,7 @@ func (c SandboxConfig) creationWait() time.Duration {
 func (c SandboxConfig) Validate() error {
 	// A create's answer only matters within the Startup Deadline.
 	if c.CreationTimeout < 0 || c.creationWait() >= domain.StartupDeadline {
-		return errors.New("agent: the sandbox creation timeout must be positive and leave room within the Startup Deadline")
+		return errors.New("agent: the sandbox creation timeout must not be negative and must leave room within the Startup Deadline")
 	}
 	if c.Models == nil {
 		return errors.New("agent: model catalog is required")
