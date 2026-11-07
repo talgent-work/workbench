@@ -64,37 +64,20 @@ const (
 
 // WakeExecution wakes the execution's reconciliation.
 func (r *Recovery) WakeExecution(ctx context.Context, executionID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconcileAllocation(executionID))
+	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID, false))
 }
 
 // WakeSandboxObservation follows the environment authority's report of a
-// change to one of the execution's sandboxes.
+// change to one of the execution's sandboxes: its reconciliation lists every
+// environment the execution owns.
 func (r *Recovery) WakeSandboxObservation(ctx context.Context, executionID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewObserveSandbox(executionID))
+	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID, true))
 }
 
-// wakeSteps enqueues each step the execution decided that its own task takes.
-func (r *Recovery) wakeSteps(ctx context.Context, executionID string, steps []domain.ExecutionStepKind) error {
-	var failures []error
-	for _, step := range steps {
-		failures = append(failures, r.wakeStep(ctx, executionID, step))
-	}
-	return errors.Join(failures...)
-}
-
-func (r *Recovery) wakeStep(ctx context.Context, executionID string, step domain.ExecutionStepKind) error {
-	switch step {
-	case domain.StepPrepare:
-		return r.enqueue(ctx, preparationAttemptTimeout)(agenttask.NewPrepareAllocation(executionID))
-	case domain.StepConnect:
-		return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconnectAllocation(executionID))
-	case domain.StepDeliverCredentials:
-		return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewDeliverCredentials(executionID))
-	case domain.StepSyncInputs:
-		return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewSyncInputs(executionID))
-	default:
-		return nil
-	}
+// wakeLongStep wakes the execution's long step, whose attempt may last until
+// the Startup Deadline.
+func (r *Recovery) wakeLongStep(ctx context.Context, executionID string) error {
+	return r.enqueue(ctx, preparationAttemptTimeout)(agenttask.NewRunLongExecutionStep(executionID))
 }
 
 // WakeWork wakes the Work's own obligations and those of its current
@@ -111,10 +94,10 @@ func (r *Recovery) WakeWork(ctx context.Context, workID string) error {
 	return errors.Join(err, r.WakeExecution(ctx, execution.ID))
 }
 
-// ReconnectWork reconnects the Work's launched process after Dispatcher
-// reported that its connection ended without a process exit. The reconnect
-// neither prepares the environment nor delivers credentials; the report
-// changes no Work state.
+// ReconnectWork wakes the reconciliation of the Work's unretired execution
+// after Dispatcher reported that its connection ended without a process
+// exit, which reconnects its launched process; the report changes no Work
+// state.
 func (r *Recovery) ReconnectWork(ctx context.Context, workID string) error {
 	if strings.TrimSpace(workID) == "" {
 		return domain.ErrInvalidWork
@@ -126,7 +109,7 @@ func (r *Recovery) ReconnectWork(ctx context.Context, workID string) error {
 	if err != nil || execution.Retired() {
 		return err
 	}
-	return r.wakeStep(ctx, execution.ID, domain.StepConnect)
+	return r.WakeExecution(ctx, execution.ID)
 }
 
 func (r *Recovery) WakeContinuation(ctx context.Context, workID string) error {
@@ -167,39 +150,27 @@ func (r *Recovery) enqueue(ctx context.Context, timeout time.Duration) func(task
 	}
 }
 
-// ReconcileExecution decides the execution's steps, takes the short ones and
-// wakes the tasks of the others.
-func (r *Recovery) ReconcileExecution(ctx context.Context, executionID string) error {
-	steps, err := r.reconciliation.Reconcile(ctx, executionID, false)
-	return errors.Join(err, r.wakeSteps(ctx, executionID, steps))
+// ReconcileExecution takes the short steps the execution decides and wakes
+// its long step when one is due, even when a short step failed. Unless
+// observeEnvironments, a launched process Dispatcher reads may be observed
+// from that alone.
+func (r *Recovery) ReconcileExecution(ctx context.Context, executionID string, observeEnvironments bool) error {
+	long, err := r.reconciliation.Reconcile(ctx, executionID, observeEnvironments)
+	if long {
+		err = errors.Join(err, r.wakeLongStep(ctx, executionID))
+	}
+	return err
 }
 
-// ObserveSandbox reconciles the execution against every environment
-// carrying its ownership after the environment authority reported a change.
-func (r *Recovery) ObserveSandbox(ctx context.Context, executionID string) error {
-	steps, err := r.reconciliation.Reconcile(ctx, executionID, true)
-	return errors.Join(err, r.wakeSteps(ctx, executionID, steps))
-}
-
-func (r *Recovery) PrepareExecution(ctx context.Context, executionID string) error {
-	return r.reconciliation.Prepare(ctx, executionID)
-}
-
-func (r *Recovery) ConnectExecution(ctx context.Context, executionID string) error {
-	return r.reconciliation.Connect(ctx, executionID)
-}
-
-func (r *Recovery) DeliverCredentials(ctx context.Context, executionID string) error {
-	return r.reconciliation.DeliverCredentials(ctx, executionID)
-}
-
-func (r *Recovery) SyncInputs(ctx context.Context, executionID string) error {
-	return r.reconciliation.SyncInputs(ctx, executionID)
+// RunLongExecutionStep takes the long step the execution decides now.
+func (r *Recovery) RunLongExecutionStep(ctx context.Context, executionID string) error {
+	return r.reconciliation.RunLongStep(ctx, executionID)
 }
 
 // CredentialChanged follows Marketplace's fact that an authorization's
 // credential changed: every delivered execution using it receives the
-// current credentials, so Works sharing the authorization change together.
+// current credentials, so Works sharing the authorization change together;
+// each marked execution's reconciliation delivers them.
 // Agent never polls authorizations. Repeated or reordered facts lead to the
 // same delivery of whatever Marketplace supplies now.
 func (r *Recovery) CredentialChanged(ctx context.Context, authorizationID string) error {
@@ -213,16 +184,16 @@ func (r *Recovery) CredentialChanged(ctx context.Context, authorizationID string
 	marked, err := r.reconciliation.MarkCredentialsChanged(ctx, ids)
 	failures := []error{err}
 	for _, id := range marked {
-		failures = append(failures, r.wakeStep(ctx, id, domain.StepDeliverCredentials))
+		failures = append(failures, r.WakeExecution(ctx, id))
 	}
 	return errors.Join(failures...)
 }
 
 // InputsChanged follows Storage's fact that a file in owner's File Space
 // changed: every Work on a Managed Computer whose input source is that space
-// receives its current inputs by their own sync, which this wakes. A Cloud
-// Work mounts its inputs and needs nothing. Repeated or reordered facts lead
-// to the same sync of the current files.
+// receives its current inputs from its execution's reconciliation, which this
+// wakes. A Cloud Work mounts its inputs and needs nothing. Repeated or
+// reordered facts lead to the same sync of the current files.
 func (r *Recovery) InputsChanged(ctx context.Context, owner string) error {
 	if strings.TrimSpace(owner) == "" {
 		return domain.ErrInvalidWork
@@ -234,7 +205,7 @@ func (r *Recovery) InputsChanged(ctx context.Context, owner string) error {
 	marked, err := r.reconciliation.MarkInputsChanged(ctx, ids)
 	failures := []error{err}
 	for _, id := range marked {
-		failures = append(failures, r.wakeStep(ctx, id, domain.StepSyncInputs))
+		failures = append(failures, r.WakeExecution(ctx, id))
 	}
 	return errors.Join(failures...)
 }

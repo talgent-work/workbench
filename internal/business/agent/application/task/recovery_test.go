@@ -19,10 +19,12 @@ func TestRecoveryTasksAreKeyedByTheObjectTheyRecover(t *testing.T) {
 		payload proto.Message
 		id      func(proto.Message) string
 	}{
-		"allocation":   {agenttask.NewReconcileAllocation, agenttask.ReconcileAllocationType, agenttask.RecoveryQueue, "agent:allocation:id-1", &agenttaskv1.ReconcileAllocationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.ReconcileAllocationTaskV1).GetAllocationId() }},
-		"work":         {agenttask.NewRecoverWork, agenttask.RecoverWorkType, agenttask.RecoveryQueue, "agent:work:id-1", &agenttaskv1.RecoverWorkTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkTaskV1).GetWorkId() }},
-		"continuation": {agenttask.NewRecoverContinuation, agenttask.RecoverContinuationType, agenttask.RecoveryQueue, "agent:continuation:id-1", &agenttaskv1.RecoverContinuationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverContinuationTaskV1).GetWorkId() }},
-		"preparation":  {agenttask.NewPrepareInitialExecution, agenttask.PrepareInitialExecutionType, agenttask.PreparationQueue, "agent:initial-execution:id-1", &agenttaskv1.PrepareInitialExecutionTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.PrepareInitialExecutionTaskV1).GetWorkId() }},
+		"execution":              {func(id string) (taskqueue.Task, error) { return agenttask.NewReconcileExecution(id, false) }, agenttask.ReconcileExecutionType, agenttask.RecoveryQueue, "agent:execution:id-1", &agenttaskv1.ReconcileExecutionTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.ReconcileExecutionTaskV1).GetExecutionId() }},
+		"execution environments": {func(id string) (taskqueue.Task, error) { return agenttask.NewReconcileExecution(id, true) }, agenttask.ReconcileExecutionType, agenttask.RecoveryQueue, "agent:execution-environments:id-1", &agenttaskv1.ReconcileExecutionTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.ReconcileExecutionTaskV1).GetExecutionId() }},
+		"long step":              {agenttask.NewRunLongExecutionStep, agenttask.RunLongExecutionStepType, agenttask.PreparationQueue, "agent:execution-long-step:id-1", &agenttaskv1.RunLongExecutionStepTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RunLongExecutionStepTaskV1).GetExecutionId() }},
+		"work":                   {agenttask.NewRecoverWork, agenttask.RecoverWorkType, agenttask.RecoveryQueue, "agent:work:id-1", &agenttaskv1.RecoverWorkTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkTaskV1).GetWorkId() }},
+		"continuation":           {agenttask.NewRecoverContinuation, agenttask.RecoverContinuationType, agenttask.RecoveryQueue, "agent:continuation:id-1", &agenttaskv1.RecoverContinuationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverContinuationTaskV1).GetWorkId() }},
+		"preparation":            {agenttask.NewPrepareInitialExecution, agenttask.PrepareInitialExecutionType, agenttask.PreparationQueue, "agent:initial-execution:id-1", &agenttaskv1.PrepareInitialExecutionTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.PrepareInitialExecutionTaskV1).GetWorkId() }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			task, err := tc.build("id-1")
@@ -35,6 +37,19 @@ func TestRecoveryTasksAreKeyedByTheObjectTheyRecover(t *testing.T) {
 			_, err = tc.build(" ")
 			require.Error(t, err, "a task without its object cannot be keyed")
 		})
+	}
+}
+
+// A reconciliation woken by the environment authority's report lists every
+// environment the execution owns; any other reconciliation may read the
+// launched process from Dispatcher alone.
+func TestReconcileExecutionCarriesWhetherItListsEveryEnvironment(t *testing.T) {
+	for _, observe := range []bool{false, true} {
+		task, err := agenttask.NewReconcileExecution("id-1", observe)
+		require.NoError(t, err)
+		payload := &agenttaskv1.ReconcileExecutionTaskV1{}
+		require.NoError(t, proto.Unmarshal(task.Payload(), payload))
+		require.Equal(t, observe, payload.GetObserveEnvironments())
 	}
 }
 

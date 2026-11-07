@@ -117,12 +117,13 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
 	pass := func() error { return steps.pass(ctx, db) }
-	created, err := steps.handler.Reconcile(ctx, record.ID, false)
-	require.NoError(t, err)
-	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, created, "the creation is submitted and its sandbox bound")
 	lifecycle.mu.Lock()
-	lifecycle.info.Status.State = "Pending"
+	lifecycle.createPending = true
 	lifecycle.mu.Unlock()
+	long, err := steps.handler.Reconcile(ctx, record.ID, false)
+	require.NoError(t, err)
+	require.False(t, long)
+	require.Equal(t, sandboxID, current(t, steps, record.ID).Environment, "the creation is submitted and its sandbox bound")
 	require.NoError(t, pass())
 	pending, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
@@ -132,8 +133,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	lifecycle.mu.Lock()
 	lifecycle.info.Status.State = "Running"
 	lifecycle.mu.Unlock()
-	require.NoError(t, pass(), "the first delivery")
-	require.Error(t, pass(), "preparation and the Harness start, then an unavailable Dispatcher")
+	require.Error(t, pass(), "the first delivery, preparation and the Harness start, then an unavailable Dispatcher")
 	recovering, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, recovering.SandboxReady)
@@ -193,7 +193,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.NotZero(t, after.ReleasedAt, "nothing is left to delete")
 	require.Equal(t, 1, reserved)
 	requests := len(receiver.requests)
-	require.NoError(t, steps.handler.Connect(ctx, record.ID), "a delayed reconnect of a retired execution decides nothing")
+	require.NoError(t, steps.shortSteps(ctx, record.ID), "a delayed reconnect of a retired execution decides nothing")
 	require.Len(t, receiver.requests, requests, "and connects nothing")
 }
 

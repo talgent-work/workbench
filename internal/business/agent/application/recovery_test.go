@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
+	agenttaskv1 "github.com/talgent-work/workbench/gen/agent/task/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -18,11 +19,13 @@ import (
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
+	"google.golang.org/protobuf/proto"
 )
 
 type recordingEnqueuer struct {
 	mu      sync.Mutex
 	keys    []string
+	tasks   []taskqueue.Task
 	options []taskqueue.EnqueueOptions
 }
 
@@ -30,8 +33,28 @@ func (e *recordingEnqueuer) Enqueue(_ context.Context, task taskqueue.Task, opts
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.keys = append(e.keys, task.ID())
+	e.tasks = append(e.tasks, task)
 	e.options = append(e.options, taskqueue.NewEnqueueOptions(opts...))
 	return nil
+}
+
+// reconciliations are the executions whose Reconcile execution task was
+// enqueued, and whether each lists every environment the execution owns.
+func (e *recordingEnqueuer) reconciliations(t *testing.T) []string {
+	t.Helper()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var woken []string
+	for _, task := range e.tasks {
+		if task.Type() != agenttask.ReconcileExecutionType {
+			continue
+		}
+		require.Equal(t, agenttask.RecoveryQueue, task.Queue())
+		payload := &agenttaskv1.ReconcileExecutionTaskV1{}
+		require.NoError(t, proto.Unmarshal(task.Payload(), payload))
+		woken = append(woken, fmt.Sprintf("%s:%t", payload.GetExecutionId(), payload.GetObserveEnvironments()))
+	}
+	return woken
 }
 
 // executionLookups lists the executions the recovery reads: the outstanding
@@ -105,6 +128,16 @@ func launched(t *testing.T) func(*domain.AgentExecution) {
 	}
 }
 
+// change applies a change to the stored execution and saves it.
+func (f *recoveryFixture) change(t *testing.T, id string, apply func(*domain.AgentExecution) bool) {
+	t.Helper()
+	execution, err := f.executions.Get(context.Background(), id)
+	require.NoError(t, err)
+	if apply(execution) {
+		require.NoError(t, f.executions.Save(context.Background(), execution))
+	}
+}
+
 func page(ids []string, after string, limit int) []string {
 	var result []string
 	for _, id := range ids {
@@ -131,7 +164,7 @@ func TestWakingAWorkAlsoWakesItsUnreleasedExecution(t *testing.T) {
 	f := newRecoveryFixture(&application.Application{}, executionLookups{}, nil)
 	execution := f.execution(t, "work-1", domain.RealizationCloud, nil)
 	require.NoError(t, f.recovery.WakeWork(context.Background(), "work-1"))
-	require.Equal(t, []string{"agent:work:work-1", "agent:allocation:" + execution}, f.enqueuer.keys)
+	require.Equal(t, []string{"agent:work:work-1", "agent:execution:" + execution}, f.enqueuer.keys)
 	for _, options := range f.enqueuer.options {
 		retries, set := options.MaxRetry()
 		require.True(t, set)
@@ -150,50 +183,116 @@ func TestWakingAWorkAlsoWakesItsUnreleasedExecution(t *testing.T) {
 	require.Equal(t, []string{"agent:work:work-released"}, f.enqueuer.keys[3:], "a released execution has nothing left to reconcile")
 }
 
-func TestEndedConnectionOnlyReconnectsAnUnretiredExecution(t *testing.T) {
+// An ended connection wakes the reconciliation of the Work's unretired
+// execution, which reconnects its launched process and neither prepares nor
+// delivers.
+func TestEndedConnectionReachesTheReconciliationOfAnUnretiredExecution(t *testing.T) {
+	ctx := context.Background()
 	f := newRecoveryFixture(&application.Application{}, executionLookups{}, nil)
+	f.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}}}
 	execution := f.execution(t, "work-1", domain.RealizationCloud, launched(t))
 	f.execution(t, "retired-work", domain.RealizationCloud, func(execution *domain.AgentExecution) {
 		execution.State, execution.Retirement, execution.RetiredAt = domain.ExecutionRetired, domain.RetiredByExit, time.Now()
 	})
-	require.NoError(t, f.recovery.ReconnectWork(context.Background(), "work-1"))
-	require.NoError(t, f.recovery.ReconnectWork(context.Background(), "retired-work"))
-	require.NoError(t, f.recovery.ReconnectWork(context.Background(), "stopped-work"))
-	require.Equal(t, []string{"agent:allocation-reconnect:" + execution}, f.enqueuer.keys, "a reconnect neither prepares nor delivers")
-	require.Error(t, f.recovery.ReconnectWork(context.Background(), " "))
+	require.NoError(t, f.recovery.ReconnectWork(ctx, "work-1"))
+	require.NoError(t, f.recovery.ReconnectWork(ctx, "retired-work"))
+	require.NoError(t, f.recovery.ReconnectWork(ctx, "stopped-work"))
+	require.Equal(t, []string{execution + ":false"}, f.enqueuer.reconciliations(t))
+	require.Error(t, f.recovery.ReconnectWork(ctx, " "))
+
+	require.NoError(t, f.recovery.ReconcileExecution(ctx, execution, false))
+	require.Equal(t, 1, f.environment.Connected, "the launched process is reconnected")
+	require.Zero(t, f.environment.Prepared+f.environment.Delivered, "a reconnect neither prepares nor delivers")
+	require.Len(t, f.enqueuer.keys, 1, "a reconnect wakes no long step")
 }
 
-// A reconciliation wakes the task of each step its execution decided apart:
-// preparation on its own queue, whose attempt may last until the Startup
-// Deadline, or the connection of a launched process Dispatcher does not read.
-func TestReconciliationWakesTheStepsItsExecutionDecided(t *testing.T) {
+// The environment authority's report of a sandbox change wakes the
+// execution's reconciliation, which lists every environment it owns.
+func TestSandboxObservationReachesTheReconciliationOfItsExecution(t *testing.T) {
+	ctx := context.Background()
+	f := newRecoveryFixture(&application.Application{}, executionLookups{}, nil)
+	var listed []bool
+	f.environment.Observed = func(_ *domain.AgentExecution, full bool) domain.EnvironmentObservation {
+		listed = append(listed, full)
+		return domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}, {ID: "surplus", Running: true}}, Attached: true}
+	}
+	execution := f.execution(t, "work-1", domain.RealizationCloud, launched(t))
+	require.NoError(t, f.recovery.WakeSandboxObservation(ctx, execution))
+	require.Equal(t, []string{execution + ":true"}, f.enqueuer.reconciliations(t))
+	require.Equal(t, []string{"agent:execution-environments:" + execution}, f.enqueuer.keys, "a pending ordinary reconciliation cannot absorb it")
+
+	require.NoError(t, f.recovery.ReconcileExecution(ctx, execution, true))
+	require.Equal(t, []string{"surplus"}, f.environment.Deleted)
+	require.NotEmpty(t, listed)
+	require.NotContains(t, listed, false, "a sandbox report lists every environment the execution owns")
+}
+
+// A reconciliation takes the short steps itself and wakes the long step task
+// on its own queue, whose attempt may last until the Startup Deadline, even
+// when a short step failed.
+func TestReconciliationWakesTheLongStepItsExecutionDecided(t *testing.T) {
 	ctx := context.Background()
 	running := domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}}}
 
 	f := newRecoveryFixture(&application.Application{}, executionLookups{}, nil)
 	f.environment.Observation = running
 	preparing := f.execution(t, "work-1", domain.RealizationCloud, bound(t))
-	require.NoError(t, f.recovery.ReconcileExecution(ctx, preparing))
-	require.Equal(t, []string{"agent:allocation-preparation:" + preparing}, f.enqueuer.keys)
+	require.NoError(t, f.recovery.ReconcileExecution(ctx, preparing, false))
+	require.Equal(t, []string{"agent:execution-long-step:" + preparing}, f.enqueuer.keys)
+	require.Equal(t, agenttask.RunLongExecutionStepType, f.enqueuer.tasks[0].Type())
+	require.Equal(t, agenttask.PreparationQueue, f.enqueuer.tasks[0].Queue())
 	require.Greater(t, f.enqueuer.options[0].Timeout(), domain.StartupDeadline)
+	require.Zero(t, f.environment.Prepared, "the reconciliation never prepares itself")
 
 	f = newRecoveryFixture(&application.Application{}, executionLookups{}, nil)
-	var listed []bool
-	f.environment.Observed = func(_ *domain.AgentExecution, full bool) domain.EnvironmentObservation {
-		listed = append(listed, full)
-		return running
-	}
-	detached := f.execution(t, "work-1", domain.RealizationCloud, launched(t))
-	require.NoError(t, f.recovery.ObserveSandbox(ctx, detached))
-	require.Equal(t, []string{"agent:allocation-reconnect:" + detached}, f.enqueuer.keys)
-	require.Equal(t, []bool{true}, listed, "a sandbox report lists every environment the execution owns")
+	f.environment.Observation = running
+	f.environment.StepErr = errors.New("inputs unavailable")
+	managed := f.execution(t, "work-1", domain.RealizationManaged, func(execution *domain.AgentExecution) {
+		bound(t)(execution)
+		require.True(t, execution.MarkInputsChanged())
+	})
+	require.Error(t, f.recovery.ReconcileExecution(ctx, managed, false))
+	require.Equal(t, []string{"agent:execution-long-step:" + managed}, f.enqueuer.keys, "a failed short step holds back no long step")
 
 	f = newRecoveryFixture(&application.Application{}, executionLookups{}, nil)
 	f.environment.Observation = running
 	f.environment.Observation.Attached = true
 	settled := f.execution(t, "work-1", domain.RealizationCloud, launched(t))
-	require.NoError(t, f.recovery.ReconcileExecution(ctx, settled))
+	require.NoError(t, f.recovery.ReconcileExecution(ctx, settled, false))
 	require.Empty(t, f.enqueuer.keys, "a settled execution wakes nothing")
+}
+
+// A long step waiting minutes holds back no short step, of its own execution
+// or of another.
+func TestALongStepHoldsBackNoShortStep(t *testing.T) {
+	ctx := context.Background()
+	f := newRecoveryFixture(&application.Application{}, executionLookups{}, nil)
+	f.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}}}
+	preparing, release := make(chan struct{}), make(chan struct{})
+	f.environment.PrepareFunc = func(context.Context) error {
+		close(preparing)
+		<-release
+		return nil
+	}
+	managed := f.execution(t, "work-1", domain.RealizationManaged, bound(t))
+	other := f.execution(t, "work-2", domain.RealizationCloud, func(execution *domain.AgentExecution) {
+		require.True(t, execution.RecordSubmission())
+		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
+		require.NoError(t, err)
+	})
+	long := make(chan error, 1)
+	go func() { long <- f.recovery.RunLongExecutionStep(ctx, managed) }()
+	<-preparing
+
+	f.change(t, managed, func(execution *domain.AgentExecution) bool { return execution.MarkInputsChanged() })
+	require.NoError(t, f.recovery.ReconcileExecution(ctx, managed, false))
+	require.Equal(t, 1, f.environment.Synced, "the preparing execution syncs its inputs meanwhile")
+	require.NoError(t, f.recovery.ReconcileExecution(ctx, other, false))
+	require.Equal(t, 1, f.environment.Delivered, "another execution receives its credentials meanwhile")
+
+	close(release)
+	require.NoError(t, <-long)
+	require.Equal(t, 1, f.environment.Prepared)
 }
 
 func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
@@ -212,8 +311,8 @@ func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
 	require.NoError(t, f.recovery.Sweep(context.Background()))
 	// Each outstanding execution's reconciliation decides its own steps.
 	require.Len(t, f.enqueuer.keys, 250+2+1+1)
-	require.Contains(t, f.enqueuer.keys, "agent:allocation:execution-000")
-	require.Contains(t, f.enqueuer.keys, "agent:allocation:execution-249")
+	require.Contains(t, f.enqueuer.keys, "agent:execution:execution-000")
+	require.Contains(t, f.enqueuer.keys, "agent:execution:execution-249")
 	require.Contains(t, f.enqueuer.keys, "agent:work:work-1")
 	require.Contains(t, f.enqueuer.keys, "agent:work:work-2")
 	require.Contains(t, f.enqueuer.keys, "agent:continuation:work-2")
@@ -229,7 +328,7 @@ func (failingEnqueuer) Enqueue(context.Context, taskqueue.Task, ...taskqueue.Enq
 func TestUnavailableQueueFailsTheWake(t *testing.T) {
 	recovery := application.NewRecovery(&application.Application{}, failingEnqueuer{}, &commandtest.Executions{}, executionLookups{}, nil, nil, nil)
 	require.Error(t, recovery.WakeExecution(context.Background(), "allocation-1"))
-	_, err := agenttask.NewReconcileAllocation("allocation-1")
+	_, err := agenttask.NewReconcileExecution("allocation-1", false)
 	require.NoError(t, err)
 }
 
@@ -237,9 +336,9 @@ func (idList) GetWorkContinuation(context.Context, string) (query.WorkContinuati
 	return query.WorkContinuation{}, errors.New("not used")
 }
 
-// A credential change wakes the credential delivery of every delivered
-// execution using the authorization, and of nothing else.
-func TestCredentialChangeWakesTheDeliveriesOfItsWorks(t *testing.T) {
+// A credential change wakes the reconciliation of every delivered execution
+// using the authorization, and of nothing else; the reconciliation delivers.
+func TestCredentialChangeReachesTheReconciliationOfItsWorks(t *testing.T) {
 	using := map[string][]string{}
 	f := newRecoveryFixture(&application.Application{}, executionLookups{using: using}, nil)
 	first := f.execution(t, "work-1", domain.RealizationCloud, bound(t))
@@ -247,28 +346,43 @@ func TestCredentialChangeWakesTheDeliveriesOfItsWorks(t *testing.T) {
 	undelivered := f.execution(t, "work-3", domain.RealizationCloud, nil)
 	using["authorization-1"] = []string{first, second, undelivered}
 	require.NoError(t, f.recovery.CredentialChanged(context.Background(), "authorization-1"))
-	require.Equal(t, []string{"agent:allocation-credentials:" + first, "agent:allocation-credentials:" + second}, f.enqueuer.keys)
+	require.Equal(t, []string{first + ":false", second + ":false"}, f.enqueuer.reconciliations(t))
 	delivered, err := f.executions.Get(context.Background(), first)
 	require.NoError(t, err)
 	require.True(t, delivered.Credentials.ExpiresAt.Before(time.Now()), "the delivered credentials are due at once")
 	require.NoError(t, f.recovery.CredentialChanged(context.Background(), "authorization-unused"))
 	require.Len(t, f.enqueuer.keys, 2)
 	require.Error(t, f.recovery.CredentialChanged(context.Background(), " "))
+
+	f.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}}, Attached: true}
+	f.change(t, first, func(execution *domain.AgentExecution) bool {
+		require.True(t, execution.RecordPreparation())
+		launched, err := execution.RecordLaunch("process")
+		require.NoError(t, err)
+		return launched
+	})
+	require.NoError(t, f.recovery.ReconcileExecution(context.Background(), first, false))
+	require.Equal(t, 1, f.environment.Delivered, "the woken reconciliation replaces the credentials")
 }
 
-// A changed file in an input source's File Space wakes the inputs sync of
-// every Managed Work reading it, never a credential delivery.
-func TestInputChangeWakesTheInputsSyncOfItsManagedWorks(t *testing.T) {
+// A changed file in an input source's File Space wakes the reconciliation of
+// every Managed Work reading it, which syncs its inputs.
+func TestInputChangeReachesTheReconciliationOfItsManagedWorks(t *testing.T) {
 	inputs := map[string][]string{}
 	f := newRecoveryFixture(&application.Application{}, executionLookups{inputs: inputs}, nil)
 	managed := f.execution(t, "work-1", domain.RealizationManaged, bound(t))
 	cloud := f.execution(t, "work-2", domain.RealizationCloud, bound(t))
 	inputs["owner-1"] = []string{managed, cloud}
 	require.NoError(t, f.recovery.InputsChanged(context.Background(), "owner-1"))
-	require.Equal(t, []string{"agent:allocation-inputs:" + managed}, f.enqueuer.keys)
+	require.Equal(t, []string{managed + ":false"}, f.enqueuer.reconciliations(t))
 	require.NoError(t, f.recovery.InputsChanged(context.Background(), "owner-unread"))
 	require.Len(t, f.enqueuer.keys, 1)
 	require.Error(t, f.recovery.InputsChanged(context.Background(), " "))
+
+	f.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}}}
+	require.NoError(t, f.recovery.ReconcileExecution(context.Background(), managed, false))
+	require.Equal(t, 1, f.environment.Synced, "the woken reconciliation syncs the inputs")
+	require.Zero(t, f.environment.Delivered, "an input change delivers no credentials")
 }
 
 type reclamationRecorder struct {

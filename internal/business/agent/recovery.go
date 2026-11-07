@@ -23,8 +23,8 @@ import (
 )
 
 // RecoveryQueue and PreparationQueue name the taskqueue modules Agent's
-// recovery tasks run on. Preparation has its own workers so minutes-long
-// checkouts cannot hold the workers short recovery steps need.
+// recovery tasks run on. An execution's long step has its own workers, so a
+// preparation that waits minutes cannot hold the workers its short steps need.
 const (
 	RecoveryQueue    = "agent"
 	PreparationQueue = "agent-preparation"

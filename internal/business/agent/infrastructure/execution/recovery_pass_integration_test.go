@@ -76,27 +76,21 @@ func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeCon
 	return steps
 }
 
-// reconcile reconciles one execution and takes the separate steps it decided,
-// each by its own task.
+// reconcile reconciles one execution and takes the long step it decided,
+// though a short step failed, as its long step task would.
 func (s *executionSteps) reconcile(ctx context.Context, id string) error {
-	separate, err := s.handler.Reconcile(ctx, id, false)
-	if err != nil {
+	long, err := s.handler.Reconcile(ctx, id, false)
+	if !long {
 		return err
 	}
-	var failures []error
-	for _, step := range separate {
-		switch step {
-		case domain.StepPrepare:
-			failures = append(failures, s.handler.Prepare(ctx, id))
-		case domain.StepDeliverCredentials:
-			failures = append(failures, s.handler.DeliverCredentials(ctx, id))
-		case domain.StepConnect:
-			failures = append(failures, s.handler.Connect(ctx, id))
-		case domain.StepSyncInputs:
-			failures = append(failures, s.handler.SyncInputs(ctx, id))
-		}
-	}
-	return errors.Join(failures...)
+	return errors.Join(err, s.handler.RunLongStep(ctx, id))
+}
+
+// shortSteps reconciles one execution, taking only its short steps, as its
+// Reconcile execution task does.
+func (s *executionSteps) shortSteps(ctx context.Context, id string) error {
+	_, err := s.handler.Reconcile(ctx, id, false)
+	return err
 }
 
 // pass reconciles every outstanding execution once, as one sweep would.

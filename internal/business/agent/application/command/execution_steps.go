@@ -3,111 +3,127 @@ package command
 import (
 	"context"
 	"errors"
-	"time"
+	"fmt"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// launchTimeout bounds starting the Harness and connecting it.
-const launchTimeout = 30 * time.Second
-
-// DeliverCredentials delivers or replaces the bound environment's
-// credentials when the execution still decides so, and records what was
-// delivered.
-func (h *ReconcileExecutionHandler) DeliverCredentials(ctx context.Context, executionID string) error {
-	execution, decision, _, err := h.decide(ctx, executionID, false)
-	if err != nil || execution == nil || !decision.Includes(domain.StepDeliverCredentials) {
-		return err
+// takeShortStep takes one short step the execution decided and reports
+// whether it changed the execution. A step that changed nothing, such as a
+// deletion the authority may still show or a connection, would be decided
+// again unchanged.
+func (h *ReconcileExecutionHandler) takeShortStep(ctx context.Context, execution *domain.AgentExecution, step domain.ExecutionStep) (bool, error) {
+	switch step.Kind {
+	case domain.StepSubmitCreation:
+		return h.submit(ctx, execution)
+	case domain.StepDeleteEnvironment:
+		return false, h.environments.DeleteEnvironment(ctx, execution, step.EnvironmentID)
+	case domain.StepDeliverCredentials:
+		return h.deliverCredentials(ctx, execution)
+	case domain.StepWithdrawCredentials:
+		return h.withdraw(ctx, execution)
+	case domain.StepSyncInputs:
+		return h.syncInputs(ctx, execution)
+	case domain.StepLeaveDesk:
+		return h.leaveDesk(ctx, execution)
+	case domain.StepConnect:
+		return false, h.environments.Connect(ctx, execution)
+	case domain.StepSignalExit:
+		return false, h.signalExit(ctx, execution)
+	default:
+		return false, fmt.Errorf("agent: no short step %q", step.Kind)
 	}
+}
+
+// deliverCredentials delivers or replaces the bound environment's
+// credentials and records what was delivered.
+func (h *ReconcileExecutionHandler) deliverCredentials(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
 	delivery, err := h.environments.DeliverCredentials(ctx, execution)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
+	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
 		return execution.RecordCredentialDelivery(delivery), nil
 	})
 }
 
-// Connect hands the launched process to Dispatcher again when the execution
-// still decides so.
-func (h *ReconcileExecutionHandler) Connect(ctx context.Context, executionID string) error {
-	execution, decision, _, err := h.decide(ctx, executionID, false)
-	if err != nil || execution == nil || !decision.Includes(domain.StepConnect) {
-		return err
-	}
-	return h.environments.Connect(ctx, execution)
-}
-
-// SyncInputs syncs a Managed Computer's input copies when the execution
-// still decides so, and records the changes it covered.
-func (h *ReconcileExecutionHandler) SyncInputs(ctx context.Context, executionID string) error {
-	execution, decision, _, err := h.decide(ctx, executionID, false)
-	if err != nil || execution == nil || !decision.Includes(domain.StepSyncInputs) {
-		return err
-	}
+// syncInputs syncs a Managed Computer's input copies and records the changes
+// it covered.
+func (h *ReconcileExecutionHandler) syncInputs(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
 	synced, err := h.environments.SyncInputs(ctx, execution)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
+	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
 		return execution.RecordInputSync(synced, h.now()), nil
 	})
 }
 
-// Prepare sees the in-environment preparation through to its exit, no later
-// than the Startup Deadline, then launches the Harness and connects it, each
-// outcome recorded before the next. A start past its deadline launches
-// nothing; the execution records its failure.
-func (h *ReconcileExecutionHandler) Prepare(ctx context.Context, executionID string) error {
-	execution, decision, _, err := h.decide(ctx, executionID, false)
-	if err != nil || execution == nil || !decision.Includes(domain.StepPrepare) {
-		return err
-	}
-	deadline := execution.StartupDeadlineAt()
-	if !h.now().Before(deadline) {
-		return nil
-	}
-	bounded, cancel := context.WithDeadline(ctx, deadline)
-	defer cancel()
-	if !execution.Process.PreparationEnded {
-		err := h.environments.Prepare(bounded, execution)
-		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			// The Startup Deadline passed while it prepared; the execution's
-			// next reconciliation records the failure.
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
-			return execution.RecordPreparation(), nil
-		}); err != nil {
-			return err
-		}
-		if execution, err = h.executions.Get(ctx, executionID); err != nil {
-			return err
+// submit fixes the environment's specification with the Mount Grants
+// Storage issues on a Cloud, records the submission, and only then submits it
+// once; a lost answer leaves observation and the Startup Deadline to decide.
+func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
+	var mounts domain.SandboxMounts
+	if execution.Realization == domain.RealizationCloud {
+		var err error
+		if mounts, err = h.mounts.AcquireMounts(ctx, execution.Launch.MountRequest()); err != nil {
+			return false, err
 		}
 	}
-	launch, release := context.WithTimeout(ctx, launchTimeout)
-	defer release()
-	processID, err := h.environments.Launch(launch, execution)
+	if err := h.environments.PrepareCreation(ctx, execution, mounts); err != nil {
+		return false, err
+	}
+	if !execution.RecordSubmission() {
+		return false, nil
+	}
+	if err := h.executions.Save(ctx, execution); err != nil {
+		return false, err
+	}
+	submitted, err := h.executions.Get(ctx, execution.ID)
 	if err != nil {
-		return err
+		return false, err
 	}
-	launched := false
-	if err := h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
-		changed, err := execution.RecordLaunch(processID)
-		launched = changed
-		return changed, err
-	}); err != nil || !launched {
-		// An uncertain or refused record leaves the launched process to its
-		// environment's deletion; it is never connected.
-		return err
+	answer, err := h.environments.SubmitCreation(ctx, submitted)
+	if err != nil {
+		return false, err
 	}
-	if execution, err = h.executions.Get(ctx, executionID); err != nil {
-		return err
+	// The recorded submission changed the execution whatever its answer.
+	_, err = h.recorded(ctx, submitted.ID, func(execution *domain.AgentExecution) (bool, error) {
+		return execution.RecordCreationAnswer(answer)
+	})
+	return true, err
+}
+
+func (h *ReconcileExecutionHandler) withdraw(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
+	if err := h.environments.WithdrawCredentials(ctx, execution); err != nil {
+		return false, err
 	}
-	return h.environments.Connect(launch, execution)
+	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
+		return execution.RecordCredentialsWithdrawn(), nil
+	})
+}
+
+// signalExit asks the launched process to exit under the Work's stop
+// identity, cancelling a Waiting Turn first when the Work asked (Timeout
+// cancels first).
+func (h *ReconcileExecutionHandler) signalExit(ctx context.Context, execution *domain.AgentExecution) error {
+	if execution.ExitRequest.CancelWaitingTurn {
+		if err := cancelRunningTurn(ctx, h.harness, execution.WorkID); err != nil {
+			return err
+		}
+	}
+	return h.harness.StopExecution(ctx, execution.WorkID, execution.ExitRequest.StopRequestID)
+}
+
+func (h *ReconcileExecutionHandler) leaveDesk(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
+	if execution.Desk.ID != "" {
+		if err := h.computers.LeaveDesk(ctx, execution.Desk.ID); err != nil {
+			return false, err
+		}
+	}
+	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
+		return execution.RecordDeskLeft(h.now()), nil
+	})
 }
 
 // MarkCredentialsChanged records, on every unretired execution whose Work
@@ -140,4 +156,20 @@ func (h *ReconcileExecutionHandler) markEach(ctx context.Context, ids []string, 
 		}
 	}
 	return marked, errors.Join(failures...)
+}
+
+// cancelRunningTurn ends the Turn the Harness is running, if one is; asking
+// again while its cancellation is pending, or after it ended, changes
+// nothing.
+func cancelRunningTurn(ctx context.Context, harness RunningHarnessPort, workID string) error {
+	turn, err := harness.GetCurrentTurn(ctx, workID)
+	if err != nil || !turn.Active || turn.ID == "" || turn.CancelRequested {
+		return err
+	}
+	err = harness.CancelTurn(ctx, workID, turn.ID)
+	if errors.Is(err, domain.ErrWorkTransition) {
+		// The Turn ended before the cancellation reached it.
+		return nil
+	}
+	return err
 }

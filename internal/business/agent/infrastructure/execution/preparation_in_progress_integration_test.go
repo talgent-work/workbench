@@ -81,13 +81,13 @@ func newPreparingAllocation(t *testing.T) *preparingAllocation {
 	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
 	require.NoError(t, err)
 	f.steps = newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
-	decided, err := f.steps.handler.Reconcile(ctx, record.ID, false)
+	long, err := f.steps.handler.Reconcile(ctx, record.ID, false)
 	require.NoError(t, err)
-	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, decided, "the first delivery precedes preparation")
-	require.NoError(t, f.steps.handler.DeliverCredentials(ctx, record.ID))
+	require.True(t, long, "the preparation follows the first delivery")
 	f.record, _, err = latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, f.record.SandboxReady)
+	require.Empty(t, f.record.PreparationProcessID, "the first delivery precedes preparation")
 	return f
 }
 
@@ -96,7 +96,7 @@ func newPreparingAllocation(t *testing.T) *preparingAllocation {
 func TestPreparationExitStartsAndConnectsTheHarnessAtOnce(t *testing.T) {
 	ctx := context.Background()
 	f := newPreparingAllocation(t)
-	require.NoError(t, f.steps.handler.Prepare(ctx, f.record.ID))
+	require.NoError(t, f.steps.handler.RunLongStep(ctx, f.record.ID))
 	exit := <-f.exited
 	connected, _, err := latestAllocation(ctx, f.db, f.record.SessionID)
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestStopAdmittedDuringPreparationStartsNoHarness(t *testing.T) {
 		require.NoError(t, f.steps.executions.Save(ctx, run))
 	}
 	f.beforeExit.Store(&stop)
-	require.ErrorIs(t, f.steps.handler.Prepare(ctx, f.record.ID), errAllocationNotHeld)
+	require.ErrorIs(t, f.steps.handler.RunLongStep(ctx, f.record.ID), errAllocationNotHeld)
 	<-f.exited
 	stopped, _, err := latestAllocation(ctx, f.db, f.record.SessionID)
 	require.NoError(t, err)

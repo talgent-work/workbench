@@ -217,7 +217,8 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 			require.ElementsMatch(t, allocations, markChanged(authorizationID))
 		}
 		for _, allocation := range using {
-			require.NoError(t, f.reconcile.DeliverCredentials(ctx, allocation))
+			_, err := f.reconcile.Reconcile(ctx, allocation, false)
+			require.NoError(t, err)
 		}
 		if stage.token != "" {
 			require.Equal(t, 2, writes.writesWith(stage.token), "both Vaults receive the changed credential")
@@ -245,7 +246,8 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	require.ElementsMatch(t, allocations, marked)
 	before := writes.writesWith("reauthorized-provider-token")
 	for _, allocation := range marked {
-		require.ErrorIs(t, f.reconcile.DeliverCredentials(ctx, allocation), errSupplyTemporarilyUnavailable)
+		_, err := f.reconcile.Reconcile(ctx, allocation, false)
+		require.ErrorIs(t, err, errSupplyTemporarilyUnavailable)
 		record, _, err := f.provisioning.get(ctx, allocation)
 		require.NoError(t, err)
 		require.Equal(t, staleDelivery.UnixMilli(), record.CredentialsExpireAt, "the change stays due until it is delivered")

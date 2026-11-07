@@ -25,6 +25,10 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
+// Cases whose sandboxes the fixture creates with createPending bind them
+// while they start, so their reconciliation delivers nothing: the fixture's
+// credentials deliver to no Vault.
+
 // reconcilerOf reconciles executions through p, on p's clock.
 func reconcilerOf(t *testing.T, db *xorm.Engine, p *Provisioning) *executionSteps {
 	t.Helper()
@@ -118,7 +122,8 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 	// Storage owns the spaces themselves; retiring an execution only retires
 	// its record, and a later start begins a new one.
 	t.Run("environment retirement retires only the allocation", func(t *testing.T) {
-		provider, _, _ := sandboxClient(t)
+		provider, _, fixture := sandboxClient(t)
+		fixture.createPending = true
 		p := newProvisioning(provider, time.Now)
 		steps := reconcilerOf(t, db, p)
 		input := request()
@@ -154,7 +159,8 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 	// Startup Deadline with its margin and retired without an exit, while a
 	// younger one still waits.
 	t.Run("abandoned start retires without a process", func(t *testing.T) {
-		provider, _, _ := sandboxClient(t)
+		provider, _, fixture := sandboxClient(t)
+		fixture.createPending = true
 		p := newProvisioning(provider, time.Now)
 		steps := reconcilerOf(t, db, p)
 		input := request()
@@ -182,6 +188,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 
 	t.Run("restart retains original specification and credential", func(t *testing.T) {
 		provider, _, fixture := sandboxClient(t)
+		fixture.createPending = true
 		input := request()
 		input.WorkID = "restart"
 		provisioning := newProvisioning(provider, time.Now)
@@ -219,6 +226,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 
 	t.Run("lost response is recovered by lookup with no second POST", func(t *testing.T) {
 		provider, _, fixture := sandboxClient(t)
+		fixture.createPending = true
 		fixture.loseCreateResponse = true
 		provisioning := newProvisioning(provider, time.Now)
 		input := request()
@@ -242,6 +250,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 
 	t.Run("refused create rejects the start and retires without deletion", func(t *testing.T) {
 		provider, _, fixture := sandboxClient(t)
+		fixture.createPending = true
 		fixture.refuseStatus = http.StatusBadRequest
 		provisioning := newProvisioning(provider, time.Now)
 		steps := reconcilerOf(t, db, provisioning)
@@ -273,6 +282,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 
 	t.Run("refused create keeps a sandbox the provider created anyway", func(t *testing.T) {
 		provider, _, fixture := sandboxClient(t)
+		fixture.createPending = true
 		fixture.refuseStatus, fixture.createOnRefusal = http.StatusBadRequest, true
 		provisioning := newProvisioning(provider, time.Now)
 		input := request()
@@ -290,6 +300,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 
 	t.Run("concurrent workers cannot double submit", func(t *testing.T) {
 		provider, _, fixture := sandboxClient(t)
+		fixture.createPending = true
 		provisioning := newProvisioning(provider, time.Now)
 		input := request()
 		input.WorkID = "concurrent"
@@ -318,6 +329,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 
 	t.Run("empty lookup cannot authorize blind resubmission", func(t *testing.T) {
 		provider, _, fixture := sandboxClient(t)
+		fixture.createPending = true
 		provisioning := newProvisioning(provider, time.Now)
 		steps := reconcilerOf(t, db, provisioning)
 		input := request()
@@ -345,7 +357,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		var spec sdk.CreateSandboxRequest
 		require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
 		fixture.mu.Lock()
-		fixture.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: spec.Metadata, Status: sdk.SandboxStatus{State: sdk.StateRunning}}
+		fixture.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: spec.Metadata, Status: sdk.SandboxStatus{State: "Pending"}}
 		fixture.mu.Unlock()
 		require.NoError(t, reconcile(steps, begun.ID))
 		record, _, err = latestAllocation(ctx, db, input.WorkID)

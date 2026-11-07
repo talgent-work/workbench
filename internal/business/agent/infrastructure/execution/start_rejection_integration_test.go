@@ -25,6 +25,8 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	t.Cleanup(func() { _ = db.Close() })
 	initial := infrastructure.NewInitialExecutionRequests(db, time.Now)
 	provider, _, external := sandboxClient(t)
+	// Sandboxes are bound while they start: this case delivers nothing.
+	external.createPending = true
 	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, initial, nil)
 	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(initial))
 	require.NoError(t, err)

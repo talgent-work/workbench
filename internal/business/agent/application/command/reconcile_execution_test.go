@@ -48,12 +48,15 @@ func TestCreationIsSubmittedOnceAfterItsSubmissionIsRecorded(t *testing.T) {
 		}
 		return domain.EnvironmentObservation{}
 	}
-	steps, err := w.reconciliation().Reconcile(ctx, execution.ID, false)
+	long, err := w.reconciliation().Reconcile(ctx, execution.ID, false)
 	require.NoError(t, err)
 	require.Equal(t, 1, w.environment.Submitted)
 	require.True(t, w.environment.SubmittedState[0].Creation.Submitted, "the submission is durable before the creation is sent")
 	require.Equal(t, "environment", w.execution(t).Environment)
-	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, steps, "the created environment is decided on at once")
+	require.Equal(t, 1, w.environment.Delivered, "the created environment is decided on at once")
+	require.True(t, w.execution(t).Credentials.Delivered)
+	require.True(t, long, "the delivered environment's preparation is due")
+	require.Zero(t, w.environment.Prepared, "a reconciliation never takes a long step")
 
 	_, err = w.reconciliation().Reconcile(ctx, execution.ID, false)
 	require.NoError(t, err)
@@ -214,13 +217,13 @@ func TestPreparationIsBoundedByTheStartupDeadline(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	require.NoError(t, w.reconciliation().Prepare(ctx, w.execution(t).ID))
+	require.NoError(t, w.reconciliation().RunLongStep(ctx, w.execution(t).ID))
 	require.Equal(t, 1, w.environment.Prepared)
 	require.Zero(t, w.environment.Launched, "no Harness is launched past the deadline")
 	require.False(t, w.execution(t).Process.PreparationEnded)
 
 	w.at = w.execution(t).StartupDeadlineAt()
-	require.NoError(t, w.reconciliation().Prepare(ctx, w.execution(t).ID))
+	require.NoError(t, w.reconciliation().RunLongStep(ctx, w.execution(t).ID))
 	require.Equal(t, 1, w.environment.Prepared, "a start past its deadline does not prepare")
 	require.Zero(t, w.environment.Launched)
 }
@@ -230,7 +233,7 @@ func TestPreparationIsBoundedByTheStartupDeadline(t *testing.T) {
 func TestPreparationLaunchesAndConnectsTheHarness(t *testing.T) {
 	w := boundWorld(t)
 	w.environment.Observation = running("environment")
-	require.NoError(t, w.reconciliation().Prepare(context.Background(), w.execution(t).ID))
+	require.NoError(t, w.reconciliation().RunLongStep(context.Background(), w.execution(t).ID))
 	execution := w.execution(t)
 	require.True(t, execution.Process.PreparationEnded)
 	require.Equal(t, "process", execution.Process.ID)
@@ -247,6 +250,54 @@ func TestAStepOutcomeIsRecordedDespiteAConcurrentChange(t *testing.T) {
 		w.executions.Conflicts = 2
 		return nil
 	}
-	require.NoError(t, w.reconciliation().Prepare(context.Background(), w.execution(t).ID))
+	require.NoError(t, w.reconciliation().RunLongStep(context.Background(), w.execution(t).ID))
 	require.True(t, w.execution(t).Process.PreparationEnded, "the preparation is recorded on the third attempt")
+}
+
+// A reconciliation takes the short steps of a launched process itself: it
+// reconnects a process Dispatcher does not read once, however many decisions
+// it makes, and replaces credentials marked changed.
+func TestReconciliationReconnectsAndReplacesCredentialsItself(t *testing.T) {
+	ctx := context.Background()
+	w := boundWorld(t)
+	w.environment.Observation = running("environment")
+	require.NoError(t, w.reconciliation().RunLongStep(ctx, w.execution(t).ID))
+	connected := w.environment.Connected
+	long, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	require.NoError(t, err)
+	require.False(t, long)
+	require.Equal(t, connected+1, w.environment.Connected, "a process Dispatcher does not read is reconnected once")
+
+	w.environment.Observation.Attached = true
+	w.change(t, func(execution *domain.AgentExecution) { require.True(t, execution.MarkCredentialsChanged()) })
+	delivered := w.environment.Delivered
+	_, err = w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	require.NoError(t, err)
+	require.Equal(t, delivered+1, w.environment.Delivered, "changed credentials are replaced")
+	_, err = w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	require.NoError(t, err)
+	require.Equal(t, delivered+1, w.environment.Delivered, "the replacement is recorded")
+}
+
+// A Managed execution's changed inputs are synced by its reconciliation.
+func TestReconciliationSyncsChangedInputs(t *testing.T) {
+	w := boundWorld(t)
+	w.environment.Observation = running("environment")
+	w.change(t, func(execution *domain.AgentExecution) {
+		execution.Realization = domain.RealizationManaged
+		require.True(t, execution.MarkInputsChanged())
+	})
+	_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID, false)
+	require.NoError(t, err)
+	require.Equal(t, 1, w.environment.Synced)
+	require.Zero(t, w.execution(t).Inputs.Due, "the sync is recorded")
+}
+
+// A long step no longer decided is not taken.
+func TestALongStepNoLongerDecidedIsNotTaken(t *testing.T) {
+	w := boundWorld(t)
+	w.environment.Observation = running("environment")
+	require.NoError(t, w.reconciliation().RunLongStep(context.Background(), w.execution(t).ID))
+	require.NoError(t, w.reconciliation().RunLongStep(context.Background(), w.execution(t).ID))
+	require.Equal(t, 1, w.environment.Prepared, "a launched execution prepares nothing more")
 }

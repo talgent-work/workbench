@@ -85,19 +85,21 @@ func (s *Sandboxes) ownedRequest(ctx context.Context, r domain.LaunchSpecificati
 type lifecycleFixture struct {
 	mu                 sync.Mutex
 	loseCreateResponse bool
-	create             sdk.CreateSandboxRequest
-	info               *sdk.SandboxInfo
-	pages              [][]sdk.SandboxInfo
-	creates, deletes   int
-	createFailure      bool
-	refuseStatus       int
-	createOnRefusal    bool
-	endpoint           string
-	egress             string
-	egressToken        string
-	vault              *vaultFixture
-	inspectStatus      int
-	endpointStatus     int
+	// createPending creates each sandbox not yet running.
+	createPending    bool
+	create           sdk.CreateSandboxRequest
+	info             *sdk.SandboxInfo
+	pages            [][]sdk.SandboxInfo
+	creates, deletes int
+	createFailure    bool
+	refuseStatus     int
+	createOnRefusal  bool
+	endpoint         string
+	egress           string
+	egressToken      string
+	vault            *vaultFixture
+	inspectStatus    int
+	endpointStatus   int
 	// others are sandboxes beside info, by identity; the list filters them,
 	// like info, by the owner metadata it is asked for.
 	others map[string]sdk.SandboxInfo
@@ -124,6 +126,9 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.refuseStatus != 0 {
 			if f.createOnRefusal {
 				f.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: f.create.Metadata, Status: sdk.SandboxStatus{State: sdk.StateRunning}}
+				if f.createPending {
+					f.info.Status.State = "Pending"
+				}
 			}
 			http.Error(w, "invalid parameters", f.refuseStatus)
 			return
@@ -133,6 +138,9 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: f.create.Metadata, Status: sdk.SandboxStatus{State: sdk.StateRunning}}
+		if f.createPending {
+			f.info.Status.State = "Pending"
+		}
 		if f.loseCreateResponse {
 			http.Error(w, "response lost after allocation", 500)
 			return

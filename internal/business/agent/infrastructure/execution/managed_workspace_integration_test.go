@@ -80,16 +80,19 @@ func TestManagedWorkReceivesItsCurrentInputs(t *testing.T) {
 
 	// The machine is away: the inputs stay due.
 	f.relay.set(func(m *machineRelay) { m.unreachable = true })
-	require.Error(t, f.steps.handler.SyncInputs(ctx, record.ID))
+	require.Error(t, f.steps.shortSteps(ctx, record.ID))
+	away, _, err := latestAllocation(ctx, f.db, input.WorkID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, away.InputsDue, "the inputs stay due while the machine is away")
 	f.relay.set(func(m *machineRelay) { m.unreachable = false })
-	require.NoError(t, f.steps.handler.SyncInputs(ctx, record.ID))
+	require.NoError(t, f.steps.shortSteps(ctx, record.ID))
 	require.Len(t, lastManifest(t, f.relay), 2)
 	synced, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.Zero(t, synced.InputsDue)
 	deliveries := f.relay.deliveries
 	manifests := len(f.relay.manifests)
-	require.NoError(t, f.steps.handler.SyncInputs(ctx, record.ID), "nothing is due")
+	require.NoError(t, f.steps.shortSteps(ctx, record.ID), "nothing is due")
 	require.Equal(t, manifests, len(f.relay.manifests), "nothing is synced again")
 	require.Equal(t, deliveries, f.relay.deliveries, "a sync delivers no credentials")
 }
@@ -117,7 +120,7 @@ func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 	require.NoError(t, err)
 	f.inputs.attachments[owner][0].AccessPath = "/v1/storage/content?grant=second"
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepSyncInputs}, f.decided(t, synced.ID), "inputs older than the refresh interval are synced")
-	require.NoError(t, f.steps.handler.SyncInputs(ctx, synced.ID))
+	require.NoError(t, f.steps.shortSteps(ctx, synced.ID))
 	require.Equal(t, managedContentAddress+"?grant=second", lastManifest(t, f.relay)[0].URL)
 	refreshed, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
@@ -141,7 +144,7 @@ func TestAFailingInputsSyncLeavesTheStartReady(t *testing.T) {
 	f.inputs.err = nil
 	owner := "case-" + uuid.NewString()
 	f.inputs.owners = map[string]string{"file-space/case-1": owner}
-	require.NoError(t, f.steps.handler.SyncInputs(ctx, record.ID))
+	require.NoError(t, f.steps.shortSteps(ctx, record.ID))
 	require.Empty(t, lastManifest(t, f.relay))
 	synced, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)

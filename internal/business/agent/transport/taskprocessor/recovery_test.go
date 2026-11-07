@@ -72,37 +72,57 @@ func processorFor(t *testing.T, processors []taskqueue.Processor, kind taskqueue
 	return nil
 }
 
+// The reconciliation task delegates its execution once; one woken by a
+// sandbox report reconciles it against every environment it owns.
 func TestReconcileTaskDelegatesItsExecutionOnce(t *testing.T) {
 	environments := &observed{}
 	recovery, id := recovery(t, environments)
-	processors := taskprocessor.RecoveryProcessors(recovery, slog.Default())
-	task, err := agenttask.NewReconcileAllocation(id)
+	processor := processorFor(t, taskprocessor.RecoveryProcessors(recovery, slog.Default()), agenttask.ReconcileExecutionType)
+	for _, observe := range []bool{false, true} {
+		task, err := agenttask.NewReconcileExecution(id, observe)
+		require.NoError(t, err)
+		require.NoError(t, processor.Process(context.Background(), task))
+	}
+	require.Equal(t, []string{id + ":false", id + ":true"}, environments.ids)
+}
+
+// The long step task is served only by the preparation workers, and decides
+// its execution again before taking a step.
+func TestLongStepTaskRunsOnlyOnThePreparationWorkers(t *testing.T) {
+	environments := &observed{}
+	recovery, id := recovery(t, environments)
+	for _, processor := range taskprocessor.RecoveryProcessors(recovery, slog.Default()) {
+		require.NotEqual(t, agenttask.RunLongExecutionStepType, processor.TaskType(), "no recovery worker waits for a long step")
+	}
+	task, err := agenttask.NewRunLongExecutionStep(id)
 	require.NoError(t, err)
-	require.NoError(t, processorFor(t, processors, agenttask.ReconcileAllocationType).Process(context.Background(), task))
+	require.NoError(t, processorFor(t, taskprocessor.PreparationProcessors(recovery, slog.Default()), agenttask.RunLongExecutionStepType).Process(context.Background(), task))
 	require.Equal(t, []string{id + ":false"}, environments.ids)
 }
 
-// Each step task decides its execution again before taking its step; a
-// sandbox observation reconciles it against every environment it owns.
-func TestStepTasksDelegateTheirExecution(t *testing.T) {
+// A task queued under a type no longer enqueued is dropped without
+// delegating, rather than retried without end; the sweep recovers its object.
+func TestTasksOfRemovedTypesAreDropped(t *testing.T) {
 	environments := &observed{}
 	recovery, id := recovery(t, environments)
 	for _, step := range []struct {
 		processors []taskqueue.Processor
 		kind       taskqueue.TaskType
-		task       func(string) (taskqueue.Task, error)
 	}{
-		{taskprocessor.PreparationProcessors(recovery, slog.Default()), agenttask.PrepareAllocationType, agenttask.NewPrepareAllocation},
-		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), agenttask.ReconnectAllocationType, agenttask.NewReconnectAllocation},
-		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), agenttask.ObserveSandboxType, agenttask.NewObserveSandbox},
-		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), agenttask.DeliverCredentialsType, agenttask.NewDeliverCredentials},
-		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), agenttask.SyncInputsType, agenttask.NewSyncInputs},
+		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), "agent.allocation.reconcile.v1"},
+		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), "agent.allocation.reconnect.v1"},
+		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), "agent.allocation.observe-sandbox.v1"},
+		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), "agent.allocation.deliver-credentials.v1"},
+		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), "agent.allocation.sync-inputs.v1"},
+		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), "agent.work-creation.recover.v1"},
+		{taskprocessor.PreparationProcessors(recovery, slog.Default()), "agent.allocation.prepare.v1"},
 	} {
-		task, err := step.task(id)
+		// The removed payloads carried the execution's identity as field 1.
+		queued, err := taskqueue.New(taskqueue.Definition{Type: step.kind}, []byte{0x0a, 0x01, 0x78}, taskqueue.WithID("agent:allocation:"+id))
 		require.NoError(t, err)
-		require.NoError(t, processorFor(t, step.processors, step.kind).Process(context.Background(), task))
+		require.NoError(t, processorFor(t, step.processors, step.kind).Process(context.Background(), queued), step.kind)
 	}
-	require.Equal(t, []string{id + ":false", id + ":false", id + ":true", id + ":false", id + ":false"}, environments.ids)
+	require.Empty(t, environments.ids)
 }
 
 // A malformed task is dropped rather than archived, so it cannot hold its key

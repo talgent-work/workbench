@@ -473,7 +473,9 @@ data:
       retry-delay-max: 60s
       retry-delay-min: 1s
       shutdown-timeout: 30s
-      # Each starting Work holds a worker while its preparation runs.
+      # Each execution's long step (its preparation) and each initial execution
+      # preparation hold a worker while they run; lower to 8 once initial
+      # execution preparation no longer runs on this queue.
       worker-concurrency: 32
     # Storage renders Preview Copies on one lane; scale worker-concurrency
     # with Gotenberg's replicas (gotenberg.yaml).

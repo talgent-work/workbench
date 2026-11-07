@@ -64,12 +64,10 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	f.lifecycle = lifecycle
 	initial := infrastructure.NewInitialExecutionRequests(db, f.now)
 	works := infrastructure.NewAgentWorkRepository(db, f.now)
-	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, f.now, initial, nil)
-	policy, err := provider.networkPolicy(ctx)
-	require.NoError(t, err)
-	lifecycle.vault.policy = policy
-	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(initial))
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, f.now, initial, nil)
+	// A bound sandbox receives its credentials, so onboarding continues.
+	attachNativeCredentials(t, db, p, lifecycle)
+	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(initial))
 	require.NoError(t, err)
 	f.works, f.steps = works, newExecutionSteps(t, p, connections, unread{}, nil, f.now)
 	f.coordination = command.NewExecutionCoordination(f.now, works, f.steps.executions, f.steps.desks, f.steps.harness)
@@ -151,12 +149,12 @@ func (f *unboundStart) recover(t *testing.T) {
 }
 
 // reconcile runs the execution's reconciliation as its task would, and
-// answers the steps it leaves to their own tasks.
-func (f *unboundStart) reconcile(t *testing.T) []domain.ExecutionStepKind {
+// answers whether it leaves a long step to its long step task.
+func (f *unboundStart) reconcile(t *testing.T) bool {
 	t.Helper()
-	steps, err := f.steps.handler.Reconcile(context.Background(), f.allocation(t).ID, false)
+	long, err := f.steps.handler.Reconcile(context.Background(), f.allocation(t).ID, false)
 	require.NoError(t, err)
-	return steps
+	return long
 }
 
 // retire asks the execution to retire for cause, as a Work whose execution
@@ -232,8 +230,9 @@ func TestAStartWhoseSandboxNeverAppearedIsAbandonedAndReleased(t *testing.T) {
 func TestALostCreateAnswerBindsTheSandboxAndAFailedStartReleasesIt(t *testing.T) {
 	f := newUnboundStart(t, createdUnanswered)
 
-	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, f.reconcile(t), "onboarding continues")
+	require.True(t, f.reconcile(t), "onboarding continues to the preparation")
 	require.Equal(t, sandboxID, f.allocation(t).SandboxID, "the found sandbox is bound")
+	require.True(t, f.allocation(t).SandboxReady, "the found sandbox receives its credentials")
 	require.Equal(t, 1, f.creates())
 	f.retire(t, domain.RetiredByExit)
 	require.Zero(t, f.allocation(t).DeletedAt, "a request without an acknowledged exit retires nothing")

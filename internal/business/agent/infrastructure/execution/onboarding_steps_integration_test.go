@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -50,11 +51,20 @@ func newOnboarding(t *testing.T) *onboardingFixture {
 	require.NoError(t, err)
 	owners := &readingProcess{}
 	steps := newExecutionSteps(t, p, connections, owners, nil, time.Now)
+	// The sandbox is bound while it starts, so its reconciliation delivers
+	// nothing yet; each case takes the onboarding from there.
+	lifecycle.mu.Lock()
+	lifecycle.createPending = true
+	lifecycle.mu.Unlock()
 	_, err = steps.handler.Reconcile(ctx, record.ID, false)
 	require.NoError(t, err)
+	lifecycle.mu.Lock()
+	lifecycle.info.Status.State = sdk.StateRunning
+	lifecycle.mu.Unlock()
 	record, _, err = latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, sandboxID, record.SandboxID)
+	require.False(t, record.SandboxReady)
 	return &onboardingFixture{steps: steps, lifecycle: lifecycle, owners: owners, db: db, record: record}
 }
 
@@ -184,7 +194,7 @@ func TestSweepWakesTheDrainOfAStoppedWork(t *testing.T) {
 	f.requestExit(t)
 	require.Equal(t, stepKinds(domain.StepWithdrawCredentials, domain.StepSignalExit), f.step(t, false))
 	before := f.authorityCalls()
-	require.NoError(t, f.steps.handler.Prepare(context.Background(), f.record.ID))
+	require.NoError(t, f.steps.handler.RunLongStep(context.Background(), f.record.ID))
 	require.Equal(t, before, f.authorityCalls(), "a stopping Work is never prepared")
 }
 
@@ -229,7 +239,7 @@ func TestStaleAllocationReportsNoLoss(t *testing.T) {
 func TestPreparationPastTheStartupDeadlineAttemptsNothing(t *testing.T) {
 	f := newOnboarding(t)
 	f.at(t, fmt.Sprintf("sandbox_ready = 1, seated_at = %d", time.Now().Add(-domain.StartupDeadline-time.Minute).UnixMilli()))
-	require.NoError(t, f.steps.handler.Prepare(context.Background(), f.record.ID))
+	require.NoError(t, f.steps.handler.RunLongStep(context.Background(), f.record.ID))
 	record, _, err := f.steps.environment.provisioning.get(context.Background(), f.record.ID)
 	require.NoError(t, err)
 	require.Empty(t, record.PreparationProcessID, "no preparation started")

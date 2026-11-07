@@ -62,7 +62,7 @@ func TestConnectionEndedFromDispatcherReconnectsTheLiveExecution(t *testing.T) {
 	defer server.Close()
 
 	require.NoError(t, agentfeedback.NewClient(server.Client(), server.URL, "integration-secret").ReportConnectionEnded(ctx, "work-1", "process-1"))
-	require.Equal(t, []string{"agent:allocation-reconnect:" + executionID}, wakes.keys)
+	require.Equal(t, []string{"agent:execution:" + executionID}, wakes.keys)
 	require.NoError(t, agentfeedback.NewClient(server.Client(), server.URL, "integration-secret").ReportConnectionEnded(ctx, "stopped-work", "process-1"), "a Work without an execution has nothing to reconnect")
 	require.Len(t, wakes.keys, 1)
 

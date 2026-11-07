@@ -90,11 +90,6 @@ type ExecutionDecision struct {
 	Changed bool
 }
 
-// Includes reports whether the decision takes a step of kind.
-func (d ExecutionDecision) Includes(kind ExecutionStepKind) bool {
-	return slices.ContainsFunc(d.Steps, func(step ExecutionStep) bool { return step.Kind == kind })
-}
-
 // Reconcile decides its next steps from its own facts, the environments
 // carrying its ownership as observed now and the current time. It binds the
 // first observed environment while none is bound and deletes every other
