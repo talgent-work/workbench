@@ -18,7 +18,7 @@ func (h *WorkHandler) GetWorkPluginResults(ctx context.Context, request *agentpu
 	}
 	response := &agentpublicv1.GetWorkPluginResultsResponse{}
 	for _, result := range results {
-		item := &agentpublicv1.WorkPluginResult{Slug: result.Slug, ReleaseVersion: result.ReleaseVersion, Source: result.Source, Installation: pluginStatus(result.InstallationObserved, result.Installed), InstallationReason: result.InstallationReason, Loading: pluginStatus(result.LoadObserved, result.Loaded), LoadingReason: result.LoadReason}
+		item := &agentpublicv1.WorkPluginResult{Slug: result.Slug, ReleaseVersion: result.ReleaseVersion, Source: result.Source, Installation: pluginStatus(result.InstallationReported, result.Installed), InstallationReason: result.InstallationReason, Loading: pluginStatus(result.LoadingReported, result.Loaded), LoadingReason: result.LoadingReason}
 		if !result.UpdatedAt.IsZero() {
 			item.UpdatedAt = timestamppb.New(result.UpdatedAt)
 		}
@@ -27,8 +27,8 @@ func (h *WorkHandler) GetWorkPluginResults(ctx context.Context, request *agentpu
 	return response, nil
 }
 
-func pluginStatus(observed, succeeded bool) agentpublicv1.PluginPreparationStatus {
-	if !observed {
+func pluginStatus(reported, succeeded bool) agentpublicv1.PluginPreparationStatus {
+	if !reported {
 		return agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_UNSPECIFIED
 	}
 	if succeeded {

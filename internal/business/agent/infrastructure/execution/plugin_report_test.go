@@ -16,7 +16,7 @@ func twoPluginSnapshot() domain.CapabilitySnapshot {
 func TestRepeatedPreparationReportsKeepEachPluginsOutcome(t *testing.T) {
 	report := `{"results":[{"slug":"mattpocock-skills","installed":false,"reason":"installation_failed"},{"slug":"talgent-runtime","installed":true,"reason":""}]}` + "\n"
 	results := installationResults([]byte(report+report+report), 0, twoPluginSnapshot())
-	require.Equal(t, []pluginInstallationResult{
+	require.Equal(t, []domain.PluginInstallation{
 		{Slug: "mattpocock-skills", Installed: false, Reason: "installation_failed"},
 		{Slug: "talgent-runtime", Installed: true, Reason: ""},
 	}, results)

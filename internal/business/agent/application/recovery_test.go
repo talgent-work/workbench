@@ -99,8 +99,10 @@ func bound(t *testing.T) func(*domain.AgentExecution) {
 func launched(t *testing.T) func(*domain.AgentExecution) {
 	return func(execution *domain.AgentExecution) {
 		bound(t)(execution)
-		require.True(t, execution.RecordPreparation())
-		_, err := execution.RecordLaunch("process")
+		prepared, err := execution.RecordPreparation(domain.PreparationReport{})
+		require.NoError(t, err)
+		require.True(t, prepared)
+		_, err = execution.RecordLaunch("process")
 		require.NoError(t, err)
 	}
 }

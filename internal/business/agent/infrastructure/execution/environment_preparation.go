@@ -6,8 +6,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/google/uuid"
-	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
@@ -69,37 +67,38 @@ func (n *NativeConnections) startPreparation(ctx context.Context, record *alloca
 // which installs Plugins and then checks out the planned repositories before
 // the Harness starts, and waits for its exit until ctx ends. An
 // interrupted wait detaches only; the retained handle is reattached from
-// offset zero. Outcomes are recorded before it returns, and only then does
-// the execution record its preparation ended, so a ready Harness always
-// follows recorded checkout outcomes.
-func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *allocationRecord, client *execd.Client, snapshot domain.CapabilitySnapshot) error {
+// offset zero. Checkout outcomes are recorded before it returns, and it
+// reports each selected Plugin's installation, which the execution records
+// with the end of its preparation, so a ready Harness always follows recorded
+// outcomes.
+func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *allocationRecord, client *execd.Client, snapshot domain.CapabilitySnapshot) ([]domain.PluginInstallation, error) {
 	if record.EnvironmentPrepared {
-		return nil
+		return nil, nil
 	}
 	if record.PreparationProcessID == "" {
 		if err := n.startPreparation(ctx, record, client); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	plan, err := record.checkoutPlan()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	pipe, err := client.Attach(ctx, record.PreparationProcessID, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer pipe.Close()
 	var output []byte
 	for {
 		frame, err := pipe.Receive(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		switch frame.Type {
 		case "stdout", "replay":
 			if len(output)+len(frame.Data) > 128*1024 {
-				return errors.New("agent: preparation report too large")
+				return nil, errors.New("agent: preparation report too large")
 			}
 			output = append(output, frame.Data...)
 		case "exit":
@@ -107,26 +106,21 @@ func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *allo
 			if report.Repositories == nil {
 				report.Repositories = settledCheckouts(output, plan)
 			}
-			// Idempotent Work/slug projection, independent of Work lifecycle. A
-			// late result is allowed to be superseded by current preparation facts.
-			if err := n.savePluginResults(ctx, record.SessionID, report.plugins(snapshot)); err != nil {
-				return err
-			}
 			if plan != nil {
 				if err := n.checkouts.Handle(ctx, command.RecordRepositoryCheckouts{WorkID: record.SessionID, Results: report.checkouts(), Unfinished: unfinishedCheckout(*frame.ExitCode)}); err != nil {
-					return err
+					return nil, err
 				}
 			}
 			// The wait may outlast other steps; it ended the preparation process
 			// still recorded for the execution.
 			current, found, err := n.provisioning.get(ctx, record.ID)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if !found || current.PreparationProcessID != record.PreparationProcessID {
-				return errEnvironmentConflict
+				return nil, errEnvironmentConflict
 			}
-			return nil
+			return report.plugins(snapshot), nil
 		}
 	}
 }
@@ -163,15 +157,17 @@ func latestReport(output []byte, exit int, snapshot domain.CapabilitySnapshot, p
 	return preparationReport{}
 }
 
-func (r preparationReport) plugins(snapshot domain.CapabilitySnapshot) []pluginInstallationResult {
+// plugins reports each selected Plugin's installation; without a usable
+// report, every Plugin failed to prepare.
+func (r preparationReport) plugins(snapshot domain.CapabilitySnapshot) []domain.PluginInstallation {
 	seen := validPlugins(r.Results, snapshot)
-	results := make([]pluginInstallationResult, 0, len(snapshot.Plugins))
+	results := make([]domain.PluginInstallation, 0, len(snapshot.Plugins))
 	for _, plugin := range snapshot.Plugins {
 		result, found := seen[plugin.Release.Slug]
 		if !found {
 			result = pluginInstallationResult{Slug: plugin.Release.Slug, Reason: "preparation_failed"}
 		}
-		results = append(results, result)
+		results = append(results, domain.PluginInstallation{Slug: result.Slug, Installed: result.Installed, Reason: result.Reason})
 	}
 	return results
 }
@@ -281,19 +277,4 @@ func validPlugins(reported []pluginInstallationResult, snapshot domain.Capabilit
 		}
 	}
 	return seen
-}
-
-func (n *NativeConnections) savePluginResults(ctx context.Context, workID string, results []pluginInstallationResult) error {
-	now := n.provisioning.now().UnixMilli()
-	for _, result := range results {
-		_, err := n.provisioning.db.Context(ctx).Exec(`INSERT INTO agent_plugin_result
-		(id, work_id, slug, installation_observed, installed, reason, version, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, 1, ?, ?, 1, ?, ?, 0)
-		ON DUPLICATE KEY UPDATE installation_observed=1, installed=VALUES(installed), reason=VALUES(reason), version=version+1, updated_at=VALUES(updated_at)`,
-			uuid.Must(uuid.NewV7()).String(), workID, result.Slug, result.Installed, result.Reason, now, now)
-		if err != nil {
-			return oops.With("operation", "save_plugin_installation_result").Wrap(err)
-		}
-	}
-	return nil
 }

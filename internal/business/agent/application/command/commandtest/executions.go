@@ -78,7 +78,7 @@ func (r *Executions) Save(_ context.Context, execution *domain.AgentExecution) e
 		return domain.ErrConcurrentModification
 	}
 	stored.Version = execution.Version + 1
-	stored.Events = nil
+	stored.Events, stored.PluginResults = nil, slices.Clone(execution.PluginResults)
 	r.saved[execution.ID] = stored
 	if execution.Events != nil {
 		r.Committed = append(r.Committed, execution.Events.Drain()...)
@@ -101,7 +101,7 @@ func (r *Executions) Put(execution *domain.AgentExecution) {
 	if stored.Version == 0 {
 		stored.Version = 1
 	}
-	stored.Events = nil
+	stored.Events, stored.PluginResults = nil, slices.Clone(execution.PluginResults)
 	r.saved[execution.ID] = stored
 }
 
@@ -125,6 +125,6 @@ func (r *Executions) CommittedKinds() []domain.EventKind {
 
 func loaded(saved domain.AgentExecution) *domain.AgentExecution {
 	copy := saved
-	copy.Events = domain.NewEventCollection()
+	copy.Events, copy.PluginResults = domain.NewEventCollection(), slices.Clone(saved.PluginResults)
 	return &copy
 }

@@ -76,7 +76,8 @@ func TestPreparationReportRecordsTheFirstStartsCheckouts(t *testing.T) {
 	// Controlplane takes no part in checkout beyond sending the plan: this
 	// Provisioning has no storage root, so it cannot write the workspace.
 	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now, initial: initial}, checkouts: command.NewRecordRepositoryCheckoutsHandler(initial)}
-	require.NoError(t, n.prepareEnvironment(ctx, &record, client, domain.CapabilitySnapshot{}))
+	_, err = n.prepareEnvironment(ctx, &record, client, domain.CapabilitySnapshot{})
+	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(created, "talgent_checkout_plan='"), "the process receives the plan: %s", created)
 	for _, secret := range []string{"Authorization", "x-access-token", "credential.helper=!", "GIT_ASKPASS"} {
 		require.NotContains(t, created, secret, "the plan carries no credential; the Credential Proxy adds it")

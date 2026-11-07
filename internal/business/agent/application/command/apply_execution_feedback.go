@@ -33,6 +33,9 @@ const (
 	// Work's Disconnection follows; DetachedSince names the loss.
 	AttachmentLost     ExecutionFeedbackKind = "attachment_lost"
 	AttachmentReturned ExecutionFeedbackKind = "attachment_returned"
+	// PluginLoadsObserved is the complete inventory of Plugins the process
+	// loaded.
+	PluginLoadsObserved ExecutionFeedbackKind = "plugin_loads_observed"
 )
 
 var ErrUnknownExecutionFeedback = errors.New("agent: unknown execution feedback")
@@ -61,6 +64,8 @@ type ExecutionFeedback struct {
 	// DetachedSince is when the attachment an AttachmentLost or
 	// AttachmentReturned report is about was lost.
 	DetachedSince time.Time
+	// LoadedPlugins is the inventory a PluginLoadsObserved report carries.
+	LoadedPlugins []domain.LoadedPlugin
 }
 
 type ApplyExecutionFeedbackHandler struct {
@@ -99,6 +104,8 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 		return h.confirmReady(ctx, execution.ID, domain.ReadinessReport{Prepared: feedback.Kind == ExecutorPrepared, Started: feedback.Kind == AgentStarted})
 	case ProcessObserved:
 		return h.observeProcess(ctx, execution)
+	case PluginLoadsObserved:
+		return h.recordPluginLoads(ctx, execution, feedback)
 	}
 	if !launched(execution, feedback.ProcessID) || execution.Retired() {
 		// An exiting process's input still settled in the buffer: its

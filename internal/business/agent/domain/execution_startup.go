@@ -159,16 +159,6 @@ func (e *AgentExecution) RecordInputSync(synced int64, syncedAt time.Time) bool 
 	return true
 }
 
-// RecordPreparation records that its in-environment preparation ended, its
-// outcomes recorded within its LaunchSpecification (Preparation order).
-func (e *AgentExecution) RecordPreparation() bool {
-	if e.Retired() || e.Environment == "" || e.Process.PreparationEnded {
-		return false
-	}
-	e.Process.PreparationEnded = true
-	return true
-}
-
 // RecordLaunch records the Harness process launched into its bound
 // environment. Only an unretired execution without an exit request launches
 // (Bound environment only), and a second process is never recorded.

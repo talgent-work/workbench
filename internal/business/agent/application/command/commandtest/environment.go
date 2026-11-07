@@ -2,6 +2,7 @@ package commandtest
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -22,6 +23,8 @@ type Environment struct {
 	SubmitErr error
 	// PrepareFunc runs as Prepare; nil prepares at once.
 	PrepareFunc func(ctx context.Context) error
+	// Installations is what a preparation reports of its Plugins.
+	Installations []domain.PluginInstallation
 	// ProcessID is the process Launch starts, "process" unless named.
 	ProcessID string
 	Delivery  domain.CredentialDelivery
@@ -86,15 +89,17 @@ func (e *Environment) WithdrawCredentials(context.Context, *domain.AgentExecutio
 	return e.StepErr
 }
 
-func (e *Environment) Prepare(ctx context.Context, _ *domain.AgentExecution) error {
+func (e *Environment) Prepare(ctx context.Context, _ *domain.AgentExecution) ([]domain.PluginInstallation, error) {
 	e.mu.Lock()
 	e.Prepared++
-	prepare := e.PrepareFunc
+	prepare, installations := e.PrepareFunc, slices.Clone(e.Installations)
 	e.mu.Unlock()
 	if prepare != nil {
-		return prepare(ctx)
+		if err := prepare(ctx); err != nil {
+			return nil, err
+		}
 	}
-	return nil
+	return installations, nil
 }
 
 func (e *Environment) Launch(context.Context, *domain.AgentExecution) (string, error) {

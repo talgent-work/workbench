@@ -11,9 +11,10 @@ import (
 	"xorm.io/xorm"
 )
 
-// AgentExecutionRepository keeps every AgentExecution in execution_allocation.
-// It writes the execution's facts under its optimistic version and leaves
-// the technical columns to the execution environment adapter.
+// AgentExecutionRepository keeps every AgentExecution in execution_allocation
+// and its Plugin outcomes in execution_plugin_result. It writes the
+// execution's facts under its optimistic version and leaves the technical
+// columns to the execution environment adapter.
 type AgentExecutionRepository struct {
 	records
 	now func() time.Time
@@ -36,7 +37,7 @@ func (r *AgentExecutionRepository) Get(ctx context.Context, id string) (*domain.
 	if !found {
 		return nil, domain.ErrExecutionNotFound
 	}
-	return executionFromRecord(record)
+	return r.restore(ctx, record)
 }
 
 func (r *AgentExecutionRepository) Latest(ctx context.Context, workID string) (*domain.AgentExecution, error) {
@@ -47,7 +48,19 @@ func (r *AgentExecutionRepository) Latest(ctx context.Context, workID string) (*
 	if !found {
 		return nil, domain.ErrExecutionNotFound
 	}
-	return executionFromRecord(record)
+	return r.restore(ctx, record)
+}
+
+// restore rebuilds the execution of a record with its Plugin outcomes.
+func (r *AgentExecutionRepository) restore(ctx context.Context, record allocationRecord) (*domain.AgentExecution, error) {
+	execution, err := executionFromRecord(record)
+	if err != nil {
+		return nil, err
+	}
+	if execution.PluginResults, err = pluginResults(ctx, r.db, execution.ID); err != nil {
+		return nil, err
+	}
+	return execution, nil
 }
 
 func (r *AgentExecutionRepository) Save(ctx context.Context, execution *domain.AgentExecution) error {
@@ -60,13 +73,33 @@ func (r *AgentExecutionRepository) Save(ctx context.Context, execution *domain.A
 	}
 	now := r.now().UnixMilli()
 	record.UpdatedAt = now
-	if execution.Version == 0 {
-		return r.insert(ctx, record, execution.Launch.AuthorizationSelection, now)
-	}
-	record.Version = execution.Version + 1
-	changed, err := r.db.Context(ctx).Cols(factColumns...).Where("id = ? AND version = ?", execution.ID, execution.Version).Update(&record)
-	if err != nil {
+	tx := r.db.NewSession()
+	defer tx.Close()
+	tx = tx.Context(ctx)
+	if err := tx.Begin(); err != nil {
 		return oops.With("operation", "save_execution", "execution_id", execution.ID).Wrap(err)
+	}
+	defer tx.Rollback()
+	if execution.Version == 0 {
+		err = insertExecution(tx, record, execution.Launch.AuthorizationSelection, now)
+	} else {
+		err = updateExecution(tx, record, execution.Version)
+	}
+	if err != nil {
+		return err
+	}
+	if err := savePluginResults(tx, execution.ID, execution.PluginResults, now); err != nil {
+		return err
+	}
+	return oops.With("operation", "commit_execution", "execution_id", execution.ID).Wrap(tx.Commit())
+}
+
+// updateExecution writes the execution's facts under its loaded version.
+func updateExecution(tx *xorm.Session, record allocationRecord, version int) error {
+	record.Version = version + 1
+	changed, err := tx.Cols(factColumns...).Where("id = ? AND version = ?", record.ID, version).Update(&record)
+	if err != nil {
+		return oops.With("operation", "save_execution", "execution_id", record.ID).Wrap(err)
 	}
 	if changed != 1 {
 		return domain.ErrConcurrentModification
@@ -74,9 +107,9 @@ func (r *AgentExecutionRepository) Save(ctx context.Context, execution *domain.A
 	return nil
 }
 
-// insert records a new execution with its technical columns empty; the
-// unique unretired execution per Work refuses a second one.
-func (r *AgentExecutionRepository) insert(ctx context.Context, record allocationRecord, selection domain.WorkAuthorizationSelection, now int64) error {
+// insertExecution records a new execution with its technical columns empty;
+// the unique unretired execution per Work refuses a second one.
+func insertExecution(tx *xorm.Session, record allocationRecord, selection domain.WorkAuthorizationSelection, now int64) error {
 	authorizations, err := usedAuthorizations(selection)
 	if err != nil {
 		return err
@@ -84,7 +117,7 @@ func (r *AgentExecutionRepository) insert(ctx context.Context, record allocation
 	record.Version, record.CreatedAt = 1, now
 	record.AuthorizationIDs = authorizations
 	record.ServiceAccessJSON, record.CredentialPlanJSON, record.SpecificationJSON = []byte("[]"), []byte("null"), []byte("null")
-	_, err = r.db.Context(ctx).Insert(&record)
+	_, err = tx.Insert(&record)
 	var duplicate *mysql.MySQLError
 	if errors.As(err, &duplicate) && duplicate.Number == 1062 {
 		return domain.ErrExecutionAdmission

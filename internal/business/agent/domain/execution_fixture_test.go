@@ -65,7 +65,7 @@ func launchedExecution(t *testing.T) (*domain.AgentWork, *domain.AgentExecution)
 	t.Helper()
 	work, execution := boundExecution(t)
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepPrepare}, kinds(decide(t, execution, runningEnvironment("env-1"), execution.Desk.SeatedAt)))
-	require.True(t, execution.RecordPreparation())
+	require.True(t, recordPreparation(t, execution))
 	launched, err := execution.RecordLaunch("process-1")
 	require.NoError(t, err)
 	require.True(t, launched)
@@ -75,4 +75,13 @@ func launchedExecution(t *testing.T) (*domain.AgentWork, *domain.AgentExecution)
 // executionEvents drains the execution's events.
 func executionEvents(execution *domain.AgentExecution) []domain.Event {
 	return execution.Events.Drain()
+}
+
+// recordPreparation records that the execution's preparation ended with no
+// Plugin selected, and reports whether that changed it.
+func recordPreparation(t *testing.T, execution *domain.AgentExecution) bool {
+	t.Helper()
+	changed, err := execution.RecordPreparation(domain.PreparationReport{})
+	require.NoError(t, err)
+	return changed
 }

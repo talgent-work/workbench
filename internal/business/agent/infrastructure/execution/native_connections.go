@@ -162,17 +162,17 @@ func (n *NativeConnections) withdraw(ctx context.Context, record allocationRecor
 	})
 }
 
-// prepare sees the preparation process through to its exit, bounded by ctx.
-// Re-attaching after an interrupted attempt replays the preparation from its
-// start.
-func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord) error {
+// prepare sees the preparation process through to its exit, bounded by ctx,
+// and reports each selected Plugin's installation. Re-attaching after an
+// interrupted attempt replays the preparation from its start.
+func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord) ([]domain.PluginInstallation, error) {
 	box, err := n.resolve(ctx, record)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	admitted, err := decodeStartRequest(record.RequestJSON)
 	if err != nil {
-		return oops.With("operation", "decode_native_request").Wrap(err)
+		return nil, oops.With("operation", "decode_native_request").Wrap(err)
 	}
 	if record.PreparationProcessID == "" {
 		err := n.credentials.withLock(ctx, record.SandboxID, func() error {
@@ -184,7 +184,7 @@ func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord
 			return err
 		})
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	return n.prepareEnvironment(ctx, &record, box.client, admitted.Capabilities)
