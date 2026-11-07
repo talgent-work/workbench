@@ -7,7 +7,7 @@ server:
     repository: sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server
     tag: v0.2.2@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb
   # The chart default (4Gi/1 CPU requests) far exceeds this server's use; it
-  # idles near 120Mi, and its requests count toward the agent-executions quota.
+  # idles near 120Mi.
   resources:
     limits:
       cpu: "1"
@@ -45,7 +45,7 @@ configToml: |
   readiness_timeout_seconds = 60.0
   [kubernetes]
   kubeconfig_path = ""
-  namespace = "talgent"
+  namespace = "talgent-sandbox"
   workload_provider = "batchsandbox"
   sandbox_create_timeout_seconds = 300
   # The informer cache stopped following BatchSandbox status on this cluster:

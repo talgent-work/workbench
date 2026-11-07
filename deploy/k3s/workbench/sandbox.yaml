@@ -1,0 +1,312 @@
+# What lives in the sandbox namespace, talgent-sandbox (agent-capacity.yaml
+# creates it with its budget): by convention it runs only sandbox Pods, which
+# OpenSandbox creates there (SANDBOX_NAMESPACE). The platform namespace,
+# talgent, holds trusted services that trust each other.
+#
+# Storage: sandboxes mount claims of the names Storage grants
+# (agent-execution's working-claim and inputs-claim), each bound to a PV of
+# its own over the platform's NAS share or JuiceFS file system; controlplane
+# keeps its claims in talgent. A PV's name and volume handle carry -sandbox.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: talgent-nas-root-sandbox
+  labels:
+    talgent.io/storage: nas-root-sandbox
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - timeo=600
+    - retrans=2
+    - noatime
+  # kustomization.yaml copies the NAS export of the environment into both
+  # NAS PVs.
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: talgent-nas-root-sandbox
+    volumeAttributes:
+      server: nfs.example.com
+      share: /exports/talgent
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: talgent-nas-root
+  namespace: talgent-sandbox
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 1Ti
+  selector:
+    matchLabels:
+      talgent.io/storage: nas-root-sandbox
+---
+# Work input sources on the JuiceFS file system. Sandboxes mount it
+# read-only: OpenSandbox requires every mount of one claim to share its
+# read-only policy. A distinct volumeHandle gives it its own CSI mount.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: talgent-juicefs-inputs-sandbox
+  labels:
+    talgent.io/storage: juicefs-inputs-sandbox
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  # File attributes (uploader, producing Work) are extended attributes.
+  mountOptions:
+    - enable-xattr
+  csi:
+    driver: csi.juicefs.com
+    volumeHandle: talgent-juicefs-inputs-rustfs-sandbox
+    fsType: juicefs
+    nodePublishSecretRef:
+      name: talgent-juicefs-secret
+      namespace: talgent
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: talgent-juicefs-inputs
+  namespace: talgent-sandbox
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 100Gi
+  selector:
+    matchLabels:
+      talgent.io/storage: juicefs-inputs-sandbox
+---
+# controlplane, under its ServiceAccount in talgent, reads the execution
+# quota and observes the OpenSandbox resources that are the environment
+# authority; creation and deletion go through the OpenSandbox API.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: talgent-controlplane
+  namespace: talgent-sandbox
+rules:
+  - apiGroups: [""]
+    resources: ["resourcequotas"]
+    verbs: ["get"]
+  - apiGroups: ["sandbox.opensandbox.io"]
+    resources: ["batchsandboxes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: talgent-controlplane
+  namespace: talgent-sandbox
+subjects:
+  - kind: ServiceAccount
+    name: talgent-controlplane
+    namespace: talgent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: talgent-controlplane
+---
+# The OpenSandbox server (deploy/opensandbox/server.yaml, ServiceAccount
+# opensandbox in talgent) manages sandboxes only in this namespace: a
+# compromised server cannot touch the platform namespace's Pods and Secrets.
+# At cluster scope it only reads Namespaces and RuntimeClasses. These objects
+# keep the chart's names, so an apply narrows a cluster that still has the
+# chart's ClusterRole; scripts/deploy/apply-opensandbox.sh applies them
+# (selected by their app.kubernetes.io/name label) ahead of the server.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opensandbox-role
+  namespace: talgent-sandbox
+  labels:
+    app.kubernetes.io/name: opensandbox-server
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/status", "pods/log", "events", "services", "configmaps"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "delete", "get"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["create", "delete", "get", "list", "patch"]
+  - apiGroups: ["sandbox.opensandbox.io"]
+    resources: ["batchsandboxes", "batchsandboxes/status", "batchsandboxes/finalizers"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["sandbox.opensandbox.io"]
+    resources: ["pools", "pools/status", "pools/finalizers"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["sandbox.opensandbox.io"]
+    resources: ["sandboxsnapshots", "sandboxsnapshots/status", "sandboxsnapshots/finalizers"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: opensandbox-rolebinding
+  namespace: talgent-sandbox
+  labels:
+    app.kubernetes.io/name: opensandbox-server
+subjects:
+  - kind: ServiceAccount
+    name: opensandbox
+    namespace: talgent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opensandbox-role
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: opensandbox-role
+  labels:
+    app.kubernetes.io/name: opensandbox-server
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+  - apiGroups: ["node.k8s.io"]
+    resources: ["runtimeclasses"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: opensandbox-rolebinding
+  labels:
+    app.kubernetes.io/name: opensandbox-server
+subjects:
+  - kind: ServiceAccount
+    name: opensandbox
+    namespace: talgent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: opensandbox-role
+---
+# Network: every restriction on a sandbox lives on its own ingress and egress
+# here, and no policy targets a trusted platform service. NetworkPolicies only
+# add up, so each allowance a deployment may drop as a whole is a policy of
+# its own.
+#
+# Every Pod in this namespace is a sandbox: the policies select all of them
+# rather than relying on labels OpenSandbox sets. Rules for platform services
+# name both their namespace and their Pods, and the Pods' ports, as the CNI
+# sees the backend after Service DNAT. The sandbox's egress sidecar excludes
+# the Services' ClusterIPs from its own nft policy, never a Pod or node address.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-boundary
+  namespace: talgent-sandbox
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  # Only controlplane, dispatcher and the OpenSandbox server reach a
+  # sandbox's execd and egress ports.
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: talgent
+          podSelector:
+            matchLabels:
+              app: controlplane
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: talgent
+          podSelector:
+            matchLabels:
+              app: dispatcher
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: talgent
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opensandbox-server
+      ports:
+        - protocol: TCP
+          port: 44772
+        - protocol: TCP
+          port: 18080
+  # The internet, DNS and the Collector; private networks, the NAS included,
+  # stay closed.
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: talgent
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
+---
+# A sandbox reaches the platform through controlplane's native API, which
+# admits each call by its Work credential. A deployment that routes sandboxes
+# to another platform service deletes this policy and opens that service with
+# a policy of its own.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-native-api
+  namespace: talgent-sandbox
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: talgent
+          podSelector:
+            matchLabels:
+              app: controlplane
+      ports:
+        - protocol: TCP
+          port: 8081

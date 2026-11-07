@@ -124,7 +124,8 @@ ensure_redis_auth_secret
 
 bash "${ROOT_DIR}/scripts/deploy/bootstrap-native-control.sh"
 
-# The namespace budget precedes every Pod, OpenSandbox's included.
+# The sandbox namespace and its budget precede every Pod, OpenSandbox's
+# included.
 kubectl apply -f "${rendered}" -l app.kubernetes.io/name=agent-capacity
 
 if [[ "${SKIP_DB_BOOTSTRAP}" != "1" ]]; then
@@ -133,9 +134,15 @@ else
   echo "skip MySQL schema bootstrap because TALGENT_SKIP_DB_BOOTSTRAP=1" >&2
 fi
 
-# OpenSandbox's step deploys the Collector, which creates the native tables
-# the ClickHouse projections read.
 bash "${ROOT_DIR}/scripts/deploy/apply-opensandbox.sh" "${rendered}"
+
+# The Collector creates the native tables the ClickHouse projections read. Its
+# pipeline has one copy, configs/otelcol/config.yaml; the rendered Deployment
+# carries its hash, so a change rolls the Pods.
+kubectl -n "${NS}" create configmap otelcol-config --from-file=config.yaml="${ROOT_DIR}/configs/otelcol/config.yaml" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f "${rendered}" -l app.kubernetes.io/name=workbench-environment
+kubectl apply -f "${rendered}" -l app.kubernetes.io/name=otel-collector
+kubectl -n "${NS}" rollout status deployment/otel-collector --timeout=180s
 
 if [[ "${SKIP_CLICKHOUSE_MIGRATION}" != "1" ]]; then
   CLICKHOUSE_WAIT_SECONDS="${CLICKHOUSE_WAIT_SECONDS:-120}" bash "${ROOT_DIR}/scripts/deploy/bootstrap-clickhouse.sh"

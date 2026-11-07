@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploys OpenSandbox and the OTel Collector, whose ClusterIP the sandbox
-# NetworkPolicy needs. Its argument is the k3s manifest scripts/deploy/render-k3s.sh
-# rendered; the Collector's objects are applied from it.
+# Deploys OpenSandbox. Its argument is the k3s manifest
+# scripts/deploy/render-k3s.sh rendered; the server's permissions, in the
+# sandbox namespace, are applied from it. The sandbox namespace and its
+# NetworkPolicies come with that manifest.
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 if [[ $# -ne 1 || ! -r "$1" ]]; then
   echo "usage: $(basename "$0") <rendered k3s manifest>" >&2
@@ -52,21 +53,10 @@ elif [[ ! "$key_length" =~ ^[0-9]+$ ]] || (( key_length < 32 )); then
   echo "opensandbox-api has no valid api-key; existing credentials were not changed" >&2
   exit 1
 fi
-# The Collector's pipeline has one copy, configs/otelcol/config.yaml; the
-# rendered Deployment carries its hash, so a change rolls the Pods.
-kubectl -n talgent create configmap otelcol-config --from-file=config.yaml="$root_dir/configs/otelcol/config.yaml" --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -f "$manifest" -l app.kubernetes.io/name=workbench-environment
-kubectl apply -f "$manifest" -l app.kubernetes.io/name=otel-collector
-kubectl -n talgent rollout status deployment/otel-collector --timeout=180s
-collector_ip=$(kubectl -n talgent get service otel-collector -o jsonpath='{.spec.clusterIP}')
-if [[ ! "$collector_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Expected IPv4 ClusterIP for otel-collector" >&2; exit 1
-fi
-sed "s|TALGENT_OTLP_SERVICE_CIDR|$collector_ip/32|" "$root_dir/deploy/opensandbox/network-policy.yaml" > "$deployment_dir/network-policy.yaml"
-kubectl apply -f "$deployment_dir/network-policy.yaml"
 kubectl apply -f "$root_dir/deploy/opensandbox/resources.yaml"
 kubectl apply --server-side -f "$root_dir/deploy/opensandbox/controller.yaml"
 kubectl wait --for=condition=Established --timeout=60s crd/batchsandboxes.sandbox.opensandbox.io crd/pools.sandbox.opensandbox.io crd/sandboxsnapshots.sandbox.opensandbox.io
 kubectl -n opensandbox-system rollout status deployment/opensandbox-controller-manager --timeout=300s
+kubectl apply -f "$manifest" -l app.kubernetes.io/name=opensandbox-server
 kubectl apply -f "$deployment_dir/server.yaml"
 kubectl -n talgent rollout status deployment/opensandbox --timeout=300s
