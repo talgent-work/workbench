@@ -5,6 +5,10 @@
 # placeholders, images at TALGENT_REGISTRY with their product's tag
 # (lib/images.sh), the platform release the Workbench's tag names, and the
 # Collector pipeline's hash.
+#
+# --placeholders renders with the placeholder values the kustomizations' own
+# environment.env files hold, without a deployment's environment: the offline
+# render CI tests the manifests with. Such a render is never applied.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -13,8 +17,13 @@ source "${ROOT_DIR}/scripts/deploy/lib/images.sh"
 # shellcheck source=lib/environment.sh
 source "${ROOT_DIR}/scripts/deploy/lib/environment.sh"
 
+placeholders=0
+if [[ "${1:-}" == "--placeholders" ]]; then
+  placeholders=1
+  shift
+fi
 if [[ $# -ne 1 || ! -f "$1/kustomization.yaml" ]]; then
-  echo "usage: $(basename "$0") <kustomization directory>" >&2
+  echo "usage: $(basename "$0") [--placeholders] <kustomization directory>" >&2
   exit 2
 fi
 target="$(cd "$1" && pwd -P)"
@@ -26,7 +35,9 @@ target="$(cd "$1" && pwd -P)"
 # the base's.
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
-resolve_k3s_environment "${target}" "${work}/environment.env"
+if [[ "${placeholders}" == "0" ]]; then
+  resolve_k3s_environment "${target}" "${work}/environment.env"
+fi
 cp -R "${K3S_DIR}/." "${work}/tree"
 # A Workbench read from the Go module cache is read-only, and so is its copy.
 chmod -R u+w "${work}/tree"
@@ -41,7 +52,9 @@ else
   cp -R "${target}" "${build}"
   chmod -R u+w "${build}"
 fi
-find "${work}/tree" -name environment.env -exec cp "${work}/environment.env" {} \;
+if [[ "${placeholders}" == "0" ]]; then
+  find "${work}/tree" -name environment.env -exec cp "${work}/environment.env" {} \;
+fi
 
 # A vX.Y.Z tag deploys that platform release; the Computer Gateway tells the
 # Computers page which @talgent/computer to install. Any other tag is no
