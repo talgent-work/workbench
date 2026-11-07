@@ -33,7 +33,7 @@ def named(kind):
 # sandboxes; no policy targets a trusted platform service.
 for name, namespace in named("NetworkPolicy"):
     if name != "gotenberg-isolation":
-        check(namespace == "talgent-sandbox", f"NetworkPolicy {name} is in {namespace}, not talgent-sandbox")
+        check(namespace == "talgent-sandbox", f"NetworkPolicy {name} is in talgent-sandbox, got {namespace}")
 check(("gotenberg-isolation", "talgent") in named("NetworkPolicy"), "Gotenberg keeps its no-egress policy in talgent")
 check({"sandbox-boundary", "sandbox-native-api"} <= {n for n, _ in named("NetworkPolicy")},
       "the sandbox policies sandbox-boundary and sandbox-native-api are rendered")
@@ -93,17 +93,18 @@ for _, role in granted("ClusterRoleBinding", "ClusterRole"):
     for rule in role["rules"]:
         resources = {(g, r) for g in rule["apiGroups"] for r in rule["resources"]}
         check(resources <= cluster_reads and set(rule["verbs"]) <= {"get", "list", "watch"},
-              f"ClusterRole {role['metadata']['name']} grants the OpenSandbox server {sorted(rule['verbs'])} on {sorted(resources)} at cluster scope")
+              f"at cluster scope the OpenSandbox server only reads Namespaces and RuntimeClasses, got ClusterRole "
+              f"{role['metadata']['name']} granting {sorted(rule['verbs'])} on {sorted(resources)}")
 namespaced = granted("RoleBinding", "Role")
 check([where(r) for _, r in namespaced] == ["talgent-sandbox"], "the OpenSandbox server has one Role, in talgent-sandbox")
 check(any("pods" in rule["resources"] and "create" in rule["verbs"] for _, r in namespaced for rule in r["rules"]),
       "the OpenSandbox server's Role lets it create sandbox Pods")
 
 # The sandboxes' namespace is configured as SANDBOX_NAMESPACE only.
-check("K8S_NAMESPACE" not in open(os.environ["RENDERED"]).read(), "the rendered base still names K8S_NAMESPACE")
+check("K8S_NAMESPACE" not in open(os.environ["RENDERED"]).read(), "the rendered base never names K8S_NAMESPACE")
 
 if failures:
-    print("\n".join(failures), file=sys.stderr)
+    print("\n".join(f"expected: {f}" for f in failures), file=sys.stderr)
     sys.exit(1)
 PYTHON
 echo "k3s-render: ok"
