@@ -10,8 +10,8 @@ import (
 	"connectrpc.com/connect/v2/connectinprocess"
 	"github.com/stretchr/testify/require"
 
-	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
-	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 

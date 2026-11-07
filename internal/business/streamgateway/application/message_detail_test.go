@@ -6,8 +6,8 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
-	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/streamgateway/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	"github.com/talgent-work/workbench/internal/pkg/authn"

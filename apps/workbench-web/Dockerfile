@@ -14,15 +14,12 @@ WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY apps/workbench-web/package.json apps/workbench-web/
 COPY packages/workbench-ui/package.json packages/workbench-ui/
-COPY packages/contracts/package.json packages/contracts/tsconfig.json packages/contracts/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter=@talgent/workbench-web...
 
 COPY apps/workbench-web apps/workbench-web
 COPY packages/workbench-ui packages/workbench-ui
-COPY packages/contracts packages/contracts
-RUN pnpm --filter @talgent/contracts run build \
- && pnpm --filter @talgent/workbench-web run build
+RUN pnpm --filter @talgent/workbench-web run build
 
 FROM scratch AS prebuilt
 COPY apps/workbench-web/dist /repo/apps/workbench-web/dist

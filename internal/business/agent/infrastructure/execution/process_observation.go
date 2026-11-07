@@ -8,7 +8,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"github.com/samber/oops"
-	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"

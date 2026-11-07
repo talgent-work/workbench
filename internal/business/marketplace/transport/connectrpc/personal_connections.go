@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect/v2"
-	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"

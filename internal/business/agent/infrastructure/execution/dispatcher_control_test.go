@@ -9,8 +9,8 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 
-	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
-	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"

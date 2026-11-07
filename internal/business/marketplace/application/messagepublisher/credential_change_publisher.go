@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/marketplace/integration/v1"
+	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/go/marketplace/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 

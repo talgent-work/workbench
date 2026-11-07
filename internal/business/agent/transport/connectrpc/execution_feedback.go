@@ -6,8 +6,8 @@ import (
 	"errors"
 
 	"connectrpc.com/connect/v2"
-	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
-	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"

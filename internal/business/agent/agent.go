@@ -12,8 +12,8 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/eventlog"
 	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 
-	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
-	"github.com/talgent-work/contracts/gen/agent/public/v1/agentpublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 

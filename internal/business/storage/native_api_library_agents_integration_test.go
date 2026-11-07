@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/contracts/gen/storage/private/v1/storageprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	agentapplication "github.com/talgent-work/workbench/internal/business/agent/application"
 	agentcommand "github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"

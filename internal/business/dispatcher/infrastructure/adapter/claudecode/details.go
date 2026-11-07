@@ -3,7 +3,7 @@ package claudecode
 import (
 	"unicode/utf8"
 
-	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 )
 
 func withDetail(message *dispatcherpublicv1.UnifiedMessage, detail string, format dispatcherpublicv1.MessageDetailFormat) *dispatcherpublicv1.UnifiedMessage {

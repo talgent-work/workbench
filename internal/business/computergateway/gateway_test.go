@@ -19,8 +19,8 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
-	computerprivatev1 "github.com/talgent-work/contracts/gen/computer/private/v1"
-	"github.com/talgent-work/contracts/gen/computer/private/v1/computerprivatev1connect"
+	computerprivatev1 "github.com/talgent-work/contracts/gen/go/computer/private/v1"
+	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
 )
 

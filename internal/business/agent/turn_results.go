@@ -6,7 +6,7 @@ import (
 
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/turnresults"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"

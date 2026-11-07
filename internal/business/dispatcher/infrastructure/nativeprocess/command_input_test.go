@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/adapter/claudecode"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/nativeprocess"

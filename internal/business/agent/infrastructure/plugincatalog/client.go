@@ -10,9 +10,9 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
-	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/marketplace/private/v1"
-	"github.com/talgent-work/contracts/gen/marketplace/private/v1/marketplaceprivatev1connect"
-	"github.com/talgent-work/contracts/gen/marketplace/public/v1/marketplacepublicv1connect"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
+	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"

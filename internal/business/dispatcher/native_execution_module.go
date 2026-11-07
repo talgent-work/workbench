@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/messagedelivery"

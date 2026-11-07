@@ -8,7 +8,7 @@ import (
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 
-	computerintegrationv1 "github.com/talgent-work/contracts/gen/computer/integration/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 

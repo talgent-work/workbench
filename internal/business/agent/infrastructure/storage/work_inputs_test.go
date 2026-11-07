@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	storageprivatev1 "github.com/talgent-work/contracts/gen/storage/private/v1"
-	"github.com/talgent-work/contracts/gen/storage/private/v1/storageprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 )
 

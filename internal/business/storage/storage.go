@@ -17,7 +17,7 @@ import (
 	"go.uber.org/fx"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/contracts/gen/storage/private/v1/storageprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/application/messagepublisher"
 	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"

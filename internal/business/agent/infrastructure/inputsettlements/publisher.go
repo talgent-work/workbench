@@ -11,7 +11,7 @@ import (
 	"github.com/samber/oops"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	agentintegrationv1 "github.com/talgent-work/contracts/gen/agent/integration/v1"
+	agentintegrationv1 "github.com/talgent-work/contracts/gen/go/agent/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 )
 

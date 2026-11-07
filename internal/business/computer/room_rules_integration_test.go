@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	computerprivatev1 "github.com/talgent-work/contracts/gen/computer/private/v1"
-	computerpublicv1 "github.com/talgent-work/contracts/gen/computer/public/v1"
+	computerprivatev1 "github.com/talgent-work/contracts/gen/go/computer/private/v1"
+	computerpublicv1 "github.com/talgent-work/contracts/gen/go/computer/public/v1"
 )
 
 // registerOnline registers a machine for person and connects it.

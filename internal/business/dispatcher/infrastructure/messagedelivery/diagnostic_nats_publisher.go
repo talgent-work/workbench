@@ -7,7 +7,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/streamgateway/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 )
 
 var diagnosticProtoJSON = protojson.MarshalOptions{UseProtoNames: true}

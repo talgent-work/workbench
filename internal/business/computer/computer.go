@@ -22,8 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/talgent-work/contracts/gen/computer/private/v1/computerprivatev1connect"
-	"github.com/talgent-work/contracts/gen/computer/public/v1/computerpublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/computer/public/v1/computerpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/application/messagepublisher"
 	"github.com/talgent-work/workbench/internal/business/computer/domain"

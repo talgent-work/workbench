@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 )
 
 // Live readers receive a UnifiedMessage on the Work subject in proto JSON,

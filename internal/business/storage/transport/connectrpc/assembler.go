@@ -3,7 +3,7 @@ package connectrpc
 import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	storageprivatev1 "github.com/talgent-work/contracts/gen/storage/private/v1"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )

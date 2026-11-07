@@ -5,7 +5,7 @@ import (
 	"errors"
 	"slices"
 
-	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 )

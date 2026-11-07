@@ -16,8 +16,8 @@ import (
 	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
 
-	storageprivatev1 "github.com/talgent-work/contracts/gen/storage/private/v1"
-	"github.com/talgent-work/contracts/gen/storage/private/v1/storageprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )

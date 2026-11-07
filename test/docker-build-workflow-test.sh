@@ -149,7 +149,6 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
     ("branch already built", "false", "", "", "push", set(), "false"),
     ("Go test only", "false", "", "internal/business/agent/application/command/create_work_test.go", "push", set(), "false"),
     ("move out of an app", "false", "", "apps/workbench-web/index.html\ndocs/logo.svg", "push", {"workbench-web"}, "false"),
-    ("generated TS contract", "false", "", "packages/contracts/src/file/v1/file_pb.ts", "push", {"workbench-web"}, "false"),
     ("raw proto is not a TS build input", "false", "", "proto/file/v1/file.proto", "push", set(), "false"),
     ("shared workspace dependencies", "false", "", "pnpm-lock.yaml", "push", {"workbench-web"}, "false"),
     ("Talgent Computer ships through npm, in no image", "false", "", "apps/computer/src/cli.ts", "push", set(), "false"),
@@ -161,7 +160,6 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
     # These run the real substantive filter: the listed files are identical at
     # both revisions, as a comment-only change compiles to the same code.
     ("REAL Go comments only", "false", "", "internal/pkg/taskqueue/runtime.go", "push", set(), "false"),
-    ("REAL generated TS comments only", "false", "", "packages/contracts/src/trace/public/v1/trace_pb.ts", "push", set(), "false"),
     ("REAL hand-written TS is always a change", "false", "", "apps/workbench-web/src/app.tsx", "push", {"workbench-web"}, "false"),
 ]:
     with tempfile.NamedTemporaryFile() as output:

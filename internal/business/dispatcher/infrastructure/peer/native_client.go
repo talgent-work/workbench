@@ -5,7 +5,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
-	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 )
 
 // NativeClients supplies outbound private execution clients for peer routing.

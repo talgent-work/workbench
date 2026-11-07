@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	computerintegrationv1 "github.com/talgent-work/contracts/gen/computer/integration/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"

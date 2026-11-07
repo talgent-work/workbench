@@ -7,7 +7,7 @@ import (
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 
-	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/marketplace/integration/v1"
+	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/go/marketplace/integration/v1"
 )
 
 // CredentialChanges follows a credential change of a Provider Authorization.

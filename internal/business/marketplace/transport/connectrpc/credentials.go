@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect/v2"
-	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/marketplace/private/v1"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"

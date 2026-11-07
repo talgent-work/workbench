@@ -8,7 +8,7 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
 	"google.golang.org/protobuf/encoding/protojson"
 )

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 

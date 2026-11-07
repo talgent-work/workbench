@@ -16,8 +16,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	storageprivatev1 "github.com/talgent-work/contracts/gen/storage/private/v1"
-	"github.com/talgent-work/contracts/gen/storage/private/v1/storageprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	agentmodule "github.com/talgent-work/workbench/internal/business/agent"
 	agentapplication "github.com/talgent-work/workbench/internal/business/agent/application"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"

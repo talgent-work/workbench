@@ -5,8 +5,8 @@ import (
 
 	"connectrpc.com/connect/v2"
 
-	accountpublicv1 "github.com/talgent-work/contracts/gen/account/public/v1"
-	"github.com/talgent-work/contracts/gen/account/public/v1/accountpublicv1connect"
+	accountpublicv1 "github.com/talgent-work/contracts/gen/go/account/public/v1"
+	"github.com/talgent-work/contracts/gen/go/account/public/v1/accountpublicv1connect"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 

@@ -7,8 +7,8 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
-	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/agentfeedback"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"

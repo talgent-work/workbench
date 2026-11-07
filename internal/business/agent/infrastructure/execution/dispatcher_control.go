@@ -10,8 +10,8 @@ import (
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/samber/oops"
-	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
-	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 

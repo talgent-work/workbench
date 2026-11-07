@@ -8,7 +8,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	agentapp "github.com/talgent-work/workbench/internal/business/agent/application"
 	agentdomain "github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"

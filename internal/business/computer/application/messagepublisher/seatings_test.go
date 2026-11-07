@@ -11,7 +11,7 @@ import (
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/stretchr/testify/require"
 
-	computerintegrationv1 "github.com/talgent-work/contracts/gen/computer/integration/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/application/messagepublisher"
 )

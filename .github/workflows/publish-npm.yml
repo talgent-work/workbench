@@ -54,8 +54,7 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
-    # Every package takes the release's version. workbench-ui type-checks
-    # against the contracts the Workbench is built with.
+    # Every package takes the release's version.
     - name: Build at the release version
       env:
         VERSION: ${{ steps.release.outputs.version }}
@@ -64,7 +63,6 @@ jobs:
           (cd "$dir" && npm version "$VERSION" --no-git-tag-version --allow-same-version)
         done
         pnpm --filter @talgent/computer run build
-        pnpm --filter @talgent/contracts run build
         pnpm --filter @talgent/workbench-ui run typecheck
 
     # pnpm packs each package, replacing workspace: dependencies with the

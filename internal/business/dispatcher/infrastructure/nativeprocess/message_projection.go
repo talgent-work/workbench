@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
-	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

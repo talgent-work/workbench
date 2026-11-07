@@ -6,7 +6,7 @@ import (
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 
-	storageintegrationv1 "github.com/talgent-work/contracts/gen/storage/integration/v1"
+	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
 )
 
 // InputChanges follows a change of the Attachments in a File Space.

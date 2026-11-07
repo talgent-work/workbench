@@ -1,7 +1,7 @@
 # Recipes pipe go test into scripts/test/case-budget.py and need pipefail.
 SHELL := bash
 
-.PHONY: generate check-generate check-breaking build image-binaries test test-scripts test-go test-compile test-integration test-integration-compile print-unit-packages print-integration-packages lint clean pnpm-install gen-ts-rebuild gen-ts-test-runtime frontend-typecheck frontend-test frontend-build frontend-lint check-leaks install-hooks
+.PHONY: generate check-generate check-breaking build image-binaries test test-scripts test-go test-compile test-integration test-integration-compile print-unit-packages print-integration-packages lint clean pnpm-install frontend-typecheck frontend-test frontend-build frontend-lint check-leaks install-hooks
 
 UNIT_TEST_DIRS = $(shell find . -name '*_test.go' \
 	-not -path './cmd/*' \
@@ -122,22 +122,14 @@ test-integration:
 pnpm-install:
 	pnpm install --frozen-lockfile
 
-gen-ts-rebuild:
-	pnpm --filter @talgent/contracts run rebuild
-
-gen-ts-test-runtime:
-	pnpm --filter @talgent/contracts run test:runtime
-
 frontend-typecheck:
-	pnpm --filter @talgent/contracts run build
-	pnpm -r --parallel --stream --filter '!@talgent/contracts' run typecheck
+	pnpm -r --parallel --stream run typecheck
 
 frontend-test:
 	pnpm -r --parallel --stream run test
 
 frontend-build:
-	pnpm --filter @talgent/contracts run build
-	pnpm -r --parallel --stream --filter '!@talgent/contracts' run build
+	pnpm -r --parallel --stream run build
 
 frontend-lint:
 	pnpm --filter @talgent/workbench-ui --filter @talgent/workbench-web --filter @talgent/computer run lint

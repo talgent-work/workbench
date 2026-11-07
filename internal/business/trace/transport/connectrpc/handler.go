@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"connectrpc.com/connect/v2"
-	tracepublicv1 "github.com/talgent-work/contracts/gen/trace/public/v1"
-	"github.com/talgent-work/contracts/gen/trace/public/v1/tracepublicv1connect"
+	tracepublicv1 "github.com/talgent-work/contracts/gen/go/trace/public/v1"
+	"github.com/talgent-work/contracts/gen/go/trace/public/v1/tracepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/trace/application"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 	"google.golang.org/protobuf/types/known/timestamppb"

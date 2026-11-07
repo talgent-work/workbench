@@ -7,8 +7,8 @@ import (
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/stretchr/testify/require"
 
-	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/marketplace/integration/v1"
-	storageintegrationv1 "github.com/talgent-work/contracts/gen/storage/integration/v1"
+	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/go/marketplace/integration/v1"
+	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
 )
 

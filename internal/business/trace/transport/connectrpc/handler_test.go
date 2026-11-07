@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tracepublicv1 "github.com/talgent-work/contracts/gen/trace/public/v1"
+	tracepublicv1 "github.com/talgent-work/contracts/gen/go/trace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/trace/application"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 

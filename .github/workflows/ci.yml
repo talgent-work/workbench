@@ -167,12 +167,6 @@ jobs:
     - name: Install dependencies
       run: make pnpm-install
 
-    - name: Build generated TypeScript package
-      run: make gen-ts-rebuild
-
-    - name: Verify generated TypeScript runtime imports
-      run: make gen-ts-test-runtime
-
     # Every workspace build type-checks its sources (tsc -b / tsc --noEmit),
     # so no separate type-check pass is needed.
     - name: Build (all workspaces)

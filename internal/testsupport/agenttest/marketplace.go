@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/contracts/gen/marketplace/public/v1/marketplacepublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
 	marketapp "github.com/talgent-work/workbench/internal/business/marketplace/application"
 	marketdomain "github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	marketinfra "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"

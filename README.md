@@ -82,8 +82,7 @@ Credential Proxy adds; the core runtime plugin (`plugins/talgent-runtime`) teach
 |---|---|
 | `cmd/` | The four Go services |
 | `internal/` | Bounded contexts, shared infrastructure (`internal/pkg`) and test kits (`internal/testsupport`) |
-| `proto/`, `gen/` | The task payloads the queues persist and their generated Go code; every other contract is the [contracts module](https://github.com/talgent-work/contracts) |
-| `packages/contracts/` | `@talgent/contracts` for the web app, a placeholder until the contracts repository ships it |
+| `proto/`, `gen/` | The task payloads the queues persist and their generated Go code; every other contract, Go and TypeScript (`@talgent/contracts`), comes from the [contracts repository](https://github.com/talgent-work/contracts) |
 | `apps/workbench-web/` | The web app |
 | `apps/computer/` | Talgent Computer |
 | `packages/workbench-ui/` | The pages and components the web app is built from (`@talgent/workbench-ui`) |

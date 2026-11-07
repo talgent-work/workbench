@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/marketplace/integration/v1"
+	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/go/marketplace/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 

@@ -7,8 +7,8 @@ import (
 
 	"connectrpc.com/connect/v2"
 
-	computerpublicv1 "github.com/talgent-work/contracts/gen/computer/public/v1"
-	"github.com/talgent-work/contracts/gen/computer/public/v1/computerpublicv1connect"
+	computerpublicv1 "github.com/talgent-work/contracts/gen/go/computer/public/v1"
+	"github.com/talgent-work/contracts/gen/go/computer/public/v1/computerpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"

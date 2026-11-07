@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/contracts/gen/marketplace/private/v1/marketplaceprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"

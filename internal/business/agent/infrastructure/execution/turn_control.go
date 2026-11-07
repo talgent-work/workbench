@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect/v2"
-	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )

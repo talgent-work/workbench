@@ -14,9 +14,9 @@ import (
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
-	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
-	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 )
 
 func TestNativeExecutionRoutingPreservesScopeAndPrivateAuthentication(t *testing.T) {

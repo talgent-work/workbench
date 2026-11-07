@@ -17,8 +17,8 @@ import (
 	"go.uber.org/fx"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/contracts/gen/account/private/v1/accountprivatev1connect"
-	"github.com/talgent-work/contracts/gen/account/public/v1/accountpublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/account/private/v1/accountprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/account/public/v1/accountpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/account/application"
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 	"github.com/talgent-work/workbench/internal/business/account/infrastructure"

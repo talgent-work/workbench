@@ -9,7 +9,7 @@ import (
 	"errors"
 	"strings"
 
-	storageprivatev1 "github.com/talgent-work/contracts/gen/storage/private/v1"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 
 	"connectrpc.com/connect/v2"

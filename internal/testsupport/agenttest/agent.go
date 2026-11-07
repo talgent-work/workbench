@@ -22,8 +22,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
-	"github.com/talgent-work/contracts/gen/agent/public/v1/agentpublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"

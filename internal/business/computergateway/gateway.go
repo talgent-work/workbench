@@ -17,7 +17,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/contracts/gen/computer/private/v1/computerprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
 )
 

@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/contracts/gen/streamgateway/public/v1/streamgatewaypublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/streamgateway/public/v1/streamgatewaypublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/infrastructure"

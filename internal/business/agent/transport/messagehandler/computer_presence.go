@@ -7,7 +7,7 @@ import (
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 
-	computerintegrationv1 "github.com/talgent-work/contracts/gen/computer/integration/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 )
 
 // ComputerReach applies what a Managed Computer is now to the Works on it:

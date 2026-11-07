@@ -12,8 +12,8 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectinprocess"
-	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/streamgateway/public/v1"
-	"github.com/talgent-work/contracts/gen/streamgateway/public/v1/streamgatewaypublicv1connect"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
+	"github.com/talgent-work/contracts/gen/go/streamgateway/public/v1/streamgatewaypublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	streamrpc "github.com/talgent-work/workbench/internal/business/streamgateway/transport/connectrpc"

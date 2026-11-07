@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect/v2"
-	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
-	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
-	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"google.golang.org/protobuf/types/known/timestamppb"

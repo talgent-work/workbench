@@ -10,7 +10,7 @@ import (
 	"connectrpc.com/connect/v2/connectproto"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
-	storageprivatev1 "github.com/talgent-work/contracts/gen/storage/private/v1"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 )
 
 // Domain is the google.rpc.ErrorInfo domain of Storage's refusals.

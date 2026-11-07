@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	computerintegrationv1 "github.com/talgent-work/contracts/gen/computer/integration/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 )
 

@@ -6,7 +6,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 
-	storageprivatev1 "github.com/talgent-work/contracts/gen/storage/private/v1"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 )
 
 // A refusal keeps its reason across the wire format of its details.

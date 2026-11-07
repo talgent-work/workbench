@@ -8,7 +8,7 @@ import (
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/stretchr/testify/require"
 
-	agentintegrationv1 "github.com/talgent-work/contracts/gen/agent/integration/v1"
+	agentintegrationv1 "github.com/talgent-work/contracts/gen/go/agent/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/inputsettlements"
 )

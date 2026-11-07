@@ -12,8 +12,8 @@ import (
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 
-	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
-	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 

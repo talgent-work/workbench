@@ -12,7 +12,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 )
 
 func (r *ClickHouseReader) GetMessageDetail(ctx context.Context, request query.MessageDetailRequest) (query.MessageDetail, error) {

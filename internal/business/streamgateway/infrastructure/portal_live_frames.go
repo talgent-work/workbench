@@ -3,7 +3,7 @@ package infrastructure
 import (
 	"time"
 
-	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/streamgateway/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/talgent-work/contracts/gen/trace/public/v1/tracepublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/trace/public/v1/tracepublicv1connect"
 
 	"connectrpc.com/connect/v2"
 	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"

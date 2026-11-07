@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/streamgateway/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 	"google.golang.org/protobuf/proto"

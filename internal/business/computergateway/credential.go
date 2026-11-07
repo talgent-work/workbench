@@ -9,7 +9,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	computerprivatev1 "github.com/talgent-work/contracts/gen/computer/private/v1"
+	computerprivatev1 "github.com/talgent-work/contracts/gen/go/computer/private/v1"
 )
 
 // Revalidate is how often each connection's Computer Credential is checked

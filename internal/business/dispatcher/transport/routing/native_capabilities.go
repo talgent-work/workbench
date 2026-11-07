@@ -3,7 +3,7 @@ package routing
 import (
 	"context"
 
-	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 )
 
 func (h *NativeExecutionHandler) GetCapabilities(ctx context.Context, request *dispatcherprivatev1.GetCapabilitiesRequest) (*dispatcherprivatev1.GetCapabilitiesResponse, error) {

@@ -15,7 +15,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
-	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/dispatcher"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
