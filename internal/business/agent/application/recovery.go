@@ -301,32 +301,29 @@ func (r *Recovery) ObserveSandbox(ctx context.Context, allocationID string) erro
 	return r.wakeStep(ctx, allocationID, next)
 }
 
-// RecoverWork advances the Work's Startup Deadline, retained control request and
-// waiting timeout, and settles exit and release from current observation, in
-// that order. Accepted input needs no
-// retry here: Dispatcher's input buffer delivers it.
+// RecoverWork applies the current observation of the Work's process first, so
+// a retained request that keeps failing never holds back the observation that
+// would settle it, then advances the Work's Startup Deadline, retained control
+// requests and waiting timeout. Each step runs regardless of the others'
+// outcome, and every failure is returned together. Accepted input needs no retry here:
+// Dispatcher's input buffer delivers it.
 func (r *Recovery) RecoverWork(ctx context.Context, workID string) error {
 	commands := r.app.Commands
-	if err := commands.RecoverWork.Handle(ctx, workID); err != nil {
-		return err
-	}
-	// Native feedback is best effort. Current observation settles exits and
-	// releases whose notification was lost.
-	if err := commands.ApplyExecutionFeedback.Handle(ctx, command.ExecutionFeedback{WorkID: workID, Kind: command.ProcessObserved}); err != nil {
-		return err
-	}
+	// Native feedback is best effort. Current observation settles exits,
+	// abandoned starts and releases whose notification was lost.
+	observed := commands.ApplyExecutionFeedback.Handle(ctx, command.ExecutionFeedback{WorkID: workID, Kind: command.ProcessObserved})
+	retained := commands.RecoverWork.Handle(ctx, workID)
 	// A close request the Work kept while it stopped applies once stopped; the
 	// event that applies it may have been lost.
-	if err := commands.CloseWork.ApplyKeptClose(ctx, workID); err != nil {
-		return err
-	}
+	kept := commands.CloseWork.ApplyKeptClose(ctx, workID)
 	// A Resume owed on its Computer's reconnection is retried here too, so a
 	// lost Computer Became Reachable or a failed retry does not wait for the
 	// machine's next return.
-	if r.reconnection == nil {
-		return nil
+	var owed error
+	if r.reconnection != nil {
+		owed = r.reconnection.RetryOwedResume(ctx, workID)
 	}
-	return r.reconnection.RetryOwedResume(ctx, workID)
+	return errors.Join(observed, retained, kept, owed)
 }
 
 func (r *Recovery) RecoverContinuation(ctx context.Context, workID string) error {

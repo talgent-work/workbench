@@ -82,8 +82,8 @@ const (
 	// permanently disappeared.
 	ProcessEnvironmentLost ProcessState = "environment_lost"
 	// ProcessStartAbandoned means the start never launched a Harness process
-	// and, past its Startup Deadline, no longer can; its environment still
-	// exists until released.
+	// and, past its Startup Deadline, no longer can; whatever environment it
+	// may hold, known or not, remains until released.
 	ProcessStartAbandoned ProcessState = "start_abandoned"
 )
 

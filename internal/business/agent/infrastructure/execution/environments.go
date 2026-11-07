@@ -72,7 +72,7 @@ func (e *Environments) StartAbandoned(ctx context.Context, workID string) (bool,
 	if err != nil {
 		return false, err
 	}
-	return found && record.SandboxID != "" && abandoned(record, e.provisioning.now()), nil
+	return found && startAbandoned(record, e.provisioning.now()), nil
 }
 
 // Delete retires the Work's live allocation after its process exited, its
@@ -110,7 +110,7 @@ func (e *Environments) Delete(ctx context.Context, workID string) error {
 	// resource selected above: only its acknowledged exit, its lost
 	// environment, its abandonment or its current run's reclamation beyond
 	// reach authorizes deletion, never a stale Work-level request.
-	if !record.ProcessExited && !abandoned(record, e.provisioning.now()) {
+	if !record.ProcessExited && !startAbandoned(record, e.provisioning.now()) {
 		unreached, err := e.provisioning.unreached(ctx, record)
 		if err != nil {
 			return err
@@ -172,6 +172,15 @@ func retire(ctx context.Context, provisioning *Provisioning, record allocationRe
 		return oops.With("operation", "retire_execution_allocation").Wrap(err)
 	}
 	return nil
+}
+
+// startAbandoned reports a live allocation whose start is abandoned: its
+// create was submitted, whether or not the environment's identity was ever
+// learned, and it is past the point where it could still launch. An
+// allocation that never submitted a create holds no compute to abandon; a
+// rejected one is settled as rejected.
+func startAbandoned(record allocationRecord, now time.Time) bool {
+	return record.DeletedAt == 0 && !record.StartRejected && record.Submitted && abandoned(record, now)
 }
 
 // abandonmentMargin keeps a launch begun just before the Startup Deadline

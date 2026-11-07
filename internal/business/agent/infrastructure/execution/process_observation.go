@@ -111,6 +111,11 @@ func (o *ProcessObservations) observeAllocation(ctx context.Context, record allo
 		}
 		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessStartRejected}}, nil
 	}
+	if startAbandoned(record, o.provisioning.now()) {
+		// Whether or not the environment's identity was ever learned, the
+		// start can no longer launch; release finds its compute by ownership.
+		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessStartAbandoned}}, nil
+	}
 	if record.SandboxID == "" {
 		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessPending}}, nil
 	}
@@ -120,9 +125,6 @@ func (o *ProcessObservations) observeAllocation(ctx context.Context, record allo
 		// environment authority's observation, so observing a
 		// running process asks only Dispatcher.
 		if record.ProcessID == "" {
-			if abandoned(record, o.provisioning.now()) {
-				return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessStartAbandoned}}, nil
-			}
 			return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessPending}}, nil
 		}
 		return o.dispatcher.ObserveProcess(ctx, workID, record.ProcessID)
