@@ -4,7 +4,6 @@ SHELL := bash
 .PHONY: generate check-generate check-breaking build image-binaries test test-scripts test-go test-compile test-integration test-integration-compile print-unit-packages print-integration-packages lint clean pnpm-install frontend-typecheck frontend-test frontend-build frontend-lint check-leaks install-hooks
 
 UNIT_TEST_DIRS = $(shell find . -name '*_test.go' \
-	-not -path './cmd/*' \
 	-not -path './gen/*' \
 	-not -path '*/node_modules/*' \
 	-printf '%h\n' | sort -u)

@@ -34,10 +34,10 @@ if make -s --no-print-directory -C "${ROOT_DIR}" print-integration-packages INTE
   fail "unknown integration group must not silently run zero tests"
 fi
 
-# Intent: the default unit target must stay focused on code-level tests and not
-# compile deployment entrypoints, or generated contracts.
-assert_not_contains "${unit_packages}" "github.com/talgent-work/workbench/cmd/dispatcher" "unit package selection"
-assert_not_contains "${unit_packages}" "github.com/talgent-work/workbench/cmd/controlplane" "unit package selection"
+# Intent: the default unit target runs every code-level test, the entrypoints'
+# composition checks included (a service that cannot be assembled must fail
+# before release), and leaves out generated contracts.
+assert_contains "${unit_packages}" "github.com/talgent-work/workbench/cmd/controlplane" "entrypoint composition coverage"
 assert_not_contains "${unit_packages}" "github.com/talgent-work/workbench/internal/business/foundry/infrastructure/buildkit" "unit package selection"
 assert_not_contains "${unit_packages}" "github.com/talgent-work/workbench/internal/business/foundry/infrastructure/kubernetes" "unit package selection"
 assert_not_contains "${unit_packages}" "github.com/talgent-work/workbench/internal/business/foundry/infrastructure/oci" "unit package selection"
