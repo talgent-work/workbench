@@ -141,7 +141,7 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	originalRequest := uuid.Must(uuid.NewV7()).String()
 	sessionID, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: originalRequest, SubjectID: "owner", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "work"}, ProjectID: "project", WorkspaceReference: "work"})
 	require.NoError(t, err)
-	original := requireStartIntended(t, sessions, sessionID)
+	original := requireStartRequested(t, sessions, sessionID)
 	require.Equal(t, domain.ContextFresh, original.ContextMode)
 	// The admission's Domain Event is lost: no execution has begun.
 	_, err = run.executions.Latest(ctx, sessionID)
@@ -203,7 +203,7 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	afterReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
 	require.Equal(t, beforeReplay, afterReplay, "a replay cannot admit a second execution")
-	continuation := requireStartIntended(t, sessions, sessionID)
+	continuation := requireStartRequested(t, sessions, sessionID)
 	require.Equal(t, sessionID, continuation.WorkID)
 	require.Equal(t, domain.ContextContinue, continuation.ContextMode)
 	require.Equal(t, original.HarnessSessionReference, continuation.HarnessSessionReference)

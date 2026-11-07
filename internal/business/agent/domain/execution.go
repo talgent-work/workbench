@@ -133,7 +133,7 @@ const (
 
 // AgentExecution is one run of a Work's Harness process on its Computer, from
 // start admission until its Desk, environment and process are released. It
-// decides each step from its own intent and the current environment
+// decides each step from its own request and the current environment
 // observation, and reports what happened to its Work.
 type AgentExecution struct {
 	ID     string `validate:"required,uuid"`
@@ -237,7 +237,7 @@ func (e *AgentExecution) Retired() bool {
 }
 
 // Serves reports whether it is the execution of the Work's start admitted at
-// startAdmittedAt, so an intent about an earlier start, delivered late, never
+// startAdmittedAt, so a request about an earlier start, delivered late, never
 // reaches the execution of a later one. Times compare as they are kept, to
 // the millisecond.
 func (e *AgentExecution) Serves(startAdmittedAt time.Time) bool {

@@ -93,7 +93,7 @@ var Module = fx.Module("domain.agent",
 	// Every run of a Work takes a Desk on its Computer.
 	fx.Provide(fx.Annotate(newComputerClient, fx.As(new(command.ComputerPort)))),
 	// Each run of a Work is an AgentExecution; the Policies between the two
-	// Roots pass the Work's intents and the execution's reports.
+	// Roots pass the Work's execution requests and the execution's reports.
 	fx.Provide(fx.Annotate(newCommittedExecutions, fx.As(fx.Self()), fx.As(new(domain.AgentExecutionRepository)))),
 	fx.Provide(command.NewExecutionCoordination),
 	fx.Provide(eventhandler.NewBeginExecution, eventhandler.NewRequestProcessExit, eventhandler.NewRetireExecution, eventhandler.NewApplyExecutionReport, eventhandler.NewConfirmComputeRelease),

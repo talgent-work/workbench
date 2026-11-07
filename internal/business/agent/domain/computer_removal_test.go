@@ -52,7 +52,7 @@ func TestAComputerRemovalLosesTheEnvironmentOfItsWorks(t *testing.T) {
 	require.Equal(t, domain.WorkClosing, closing.State)
 	decide(t, execution, removed, time.Now())
 	applyReports(t, closing, execution)
-	requested, _ := intent[domain.WorkComputeReleaseRequested](closing)
+	requested, _ := executionRequest[domain.WorkComputeReleaseRequested](closing)
 	retired, err := execution.Retire(requested, time.Now())
 	require.NoError(t, err)
 	require.True(t, retired)

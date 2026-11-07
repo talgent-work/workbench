@@ -98,7 +98,7 @@ func (r *Recovery) wakeStep(ctx context.Context, executionID string, step domain
 }
 
 // WakeWork wakes the Work's own obligations and those of its current
-// execution, whose intents follow the Work's lifecycle.
+// execution, whose execution requests follow the Work's lifecycle.
 func (r *Recovery) WakeWork(ctx context.Context, workID string) error {
 	err := r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
 	execution, lookupErr := r.executions.Latest(ctx, workID)
@@ -240,14 +240,14 @@ func (r *Recovery) InputsChanged(ctx context.Context, owner string) error {
 }
 
 // RecoverWork applies what the Work's execution reported and passes the
-// Work's intents to it first, so a retained request that keeps failing never
+// Work's execution requests to it first, so a retained request that keeps failing never
 // holds back the report that would settle it, then advances the Work's
 // retained control requests and waiting timeout. Each step runs regardless of the others'
 // outcome, and every failure is returned together. Accepted input needs no retry here:
 // Dispatcher's input buffer delivers it.
 func (r *Recovery) RecoverWork(ctx context.Context, workID string) error {
 	commands := r.app.Commands
-	// The Work's intents and its execution's reports are passed again, so a
+	// The Work's execution requests and its execution's reports are passed again, so a
 	// lost Domain Event is repaired, and native feedback lost on the way is
 	// made up by Dispatcher's current observation of the process.
 	coordinated := commands.ExecutionCoordination.Coordinate(ctx, workID)

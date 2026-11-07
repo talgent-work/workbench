@@ -118,7 +118,7 @@ func (r *runs) launch(ctx context.Context, workID string) {
 	require.NoError(r.t, r.executions.Save(ctx, run))
 }
 
-// coordinate passes the Work's intents to its execution and applies the
+// coordinate passes the Work's execution requests to its execution and applies the
 // execution's reports to the Work.
 func (r *runs) coordinate(ctx context.Context, workID string) {
 	r.t.Helper()
@@ -212,19 +212,19 @@ func subjectWork(t testing.TB, works domain.AgentWorkRepository, agentID string,
 	return domain.WorkCreationFacts{SubjectWork: work}
 }
 
-// requireStartIntended asserts that the Work holds the intent to begin its
+// requireStartRequested asserts that the Work holds the request to begin its
 // admitted start's execution, which the Policies and the Work's recovery
 // pass on.
-func requireStartIntended(t testing.TB, works domain.AgentWorkRepository, workID string) domain.LaunchSpecification {
+func requireStartRequested(t testing.TB, works domain.AgentWorkRepository, workID string) domain.LaunchSpecification {
 	t.Helper()
 	work, err := works.Get(t.Context(), workID)
 	require.NoError(t, err)
-	for _, intent := range work.Intents() {
-		if _, ok := intent.(domain.WorkStartAdmitted); ok {
+	for _, request := range work.ExecutionRequests() {
+		if _, ok := request.(domain.WorkStartAdmitted); ok {
 			return work.LaunchSpecification()
 		}
 	}
-	require.Fail(t, "the Work holds no start intent")
+	require.Fail(t, "the Work holds no start request")
 	return domain.LaunchSpecification{}
 }
 

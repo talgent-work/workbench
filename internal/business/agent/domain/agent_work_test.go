@@ -34,14 +34,14 @@ func TestWorkRequiresReadinessAndConfirmedStopBeforeResume(t *testing.T) {
 	require.Equal(t, domain.WorkStopping, session.State)
 	require.ErrorIs(t, session.Resume(admission(session)), domain.ErrWorkTransition)
 	exited(t, session, domain.HarnessExit{})
-	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, intentsOf(session).releases)
+	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, requestsOf(session).releases)
 	require.Equal(t, domain.WorkStopping, session.State, "accepted reclamation is not completed reclamation")
 	released(t, session)
 	require.Equal(t, domain.WorkStopped, session.State)
 	harnessSession := session.HarnessSessionReference
 	require.NoError(t, session.Resume(admission(session)))
 	require.Equal(t, harnessSession, session.HarnessSessionReference, "every run continues the same Harness Session")
-	require.Equal(t, 2, intentsOf(session).starts)
+	require.Equal(t, 2, requestsOf(session).starts)
 	require.Equal(t, harnessSession, session.LaunchSpecification().HarnessSessionReference)
 	require.Equal(t, domain.ContextContinue, session.LaunchSpecification().ContextMode)
 	require.False(t, session.HarnessProcess.Ready, "process facts are reset for the new start")
@@ -67,7 +67,7 @@ func TestReportOfAnEarlierStartLeavesTheCurrentRunWorking(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, domain.WorkWorking, session.State)
-	require.Empty(t, intentsOf(session).releases, "a live process is never reclaimed")
+	require.Empty(t, requestsOf(session).releases, "a live process is never reclaimed")
 	require.True(t, session.HoldsProcess())
 }
 
@@ -76,10 +76,10 @@ func TestFailedObservationRecordsFailureAndRequestsReclamation(t *testing.T) {
 	exited(t, session, domain.HarnessExit{ExitCode: 1, Reason: "native_initialization_failed"})
 	require.Equal(t, domain.WorkFailed, session.State)
 	require.Equal(t, "native_initialization_failed (exit code 1)", session.FailureReason, "a failure from an exit fact keeps its code")
-	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, intentsOf(session).releases)
+	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, requestsOf(session).releases)
 	require.False(t, session.HoldsProcess(), "exit ends the concurrency hold without awaiting compute release")
 	exited(t, session, domain.HarnessExit{ExitCode: 1})
-	require.Len(t, intentsOf(session).releases, 1, "a repeated report is idempotent")
+	require.Len(t, requestsOf(session).releases, 1, "a repeated report is idempotent")
 }
 
 func TestComputeReleaseBeforeExitEstablishesNothing(t *testing.T) {
@@ -104,7 +104,7 @@ func TestWorkRestartRetainsIdentityCapabilitiesAndBindings(t *testing.T) {
 	require.Equal(t, capabilities, session.CapabilitySnapshot)
 	require.Equal(t, "workspace-a", session.WorkspaceReference)
 	require.Equal(t, "user-home", session.HomeBinding.OwnerID)
-	require.Equal(t, 2, intentsOf(session).starts)
+	require.Equal(t, 2, requestsOf(session).starts)
 	require.Equal(t, domain.ContextRecover, session.LaunchSpecification().ContextMode)
 }
 
@@ -119,10 +119,10 @@ func TestWithdrawnModelConfigurationRejectsResumeAndRestartKeepingState(t *testi
 	require.NoError(t, stopped.Stop("stop-1", false))
 	exited(t, stopped, domain.HarnessExit{})
 	released(t, stopped)
-	starts := intentsOf(stopped).starts
+	starts := requestsOf(stopped).starts
 	require.ErrorIs(t, stopped.Resume(withdrawn(stopped)), domain.ErrModelConfigurationWithdrawn)
 	require.Equal(t, domain.WorkStopped, stopped.State, "a withdrawn Model Configuration keeps the Work's state")
-	require.Equal(t, starts, intentsOf(stopped).starts, "no start is requested")
+	require.Equal(t, starts, requestsOf(stopped).starts, "no start is requested")
 	require.NoError(t, stopped.Resume(admission(stopped)), "the Work resumes once the configuration is provided again")
 
 	failed := newSession(t)
@@ -131,7 +131,7 @@ func TestWithdrawnModelConfigurationRejectsResumeAndRestartKeepingState(t *testi
 	released(t, failed)
 	require.ErrorIs(t, failed.Restart(withdrawn(failed)), domain.ErrModelConfigurationWithdrawn)
 	require.Equal(t, domain.WorkFailed, failed.State)
-	require.Equal(t, 1, intentsOf(failed).starts)
+	require.Equal(t, 1, requestsOf(failed).starts)
 }
 
 func TestRestartRequiresFailedAndRetainsAnEstablishedPlan(t *testing.T) {
@@ -153,7 +153,7 @@ func TestRestartRequiresFailedAndRetainsAnEstablishedPlan(t *testing.T) {
 	require.Equal(t, harnessSession, session.HarnessSessionReference)
 	require.Equal(t, domain.ContextRecover, session.HarnessProcess.ContextMode)
 	require.Equal(t, "Keep native context", session.Progress.Items[0].Content)
-	require.Equal(t, 3, intentsOf(session).starts)
+	require.Equal(t, 3, requestsOf(session).starts)
 	require.Equal(t, domain.ContextRecover, session.LaunchSpecification().ContextMode)
 }
 
@@ -170,7 +170,7 @@ func TestClosePermanentlyForbidsExecutionAndWaitsForActualRemoval(t *testing.T) 
 	require.Equal(t, domain.WorkClosing, session.State)
 	released(t, session)
 	require.Equal(t, domain.WorkClosed, session.State)
-	require.Equal(t, 1, intentsOf(session).starts)
+	require.Equal(t, 1, requestsOf(session).starts)
 	require.NoError(t, session.Close("duplicate", domain.ClosureFacts{}))
 }
 
@@ -193,7 +193,7 @@ func TestRejectedAdmissionDoesNotCreateProcessOrDeferredWork(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, work.State)
 	require.True(t, work.HoldsProcess())
-	require.Equal(t, 1, intentsOf(work).starts)
+	require.Equal(t, 1, requestsOf(work).starts)
 	require.Equal(t, domain.ContextFresh, work.LaunchSpecification().ContextMode)
 }
 
@@ -201,10 +201,10 @@ func TestNormalExitRequestsReclamationBeforeStopCompletes(t *testing.T) {
 	session := newSession(t)
 	ready(t, session)
 	require.NoError(t, session.Stop("stop", false))
-	require.Equal(t, []string{"stop"}, intentsOf(session).stops)
-	require.Empty(t, intentsOf(session).releases, "stop acceptance does not prove exit")
+	require.Equal(t, []string{"stop"}, requestsOf(session).stops)
+	require.Empty(t, requestsOf(session).releases, "stop acceptance does not prove exit")
 	exited(t, session, domain.HarnessExit{})
-	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, intentsOf(session).releases, "observed exit permits compute reclamation")
+	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, requestsOf(session).releases, "observed exit permits compute reclamation")
 	require.Equal(t, domain.StopReasonUserStopped, session.StopReason)
 	require.Equal(t, domain.WorkStopping, session.State)
 	released(t, session)
@@ -216,12 +216,12 @@ func TestFailedWorkClosePreservesExitAndReclamationObligations(t *testing.T) {
 	ready(t, session)
 	require.NoError(t, session.RecordFailure("agent execution failed"))
 	require.NoError(t, session.Close("close", domain.ClosureFacts{}))
-	require.Empty(t, intentsOf(session).releases, "failure alone does not prove exit")
+	require.Empty(t, requestsOf(session).releases, "failure alone does not prove exit")
 	require.Equal(t, domain.WorkClosing, session.State)
 	released(t, session)
 	require.Equal(t, domain.WorkClosing, session.State, "release before exit establishes nothing")
 	exited(t, session, domain.HarnessExit{})
-	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, intentsOf(session).releases)
+	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, requestsOf(session).releases)
 	require.Equal(t, domain.WorkClosing, session.State)
 	released(t, session)
 	require.Equal(t, domain.WorkClosed, session.State)
@@ -247,7 +247,7 @@ func TestPermanentEnvironmentLossCompletesClosureWithoutNormalExit(t *testing.T)
 				require.Equal(t, domain.WorkClosing, session.State)
 				lost(t, session, "")
 			}
-			require.Equal(t, []domain.RetirementCause{domain.RetiredByLoss}, intentsOf(session).releases)
+			require.Equal(t, []domain.RetirementCause{domain.RetiredByLoss}, requestsOf(session).releases)
 			released(t, session)
 			require.Equal(t, domain.WorkClosed, session.State)
 			require.NotEmpty(t, session.FailureReason)
@@ -297,7 +297,7 @@ func TestReconcileAfterAdmittedStopEndsNormally(t *testing.T) {
 	ready(t, session)
 	require.NoError(t, session.Stop("stop", false))
 	exited(t, session, domain.HarnessExit{ExitCode: 1, Reason: "native_process_exited_unexpectedly"})
-	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, intentsOf(session).releases)
+	require.Equal(t, []domain.RetirementCause{domain.RetiredByExit}, requestsOf(session).releases)
 	require.Equal(t, domain.WorkStopping, session.State)
 	require.Empty(t, session.FailureReason)
 	released(t, session)

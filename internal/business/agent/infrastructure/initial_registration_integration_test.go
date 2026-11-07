@@ -77,7 +77,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	create = command.NewCreateWorkHandler(time.Now, agents, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), prepare)
 	recover := command.NewRecoverInitialExecutionHandler(receipts, sessions, prepare)
 	require.ErrorIs(t, recover.Handle(ctx, session.ID), command.ErrInitialExecutionPending)
-	requireStartIntended(t, sessions, session.ID)
+	requireStartRequested(t, sessions, session.ID)
 	// The start's preparation process reports its planned checkout before the
 	// Harness starts; an unreachable repository degrades.
 	planned, err := receipts.Get(ctx, session.ID)
@@ -132,7 +132,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	repeat.RequestID, repeat.Input.ID = uuid.NewString(), uuid.NewString()
 	_, err = prepareNew(ctx, creation, repeat)
 	require.ErrorIs(t, err, command.ErrInitialExecutionConflict)
-	requireStartIntended(t, sessions, ref)
+	requireStartRequested(t, sessions, ref)
 	require.Len(t, buffer.Inputs, 1)
 }
 

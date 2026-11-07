@@ -36,7 +36,7 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	create, _ := creationCoordinator(f.db, &creationCapacity{}, nil, models, &personalStartupCatalog{})
 	id, err := create.Handle(ctx, f.request)
 	require.NoError(t, err)
-	requireStartIntended(t, f.sessions, id)
+	requireStartRequested(t, f.sessions, id)
 	thinking := &workThinking{}
 	owners := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	views := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(f.db), models)

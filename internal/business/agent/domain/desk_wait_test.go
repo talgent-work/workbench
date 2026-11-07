@@ -86,11 +86,11 @@ func TestStoppingOrClosingAQueuedFirstStartClosesTheWork(t *testing.T) {
 			require.Equal(t, domain.WorkClosed, work.State)
 			require.Empty(t, port.stops())
 			require.Equal(t, domain.RetiredWithdrawn, releaseCause(work))
-			_, begins := intent[domain.WorkStartAdmitted](work)
+			_, begins := executionRequest[domain.WorkStartAdmitted](work)
 			require.False(t, begins, "a withdrawn start is never begun")
 			require.NoError(t, work.Validate())
 
-			requested, _ := intent[domain.WorkComputeReleaseRequested](work)
+			requested, _ := executionRequest[domain.WorkComputeReleaseRequested](work)
 			retired, err := execution.Retire(requested, time.Now())
 			require.NoError(t, err)
 			require.True(t, retired)
@@ -114,7 +114,7 @@ func TestAWithdrawnQueuedContinuationReturnsToItsFormerState(t *testing.T) {
 
 	require.NoError(t, work.Stop("withdraw", true))
 	require.Equal(t, domain.WorkStopped, work.State)
-	require.Equal(t, []domain.RetirementCause{domain.RetiredWithdrawn}, intentsOf(work).releases, "its execution retires and leaves its Desk")
+	require.Equal(t, []domain.RetirementCause{domain.RetiredWithdrawn}, requestsOf(work).releases, "its execution retires and leaves its Desk")
 	require.NoError(t, work.Validate())
 
 	admission.Seat.DeskID = "desk-3"

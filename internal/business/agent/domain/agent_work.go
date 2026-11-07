@@ -149,7 +149,7 @@ type HarnessProcess struct {
 	ContextMode   ContextMode
 	// DeskID is the Desk the admitted start took on the Work's Computer, and
 	// DeskWaiting whether its Computer admitted it waiting in its line: the
-	// admission its start intent carries. The start's AgentExecution holds
+	// admission its start request carries. The start's AgentExecution holds
 	// that Desk and whether it still waits.
 	DeskID      string
 	DeskWaiting bool

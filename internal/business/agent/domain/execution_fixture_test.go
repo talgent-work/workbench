@@ -10,10 +10,10 @@ import (
 )
 
 // beginOf begins the AgentExecution of the Work's current start, as Begin
-// execution does from the Work's start intent.
+// execution does from the Work's start request.
 func beginOf(t *testing.T, work *domain.AgentWork, realization domain.ExecutionRealization) *domain.AgentExecution {
 	t.Helper()
-	admitted, ok := intent[domain.WorkStartAdmitted](work)
+	admitted, ok := executionRequest[domain.WorkStartAdmitted](work)
 	require.True(t, ok, "the Work asks for its start")
 	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: work.LaunchSpecification(), Realization: realization})
 	require.NoError(t, err)

@@ -146,7 +146,7 @@ func TestAnIdleOrWaitingWorkStopsAfterTheTimeout(t *testing.T) {
 		require.Equal(t, []string{session.StopRequestReference}, port.stops())
 		_, err = session.RecoverExecution()
 		require.NoError(t, err)
-		stop, asked := intent[domain.WorkStopRequested](session)
+		stop, asked := executionRequest[domain.WorkStopRequested](session)
 		require.True(t, asked, "recovery passes the exit request again")
 		require.True(t, stop.CancelWaitingTurn, "with the Turn's cancellation first, until the Turn ended")
 	})

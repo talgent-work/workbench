@@ -75,7 +75,7 @@ func (h *ReconcileDesksHandler) held(ctx context.Context, desk OpenDesk) (bool, 
 	if err != nil {
 		return false, err
 	}
-	admitted, ok := intentOf[domain.WorkStartAdmitted](work)
+	admitted, ok := requestOf[domain.WorkStartAdmitted](work)
 	if !ok || admitted.DeskID != desk.DeskID {
 		return false, nil
 	}

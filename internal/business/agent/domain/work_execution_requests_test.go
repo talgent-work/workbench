@@ -9,7 +9,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// A start's admission records its start intent for its execution, carrying
+// A start's admission records its start request for its execution, carrying
 // the Desk and admission time it begins from.
 func TestAdmittedStartRecordsItsStartIntent(t *testing.T) {
 	work := newSession(t)
@@ -22,7 +22,7 @@ func TestAdmittedStartRecordsItsStartIntent(t *testing.T) {
 }
 
 // An admitted stop records the request that the process exit; the
-// execution's exit then records its retirement request. Intents rebuilds
+// execution's exit then records its retirement request. ExecutionRequests rebuilds
 // both from the Work's facts, so a lost event is passed again.
 func TestStopRecordsItsExitRequestAndExitItsRetirement(t *testing.T) {
 	work := newSession(t)
@@ -43,7 +43,7 @@ func TestStopRecordsItsExitRequestAndExitItsRetirement(t *testing.T) {
 
 	released(t, work)
 	require.Equal(t, domain.WorkStopped, work.State)
-	_, starting := intent[domain.WorkStartAdmitted](work)
+	_, starting := executionRequest[domain.WorkStartAdmitted](work)
 	require.False(t, starting, "a released start asks for nothing")
 }
 
@@ -95,7 +95,7 @@ func TestReportsApplyOnlyToTheirStart(t *testing.T) {
 
 	changed, err = work.ApplyExecutionReport(domain.WorkStopRequested{WorkID: work.ID, StartAdmittedAt: start})
 	require.NoError(t, err)
-	require.False(t, changed, "an intent is not a report")
+	require.False(t, changed, "a request is not a report")
 }
 
 // A release reported before the current start's process ended confirms

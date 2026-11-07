@@ -15,7 +15,7 @@ import (
 
 // reconcileAt reconciles the Work's current execution at a time, observing
 // its bound environment running, and applies what it reported to the Work,
-// passing the Work's intents back.
+// passing the Work's execution requests back.
 func reconcileAt(t *testing.T, w *world, at time.Time) {
 	t.Helper()
 	ctx := context.Background()
@@ -27,7 +27,7 @@ func reconcileAt(t *testing.T, w *world, at time.Time) {
 	}
 	_, err := w.reconciliation().Reconcile(ctx, execution.ID, false)
 	require.NoError(t, err)
-	// The execution's report event applies its reports; the intents they
+	// The execution's report event applies its reports; the execution requests they
 	// leave on the Work are passed by the events the Work's save commits.
 	require.NoError(t, w.coordination.ApplyExecutionReports(ctx, w.work().ID))
 	require.NoError(t, w.coordination.Coordinate(ctx, w.work().ID))

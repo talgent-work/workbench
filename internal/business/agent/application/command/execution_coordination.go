@@ -11,7 +11,7 @@ import (
 // coordinationAttempts bounds retries of a Root changed concurrently.
 const coordinationAttempts = 3
 
-// ExecutionCoordination carries the intents of a Work to its AgentExecution
+// ExecutionCoordination carries the execution requests of a Work to its AgentExecution
 // and the execution's reports back, each Root changed in its own
 // transaction. Every use case reads both Roots as they are now, so a repeated,
 // lost or reordered Domain Event leads to the same outcome, and the Work's
@@ -29,7 +29,7 @@ func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkReposi
 }
 
 // Coordinate applies every report the Work's current execution made, then
-// passes every intent the Work holds, so an intent a report caused, such as
+// passes every request the Work holds, so a request a report caused, such as
 // the retirement an exit asks for, is passed in the same sweep; each step
 // runs regardless of the others' outcome.
 func (c *ExecutionCoordination) Coordinate(ctx context.Context, workID string) error {
@@ -52,7 +52,7 @@ func (c *ExecutionCoordination) BeginExecution(ctx context.Context, workID strin
 	if err != nil {
 		return err
 	}
-	admitted, ok := intentOf[domain.WorkStartAdmitted](work)
+	admitted, ok := requestOf[domain.WorkStartAdmitted](work)
 	if !ok {
 		return nil
 	}
@@ -103,8 +103,8 @@ func (c *ExecutionCoordination) begin(ctx context.Context, work *domain.AgentWor
 // RequestProcessExit records the Work's request that its process exit on the
 // current execution (Request process exit).
 func (c *ExecutionCoordination) RequestProcessExit(ctx context.Context, workID string) error {
-	return c.passIntent(ctx, workID, func(work *domain.AgentWork, execution *domain.AgentExecution) (bool, error) {
-		requested, ok := intentOf[domain.WorkStopRequested](work)
+	return c.passRequest(ctx, workID, func(work *domain.AgentWork, execution *domain.AgentExecution) (bool, error) {
+		requested, ok := requestOf[domain.WorkStopRequested](work)
 		if !ok {
 			return false, nil
 		}
@@ -115,8 +115,8 @@ func (c *ExecutionCoordination) RequestProcessExit(ctx context.Context, workID s
 // RetireExecution retires the current execution once its Work's execution
 // ended (Retire execution).
 func (c *ExecutionCoordination) RetireExecution(ctx context.Context, workID string) error {
-	return c.passIntent(ctx, workID, func(work *domain.AgentWork, execution *domain.AgentExecution) (bool, error) {
-		requested, ok := intentOf[domain.WorkComputeReleaseRequested](work)
+	return c.passRequest(ctx, workID, func(work *domain.AgentWork, execution *domain.AgentExecution) (bool, error) {
+		requested, ok := requestOf[domain.WorkComputeReleaseRequested](work)
 		if !ok {
 			return false, nil
 		}
@@ -124,7 +124,7 @@ func (c *ExecutionCoordination) RetireExecution(ctx context.Context, workID stri
 	})
 }
 
-func (c *ExecutionCoordination) passIntent(ctx context.Context, workID string, pass func(*domain.AgentWork, *domain.AgentExecution) (bool, error)) error {
+func (c *ExecutionCoordination) passRequest(ctx context.Context, workID string, pass func(*domain.AgentWork, *domain.AgentExecution) (bool, error)) error {
 	var err error
 	for range coordinationAttempts {
 		var work *domain.AgentWork
@@ -203,10 +203,10 @@ func (c *ExecutionCoordination) latest(ctx context.Context, workID string) (*dom
 	return execution, err
 }
 
-// intentOf picks the Work's current intent of one kind.
-func intentOf[T domain.Event](work *domain.AgentWork) (T, bool) {
-	for _, intent := range work.Intents() {
-		if typed, ok := intent.(T); ok {
+// requestOf picks the Work's current request of one kind.
+func requestOf[T domain.Event](work *domain.AgentWork) (T, bool) {
+	for _, request := range work.ExecutionRequests() {
+		if typed, ok := request.(T); ok {
 			return typed, true
 		}
 	}
@@ -218,7 +218,7 @@ func intentOf[T domain.Event](work *domain.AgentWork) (T, bool) {
 // its Desk: its execution is Queued, or, not begun yet, its Computer admitted
 // it waiting.
 func startQueued(ctx context.Context, executions domain.AgentExecutionRepository, work *domain.AgentWork) (bool, error) {
-	admitted, ok := intentOf[domain.WorkStartAdmitted](work)
+	admitted, ok := requestOf[domain.WorkStartAdmitted](work)
 	if !ok {
 		return false, nil
 	}

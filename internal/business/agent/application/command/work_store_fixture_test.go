@@ -50,7 +50,7 @@ func (s *feedbackSessionStore) Save(_ context.Context, session *domain.AgentWork
 	return nil
 }
 
-// admittedStarts are the starts the committed Work admitted, each the intent
+// admittedStarts are the starts the committed Work admitted, each the request
 // its execution begins from.
 func (s *feedbackSessionStore) admittedStarts() []domain.WorkStartAdmitted {
 	var starts []domain.WorkStartAdmitted

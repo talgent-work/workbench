@@ -89,7 +89,7 @@ func TestPresenceChangesRecordAndEndTheDisconnectionOfRunningWorks(t *testing.T)
 	require.NoError(t, reach.PresenceChanged(ctx, sessions.session.ComputerID))
 	require.False(t, sessions.session.Disconnected())
 	require.Equal(t, domain.WorkWorking, sessions.session.State)
-	require.Equal(t, []domain.EventKind{domain.EventKindWorkStartAdmitted}, intents(sessions.session), "the run holds no exit or release request")
+	require.Equal(t, []domain.EventKind{domain.EventKindWorkStartAdmitted}, executionRequests(sessions.session), "the run holds no exit or release request")
 	require.False(t, w.execution(t).Retired())
 
 	place.description = command.ComputerDescription{Managed: false}

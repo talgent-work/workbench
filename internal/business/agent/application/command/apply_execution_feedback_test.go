@@ -40,7 +40,7 @@ func TestExitFeedbackStopsOnlyAfterComputeRelease(t *testing.T) {
 	require.Equal(t, domain.WorkStopping, w.work().State, "an exit after readiness with an admitted stop is normal whatever its code")
 	require.Empty(t, w.work().FailureReason)
 	require.False(t, w.work().HoldsProcess(), "the exited process no longer counts toward concurrency")
-	require.Contains(t, intents(w.work()), domain.EventKindWorkComputeReleaseRequested)
+	require.Contains(t, executionRequests(w.work()), domain.EventKindWorkComputeReleaseRequested)
 	require.NoError(t, w.coordination.RetireExecution(ctx, w.work().ID))
 	require.Equal(t, domain.RetiredByExit, w.execution(t).Retirement)
 	saves := w.executions.Saves

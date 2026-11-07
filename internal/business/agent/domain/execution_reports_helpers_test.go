@@ -9,7 +9,7 @@ import (
 )
 
 // These helpers stand in for the AgentExecution of a Work's current start:
-// they apply the reports it makes and read the intents the Work passes it.
+// they apply the reports it makes and read the execution requests the Work passes it.
 
 func currentStart(work *domain.AgentWork) domain.ExecutionReady {
 	return domain.ExecutionReady{WorkID: work.ID, StartAdmittedAt: work.HarnessProcess.StartingSince}
@@ -69,9 +69,9 @@ func missedDeadline(t *testing.T, work *domain.AgentWork, reason string) {
 	report(t, work, domain.ExecutionStartFailed{WorkID: s.WorkID, StartAdmittedAt: s.StartAdmittedAt, Reason: reason})
 }
 
-// intent is the Work's current intent of type T for its execution.
-func intent[T domain.Event](work *domain.AgentWork) (T, bool) {
-	for _, candidate := range work.Intents() {
+// executionRequest is the Work's current request of type T for its execution.
+func executionRequest[T domain.Event](work *domain.AgentWork) (T, bool) {
+	for _, candidate := range work.ExecutionRequests() {
 		if found, ok := candidate.(T); ok {
 			return found, true
 		}
@@ -83,14 +83,14 @@ func intent[T domain.Event](work *domain.AgentWork) (T, bool) {
 // releaseCause is why the Work asks its execution to retire, empty while it
 // does not.
 func releaseCause(work *domain.AgentWork) domain.RetirementCause {
-	requested, _ := intent[domain.WorkComputeReleaseRequested](work)
+	requested, _ := executionRequest[domain.WorkComputeReleaseRequested](work)
 	return requested.Cause
 }
 
 // stopRequest is the stop identity under which the Work asks its process to
 // exit, empty while it does not.
 func stopRequest(work *domain.AgentWork) string {
-	requested, _ := intent[domain.WorkStopRequested](work)
+	requested, _ := executionRequest[domain.WorkStopRequested](work)
 	return requested.StopRequestID
 }
 
@@ -105,7 +105,7 @@ func recorded[T domain.Event](work *domain.AgentWork) []T {
 	return found
 }
 
-// passed are the intents a Work recorded for its executions since its events
+// passed are the execution requests a Work recorded for its executions since its events
 // were last drained, as its Policies pass them on.
 type passed struct {
 	// starts counts the admitted starts.
@@ -118,8 +118,8 @@ type passed struct {
 	releases []domain.RetirementCause
 }
 
-// intentsOf reads the intents the Work recorded, leaving its events in place.
-func intentsOf(work *domain.AgentWork) passed {
+// requestsOf reads the execution requests the Work recorded, leaving its events in place.
+func requestsOf(work *domain.AgentWork) passed {
 	if work == nil {
 		return passed{}
 	}
@@ -142,28 +142,28 @@ func intentsOf(work *domain.AgentWork) passed {
 	return result
 }
 
-// executionPort follows one Work and reads the intents it passed to its
+// executionPort follows one Work and reads the execution requests it passed to its
 // executions, as its Policies would carry them.
 type executionPort struct{ work *domain.AgentWork }
 
 func follow(work *domain.AgentWork) *executionPort { return &executionPort{work: work} }
 
 // starts counts the admitted starts.
-func (p *executionPort) starts() int { return intentsOf(p.work).starts }
+func (p *executionPort) starts() int { return requestsOf(p.work).starts }
 
 // launch is what the Work's latest start launches with.
 func (p *executionPort) launch() domain.LaunchSpecification { return p.work.LaunchSpecification() }
 
 // stops are the stop identities its process was asked to exit under.
-func (p *executionPort) stops() []string { return intentsOf(p.work).stops }
+func (p *executionPort) stops() []string { return requestsOf(p.work).stops }
 
 // cancels counts the exit requests that cancel a Waiting Turn first.
-func (p *executionPort) cancels() int { return intentsOf(p.work).cancels }
+func (p *executionPort) cancels() int { return requestsOf(p.work).cancels }
 
 // reclaims counts the retirements asked for that release compute.
 func (p *executionPort) reclaims() int {
 	count := 0
-	for _, cause := range intentsOf(p.work).releases {
+	for _, cause := range requestsOf(p.work).releases {
 		if cause != domain.RetiredFenced {
 			count++
 		}
@@ -175,7 +175,7 @@ func (p *executionPort) reclaims() int {
 // which release no compute.
 func (p *executionPort) retires() int {
 	count := 0
-	for _, cause := range intentsOf(p.work).releases {
+	for _, cause := range requestsOf(p.work).releases {
 		if cause == domain.RetiredFenced {
 			count++
 		}

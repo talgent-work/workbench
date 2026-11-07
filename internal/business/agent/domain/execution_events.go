@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// Work intents (Work intents rule): AgentWork changes its AgentExecution only
+// AgentWork changes its AgentExecution only
 // through these. Each names the start it concerns by its admission time.
 const (
 	EventKindWorkStartAdmitted           EventKind = "agent.work.start_admitted"

@@ -69,8 +69,8 @@ func abandonedStart(t *testing.T) *recoveryWorld {
 		domain.StartAdmission{AdmittedAt: seated, AgentID: agent, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	var admitted domain.WorkStartAdmitted
-	for _, intent := range work.Intents() {
-		if start, ok := intent.(domain.WorkStartAdmitted); ok {
+	for _, request := range work.ExecutionRequests() {
+		if start, ok := request.(domain.WorkStartAdmitted); ok {
 			admitted = start
 		}
 	}

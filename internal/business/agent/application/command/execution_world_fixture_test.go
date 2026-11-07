@@ -237,11 +237,11 @@ func stoppedSession(t *testing.T) *domain.AgentWork {
 	return settled(session)
 }
 
-// intents lists the kinds of the intents the Work holds.
-func intents(work *domain.AgentWork) []domain.EventKind {
+// executionRequests lists the kinds of the execution requests the Work holds.
+func executionRequests(work *domain.AgentWork) []domain.EventKind {
 	var kinds []domain.EventKind
-	for _, intent := range work.Intents() {
-		kinds = append(kinds, intent.Kind())
+	for _, request := range work.ExecutionRequests() {
+		kinds = append(kinds, request.Kind())
 	}
 	return kinds
 }

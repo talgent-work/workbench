@@ -85,9 +85,9 @@ func TestRecoveryListsAWithdrawnStartUntilItsExecutionRetires(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, execution.Queued())
 	requested, ok := domain.Event(nil), false
-	for _, intent := range work.Intents() {
-		if _, ok = intent.(domain.WorkComputeReleaseRequested); ok {
-			requested = intent
+	for _, request := range work.ExecutionRequests() {
+		if _, ok = request.(domain.WorkComputeReleaseRequested); ok {
+			requested = request
 			break
 		}
 	}

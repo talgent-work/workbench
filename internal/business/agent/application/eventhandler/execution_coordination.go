@@ -90,7 +90,7 @@ type coordination struct {
 	logger *slog.Logger
 }
 
-// keyed is every intent and report: each names its Work.
+// keyed is every request and report: each names its Work.
 type keyed interface{ Key() string }
 
 func (c coordination) Handle(ctx context.Context, event domainevent.Event) {

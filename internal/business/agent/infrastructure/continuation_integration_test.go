@@ -203,7 +203,7 @@ func TestContinuationObservationResolvesAcceptedAdmissionAfterLostResponse(t *te
 	recovery := command.NewRecoverWorkHandler(time.Now, f.sessions, &commandtest.InputBuffer{}, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil)
 	require.NoError(t, recovery.Handle(ctx, id))
 	require.Empty(t, starts, "the start was admitted by the lost commit, not again")
-	intended := requireStartIntended(t, f.sessions, id)
+	intended := requireStartRequested(t, f.sessions, id)
 	require.Equal(t, id, intended.WorkID)
 	require.Equal(t, domain.ContextContinue, intended.ContextMode)
 	begun := newRuns(t, f.db, f.sessions).latest(ctx, id)

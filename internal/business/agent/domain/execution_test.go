@@ -9,7 +9,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// An execution begins from its Work's start intent: seated at once when its
+// An execution begins from its Work's start request: seated at once when its
 // Desk was seated at admission, Queued while the Desk waits in its
 // Computer's line. A start without a Desk or its admission time begins none.
 func TestBeginExecutionSeatsOrQueuesItsStart(t *testing.T) {
@@ -30,7 +30,7 @@ func TestBeginExecutionSeatsOrQueuesItsStart(t *testing.T) {
 	require.True(t, waiting.Desk.SeatedAt.IsZero())
 	require.True(t, waiting.Launch.PreparationBound.IsZero())
 
-	admitted, _ := intent[domain.WorkStartAdmitted](work)
+	admitted, _ := executionRequest[domain.WorkStartAdmitted](work)
 	for name, broken := range map[string]func(*domain.WorkStartAdmitted){
 		"no Desk":           func(a *domain.WorkStartAdmitted) { a.DeskID = "" },
 		"no admission time": func(a *domain.WorkStartAdmitted) { a.StartAdmittedAt = time.Time{} },
@@ -165,7 +165,7 @@ func TestReleaseIsConfirmedOnlyWithoutEnvironmentsAndAfterTheDeskLeft(t *testing
 	for _, r := range execution.Reports() {
 		report(t, work, r)
 	}
-	requested, _ := intent[domain.WorkComputeReleaseRequested](work)
+	requested, _ := executionRequest[domain.WorkComputeReleaseRequested](work)
 	retired, err := execution.Retire(requested, time.Now())
 	require.NoError(t, err)
 	require.True(t, retired)
@@ -213,7 +213,7 @@ func TestARetiredExecutionWithoutEnvironmentsIsReleasedOnceItsDeskLeft(t *testin
 		report(t, work, r)
 	}
 	require.Equal(t, domain.RetiredByRejection, releaseCause(work))
-	requested, _ := intent[domain.WorkComputeReleaseRequested](work)
+	requested, _ := executionRequest[domain.WorkComputeReleaseRequested](work)
 	retired, err := execution.Retire(requested, time.Now())
 	require.NoError(t, err)
 	require.True(t, retired)

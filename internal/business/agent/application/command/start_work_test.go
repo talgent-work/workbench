@@ -71,7 +71,7 @@ func TestRestartRetainsAdmissionWhileItsExecutionCannotBegin(t *testing.T) {
 	w.executions.SaveErr = failure
 	require.ErrorIs(t, w.coordination.BeginExecution(ctx, sessions.session.ID), failure)
 	require.Equal(t, domain.WorkStarting, sessions.session.State)
-	require.Contains(t, intents(sessions.session), domain.EventKindWorkStartAdmitted, "the start intent is retained")
+	require.Contains(t, executionRequests(sessions.session), domain.EventKindWorkStartAdmitted, "the start request is retained")
 	w.executions.SaveErr = nil
 	require.NoError(t, w.coordination.Coordinate(ctx, sessions.session.ID))
 	require.Equal(t, 1, w.executions.Count())

@@ -79,10 +79,10 @@ func (s *AgentWork) begin(admission StartAdmission, mode ContextMode) error {
 // admitStart records the admitted start, whose AgentExecution begins with
 // its Desk (Begin execution).
 func (s *AgentWork) admitStart() {
-	s.record(s.startIntent())
+	s.record(s.startRequest())
 }
 
-func (s *AgentWork) startIntent() WorkStartAdmitted {
+func (s *AgentWork) startRequest() WorkStartAdmitted {
 	p := s.HarnessProcess
 	return WorkStartAdmitted{WorkID: s.ID, StartAdmittedAt: p.StartingSince, DeskID: p.DeskID, Waiting: p.DeskWaiting}
 }
@@ -141,30 +141,30 @@ func (s *AgentWork) RecoverExecution() (bool, error) {
 	return false, nil
 }
 
-// Intents rebuilds, from its facts, the intents its current start still
+// ExecutionRequests rebuilds, from its facts, the execution requests its current start still
 // holds for its AgentExecution, so one whose event was lost is passed again
 // (Begin execution, Request process exit, Retire execution).
-func (s *AgentWork) Intents() []Event {
+func (s *AgentWork) ExecutionRequests() []Event {
 	p := s.HarnessProcess
 	if p == nil {
 		return nil
 	}
-	var intents []Event
+	var requests []Event
 	if !p.StartWithdrawn && !p.ComputeReclaimed {
-		intents = append(intents, s.startIntent())
+		requests = append(requests, s.startRequest())
 	}
-	if stop, ok := s.stopIntent(); ok {
-		intents = append(intents, stop)
+	if stop, ok := s.exitRequest(); ok {
+		requests = append(requests, stop)
 	}
-	if release, ok := s.releaseIntent(); ok {
-		intents = append(intents, release)
+	if release, ok := s.retirementRequest(); ok {
+		requests = append(requests, release)
 	}
-	return intents
+	return requests
 }
 
-// stopIntent is the request that the current start's process exit, held
+// exitRequest is the request that the current start's process exit, held
 // while a stop is admitted and the process has not ended.
-func (s *AgentWork) stopIntent() (WorkStopRequested, bool) {
+func (s *AgentWork) exitRequest() (WorkStopRequested, bool) {
 	p := s.HarnessProcess
 	if s.StopRequestReference == "" || p.ended() || p.EnvironmentLost || p.Unreached {
 		return WorkStopRequested{}, false
@@ -178,9 +178,9 @@ func (s *AgentWork) stopIntent() (WorkStopRequested, bool) {
 	return WorkStopRequested{WorkID: s.ID, StartAdmittedAt: p.StartingSince, StopRequestID: s.StopRequestReference, CancelWaitingTurn: cancel}, true
 }
 
-// releaseIntent is the request that the current start's execution retire,
+// retirementRequest is the request that the current start's execution retire,
 // held once the Work's execution ended.
-func (s *AgentWork) releaseIntent() (WorkComputeReleaseRequested, bool) {
+func (s *AgentWork) retirementRequest() (WorkComputeReleaseRequested, bool) {
 	p := s.HarnessProcess
 	var cause RetirementCause
 	switch {
@@ -207,7 +207,7 @@ func (s *AgentWork) releaseIntent() (WorkComputeReleaseRequested, bool) {
 // requestComputeRelease records that the current start's execution ended, so
 // its AgentExecution retires (Retire execution).
 func (s *AgentWork) requestComputeRelease() {
-	if release, ok := s.releaseIntent(); ok {
+	if release, ok := s.retirementRequest(); ok {
 		s.record(release)
 	}
 }
@@ -215,7 +215,7 @@ func (s *AgentWork) requestComputeRelease() {
 // requestStop records the admitted stop's request that the process exit
 // (Request process exit).
 func (s *AgentWork) requestStop() {
-	if stop, ok := s.stopIntent(); ok {
+	if stop, ok := s.exitRequest(); ok {
 		s.record(stop)
 	}
 }
