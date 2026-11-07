@@ -25,6 +25,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -116,10 +117,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	t.Cleanup(func() { _ = db.Close() })
 	models := cfg.models()
 	catalog := &catalog{config: cfg}
-	var repositories interface {
-		command.PersonalConnectionsPort
-		query.AccessibleRepositoriesPort
-	} = fixtureRepositories{}
+	var repositories connections = fixtureRepositories{}
 	if cfg.Marketplace != "" {
 		client, err := plugincatalog.NewClient(http.DefaultClient, plugincatalog.Config{Address: cfg.Marketplace})
 		require.NoError(t, err)
@@ -128,15 +126,16 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	works := infrastructure.NewAgentWorkRepository(db, time.Now)
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	lookup := infrastructure.NewAgentDefinitionLookup(db)
-	authorizer := infrastructure.NewWorkAuthorizer(db)
+	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	requests := infrastructure.NewWorkCreationRequests(db, time.Now)
 	queries := infrastructure.NewWorkQueryRepository(db)
-	execution := infrastructure.NewExecutionRequestsFactory(executionPort{onStart: cfg.OnStart})
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, authorizer, models, catalog, repositories, works, computertest.Checked(admission{admit: cfg.Admit}), execution)
+	execution := executionPort{onStart: cfg.OnStart}
+	start := startCatalog{catalog: catalog, connections: repositories}
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), execution)
 	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), works, authorizer, execution, requests, models)
 	views := query.NewModelOptionViews(queries, models)
 	app := &application.Application{
-		RepositoryOptions: repositories, RecentRepositories: queries, Plugins: catalog, Definitions: definitions, DefinitionLookup: lookup,
+		RecentRepositories: queries, Catalog: start, Definitions: definitions, DefinitionLookup: lookup,
 		Works: works, WorkPrincipals: authorizer, WorkViews: views, Models: models,
 		Commands: application.Commands{
 			EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup),

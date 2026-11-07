@@ -27,7 +27,7 @@ import (
 // librarySpaces stands in for Storage's File Space Contract: a space opens
 // under its owner's name and the files are the fixture's.
 type librarySpaces struct {
-	personalwork.FileSpaces
+	personalwork.FileSpacePort
 	files  []personalwork.SpaceFile
 	issued []string
 }

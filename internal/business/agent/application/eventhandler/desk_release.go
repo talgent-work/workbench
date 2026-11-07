@@ -14,13 +14,13 @@ import (
 // the run no longer holds its room. A lost report is caught by the open-Desk
 // reconciliation of the recovery sweep.
 type DeskReleases struct {
-	computers command.ComputerAdmissionPort
+	computers command.ComputerPort
 	logger    *slog.Logger
 }
 
 var _ domainevent.Handler = (*DeskReleases)(nil)
 
-func NewDeskReleases(computers command.ComputerAdmissionPort, logger *slog.Logger) *DeskReleases {
+func NewDeskReleases(computers command.ComputerPort, logger *slog.Logger) *DeskReleases {
 	return &DeskReleases{computers: computers, logger: logger}
 }
 

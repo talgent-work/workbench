@@ -16,6 +16,7 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -32,8 +33,8 @@ func TestExecutionArchiveRPCRequiresStoppedSessionWithoutPendingContinuation(t *
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
 	port := &recoveryExecutionPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
-	authorization := infrastructure.NewWorkAuthorizer(f.db)
+	factory := port
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
 	handler := command.NewCloseWorkHandler(f.sessions, authorization, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, receipts, &commandtest.InputBuffer{})
 	app := &application.Application{Works: f.sessions, Commands: application.Commands{CloseWork: handler}}
@@ -81,7 +82,7 @@ func TestExecutionArchiveRPCRequiresStoppedSessionWithoutPendingContinuation(t *
 	require.Equal(t, domain.WorkClosed, closed.State)
 	require.Equal(t, before.WorkspaceReference, closed.WorkspaceReference)
 	require.Equal(t, before.HarnessProcess, closed.HarnessProcess, "archive keeps the last process facts")
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, authorization, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), factory)
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, authorization, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory)
 	created, err := create.Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: before.ProjectID, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID, WorkspaceReference: uuid.NewString()})
 	require.NoError(t, err)
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(archive("owner", "control", created)), "a newly admitted Starting Work cannot be archived")
@@ -152,8 +153,8 @@ func TestExecutionArchiveAndContinuationCannotBothCommitFromStoppedRevision(t *t
 				}}
 			}
 			port := &recoveryExecutionPort{}
-			factory := infrastructure.NewExecutionRequestsFactory(port)
-			authorization := infrastructure.NewWorkAuthorizer(f.db)
+			factory := port
+			authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 			archive := command.NewCloseWorkHandler(f.sessions, authorization, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, reader, &commandtest.InputBuffer{})
 			err = archive.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()})
 			observer := infrastructure.NewAgentWorkRepository(other, time.Now)
@@ -162,7 +163,7 @@ func TestExecutionArchiveAndContinuationCannotBothCommitFromStoppedRevision(t *t
 				stored, err := observer.Get(ctx, id)
 				require.NoError(t, err)
 				require.Equal(t, domain.WorkStopped, stored.State)
-				err = command.NewResumeWorkHandler(time.Now, observer, f.agents, authorization, computertest.Checked(startupAuthority{}), factory, observer, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request.StartWork)
+				err = command.NewResumeWorkHandler(time.Now, observer, f.agents, authorization, computertest.Checked(startupAuthority{}), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request.StartWork)
 				require.NoError(t, err)
 				stored, err = observer.Get(ctx, id)
 				require.NoError(t, err)
@@ -171,7 +172,7 @@ func TestExecutionArchiveAndContinuationCannotBothCommitFromStoppedRevision(t *t
 				require.NoError(t, err)
 				_, err = receipts.RetainContinuation(ctx, request, before.Version)
 				require.ErrorIs(t, err, domain.ErrConcurrentModification)
-				err = command.NewResumeWorkHandler(time.Now, observer, f.agents, authorization, computertest.Checked(startupAuthority{}), factory, observer, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request.StartWork)
+				err = command.NewResumeWorkHandler(time.Now, observer, f.agents, authorization, computertest.Checked(startupAuthority{}), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request.StartWork)
 				require.ErrorIs(t, err, domain.ErrWorkTransition)
 				stored, err := observer.Get(ctx, id)
 				require.NoError(t, err)
@@ -198,10 +199,10 @@ func TestExecutionArchiveRecoversCloseFromAgentAfterCommitAcknowledgementLoss(t 
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
 	port := &recoveryExecutionPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
-	authorization := infrastructure.NewWorkAuthorizer(f.db)
+	factory := port
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), factory, f.sessions, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	// Startup failure established by Agent before the process was prepared.

@@ -21,7 +21,6 @@ import (
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -43,7 +42,7 @@ func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return nil }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
 		fx.Provide(func() domain.ExecutionPort { return unusedExecutionPort{} }),
-		fx.Provide(func() command.InputBufferPort { return unusedExecutionPort{} }),
+		fx.Provide(func() command.RunningHarnessPort { return unusedExecutionPort{} }),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(context.Background()))
@@ -82,7 +81,7 @@ func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
 
 type unusedExecutionPort struct{}
 
-func (unusedExecutionPort) ListPendingInteractions(context.Context, string) ([]application.PendingInteraction, error) {
+func (unusedExecutionPort) ListPendingInteractions(context.Context, string) ([]command.PendingInteraction, error) {
 	panic("unauthenticated interaction query")
 }
 
@@ -119,8 +118,8 @@ func storageStub() fx.Option {
 	return fx.Options(
 		fx.Supply(agent.StorageConfig{Address: "http://storage.invalid", Token: "storage-test"}),
 		fx.Supply(agent.UserDirectoryConfig{Address: "http://account.invalid"}),
-		fx.Decorate(func(domain.SandboxMountPort) domain.SandboxMountPort { return stubStorage{} }),
-		fx.Decorate(func(eventhandler.WorkspaceReclamationPort) eventhandler.WorkspaceReclamationPort {
+		fx.Decorate(func(command.SandboxMountPort) command.SandboxMountPort { return stubStorage{} }),
+		fx.Decorate(func(eventhandler.WorkspaceReclamationQueue) eventhandler.WorkspaceReclamationQueue {
 			return stubStorage{}
 		}),
 	)
@@ -149,7 +148,7 @@ func (stubStorage) RequestWorkspaceReclamation(context.Context, string, string) 
 func sessionStateTransport(t *testing.T) fx.Option {
 	t.Helper()
 	serverURL := middlewaretest.Environment(t, "TALGENT_TEST_NATS_URL")
-	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() application.ExecutionThinkingPort { return unusedExecutionPort{} }, func() application.ExecutionPermissionPort { return unusedExecutionPort{} }, func() application.PendingInteractionsPort { return unusedExecutionPort{} }, func() application.TurnControlPort { return unusedExecutionPort{} }, func() application.WorkCapabilitiesPort { return unusedExecutionPort{} }, func() command.ProcessObservationPort { return pendingModuleProcess{} }, func() query.WorkCredentialVerifier { return unusedExecutionPort{} }, func() query.CallPositionReader { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }),
+	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() command.ProcessObservationPort { return pendingModuleProcess{} }, func() query.WorkCredentialVerifier { return unusedExecutionPort{} }, func() query.CallPositionReader { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }),
 		// The Library reads' native callers are verified by the native API in
 		// front; no test here reaches it.
 		fx.Provide(func() (*nativeauth.LiveWorkClient, error) {
@@ -181,7 +180,7 @@ func (unusedExecutionPort) GetThinkingLevel(context.Context, string) (string, er
 func (unusedExecutionPort) CancelTurn(context.Context, string, string) error {
 	panic("unauthenticated cancellation")
 }
-func (unusedExecutionPort) GetCurrentTurn(context.Context, string) (application.CurrentTurn, error) {
+func (unusedExecutionPort) GetCurrentTurn(context.Context, string) (command.CurrentTurn, error) {
 	panic("unauthenticated turn query")
 }
 
@@ -218,7 +217,7 @@ func (pendingModuleProcess) AcknowledgeExit(context.Context, string, string) (bo
 	return false, nil
 }
 
-func (unusedExecutionPort) GetWorkCapabilities(context.Context, string) (application.WorkCapabilities, error) {
+func (unusedExecutionPort) GetWorkCapabilities(context.Context, string) (command.WorkCapabilities, error) {
 	panic("unexpected capability query")
 }
 

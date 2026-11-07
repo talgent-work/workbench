@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 
+	"time"
+
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
@@ -15,7 +17,6 @@ import (
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
-	"time"
 )
 
 type recordingEnqueuer struct {
@@ -33,12 +34,13 @@ func (e *recordingEnqueuer) Enqueue(_ context.Context, task taskqueue.Task, opts
 }
 
 type environmentStub struct {
+	command.ExecutionEnvironmentPort
 	live        map[string]string
 	outstanding []string
 	// steps are the missing steps of outstanding allocations, and next the
 	// step a reconciliation or sandbox observation reports.
-	steps map[string]application.AllocationStep
-	next  application.AllocationStep
+	steps map[string]command.AllocationStep
+	next  command.AllocationStep
 	// using lists the allocations that use each authorization, and inputs
 	// the Managed allocations whose input source is each owner's space.
 	using, inputs map[string][]string
@@ -54,26 +56,26 @@ func (e environmentStub) MarkInputsChanged(_ context.Context, owner string) ([]s
 	return e.inputs[owner], nil
 }
 
-func (e environmentStub) ReconcileAllocation(context.Context, string) (application.AllocationStep, error) {
+func (e environmentStub) ReconcileAllocation(context.Context, string) (command.AllocationStep, error) {
 	return e.next, nil
 }
 func (environmentStub) PrepareAllocation(context.Context, string) error   { return nil }
 func (environmentStub) ReconnectAllocation(context.Context, string) error { return nil }
-func (e environmentStub) ObserveSandbox(context.Context, string) (application.AllocationStep, error) {
+func (e environmentStub) ObserveSandbox(context.Context, string) (command.AllocationStep, error) {
 	return e.next, nil
 }
 func (e environmentStub) LiveAllocation(_ context.Context, workID string) (string, bool, error) {
 	id, ok := e.live[workID]
 	return id, ok, nil
 }
-func (e environmentStub) ListOutstandingAllocations(_ context.Context, after string, limit int) ([]application.AllocationStatus, error) {
-	var statuses []application.AllocationStatus
+func (e environmentStub) ListOutstandingAllocations(_ context.Context, after string, limit int) ([]command.AllocationStatus, error) {
+	var statuses []command.AllocationStatus
 	for _, id := range page(e.outstanding, after, limit) {
 		step, ok := e.steps[id]
 		if !ok {
-			step = application.AllocationReconcile
+			step = command.AllocationReconcile
 		}
-		statuses = append(statuses, application.AllocationStatus{AllocationID: id, Step: step})
+		statuses = append(statuses, command.AllocationStatus{AllocationID: id, Step: step})
 	}
 	return statuses, nil
 }
@@ -132,13 +134,13 @@ func TestEndedConnectionOnlyReconnectsALiveAllocation(t *testing.T) {
 // attempt may last until the Startup Deadline.
 func TestEachOnboardingStepWakesTheNextOne(t *testing.T) {
 	enqueuer := &recordingEnqueuer{}
-	recovery := application.NewRecovery(&application.Application{}, enqueuer, environmentStub{next: application.AllocationPrepare}, nil, nil)
+	recovery := application.NewRecovery(&application.Application{}, enqueuer, environmentStub{next: command.AllocationPrepare}, nil, nil)
 	require.NoError(t, recovery.ReconcileAllocation(context.Background(), "allocation-1"))
 	require.Equal(t, []string{"agent:allocation-preparation:allocation-1"}, enqueuer.keys)
 	require.Greater(t, enqueuer.options[0].Timeout(), domain.StartupDeadline)
 
 	enqueuer = &recordingEnqueuer{}
-	recovery = application.NewRecovery(&application.Application{}, enqueuer, environmentStub{next: application.AllocationReconnect}, nil, nil)
+	recovery = application.NewRecovery(&application.Application{}, enqueuer, environmentStub{next: command.AllocationReconnect}, nil, nil)
 	require.NoError(t, recovery.ObserveSandbox(context.Background(), "allocation-1"))
 	require.Equal(t, []string{"agent:allocation-reconnect:allocation-1"}, enqueuer.keys)
 
@@ -150,11 +152,11 @@ func TestEachOnboardingStepWakesTheNextOne(t *testing.T) {
 
 func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
 	var allocations, works idList
-	steps := map[string]application.AllocationStep{}
+	steps := map[string]command.AllocationStep{}
 	for n := range 250 {
 		id := fmt.Sprintf("allocation-%03d", n)
 		allocations = append(allocations, id)
-		steps[id] = application.AllocationStep(n % 4)
+		steps[id] = command.AllocationStep(n % 4)
 	}
 	works = idList{"work-1", "work-2"}
 	app := &application.Application{Commands: application.Commands{
@@ -221,7 +223,10 @@ func TestInputChangeWakesTheInputsSyncOfItsManagedWorks(t *testing.T) {
 	require.Error(t, recovery.InputsChanged(context.Background(), " "))
 }
 
-type reclamationRecorder struct{ sent []string }
+type reclamationRecorder struct {
+	application.WorkspacePort
+	sent []string
+}
 
 func (r *reclamationRecorder) RequestWorkspaceReclamation(_ context.Context, workID, reference string) error {
 	r.sent = append(r.sent, workID+"/"+reference)

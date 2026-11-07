@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -30,7 +28,7 @@ func TestStopDeliveryFailurePreservesStopRequestForRecovery(t *testing.T) {
 	store := &feedbackSessionStore{session: session}
 	failure := errors.New("dispatcher unavailable")
 	port := controlPort{stopErr: failure}
-	err := command.NewStopWorkHandler(store, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port)).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop"})
+	err := command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop"})
 	require.ErrorIs(t, err, failure)
 	require.Equal(t, 1, store.saves)
 	require.Equal(t, domain.WorkStopping, store.session.State)
@@ -41,7 +39,7 @@ func TestCloseAcceptanceDoesNotWaitForExecutionControl(t *testing.T) {
 	session := stoppingSession(t)
 	store := &feedbackSessionStore{session: session}
 	port := observingControlPort{onStop: func() { t.Fatal("closure acceptance must not call the executor") }}
-	err := command.NewCloseWorkHandler(store, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
+	err := command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopping, store.session.State, "a stopping Work closes once it has stopped")
 	require.Equal(t, "close", store.session.CloseRequestReference)
@@ -75,10 +73,10 @@ func TestControlPersistsBeforeSendingToExecutor(t *testing.T) {
 			}}
 			request := command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop"}
 			if closeSession {
-				require.NoError(t, command.NewCloseWorkHandler(store, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request))
+				require.NoError(t, command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request))
 				require.Zero(t, calls, "permanent close is delivered by recovery")
 			} else {
-				require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port)).Handle(context.Background(), request))
+				require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), request))
 				require.Equal(t, 1, calls)
 			}
 		})
@@ -91,7 +89,7 @@ func TestControlSaveFailureDoesNotStopExecutor(t *testing.T) {
 	store := &feedbackSessionStore{session: session, saveErr: failure}
 	sent := false
 	port := observingControlPort{onStop: func() { sent = true }}
-	err := command.NewCloseWorkHandler(store, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
+	err := command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
 	require.ErrorIs(t, err, failure)
 	require.False(t, sent, "rejected persistence must not change the external execution")
 	require.Equal(t, domain.WorkStopping, store.session.State)
@@ -111,13 +109,13 @@ func TestImmediateExitFeedbackCannotBeOverwrittenByStopCommand(t *testing.T) {
 	session := runningSession(t)
 	store := &feedbackSessionStore{session: session}
 	processes := exitedProcess()
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, store, processes, infrastructure.NewExecutionRequestsFactory(&feedbackPort{}), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, store, processes, &feedbackPort{}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	port := observingControlPort{onStop: func() {
 		require.NoError(t, feedback.Handle(context.Background(), command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutionExited, WorkID: session.ID}))
 		processes.observation = domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true}
 		require.NoError(t, feedback.Handle(context.Background(), command.ExecutionFeedback{Kind: command.ComputeReclaimed, WorkID: session.ID}))
 	}}
-	require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port)).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop"}))
+	require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop"}))
 	require.Equal(t, domain.WorkStopped, store.session.State, "command must not save an older snapshot over acknowledged completion")
 	require.True(t, store.session.HarnessProcess.ComputeReclaimed)
 }
@@ -131,12 +129,12 @@ func TestStopUnderStaleWorkVersionIsRejected(t *testing.T) {
 	store := &feedbackSessionStore{session: session}
 	port := observingControlPort{onStop: func() {}}
 	stale := 6
-	err := command.NewStopWorkHandler(store, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port)).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop", ExpectedVersion: &stale})
+	err := command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop", ExpectedVersion: &stale})
 	require.ErrorIs(t, err, domain.ErrConcurrentModification)
 	require.Zero(t, store.saves)
 	require.Equal(t, domain.WorkWorking, store.session.State)
 	current := 7
-	require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port)).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop", ExpectedVersion: &current}))
+	require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop", ExpectedVersion: &current}))
 	require.Equal(t, domain.WorkStopping, store.session.State)
 }
 

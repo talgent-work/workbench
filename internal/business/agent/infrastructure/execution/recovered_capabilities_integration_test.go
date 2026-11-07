@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"xorm.io/xorm"
@@ -42,7 +43,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			definition, err = definitions.Get(ctx, definition.ID)
 			require.NoError(t, err)
 			delivery := &allocationRegistration{provisioning: provisioning}
-			pending := infrastructure.NewExecutionRequestsFactory(delivery)()
+			pending := commandtest.Hold(delivery)
 			work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, HomeBinding: definition.HomeBinding, WorkspaceReference: uuid.NewString()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, pending)
 			require.NoError(t, err)
 			works := infrastructure.NewAgentWorkRepository(db, time.Now)
@@ -57,7 +58,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			recovered, err := infrastructure.NewAgentWorkRepository(reopened, time.Now).Get(ctx, work.ID)
 			require.NoError(t, err)
 			require.Equal(t, snapshot.Connectors, recovered.CapabilitySnapshot.Connectors)
-			pending = infrastructure.NewExecutionRequestsFactory(delivery)()
+			pending = commandtest.Hold(delivery)
 			_, err = recovered.RecoverExecution(ctx, pending)
 			require.NoError(t, err)
 			require.NoError(t, pending.Send(ctx), "recovery must reuse the admitted allocation")

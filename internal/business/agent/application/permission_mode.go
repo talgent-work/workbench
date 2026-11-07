@@ -6,12 +6,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// ExecutionPermissionPort asks the Work's running Harness to change its
-// permission mode and answers the mode the Harness accepted.
-type ExecutionPermissionPort interface {
-	SetPermissionMode(ctx context.Context, workID string, mode domain.PermissionMode) (domain.PermissionMode, error)
-}
-
 // SetPermissionMode changes a running Managed Work's permission mode.
 type SetPermissionMode struct {
 	ActorUserID, WorkID string
@@ -35,5 +29,5 @@ func (a *Application) SetPermissionMode(ctx context.Context, input SetPermission
 	if err := work.AdmitPermissionModeChange(input.ActorUserID, input.Mode); err != nil {
 		return "", err
 	}
-	return a.Permissions.SetPermissionMode(ctx, work.ID, input.Mode)
+	return a.Harness.SetPermissionMode(ctx, work.ID, input.Mode)
 }

@@ -39,13 +39,13 @@ type EnvironmentResources interface {
 type Environment struct {
 	resources  EnvironmentResources
 	dispatcher *DispatcherControl
-	mounts     domain.SandboxMountPort
-	computers  command.ComputerDescriptionPort
+	mounts     command.SandboxMountPort
+	computers  command.ComputerPort
 }
 
 var _ domain.ExecutionPort = (*Environment)(nil)
 
-func NewEnvironment(resources EnvironmentResources, dispatcher *DispatcherControl, mounts domain.SandboxMountPort, computers command.ComputerDescriptionPort) (*Environment, error) {
+func NewEnvironment(resources EnvironmentResources, dispatcher *DispatcherControl, mounts command.SandboxMountPort, computers command.ComputerPort) (*Environment, error) {
 	if resources == nil || dispatcher == nil || mounts == nil || computers == nil {
 		return nil, errors.New("agent: environment resources, Dispatcher control, sandbox mounts and Computer lookup are required")
 	}

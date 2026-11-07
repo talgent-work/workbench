@@ -8,13 +8,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// InputAcceptances commits accepted input.
-type InputAcceptances interface {
-	// CommitAcceptance saves the Work changed by accepting input against the
-	// Work version.
-	CommitAcceptance(ctx context.Context, work *domain.AgentWork) error
-}
-
 // acceptanceAttempts bounds retries of a commit that lost to a concurrent
 // change of the Work after the input was buffered.
 const acceptanceAttempts = 3
@@ -24,15 +17,14 @@ const acceptanceAttempts = 3
 // commits the resulting Work state. Agent keeps no input or delivery record;
 // the buffer's deduplication gives idempotency.
 type InputAcceptance struct {
-	sessions    domain.AgentWorkRepository
-	acceptances InputAcceptances
-	buffer      InputBufferPort
+	sessions domain.AgentWorkRepository
+	buffer   RunningHarnessPort
 }
 
 var _ WorkInputs = (*InputAcceptance)(nil)
 
-func NewInputAcceptance(sessions domain.AgentWorkRepository, acceptances InputAcceptances, buffer InputBufferPort) *InputAcceptance {
-	return &InputAcceptance{sessions: sessions, acceptances: acceptances, buffer: buffer}
+func NewInputAcceptance(sessions domain.AgentWorkRepository, buffer RunningHarnessPort) *InputAcceptance {
+	return &InputAcceptance{sessions: sessions, buffer: buffer}
 }
 
 func (h *InputAcceptance) AcceptInput(ctx context.Context, workID string, input ExecutionInput) (InputHandOff, error) {
@@ -90,7 +82,9 @@ func (h *InputAcceptance) accept(ctx context.Context, work *domain.AgentWork, ad
 		if replay {
 			return handOff, nil
 		}
-		err := h.acceptances.CommitAcceptance(ctx, work)
+		// The Work changed by accepting input is saved against the Work
+		// version the acceptance read.
+		err := h.sessions.Save(ctx, work)
 		if !errors.Is(err, domain.ErrConcurrentModification) || attempt == acceptanceAttempts {
 			return handOff, err
 		}

@@ -56,7 +56,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
 			fx.Provide(func() domain.ExecutionPort { return port }),
-			fx.Provide(func() command.InputBufferPort { return port }),
+			fx.Provide(func() command.RunningHarnessPort { return port }),
 		)
 		require.NoError(t, app.Err())
 		require.NoError(t, app.Start(ctx))

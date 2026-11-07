@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -35,19 +36,19 @@ func stoppedContinuationSession(t *testing.T) (workCreationFixture, string) {
 	t.Helper()
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	id, err := create.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id))
 	require.NoError(t, f.requests.CompleteWorkCreation(ctx, f.request.ID))
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
+	factory := executionPort{}
 	ref := id
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
 	// A normal exit follows an admitted stop (Lifecycle observation).
-	require.NoError(t, command.NewStopWorkHandler(f.sessions, infrastructure.NewWorkAuthorizer(f.db), factory).Handle(ctx, command.WorkControl{SubjectID: f.request.Creation.SubjectID, WorkID: id, RequestID: uuid.NewString()}))
+	require.NoError(t, command.NewStopWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), factory).Handle(ctx, command.WorkControl{SubjectID: f.request.Creation.SubjectID, WorkID: id, RequestID: uuid.NewString()}))
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutionExited, command.ComputeReclaimed} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
@@ -64,9 +65,9 @@ func TestContinuationCapacityRejectionNeverReentersAdmissionWithoutExplicitRetry
 	require.NoError(t, err)
 	capacity := &continuationCapacity{err: domain.ErrCapacityUnavailable}
 	starts := []domain.StartExecutionRequest{}
-	factory := infrastructure.NewExecutionRequestsFactory(startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }})
+	factory := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }}
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	handler := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(capacity), factory, f.sessions, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	handler := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(capacity), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 	foreign := request
 	foreign.SubjectID = "another-owner"
@@ -139,9 +140,9 @@ func TestContinuationRecoversRejectionWithoutRequestingCapacity(t *testing.T) {
 	ctx := context.Background()
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
 	capacity := &continuationCapacity{err: domain.ErrCapacityUnavailable}
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
+	factory := executionPort{}
 	lost := &lostContinuationReceipt{ContinuationRequests: receipts, reject: true}
-	h := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(capacity), factory, f.sessions, lost, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	h := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(capacity), factory, lost, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 	err := h.Handle(ctx, request)
 	require.ErrorIs(t, err, errContinuationAckLost)
@@ -153,7 +154,7 @@ func TestContinuationRecoversRejectionWithoutRequestingCapacity(t *testing.T) {
 	t.Cleanup(func() { _ = other.Close() })
 	sessions := infrastructure.NewAgentWorkRepository(other, time.Now)
 	capacity.err = nil
-	rebuilt := command.NewResumeWorkHandler(time.Now, sessions, infrastructure.NewAgentDefinitionRepository(other, time.Now), infrastructure.NewWorkAuthorizer(other), computertest.Checked(capacity), factory, sessions, infrastructure.NewContinuationRequests(other, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	rebuilt := command.NewResumeWorkHandler(time.Now, sessions, infrastructure.NewAgentDefinitionRepository(other, time.Now), access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(other)), computertest.Checked(capacity), factory, infrastructure.NewContinuationRequests(other, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	require.NoError(t, rebuilt.Recover(ctx, id))
 	require.Equal(t, 1, capacity.calls)
 	view, err = receipts.GetWorkContinuation(ctx, id)
@@ -163,7 +164,7 @@ func TestContinuationRecoversRejectionWithoutRequestingCapacity(t *testing.T) {
 	// has been reconciled: the start request record was canceled.
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
-	require.NoError(t, session.Resume(ctx, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: session.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, factory()))
+	require.NoError(t, session.Resume(ctx, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: session.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, commandtest.Hold(factory)))
 	require.ErrorIs(t, sessions.CommitStart(ctx, session, agentquery.AdmittedStart{WorkID: id, Kind: agentquery.StartKindResume}, request.RequestID), command.ErrStartRequestCanceled)
 	actual, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -189,9 +190,9 @@ func TestContinuationObservationResolvesAcceptedAdmissionAfterLostResponse(t *te
 	ctx := context.Background()
 	capacity := &continuationCapacity{}
 	starts := []domain.StartExecutionRequest{}
-	factory := infrastructure.NewExecutionRequestsFactory(startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }})
+	factory := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }}
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	h := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(capacity), factory, &lostContinuationAdmission{AgentWorkRepository: f.sessions, lost: true}, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	h := command.NewResumeWorkHandler(time.Now, &lostContinuationAdmission{AgentWorkRepository: f.sessions, lost: true}, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(capacity), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 	err := h.Handle(ctx, request)
 	require.ErrorIs(t, err, errContinuationAckLost)
@@ -219,9 +220,9 @@ func TestContinuationRetainsOriginalRequestBeforeAnyAdmission(t *testing.T) {
 	require.NoError(t, err)
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
 	capacity := &continuationCapacity{}
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
+	factory := executionPort{}
 	lost := &lostContinuationReceipt{ContinuationRequests: receipts, retain: true}
-	h := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(capacity), factory, f.sessions, lost, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	h := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(capacity), factory, lost, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 	err = h.Handle(ctx, request)
 	require.ErrorIs(t, err, errContinuationAckLost)
@@ -304,7 +305,7 @@ func TestContinuationConcurrentReservationAndIdentityCollision(t *testing.T) {
 	ids, err = stores[0].ListPendingContinuations(ctx, id, 100)
 	require.NoError(t, err)
 	require.Empty(t, ids)
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	otherID, err := create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: before.ProjectID})
 	require.NoError(t, err)
 	otherBefore, err := f.sessions.Get(ctx, otherID)
@@ -327,9 +328,9 @@ func TestContinuationRefusesAWithdrawnModelConfigurationUntilItIsProvidedAgain(t
 	before, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	starts := []domain.StartExecutionRequest{}
-	factory := infrastructure.NewExecutionRequestsFactory(startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }})
+	factory := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }}
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	withdrawn := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(&continuationCapacity{}), factory, f.sessions, receipts, agentquery.NewModelConfigurations(), commandtest.UnchangedPlugins{})
+	withdrawn := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(&continuationCapacity{}), factory, receipts, agentquery.NewModelConfigurations(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 	require.ErrorIs(t, withdrawn.Handle(ctx, request), domain.ErrModelConfigurationWithdrawn)
 	require.ErrorIs(t, withdrawn.Handle(ctx, request), domain.ErrModelConfigurationWithdrawn, "the retained refusal keeps its reason")
@@ -339,14 +340,14 @@ func TestContinuationRefusesAWithdrawnModelConfigurationUntilItIsProvidedAgain(t
 	require.Equal(t, domain.WorkStopped, retained.State)
 	require.Equal(t, before.HarnessProcess, retained.HarnessProcess)
 
-	provided := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(&continuationCapacity{}), factory, f.sessions, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	provided := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(&continuationCapacity{}), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	require.NoError(t, provided.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.Len(t, starts, 1)
 	require.Equal(t, before.WorkModel, starts[0].WorkModel)
 }
 
 // unreachableComputer refuses every run as its Managed Computer being away.
-type unreachableComputer struct{ command.ComputerAdmissionPort }
+type unreachableComputer struct{ command.ComputerPort }
 
 func (unreachableComputer) AdmitRun(context.Context, command.RunAdmission) (command.ComputerAnswer, error) {
 	return command.ComputerAnswer{Kind: command.ComputerRejected, Rejection: domain.ErrComputerUnreachable}, nil
@@ -359,9 +360,9 @@ func (unreachableComputer) AdmitRun(context.Context, command.RunAdmission) (comm
 func TestContinuationRefusedAsUnreachableLeavesNoFailedStartup(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
+	factory := executionPort{}
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	handler := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), unreachableComputer{computertest.Checked(&continuationCapacity{})}, factory, f.sessions, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	handler := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), unreachableComputer{computertest.Checked(&continuationCapacity{})}, factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	views := infrastructure.NewWorkQueryRepository(f.db)
 	before, err := views.GetWorkView(ctx, id)
 	require.NoError(t, err)

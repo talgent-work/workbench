@@ -10,8 +10,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 )
 
-var _ application.ServiceCredentialPort = (*Client)(nil)
-
 // credentialStatusHeader is the metadata in which Marketplace states why it
 // refused a credential.
 const credentialStatusHeader = "X-Talgent-Credential-Status"

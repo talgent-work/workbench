@@ -13,7 +13,6 @@ import (
 	"github.com/samber/oops"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -40,8 +39,6 @@ type ManagedReconciliation struct {
 	machines *ManagedComputers
 	works    *HeldWorks
 }
-
-var _ command.ComputerReconciliationPort = (*ManagedReconciliation)(nil)
 
 func NewManagedReconciliation(db *xorm.Engine, machines *ManagedComputers, works *HeldWorks) (*ManagedReconciliation, error) {
 	if db == nil || machines == nil || works == nil {

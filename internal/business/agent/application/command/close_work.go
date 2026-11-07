@@ -17,10 +17,10 @@ type CloseWorkHandler struct {
 	initial       InitialExecutionReader
 	startup       query.WorkStartupReader
 	continuations query.ContinuationReader
-	buffer        InputBufferPort
+	buffer        RunningHarnessPort
 }
 
-func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution ExecutionRequestsFactory, initial InitialExecutionReader, startup query.WorkStartupReader, continuations query.ContinuationReader, buffer InputBufferPort) *CloseWorkHandler {
+func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort, initial InitialExecutionReader, startup query.WorkStartupReader, continuations query.ContinuationReader, buffer RunningHarnessPort) *CloseWorkHandler {
 	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, execution: execution}, initial: initial, startup: startup, continuations: continuations, buffer: buffer}
 }
 
@@ -50,14 +50,14 @@ func (h *CloseWorkHandler) ApplyKeptClose(ctx context.Context, workID string) er
 	if err != nil {
 		return err
 	}
-	requests := h.control.execution()
+	requests := deferExecution(h.control.execution)
 	if err := work.Close(ctx, work.CloseRequestReference, facts, requests); err != nil {
 		return err
 	}
 	if err := h.control.sessions.Save(ctx, work); err != nil {
 		return err
 	}
-	return requests.Send(ctx)
+	return requests.send(ctx)
 }
 
 // facts supplies the obligations a close must not discard.

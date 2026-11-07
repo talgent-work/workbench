@@ -46,7 +46,7 @@ func (h workContinuation) handle(ctx context.Context, input StartWork, operation
 	}
 	// An earlier admitted request remains idempotent even after the current
 	// continuation record has been replaced by a subsequent explicit request.
-	if _, found, err := h.startup.admissions.FindAdmittedStart(ctx, input.RequestID); err != nil {
+	if _, found, err := h.startup.sessions.FindAdmittedStart(ctx, input.RequestID); err != nil {
 		return err
 	} else if found {
 		_, err := h.submit(ctx, ContinuationRequest{StartWork: input, Operation: operation})
@@ -79,7 +79,7 @@ func (h workContinuation) handle(ctx context.Context, input StartWork, operation
 				// A competing retry may have admitted and resolved this exact
 				// request after submit's negative lookup. A durable admission
 				// wins; do not reject it or alter a newer continuation record.
-				accepted, found, lookupErr := h.startup.admissions.FindAdmittedStart(ctx, request.RequestID)
+				accepted, found, lookupErr := h.startup.sessions.FindAdmittedStart(ctx, request.RequestID)
 				if lookupErr != nil {
 					return lookupErr
 				}
@@ -111,14 +111,14 @@ func (h workContinuation) submit(ctx context.Context, request ContinuationReques
 }
 
 func (h workContinuation) settleRejection(ctx context.Context, request ContinuationRequest) error {
-	canceled, err := h.startup.admissions.CancelStart(ctx, request.WorkID, request.RequestID)
+	canceled, err := h.startup.sessions.CancelStart(ctx, request.WorkID, request.RequestID)
 	if err != nil {
 		return err
 	}
 	if !canceled {
 		// Admission won the shared serialization, including a start that
 		// already completed before its response was observed.
-		accepted, found, err := h.startup.admissions.FindAdmittedStart(ctx, request.RequestID)
+		accepted, found, err := h.startup.sessions.FindAdmittedStart(ctx, request.RequestID)
 		if err != nil {
 			return err
 		}
@@ -147,7 +147,7 @@ func (h workContinuation) recover(ctx context.Context, sessionID string) error {
 		}
 		return err
 	}
-	accepted, found, err := h.startup.admissions.FindAdmittedStart(ctx, request.RequestID)
+	accepted, found, err := h.startup.sessions.FindAdmittedStart(ctx, request.RequestID)
 	if err != nil || !found {
 		return err
 	}

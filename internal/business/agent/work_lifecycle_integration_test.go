@@ -69,13 +69,12 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 		mux := http.NewServeMux()
 		server := httptest.NewServer(mux)
 		app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
-			fx.Decorate(func(application.PendingInteractionsPort) application.PendingInteractionsPort { return port }),
 			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("10", "10Gi", "64")),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 			fx.Provide(func() kubernetes.Interface { return capacityClient }),
 			fx.Provide(func() domain.ExecutionPort { return port }),
-			fx.Provide(func() command.InputBufferPort { return port }),
+			fx.Provide(func() command.RunningHarnessPort { return port }),
 			fx.Decorate(func(command.ProcessObservationPort) command.ProcessObservationPort { return processes }),
 			fx.Invoke(func(feedback *command.ApplyExecutionFeedbackHandler, recoverSession *command.RecoverWorkHandler, app *application.Application) {
 				recovery, agentApp, reclamations = recoverSession, app, feedback

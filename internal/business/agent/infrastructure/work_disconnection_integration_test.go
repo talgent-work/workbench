@@ -9,7 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -21,8 +23,8 @@ import (
 func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db),
-		creationModels(), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	id, err := handler.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(ctx, id)
@@ -85,8 +87,8 @@ func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T
 func TestAReachResumeMarkPersistsAndIsFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db),
-		creationModels(), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	id, err := handler.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(ctx, id)

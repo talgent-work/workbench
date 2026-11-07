@@ -29,7 +29,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	agentcomputer "github.com/talgent-work/workbench/internal/business/agent/infrastructure/computer"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/inputsettlements"
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/userdirectory"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
@@ -42,14 +41,14 @@ func newStorageClient(httpClient *http.Client, config StorageConfig) (*agentstor
 	return agentstorage.NewClient(httpClient, config)
 }
 
-type workspaceViewSources struct {
+type workspaceSources struct {
 	fx.In
 	Storage *agentstorage.Client
 	Managed *execution.ManagedWorkspaces `optional:"true"`
 }
 
-func newWorkspaceViews(in workspaceViewSources) (application.WorkspaceViewPort, error) {
-	return execution.NewWorkspaceViews(in.Storage, in.Managed)
+func newWorkspaces(in workspaceSources) (application.WorkspacePort, error) {
+	return execution.NewWorkspaces(in.Storage, in.Managed)
 }
 
 func newFileSpaces(httpClient *http.Client, config StorageConfig) (*agentstorage.FileSpaces, error) {
@@ -81,34 +80,33 @@ var Module = fx.Module("domain.agent",
 	fx.Invoke(registerDomainEventLifecycle),
 	fx.Invoke(fx.Annotate(RegisterRPCHandlers, fx.ParamTags(``, ``, ``, ``, `optional:"true"`))),
 	fx.Invoke(RegisterPersonalWorkHandlers),
-	fx.Provide(fx.Annotate(newFileSpaces, fx.As(new(personalwork.FileSpaces))), fx.Private),
-	fx.Provide(fx.Annotate(userdirectory.NewClient, fx.As(new(personalwork.UserDirectory))), fx.Private),
+	fx.Provide(fx.Annotate(newFileSpaces, fx.As(new(personalwork.FileSpacePort))), fx.Private),
+	fx.Provide(fx.Annotate(userdirectory.NewClient, fx.As(new(personalwork.UserDirectoryPort))), fx.Private),
 	fx.Provide(personalwork.New, fx.Private),
 	fx.Provide(fx.Annotate(infrastructure.NewPluginResults, fx.As(new(application.PluginResults)))),
 	fx.Provide(fx.Annotate(infrastructure.NewServiceAccessResults, fx.As(new(query.ServiceAccessReader)))),
-	fx.Provide(infrastructure.NewWorkStateNATSPublisher, newWorkStateUpdates),
-	fx.Provide(fx.Annotate(infrastructure.NewWorkAccessNATSPublisher, fx.As(new(eventhandler.WorkAccessWithdrawalPort)))),
+	fx.Provide(newLiveStreamPublisher, newWorkStateUpdates),
 	fx.Provide(newDomainEventDispatcher, fx.Private),
 	fx.Provide(func(d *domainevent.InMemoryDispatcher) domainevent.Dispatcher { return d }, fx.Private),
 	fx.Provide(eventhandler.NewWorkAccessWithdrawals),
 	fx.Provide(eventhandler.NewWorkClosures),
 	// Every run of a Work takes a Desk on its Computer.
-	fx.Provide(fx.Annotate(newComputerClient, fx.As(new(command.ComputerAdmissionPort)), fx.As(new(command.ComputerDescriptionPort)))),
+	fx.Provide(fx.Annotate(newComputerClient, fx.As(new(command.ComputerPort)))),
 	fx.Provide(eventhandler.NewDeskReleases),
 	// Storage owns every space a Work uses.
-	fx.Provide(fx.Annotate(newStorageClient, fx.As(fx.Self()), fx.As(new(domain.SandboxMountPort)), fx.As(new(application.WorkspaceReclamationSender)))),
+	fx.Provide(fx.Annotate(newStorageClient, fx.As(fx.Self()), fx.As(new(command.SandboxMountPort)))),
 	// A Work's workspace is read where its files are: Storage's for a Cloud
 	// Work, its machine's for a Managed one when ExecutionModule reaches
 	// Managed Computers.
-	fx.Provide(newWorkspaceViews),
+	fx.Provide(newWorkspaces),
 	fx.Invoke(subscribeEventHandlers),
 	fx.Provide(application.NewRequiredResponseReader),
 	fx.Provide(fx.Annotate(command.NewInputAcceptance, fx.As(new(command.WorkInputs)))),
 	fx.Provide(fx.Annotate(infrastructure.NewAgentDefinitionLookup, fx.As(new(query.AgentDefinitionLookup)), fx.As(new(query.AgentAppearanceReader)))),
 	fx.Provide(func() func() time.Time { return time.Now }, fx.Private),
 	fx.Provide(fx.Annotate(infrastructure.NewAgentDefinitionRepository, fx.As(new(domain.AgentDefinitionRepository)))),
-	fx.Provide(fx.Annotate(newCommittedWorks, fx.As(new(domain.AgentWorkRepository)), fx.As(new(command.InputAcceptances)), fx.As(new(command.WorkRegistrar)), fx.As(new(command.StartAdmissions)), fx.As(new(domain.WorkLookupPort)), fx.As(new(query.StartAdmissionReader)), fx.As(new(application.WorkRegistrationCancellationPort)))),
-	fx.Provide(fx.Annotate(infrastructure.NewWorkAuthorizer, fx.As(new(access.WorkAuthorizer)))),
+	fx.Provide(fx.Annotate(newCommittedWorks, fx.As(new(domain.AgentWorkRepository)), fx.As(new(command.AgentWorkRepository)), fx.As(new(domain.WorkLookupPort)), fx.As(new(query.StartAdmissionReader)))),
+	fx.Provide(fx.Annotate(infrastructure.NewWorkAccessReader, fx.As(new(access.WorkAccessReader))), access.NewWorkAuthorizer),
 	fx.Provide(fx.Annotate(command.NewCatalogPluginUpgrades, fx.As(new(command.PluginUpgrades)))),
 	fx.Provide(fx.Annotate(newCommittedContinuations, fx.As(new(command.ContinuationRequests)), fx.As(new(query.ContinuationReader)))),
 	fx.Provide(fx.Annotate(newCommittedInitialExecutions, fx.As(new(command.InitialExecutionRequests)), fx.As(new(command.InitialExecutionReader)), fx.As(new(query.InitialExecutionRecoveryReader)), fx.As(new(query.WorkPreparationReader)))),
@@ -142,7 +140,6 @@ var Module = fx.Module("domain.agent",
 		query.NewGetWorkPreparationHandler,
 		query.NewListSubmittedPreparationsHandler,
 		command.NewReconcileDesksHandler,
-		infrastructure.NewExecutionRequestsFactory,
 		command.NewResumeWorkHandler,
 		command.NewRestartWorkHandler,
 		command.NewEnsureAgentDefinitionHandler,
@@ -154,7 +151,6 @@ var Module = fx.Module("domain.agent",
 		command.NewDeliverWorkInputHandler,
 		command.NewRespondWorkInteractionHandler,
 		command.NewApplyExecutionFeedbackHandler,
-		fx.Annotate(inputsettlements.NewPublisher, fx.As(new(command.InputSettlements))),
 		query.NewGetAgentDefinitionHandler,
 		query.NewLocateWorkHandler,
 		query.NewGetAgentDefinitionForPurposeHandler,

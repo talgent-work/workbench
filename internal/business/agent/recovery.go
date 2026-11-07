@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
-	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
@@ -73,12 +72,14 @@ func (c RecoveryConfig) sweepInterval() (time.Duration, error) {
 // RecoveryModule wakes and performs Agent's recovery obligations as keyed tasks:
 // sandbox observations, Work commits, connection reports and a periodic sweep
 // of unfinished obligations wake one object each; completed history is never
-// scanned. It requires an ExecutionEnvironmentRecovery, supplied by
+// scanned. It requires a command.ExecutionEnvironmentPort, supplied by
 // ExecutionModule, and the two named task queues.
 var RecoveryModule = fx.Module("agent.recovery",
 	pkgtaskqueue.Bind(RecoveryQueue),
 	fx.Provide(
-		fx.Annotate(newComputerReconnection, fx.As(fx.Self()), fx.As(new(application.OwedResumes))),
+		// A Managed Computer's return of reach, for Computer Became Reachable
+		// and for the recovery of each Work owed a Resume.
+		fx.Annotate(command.NewComputerReconnectionHandler, fx.As(fx.Self()), fx.As(new(application.OwedResumes))),
 		application.NewRecovery,
 		fx.Annotate(taskprocessor.RecoveryProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(RecoveryQueue))),
 		fx.Annotate(taskprocessor.PreparationProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(PreparationQueue))),
@@ -145,7 +146,8 @@ func deferredWake(logger *slog.Logger, name string, fn func(context.Context, str
 // execution integration registers or retires.
 var environmentRecoveryOptions = fx.Options(
 	fx.Provide(
-		fx.Annotate(execution.NewEnvironmentRecovery, fx.As(fx.Self()), fx.As(new(application.ExecutionEnvironmentRecovery))),
+		execution.NewEnvironmentRecovery,
+		newExecutionEnvironment,
 		pkgkubernetes.NewDynamicClient,
 		newStreamOwners,
 	),
@@ -207,27 +209,15 @@ func (d dispatcherStreams) Reading(ctx context.Context, workID string) (executio
 	return execution.StreamReading{ProcessID: reading.ProcessID, Endpoint: reading.Endpoint}, found, err
 }
 
-// reconnectionDependencies are what a Managed Computer's return of reach
-// acts on; Managed is absent or nil for a deployment that reaches no Managed
-// Computer.
-type reconnectionDependencies struct {
+// executionEnvironmentSources are what the execution environments are
+// reached through; Managed is absent or nil for a deployment that reaches no
+// Managed Computer.
+type executionEnvironmentSources struct {
 	fx.In
-	Computers command.ComputerDescriptionPort
-	Sessions  domain.AgentWorkRepository
-	Agents    domain.AgentDefinitionRepository
-	Works     command.ReachResumeWorks
-	Buffer    command.InputBufferPort
-	Resume    *command.ResumeWorkHandler
-	Managed   *execution.ManagedEnvironment `optional:"true"`
-	Logger    *slog.Logger
+	Recovery *execution.EnvironmentRecovery
+	Managed  *execution.ManagedEnvironment `optional:"true"`
 }
 
-// newComputerReconnection applies a Managed Computer's return of reach, for
-// Computer Became Reachable and for the recovery of each Work owed a Resume.
-func newComputerReconnection(deps reconnectionDependencies) (*command.ComputerReconnectionHandler, error) {
-	var reconciliation command.ComputerReconciliationPort
-	if deps.Managed != nil {
-		reconciliation = deps.Managed.Reconciliation()
-	}
-	return command.NewComputerReconnectionHandler(deps.Computers, deps.Sessions, deps.Agents, deps.Works, deps.Buffer, deps.Resume, reconciliation, deps.Logger)
+func newExecutionEnvironment(in executionEnvironmentSources) (command.ExecutionEnvironmentPort, error) {
+	return execution.NewExecutionEnvironment(in.Recovery, in.Managed)
 }

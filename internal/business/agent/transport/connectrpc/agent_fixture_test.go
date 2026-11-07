@@ -30,6 +30,7 @@ func (r *rpcAgents) Save(_ context.Context, a *domain.AgentDefinition) error {
 }
 
 type rpcSessions struct {
+	command.AgentWorkRepository
 	items    map[string]*domain.AgentWork
 	starts   map[string]query.AdmittedStart
 	canceled map[string]bool

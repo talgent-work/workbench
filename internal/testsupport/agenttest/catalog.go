@@ -43,8 +43,28 @@ func (*catalog) ReadConnectorSelection(context.Context, string) (command.Connect
 	return connectorcatalogtest.Selection(), nil
 }
 
-func (*catalog) ListAccessibleRepositories(context.Context, string) ([]domain.AccessibleRepository, error) {
-	return nil, nil
+// connections are the Provider Authorizations and repositories a user
+// reaches.
+type connections interface {
+	ListPersonalAuthorizations(context.Context, string) ([]domain.PersonalAuthorization, error)
+	ListAccessibleRepositories(context.Context, string) ([]domain.AccessibleRepository, error)
+}
+
+// startCatalog is the Marketplace a Work's start reaches: the catalog's
+// Plugins and Connectors, and the user's connections.
+type startCatalog struct {
+	*catalog
+	connections connections
+}
+
+var _ command.StartCatalogPort = startCatalog{}
+
+func (s startCatalog) ListPersonalAuthorizations(ctx context.Context, user string) ([]domain.PersonalAuthorization, error) {
+	return s.connections.ListPersonalAuthorizations(ctx, user)
+}
+
+func (s startCatalog) ListAccessibleRepositories(ctx context.Context, owner string) ([]domain.AccessibleRepository, error) {
+	return s.connections.ListAccessibleRepositories(ctx, owner)
 }
 
 // fixtureRepositories gives every user one repository under their own

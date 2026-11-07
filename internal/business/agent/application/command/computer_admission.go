@@ -46,10 +46,12 @@ type UsableComputer struct {
 	Cloud bool
 }
 
-// ComputerAdmissionPort is Computer's admission contract as Agent uses it.
-// Each run of a Work takes a Desk before it starts and Agent reports the
-// Desk's departure.
-type ComputerAdmissionPort interface {
+// ComputerPort reaches the Computers Works run on, through Computer's
+// contract: the Computers a person may use, each run's admission and Desk,
+// and what a Computer is now. Each run of a Work takes a Desk before it starts
+// and Agent reports the Desk's departure. An unknown Computer is one the Work
+// cannot use.
+type ComputerPort interface {
 	// ListUsableComputers lists every Cloud, then the person's own Managed
 	// Computers.
 	ListUsableComputers(ctx context.Context, personID string) ([]UsableComputer, error)
@@ -66,6 +68,7 @@ type ComputerAdmissionPort interface {
 	// says, when it was seated, so a waiting start whose Desk Assigned was
 	// lost still begins; a vacated or unknown Desk is not seated.
 	DeskSeated(ctx context.Context, deskID string) (seatedAt time.Time, seated bool, err error)
+	DescribeComputer(ctx context.Context, computerID string) (ComputerDescription, error)
 }
 
 // OpenDesk is a Desk its Computer still counts as waiting or occupied.
@@ -80,7 +83,7 @@ var ErrComputerUnavailable = errors.New("agent: the Work's Computer cannot be re
 // workComputer is the Computer a new Work starts on: the one its starter
 // chose among the Computers usable to them, or, with none chosen, the first
 // Cloud usable to them.
-func workComputer(ctx context.Context, computers ComputerAdmissionPort, personID, chosen string) (UsableComputer, error) {
+func workComputer(ctx context.Context, computers ComputerPort, personID, chosen string) (UsableComputer, error) {
 	usable, err := computers.ListUsableComputers(ctx, personID)
 	if err != nil {
 		return UsableComputer{}, err
@@ -99,7 +102,7 @@ func workComputer(ctx context.Context, computers ComputerAdmissionPort, personID
 
 // admitRun asks the Work's Computer to admit one run: it is seated, or
 // waits in the Computer's line when the Computer queues a run while full.
-func admitRun(ctx context.Context, computers ComputerAdmissionPort, run RunAdmission) (domain.ComputerSeat, error) {
+func admitRun(ctx context.Context, computers ComputerPort, run RunAdmission) (domain.ComputerSeat, error) {
 	run.DeskID = uuid.Must(uuid.NewV7()).String()
 	answer, err := computers.AdmitRun(ctx, run)
 	if err != nil {

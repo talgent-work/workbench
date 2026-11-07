@@ -8,15 +8,19 @@ import (
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
 )
 
-type reconciled struct{ ids []string }
+type reconciled struct {
+	command.ExecutionEnvironmentPort
+	ids []string
+}
 
-func (r *reconciled) ReconcileAllocation(_ context.Context, id string) (application.AllocationStep, error) {
+func (r *reconciled) ReconcileAllocation(_ context.Context, id string) (command.AllocationStep, error) {
 	r.ids = append(r.ids, id)
-	return application.AllocationSettled, nil
+	return command.AllocationSettled, nil
 }
 func (r *reconciled) PrepareAllocation(_ context.Context, id string) error {
 	r.ids = append(r.ids, "prepare:"+id)
@@ -26,9 +30,9 @@ func (r *reconciled) ReconnectAllocation(_ context.Context, id string) error {
 	r.ids = append(r.ids, "reconnect:"+id)
 	return nil
 }
-func (r *reconciled) ObserveSandbox(_ context.Context, id string) (application.AllocationStep, error) {
+func (r *reconciled) ObserveSandbox(_ context.Context, id string) (command.AllocationStep, error) {
 	r.ids = append(r.ids, "observe:"+id)
-	return application.AllocationSettled, nil
+	return command.AllocationSettled, nil
 }
 func (r *reconciled) DeliverCredentials(_ context.Context, id string) error {
 	r.ids = append(r.ids, "deliver:"+id)
@@ -43,7 +47,7 @@ func (*reconciled) MarkInputsChanged(context.Context, string) ([]string, error) 
 func (*reconciled) LiveAllocation(context.Context, string) (string, bool, error) {
 	return "", false, nil
 }
-func (*reconciled) ListOutstandingAllocations(context.Context, string, int) ([]application.AllocationStatus, error) {
+func (*reconciled) ListOutstandingAllocations(context.Context, string, int) ([]command.AllocationStatus, error) {
 	return nil, nil
 }
 

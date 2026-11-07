@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -26,7 +27,7 @@ import (
 func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db), query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	sessionID, err := create.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	store := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
@@ -97,7 +98,7 @@ func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 
 	// Restart retains the original input identity and resets the failed
 	// preparation; it does not replace the initial receipt with a new task.
-	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}), f.sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), executionPort{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	_, err = restart.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: sessionID, RequestID: uuid.NewString()})
 	require.NoError(t, err)
 	afterRestart := read()
@@ -130,7 +131,7 @@ func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 	require.NoError(t, session.RecordExit(ctx, domain.HarnessExit{ExitCode: 1, Reason: "startup failed again"}, executionPort{}))
 	require.NoError(t, session.ConfirmComputeReclaimed())
 	require.NoError(t, f.sessions.Save(ctx, session))
-	closeWork := command.NewCloseWorkHandler(f.sessions, infrastructure.NewWorkAuthorizer(f.db), infrastructure.NewExecutionRequestsFactory(executionPort{}), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+	closeWork := command.NewCloseWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionPort{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
 	require.NoError(t, closeWork.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: uuid.NewString()}))
 	retained, err = store.Get(ctx, sessionID)
 	require.NoError(t, err)

@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 // stopRecordingPort records the process end requested by a Work.
@@ -31,7 +30,7 @@ func (*stopRecordingPort) RetireFencedRun(context.Context, string) error { retur
 
 func recoverAt(t *testing.T, at time.Time, sessions *feedbackSessionStore, agents *startupAgentStore, port domain.ExecutionPort, initial command.InitialExecutionReader) {
 	t.Helper()
-	handler := command.NewRecoverWorkHandler(func() time.Time { return at }, sessions, infrastructure.NewExecutionRequestsFactory(port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
+	handler := command.NewRecoverWorkHandler(func() time.Time { return at }, sessions, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
 	require.NoError(t, handler.Handle(context.Background(), sessions.session.ID))
 }
 
@@ -69,7 +68,7 @@ func TestReadinessAfterAStartupDeadlineFailureDoesNotReviveTheWork(t *testing.T)
 	recoverAt(t, sessions.session.HarnessProcess.StartingSince.Add(domain.StartupDeadline), sessions, agents, &stopRecordingPort{}, noInitialExecution{})
 	require.Equal(t, domain.WorkFailed, sessions.session.State)
 
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), infrastructure.NewExecutionRequestsFactory(&feedbackPort{}), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), &feedbackPort{}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutorPrepared, WorkID: sessions.session.ID}))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.AgentStarted, WorkID: sessions.session.ID}))
 	require.Equal(t, domain.WorkFailed, sessions.session.State, "only an explicit Restart continues a failed Work")
@@ -85,7 +84,7 @@ func TestRestartCountsItsOwnStartupDeadline(t *testing.T) {
 	require.NoError(t, sessions.session.ConfirmComputeReclaimed())
 
 	sessions.starts = map[string]query.AdmittedStart{}
-	restart := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(&stopRecordingPort{}), sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	restart := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, &stopRecordingPort{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	_, err := restart.Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID})
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, sessions.session.State)
@@ -114,7 +113,7 @@ func TestAbandonedStartIsReleasedThroughRecoveryAndObservation(t *testing.T) {
 
 	processes := exitedProcess()
 	processes.observation = domain.ProcessObservation{State: domain.ProcessStartAbandoned}
-	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return deadline }, sessions, processes, infrastructure.NewExecutionRequestsFactory(port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return deadline }, sessions, processes, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{WorkID: sessions.session.ID, Kind: command.ProcessObserved}))
 	require.True(t, sessions.session.HarnessProcess.StartAbandoned, "the abandonment is saved")
 	require.Equal(t, 1, port.reclaims, "the release is sent after the save")

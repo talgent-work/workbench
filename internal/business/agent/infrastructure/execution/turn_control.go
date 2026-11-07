@@ -7,11 +7,9 @@ import (
 
 	"connectrpc.com/connect/v2"
 	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
-
-var _ application.TurnControlPort = (*DispatcherControl)(nil)
 
 func (c *DispatcherControl) CancelTurn(ctx context.Context, workID string, turnID string) error {
 	if strings.TrimSpace(workID) == "" {
@@ -33,22 +31,22 @@ func (c *DispatcherControl) CancelTurn(ctx context.Context, workID string, turnI
 	}
 	return controlError(ctx, workID, "cancel turn", err)
 }
-func (c *DispatcherControl) GetCurrentTurn(ctx context.Context, workID string) (application.CurrentTurn, error) {
+func (c *DispatcherControl) GetCurrentTurn(ctx context.Context, workID string) (command.CurrentTurn, error) {
 	if strings.TrimSpace(workID) == "" {
-		return application.CurrentTurn{}, domain.ErrExecutionRequest
+		return command.CurrentTurn{}, domain.ErrExecutionRequest
 	}
 	if strings.TrimSpace(c.token) == "" {
-		return application.CurrentTurn{}, domain.ErrExecutionRequest
+		return command.CurrentTurn{}, domain.ErrExecutionRequest
 	}
 	request := &dispatcherprivatev1.GetCurrentTurnRequest{WorkId: workID}
 	ctx, info := connect.NewClientContext(ctx)
 	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	response, err := c.client.GetCurrentTurn(ctx, request)
 	if connect.CodeOf(err) == connect.CodeUnavailable {
-		return application.CurrentTurn{}, unobservedError(ctx, workID, "current turn", err)
+		return command.CurrentTurn{}, unobservedError(ctx, workID, "current turn", err)
 	}
 	if err != nil {
-		return application.CurrentTurn{}, controlError(ctx, workID, "current turn", err)
+		return command.CurrentTurn{}, controlError(ctx, workID, "current turn", err)
 	}
-	return application.CurrentTurn{ID: response.TurnId, CancelRequested: response.CancelRequested, Active: response.Active}, nil
+	return command.CurrentTurn{ID: response.TurnId, CancelRequested: response.CancelRequested, Active: response.Active}, nil
 }

@@ -21,7 +21,7 @@ func TestInputIsKeptForTheNextStartOfAWorkThatIsNotRunning(t *testing.T) {
 		t.Run(string(state), func(t *testing.T) {
 			_, sessions := runningMessagingSession(t)
 			buffer := &commandtest.InputBuffer{}
-			deliver := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, buffer), &initialRequestStore{})
+			deliver := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, buffer), &initialRequestStore{})
 			sessions.session.State = state
 			input := command.ExecutionInput{ID: uuid.NewString(), Text: "Requested changes"}
 			request := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: input}
@@ -41,7 +41,7 @@ func TestInputIsAcceptedDuringADisconnection(t *testing.T) {
 	ctx := context.Background()
 	_, sessions := runningMessagingSession(t)
 	buffer := &commandtest.InputBuffer{}
-	deliver := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, buffer), &initialRequestStore{})
+	deliver := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, buffer), &initialRequestStore{})
 	sessions.session.DisconnectedSince = time.Now().Add(-time.Minute)
 	input := command.ExecutionInput{ID: uuid.NewString(), Text: "Keep going"}
 	require.NoError(t, deliveryErr(deliver.Deliver(ctx, command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: input})))
@@ -54,7 +54,7 @@ func TestInputIsRefusedForAWorkBeingClosed(t *testing.T) {
 	ctx := context.Background()
 	_, sessions := runningMessagingSession(t)
 	buffer := &commandtest.InputBuffer{}
-	deliver := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, sessions, buffer), &initialRequestStore{})
+	deliver := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, buffer), &initialRequestStore{})
 	sessions.session.State, sessions.session.CloseRequestReference = domain.WorkClosing, "close"
 	input := command.ExecutionInput{ID: uuid.NewString(), Text: "Requested changes"}
 	require.ErrorIs(t, deliveryErr(deliver.Deliver(ctx, command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: input})), domain.ErrWorkTransition)

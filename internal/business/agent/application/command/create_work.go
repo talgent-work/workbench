@@ -48,11 +48,9 @@ type CreateWork struct {
 	Harness domain.HarnessChoice
 }
 
-// WorkRegistrar persists one new Session against the definition revision
-// used for its creation. A competing registration or changed definition returns
-// ErrConcurrentModification; the use case reloads and lets AgentDefinition locate it.
-// When initial input is supplied, registration and its recovery receipt commit
-// together, so a registered Session never loses its original startup input.
+// WorkRegistration is the creation request a new Work is registered with:
+// its caller's request identity and creation correlation, the definition
+// revision used for its creation and its retained initial input.
 type WorkRegistration struct {
 	SubjectID, RequestID string
 	// WorkspaceReference is the one the creating caller named, part of its
@@ -62,26 +60,20 @@ type WorkRegistration struct {
 	InitialExecution   *PrepareWorkExecution
 }
 
-type WorkRegistrar interface {
-	RegisterWork(context.Context, *domain.AgentWork, WorkRegistration) error
-}
-
 type CreateWorkHandler struct {
 	now           func() time.Time
-	connections   PersonalConnectionsPort
-	admissions    StartAdmissions
-	computers     ComputerAdmissionPort
-	execution     ExecutionRequestsFactory
-	plugins       PluginCatalogPort
+	catalog       StartCatalogPort
+	computers     ComputerPort
+	execution     domain.ExecutionPort
 	models        query.ModelConfigurations
 	agents        domain.AgentDefinitionRepository
-	sessions      WorkRegistrar
+	sessions      AgentWorkRepository
 	lookup        domain.WorkLookupPort
 	authorization access.WorkAuthorizer
 }
 
-func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions WorkRegistrar, lookup domain.WorkLookupPort, authorization access.WorkAuthorizer, models query.ModelConfigurations, plugins PluginCatalogPort, connections PersonalConnectionsPort, admissions StartAdmissions, computers ComputerAdmissionPort, execution ExecutionRequestsFactory) *CreateWorkHandler {
-	return &CreateWorkHandler{now: now, connections: connections, admissions: admissions, computers: computers, execution: execution, agents: agents, sessions: sessions, lookup: lookup, authorization: authorization, models: models, plugins: plugins}
+func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions AgentWorkRepository, lookup domain.WorkLookupPort, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog StartCatalogPort, computers ComputerPort, execution domain.ExecutionPort) *CreateWorkHandler {
+	return &CreateWorkHandler{now: now, catalog: catalog, computers: computers, execution: execution, agents: agents, sessions: sessions, lookup: lookup, authorization: authorization, models: models}
 }
 
 func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (string, error) {
@@ -105,7 +97,7 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 		}
 		// Read on every attempt: a competing creation of the same request
 		// identity that won registration is found here and reused.
-		accepted, admitted, err := h.admissions.FindAdmittedStart(ctx, request.RequestID)
+		accepted, admitted, err := h.sessions.FindAdmittedStart(ctx, request.RequestID)
 		if err != nil {
 			return "", err
 		}
@@ -140,7 +132,7 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 		if catalogUser == "" {
 			catalogUser = request.SubjectID
 		}
-		capabilities, err := resolveStartupCapabilities(ctx, h.plugins, catalogUser, request.StartingUserID, domain.StartupCapabilityInput{
+		capabilities, err := resolveStartupCapabilities(ctx, h.catalog, catalogUser, request.StartingUserID, domain.StartupCapabilityInput{
 			BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: domain.WithRequiredPlugins(agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.Capabilities.StartupAgent,
 			Prompt: request.CapabilityDifferences.Prompt, StartupAgent: request.CapabilityDifferences.StartupAgent, Plugins: request.CapabilityDifferences.Plugins,
 			ConnectorChoices: request.CapabilityDifferences.Connectors,
@@ -152,7 +144,7 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 		// Plugin and Connector choices.
 		authorizationInput := domain.WorkAuthorizationInput{OwnerUserID: agent.PersonalAuthorizationOwner()}
 		if authorizationInput.OwnerUserID != "" {
-			authorizationInput.Available, err = h.connections.ListPersonalAuthorizations(ctx, authorizationInput.OwnerUserID)
+			authorizationInput.Available, err = h.catalog.ListPersonalAuthorizations(ctx, authorizationInput.OwnerUserID)
 			if err != nil {
 				return "", err
 			}
@@ -217,7 +209,7 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 			}
 			admission.DefinitionAdmitted, admission.Seat = true, seat
 		}
-		requests := h.execution()
+		requests := deferExecution(h.execution)
 
 		work, created, err := agent.CreateWork(ctx, domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, Harness: harness, Subject: request.Subject, ProjectID: request.ProjectID, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, Capabilities: capabilities, TraceAttributes: attributes, ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle}, h.lookup, requests)
 		if err != nil {
@@ -259,7 +251,7 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 		// Initial input preparation waits for its cross-context binding confirmation;
 		// the Work already retains the admitted startup obligation for recovery.
 		if initial == nil {
-			return work.ID, requests.Send(ctx)
+			return work.ID, requests.send(ctx)
 		}
 		return work.ID, nil
 	}
@@ -302,7 +294,7 @@ func (h *CreateWorkHandler) reuseAfterRejection(ctx context.Context, agent *doma
 	if work == nil {
 		return "", rejection
 	}
-	accepted, found, err := h.admissions.FindAdmittedStart(ctx, request.RequestID)
+	accepted, found, err := h.sessions.FindAdmittedStart(ctx, request.RequestID)
 	if err != nil {
 		return "", err
 	}

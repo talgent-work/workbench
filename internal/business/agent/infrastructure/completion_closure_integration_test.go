@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -19,7 +20,7 @@ import (
 )
 
 func completionHandler(db *xorm.Engine, initial command.InitialExecutionReader) *command.CloseWorkHandler {
-	return command.NewCloseWorkHandler(infrastructure.NewAgentWorkRepository(db, time.Now), infrastructure.NewWorkAuthorizer(db), infrastructure.NewExecutionRequestsFactory(executionPort{}), initial, infrastructure.NewExecutionQueryRepository(db), infrastructure.NewContinuationRequests(db, time.Now), &commandtest.InputBuffer{})
+	return command.NewCloseWorkHandler(infrastructure.NewAgentWorkRepository(db, time.Now), access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), executionPort{}, initial, infrastructure.NewExecutionQueryRepository(db), infrastructure.NewContinuationRequests(db, time.Now), &commandtest.InputBuffer{})
 }
 
 // Closing a running Work for a completed Subject waits for its first input and
@@ -35,7 +36,7 @@ func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testin
 	require.NoError(t, err)
 	started.InputBuffered = true
 	require.NoError(t, initial.Save(ctx, started))
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, infrastructure.NewExecutionRequestsFactory(executionPort{}), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, executionPort{}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.TurnStarted, ObservationSequence: 10}))
 	require.ErrorIs(t, handler.Handle(ctx, request), domain.ErrTurnActive, "a running Turn prevents the stop closure needs")
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.TurnFinished, ObservationSequence: 20, TurnCompleted: true}))
@@ -97,8 +98,8 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 			observed, err := f.sessions.Get(ctx, id)
 			require.NoError(t, err)
 			require.Equal(t, domain.WorkFailed, observed.State)
-			factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
-			restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(startupAuthority{}), factory, f.sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+			factory := executionPort{}
+			restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), factory, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 			retry := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			request := command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			if startupFirst {

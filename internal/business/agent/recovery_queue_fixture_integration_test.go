@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 	"go.uber.org/fx"
@@ -64,15 +64,17 @@ func recoveryRedis(t *testing.T) leasedRedis {
 // execution through its own port and has no allocations.
 type noEnvironments struct{}
 
-var _ application.ExecutionEnvironmentRecovery = noEnvironments{}
+func (noEnvironments) ReconcileComputer(context.Context, string) error { return nil }
 
-func (noEnvironments) ReconcileAllocation(context.Context, string) (application.AllocationStep, error) {
-	return application.AllocationSettled, nil
+var _ command.ExecutionEnvironmentPort = noEnvironments{}
+
+func (noEnvironments) ReconcileAllocation(context.Context, string) (command.AllocationStep, error) {
+	return command.AllocationSettled, nil
 }
 func (noEnvironments) PrepareAllocation(context.Context, string) error   { return nil }
 func (noEnvironments) ReconnectAllocation(context.Context, string) error { return nil }
-func (noEnvironments) ObserveSandbox(context.Context, string) (application.AllocationStep, error) {
-	return application.AllocationSettled, nil
+func (noEnvironments) ObserveSandbox(context.Context, string) (command.AllocationStep, error) {
+	return command.AllocationSettled, nil
 }
 func (noEnvironments) DeliverCredentials(context.Context, string) error { return nil }
 func (noEnvironments) SyncInputs(context.Context, string) error         { return nil }
@@ -85,6 +87,6 @@ func (noEnvironments) MarkInputsChanged(context.Context, string) ([]string, erro
 func (noEnvironments) LiveAllocation(context.Context, string) (string, bool, error) {
 	return "", false, nil
 }
-func (noEnvironments) ListOutstandingAllocations(context.Context, string, int) ([]application.AllocationStatus, error) {
+func (noEnvironments) ListOutstandingAllocations(context.Context, string, int) ([]command.AllocationStatus, error) {
 	return nil, nil
 }

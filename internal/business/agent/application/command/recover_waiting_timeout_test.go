@@ -11,7 +11,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 type turnCancelPort struct {
@@ -45,7 +44,7 @@ func TestRecoveryWeighsTheBufferForADueWaitingTimeout(t *testing.T) {
 		sessions, _ := held(t)
 		port := &turnCancelPort{}
 		buffer := &commandtest.InputBuffer{Replies: []command.InteractionResponse{{InteractionID: "question"}}}
-		require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, infrastructure.NewExecutionRequestsFactory(port), buffer, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
+		require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, port, buffer, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
 		require.True(t, sessions.session.Waiting())
 		require.Zero(t, port.cancels)
 	})
@@ -53,7 +52,7 @@ func TestRecoveryWeighsTheBufferForADueWaitingTimeout(t *testing.T) {
 		sessions, _ := held(t)
 		port := &turnCancelPort{}
 		buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{{ID: uuid.NewString(), Text: "held"}}}
-		require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, infrastructure.NewExecutionRequestsFactory(port), buffer, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
+		require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, port, buffer, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
 		require.Equal(t, domain.WorkStopping, sessions.session.State)
 		require.Equal(t, domain.StopReasonWaitingTimeout, sessions.session.StopReason)
 		require.Equal(t, 1, port.cancels, "the held Turn is cancelled first")
@@ -70,7 +69,7 @@ func TestRecoveryRestoresIdlenessALateActivityReportEnded(t *testing.T) {
 	require.NoError(t, sessions.session.ObserveTurn(domain.TurnObservation{Sequence: 1}, false, false, time.Now()))
 	require.True(t, sessions.session.ObserveTurnActivity())
 	buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{{ID: uuid.NewString(), Text: "queued"}}}
-	recover := command.NewRecoverWorkHandler(time.Now, sessions, infrastructure.NewExecutionRequestsFactory(&turnCancelPort{}), buffer, &commandtest.InputSettlements{}, nil, nil)
+	recover := command.NewRecoverWorkHandler(time.Now, sessions, &turnCancelPort{}, buffer, &commandtest.InputSettlements{}, nil, nil)
 	require.NoError(t, recover.Handle(ctx, sessions.session.ID))
 	require.False(t, sessions.session.Idle(), "buffered input is still to be processed")
 	buffer.Settle(buffer.Inputs[0].ID)

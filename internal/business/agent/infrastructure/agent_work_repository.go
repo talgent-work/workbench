@@ -21,7 +21,7 @@ type AgentWorkRepository struct {
 	now func() time.Time
 }
 
-var _ domain.AgentWorkRepository = (*AgentWorkRepository)(nil)
+var _ command.AgentWorkRepository = (*AgentWorkRepository)(nil)
 
 func NewAgentWorkRepository(db *xorm.Engine, now func() time.Time) *AgentWorkRepository {
 	return &AgentWorkRepository{db: db, now: now}
@@ -43,8 +43,6 @@ func (r *AgentWorkRepository) Get(ctx context.Context, id string) (*domain.Agent
 	session.WorkShares, err = workShares(r.db.Context(ctx), id)
 	return session, err
 }
-
-var _ command.WorkRegistrar = (*AgentWorkRepository)(nil)
 
 // RegisterWork persists the definition's association and its controlling
 // principal together. The definition lock serializes rule changes with creation.

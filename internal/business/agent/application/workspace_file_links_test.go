@@ -25,7 +25,10 @@ func (w linkedWorks) Get(_ context.Context, id string) (*domain.AgentWork, error
 func (linkedWorks) Save(context.Context, *domain.AgentWork) error { return nil }
 
 // machineLinks grants each token a read of the Work it names.
-type machineLinks struct{ opened []string }
+type machineLinks struct {
+	application.WorkspacePort
+	opened []string
+}
 
 func (m *machineLinks) LinkedWork(token string) (string, error) {
 	if token == "forged" {

@@ -19,11 +19,11 @@ const deskGrace = 10 * time.Minute
 // lost. It is Agent confirming such a run can no longer start.
 type ReconcileDesksHandler struct {
 	now       func() time.Time
-	computers ComputerAdmissionPort
+	computers ComputerPort
 	works     domain.AgentWorkRepository
 }
 
-func NewReconcileDesksHandler(now func() time.Time, computers ComputerAdmissionPort, works domain.AgentWorkRepository) *ReconcileDesksHandler {
+func NewReconcileDesksHandler(now func() time.Time, computers ComputerPort, works domain.AgentWorkRepository) *ReconcileDesksHandler {
 	return &ReconcileDesksHandler{now: now, computers: computers, works: works}
 }
 

@@ -99,6 +99,7 @@ func TestRepositoryAccessPlansAWorkStartedForAnotherHome(t *testing.T) {
 }
 
 type repositoryAccessFixture struct {
+	application.CredentialSupplyPort
 	app          *application.RepositoryAccess
 	work         *domain.AgentWork
 	request      command.InitialExecutionRequest
@@ -125,11 +126,14 @@ func newRepositoryAccessFixture(t *testing.T, withoutAuthorization ...bool) *rep
 	require.NoError(t, err)
 	f.request = command.InitialExecutionRequest{PrepareWorkExecution: command.PrepareWorkExecution{SubjectID: "owner", WorkID: f.work.ID, RequestID: "request", WorkBranch: "talgent/" + "TAL-382", Selections: []command.RepositorySelection{{RepositoryID: "123"}}}, Prepared: true}
 	require.NoError(t, f.request.PlanCheckouts(f.work))
-	f.app = application.NewRepositoryAccess(repositoryWorkStore{f}, repositoryRequestStore{f}, f)
+	f.app = application.NewRepositoryAccess(repositoryWorkStore{f: f}, repositoryRequestStore{f}, f)
 	return f
 }
 
-type repositoryWorkStore struct{ f *repositoryAccessFixture }
+type repositoryWorkStore struct {
+	command.AgentWorkRepository
+	f *repositoryAccessFixture
+}
 
 func (s repositoryWorkStore) Get(_ context.Context, id string) (*domain.AgentWork, error) {
 	if id != s.f.work.ID {

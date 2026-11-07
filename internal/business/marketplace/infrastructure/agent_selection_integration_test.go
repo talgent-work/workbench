@@ -35,7 +35,7 @@ func TestAgentUsesStartingUserPluginsThroughMarketplaceContract(t *testing.T) {
 	require.NoError(t, err)
 	port, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL, CredentialToken: "selection-test"})
 	require.NoError(t, err)
-	app := &agentapp.Application{Plugins: port}
+	app := &agentapp.Application{Catalog: port}
 	input := agentdomain.StartupCapabilityInput{Connectors: []agentdomain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"reviewer"}, Plugins: []agentdomain.PluginChoice{{Slug: "reviewer", Include: false}}, PersonalPlugins: []agentdomain.PersonalPlugin{{Slug: "spoofed", Enabled: true}}}
 	snapshot, err := app.ResolveStartupCapabilities(ctx, starter, input)
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestNewReleaseValidationPreservesOldSelectionAndPersonalConfiguration(t *te
 	require.NoError(t, err)
 	port, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL, CredentialToken: "selection-test"})
 	require.NoError(t, err)
-	app := &agentapp.Application{Plugins: port}
+	app := &agentapp.Application{Catalog: port}
 	snapshot, err := app.ResolveStartupCapabilities(t.Context(), user, agentdomain.StartupCapabilityInput{Connectors: []agentdomain.CatalogConnector{connectorcatalogtest.Required()}})
 	require.NoError(t, err)
 	release = catalogRelease("owned", "reviewer", "2.0.0")

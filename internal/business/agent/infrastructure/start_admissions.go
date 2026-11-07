@@ -11,8 +11,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-var _ command.StartAdmissions = (*AgentWorkRepository)(nil)
-
 func (r *AgentWorkRepository) FindAdmittedStart(ctx context.Context, requestID string) (query.AdmittedStart, bool, error) {
 	var row startRequestDO
 	found, err := r.db.Context(ctx).Where("id = ? AND canceled = 0 AND deleted_at = 0", requestID).Get(&row)

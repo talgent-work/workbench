@@ -45,7 +45,7 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 		base = definition.ProvideCapabilities()
 	}
 	base.RequiredPlugins = domain.WithRequiredPlugins(base.RequiredPlugins, input.RequiredPlugins)
-	personal, err := a.Plugins.ListPersonalPlugins(ctx, input.SubjectID)
+	personal, err := a.Catalog.ListPersonalPlugins(ctx, input.SubjectID)
 	if err != nil {
 		return query.WorkStartOptions{}, err
 	}
@@ -55,7 +55,7 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 	}
 	value.DefaultStartupAgent = base.StartupAgent
 	for _, slug := range slugs {
-		release, err := a.Plugins.ResolvePlugin(ctx, input.SubjectID, slug)
+		release, err := a.Catalog.ResolvePlugin(ctx, input.SubjectID, slug)
 		if err != nil {
 			return query.WorkStartOptions{}, err
 		}
@@ -63,7 +63,7 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 	}
 	// The same composition as creation: required entries plus the subject's
 	// enabled installations of Offered entries.
-	selection, err := a.Plugins.ReadConnectorSelection(ctx, input.SubjectID)
+	selection, err := a.Catalog.ReadConnectorSelection(ctx, input.SubjectID)
 	if err != nil {
 		return query.WorkStartOptions{}, err
 	}
@@ -85,7 +85,7 @@ func (a *Application) ListWorkStartRepositories(ctx context.Context, owner strin
 		return query.WorkStartRepositories{}, domain.ErrInvalidWork
 	}
 	var value query.WorkStartRepositories
-	repositories, err := a.RepositoryOptions.ListAccessibleRepositories(ctx, owner)
+	repositories, err := a.Catalog.ListAccessibleRepositories(ctx, owner)
 	if err != nil {
 		if ctx.Err() != nil {
 			return query.WorkStartRepositories{}, ctx.Err()

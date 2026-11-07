@@ -13,6 +13,7 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/agentfeedback"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
@@ -32,13 +33,14 @@ func (r *wakeRecorder) Enqueue(_ context.Context, task taskqueue.Task, _ ...task
 
 type liveAllocations map[string]string
 
-func (liveAllocations) ReconcileAllocation(context.Context, string) (application.AllocationStep, error) {
-	return application.AllocationSettled, nil
+func (liveAllocations) ReconcileAllocation(context.Context, string) (command.AllocationStep, error) {
+	return command.AllocationSettled, nil
 }
 func (liveAllocations) PrepareAllocation(context.Context, string) error   { return nil }
+func (liveAllocations) ReconcileComputer(context.Context, string) error   { return nil }
 func (liveAllocations) ReconnectAllocation(context.Context, string) error { return nil }
-func (liveAllocations) ObserveSandbox(context.Context, string) (application.AllocationStep, error) {
-	return application.AllocationSettled, nil
+func (liveAllocations) ObserveSandbox(context.Context, string) (command.AllocationStep, error) {
+	return command.AllocationSettled, nil
 }
 func (liveAllocations) DeliverCredentials(context.Context, string) error { return nil }
 func (liveAllocations) SyncInputs(context.Context, string) error         { return nil }
@@ -52,7 +54,7 @@ func (l liveAllocations) LiveAllocation(_ context.Context, workID string) (strin
 	id, ok := l[workID]
 	return id, ok, nil
 }
-func (liveAllocations) ListOutstandingAllocations(context.Context, string, int) ([]application.AllocationStatus, error) {
+func (liveAllocations) ListOutstandingAllocations(context.Context, string, int) ([]command.AllocationStatus, error) {
 	return nil, nil
 }
 

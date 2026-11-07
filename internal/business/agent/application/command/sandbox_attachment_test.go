@@ -11,7 +11,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 func attachment(kind command.ExecutionFeedbackKind, workID, processID string, since time.Time) command.ExecutionFeedback {
@@ -86,7 +85,7 @@ func TestRecoveryFollowsDispatchersAttachment(t *testing.T) {
 	ctx := context.Background()
 	store := &feedbackSessionStore{session: runningSession(t)}
 	port := &feedbackPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
+	factory := port
 	processes := &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessRunning}, attachment: command.AttachmentHeld}
 	clock := &testClock{at: time.Now()}
 	reach := command.NewComputerReachHandler(clock.now, store, &presencePlace{}, computerWorks{id: store.session.ID}, factory, processes, &commandtest.InputBuffer{}, nil)
@@ -129,7 +128,7 @@ func TestRecoveryStopsBeyondReachOnlyOnAnObservedLoss(t *testing.T) {
 	ctx := context.Background()
 	store := &feedbackSessionStore{session: runningSession(t)}
 	port := &feedbackPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
+	factory := port
 	outage := errors.New("dispatcher unavailable")
 	processes := &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessRunning}, observeErr: outage}
 	clock := &testClock{at: time.Now()}

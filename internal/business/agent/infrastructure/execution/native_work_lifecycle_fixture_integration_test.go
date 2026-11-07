@@ -34,7 +34,7 @@ type nativeWorkLifecycleFixture struct {
 	removals     *Removals
 	reclaimer    *Reclaimer
 	external     *lifecycleFixture
-	requests     command.ExecutionRequestsFactory
+	requests     domain.ExecutionPort
 }
 
 func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecycleFixture {
@@ -64,7 +64,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	require.NoError(t, err)
 	environment, err := NewEnvironment(resources, control, directoryMounts{root: t.TempDir()}, cloudComputers{})
 	require.NoError(t, err)
-	requests := infrastructure.NewExecutionRequestsFactory(environment)
+	requests := environment
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, works, observations, requests, control, &commandtest.InputSettlements{})
 	reclaimer, err := NewReclaimer(feedback)
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx c
 	require.NoError(t, f.definitions.Save(ctx, definition))
 	definition, err = f.definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
-	requests := f.requests()
+	requests := commandtest.Hold(f.requests)
 	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: uuid.NewString(), HomeBinding: definition.HomeBinding, Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, requests)
 	require.NoError(t, err)
 	startID := uuid.NewString()

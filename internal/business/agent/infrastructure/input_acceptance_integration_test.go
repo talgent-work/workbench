@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -37,8 +38,8 @@ func runningInputSession(t *testing.T) (workCreationFixture, string) {
 	t.Helper()
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(startupAuthority{}), factory, f.sessions, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	factory := executionPort{}
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), factory, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
@@ -54,11 +55,11 @@ func TestInputAcceptanceAndPermanentCloseShareOneOrder(t *testing.T) {
 	buffer := closingBuffer{InputBuffer: &commandtest.InputBuffer{}}
 	// The close read the buffer before the input was appended, so it saw
 	// nothing pending, and its stop commits after the append.
-	closeSession := command.NewCloseWorkHandler(f.sessions, infrastructure.NewWorkAuthorizer(f.db), infrastructure.NewExecutionRequestsFactory(executionPort{}), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+	closeSession := command.NewCloseWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionPort{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
 	buffer.during = func() {
 		require.NoError(t, closeSession.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: ref, RequestID: uuid.NewString()}))
 	}
-	inputs := command.NewInputAcceptance(f.sessions, f.sessions, buffer)
+	inputs := command.NewInputAcceptance(f.sessions, buffer)
 	input := command.ExecutionInput{ID: uuid.NewString(), Text: "late input"}
 	require.NoError(t, acceptance(inputs.AcceptInput(ctx, ref, input)), "input that lost to the stop before a close is accepted")
 	require.Zero(t, buffer.Dropped, "the buffer is dropped once the Work enters Closing")
@@ -79,9 +80,9 @@ func TestAcceptanceCommitsTheWorkAgainstItsVersion(t *testing.T) {
 	current, err := f.sessions.Get(ctx, ref)
 	require.NoError(t, err)
 	require.NoError(t, current.AcceptInput(false))
-	require.NoError(t, f.sessions.CommitAcceptance(ctx, current))
+	require.NoError(t, f.sessions.Save(ctx, current))
 	require.NoError(t, stale.AcceptInput(false))
-	require.ErrorIs(t, f.sessions.CommitAcceptance(ctx, stale), domain.ErrConcurrentModification)
+	require.ErrorIs(t, f.sessions.Save(ctx, stale), domain.ErrConcurrentModification)
 }
 
 // acceptance is the error of accepting an input, whatever the hand-off.

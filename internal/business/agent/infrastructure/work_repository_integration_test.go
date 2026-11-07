@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
@@ -26,8 +28,8 @@ func (creationConnections) ListAccessibleRepositories(_ context.Context, owner s
 
 func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db),
-		creationModels(), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	id, err := handler.Handle(t.Context(), f.request.Creation)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)
@@ -41,8 +43,8 @@ func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want, work.RepositorySelection)
 	// A repository no longer reachable cannot stop reuse or change the original selection.
-	handler = command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db),
-		creationModels(), &creationCatalog{}, authorizationcatalogtest.Empty{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	handler = command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(startupAuthority{}), executionPort{})
 	f.request.Creation.InitialExecution.Selections[0].BaseBranch = "changed"
 	reused, err := handler.Handle(t.Context(), f.request.Creation)
 	require.NoError(t, err)

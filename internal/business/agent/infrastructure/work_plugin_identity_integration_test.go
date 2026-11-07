@@ -9,7 +9,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -31,8 +33,8 @@ func TestRecoveredCreationRetainsPersonalOwner(t *testing.T) {
 	require.Equal(t, "owner", retained.Creation.StartingUserID)
 	require.Equal(t, "owner", retained.Creation.SubjectID)
 	works := infrastructure.NewAgentWorkRepository(otherDB, time.Now)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, works, works, infrastructure.NewWorkAuthorizer(otherDB),
-		creationModels(), &identityCatalog{}, creationConnections{}, works, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(otherDB)),
+		creationModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
 	id, err := handler.Handle(t.Context(), retained.Creation)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)

@@ -71,10 +71,13 @@ func (s *storageMounts) AcquireMounts(_ context.Context, request domain.SandboxM
 
 // computerPlaces describes each Computer as the fixture names it: Managed
 // when listed, a Cloud otherwise.
-type computerPlaces map[string]command.ComputerDescription
+type computerPlaces struct {
+	command.ComputerPort
+	places map[string]command.ComputerDescription
+}
 
 func (c computerPlaces) DescribeComputer(_ context.Context, id string) (command.ComputerDescription, error) {
-	return c[id], nil
+	return c.places[id], nil
 }
 
 func environmentClient(t *testing.T, remote *environmentServer, control *dispatcherServer) *execution.Environment {
@@ -216,7 +219,7 @@ func TestEnvironmentRoutesAStartByItsComputersKind(t *testing.T) {
 	const managed = "01900000-0000-7000-8000-0000000000c1"
 	remote := &environmentServer{calls: make(chan resourceCall, 4)}
 	mounts := &storageMounts{}
-	port, err := execution.NewEnvironment(remote, controlClient(t, &dispatcherServer{}), mounts, computerPlaces{managed: {Managed: true}})
+	port, err := execution.NewEnvironment(remote, controlClient(t, &dispatcherServer{}), mounts, computerPlaces{places: map[string]command.ComputerDescription{managed: {Managed: true}}})
 	require.NoError(t, err)
 	input := domain.StartExecutionRequest{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "work", ComputerID: managed, Capabilities: domain.CapabilitySnapshot{Prompt: "prompt", Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, HarnessSessionReference: "context", ContextMode: domain.ContextFresh, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "employee"}}
 	require.NoError(t, port.StartExecution(context.Background(), input))

@@ -15,11 +15,11 @@ import (
 type SeatWaitingStartHandler struct {
 	now       func() time.Time
 	sessions  domain.AgentWorkRepository
-	computers ComputerAdmissionPort
-	execution ExecutionRequestsFactory
+	computers ComputerPort
+	execution domain.ExecutionPort
 }
 
-func NewSeatWaitingStartHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerAdmissionPort, execution ExecutionRequestsFactory) *SeatWaitingStartHandler {
+func NewSeatWaitingStartHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerPort, execution domain.ExecutionPort) *SeatWaitingStartHandler {
 	return &SeatWaitingStartHandler{now: now, sessions: sessions, computers: computers, execution: execution}
 }
 
@@ -67,12 +67,12 @@ func (h *SeatWaitingStartHandler) begin(ctx context.Context, work *domain.AgentW
 	if seatedAt.IsZero() {
 		seatedAt = h.now()
 	}
-	requests := h.execution()
+	requests := deferExecution(h.execution)
 	if _, err := work.BeginSeatedStart(ctx, seatedAt, requests); err != nil {
 		return err
 	}
 	if err := h.sessions.Save(ctx, work); err != nil {
 		return err
 	}
-	return requests.Send(ctx)
+	return requests.send(ctx)
 }

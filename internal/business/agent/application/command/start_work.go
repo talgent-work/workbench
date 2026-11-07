@@ -15,24 +15,6 @@ import (
 
 var ErrStartRequestCanceled = errors.New("agent: start request canceled")
 
-// StartAdmissions retains start-request correlation. A start request identity
-// serves only control-request idempotency; it never distinguishes processes.
-type StartAdmissions interface {
-	query.StartAdmissionReader
-	// CommitStart atomically persists the admitted Work and its start request.
-	// Explicit Restart also reopens a retained rejected initial preparation
-	// before task execution, preserving its original input and request identity.
-	// The commit fails with ErrStartRequestCanceled when the request was
-	// canceled before admission. Inputs admitted to an
-	// earlier process run and never settled are settled with the new start:
-	// they are dropped rather than replayed into the new process.
-	CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error
-	// CancelStart prevents a start request that was not admitted, under the
-	// same serialization as CommitStart. It returns false when the request was
-	// already admitted for this Work.
-	CancelStart(ctx context.Context, workID, requestID string) (bool, error)
-}
-
 type StartWork struct {
 	ThinkingLevel string
 	RequestID     string
@@ -53,12 +35,11 @@ func (request StartWork) admitObservedVersion(work *domain.AgentWork) error {
 
 type workStartup struct {
 	now           func() time.Time
-	admissions    StartAdmissions
-	sessions      domain.AgentWorkRepository
+	sessions      AgentWorkRepository
 	agents        domain.AgentDefinitionRepository
 	authorization access.WorkAuthorizer
-	computers     ComputerAdmissionPort
-	execution     ExecutionRequestsFactory
+	computers     ComputerPort
+	execution     domain.ExecutionPort
 	models        query.ModelConfigurations
 	plugins       PluginUpgrades
 }
@@ -126,13 +107,13 @@ func (h workStartup) admit(ctx context.Context, request StartWork, begin startBe
 		admission.DefinitionAdmitted, admission.Seat = true, seat
 	}
 	start := query.AdmittedStart{WorkID: session.ID, Kind: kind(session)}
-	requests := h.execution()
+	requests := deferExecution(h.execution)
 	if err := begin(session, ctx, admission, requests); err != nil {
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return false, err
 	}
 	// No external execution starts until the Work and its start request commit.
-	if err := h.admissions.CommitStart(ctx, session, start, request.RequestID); err != nil {
+	if err := h.sessions.CommitStart(ctx, session, start, request.RequestID); err != nil {
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		if errors.Is(err, domain.ErrConcurrentModification) {
 			// A concurrent retry of this request may have won.
@@ -142,7 +123,7 @@ func (h workStartup) admit(ctx context.Context, request StartWork, begin startBe
 		}
 		return false, err
 	}
-	return true, requests.Send(ctx)
+	return true, requests.send(ctx)
 }
 
 // refused records on the Work what its Computer's refusal of a Resume leaves
@@ -162,7 +143,7 @@ func (h workStartup) refused(ctx context.Context, session *domain.AgentWork, kin
 // admitted reports whether this request was already admitted for the Work,
 // making a repeated request idempotent.
 func (h workStartup) admitted(ctx context.Context, request StartWork, acceptedKinds []query.StartKind) (bool, error) {
-	accepted, found, err := h.admissions.FindAdmittedStart(ctx, request.RequestID)
+	accepted, found, err := h.sessions.FindAdmittedStart(ctx, request.RequestID)
 	if err != nil || !found {
 		return false, err
 	}
@@ -189,11 +170,11 @@ func fixedKind(kind query.StartKind) func(*domain.AgentWork) query.StartKind {
 type ResumeWorkHandler struct{ continuation workContinuation }
 type RestartWorkHandler struct{ startup workStartup }
 
-func NewResumeWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerAdmissionPort, execution ExecutionRequestsFactory, admissions StartAdmissions, requests ContinuationRequests, models query.ModelConfigurations, plugins PluginUpgrades) *ResumeWorkHandler {
-	return &ResumeWorkHandler{continuation: workContinuation{startup: workStartup{now: now, admissions: admissions, sessions: sessions, agents: agents, authorization: authorization, computers: computers, execution: execution, models: models, plugins: plugins}, requests: requests}}
+func NewResumeWorkHandler(now func() time.Time, sessions AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerPort, execution domain.ExecutionPort, requests ContinuationRequests, models query.ModelConfigurations, plugins PluginUpgrades) *ResumeWorkHandler {
+	return &ResumeWorkHandler{continuation: workContinuation{startup: workStartup{now: now, sessions: sessions, agents: agents, authorization: authorization, computers: computers, execution: execution, models: models, plugins: plugins}, requests: requests}}
 }
-func NewRestartWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerAdmissionPort, execution ExecutionRequestsFactory, admissions StartAdmissions, models query.ModelConfigurations, plugins PluginUpgrades) *RestartWorkHandler {
-	return &RestartWorkHandler{startup: workStartup{now: now, admissions: admissions, sessions: sessions, agents: agents, authorization: authorization, computers: computers, execution: execution, models: models, plugins: plugins}}
+func NewRestartWorkHandler(now func() time.Time, sessions AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerPort, execution domain.ExecutionPort, models query.ModelConfigurations, plugins PluginUpgrades) *RestartWorkHandler {
+	return &RestartWorkHandler{startup: workStartup{now: now, sessions: sessions, agents: agents, authorization: authorization, computers: computers, execution: execution, models: models, plugins: plugins}}
 }
 func (h *ResumeWorkHandler) Handle(ctx context.Context, request StartWork) error {
 	return h.continuation.handle(ctx, request, "resume")

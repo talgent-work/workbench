@@ -11,7 +11,6 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -24,8 +23,10 @@ func sessionControlRequest(ctx context.Context) context.Context {
 }
 
 type sessionCommandRecorder struct {
+	// The Harness settings and live reads it does not record are unused.
+	unusedExecutionPort
 	inputError, replyError error
-	pending                []application.PendingInteraction
+	pending                []command.PendingInteraction
 	mu                     sync.Mutex
 	starts                 []domain.StartExecutionRequest
 	stops                  []struct {
@@ -195,8 +196,8 @@ func (p *sessionCommandRecorder) assertReclaim(t *testing.T, workID string) {
 	require.Equal(t, workID, p.reclaims[len(p.reclaims)-1])
 }
 
-func (p *sessionCommandRecorder) ListPendingInteractions(context.Context, string) ([]application.PendingInteraction, error) {
-	return append([]application.PendingInteraction(nil), p.pending...), nil
+func (p *sessionCommandRecorder) ListPendingInteractions(context.Context, string) ([]command.PendingInteraction, error) {
+	return append([]command.PendingInteraction(nil), p.pending...), nil
 }
 
 func (*sessionCommandRecorder) CancelRunningTurn(context.Context, string) error { return nil }

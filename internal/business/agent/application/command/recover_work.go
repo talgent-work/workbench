@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -15,12 +16,12 @@ type RecoverWorkHandler struct {
 	reach       *ComputerReachHandler
 	now         func() time.Time
 	sessions    domain.AgentWorkRepository
-	execution   ExecutionRequestsFactory
-	buffer      InputBufferPort
-	settlements InputSettlements
+	execution   domain.ExecutionPort
+	buffer      RunningHarnessPort
+	settlements integrationmessage.Publisher
 }
 
-func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, execution ExecutionRequestsFactory, buffer InputBufferPort, settlements InputSettlements, seating *SeatWaitingStartHandler, reach *ComputerReachHandler) *RecoverWorkHandler {
+func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, execution domain.ExecutionPort, buffer RunningHarnessPort, settlements integrationmessage.Publisher, seating *SeatWaitingStartHandler, reach *ComputerReachHandler) *RecoverWorkHandler {
 	return &RecoverWorkHandler{seating: seating, reach: reach, now: now, sessions: sessions, execution: execution, buffer: buffer, settlements: settlements}
 }
 
@@ -50,7 +51,7 @@ func (h *RecoverWorkHandler) Handle(ctx context.Context, sessionID string) error
 	if session.WaitsForDesk() {
 		return errors.Join(h.seating.recover(ctx, session), unreadRemoval)
 	}
-	requests := h.execution()
+	requests := deferExecution(h.execution)
 	// A start past its Startup Deadline fails before anything else is retried
 	// for it; its end obligation is all that remains.
 	failed, err := session.FailAtStartupDeadline(ctx, h.now(), requests)
@@ -61,7 +62,7 @@ func (h *RecoverWorkHandler) Handle(ctx context.Context, sessionID string) error
 		if err := h.sessions.Save(ctx, session); err != nil {
 			return err
 		}
-		return errors.Join(requests.Send(ctx), unreadRemoval)
+		return errors.Join(requests.send(ctx), unreadRemoval)
 	}
 	// A Work's Disconnection follows its Computer's Presence or, on a Cloud,
 	// Dispatcher's attachment; a Managed Work stopped beyond reach has
@@ -76,7 +77,7 @@ func (h *RecoverWorkHandler) Handle(ctx context.Context, sessionID string) error
 		if err := h.sessions.Save(ctx, session); err != nil {
 			return err
 		}
-		return errors.Join(requests.Send(ctx), unreadRemoval)
+		return errors.Join(requests.send(ctx), unreadRemoval)
 	}
 	// Advance a retained control request before considering a new policy stop.
 	changed, err := session.RecoverExecution(ctx, requests)
@@ -96,12 +97,12 @@ func (h *RecoverWorkHandler) Handle(ctx context.Context, sessionID string) error
 			return err
 		}
 	}
-	return errors.Join(requests.Send(ctx), unread, unreadRemoval)
+	return errors.Join(requests.send(ctx), unread, unreadRemoval)
 }
 
 // stopAfterTimeout supplies the buffered-input fact only to a Work that has
 // been idle or Waiting long enough, so the sweep reads the buffer rarely.
-func (h *RecoverWorkHandler) stopAfterTimeout(ctx context.Context, work *domain.AgentWork, requests ExecutionRequests) (bool, error) {
+func (h *RecoverWorkHandler) stopAfterTimeout(ctx context.Context, work *domain.AgentWork, requests *deferredExecution) (bool, error) {
 	if !work.TimeoutDue(h.now()) {
 		return false, nil
 	}
@@ -139,7 +140,7 @@ func (h *RecoverWorkHandler) dropBuffer(ctx context.Context, workID string) erro
 		return err
 	}
 	for _, inputID := range buffered.InputIDs {
-		if err := h.settlements.Settled(ctx, InputSettlement{WorkID: workID, InputID: inputID, Outcome: InputDropped, At: h.now()}); err != nil {
+		if err := publishInputSettlement(ctx, h.settlements, InputSettlement{WorkID: workID, InputID: inputID, Outcome: InputDropped, At: h.now()}); err != nil {
 			return err
 		}
 	}

@@ -18,10 +18,10 @@ type PrepareWorkExecutionHandler struct {
 	requests      InitialExecutionRequests
 	sessions      domain.AgentWorkRepository
 	authorization access.WorkAuthorizer
-	execution     ExecutionRequestsFactory
+	execution     domain.ExecutionPort
 }
 
-func NewPrepareWorkExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution ExecutionRequestsFactory, creations WorkCreationReader, models query.ModelConfigurations) *PrepareWorkExecutionHandler {
+func NewPrepareWorkExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort, creations WorkCreationReader, models query.ModelConfigurations) *PrepareWorkExecutionHandler {
 	return &PrepareWorkExecutionHandler{models: models, creations: creations, requests: requests, sessions: sessions, authorization: authorization, execution: execution}
 }
 
@@ -99,11 +99,11 @@ func (h *PrepareWorkExecutionHandler) advance(ctx context.Context, request Initi
 	if err != nil {
 		return "", err
 	}
-	requests := h.execution()
+	requests := deferExecution(h.execution)
 	if _, err := session.RecoverExecution(ctx, requests); err != nil {
 		return "", err
 	}
-	if err := requests.Send(ctx); err != nil {
+	if err := requests.send(ctx); err != nil {
 		return "", err
 	}
 

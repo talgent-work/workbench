@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 )
 
@@ -23,7 +23,7 @@ func TestCreationCapturesOwnersRepositoryAndReuseIgnoresLaterBindingChanges(t *t
 	catalog := &repositoryCatalog{}
 	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store,
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
-		emptyPluginCatalog{}, catalog, store, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(&startupPort{}))
+		commandtest.StartCatalog(emptyPluginCatalog{}, catalog), capacityCheck{}, &startupPort{})
 	input := command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", AgentID: agent.ID, SubjectID: "owner", StartingUserID: "owner", WorkspaceReference: "workspace",
 		InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(),
 			WorkBranch: "talgent/" + "TAL-382", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Prepare repositories"},

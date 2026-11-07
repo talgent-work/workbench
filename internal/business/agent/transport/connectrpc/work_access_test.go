@@ -49,7 +49,7 @@ func newAccessFixture(t *testing.T) *accessFixture {
 }
 
 // newAccessFixtureWith also serves workspaces through views, Storage's stand-in.
-func newAccessFixtureWith(t *testing.T, views application.WorkspaceViewPort) *accessFixture {
+func newAccessFixtureWith(t *testing.T, views application.WorkspacePort) *accessFixture {
 	t.Helper()
 	agents := &rpcAgents{items: map[string]*domain.AgentDefinition{}}
 	dispatcher := domainevent.NewDispatcher(domainevent.WithDelayClose(0))
@@ -64,9 +64,9 @@ func newAccessFixtureWith(t *testing.T, views application.WorkspaceViewPort) *ac
 	dispatcher.Subscribe(eventhandler.NewWorkAccessWithdrawals(f.withdrawals, slog.Default()))
 	requests := &memoryCreations{items: map[string]command.WorkCreationRequest{}}
 	app := &application.Application{Definitions: agents, Works: sessions, WorkPrincipals: ownerAuthorization{sessions}, WorkViews: sessionViews{sessions}, Logger: slog.Default(),
-		Commands:       application.Commands{CreateRequestedWork: command.NewCreateRequestedWorkHandler(requests, nil, nil)},
-		Queries:        application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions})},
-		WorkspaceViews: views,
+		Commands:   application.Commands{CreateRequestedWork: command.NewCreateRequestedWorkHandler(requests, nil, nil)},
+		Queries:    application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions})},
+		Workspaces: views,
 	}
 	mux := http.NewServeMux()
 	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, slog.Default(), nil)
@@ -253,6 +253,7 @@ func TestCancelledCreationRequestIdentityNeverCreatesAWork(t *testing.T) {
 }
 
 type recordedWithdrawals struct {
+	eventhandler.LiveStreamPort
 	mu    sync.Mutex
 	items []eventhandler.WorkAccessWithdrawal
 }

@@ -22,7 +22,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 )
 
@@ -34,7 +33,7 @@ func TestFeedbackRPCAuthenticatesBeforeAdvancingWork(t *testing.T) {
 	session, err := domain.NewAgentWork(context.Background(), domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, AgentID: agent.ID, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: "review"}, WorkspaceReference: "workspace"}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, port)
 	require.NoError(t, err)
 	store := &sessionStore{session: session}
-	app := &application.Application{Commands: application.Commands{ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, store, &rpcProcesses{}, infrastructure.NewExecutionRequestsFactory(port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})}}
+	app := &application.Application{Commands: application.Commands{ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, store, &rpcProcesses{}, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})}}
 	handler := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(app, nil, "integration-secret"))
 	})

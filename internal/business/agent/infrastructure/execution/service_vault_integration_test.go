@@ -113,6 +113,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 }
 
 type currentServiceSupply struct {
+	application.CredentialSupplyPort
 	token, reason string
 	received      []application.ServiceCredentialRequest
 }
