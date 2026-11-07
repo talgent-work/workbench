@@ -149,16 +149,19 @@ type AgentExecution struct {
 	// observation; empty while none is bound.
 	Environment string
 	Process     LaunchedProcess
-	ExitRequest ExitRequest
-	Credentials CredentialDelivery
-	Inputs      InputSync
-	Outcome     ExecutionOutcome
-	State       ExecutionState `validate:"oneof=queued starting running retired released"`
-	Retirement  RetirementCause
-	RetiredAt   time.Time
-	ReleasedAt  time.Time
-	Events      EventCollection
-	Version     int `validate:"gte=0"`
+	// PluginResults are its selected Plugins' preparation outcomes in this
+	// run, at most one per Plugin, in no particular order.
+	PluginResults []PluginResult
+	ExitRequest   ExitRequest
+	Credentials   CredentialDelivery
+	Inputs        InputSync
+	Outcome       ExecutionOutcome
+	State         ExecutionState `validate:"oneof=queued starting running retired released"`
+	Retirement    RetirementCause
+	RetiredAt     time.Time
+	ReleasedAt    time.Time
+	Events        EventCollection
+	Version       int `validate:"gte=0"`
 }
 
 // ExecutionBeginning is what Begin takes from an admitted start: the Work's

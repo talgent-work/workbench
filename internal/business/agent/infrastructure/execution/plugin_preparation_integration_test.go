@@ -16,7 +16,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
@@ -24,7 +23,7 @@ import (
 	"xorm.io/xorm"
 )
 
-func TestPluginPreparationRecoveryRetainsHandleAndProjectsDegradation(t *testing.T) {
+func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
@@ -70,7 +69,7 @@ func TestPluginPreparationRecoveryRetainsHandleAndProjectsDegradation(t *testing
 	require.NoError(t, err)
 	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now, initial: infrastructure.NewInitialExecutionRequests(db, time.Now)}}
 	snapshot := domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "runtime"}}}}
-	err = n.prepareEnvironment(observation, &record, client, snapshot)
+	_, err = n.prepareEnvironment(observation, &record, client, snapshot)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, "prepare-1", <-attachedHandle, "the handle is durable before observation stops")
 	require.Equal(t, "prepare-1", record.PreparationProcessID)
@@ -81,38 +80,20 @@ func TestPluginPreparationRecoveryRetainsHandleAndProjectsDegradation(t *testing
 	require.True(t, found)
 	// A new reconciler instance uses the committed handle after restart.
 	n = &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now, initial: infrastructure.NewInitialExecutionRequests(db, time.Now)}}
-	require.NoError(t, n.prepareEnvironment(t.Context(), &retained, client, snapshot), "installation failure is a recorded degradation, not a preparation retry")
+	installations, err := n.prepareEnvironment(t.Context(), &retained, client, snapshot)
+	require.NoError(t, err, "installation failure is a reported degradation, not a preparation retry")
+	require.Equal(t, []domain.PluginInstallation{{Slug: "runtime", Reason: "installation_failed"}}, installations)
 	require.EqualValues(t, 1, reservations.Load())
-	require.False(t, retained.EnvironmentPrepared, "the execution records its preparation ended, after the outcomes")
-	rows, err := db.QueryString("SELECT installed, reason FROM agent_plugin_result WHERE work_id=?", record.SessionID)
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, "0", rows[0]["installed"])
-	require.Equal(t, "installation_failed", rows[0]["reason"])
+	require.False(t, retained.EnvironmentPrepared, "the execution records its preparation ended with the reported outcomes")
 	// The execution records its preparation ended once the step returned.
 	_, err = db.Exec("UPDATE execution_allocation SET plugins_prepared = 1 WHERE id = ?", record.ID)
 	require.NoError(t, err)
 	retained, _, err = latestAllocation(t.Context(), db, record.SessionID)
 	require.NoError(t, err)
-	require.NoError(t, n.prepareEnvironment(t.Context(), &retained, client, snapshot))
+	installations, err = n.prepareEnvironment(t.Context(), &retained, client, snapshot)
+	require.NoError(t, err)
+	require.Empty(t, installations, "a completed preparation reports nothing again")
 	require.EqualValues(t, 2, attachments.Load(), "completed preparation is not attached again")
-	// Current results replace an earlier Work/slug projection without a run fence.
-	require.NoError(t, n.savePluginResults(t.Context(), record.SessionID, []pluginInstallationResult{{Slug: "runtime", Installed: true}}))
-	rows, err = db.QueryString("SELECT installed, reason FROM agent_plugin_result WHERE work_id=?", record.SessionID)
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, "1", rows[0]["installed"])
-	require.Empty(t, rows[0]["reason"])
-	loads := infrastructure.NewPluginResults(db, time.Now)
-	require.NoError(t, loads.RecordLoads(t.Context(), record.SessionID, []application.PluginLoadResult{{Slug: "runtime", Loaded: true}}))
-	require.NoError(t, n.savePluginResults(t.Context(), record.SessionID, []pluginInstallationResult{{Slug: "runtime", Reason: "installation_failed"}}))
-	projected, err := loads.Read(t.Context(), record.SessionID)
-	require.NoError(t, err)
-	require.Len(t, projected, 1)
-	require.True(t, projected[0].InstallationObserved)
-	require.False(t, projected[0].Installed)
-	require.True(t, projected[0].LoadObserved)
-	require.True(t, projected[0].Loaded, "late installation feedback must preserve the independent loading observation")
 }
 
 func TestPluginPreparationDeletionRecoversAfterLostRetirement(t *testing.T) {

@@ -61,7 +61,7 @@ type Application struct {
 	Repositories         *RepositoryAccess
 	WorkPrincipals       access.WorkAuthorizer
 	Harness              command.RunningHarnessPort
-	PluginResults        PluginResults
+	PluginResults        query.PluginResultReader
 	ServiceAccessResults query.ServiceAccessReader
 	Catalog              command.StartCatalogPort
 	Works                command.AgentWorkRepository
@@ -81,7 +81,7 @@ func NewApplication(
 	services *ServiceAccess,
 	workPrincipals access.WorkAuthorizer,
 	harness command.RunningHarnessPort,
-	pluginResults PluginResults,
+	pluginResults query.PluginResultReader,
 	serviceAccessResults query.ServiceAccessReader,
 	catalog command.StartCatalogPort,
 	recentRepositories query.RecentRepositoryReader,

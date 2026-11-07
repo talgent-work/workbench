@@ -122,8 +122,10 @@ func bound(t *testing.T) func(*domain.AgentExecution) {
 func launched(t *testing.T) func(*domain.AgentExecution) {
 	return func(execution *domain.AgentExecution) {
 		bound(t)(execution)
-		require.True(t, execution.RecordPreparation())
-		_, err := execution.RecordLaunch("process")
+		prepared, err := execution.RecordPreparation(domain.PreparationReport{})
+		require.NoError(t, err)
+		require.True(t, prepared)
+		_, err = execution.RecordLaunch("process")
 		require.NoError(t, err)
 	}
 }
@@ -356,7 +358,9 @@ func TestCredentialChangeReachesTheReconciliationOfItsWorks(t *testing.T) {
 
 	f.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}}, Attached: true}
 	f.change(t, first, func(execution *domain.AgentExecution) bool {
-		require.True(t, execution.RecordPreparation())
+		prepared, err := execution.RecordPreparation(domain.PreparationReport{})
+		require.NoError(t, err)
+		require.True(t, prepared)
 		launched, err := execution.RecordLaunch("process")
 		require.NoError(t, err)
 		return launched

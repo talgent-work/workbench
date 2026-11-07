@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"time"
 
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -127,4 +128,35 @@ func (r *ExecutionQueryRepository) ListHeldWorkIDs(ctx context.Context, computer
 		return nil, oops.With("operation", "agent.list_computer_held_works").Wrap(err)
 	}
 	return ids, nil
+}
+
+// ListCurrentPluginResults reads the Plugin outcomes that the Work's most
+// recently begun execution recorded; an earlier run's outcomes are not
+// current.
+func (r *ExecutionQueryRepository) ListCurrentPluginResults(ctx context.Context, workID string) ([]query.PluginResult, error) {
+	var rows []struct {
+		Slug                 string `xorm:"slug"`
+		InstallationReported bool   `xorm:"installation_reported"`
+		Installed            bool   `xorm:"installed"`
+		InstallationReason   string `xorm:"installation_reason"`
+		LoadingReported      bool   `xorm:"loading_reported"`
+		Loaded               bool   `xorm:"loaded"`
+		LoadingReason        string `xorm:"loading_reason"`
+		UpdatedAt            int64  `xorm:"updated_at"`
+	}
+	err := r.db.Context(ctx).SQL(`SELECT p.slug, p.installation_reported, p.installed, p.installation_reason,
+ p.loading_reported, p.loaded, p.loading_reason, p.updated_at
+ FROM execution_plugin_result p
+ WHERE p.deleted_at = 0 AND p.execution_id = (
+ SELECT e.id FROM execution_allocation e WHERE e.session_id = ? ORDER BY e.created_at DESC, e.id DESC LIMIT 1)
+ ORDER BY p.slug`, workID).Find(&rows)
+	if err != nil {
+		return nil, oops.With("operation", "agent.current_plugin_results", "agent_work_id", workID).Wrap(err)
+	}
+	results := make([]query.PluginResult, 0, len(rows))
+	for _, row := range rows {
+		results = append(results, query.PluginResult{Slug: row.Slug, InstallationReported: row.InstallationReported, Installed: row.Installed, InstallationReason: row.InstallationReason,
+			LoadingReported: row.LoadingReported, Loaded: row.Loaded, LoadingReason: row.LoadingReason, UpdatedAt: time.UnixMilli(row.UpdatedAt).UTC()})
+	}
+	return results, nil
 }

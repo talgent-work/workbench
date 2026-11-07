@@ -61,24 +61,6 @@ CREATE TABLE IF NOT EXISTS `agent_initial_execution_request` (
   KEY `idx_initial_execution_submitted` (`submitted`, `deleted_at`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent application initial execution and input recovery';
 
-CREATE TABLE IF NOT EXISTS `agent_plugin_result` (
-  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Projection row identity',
-  `work_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Work whose preparation produced the result',
-  `slug` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Selected plugin slug',
-  `installation_observed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'An installer result has been observed',
-  `load_observed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'A complete native plugin inventory has been observed',
-  `loaded` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Native inventory contains the selected release',
-  `load_reason` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Safe loading failure code',
-  `installed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Native installer succeeded, not proof of Harness loading',
-  `reason` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Safe installation failure code',
-  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Projection update revision',
-  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_work_slug` (`work_id`,`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Latest per-plugin preparation facts, outside the Work aggregate';
-
 CREATE TABLE IF NOT EXISTS `agent_session` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'AgentSession UUIDv7 identity',
   `agent_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Referenced AgentDefinition aggregate identity',
@@ -306,8 +288,27 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
   UNIQUE KEY `uniq_live_session_id` (`live_session_id`),
   KEY `idx_allocation_label` (`allocation_label`),
   KEY `idx_input_owner_deleted_at` (`input_owner`, `deleted_at`),
+  KEY `idx_session_id_created_at_id` (`session_id`, `created_at`, `id`),
   KEY `idx_authorization_ids` ((CAST(`authorization_ids` AS CHAR(36) ARRAY)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentExecution aggregate: one run of a Work and its execution environment';
+
+CREATE TABLE IF NOT EXISTS `execution_plugin_result` (
+  `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'UUIDv7 row identity',
+  `execution_id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'AgentExecution (execution_allocation) whose run the outcome describes',
+  `slug` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Slug of a Plugin the run selected',
+  `installation_reported` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The run''s preparation reported the Plugin''s installation',
+  `installed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The installation succeeded, not proof of Harness loading',
+  `installation_reason` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Safe installation failure code; empty on success',
+  `loading_reported` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The run''s Harness process reported its complete loaded Plugin inventory',
+  `loaded` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The Harness loaded the release the run selected',
+  `loading_reason` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Safe loading failure code; empty on success',
+  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Stored row version',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
+  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
+  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; zero is active',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_execution_id_slug` (`execution_id`,`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentExecution''s Plugin preparation outcomes: each selected Plugin''s installation and loading in one run';
 
 CREATE TABLE IF NOT EXISTS `login_session` (
   `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Login Session UUIDv7 identity; the sid claim',

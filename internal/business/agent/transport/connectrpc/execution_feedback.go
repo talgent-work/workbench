@@ -45,16 +45,6 @@ func (h *FeedbackHandler) Report(ctx context.Context, request *agentprivatev1.Re
 	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	if request.Kind == agentprivatev1.FeedbackKind_FEEDBACK_KIND_PLUGIN_LOADS_OBSERVED {
-		plugins := make([]application.PluginLoad, 0, len(request.LoadedPlugins))
-		for _, item := range request.LoadedPlugins {
-			plugins = append(plugins, application.PluginLoad{Slug: item.GetSlug(), Version: item.GetVersion()})
-		}
-		if err := h.application.RecordPluginLoads(ctx, request.WorkId, plugins); err != nil {
-			return nil, mapFeedbackError(err)
-		}
-		return &agentprivatev1.ReportResponse{}, nil
-	}
 	kind, ok := feedbackKinds[request.GetKind()]
 	if !ok {
 		return nil, connect.NewError(connect.CodeInvalidArgument, command.ErrUnknownExecutionFeedback.Error()).WithCause(command.ErrUnknownExecutionFeedback)
@@ -75,6 +65,9 @@ func (h *FeedbackHandler) Report(ctx context.Context, request *agentprivatev1.Re
 	}
 	for _, item := range request.GetWorkProgress() {
 		feedback.WorkProgress = append(feedback.WorkProgress, domain.WorkProgressItem{Content: item.GetContent(), Status: item.GetStatus(), ActiveForm: item.GetActiveForm()})
+	}
+	for _, item := range request.GetLoadedPlugins() {
+		feedback.LoadedPlugins = append(feedback.LoadedPlugins, domain.LoadedPlugin{Slug: item.GetSlug(), Version: item.GetVersion()})
 	}
 	for _, item := range request.GetSubagents() {
 		feedback.SubAgents = append(feedback.SubAgents, domain.SubAgent{ID: item.GetId(), Type: item.GetType(), Task: item.GetTask(), Status: domain.SubAgentStatus(item.GetStatus())})
@@ -101,6 +94,7 @@ var feedbackKinds = map[agentprivatev1.FeedbackKind]command.ExecutionFeedbackKin
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_PERMISSION_MODE_OBSERVED:  command.PermissionModeObserved,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_ATTACHMENT_LOST:           command.AttachmentLost,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_ATTACHMENT_RETURNED:       command.AttachmentReturned,
+	agentprivatev1.FeedbackKind_FEEDBACK_KIND_PLUGIN_LOADS_OBSERVED:     command.PluginLoadsObserved,
 }
 
 // inputOutcomes are the outcomes a caller's input settles with; a reply's

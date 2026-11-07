@@ -141,7 +141,7 @@ func TestARunningRunConnectsAndKeepsItsCredentialsAndInputsCurrent(t *testing.T)
 	require.NoError(t, err)
 	expiry := expiring.Desk.SeatedAt.Add(time.Hour)
 	require.True(t, expiring.RecordCredentialDelivery(domain.CredentialDelivery{ExpiresAt: expiry}))
-	require.True(t, expiring.RecordPreparation())
+	require.True(t, recordPreparation(t, expiring))
 	_, err = expiring.RecordLaunch("process-1")
 	require.NoError(t, err)
 	current := runningEnvironment("env-1")
@@ -191,16 +191,16 @@ func TestSeatAppliesOnceToAQueuedExecution(t *testing.T) {
 // execution.
 func TestRecordPreparationNeedsABoundUnretiredExecution(t *testing.T) {
 	unbound := beginOf(t, newSession(t), domain.RealizationCloud)
-	require.False(t, unbound.RecordPreparation(), "nothing is prepared without a bound environment")
+	require.False(t, recordPreparation(t, unbound), "nothing is prepared without a bound environment")
 
 	_, bound := boundExecution(t)
-	require.True(t, bound.RecordPreparation())
-	require.False(t, bound.RecordPreparation(), "preparation ends once")
+	require.True(t, recordPreparation(t, bound))
+	require.False(t, recordPreparation(t, bound), "preparation ends once")
 
 	_, retiring := boundExecution(t)
 	decide(t, retiring, domain.EnvironmentObservation{LossReason: "gone"}, time.Now())
 	retired, err := retiring.Retire(domain.WorkComputeReleaseRequested{WorkID: retiring.WorkID, StartAdmittedAt: retiring.StartAdmittedAt, Cause: domain.RetiredByLoss}, time.Now())
 	require.NoError(t, err)
 	require.True(t, retired)
-	require.False(t, retiring.RecordPreparation(), "a retired execution prepares nothing")
+	require.False(t, recordPreparation(t, retiring), "a retired execution prepares nothing")
 }

@@ -5,15 +5,20 @@ import (
 	"time"
 )
 
+// PluginResultReader, a facet of ExecutionQueryRepository, reads the Plugin
+// outcomes of a Work's current run: those its most recently begun
+// AgentExecution recorded (Plugin result reading).
 type PluginResultReader interface {
-	Read(context.Context, string) ([]PluginResult, error)
+	ListCurrentPluginResults(ctx context.Context, workID string) ([]PluginResult, error)
 }
 
-// PluginResult contains observation facts only, outside the Work aggregate.
+// PluginResult is one selected Plugin's preparation outcome in the Work's
+// current run, with the release the Work selected. Installation and loading
+// are independent, each unknown until reported.
 type PluginResult struct {
-	Slug, ReleaseVersion, Source    string
-	InstallationObserved, Installed bool
-	LoadObserved, Loaded            bool
-	InstallationReason, LoadReason  string
-	UpdatedAt                       time.Time
+	Slug, ReleaseVersion, Source      string
+	InstallationReported, Installed   bool
+	LoadingReported, Loaded           bool
+	InstallationReason, LoadingReason string
+	UpdatedAt                         time.Time
 }

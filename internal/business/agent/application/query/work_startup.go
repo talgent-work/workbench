@@ -17,12 +17,14 @@ type WorkStartup struct {
 	CreationPending            bool
 }
 
-// ExecutionQueryRepository reads startup obligations and recovery candidates:
-// the Works and the AgentExecutions with unfinished obligations.
+// ExecutionQueryRepository reads startup obligations, recovery candidates
+// (the Works and the AgentExecutions with unfinished obligations) and the
+// current run's Plugin outcomes.
 type ExecutionQueryRepository interface {
 	WorkStartupReader
 	RecoveryWorkQueryRepository
 	ExecutionRecoveryReader
+	PluginResultReader
 }
 
 type WorkStartupReader interface {

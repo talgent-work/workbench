@@ -35,8 +35,8 @@ type ExecutionEnvironmentPort interface {
 	// discards an unfinished preparation.
 	WithdrawCredentials(ctx context.Context, execution *domain.AgentExecution) error
 	// Prepare sees the in-environment preparation through to its exit,
-	// bounded by the caller.
-	Prepare(ctx context.Context, execution *domain.AgentExecution) error
+	// bounded by the caller, and reports each selected Plugin's installation.
+	Prepare(ctx context.Context, execution *domain.AgentExecution) ([]domain.PluginInstallation, error)
 	// Launch starts the Harness in the bound environment and returns its
 	// process.
 	Launch(ctx context.Context, execution *domain.AgentExecution) (string, error)
