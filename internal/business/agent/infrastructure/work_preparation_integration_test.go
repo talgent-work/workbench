@@ -52,20 +52,21 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []agentquery.WorkPreparation{preparation}, submitted)
 
-	// A repeat outside creation is answered from the Work: the same
-	// repository choices confirm it, changed ones conflict and change nothing.
+	// A repeat outside creation is answered from the Work: whatever
+	// repository choices it names, it returns the original Work unchanged.
 	prepare := command.NewPrepareWorkExecutionHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels())
 	repeat := *initial
 	repeat.WorkID, repeat.RequestID, repeat.Input.ID, repeat.Input.Text = id, uuid.NewString(), uuid.NewString(), "another task"
 	confirmed, err := prepare.Handle(ctx, repeat)
 	require.NoError(t, err)
 	require.Equal(t, id, confirmed)
-	repeat.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "changed"}}
-	_, err = prepare.Handle(ctx, repeat)
-	require.ErrorIs(t, err, command.ErrInitialExecutionConflict)
+	repeat.WorkBranch, repeat.Selections = "talgent/other", []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "changed"}}
+	reused, err := prepare.Handle(ctx, repeat)
+	require.NoError(t, err)
+	require.Equal(t, id, reused)
 	unchanged, _, err := reader.GetWorkPreparation(ctx, id)
 	require.NoError(t, err)
-	require.Equal(t, preparation, unchanged, "a refused repeat cannot replace the original input or selection")
+	require.Equal(t, preparation, unchanged, "a reuse cannot replace the original input or selection")
 
 	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)

@@ -149,12 +149,3 @@ func TestRepositoryAccessEndsOnceTheWorkCloses(t *testing.T) {
 
 	require.ErrorIs(t, work.AdmitRepositoryAccess("owner"), domain.ErrRepositoryPreparationCanceled)
 }
-
-func TestRepeatedRepositoryChoicesFollowTheRetainedSelection(t *testing.T) {
-	work := repositoryWork(t)
-
-	require.NoError(t, work.AdmitRepositoryChoices("owner", []domain.WorkRepositoryChoice{{RepositoryID: "github:1"}, {RepositoryID: "github:2", BaseBranch: "main"}}))
-	require.ErrorIs(t, work.AdmitRepositoryChoices("owner", []domain.WorkRepositoryChoice{{RepositoryID: "github:1"}}), domain.ErrRepositoryPreparationConflict)
-	require.ErrorIs(t, work.AdmitRepositoryChoices("owner", []domain.WorkRepositoryChoice{{RepositoryID: "github:1", BaseBranch: "dev"}, {RepositoryID: "github:2"}}), domain.ErrRepositoryPreparationConflict)
-	require.ErrorIs(t, work.AdmitRepositoryChoices("other", []domain.WorkRepositoryChoice{{RepositoryID: "github:1"}, {RepositoryID: "github:2"}}), domain.ErrRepositoryPreparationConflict)
-}

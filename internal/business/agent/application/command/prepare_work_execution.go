@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"errors"
 
 	"github.com/google/uuid"
 
@@ -10,10 +9,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
-
-// ErrInitialExecutionConflict refuses a first-start request whose repository
-// choices differ from those its Work retained.
-var ErrInitialExecutionConflict = errors.New("agent: conflicting initial execution request")
 
 type RepositorySelection struct {
 	RepositoryID string
@@ -37,20 +32,12 @@ type PrepareWorkExecution struct {
 	Selections []RepositorySelection
 }
 
-// repositoryChoices are the selections as the Work's repository choices.
-func (p PrepareWorkExecution) repositoryChoices() []domain.WorkRepositoryChoice {
-	choices := make([]domain.WorkRepositoryChoice, 0, len(p.Selections))
-	for _, selection := range p.Selections {
-		choices = append(choices, domain.WorkRepositoryChoice{RepositoryID: selection.RepositoryID, BaseBranch: selection.BaseBranch})
-	}
-	return choices
-}
-
 // PrepareWorkExecutionHandler answers a first-start request for a Work that
 // already exists: the repeat of its creation, or a reuse of its Subject's
 // Work. Initial execution is part of accepted creation, never a later
-// transition, so it starts nothing: it confirms the Work when the request
-// asks for what the Work retained (Repository preparation continuity).
+// transition, so it starts nothing and returns the original Work: the
+// request's input and repository choices are creation-specific and apply
+// only to a new Work, so they never change or refuse the one it locates.
 type PrepareWorkExecutionHandler struct {
 	models        query.ModelConfigurations
 	sessions      domain.AgentWorkRepository
@@ -77,9 +64,6 @@ func (h *PrepareWorkExecutionHandler) Handle(ctx context.Context, input PrepareW
 	}
 	if err := validateInitialThinkingLevel(h.models, work.WorkModel, input.ThinkingLevel); err != nil {
 		return "", err
-	}
-	if err := work.AdmitRepositoryChoices(input.SubjectID, input.repositoryChoices()); err != nil {
-		return "", errors.Join(ErrInitialExecutionConflict, err)
 	}
 	return work.ID, nil
 }

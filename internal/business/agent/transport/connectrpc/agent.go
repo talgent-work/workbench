@@ -259,7 +259,7 @@ func mapAgentError(err error) error {
 		code = connect.CodeInvalidArgument
 	case errors.Is(err, domain.ErrCapacityUnavailable), errors.Is(err, command.ErrInputBacklog):
 		code = connect.CodeResourceExhausted
-	case errors.Is(err, command.ErrWorkCreationConflict), errors.Is(err, command.ErrInitialExecutionConflict), errors.Is(err, domain.ErrConcurrentModification):
+	case errors.Is(err, command.ErrWorkCreationConflict), errors.Is(err, domain.ErrConcurrentModification):
 		code = connect.CodeAborted
 	case errors.Is(err, application.ErrWorkCapabilitiesUnavailable), errors.Is(err, domain.ErrTurnActive), errors.Is(err, command.ErrWorkCreationCanceled), errors.Is(err, domain.ErrWorkVisibilityFixed), errors.Is(err, domain.ErrWorkWithoutProject), errors.Is(err, command.ErrStartRequestCanceled), errors.Is(err, command.ErrStartRequestConflict), errors.Is(err, domain.ErrWorkTransition), errors.Is(err, domain.ErrExecutionNotPermitted), errors.Is(err, domain.ErrComputeReclamationPending), errors.Is(err, domain.ErrModelConfigurationWithdrawn), domain.RefusedByComputer(err), errors.Is(err, domain.ErrNotPersonalWork), errors.Is(err, domain.ErrWorkNotActing), errors.Is(err, domain.ErrWorkFilesUnavailable), errors.Is(err, domain.ErrWorkFilesClosed):
 		code = connect.CodeFailedPrecondition

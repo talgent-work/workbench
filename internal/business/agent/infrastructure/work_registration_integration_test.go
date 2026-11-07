@@ -107,21 +107,26 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, observed, unchanged)
 	// A repeat with new transport IDs locates the original Work and input;
-	// an incompatible repeat must not alter it or create another Work.
+	// no repeat alters it or creates another Work.
 	repeat := input
 	repeat.RequestID, repeat.Input.ID = uuid.NewString(), uuid.NewString()
 	repeated, err := prepareNew(ctx, creation, repeat)
 	require.NoError(t, err)
 	require.Equal(t, ref, repeated)
 	// Repeating that request identity with other content is a conflict; a new
-	// request with other repository choices cannot replace the original ones.
+	// request with other repository choices returns the original Work, whose
+	// retained choices it never replaces.
 	repeat.Input.Text = "different task"
 	_, err = prepareNew(ctx, creation, repeat)
 	require.ErrorIs(t, err, command.ErrWorkCreationConflict)
 	repeat.RequestID, repeat.Input.ID = uuid.NewString(), uuid.NewString()
 	repeat.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "main"}}
-	_, err = prepareNew(ctx, creation, repeat)
-	require.ErrorIs(t, err, command.ErrInitialExecutionConflict)
+	reused, err := prepareNew(ctx, creation, repeat)
+	require.NoError(t, err)
+	require.Equal(t, ref, reused)
+	retained, err := infrastructure.NewServiceAccessResults(db).ReadRepositoryPreparation(ctx, ref)
+	require.NoError(t, err)
+	require.Equal(t, observed, retained, "the reuse keeps the original selection and outcomes")
 	requireStartRequested(t, sessions, ref)
 	require.Len(t, buffer.Inputs, 1)
 }
