@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -82,7 +81,7 @@ func TestRepositoryAccessFollowsTheRetainedSelection(t *testing.T) {
 	again, err := f.app.Plan(t.Context(), "owner", f.work.ID)
 	require.NoError(t, err)
 	require.Equal(t, first, again)
-	require.Equal(t, query.PlanCheckouts(f.work.ID, f.work.RepositorySelection)[0].AccessID, first[0].AccessID)
+	require.Equal(t, command.PlanCheckouts(f.work.ID, f.work.RepositorySelection)[0].AccessID, first[0].AccessID)
 
 	f.duringSupply = func() { f.work.RepositorySelection.Repositories[0].CloneURL = "https://github.com/acme/moved.git" }
 	material, err := f.app.Resolve(t.Context(), "owner", f.work.ID)

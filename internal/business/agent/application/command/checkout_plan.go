@@ -1,4 +1,4 @@
-package query
+package command
 
 import (
 	"fmt"
@@ -19,18 +19,26 @@ const repositoryTargetRoot = "/workspace/repos"
 // from its Work, so every start of the Work names the same one.
 var checkoutAccessNamespace = uuid.MustParse("4f8f8e7c-4d0a-4d36-9b8e-6a3e0c1f2b57")
 
+// PlannedCheckout is where one selected repository is checked out in the
+// Work's workspace, on which branch, and the identity of its temporary
+// access there.
+type PlannedCheckout struct {
+	Provider, RepoID, RepoName, CloneURL, WebURL, DefaultBranch string
+	BaseBranch, WorkBranch, TargetPath, AccessID                string
+}
+
 // PlanCheckouts derives where each selected repository is checked out in the
 // Work's workspace, from its retained selection alone, so every start plans
 // the same targets. The access identity names the repository's temporary
 // access in the Work's environment; it is not a personal authorization,
 // credential or independently managed grant.
-func PlanCheckouts(workID string, selection domain.WorkRepositorySelection) []PreparedCheckout {
+func PlanCheckouts(workID string, selection domain.WorkRepositorySelection) []PlannedCheckout {
 	if len(selection.Repositories) == 0 {
 		return nil
 	}
-	plan := make([]PreparedCheckout, 0, len(selection.Repositories))
+	plan := make([]PlannedCheckout, 0, len(selection.Repositories))
 	for _, repo := range selection.Repositories {
-		plan = append(plan, PreparedCheckout{Provider: repo.Provider, RepoID: repo.RepoID, RepoName: repo.RepoName,
+		plan = append(plan, PlannedCheckout{Provider: repo.Provider, RepoID: repo.RepoID, RepoName: repo.RepoName,
 			CloneURL: repo.CloneURL, WebURL: repo.WebURL, DefaultBranch: repo.DefaultBranch, BaseBranch: repo.BaseBranch,
 			WorkBranch: selection.WorkBranch, TargetPath: repositoryTargetPath(repo.RepoName),
 			AccessID: uuid.NewSHA1(checkoutAccessNamespace, []byte(workID+"\x00"+repo.RepoID)).String()})
@@ -41,7 +49,7 @@ func PlanCheckouts(workID string, selection domain.WorkRepositorySelection) []Pr
 
 // allocateRepositoryTargets gives repositories whose names collide distinct
 // targets, independently of selection order.
-func allocateRepositoryTargets(plan []PreparedCheckout) {
+func allocateRepositoryTargets(plan []PlannedCheckout) {
 	byTargetPath := map[string]int{}
 	order := make([]int, len(plan))
 	for n, checkout := range plan {
@@ -98,7 +106,7 @@ func repositoryConflictTargetPath(repoName string) string {
 	return path.Join(repositoryTargetRoot, strings.Join(clean, "-"))
 }
 
-func uniqueRepositoryTargetPath(targetPath string, checkout PreparedCheckout, used map[string]struct{}) string {
+func uniqueRepositoryTargetPath(targetPath string, checkout PlannedCheckout, used map[string]struct{}) string {
 	if _, exists := used[targetPath]; !exists {
 		return targetPath
 	}
@@ -115,7 +123,7 @@ func uniqueRepositoryTargetPath(targetPath string, checkout PreparedCheckout, us
 	}
 }
 
-func repositoryTargetSuffix(checkout PreparedCheckout) string {
+func repositoryTargetSuffix(checkout PlannedCheckout) string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(checkout.RepoName))
 	_, _ = h.Write([]byte{0})

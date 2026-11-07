@@ -1,4 +1,4 @@
-package query_test
+package command_test
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -20,7 +20,7 @@ func TestCheckoutTargetsRemainUniqueAndStableRegardlessOfSelectionOrder(t *testi
 	}
 	plan := func(repos []domain.WorkRepository) map[string]string {
 		byRepository, used := map[string]string{}, map[string]bool{}
-		for _, checkout := range query.PlanCheckouts("work", domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-382", Repositories: repos}) {
+		for _, checkout := range command.PlanCheckouts("work", domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-382", Repositories: repos}) {
 			require.False(t, used[checkout.TargetPath], "checkout paths must be globally unique")
 			used[checkout.TargetPath] = true
 			byRepository[checkout.RepoName] = checkout.TargetPath
@@ -40,7 +40,7 @@ func TestCheckoutPlanFollowsTheRetainedSelection(t *testing.T) {
 		{Provider: "github", RepoID: "456", RepoName: "other/api", CloneURL: "https://github.com/other/api.git", DefaultBranch: "main", BaseBranch: "release"},
 	}}
 
-	plan := query.PlanCheckouts("work", selection)
+	plan := command.PlanCheckouts("work", selection)
 
 	require.Len(t, plan, 2)
 	require.Equal(t, "old-main", plan[0].BaseBranch)
@@ -50,7 +50,7 @@ func TestCheckoutPlanFollowsTheRetainedSelection(t *testing.T) {
 	require.Equal(t, "talgent/TAL-382", plan[0].WorkBranch)
 	require.NoError(t, uuid.Validate(plan[0].AccessID))
 	require.NotEqual(t, plan[0].AccessID, plan[1].AccessID)
-	require.Equal(t, plan, query.PlanCheckouts("work", selection), "every start plans the same targets and access identities")
-	require.NotEqual(t, plan[0].AccessID, query.PlanCheckouts("other-work", selection)[0].AccessID)
-	require.Empty(t, query.PlanCheckouts("work", domain.WorkRepositorySelection{}))
+	require.Equal(t, plan, command.PlanCheckouts("work", selection), "every start plans the same targets and access identities")
+	require.NotEqual(t, plan[0].AccessID, command.PlanCheckouts("other-work", selection)[0].AccessID)
+	require.Empty(t, command.PlanCheckouts("work", domain.WorkRepositorySelection{}))
 }

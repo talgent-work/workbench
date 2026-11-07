@@ -5,6 +5,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 
@@ -79,7 +80,11 @@ func workPreparationFromRow(row workPreparationRow) (query.WorkPreparation, erro
 	}
 	preparation := query.WorkPreparation{ThinkingLevel: row.ThinkingLevel, WorkID: row.ID, RequestID: row.CreationRequestID, SubjectID: row.StartedBy,
 		WorkBranch: selection.WorkBranch, Prepared: true, Submitted: true, InputPrepared: len(checkouts) >= len(selection.Repositories),
-		InputBuffered: initial == nil, Checkouts: query.PlanCheckouts(row.ID, selection)}
+		InputBuffered: initial == nil}
+	for _, c := range command.PlanCheckouts(row.ID, selection) {
+		preparation.Checkouts = append(preparation.Checkouts, query.PreparedCheckout{Provider: c.Provider, RepoID: c.RepoID, RepoName: c.RepoName, CloneURL: c.CloneURL, WebURL: c.WebURL,
+			DefaultBranch: c.DefaultBranch, BaseBranch: c.BaseBranch, WorkBranch: c.WorkBranch, TargetPath: c.TargetPath, AccessID: c.AccessID})
+	}
 	if initial != nil {
 		preparation.InputID, preparation.Input = initial.ID, initial.Text
 	}

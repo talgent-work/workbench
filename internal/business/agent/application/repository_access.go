@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -79,7 +79,7 @@ func (a *RepositoryAccess) Plan(ctx context.Context, owner, workID string) ([]Re
 		return nil, err
 	}
 	var refs []RepositoryAccessReference
-	for _, checkout := range query.PlanCheckouts(work.ID, work.RepositorySelection) {
+	for _, checkout := range command.PlanCheckouts(work.ID, work.RepositorySelection) {
 		ref, err := work.RepositoryAuthorization(checkout.RepoID)
 		if err != nil && !errors.Is(err, domain.ErrServiceAuthorizationNotSelected) {
 			return nil, errors.Join(ErrRepositoryAuthorizationUnavailable, err)

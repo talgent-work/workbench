@@ -149,7 +149,7 @@ func (c *ExecutionCoordination) passRequest(ctx context.Context, workID string, 
 // RecordCheckouts records the checkout outcomes the Work's current execution
 // reported on its Work (Record checkouts).
 func (c *ExecutionCoordination) RecordCheckouts(ctx context.Context, workID string) error {
-	return c.applyExecution(ctx, workID, false)
+	return c.applyExecution(ctx, workID, checkoutsOnly)
 }
 
 // ApplyExecutionReports applies every report the Work's current execution
@@ -158,10 +158,19 @@ func (c *ExecutionCoordination) RecordCheckouts(ctx context.Context, workID stri
 // outcomes its next start leaves out. A Work that became ready has its
 // idleness recorded from its input buffer.
 func (c *ExecutionCoordination) ApplyExecutionReports(ctx context.Context, workID string) error {
-	return c.applyExecution(ctx, workID, true)
+	return c.applyExecution(ctx, workID, withReports)
 }
 
-func (c *ExecutionCoordination) applyExecution(ctx context.Context, workID string, reports bool) error {
+// executionFacts names what applyExecution applies of the execution: its
+// checkout outcomes alone, or those and then every report.
+type executionFacts int
+
+const (
+	checkoutsOnly executionFacts = iota
+	withReports
+)
+
+func (c *ExecutionCoordination) applyExecution(ctx context.Context, workID string, facts executionFacts) error {
 	var err error
 	for range coordinationAttempts {
 		var execution *domain.AgentExecution
@@ -177,7 +186,7 @@ func (c *ExecutionCoordination) applyExecution(ctx context.Context, workID strin
 		if ended, ok := execution.CheckoutsEnded(); ok {
 			changed = work.RecordRepositoryCheckouts(ended)
 		}
-		if reports {
+		if facts == withReports {
 			for _, report := range execution.Reports() {
 				applied, applyErr := work.ApplyExecutionReport(report)
 				if applyErr != nil {

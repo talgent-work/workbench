@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/samber/oops"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"xorm.io/xorm"
 )
@@ -40,7 +41,7 @@ func (r *ServiceAccessResults) ReadRepositoryPreparation(ctx context.Context, wo
 		return nil, err
 	}
 	var results []query.RepositoryPreparation
-	for _, planned := range query.PlanCheckouts(workID, selection) {
+	for _, planned := range command.PlanCheckouts(workID, selection) {
 		for _, checkout := range checkouts {
 			if checkout.RepositoryID == planned.RepoID {
 				results = append(results, query.RepositoryPreparation{RepositoryID: checkout.RepositoryID, TargetPath: planned.TargetPath, Prepared: checkout.CheckedOut, Reason: checkout.Reason})

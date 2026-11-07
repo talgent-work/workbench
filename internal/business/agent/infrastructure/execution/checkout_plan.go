@@ -6,7 +6,7 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -15,7 +15,7 @@ import (
 // selection plans for it. Nil means nothing to check out.
 func checkoutPlan(launch domain.LaunchSpecification) []repositoryCheckout {
 	var plan []repositoryCheckout
-	for _, checkout := range query.PlanCheckouts(launch.WorkID, launch.RepositorySelection) {
+	for _, checkout := range command.PlanCheckouts(launch.WorkID, launch.RepositorySelection) {
 		if slices.Contains(launch.RemainingRepositories, checkout.RepoID) {
 			plan = append(plan, repositoryCheckout{RepositoryID: checkout.RepoID, CloneURL: checkout.CloneURL, BaseBranch: checkout.BaseBranch, WorkBranch: checkout.WorkBranch, TargetPath: checkout.TargetPath})
 		}
