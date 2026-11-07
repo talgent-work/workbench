@@ -50,8 +50,6 @@ func (s *AgentWork) Close(ctx context.Context, requestID string, facts ClosureFa
 		if facts.ContinuationPending {
 			return ErrWorkTransition
 		}
-		// Buffered input never holds back a stopped or failed Work's close:
-		// entering Closing drops it, whether or not compute is released.
 		s.close(requestID)
 		return nil
 	case WorkWorking:

@@ -35,13 +35,11 @@ func TestEveryWorkButAClosedOneAdmitsInput(t *testing.T) {
 	require.ErrorIs(t, session.AcceptResponse(false), domain.ErrWorkTransition)
 }
 
-// A Stopped or Failed Work closes while input is still buffered, whether or
-// not its compute is released: closing drops the buffered input instead of
-// waiting for the release.
-func TestStoppedOrFailedWorkClosesWithBufferedInputBeforeItsComputeRelease(t *testing.T) {
+// A Failed Work closes while input is still buffered and before its compute
+// is released: closing drops the buffered input instead of waiting for the
+// release.
+func TestFailedWorkClosesWithBufferedInputBeforeItsComputeRelease(t *testing.T) {
 	ctx := context.Background()
-	pending := domain.ClosureFacts{InputPending: true}
-
 	failed := newSession(t)
 	port := &executionPort{}
 	require.NoError(t, recoverStartup(ctx, failed, port))
@@ -51,15 +49,22 @@ func TestStoppedOrFailedWorkClosesWithBufferedInputBeforeItsComputeRelease(t *te
 	require.Equal(t, domain.WorkFailed, failed.State)
 	require.False(t, failed.HarnessProcess.ComputeReclaimed)
 	failed.Events.Drain()
-	require.NoError(t, failed.Close(ctx, "close", pending, port))
+	require.NoError(t, failed.Close(ctx, "close", domain.ClosureFacts{InputPending: true}, port))
 	require.Equal(t, domain.WorkClosing, failed.State, "the close waits only for the release, not for the input")
 	require.Contains(t, failed.Events.Drain(), domain.Event(domain.WorkClosingEntered{WorkID: failed.ID}), "entering Closing drops the buffered input")
 	require.NoError(t, failed.RecordExit(ctx, domain.HarnessExit{ExitCode: 1}, port))
 	require.NoError(t, failed.ConfirmComputeReclaimed())
 	require.Equal(t, domain.WorkClosed, failed.State)
+}
 
-	stopped := &domain.AgentWork{ID: "stopped", State: domain.WorkStopped, Events: domain.NewEventCollection()}
-	require.NoError(t, stopped.Close(ctx, "close", pending, &executionPort{}), "a Stopped Work with no confirmed release closes too")
-	require.True(t, stopped.Closed())
-	require.Contains(t, stopped.Events.Drain(), domain.Event(domain.WorkClosingEntered{WorkID: stopped.ID}))
+// A Stopped Work whose exited process is not yet released closes while input
+// is still buffered, dropping it.
+func TestStoppedWorkClosesWithBufferedInputBeforeItsComputeRelease(t *testing.T) {
+	ctx := context.Background()
+	stopped := &domain.AgentWork{ID: "stopped", State: domain.WorkStopped, HarnessProcess: &domain.HarnessProcess{Exited: true}, Events: domain.NewEventCollection()}
+	require.NoError(t, stopped.Close(ctx, "close", domain.ClosureFacts{InputPending: true}, &executionPort{}))
+	require.Equal(t, domain.WorkClosing, stopped.State, "the close waits only for the release, not for the input")
+	require.Contains(t, stopped.Events.Drain(), domain.Event(domain.WorkClosingEntered{WorkID: stopped.ID}), "entering Closing drops the buffered input")
+	require.NoError(t, stopped.ConfirmComputeReclaimed())
+	require.Equal(t, domain.WorkClosed, stopped.State)
 }
