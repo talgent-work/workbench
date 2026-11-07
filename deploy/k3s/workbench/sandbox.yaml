@@ -127,10 +127,9 @@ roleRef:
 # The OpenSandbox server (deploy/opensandbox/server.yaml, ServiceAccount
 # opensandbox in talgent) manages sandboxes only in this namespace: a
 # compromised server cannot touch the platform namespace's Pods and Secrets.
-# At cluster scope it only reads Namespaces and RuntimeClasses. These objects
-# keep the chart's names, so an apply narrows a cluster that still has the
-# chart's ClusterRole; scripts/deploy/apply-opensandbox.sh applies them
-# (selected by their app.kubernetes.io/name label) ahead of the server.
+# At cluster scope it only reads Namespaces and RuntimeClasses.
+# scripts/deploy/apply-opensandbox.sh applies these objects (selected by their
+# app.kubernetes.io/name label) ahead of the server.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
