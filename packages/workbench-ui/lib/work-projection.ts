@@ -92,7 +92,8 @@ export function isTurnRunning(cause: unknown) {
 
 export const inputPendingMessage = "This Work still has messages to finish. Try again once they are handled.";
 
-// Agent closes a Work only once its accepted input is finished.
+// Agent closes a running Work only once its accepted input is finished; a
+// stopped or failed Work closes at once and drops its buffered input.
 export function isInputPending(cause: unknown) {
   const error = ConnectError.from(cause);
   return error.code === Code.FailedPrecondition && error.rawMessage.includes("still has accepted input to finish");

@@ -25,8 +25,8 @@ var (
 	// ErrTurnActive rejects stopping a Work while a Turn runs: a Work stops
 	// only between Turns, after its Turn ends or is cancelled.
 	ErrTurnActive = errors.New("agent: a Turn is running; cancel it before stopping the Work")
-	// ErrInputPending rejects closing a Work that still holds accepted input;
-	// it is a work transition refusal.
+	// ErrInputPending rejects closing a running Work that still holds
+	// accepted input; it is a work transition refusal.
 	ErrInputPending = fmt.Errorf("%w: the Work still has accepted input to finish", ErrWorkTransition)
 )
 

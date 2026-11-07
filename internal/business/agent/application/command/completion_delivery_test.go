@@ -87,6 +87,30 @@ func TestCloseRefusesOutstandingWorkButNotUnknownFacts(t *testing.T) {
 	}
 }
 
+// A failed Work whose compute is not yet released closes with input still
+// buffered, and entering Closing drops that input.
+func TestCloseDropsTheBufferedInputOfAFailedWork(t *testing.T) {
+	ctx := context.Background()
+	_, sessions := runningMessagingSession(t)
+	require.NoError(t, sessions.session.RecordFailure("harness crashed"))
+	require.False(t, sessions.session.HarnessProcess.ComputeReclaimed)
+	input := command.ExecutionInput{ID: uuid.NewString(), Text: "still buffered"}
+	buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{input}}
+	facts := &completionFacts{}
+	port := &controlRecorder{}
+	handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, infrastructure.NewExecutionRequestsFactory(port), &initialRequestStore{}, facts, facts, buffer)
+	require.NoError(t, handler.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString()}))
+	require.Equal(t, domain.WorkClosing, sessions.session.State)
+
+	settlements := &commandtest.InputSettlements{}
+	recover := command.NewRecoverWorkHandler(time.Now, sessions, infrastructure.NewExecutionRequestsFactory(&startupPort{}), buffer, settlements, nil, nil)
+	require.NoError(t, recover.Handle(ctx, sessions.session.ID))
+	require.Empty(t, buffer.Inputs, "the buffered input is dropped")
+	require.Len(t, settlements.Reported, 1)
+	require.Equal(t, input.ID, settlements.Reported[0].InputID)
+	require.Equal(t, command.InputDropped, settlements.Reported[0].Outcome)
+}
+
 // controlRecorder records the stops a command sends.
 type controlRecorder struct {
 	controlPort
