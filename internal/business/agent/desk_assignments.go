@@ -3,6 +3,7 @@ package agent
 import (
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/go-jimu/components/ddd/message"
 	"go.uber.org/fx"
@@ -28,6 +29,7 @@ const defaultDeskAssignmentGroup = "agent-desk-assignments"
 // reconciliation still finds the seated Desk by asking Computer. It requires
 // a Kafka consumer factory.
 var DeskAssignmentModule = fx.Module("agent.desk_assignments",
+	fx.Provide(func() func() time.Time { return time.Now }, fx.Private),
 	fx.Provide(command.NewSeatExecutionHandler, fx.Private),
 	fx.Invoke(consumeDeskAssignments),
 )
