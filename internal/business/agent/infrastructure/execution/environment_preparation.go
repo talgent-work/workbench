@@ -6,7 +6,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
@@ -38,17 +37,13 @@ func (n *NativeConnections) discardPluginPreparation(ctx context.Context, record
 }
 
 // startPreparation creates the preparation process with the start's checkout
-// plan. The plan is fixed when the process is created: the first start's plan
-// is determined before its credentials reach the sandbox.
-func (n *NativeConnections) startPreparation(ctx context.Context, record *allocationRecord, client *execd.Client) error {
+// plan: the repositories its LaunchSpecification leaves to it, fixed when the
+// process is created.
+func (n *NativeConnections) startPreparation(ctx context.Context, record *allocationRecord, client *execd.Client, launch domain.LaunchSpecification) error {
 	if record.PreparationCommand == "" {
 		return domain.ErrExecutionRequest
 	}
-	plan, err := n.provisioning.checkoutPlan(ctx, record.SessionID)
-	if err != nil {
-		return err
-	}
-	encoded, err := json.Marshal(plan)
+	encoded, err := json.Marshal(checkoutPlan(launch))
 	if err != nil {
 		return err
 	}
@@ -67,38 +62,39 @@ func (n *NativeConnections) startPreparation(ctx context.Context, record *alloca
 // which installs Plugins and then checks out the planned repositories before
 // the Harness starts, and waits for its exit until ctx ends. An
 // interrupted wait detaches only; the retained handle is reattached from
-// offset zero. Checkout outcomes are recorded before it returns, and it
-// reports each selected Plugin's installation, which the execution records
-// with the end of its preparation, so a ready Harness always follows recorded
-// outcomes.
-func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *allocationRecord, client *execd.Client, snapshot domain.CapabilitySnapshot) ([]domain.PluginInstallation, error) {
+// offset zero. It reports each selected Plugin's installation and each
+// planned repository's checkout, which the execution records with the end
+// of its preparation, so a ready Harness always follows recorded outcomes.
+func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *allocationRecord, client *execd.Client, launch domain.LaunchSpecification) (domain.PreparationReport, error) {
+	var none domain.PreparationReport
 	if record.EnvironmentPrepared {
-		return nil, nil
+		return none, nil
 	}
 	if record.PreparationProcessID == "" {
-		if err := n.startPreparation(ctx, record, client); err != nil {
-			return nil, err
+		if err := n.startPreparation(ctx, record, client, launch); err != nil {
+			return none, err
 		}
 	}
+	snapshot := launch.Capabilities
 	plan, err := record.checkoutPlan()
 	if err != nil {
-		return nil, err
+		return none, err
 	}
 	pipe, err := client.Attach(ctx, record.PreparationProcessID, 0)
 	if err != nil {
-		return nil, err
+		return none, err
 	}
 	defer pipe.Close()
 	var output []byte
 	for {
 		frame, err := pipe.Receive(ctx)
 		if err != nil {
-			return nil, err
+			return none, err
 		}
 		switch frame.Type {
 		case "stdout", "replay":
 			if len(output)+len(frame.Data) > 128*1024 {
-				return nil, errors.New("agent: preparation report too large")
+				return none, errors.New("agent: preparation report too large")
 			}
 			output = append(output, frame.Data...)
 		case "exit":
@@ -106,21 +102,16 @@ func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *allo
 			if report.Repositories == nil {
 				report.Repositories = settledCheckouts(output, plan)
 			}
-			if plan != nil {
-				if err := n.checkouts.Handle(ctx, command.RecordRepositoryCheckouts{WorkID: record.SessionID, Results: report.checkouts(), Unfinished: unfinishedCheckout(*frame.ExitCode)}); err != nil {
-					return nil, err
-				}
-			}
 			// The wait may outlast other steps; it ended the preparation process
 			// still recorded for the execution.
 			current, found, err := n.provisioning.get(ctx, record.ID)
 			if err != nil {
-				return nil, err
+				return none, err
 			}
 			if !found || current.PreparationProcessID != record.PreparationProcessID {
-				return nil, errEnvironmentConflict
+				return none, errEnvironmentConflict
 			}
-			return report.plugins(snapshot), nil
+			return domain.PreparationReport{Installations: report.plugins(snapshot), Checkouts: report.checkouts(plan, unfinishedCheckout(*frame.ExitCode))}, nil
 		}
 	}
 }
@@ -172,15 +163,27 @@ func (r preparationReport) plugins(snapshot domain.CapabilitySnapshot) []domain.
 	return results
 }
 
-// checkouts translates the reported outcomes. A reason outside the safe
-// vocabulary is never shown or retried; omitted repositories are completed by
-// the Application from the plan.
-func (r preparationReport) checkouts() []command.RepositoryCheckoutResult {
-	results := make([]command.RepositoryCheckoutResult, 0, len(r.Repositories))
+// checkouts translates the reported outcome of each planned repository, in
+// plan order. A reason outside the safe vocabulary is never shown or
+// retried; a planned repository the report omits did not finish, for the
+// unfinished reason.
+func (r preparationReport) checkouts(plan []repositoryCheckout, unfinished string) []domain.RepositoryCheckout {
+	reported := make(map[string]checkoutReport, len(r.Repositories))
 	for _, outcome := range r.Repositories {
-		result := command.RepositoryCheckoutResult{RepositoryID: outcome.RepositoryID, TargetPath: outcome.TargetPath, Prepared: outcome.CheckedOut, Reason: outcome.Reason}
-		if !outcome.CheckedOut && !command.IsCheckoutReason(outcome.Reason) {
-			result.Reason = command.CheckoutUnavailable
+		reported[outcome.RepositoryID] = outcome
+	}
+	results := make([]domain.RepositoryCheckout, 0, len(plan))
+	for _, planned := range plan {
+		outcome, found := reported[planned.RepositoryID]
+		result := domain.RepositoryCheckout{RepositoryID: planned.RepositoryID, CheckedOut: found && outcome.CheckedOut, Reason: unfinished}
+		switch {
+		case result.CheckedOut:
+			result.Reason = ""
+		case !found:
+		case domain.IsCheckoutReason(outcome.Reason):
+			result.Reason = outcome.Reason
+		default:
+			result.Reason = domain.CheckoutUnavailable
 		}
 		results = append(results, result)
 	}
@@ -191,9 +194,9 @@ func (r preparationReport) checkouts() []command.RepositoryCheckoutResult {
 // ended finished: at the preparation bound when timeout ended it.
 func unfinishedCheckout(exit int) string {
 	if exit == timeoutExitCode || exit == timeoutKilledExitCode {
-		return command.CheckoutTimedOut
+		return domain.CheckoutTimedOut
 	}
-	return command.CheckoutIncomplete
+	return domain.CheckoutIncomplete
 }
 
 // Exit codes of coreutils timeout: the command timed out, or had to be killed.

@@ -131,7 +131,7 @@ func (h *ComputerReconnectionHandler) retryResume(ctx context.Context, workID st
 	// that owner, who therefore asks for the retry.
 	request := StartWork{SubjectID: agent.WorkPrincipal(), WorkID: work.ID, RequestID: reachResumeRequestID(work)}
 	err = h.resume.Handle(ctx, request)
-	if err == nil || continuationRejection(err) == "" {
+	if err == nil || !refusedStart(err) {
 		return err
 	}
 	return h.refused(ctx, workID, err)

@@ -64,7 +64,7 @@ func TestEndingStartRequestPreventsAdmissionWithoutClosingConversation(t *testin
 	result := make(chan error, 1)
 	go func() {
 		started := startedWorks{AgentWorkRepository: barrier, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
-		result <- command.NewResumeWorkHandler(time.Now, started, agents, auth, computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
+		result <- command.NewResumeWorkHandler(time.Now, started, agents, auth, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
 	}()
 	select {
 	case <-barrier.arrived:

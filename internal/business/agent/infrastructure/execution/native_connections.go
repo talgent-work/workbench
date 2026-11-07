@@ -14,7 +14,6 @@ import (
 	"github.com/samber/oops"
 	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -30,20 +29,13 @@ type NativeConnections struct {
 	http         *http.Client
 	dispatcher   dispatcherprivatev1connect.ExecutionServiceClient
 	token        string
-	checkouts    CheckoutOutcomes
 }
 
-// CheckoutOutcomes records the outcomes the preparation process reports for
-// the planned repositories.
-type CheckoutOutcomes interface {
-	Handle(context.Context, command.RecordRepositoryCheckouts) error
-}
-
-func NewNativeConnections(provisioning *Provisioning, credentials *SandboxCredentials, client *http.Client, address, token string, checkouts CheckoutOutcomes) (*NativeConnections, error) {
-	if provisioning == nil || credentials == nil || client == nil || checkouts == nil || strings.TrimSpace(address) == "" || strings.TrimSpace(token) == "" {
-		return nil, errors.New("agent: provisioning, HTTP client, checkout outcomes and authenticated Dispatcher endpoint are required")
+func NewNativeConnections(provisioning *Provisioning, credentials *SandboxCredentials, client *http.Client, address, token string) (*NativeConnections, error) {
+	if provisioning == nil || credentials == nil || client == nil || strings.TrimSpace(address) == "" || strings.TrimSpace(token) == "" {
+		return nil, errors.New("agent: provisioning, HTTP client and authenticated Dispatcher endpoint are required")
 	}
-	return &NativeConnections{provisioning: provisioning, credentials: credentials, http: client, dispatcher: dispatcherprivatev1connect.NewExecutionServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0)))), token: token, checkouts: checkouts}, nil
+	return &NativeConnections{provisioning: provisioning, credentials: credentials, http: client, dispatcher: dispatcherprivatev1connect.NewExecutionServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0)))), token: token}, nil
 }
 
 // resolve finds the execution's bound environment running through its
@@ -163,31 +155,33 @@ func (n *NativeConnections) withdraw(ctx context.Context, record allocationRecor
 }
 
 // prepare sees the preparation process through to its exit, bounded by ctx,
-// and reports each selected Plugin's installation. Re-attaching after an
-// interrupted attempt replays the preparation from its start.
-func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord) ([]domain.PluginInstallation, error) {
+// and reports each selected Plugin's installation and each planned
+// repository's checkout. Re-attaching after an interrupted attempt replays
+// the preparation from its start.
+func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord) (domain.PreparationReport, error) {
+	var none domain.PreparationReport
 	box, err := n.resolve(ctx, record)
 	if err != nil {
-		return nil, err
+		return none, err
 	}
 	admitted, err := decodeStartRequest(record.RequestJSON)
 	if err != nil {
-		return nil, oops.With("operation", "decode_native_request").Wrap(err)
+		return none, oops.With("operation", "decode_native_request").Wrap(err)
 	}
 	if record.PreparationProcessID == "" {
 		err := n.credentials.withLock(ctx, record.SandboxID, func() error {
 			current, err := n.holding(ctx, record)
 			if err == nil && current.PreparationProcessID == "" {
-				err = n.startPreparation(ctx, &current, box.client)
+				err = n.startPreparation(ctx, &current, box.client, admitted)
 			}
 			record = current
 			return err
 		})
 		if err != nil {
-			return nil, err
+			return none, err
 		}
 	}
-	return n.prepareEnvironment(ctx, &record, box.client, admitted.Capabilities)
+	return n.prepareEnvironment(ctx, &record, box.client, admitted)
 }
 
 // launch starts the Harness in the bound environment and returns its

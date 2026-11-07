@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -20,8 +19,12 @@ import (
 	"xorm.io/xorm"
 )
 
-func completionHandler(db *xorm.Engine, continuations agentquery.ContinuationReader) *command.CloseWorkHandler {
-	return command.NewCloseWorkHandler(infrastructure.NewAgentWorkRepository(db, time.Now), access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), executionsOf(db), continuations, &commandtest.InputBuffer{})
+func completionHandler(db *xorm.Engine) *command.CloseWorkHandler {
+	return completionHandlerOver(db, infrastructure.NewAgentWorkRepository(db, time.Now))
+}
+
+func completionHandlerOver(db *xorm.Engine, works domain.AgentWorkRepository) *command.CloseWorkHandler {
+	return command.NewCloseWorkHandler(works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), executionsOf(db), &commandtest.InputBuffer{})
 }
 
 // Closing a running Work for a completed Subject waits for its first input and
@@ -33,7 +36,7 @@ func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testin
 	require.NoError(t, err)
 	feedback := newRuns(t, f.db, f.sessions)
 	feedback.ready(ctx, ref)
-	handler := completionHandler(f.db, infrastructure.NewContinuationRequests(f.db, time.Now))
+	handler := completionHandler(f.db)
 	request := command.WorkControl{SubjectID: "owner", WorkID: ref, RequestID: uuid.NewString()}
 	require.ErrorIs(t, handler.Handle(ctx, request), domain.ErrWorkTransition, "an initial task input not handed off prevents closure")
 	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, ref))
@@ -48,7 +51,7 @@ func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testin
 	other, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = other.Close() })
-	reconnected := completionHandler(other, infrastructure.NewContinuationRequests(other, time.Now))
+	reconnected := completionHandler(other)
 	require.NoError(t, reconnected.Handle(ctx, request), "a lost response retries the same accepted closure")
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.ExecutionExited}))
 	feedback.release(ctx, ref)
@@ -62,19 +65,6 @@ func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testin
 	require.Equal(t, request.RequestID, closed.CloseRequestReference)
 }
 
-type continuationCompletionBarrier struct {
-	agentquery.ContinuationReader
-	afterRead func()
-}
-
-func (r continuationCompletionBarrier) GetWorkContinuation(ctx context.Context, id string) (agentquery.WorkContinuation, error) {
-	value, err := r.ContinuationReader.GetWorkContinuation(ctx, id)
-	if err == nil {
-		r.afterRead()
-	}
-	return value, err
-}
-
 func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 	for _, startupFirst := range []bool{true, false} {
 		name := "closure first"
@@ -84,10 +74,6 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			f, id := runningInputSession(t)
-			initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
-			continuations := infrastructure.NewContinuationRequests(f.db, time.Now)
-			old, err := initial.Get(ctx, id)
-			require.NoError(t, err)
 			failed, err := f.sessions.Get(ctx, id)
 			require.NoError(t, err)
 			require.NoError(t, failed.ObserveTurn(domain.TurnObservation{Sequence: 1, Completed: true}, false, false, time.Now()))
@@ -101,7 +87,7 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 			retry := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			request := command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			if startupFirst {
-				handler := completionHandler(f.db, continuationCompletionBarrier{ContinuationReader: continuations, afterRead: func() {
+				handler := completionHandlerOver(f.db, workReadBarrier{AgentWorkRepository: f.sessions, done: new(bool), after: func() {
 					_, err := restart.Handle(ctx, retry)
 					require.NoError(t, err)
 				}})
@@ -109,21 +95,15 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 				actual, err := f.sessions.Get(ctx, id)
 				require.NoError(t, err)
 				require.Equal(t, domain.WorkStarting, actual.State)
-				require.ErrorIs(t, completionHandler(f.db, continuations).Handle(ctx, request), domain.ErrWorkTransition)
+				require.ErrorIs(t, completionHandler(f.db).Handle(ctx, request), domain.ErrWorkTransition)
 			} else {
-				require.NoError(t, completionHandler(f.db, continuations).Handle(ctx, request))
+				require.NoError(t, completionHandler(f.db).Handle(ctx, request))
 				_, err := restart.Handle(ctx, retry)
 				require.ErrorIs(t, err, domain.ErrWorkTransition)
 				actual, err := f.sessions.Get(ctx, id)
 				require.NoError(t, err)
 				require.Equal(t, domain.WorkClosed, actual.State)
-				retained, err := initial.Get(ctx, id)
-				require.NoError(t, err)
-				require.Equal(t, old.RequestID, retained.RequestID)
 			}
-			retained, err := initial.Get(ctx, id)
-			require.NoError(t, err)
-			require.Equal(t, old.PrepareWorkExecution, retained.PrepareWorkExecution)
 			current, err := f.sessions.Get(ctx, id)
 			require.NoError(t, err)
 			_, pending := current.PendingInitialTaskInput()

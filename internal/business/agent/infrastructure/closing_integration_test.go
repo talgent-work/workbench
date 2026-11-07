@@ -23,8 +23,7 @@ func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
 	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	feedback := newRuns(t, f.db, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
@@ -43,7 +42,7 @@ func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	reportReleased(t, failed)
 	require.NoError(t, f.sessions.Save(ctx, failed))
 	closeRequestID := uuid.NewString()
-	require.NoError(t, command.NewCloseWorkHandler(f.sessions, authorization, feedback.executions, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: closeRequestID}))
+	require.NoError(t, command.NewCloseWorkHandler(f.sessions, authorization, feedback.executions, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: closeRequestID}))
 	pending, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosing, pending.State)

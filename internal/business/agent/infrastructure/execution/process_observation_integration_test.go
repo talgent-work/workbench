@@ -11,7 +11,6 @@ import (
 	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -21,7 +20,7 @@ func startTwice(t *testing.T, db *xorm.Engine) (*AgentExecutionRepository, *doma
 	t.Helper()
 	ctx := context.Background()
 	provider, _, _ := sandboxClient(t)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	executions := NewAgentExecutionRepository(db, time.Now)
 	launched := func(processID string) *domain.AgentExecution {
 		record, err := register(ctx, p, request(), testMounts)

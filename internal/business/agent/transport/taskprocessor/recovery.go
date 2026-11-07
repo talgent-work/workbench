@@ -24,10 +24,6 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 			func(ctx context.Context, p *agenttaskv1.RecoverWorkTaskV1) error {
 				return recovery.RecoverWork(ctx, p.GetWorkId())
 			}),
-		processor(logger, agenttask.RecoverContinuationType, func() *agenttaskv1.RecoverContinuationTaskV1 { return &agenttaskv1.RecoverContinuationTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.RecoverContinuationTaskV1) error {
-				return recovery.RecoverContinuation(ctx, p.GetWorkId())
-			}),
 		processor(logger, agenttask.RequestWorkspaceReclamationType, func() *agenttaskv1.RequestWorkspaceReclamationTaskV1 {
 			return &agenttaskv1.RequestWorkspaceReclamationTaskV1{}
 		},
@@ -40,17 +36,12 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 }
 
 // PreparationProcessors serve the preparation queue, whose attempts may take
-// minutes and so must not hold recovery workers: an execution's long step and
-// the initial execution's preparation.
+// minutes and so must not hold recovery workers: an execution's long step.
 func PreparationProcessors(recovery *application.Recovery, logger *slog.Logger) []taskqueue.Processor {
 	return append([]taskqueue.Processor{
 		processor(logger, agenttask.RunLongExecutionStepType, func() *agenttaskv1.RunLongExecutionStepTaskV1 { return &agenttaskv1.RunLongExecutionStepTaskV1{} },
 			func(ctx context.Context, p *agenttaskv1.RunLongExecutionStepTaskV1) error {
 				return recovery.RunLongExecutionStep(ctx, p.GetExecutionId())
-			}),
-		processor(logger, agenttask.PrepareInitialExecutionType, func() *agenttaskv1.PrepareInitialExecutionTaskV1 { return &agenttaskv1.PrepareInitialExecutionTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.PrepareInitialExecutionTaskV1) error {
-				return recovery.PrepareInitialExecution(ctx, p.GetWorkId())
 			}),
 	}, retired(logger, retiredPreparationTypes)...)
 }

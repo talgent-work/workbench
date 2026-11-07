@@ -31,7 +31,7 @@ func TestCreationCapturesOwnersRepositoryAndReuseIgnoresLaterBindingChanges(t *t
 	id, err := handler.Handle(t.Context(), input)
 	require.NoError(t, err)
 	require.Equal(t, "owner", catalog.owner)
-	want := domain.WorkRepositorySelection{OwnerUserID: "owner", Repositories: []domain.WorkRepository{{Provider: "github", RepoID: "123", RepoName: "owner/project", CloneURL: "https://github.com/owner/project.git", DefaultBranch: "main", BaseBranch: "release"}}}
+	want := domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-382", Repositories: []domain.WorkRepository{{Provider: "github", RepoID: "123", RepoName: "owner/project", CloneURL: "https://github.com/owner/project.git", DefaultBranch: "main", BaseBranch: "release"}}}
 	require.Equal(t, want, store.session.RepositorySelection)
 	catalog.err = errors.New("personal binding no longer exists")
 	retained := *input.InitialExecution

@@ -11,9 +11,7 @@ import (
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"xorm.io/xorm"
 )
@@ -42,12 +40,12 @@ func newOnboarding(t *testing.T) *onboardingFixture {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, p, lifecycle)
 	input := request()
 	record, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
-	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
 	require.NoError(t, err)
 	owners := &readingProcess{}
 	steps := newExecutionSteps(t, p, connections, owners, nil, time.Now)

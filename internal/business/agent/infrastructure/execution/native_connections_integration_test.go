@@ -16,13 +16,10 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
-
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 	"golang.org/x/net/websocket"
@@ -65,7 +62,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	input := request()
 	input.TraceAttributes = map[string]string{"talgent.case_id": "case-native-connection"}
@@ -113,7 +110,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	mux.Handle(path, handler)
 	dispatcher := httptest.NewServer(mux)
 	defer dispatcher.Close()
-	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
 	pass := func() error { return steps.pass(ctx, db) }
@@ -144,11 +141,11 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "changed-binary"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "changed-binary"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	receiver.provisioning = provisioning
 	receiver.unavailable = false
-	connections, err = NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err = NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
 	steps = newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
 	require.NoError(t, pass())

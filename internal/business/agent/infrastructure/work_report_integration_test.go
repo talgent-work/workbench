@@ -43,7 +43,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	feedback.ready(ctx, id)
 	require.NoError(t, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 	observed = end.Add(-23 * time.Hour)
-	closeWork := command.NewCloseWorkHandler(sessions, authorization, feedback.executions, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+	closeWork := command.NewCloseWorkHandler(sessions, authorization, feedback.executions, &commandtest.InputBuffer{})
 	require.NoError(t, closeWork.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	observed = end.Add(-22 * time.Hour)
 	feedback.exit(ctx, id)

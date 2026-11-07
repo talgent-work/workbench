@@ -72,7 +72,7 @@ func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeCon
 	require.NoError(t, err)
 	executions := NewAgentExecutionRepository(p.db, now)
 	steps := &executionSteps{environment: environment, executions: executions, desks: &cloudDesks{}, harness: commandtest.NewHarness()}
-	steps.handler = command.NewReconcileExecutionHandler(now, executions, environment, steps.harness, steps.desks, mounts, infrastructure.NewInitialExecutionRequests(p.db, now))
+	steps.handler = command.NewReconcileExecutionHandler(now, executions, environment, steps.harness, steps.desks, mounts)
 	return steps
 }
 

@@ -217,22 +217,23 @@ func (e *ExecutionEnvironment) WithdrawCredentials(ctx context.Context, executio
 }
 
 // Prepare sees the in-environment preparation through to its exit, bounded by
-// ctx, its checkout outcomes recorded, and reports its Plugins' installation.
-func (e *ExecutionEnvironment) Prepare(ctx context.Context, execution *domain.AgentExecution) ([]domain.PluginInstallation, error) {
+// ctx, and reports its Plugins' installation and its checkout outcomes.
+func (e *ExecutionEnvironment) Prepare(ctx context.Context, execution *domain.AgentExecution) (domain.PreparationReport, error) {
+	var none domain.PreparationReport
 	record, err := e.record(ctx, execution)
 	if err != nil {
-		return nil, err
+		return none, err
 	}
-	installations, err := e.connections.prepare(ctx, record)
+	report, err := e.connections.prepare(ctx, record)
 	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil {
 		// The bound passed while it prepared: the execution decides what
 		// follows, not the recovery flag.
-		return nil, err
+		return none, err
 	}
 	if err = withExecution(e.recovering(ctx, record, err), execution); err != nil {
-		return nil, err
+		return none, err
 	}
-	return installations, nil
+	return report, nil
 }
 
 // Launch starts the Harness in the bound environment and returns its process.

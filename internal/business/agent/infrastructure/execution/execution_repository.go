@@ -27,7 +27,7 @@ func NewAgentExecutionRepository(db *xorm.Engine, now func() time.Time) *AgentEx
 }
 
 // factColumns are the columns holding an execution's facts.
-var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted", "start_rejected", "sandbox_id", "sandbox_ready", "plugins_prepared", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "inputs_due", "inputs_synced_at", "start_failure", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "request_json", "request_hash", "version", "updated_at"}
+var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted", "start_rejected", "sandbox_id", "sandbox_ready", "plugins_prepared", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "inputs_due", "inputs_synced_at", "start_failure", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "checkout_results", "request_json", "request_hash", "version", "updated_at"}
 
 func (r *AgentExecutionRepository) Get(ctx context.Context, id string) (*domain.AgentExecution, error) {
 	record, found, err := r.get(ctx, id)
@@ -133,8 +133,13 @@ func recordFromExecution(e *domain.AgentExecution) (allocationRecord, error) {
 	if err != nil {
 		return allocationRecord{}, err
 	}
+	checkouts, err := encodeCheckoutResults(e.CheckoutResults)
+	if err != nil {
+		return allocationRecord{}, err
+	}
 	return allocationRecord{
-		ID: e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch, RequestHash: storageKey(string(launch)),
+		CheckoutResults: checkouts,
+		ID:              e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch, RequestHash: storageKey(string(launch)),
 		State: string(e.State), StartAdmittedAt: millis(e.StartAdmittedAt), DeskID: e.Desk.ID, SeatedAt: millis(e.Desk.SeatedAt), DeskLeftAt: millis(e.Desk.LeftAt),
 		Submitted: e.Creation.Submitted, StartRejected: e.Outcome.Rejected, SandboxID: e.Environment,
 		SandboxReady: e.Credentials.Delivered, EnvironmentPrepared: e.Process.PreparationEnded,
@@ -152,8 +157,13 @@ func executionFromRecord(r allocationRecord) (*domain.AgentExecution, error) {
 	if err != nil {
 		return nil, oops.With("operation", "decode_execution_launch", "execution_id", r.ID).Wrap(err)
 	}
+	checkouts, err := decodeCheckoutResults(r.CheckoutResults)
+	if err != nil {
+		return nil, oops.With("operation", "decode_execution_checkouts", "execution_id", r.ID).Wrap(err)
+	}
 	execution := &domain.AgentExecution{
-		ID: r.ID, WorkID: r.SessionID, StartAdmittedAt: fromMillis(r.StartAdmittedAt), Realization: domain.ExecutionRealization(r.Realization),
+		CheckoutResults: checkouts,
+		ID:              r.ID, WorkID: r.SessionID, StartAdmittedAt: fromMillis(r.StartAdmittedAt), Realization: domain.ExecutionRealization(r.Realization),
 		Desk:        domain.ExecutionDesk{ID: r.DeskID, SeatedAt: fromMillis(r.SeatedAt), LeftAt: fromMillis(r.DeskLeftAt)},
 		Launch:      launch,
 		Creation:    domain.CreationSubmission{Submitted: r.Submitted},

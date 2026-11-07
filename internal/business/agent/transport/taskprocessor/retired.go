@@ -20,9 +20,11 @@ var (
 		"agent.allocation.deliver-credentials.v1",
 		"agent.allocation.sync-inputs.v1",
 		"agent.work-creation.recover.v1",
+		"agent.continuation.recover.v1",
 	}
 	retiredPreparationTypes = []taskqueue.TaskType{
 		"agent.allocation.prepare.v1",
+		"agent.initial-execution.prepare.v1",
 	}
 )
 

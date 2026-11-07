@@ -129,7 +129,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	queries := infrastructure.NewWorkQueryRepository(db)
 	start := startCatalog{catalog: catalog, connections: repositories}
-	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), works, authorizer, models)
+	prepare := command.NewPrepareWorkExecutionHandler(works, authorizer, models)
 	create := command.NewCreateWorkHandler(time.Now, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
 	views := query.NewModelOptionViews(queries, models)
 	app := &application.Application{
@@ -140,7 +140,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 			CreateWork:            create,
 		},
 		Queries: application.Queries{
-			GetWorkPreparation: query.NewGetWorkPreparationHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), authorizer),
+			GetWorkPreparation: query.NewGetWorkPreparationHandler(queries, authorizer),
 			GetWork:            query.NewGetWorkHandler(definitions, works, authorizer, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
 			GetWorkView:        query.NewGetWorkViewHandler(authorizer, views),
 			GetWorkOrigin:      query.NewGetWorkOriginHandler(queries),
@@ -186,21 +186,6 @@ func (a *Agent) Work(ctx context.Context, workID string) (Work, error) {
 		result.PluginConfiguration[plugin.Release.Slug] = plugin.Configuration
 	}
 	return result, nil
-}
-
-// InitialRequest is a Work's initial execution request as the Agent retains it.
-type InitialRequest struct {
-	RequestID, Text, ThinkingLevel string
-	Submitted, Rejected            bool
-}
-
-// InitialRequest reads a Work's initial execution request.
-func (a *Agent) InitialRequest(ctx context.Context, workID string) (InitialRequest, error) {
-	request, err := infrastructure.NewInitialExecutionRequests(a.DB, time.Now).Get(ctx, workID)
-	if err != nil {
-		return InitialRequest{}, err
-	}
-	return InitialRequest{RequestID: request.RequestID, Text: request.Input.Text, ThinkingLevel: request.ThinkingLevel, Submitted: request.Submitted, Rejected: request.Rejected}, nil
 }
 
 // Definition is a person's own Agent Definition, which their Works run.

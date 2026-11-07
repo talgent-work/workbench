@@ -64,8 +64,8 @@ func (realizedEnvironments) DeliverCredentials(context.Context, *domain.AgentExe
 func (realizedEnvironments) WithdrawCredentials(context.Context, *domain.AgentExecution) error {
 	return nil
 }
-func (realizedEnvironments) Prepare(context.Context, *domain.AgentExecution) ([]domain.PluginInstallation, error) {
-	return nil, nil
+func (realizedEnvironments) Prepare(context.Context, *domain.AgentExecution) (domain.PreparationReport, error) {
+	return domain.PreparationReport{}, nil
 }
 func (realizedEnvironments) Launch(context.Context, *domain.AgentExecution) (string, error) {
 	return launchedProcess, nil

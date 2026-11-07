@@ -25,7 +25,7 @@ func continueWork(t *testing.T, agents *startupAgentStore, sessions *feedbackSes
 		sessions.requests = map[string]query.StartRequest{requestID: {ID: requestID, WorkID: sessions.session.ID, Kind: query.StartKindStart}}
 		return requestID
 	}
-	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: requestID}))
+	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: requestID}))
 	return requestID
 }
 

@@ -18,9 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	shared "github.com/talgent-work/workbench/internal/pkg/opensandbox"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
@@ -32,7 +30,7 @@ import (
 // reconcilerOf reconciles executions through p, on p's clock.
 func reconcilerOf(t *testing.T, db *xorm.Engine, p *Provisioning) *executionSteps {
 	t.Helper()
-	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
 	require.NoError(t, err)
 	return newExecutionSteps(t, p, connections, unread{}, nil, p.now)
 }
@@ -44,7 +42,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	newProvisioning := func(provider *Sandboxes, now func() time.Time) *Provisioning {
-		return NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+		return NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, now, nil)
 	}
 	reconcile := func(steps *executionSteps, id string) error {
 		_, err := steps.handler.Reconcile(ctx, id)

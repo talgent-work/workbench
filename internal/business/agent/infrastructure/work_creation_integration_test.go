@@ -59,7 +59,7 @@ func deploymentModels() agentquery.ModelConfigurations {
 // creationPreparation is the real first-start preparation a creation carrying
 // an initial execution continues with.
 func creationPreparation(db *xorm.Engine, models agentquery.ModelConfigurations) *command.PrepareWorkExecutionHandler {
-	return command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), infrastructure.NewAgentWorkRepository(db, time.Now), access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), models)
+	return command.NewPrepareWorkExecutionHandler(infrastructure.NewAgentWorkRepository(db, time.Now), access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), models)
 }
 
 // creation is the production creation use case over this fixture's database;
@@ -124,19 +124,18 @@ func TestWorkCreationCancellationAndRegistration(t *testing.T) {
 			}
 			actual, err := f.sessions.FindBySubject(ctx, f.request.AgentID, f.request.Subject)
 			require.NoError(t, err)
-			pending, err := infrastructure.NewInitialExecutionRequests(other, time.Now).ListPendingInitialExecutions(ctx, "", 100)
-			require.NoError(t, err)
 			if registeredFirst {
 				require.NotNil(t, actual)
 				require.Equal(t, actual.ID, workID, "cancelling a committed creation returns its Work")
 				require.Equal(t, domain.WorkStarting, actual.State)
 				require.True(t, actual.HoldsProcess())
-				require.Equal(t, []string{actual.ID}, pending)
+				input, held := actual.PendingInitialTaskInput()
+				require.True(t, held, "the committed Work holds its initial task input")
+				require.Equal(t, f.request.InitialExecution.Input.ID, input.ID)
 				require.NoError(t, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(other)).AuthorizeWork(ctx, "owner", actual.ID))
 			} else {
 				require.Empty(t, workID)
 				require.Nil(t, actual, "a cancelled creation creates nothing")
-				require.Empty(t, pending)
 			}
 			require.Equal(t, 1, startRequestRows(t, f.db))
 		})
@@ -175,18 +174,18 @@ func (r creationBarrierRegistrar) RegisterWork(ctx context.Context, s *domain.Ag
 func TestWorkCreationRegistrationRollbackAllowsCancellation(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	_, err := f.db.Exec(`CREATE TRIGGER reject_creation_input BEFORE INSERT ON agent_initial_execution_request FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='creation input write failed'`)
+	_, err := f.db.Exec(`CREATE TRIGGER reject_creation_request AFTER INSERT ON agent_start_request FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='creation request write failed'`)
 	require.NoError(t, err)
 	create := f.creation(nil, computertest.Checked(startupAuthority{}))
 	_, err = create.Handle(ctx, f.request)
-	require.ErrorContains(t, err, "creation input write failed")
+	require.ErrorContains(t, err, "creation request write failed")
 	_, found, err := create.Outcome(ctx, f.request.RequestID)
 	require.NoError(t, err)
 	require.False(t, found, "a rolled-back creation records nothing")
 	session, err := f.sessions.FindBySubject(ctx, f.request.AgentID, f.request.Subject)
 	require.NoError(t, err)
 	require.Nil(t, session)
-	_, err = f.db.Exec(`DROP TRIGGER reject_creation_input`)
+	_, err = f.db.Exec(`DROP TRIGGER reject_creation_request`)
 	require.NoError(t, err)
 	workID, err := create.Cancel(ctx, f.request.RequestID)
 	require.NoError(t, err)

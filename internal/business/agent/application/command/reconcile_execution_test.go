@@ -80,28 +80,6 @@ func TestARefusedCreationRejectsTheStart(t *testing.T) {
 	require.Equal(t, 1, w.environment.Submitted)
 }
 
-// A rejected first-start preparation refuses the creation without
-// submitting it; a pending one holds it back.
-func TestTheFirstStartsPreparationGatesTheCreation(t *testing.T) {
-	ctx := context.Background()
-	for name, request := range map[string]command.InitialExecutionRequest{
-		"pending":  {Submitted: true},
-		"rejected": {Submitted: true, Rejected: true},
-	} {
-		t.Run(name, func(t *testing.T) {
-			w := newWorld(t, startingSession(t))
-			execution := w.begin(t)
-			request.WorkID = w.work().ID
-			initial := &initialRequestStore{request: request}
-			reconcile := command.NewReconcileExecutionHandler(w.now, w.executions, w.environment, w.harness, w.computers, noMounts{}, initial)
-			_, err := reconcile.Reconcile(ctx, execution.ID)
-			require.NoError(t, err)
-			require.Zero(t, w.environment.Submitted)
-			require.Equal(t, name == "rejected", w.execution(t).Outcome.Rejected)
-		})
-	}
-}
-
 // Every environment carrying the execution's ownership other than the bound
 // one is deleted.
 func TestSurplusEnvironmentsAreDeleted(t *testing.T) {

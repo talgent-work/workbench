@@ -106,7 +106,7 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, durable.State)
 	originalContext := durable.HarnessSessionReference
-	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
+	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
 	require.NoError(t, err)
 	durable, err = sessions.Get(ctx, id)
 	require.NoError(t, err)

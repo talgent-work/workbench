@@ -151,7 +151,11 @@ func (c *SandboxCredentials) write(ctx context.Context, record allocationRecord,
 	sortAuthorizations(approved)
 	sortAuthorizations(actual)
 	for _, reference := range actual {
-		if !slices.Contains(approved, reference) {
+		// The plan admitted the repository and where it is reached; the
+		// access identity only names its binding, which a delivery replaces.
+		if !slices.ContainsFunc(approved, func(admitted RepositoryAuthorization) bool {
+			return admitted.RepositoryID == reference.RepositoryID && admitted.RepositoryHTTPSURL == reference.RepositoryHTTPSURL
+		}) {
 			return nil, none, "", errors.New("agent: current repository authorization differs from admitted credential plan")
 		}
 	}

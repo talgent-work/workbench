@@ -32,7 +32,7 @@ type workStateUpdates struct {
 	logger *slog.Logger
 	// Recovery wakes are wired by RecoveryModule; without it a commit only
 	// publishes its live frame.
-	wakeWork, wakeInitialExecution, wakeContinuation func(context.Context, string)
+	wakeWork func(context.Context, string)
 }
 
 func newWorkStateUpdates(reader query.WorkViewReader, stream eventhandler.LiveStreamPort, logger *slog.Logger) *workStateUpdates {
@@ -82,19 +82,11 @@ func (r *committedWorks) RegisterWork(ctx context.Context, session *domain.Agent
 	return nil
 }
 
-// workCommitted follows a committed Work change: its live frame, and the Work's
-// and its live allocation's recovery, whose obligations follow the Work. The
-// first start's input preparation is woken too: it waits for the Work to
-// become ready, and the allocation's submission waits for that preparation.
+// workCommitted follows a committed Work change: its live frame, and the
+// Work's recovery, whose obligations follow the Work.
 func (r *workStateUpdates) workCommitted(ctx context.Context, id string) {
 	r.publish(ctx, id)
 	wake(ctx, r.wakeWork, id)
-	wake(ctx, r.wakeInitialExecution, id)
-}
-
-func (r *workStateUpdates) continuationCommitted(ctx context.Context, id string) {
-	r.publish(ctx, id)
-	wake(ctx, r.wakeContinuation, id)
 }
 
 func wake(ctx context.Context, fn func(context.Context, string), id string) {
@@ -113,15 +105,4 @@ func (r *workStateUpdates) publish(ctx context.Context, id string) {
 	if err != nil {
 		r.logger.WarnContext(ctx, "publish committed Session state failed", slog.String("agent_work_id", id), slog.Any("error", err))
 	}
-}
-
-func newCommittedInitialExecutions(db *xorm.Engine, now func() time.Time, updates *workStateUpdates) *infrastructure.InitialExecutionRequests {
-	r := infrastructure.NewInitialExecutionRequests(db, now)
-	r.ProgressCommitted = updates.workCommitted
-	return r
-}
-func newCommittedContinuations(db *xorm.Engine, now func() time.Time, updates *workStateUpdates) *infrastructure.ContinuationRequests {
-	r := infrastructure.NewContinuationRequests(db, now)
-	r.ProgressCommitted = updates.continuationCommitted
-	return r
 }

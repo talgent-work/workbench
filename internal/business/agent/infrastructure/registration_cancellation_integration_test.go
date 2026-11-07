@@ -58,11 +58,9 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 	released = true
 	require.ErrorIs(t, <-result, command.ErrStartRequestCanceled)
 	require.Zero(t, execution.starts.Load())
-	for _, table := range []string{"agent_session", "agent_initial_execution_request"} {
-		var rows []int
-		require.NoError(t, db.SQL("SELECT COUNT(*) FROM "+table).Find(&rows))
-		require.Equal(t, []int{0}, rows, "cancellation must roll back Work and initial input together")
-	}
+	var rows []int
+	require.NoError(t, db.SQL("SELECT COUNT(*) FROM agent_session").Find(&rows))
+	require.Equal(t, []int{0}, rows, "cancellation must roll back the Work with its initial task input")
 	_, found := admittedStart(t, works, request.RequestID)
 	require.False(t, found)
 	// A reconstructed adapter and connection replay the lost cancellation reply.

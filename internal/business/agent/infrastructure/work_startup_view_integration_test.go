@@ -6,7 +6,6 @@ import (
 	"context"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -33,7 +32,7 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
 	models := query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deepseek"}, Name: "DeepSeek", Vendor: "deepseek", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "max"}, query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "glm"}, Name: "GLM 5.3", Vendor: "zhipu"})
-	create, _ := creationCoordinator(f.db, &creationCapacity{}, nil, models, &personalStartupCatalog{})
+	create := creationCoordinator(f.db, &creationCapacity{}, nil, models, &personalStartupCatalog{})
 	id, err := create.Handle(ctx, f.request)
 	require.NoError(t, err)
 	requireStartRequested(t, f.sessions, id)
@@ -55,12 +54,10 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, started.Work.GetStartupRequest().Repositories[0].CheckoutStatus, "no outcome before workspace preparation ends")
 	// A checkout cut off by the Startup Deadline is shown as not checked out.
-	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
-	retained, err := initial.Get(ctx, id)
+	cut, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	retained.CheckoutResults = []command.RepositoryCheckoutResult{{RepositoryID: "123", TargetPath: "/workspace/repos/project", Reason: "timed_out"}}
-	retained.InputPrepared = true
-	require.NoError(t, initial.Save(ctx, retained))
+	require.True(t, cut.RecordRepositoryCheckouts(domain.ExecutionCheckoutsEnded{WorkID: id, Checkouts: []domain.RepositoryCheckout{{RepositoryID: "123", Reason: domain.CheckoutTimedOut}}}))
+	require.NoError(t, f.sessions.Save(ctx, cut))
 	degraded, err := client.GetWork(workMessageRequest(ctx, owner), &agentpublicv1.GetWorkRequest{WorkId: id})
 	require.NoError(t, err)
 	repository := degraded.Work.GetStartupRequest().Repositories[0]

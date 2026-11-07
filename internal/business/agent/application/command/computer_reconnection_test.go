@@ -74,7 +74,7 @@ func newReconnectionFixture(t *testing.T, buffered bool) *reconnectionFixture {
 		_, err := f.buffer.BufferInput(context.Background(), sessions.session.ID, command.ExecutionInput{ID: "message-1", Text: "a message arrived while the machine was away"})
 		require.NoError(t, err)
 	}
-	f.resume = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, f.computer, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	f.resume = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, f.computer, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, Reachable: true}}
 	var err error
 	f.reconnection, err = command.NewComputerReconnectionHandler(place, sessions, agents, markedWorks{sessions: sessions}, f.buffer, f.resume, f.reconciliation, nil)
@@ -225,7 +225,7 @@ func TestAMailBufferedDuringTheGraceIsReadOnceAfterReconnection(t *testing.T) {
 
 	starts := len(sessions.admittedStarts())
 	computer := &switchableComputer{}
-	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	place.description = command.ComputerDescription{Managed: true, Reachable: true}
 	reconnection, err := command.NewComputerReconnectionHandler(place, sessions, agents, markedWorks{sessions: sessions}, buffer, resume, &reconciliations{}, nil)
 	require.NoError(t, err)

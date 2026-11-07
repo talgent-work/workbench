@@ -43,19 +43,28 @@ type PluginInstallation struct {
 // LoadedPlugin is one Plugin release the launched Harness process loaded.
 type LoadedPlugin struct{ Slug, Version string }
 
-// PreparationReport reports a run's Plugin outcomes. The in-environment
-// preparation reports each Plugin's installation once it ended, naming no
-// process; the launched Harness process reports the complete inventory of
-// Plugins it loaded, naming itself.
+// PreparationReport reports a run's preparation outcomes. The
+// in-environment preparation reports each Plugin's installation and each
+// repository's checkout once it ended, naming no process; the launched
+// Harness process reports the complete inventory of Plugins it loaded,
+// naming itself.
 type PreparationReport struct {
 	ProcessID     string
 	Installations []PluginInstallation
+	Checkouts     []RepositoryCheckout
 	Loaded        []LoadedPlugin
 }
 
 func (r PreparationReport) valid() bool {
-	if r.ProcessID == "" && len(r.Loaded) > 0 || r.ProcessID != "" && len(r.Installations) > 0 {
+	if r.ProcessID == "" && len(r.Loaded) > 0 || r.ProcessID != "" && (len(r.Installations) > 0 || len(r.Checkouts) > 0) {
 		return false
+	}
+	checkedOut := make(map[string]bool, len(r.Checkouts))
+	for _, checkout := range r.Checkouts {
+		if !checkout.valid() || checkedOut[checkout.RepositoryID] {
+			return false
+		}
+		checkedOut[checkout.RepositoryID] = true
 	}
 	installed := make(map[string]bool, len(r.Installations))
 	for _, installation := range r.Installations {
@@ -75,9 +84,10 @@ func (r PreparationReport) valid() bool {
 }
 
 // RecordPreparation records a report of its run's preparation. The
-// preparation's report ends its in-environment preparation and records each
+// preparation's report ends its in-environment preparation, records each
 // selected Plugin's installation (Preparation order, Preparation ownership,
-// Plugin degradation). Its launched process's report records each selected
+// Plugin degradation) and each remaining repository's checkout, once
+// (Repository degradation); its Harness launches only after that. Its launched process's report records each selected
 // Plugin's loading: a Plugin missing from the inventory, or loaded at another
 // release, failed to load. A later report replaces a Plugin's outcome (Plugin
 // result replacement). A Plugin outside the run's selection, a report from
@@ -111,6 +121,7 @@ func (e *AgentExecution) RecordPreparation(report PreparationReport) (bool, erro
 			})
 		}
 	}
+	e.recordCheckouts(report.Checkouts)
 	return true, nil
 }
 

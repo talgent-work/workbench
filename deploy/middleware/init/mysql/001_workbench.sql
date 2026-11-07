@@ -45,22 +45,6 @@ CREATE TABLE IF NOT EXISTS `agent_definition` (
   UNIQUE KEY `uk_agent_definition_scope_purpose` (`scope_kind`,`scope_ref`,`purpose`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentDefinition capability, appearance and HOME authority';
 
-CREATE TABLE IF NOT EXISTS `agent_initial_execution_request` (
-  `id` varchar(36) NOT NULL COMMENT 'AgentSession identity; one initial-input obligation per conversation',
-  `request_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Original explicit execution and preparation request identity',
-  `request_data` json NOT NULL COMMENT 'Frozen first input, source references, checkout selections and preparation progress',
-  `submitted` boolean NOT NULL DEFAULT false COMMENT 'Original execution admission has been confirmed',
-  `pending` boolean NOT NULL DEFAULT true COMMENT 'Preparation, delivery or rejected-request cleanup remains outstanding',
-  `version` int unsigned NOT NULL DEFAULT 1 COMMENT 'Optimistic application receipt version',
-  `created_at` bigint NOT NULL DEFAULT 0 COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT 0 COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT 0 COMMENT 'Deletion time in Unix milliseconds; zero is active',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_initial_execution_request_id` (`request_id`),
-  KEY `idx_initial_execution_pending` (`pending`, `deleted_at`, `id`),
-  KEY `idx_initial_execution_submitted` (`submitted`, `deleted_at`, `id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent application initial execution and input recovery';
-
 CREATE TABLE IF NOT EXISTS `agent_session` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'AgentSession UUIDv7 identity',
   `agent_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Referenced AgentDefinition aggregate identity',
@@ -73,6 +57,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `capabilities` json NOT NULL COMMENT 'Resolved Work capabilities; initial Failed corrections retain releases',
   `authorization_selection` json NOT NULL DEFAULT (json_object()) COMMENT 'Creation-time personal authorization references; no credentials',
   `repository_selection` json NOT NULL DEFAULT (json_object()) COMMENT 'Creation-time repository identities and branches; no credentials',
+  `repository_checkouts` json NOT NULL DEFAULT (json_array()) COMMENT 'Final checkout outcome of each selected repository; a repository without one is checked out by the next start',
   `initial_task_input` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT (_utf8mb4'') COMMENT 'JSON of the creating caller''s first task input until it reaches the Work''s input buffer; empty once handed off or when none was supplied',
   `task_execution_begun` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Retained task admission: whether its execution began; every write sets it',
   `model_configuration_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Model Configuration retained by the Work, whose current Model Template each start uses; empty with model_machine_login',
@@ -117,22 +102,6 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   KEY `idx_started_by_deleted_at_updated_at_created_at_id` (`started_by`,`deleted_at`,`updated_at`,`created_at`,`id`),
   KEY `idx_computer_id_state_deleted_at_id` (`computer_id`,`state`,`deleted_at`,`id`) COMMENT 'Presence changes find the Works running on a Computer'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentWork conversation and Harness process lifecycle authority';
-
-CREATE TABLE IF NOT EXISTS `agent_session_continuation_request` (
-  `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'AgentSession with the current explicit continuation request',
-  `request_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Retained original execution request identity',
-  `subject_id` varchar(255) NOT NULL COMMENT 'Authorized Session principal',
-  `operation` varchar(16) NOT NULL COMMENT 'Requested Resume or Continue behavior',
-  `rejection` varchar(32) NOT NULL DEFAULT '' COMMENT 'Retained rejection awaiting or having completed admission fencing',
-  `pending` boolean NOT NULL DEFAULT true COMMENT 'Original request outcome remains unconfirmed',
-  `version` int unsigned NOT NULL DEFAULT 1 COMMENT 'Application receipt version',
-  `created_at` bigint NOT NULL DEFAULT 0 COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT 0 COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT 0 COMMENT 'Deletion time in Unix milliseconds; zero is active',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_session_continuation_request` (`request_id`),
-  KEY `idx_session_continuation_pending` (`pending`, `deleted_at`, `id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent application explicit continuation request outcome recovery';
 
 CREATE TABLE IF NOT EXISTS `agent_session_state_history` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Persisted snapshot identity',
@@ -258,6 +227,7 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last reconciliation time in Unix milliseconds',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft deletion time; zero means retained',
   `released_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the retired allocation''s compute release was confirmed; zero while its release is outstanding',
+  `checkout_results` json DEFAULT NULL COMMENT 'Checkout outcome of each repository this run checked out; SQL NULL or JSON null until its checkout ended',
   `state` varchar(16) COLLATE utf8mb4_bin NOT NULL DEFAULT 'starting' COMMENT 'AgentExecution lifecycle state: queued, starting, running, retired or released',
   `start_admitted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the Work admitted the start this execution serves',
   `desk_id` varchar(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Desk the start took on its Computer',

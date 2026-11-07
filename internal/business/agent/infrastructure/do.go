@@ -19,20 +19,6 @@ type workStateHistoryDO struct {
 
 func (workStateHistoryDO) TableName() string { return "agent_session_state_history" }
 
-type initialExecutionRequestDO struct {
-	ID          string `xorm:"id pk"`
-	RequestID   string `xorm:"request_id"`
-	RequestData string `xorm:"request_data"`
-	Submitted   bool   `xorm:"submitted"`
-	Pending     bool   `xorm:"pending"`
-	Version     int    `xorm:"version"`
-	CreatedAt   int64  `xorm:"created_at"`
-	UpdatedAt   int64  `xorm:"updated_at"`
-	DeletedAt   int64  `xorm:"deleted_at"`
-}
-
-func (initialExecutionRequestDO) TableName() string { return "agent_initial_execution_request" }
-
 type agentDefinitionDO struct {
 	Owners           string `xorm:"owners JSON"`
 	AgentName        string `xorm:"agent_name varchar(512)"`
@@ -56,7 +42,10 @@ type agentDefinitionDO struct {
 func (agentDefinitionDO) TableName() string { return "agent_definition" }
 
 type agentWorkDO struct {
-	RepositorySelection    string `xorm:"repository_selection json"`
+	RepositorySelection string `xorm:"repository_selection json"`
+	// RepositoryCheckouts is the JSON of the selected repositories' final
+	// checkout outcomes.
+	RepositoryCheckouts    string `xorm:"repository_checkouts json"`
 	AuthorizationSelection string `xorm:"authorization_selection json"`
 	TaskExecutionBegun     bool   `xorm:"task_execution_begun"`
 	ThinkingLevel          string `xorm:"thinking_level varchar(32)"`
@@ -180,21 +169,6 @@ type startRequestDO struct {
 }
 
 func (startRequestDO) TableName() string { return "agent_start_request" }
-
-type continuationRequestDO struct {
-	ID        string `xorm:"id pk"`
-	RequestID string `xorm:"request_id"`
-	SubjectID string `xorm:"subject_id"`
-	Operation string `xorm:"operation"`
-	Rejection string `xorm:"rejection"`
-	Pending   bool   `xorm:"pending"`
-	Version   int    `xorm:"version"`
-	CreatedAt int64  `xorm:"created_at"`
-	UpdatedAt int64  `xorm:"updated_at"`
-	DeletedAt int64  `xorm:"deleted_at"`
-}
-
-func (continuationRequestDO) TableName() string { return "agent_session_continuation_request" }
 
 type workProgressRecord struct {
 	Items     []workProgressItemRecord `json:"items"`

@@ -85,13 +85,11 @@ type sessionStore struct {
 	session       *domain.AgentWork
 	subject       string
 	registrations int
-	// initial holds the first start's preparation registered with the Work.
-	initial initialRequestStore
 }
 
-// preparation continues the first start's preparation the store registered.
+// preparation answers a first-start request for the Work the store holds.
 func (s *sessionStore) preparation(models agentquery.ModelConfigurations) *command.PrepareWorkExecutionHandler {
-	return command.NewPrepareWorkExecutionHandler(&s.initial, s, s, models)
+	return command.NewPrepareWorkExecutionHandler(s, s, models)
 }
 
 func (s *sessionStore) Get(context.Context, string) (*domain.AgentWork, error) {
@@ -111,9 +109,6 @@ func (s *sessionStore) RegisterWork(ctx context.Context, session *domain.AgentWo
 	}
 	s.subject = registration.SubjectID
 	s.registrations++
-	if initial := registration.InitialExecution; initial != nil {
-		s.initial.request = command.InitialExecutionRequest{PrepareWorkExecution: *initial, Submitted: true, Version: 1}
-	}
 	return s.Save(ctx, session)
 }
 

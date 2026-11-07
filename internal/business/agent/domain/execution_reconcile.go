@@ -34,9 +34,6 @@ type EnvironmentObservation struct {
 	// InputsRefresh is how long a Managed Computer's synced input copies stay
 	// current (Input copy sync).
 	InputsRefresh time.Duration
-	// CreationHeld reports that the first start's preparation still holds its
-	// creation back.
-	CreationHeld bool
 }
 
 func (o EnvironmentObservation) find(id string) (ObservedEnvironment, bool) {
@@ -153,9 +150,6 @@ func (e *AgentExecution) submit(observation EnvironmentObservation, now time.Tim
 	if e.pastDeadline(now) {
 		e.failStart()
 		e.abandon()
-		return nil
-	}
-	if observation.CreationHeld {
 		return nil
 	}
 	return []ExecutionStep{{Kind: StepSubmitCreation}}

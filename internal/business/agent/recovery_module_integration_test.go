@@ -39,7 +39,10 @@ import (
 	"xorm.io/xorm"
 )
 
-func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
+// A Resume commits its start with its request record at once, so nothing is
+// left half admitted: a restarted module with recovery admits no Resume on
+// its own, and only an explicit request resumes the stopped Work.
+func TestModuleRestartAdmitsNoResumeWithoutCaller(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	dsn := mysqltest.Database(t)
@@ -91,9 +94,8 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 	require.NoError(t, err)
 	conversation, err := client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{SubjectId: "employee", AgentId: created.AgentId, RequestId: uuid.NewString(), WorkspaceReference: "work", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project"})
 	require.NoError(t, err)
-	// Complete the initial process before reproducing a Resume that was
-	// rejected for capacity before its caller observed the outcome.
-	workID, abandoned := conversation.WorkId, uuid.NewString()
+	// Complete the initial process before restarting the module.
+	workID := conversation.WorkId
 	runs.ready(t, ctx, workID)
 	stopID := uuid.NewString()
 	_, err = client.StopWork(sessionControlRequest(ctx), &agentprivatev1.StopWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: stopID})
@@ -109,30 +111,18 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 		state, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "employee", WorkId: workID})
 		return err == nil && state.State == agentprivatev1.WorkState_WORK_STATE_STOPPED
 	}, 10*time.Second, 20*time.Millisecond, "the exited run's release stops the Work")
-	sessions := infrastructure.NewAgentWorkRepository(observer, time.Now)
-	retainedSession, err := sessions.Get(ctx, workID)
-	require.NoError(t, err)
 	require.Len(t, launches(t, observer), 1)
-	continuations := infrastructure.NewContinuationRequests(observer, time.Now)
-	_, err = continuations.RetainContinuation(ctx, command.ContinuationRequest{StartWork: command.StartWork{SubjectID: "employee", WorkID: workID, RequestID: abandoned}, Operation: "resume"}, retainedSession.Version)
-	require.NoError(t, err)
-	require.NoError(t, continuations.RecordContinuationRejection(ctx, workID, abandoned, "capacity"))
 	stop()
 	client, stop = start(true)
-	require.Eventually(t, func() bool {
-		request, found, err := continuations.GetContinuation(ctx, workID)
-		return err == nil && found && request.Resolved && request.Rejection == "capacity"
-	}, 5*time.Second, 20*time.Millisecond, "production continuation observation must finish the retained rejection")
+	// Let the restarted recovery sweep every unfinished obligation once.
+	time.Sleep(500 * time.Millisecond)
 	for _, action := range kube.Actions() {
 		require.NotEqual(t, "resourcequotas", action.GetResource().Resource, "recovery must not request capacity again")
 	}
 	state, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "employee", WorkId: workID})
 	require.NoError(t, err)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPED, state.State)
-	require.Len(t, launches(t, observer), 1, "recovery must not admit the abandoned request")
-	_, err = client.ResumeWork(sessionControlRequest(ctx), &agentprivatev1.ResumeWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: abandoned})
-	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err), "the same request retains its original capacity rejection")
-	require.Len(t, launches(t, observer), 1)
+	require.Len(t, launches(t, observer), 1, "recovery admits no Resume on its own")
 	next := uuid.NewString()
 	_, err = client.ResumeWork(sessionControlRequest(ctx), &agentprivatev1.ResumeWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: next})
 	require.NoError(t, err)
@@ -183,7 +173,7 @@ func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 	port := &sessionCommandRecorder{}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
-	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), sessions, auth, models)
+	prepare := command.NewPrepareWorkExecutionHandler(sessions, auth, models)
 	_, err = command.NewCreateWorkHandler(time.Now, agents, lostCreationAnswer{sessions}, auth, models, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{}), prepare).Handle(ctx, request)
 	require.ErrorIs(t, err, errCreationAnswerLost)
 	record, found, err := sessions.FindStartRequest(ctx, request.RequestID)
@@ -214,10 +204,6 @@ func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 	for _, start := range launches(t, db) {
 		require.Equal(t, id, start.WorkID)
 	}
-	retained, err := infrastructure.NewInitialExecutionRequests(db, time.Now).Get(ctx, id)
-	require.NoError(t, err)
-	require.Equal(t, initial.Input, retained.Input)
-	require.True(t, retained.Submitted)
 	require.Eventually(t, func() bool {
 		work, err := infrastructure.NewAgentWorkRepository(db, time.Now).Get(ctx, id)
 		if err != nil {

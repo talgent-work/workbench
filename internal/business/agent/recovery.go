@@ -130,8 +130,6 @@ func wireRecoveryWakes(recovery *application.Recovery, updates *workStateUpdates
 	updates.wakeWork = deferredWake(logger, "work", recovery.WakeWork)
 	executions.wake = deferredWake(logger, "execution", recovery.WakeExecution)
 	closures.Wake = deferredWake(logger, "work_closure", recovery.WakeWork)
-	updates.wakeInitialExecution = deferredWake(logger, "initial_execution", recovery.WakeInitialExecution)
-	updates.wakeContinuation = deferredWake(logger, "continuation", recovery.WakeContinuation)
 }
 
 // deferredWake never fails the committed change that triggers it: a failed wake

@@ -24,7 +24,6 @@ func TestQueuedExecutionWaitsAndASeatedOneSubmitsItsCreation(t *testing.T) {
 	require.True(t, seated)
 	require.Equal(t, domain.ExecutionStarting, execution.State)
 	require.Equal(t, seatedAt.Add(domain.StartupDeadline), execution.StartupDeadlineAt())
-	require.Empty(t, decide(t, execution, domain.EnvironmentObservation{CreationHeld: true}, seatedAt).Steps)
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepSubmitCreation}, kinds(decide(t, execution, domain.EnvironmentObservation{}, seatedAt)))
 
 	_, err = execution.Reconcile(domain.EnvironmentObservation{}, time.Time{})

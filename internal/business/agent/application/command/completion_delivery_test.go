@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -20,9 +19,8 @@ func TestCloseStopsARunningWorkAndClosesItOnceStopped(t *testing.T) {
 	ctx := context.Background()
 	_, sessions := runningMessagingSession(t)
 	require.NoError(t, sessions.session.ObserveTurn(domain.TurnObservation{Sequence: 1, Completed: true}, false, false, time.Now()))
-	facts := &completionFacts{}
 	buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{{ID: uuid.NewString(), Text: "still buffered"}}}
-	handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, facts, buffer)
+	handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, buffer)
 	request := command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString()}
 	require.ErrorIs(t, handler.Handle(ctx, request), domain.ErrWorkTransition, "buffered input is not discarded")
 	require.Equal(t, domain.WorkWorking, sessions.session.State)
@@ -51,28 +49,26 @@ func TestCloseStopsARunningWorkAndClosesItOnceStopped(t *testing.T) {
 	require.Equal(t, domain.WorkClosed, sessions.session.State)
 	require.Equal(t, request.RequestID, sessions.session.CloseRequestReference)
 	require.Contains(t, sessions.committed, domain.Event(domain.WorkClosingEntered{WorkID: sessions.session.ID}), "entering Closing empties the input buffer through its event")
-	facts.err = errors.New("startup query unavailable after acceptance")
+	buffer.Err = errors.New("input buffer unavailable after acceptance")
 	require.NoError(t, handler.Handle(ctx, request), "a repeated close confirms the accepted one")
 }
 
 func TestCloseRefusesOutstandingWorkButNotUnknownFacts(t *testing.T) {
-	for _, stage := range []string{"continuation", "initial task input", "unknown"} {
+	for _, stage := range []string{"initial task input", "unknown"} {
 		t.Run(stage, func(t *testing.T) {
 			_, sessions := runningMessagingSession(t)
 			require.NoError(t, sessions.session.ObserveTurn(domain.TurnObservation{Sequence: 1, Completed: true}, false, false, time.Now()))
-			facts := &completionFacts{}
-			failure := errors.New("startup unavailable")
+			buffer := &commandtest.InputBuffer{}
+			failure := errors.New("input buffer unavailable")
 			switch stage {
-			case "continuation":
-				facts.continuation.Pending = true
 			case "initial task input":
 				initial, err := domain.NewInitialTaskInput(uuid.NewString(), "first task")
 				require.NoError(t, err)
 				sessions.session.InitialTaskInput = &initial
 			case "unknown":
-				facts.err = failure
+				buffer.Err = failure
 			}
-			handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, facts, &commandtest.InputBuffer{})
+			handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, buffer)
 			err := handler.Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString()})
 			if stage == "unknown" {
 				require.ErrorIs(t, err, failure)
@@ -93,8 +89,7 @@ func TestCloseDropsTheBufferedInputOfAFailedWork(t *testing.T) {
 	require.False(t, sessions.session.HarnessProcess.ComputeReclaimed)
 	input := command.ExecutionInput{ID: uuid.NewString(), Text: "still buffered"}
 	buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{input}}
-	facts := &completionFacts{}
-	handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, facts, buffer)
+	handler := command.NewCloseWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}, buffer)
 	require.NoError(t, handler.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString()}))
 	require.Equal(t, domain.WorkClosing, sessions.session.State)
 
@@ -214,18 +209,6 @@ func (r *closingRace) Save(ctx context.Context, work *domain.AgentWork) error {
 		return domain.ErrConcurrentModification
 	}
 	return r.feedbackSessionStore.Save(ctx, work)
-}
-
-type completionFacts struct {
-	continuation query.WorkContinuation
-	err          error
-}
-
-func (f *completionFacts) GetWorkContinuation(context.Context, string) (query.WorkContinuation, error) {
-	return f.continuation, f.err
-}
-func (*completionFacts) ListPendingContinuations(context.Context, string, int) ([]string, error) {
-	return nil, nil
 }
 
 // Buffered means accepted: input whose commit loses to a stop stays buffered

@@ -325,9 +325,9 @@ func TestPreparationChecksOutIntoTheWorkRoot(t *testing.T) {
 	output, err := process.Output()
 	require.NoError(t, err)
 	report := latestReport(output, 0, domain.CapabilitySnapshot{}, plan)
-	require.Equal(t, []command.RepositoryCheckoutResult{
-		{RepositoryID: "github:1", TargetPath: "/workspace/repos/layout", Prepared: true},
-	}, report.checkouts(), "%s", output)
+	require.Equal(t, []domain.RepositoryCheckout{
+		{RepositoryID: "github:1", CheckedOut: true},
+	}, report.checkouts(plan, domain.CheckoutIncomplete), "%s", output)
 	require.FileExists(t, filepath.Join(workRoot, "repos", "layout", "README.md"))
 }
 
@@ -335,7 +335,7 @@ func TestPreparationChecksOutIntoTheWorkRoot(t *testing.T) {
 // Managed one in a deployment without the relay fails there, and an
 // unrecorded realization is never taken for either.
 func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
-	cloudOnly := NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, nil, nil)
+	cloudOnly := NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, nil)
 	authority, err := cloudOnly.authority(allocationRecord{Realization: realizationCloud})
 	require.NoError(t, err)
 	require.IsType(t, cloudEnvironment{}, authority)
@@ -355,7 +355,7 @@ func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 	require.Error(t, err, "inputs are refreshed at a positive interval")
 	managed, err := NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, &inputFiles{}, time.Minute)
 	require.NoError(t, err)
-	authority, err = NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, nil, managed).authority(allocationRecord{Realization: realizationManaged})
+	authority, err = NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, managed).authority(allocationRecord{Realization: realizationManaged})
 	require.NoError(t, err)
 	require.IsType(t, ManagedEnvironment{}, authority)
 }

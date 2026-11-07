@@ -11,8 +11,6 @@ type ClosureFacts struct {
 	// InputPending: accepted input still awaits processing. Only a running
 	// Work's close waits for it; a stopped or failed Work's close drops it.
 	InputPending bool
-	// ContinuationPending: a Resume or Restart request is not yet settled.
-	ContinuationPending bool
 	// StartQueued: the start's AgentExecution still waits for its Desk.
 	StartQueued bool
 }
@@ -27,10 +25,7 @@ func (s *AgentWork) Close(requestID string, facts ClosureFacts) error {
 	}
 	if s.WaitsForDesk(facts.StartQueued) {
 		// The close withdraws the waiting start first, then applies to the
-		// resulting Stopped or Failed Work; a first start is closed at once.
-		if s.HarnessProcess.ContextMode != ContextFresh && facts.ContinuationPending {
-			return ErrWorkTransition
-		}
+		// resulting Stopped or Failed Work.
 		s.withdrawWaitingStart(requestID)
 	}
 	if s.beyondReach() {
@@ -46,9 +41,6 @@ func (s *AgentWork) Close(requestID string, facts ClosureFacts) error {
 		}
 		return nil
 	case WorkStopped, WorkFailed:
-		if facts.ContinuationPending {
-			return ErrWorkTransition
-		}
 		s.close(requestID)
 		return nil
 	case WorkWorking:
@@ -61,7 +53,7 @@ func (s *AgentWork) Close(requestID string, facts ClosureFacts) error {
 		if facts.InputPending {
 			return ErrInputPending
 		}
-		if s.InitialTaskInput != nil || facts.ContinuationPending || s.EndRequestReference != "" {
+		if s.InitialTaskInput != nil || s.EndRequestReference != "" {
 			return ErrWorkTransition
 		}
 		s.CloseRequestReference = requestID

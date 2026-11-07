@@ -179,7 +179,7 @@ How Agent reaches Computer and Managed Computers.
 | `agent-recovery.inputs-refresh-interval` | `10m` | How often a Managed Work's inputs are synced again; inside `storage.link-ttl` |
 | `agent-credential-changes.consumer-group`, `agent-input-changes`, `agent-desk-assignments`, `agent-computer-presence` | `${AGENT_CREDENTIAL_CHANGES_GROUP:agent-credential-changes}`, `${AGENT_INPUT_CHANGES_GROUP:agent-input-changes}`, `${AGENT_DESK_ASSIGNMENTS_GROUP:agent-desk-assignments}`, `${AGENT_COMPUTER_PRESENCE_GROUP:agent-computer-presence}` | Kafka consumer groups; the same names when unset |
 | `agent-taskqueue` | queue `agent-recovery`, concurrency 16, retry `1s`–`60s` | Recovery tasks |
-| `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 32, retry `1s`–`60s` | Each starting Work holds a worker while it prepares |
+| `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 8, retry `1s`–`60s` | Each execution's long step holds a worker while it runs |
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
 | `native-api.addr` | `${NATIVE_API_ADDR::8081}` | The API Agents call with their Work credential |
 | `native-api.gateway-token` | none | When set, only a platform Connector presenting it reaches the native API; empty, any caller with a current Work credential does. The base gives controlplane `GATEWAY_TOKEN` (Secret `native-execution-control`) for a profile to name |

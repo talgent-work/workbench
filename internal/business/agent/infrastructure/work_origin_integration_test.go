@@ -56,7 +56,7 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 	feedback := newRuns(t, db, sessions)
 	feedback.exit(ctx, ids["work"])
 	feedback.release(ctx, ids["work"])
-	require.NoError(t, command.NewCloseWorkHandler(sessions, auth, feedback.executions, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: ids["work"], RequestID: "close"}))
+	require.NoError(t, command.NewCloseWorkHandler(sessions, auth, feedback.executions, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: ids["work"], RequestID: "close"}))
 	require.NoError(t, db.Close())
 	origins := infrastructure.NewWorkQueryRepository(open())
 	app := &application.Application{Queries: application.Queries{GetWorkOrigin: query.NewGetWorkOriginHandler(origins), ResolveWorkStarts: query.NewResolveWorkStartsHandler(origins)}}

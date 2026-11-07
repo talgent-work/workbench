@@ -29,20 +29,6 @@ message RecoverWorkTaskV1 {
   string work_id = 1;
 }
 
-// RecoverContinuationTaskV1 asks Agent to settle one Work's pending continuation
-// request after admission uncertainty.
-message RecoverContinuationTaskV1 {
-  // AgentWork identity owning the continuation request.
-  string work_id = 1;
-}
-
-// PrepareInitialExecutionTaskV1 asks Agent to prepare and deliver one Work's
-// initial execution under its Startup Deadline.
-message PrepareInitialExecutionTaskV1 {
-  // AgentWork identity owning the initial execution request.
-  string work_id = 1;
-}
-
 // SweepRecoveryTaskV1 is the periodic fallback that wakes every unfinished
 // recovery obligation. It carries no data.
 message SweepRecoveryTaskV1 {}

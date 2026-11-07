@@ -160,7 +160,7 @@ func TestAMachineLoginWorkResumesAndRestartsWithNoModelConfiguration(t *testing.
 			if restart {
 				_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, none, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			} else {
-				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, &continuationRequests{}, none, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
+				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, none, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			}
 			require.NoError(t, err)
 			require.Equal(t, domain.WorkStarting, sessions.session.State)

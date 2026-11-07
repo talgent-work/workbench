@@ -28,8 +28,8 @@ func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkReposi
 	return &ExecutionCoordination{now: now, works: works, executions: executions, computers: computers, buffer: buffer}
 }
 
-// Coordinate applies every report the Work's current execution made, then
-// passes every request the Work holds, so a request a report caused, such as
+// Coordinate applies every report the Work's current execution made, its
+// checkout outcomes among them, then passes every request the Work holds, so a request a report caused, such as
 // the retirement an exit asks for, is passed in the same sweep; each step
 // runs regardless of the others' outcome.
 func (c *ExecutionCoordination) Coordinate(ctx context.Context, workID string) error {
@@ -146,10 +146,22 @@ func (c *ExecutionCoordination) passRequest(ctx context.Context, workID string, 
 	return err
 }
 
+// RecordCheckouts records the checkout outcomes the Work's current execution
+// reported on its Work (Record checkouts).
+func (c *ExecutionCoordination) RecordCheckouts(ctx context.Context, workID string) error {
+	return c.applyExecution(ctx, workID, false)
+}
+
 // ApplyExecutionReports applies every report the Work's current execution
-// made, in order (Apply execution report, Confirm compute release). A Work
-// that became ready has its idleness recorded from its input buffer.
+// made, in order (Apply execution report, Confirm compute release), after
+// its checkout outcomes, so a Work whose release is confirmed holds the
+// outcomes its next start leaves out. A Work that became ready has its
+// idleness recorded from its input buffer.
 func (c *ExecutionCoordination) ApplyExecutionReports(ctx context.Context, workID string) error {
+	return c.applyExecution(ctx, workID, true)
+}
+
+func (c *ExecutionCoordination) applyExecution(ctx context.Context, workID string, reports bool) error {
 	var err error
 	for range coordinationAttempts {
 		var execution *domain.AgentExecution
@@ -162,12 +174,17 @@ func (c *ExecutionCoordination) ApplyExecutionReports(ctx context.Context, workI
 		}
 		wasStarting := work.State == domain.WorkStarting
 		changed := false
-		for _, report := range execution.Reports() {
-			applied, applyErr := work.ApplyExecutionReport(report)
-			if applyErr != nil {
-				return applyErr
+		if ended, ok := execution.CheckoutsEnded(); ok {
+			changed = work.RecordRepositoryCheckouts(ended)
+		}
+		if reports {
+			for _, report := range execution.Reports() {
+				applied, applyErr := work.ApplyExecutionReport(report)
+				if applyErr != nil {
+					return applyErr
+				}
+				changed = changed || applied
 			}
-			changed = changed || applied
 		}
 		if !changed {
 			return nil

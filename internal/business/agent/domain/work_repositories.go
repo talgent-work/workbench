@@ -25,8 +25,10 @@ type WorkRepositoryChoice struct {
 
 type WorkRepositoryInput struct {
 	OwnerUserID string
-	Choices     []WorkRepositoryChoice
-	Available   []AccessibleRepository
+	// WorkBranch is the branch the creating caller names for the checkouts.
+	WorkBranch string
+	Choices    []WorkRepositoryChoice
+	Available  []AccessibleRepository
 }
 
 // WorkRepository retains the selected external identity and branch. Concrete
@@ -42,7 +44,10 @@ type WorkRepository struct {
 }
 
 type WorkRepositorySelection struct {
-	OwnerUserID  string `validate:"max=255"`
+	OwnerUserID string `validate:"max=255"`
+	// WorkBranch is the branch every selected repository is checked out on,
+	// named by the creating caller.
+	WorkBranch   string `validate:"max=255"`
 	Repositories []WorkRepository
 }
 
@@ -126,6 +131,12 @@ func (s *AgentWork) determineRepositorySelection(input WorkRepositoryInput) erro
 			Provider: fact.Provider, RepoID: fact.RepoID, RepoName: fact.RepoName,
 			CloneURL: fact.CloneURL, WebURL: fact.WebURL, DefaultBranch: fact.DefaultBranch, BaseBranch: base,
 		})
+	}
+	if len(selection.Repositories) > 0 {
+		selection.WorkBranch = strings.TrimSpace(input.WorkBranch)
+		if selection.WorkBranch == "" {
+			return fmt.Errorf("%w: repository checkouts need a work branch", ErrInvalidWork)
+		}
 	}
 	if err := selection.Validate(); err != nil {
 		return err

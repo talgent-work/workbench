@@ -40,10 +40,10 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	app := &application.Application{Definitions: agents, Works: sessions,
 		Commands: application.Commands{
 			CreateWork:             command.NewCreateWorkHandler(time.Now, agents, sessions, permissions, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(rpcPluginCatalog{}, authorizationcatalogtest.Empty{}), capacity, nil),
-			ResumeWork:             command.NewResumeWorkHandler(time.Now, sessions, agents, permissions, capacity, &rpcContinuations{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			ResumeWork:             command.NewResumeWorkHandler(time.Now, sessions, agents, permissions, capacity, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			RestartWork:            command.NewRestartWorkHandler(time.Now, sessions, agents, permissions, capacity, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			StopWork:               command.NewStopWorkHandler(sessions, permissions, executions),
-			CloseWork:              command.NewCloseWorkHandler(sessions, permissions, executions, commandtest.NoClosureObligations{}, buffer),
+			CloseWork:              command.NewCloseWorkHandler(sessions, permissions, executions, buffer),
 			DeliverInput:           command.NewDeliverWorkInputHandler(sessions, permissions, port),
 			RespondToInteraction:   command.NewRespondWorkInteractionHandler(sessions, permissions, port),
 			ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(func() time.Time { return observationTime }, sessions, executions, coordination, buffer, &commandtest.InputSettlements{}),

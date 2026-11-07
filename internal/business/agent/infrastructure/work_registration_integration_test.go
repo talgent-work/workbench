@@ -23,9 +23,10 @@ import (
 	"xorm.io/xorm"
 )
 
-// Registration durably retains the Session and original input together.
-// Lose its acknowledgement before any input locks or execution submission, then
-// reconstruct all stores and recover only from the database scan.
+// Registration durably retains the Work and its original input together.
+// Lose its acknowledgement, reconstruct all stores, and continue the first
+// start from the Work's own facts: an unreachable repository degrades once,
+// and a later report never replays it.
 func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	ctx := context.Background()
 	dsn := mysqltest.Database(t)
@@ -35,7 +36,6 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
-	receipts := infrastructure.NewInitialExecutionRequests(db, time.Now)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
@@ -43,8 +43,8 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	creation := command.CreateWork{AgentID: definition.ID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project"}
 	lost := errors.New("registration committed; acknowledgement lost")
 	registrar := registrationLostAcknowledgement{AgentWorkRepository: sessions, err: lost}
-	prepare := command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, agentquery.ModelConfigurations{})
-	create := command.NewCreateWorkHandler(time.Now, agents, registrar, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), prepare)
+	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
+	create := command.NewCreateWorkHandler(time.Now, agents, registrar, auth, models, commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), command.NewPrepareWorkExecutionHandler(sessions, auth, agentquery.ModelConfigurations{}))
 	prepareNew := func(ctx context.Context, creation command.CreateWork, input command.PrepareWorkExecution) (string, error) {
 		creation.SubjectID, creation.RequestID, creation.InitialExecution = input.SubjectID, input.RequestID, &input
 		return create.Handle(ctx, creation)
@@ -57,79 +57,69 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	agents = infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
 	auth = access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
-	receipts = infrastructure.NewInitialExecutionRequests(db, time.Now)
-	pending, err := receipts.ListPendingInitialExecutions(ctx, "", 100)
+	reader := infrastructure.NewWorkQueryRepository(db)
+	submitted, err := reader.ListSubmittedPreparations(ctx, "", 100)
 	require.NoError(t, err)
-	require.Len(t, pending, 1, "a committed Session must already carry a discoverable original request")
-	session, err := sessions.Get(ctx, pending[0])
+	require.Len(t, submitted, 1, "a committed Work already carries a discoverable first start")
+	session, err := sessions.Get(ctx, submitted[0].WorkID)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, session.State)
 	require.True(t, session.HoldsProcess())
 	require.NoError(t, auth.AuthorizeWork(ctx, "owner", session.ID))
-	retained, err := receipts.Get(ctx, session.ID)
-	require.NoError(t, err)
-	input.WorkID, input.WorkspaceReference = session.ID, creation.WorkspaceReference
-	require.Equal(t, input, retained.PrepareWorkExecution)
-	require.False(t, retained.Prepared)
-	require.True(t, retained.Submitted, "first admission is committed with the original input")
-	buffer := &commandtest.InputBuffer{}
-	prepare = command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, agentquery.ModelConfigurations{})
-	create = command.NewCreateWorkHandler(time.Now, agents, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), prepare)
-	recover := command.NewRecoverInitialExecutionHandler(receipts, sessions, prepare)
-	require.ErrorIs(t, recover.Handle(ctx, session.ID), command.ErrInitialExecutionPending)
+	require.Equal(t, input.RequestID, submitted[0].RequestID)
+	require.Equal(t, input.Input.ID, submitted[0].InputID)
+	require.Equal(t, input.Input.Text, submitted[0].Input)
+	require.Equal(t, input.WorkBranch, submitted[0].WorkBranch)
+	require.False(t, submitted[0].InputPrepared)
+	require.True(t, submitted[0].Submitted, "first admission is committed with the original input")
+	require.Equal(t, []string{"123"}, session.LaunchSpecification().RemainingRepositories)
 	requireStartRequested(t, sessions, session.ID)
-	// The start's preparation process reports its planned checkout before the
-	// Harness starts; an unreachable repository degrades.
-	planned, err := receipts.Get(ctx, session.ID)
-	require.NoError(t, err)
-	require.Len(t, planned.Checkouts, 1)
-	checkouts := command.NewRecordRepositoryCheckoutsHandler(receipts)
-	require.NoError(t, checkouts.Handle(ctx, command.RecordRepositoryCheckouts{WorkID: session.ID, Results: []command.RepositoryCheckoutResult{{RepositoryID: planned.Checkouts[0].RepoID, Reason: command.CheckoutUnavailable}}}))
-	session, err = sessions.Get(ctx, session.ID)
-	require.NoError(t, err)
-	ref := session.ID
-	reportReady(t, session)
-	require.NoError(t, sessions.Save(ctx, session))
-	require.NoError(t, recover.Handle(ctx, session.ID))
-	require.NoError(t, command.NewInputAcceptance(sessions, buffer).HandOffInitialTaskInput(ctx, session.ID))
-	require.Equal(t, []command.ExecutionInput{input.Input}, buffer.Inputs)
-	prepared, err := receipts.Get(ctx, session.ID)
-	require.NoError(t, err)
-	require.True(t, prepared.InputPrepared)
-	require.Len(t, prepared.CheckoutResults, 1)
-	require.Equal(t, command.RepositoryCheckoutResult{RepositoryID: prepared.Checkouts[0].RepoID, TargetPath: prepared.Checkouts[0].TargetPath, Reason: "checkout_unavailable"}, prepared.CheckoutResults[0])
-	require.False(t, prepared.Rejected)
 	observed, err := infrastructure.NewServiceAccessResults(db).ReadRepositoryPreparation(ctx, session.ID)
 	require.NoError(t, err)
-	require.Len(t, observed, 1)
-	require.Equal(t, prepared.Checkouts[0].RepoID, observed[0].RepositoryID)
-	require.False(t, observed[0].Prepared)
-	require.Equal(t, "checkout_unavailable", observed[0].Reason)
-	continued, err := sessions.Get(ctx, session.ID)
+	require.Empty(t, observed, "no repository has a checkout outcome yet")
+
+	buffer := &commandtest.InputBuffer{}
+	create = command.NewCreateWorkHandler(time.Now, agents, sessions, auth, models, commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), command.NewPrepareWorkExecutionHandler(sessions, auth, agentquery.ModelConfigurations{}))
+	// The start's execution reports its checkout before the Harness starts;
+	// an unreachable repository degrades.
+	ref := session.ID
+	recordWorkCheckouts(t, sessions, ref, domain.RepositoryCheckout{RepositoryID: "123", Reason: domain.CheckoutUnavailable})
+	session, err = sessions.Get(ctx, ref)
+	require.NoError(t, err)
+	reportReady(t, session)
+	require.NoError(t, sessions.Save(ctx, session))
+	require.NoError(t, command.NewInputAcceptance(sessions, buffer).HandOffInitialTaskInput(ctx, ref))
+	require.Equal(t, []command.ExecutionInput{input.Input}, buffer.Inputs)
+	prepared, found, err := reader.GetWorkPreparation(ctx, ref)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, prepared.InputPrepared)
+	require.True(t, prepared.InputBuffered)
+	require.Len(t, prepared.Checkouts, 1)
+	observed, err = infrastructure.NewServiceAccessResults(db).ReadRepositoryPreparation(ctx, ref)
+	require.NoError(t, err)
+	require.Equal(t, []agentquery.RepositoryPreparation{{RepositoryID: "123", TargetPath: prepared.Checkouts[0].TargetPath, Reason: string(domain.CheckoutUnavailable)}}, observed)
+	continued, err := sessions.Get(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkWorking, continued.State)
-	require.NoError(t, recover.Handle(ctx, session.ID))
-	require.NoError(t, checkouts.Handle(ctx, command.RecordRepositoryCheckouts{WorkID: session.ID, Results: []command.RepositoryCheckoutResult{{RepositoryID: planned.Checkouts[0].RepoID, Prepared: true}}}))
-	unchanged, err := receipts.Get(ctx, session.ID)
+	require.False(t, continued.RecordRepositoryCheckouts(domain.ExecutionCheckoutsEnded{WorkID: ref, Checkouts: []domain.RepositoryCheckout{{RepositoryID: "123", CheckedOut: true}}}), "a later report never replays the degraded checkout")
+	unchanged, err := infrastructure.NewServiceAccessResults(db).ReadRepositoryPreparation(ctx, ref)
 	require.NoError(t, err)
-	require.Equal(t, prepared.CheckoutResults, unchanged.CheckoutResults, "a later report never replays the degraded checkout")
-	pending, err = receipts.ListPendingInitialExecutions(ctx, "", 100)
-	require.NoError(t, err)
-	require.Empty(t, pending)
-	// A repeat with new transport IDs locates the original binding and input;
-	// an incompatible repeat must not alter that obligation or create another Session.
+	require.Equal(t, observed, unchanged)
+	// A repeat with new transport IDs locates the original Work and input;
+	// an incompatible repeat must not alter it or create another Work.
 	repeat := input
-	repeat.WorkID, repeat.WorkspaceReference = "", ""
 	repeat.RequestID, repeat.Input.ID = uuid.NewString(), uuid.NewString()
 	repeated, err := prepareNew(ctx, creation, repeat)
 	require.NoError(t, err)
 	require.Equal(t, ref, repeated)
 	// Repeating that request identity with other content is a conflict; a new
-	// request with another task cannot replace the original one.
+	// request with other repository choices cannot replace the original ones.
 	repeat.Input.Text = "different task"
 	_, err = prepareNew(ctx, creation, repeat)
 	require.ErrorIs(t, err, command.ErrWorkCreationConflict)
 	repeat.RequestID, repeat.Input.ID = uuid.NewString(), uuid.NewString()
+	repeat.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "main"}}
 	_, err = prepareNew(ctx, creation, repeat)
 	require.ErrorIs(t, err, command.ErrInitialExecutionConflict)
 	requireStartRequested(t, sessions, ref)

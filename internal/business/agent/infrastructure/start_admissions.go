@@ -34,7 +34,7 @@ func (r *AgentWorkRepository) CommitStart(ctx context.Context, work *domain.Agen
 	if work == nil || work.Version == 0 || request.WorkID != work.ID || request.Canceled || request.Kind == query.StartKindStart {
 		return domain.ErrInvalidWork
 	}
-	return r.saveWith(ctx, work, "", 0, nil, r.startAdmissionHooks(work, request, ""))
+	return r.saveWith(ctx, work, 0, r.startAdmissionHooks(work, request, ""))
 }
 
 // startAdmissionHooks records the request with the Work's commit. The first
@@ -52,11 +52,6 @@ func (r *AgentWorkRepository) startAdmissionHooks(work *domain.AgentWork, reques
 		}
 		if err := command.AnswerRetained(startRequestFromDO(record), request); err != nil {
 			return err
-		}
-		if request.Kind == query.StartKindRestart && !work.TaskExecutionBegun {
-			if err := retryInitialPreparation(tx, work.ID, now); err != nil {
-				return err
-			}
 		}
 		// Input not yet written stays in the Work's input buffer for the new
 		// process.
@@ -137,32 +132,4 @@ func (r *AgentWorkRepository) lockStartRequest(tx *xorm.Session, request query.S
 		return record, domain.ErrConcurrentModification
 	}
 	return record, nil
-}
-
-// The initial obligation and explicit Restart commit under the same Work lock.
-// A concurrent recovery Save then fails its request revision check instead of
-// restoring the old rejection or releasing retained input after Restart.
-func retryInitialPreparation(tx *xorm.Session, workID string, now int64) error {
-	var row initialExecutionRequestDO
-	found, err := tx.Where("id = ? AND deleted_at = 0", workID).ForUpdate().Get(&row)
-	if err != nil {
-		return oops.Wrap(err)
-	}
-	if !found {
-		return nil
-	}
-	request, err := initialExecutionRequestFromDO(row)
-	if err != nil {
-		return err
-	}
-	changed, err := request.RetryPreparation()
-	if err != nil || !changed {
-		return err
-	}
-	updated, err := initialExecutionRequestToDO(request)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec("UPDATE agent_initial_execution_request SET request_data = ?, pending = ?, version = version + 1, updated_at = ? WHERE id = ? AND deleted_at = 0", updated.RequestData, updated.Pending, now, workID)
-	return oops.Wrap(err)
 }

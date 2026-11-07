@@ -287,7 +287,7 @@ func verifyConcurrentAdmission(t *testing.T, db *xorm.Engine, sessionID string) 
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	var starts atomic.Int32
 	started := startedWorks{AgentWorkRepository: sessions, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
-	handler := command.NewResumeWorkHandler(time.Now, started, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	handler := command.NewResumeWorkHandler(time.Now, started, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{WorkID: sessionID, SubjectID: "owner", RequestID: uuid.Must(uuid.NewV7()).String()}
 	start := make(chan struct{})
 	failures := make(chan error, 8)

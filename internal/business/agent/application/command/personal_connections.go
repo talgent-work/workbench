@@ -18,7 +18,7 @@ func (h *CreateWorkHandler) repositoryInput(ctx context.Context, owner string, i
 	if err != nil {
 		return domain.WorkRepositoryInput{}, err
 	}
-	input := domain.WorkRepositoryInput{OwnerUserID: owner, Available: facts}
+	input := domain.WorkRepositoryInput{OwnerUserID: owner, WorkBranch: initial.WorkBranch, Available: facts}
 	for _, choice := range initial.Selections {
 		input.Choices = append(input.Choices, domain.WorkRepositoryChoice{RepositoryID: choice.RepositoryID, BaseBranch: choice.BaseBranch})
 	}

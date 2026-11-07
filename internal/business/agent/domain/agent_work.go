@@ -216,8 +216,12 @@ type AgentWork struct {
 	// StartedBy is who started the Work, fixed at creation: an Owner of its
 	// definition when it started, kept as a fact, never as authority. The
 	// Work's Agent Owners are its definition's Owners.
-	StartedBy              string `validate:"max=255"`
-	RepositorySelection    WorkRepositorySelection
+	StartedBy           string `validate:"max=255"`
+	RepositorySelection WorkRepositorySelection
+	// RepositoryCheckouts are the final checkout outcomes of selected
+	// repositories, in selection order; a repository without one is still to
+	// be checked out.
+	RepositoryCheckouts    []RepositoryCheckout
 	AuthorizationSelection WorkAuthorizationSelection
 	// InitialTaskInput is the creating caller's first task input, held until
 	// it is handed to the Work's input buffer; nil once handed off, or for a
@@ -424,13 +428,6 @@ func (s *AgentWork) Validate() error {
 // AdmitPreparation admits preparing the Work's execution until it closes.
 func (s *AgentWork) AdmitPreparation() error {
 	if s.State == WorkClosing || s.State == WorkClosed {
-		return ErrWorkTransition
-	}
-	return nil
-}
-
-func (s *AgentWork) AuthorizePreparationRelease() error {
-	if s.State != WorkClosed {
 		return ErrWorkTransition
 	}
 	return nil

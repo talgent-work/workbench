@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -12,13 +11,12 @@ import (
 // and for business callers alike. A running Work is stopped first; its close
 // request applies once it has stopped, through ApplyKeptClose.
 type CloseWorkHandler struct {
-	control       sessionControl
-	continuations query.ContinuationReader
-	buffer        RunningHarnessPort
+	control sessionControl
+	buffer  RunningHarnessPort
 }
 
-func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, executions domain.AgentExecutionRepository, continuations query.ContinuationReader, buffer RunningHarnessPort) *CloseWorkHandler {
-	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, executions: executions}, continuations: continuations, buffer: buffer}
+func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, executions domain.AgentExecutionRepository, buffer RunningHarnessPort) *CloseWorkHandler {
+	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, executions: executions}, buffer: buffer}
 }
 
 func (h *CloseWorkHandler) Handle(ctx context.Context, request WorkControl) error {
@@ -64,11 +62,6 @@ func (h *CloseWorkHandler) facts(ctx context.Context, work *domain.AgentWork) (d
 		return facts, err
 	}
 	facts.StartQueued = queued
-	continuation, err := h.continuations.GetWorkContinuation(ctx, work.ID)
-	if err != nil {
-		return facts, err
-	}
-	facts.ContinuationPending = continuation.Pending
 	buffered, err := h.buffer.ReadBuffer(ctx, work.ID)
 	facts.InputPending = buffered.Pending()
 	return facts, err

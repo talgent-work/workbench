@@ -107,14 +107,6 @@ func (r *Recovery) ReconnectWork(ctx context.Context, workID string) error {
 	return r.WakeExecution(ctx, execution.ID)
 }
 
-func (r *Recovery) WakeContinuation(ctx context.Context, workID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverContinuation(workID))
-}
-
-func (r *Recovery) WakeInitialExecution(ctx context.Context, workID string) error {
-	return r.enqueue(ctx, preparationAttemptTimeout)(agenttask.NewPrepareInitialExecution(workID))
-}
-
 // WakeSweep wakes every unfinished obligation now, as on process start, instead
 // of waiting for the next periodic sweep.
 func (r *Recovery) WakeSweep(ctx context.Context, interval time.Duration) error {
@@ -230,34 +222,16 @@ func (r *Recovery) RecoverWork(ctx context.Context, workID string) error {
 	return errors.Join(coordinated, observed, retained, kept, owed)
 }
 
-func (r *Recovery) RecoverContinuation(ctx context.Context, workID string) error {
-	return r.app.Commands.ResumeWork.Recover(ctx, workID)
-}
-
-// PrepareInitialExecution advances the first start's preparation and input
-// delivery. A first start waiting for readiness or for its next admitted start
-// is woken again by that Work's commit; a Work without a first-start
-// obligation has nothing to prepare.
-func (r *Recovery) PrepareInitialExecution(ctx context.Context, workID string) error {
-	err := r.app.Commands.RecoverInitialExecution.Handle(ctx, workID)
-	if errors.Is(err, command.ErrInitialExecutionPending) || errors.Is(err, command.ErrInitialExecutionNotFound) {
-		return nil
-	}
-	return err
-}
-
 const sweepPage = 100
 
 // Sweep wakes every unfinished recovery obligation: the reconciliation of
 // each unreleased execution, Works holding execution or closure obligations,
-// and unsettled requests. Completed history is never listed.
+// and open Desks no start claims. Completed history is never listed.
 func (r *Recovery) Sweep(ctx context.Context) error {
 	queries := r.app.Queries
 	return errors.Join(
 		sweep(ctx, r.lookups.ListOutstandingExecutions, r.WakeExecution, identity),
 		sweep(ctx, pageOf(queries.ListRecoveryWorks.Handle), r.wakeWorkOnly, identity),
-		sweep(ctx, pageOf(queries.ListPendingContinuations.Handle), r.WakeContinuation, identity),
-		sweep(ctx, pageOf(queries.ListInitialExecutionRecovery.Handle), r.WakeInitialExecution, identity),
 		r.app.Commands.ReconcileDesks.Handle(ctx),
 	)
 }

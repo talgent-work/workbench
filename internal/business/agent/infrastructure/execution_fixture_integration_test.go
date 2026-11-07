@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
 )
@@ -229,15 +228,6 @@ func requireStartRequested(t testing.TB, works domain.AgentWorkRepository, workI
 	return domain.LaunchSpecification{}
 }
 
-// requireCreationHeld asserts that the Work's first start cannot submit its
-// environment's creation yet: its initial preparation is not done.
-func requireCreationHeld(t testing.TB, db *xorm.Engine, workID string) {
-	t.Helper()
-	request, err := infrastructure.NewInitialExecutionRequests(db, time.Now).Get(t.Context(), workID)
-	require.NoError(t, err)
-	require.False(t, request.Prepared, "the first start's creation waits for its initial preparation")
-}
-
 // executionsOf is the AgentExecution repository over db.
 func executionsOf(db *xorm.Engine) *execution.AgentExecutionRepository {
 	return execution.NewAgentExecutionRepository(db, time.Now)
@@ -263,4 +253,15 @@ func launchOf(run *domain.AgentExecution) domain.LaunchSpecification {
 	launch := run.Launch
 	launch.ComputerName, launch.PreparationBound = "", time.Time{}
 	return launch
+}
+
+// recordWorkCheckouts records checkout outcomes on the Work as its execution
+// reports them when its checkout ends.
+func recordWorkCheckouts(t *testing.T, works domain.AgentWorkRepository, id string, checkouts ...domain.RepositoryCheckout) {
+	t.Helper()
+	ctx := context.Background()
+	work, err := works.Get(ctx, id)
+	require.NoError(t, err)
+	require.True(t, work.RecordRepositoryCheckouts(domain.ExecutionCheckoutsEnded{WorkID: id, Checkouts: checkouts}))
+	require.NoError(t, works.Save(ctx, work))
 }

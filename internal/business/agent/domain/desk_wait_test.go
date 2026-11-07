@@ -109,9 +109,6 @@ func TestAWithdrawnQueuedContinuationReturnsToItsFormerState(t *testing.T) {
 	require.Equal(t, domain.WorkStarting, work.State)
 	require.Equal(t, starts+1, port.starts(), "a queued Resume is a start whose execution waits for its Desk")
 	work.Events.Drain()
-	require.ErrorIs(t, work.Close("close", domain.ClosureFacts{ContinuationPending: true, StartQueued: true}), domain.ErrWorkTransition, "a continuation still settling is not closed")
-	require.True(t, work.WaitsForDesk(true), "a refused close leaves the start waiting")
-
 	require.NoError(t, work.Stop("withdraw", true))
 	require.Equal(t, domain.WorkStopped, work.State)
 	require.Equal(t, []domain.RetirementCause{domain.RetiredWithdrawn}, requestsOf(work).releases, "its execution retires and leaves its Desk")

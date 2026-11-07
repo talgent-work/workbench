@@ -9,6 +9,7 @@ import (
 
 type workRepositoryRecord struct {
 	OwnerUserID  string                     `json:"owner_user_id"`
+	WorkBranch   string                     `json:"work_branch,omitempty"`
 	Repositories []selectedRepositoryRecord `json:"repositories"`
 }
 
@@ -23,7 +24,7 @@ type selectedRepositoryRecord struct {
 }
 
 func encodeWorkRepositories(selection domain.WorkRepositorySelection) (string, error) {
-	record := workRepositoryRecord{OwnerUserID: selection.OwnerUserID}
+	record := workRepositoryRecord{OwnerUserID: selection.OwnerUserID, WorkBranch: selection.WorkBranch}
 	for _, repo := range selection.Repositories {
 		record.Repositories = append(record.Repositories, selectedRepositoryRecord{
 			Provider: repo.Provider, RepoID: repo.RepoID, RepoName: repo.RepoName,
@@ -38,7 +39,7 @@ func decodeWorkRepositories(data string) (domain.WorkRepositorySelection, error)
 	if err := json.Unmarshal([]byte(data), &record); err != nil {
 		return domain.WorkRepositorySelection{}, oops.Wrap(err)
 	}
-	selection := domain.WorkRepositorySelection{OwnerUserID: record.OwnerUserID}
+	selection := domain.WorkRepositorySelection{OwnerUserID: record.OwnerUserID, WorkBranch: record.WorkBranch}
 	for _, repo := range record.Repositories {
 		selection.Repositories = append(selection.Repositories, domain.WorkRepository{
 			Provider: repo.Provider, RepoID: repo.RepoID, RepoName: repo.RepoName,
@@ -46,4 +47,37 @@ func decodeWorkRepositories(data string) (domain.WorkRepositorySelection, error)
 		})
 	}
 	return selection, selection.Validate()
+}
+
+// repositoryCheckoutRecord is one selected repository's final checkout
+// outcome.
+type repositoryCheckoutRecord struct {
+	RepositoryID string `json:"repository_id"`
+	CheckedOut   bool   `json:"checked_out"`
+	Reason       string `json:"reason,omitempty"`
+}
+
+func encodeRepositoryCheckouts(checkouts []domain.RepositoryCheckout) (string, error) {
+	records := make([]repositoryCheckoutRecord, 0, len(checkouts))
+	for _, checkout := range checkouts {
+		records = append(records, repositoryCheckoutRecord{RepositoryID: checkout.RepositoryID, CheckedOut: checkout.CheckedOut, Reason: checkout.Reason})
+	}
+	return encode(records)
+}
+
+// decodeRepositoryCheckouts reads the recorded outcomes; a Work recorded
+// before outcomes were kept on it has none.
+func decodeRepositoryCheckouts(data string) ([]domain.RepositoryCheckout, error) {
+	if data == "" {
+		return nil, nil
+	}
+	var records []repositoryCheckoutRecord
+	if err := json.Unmarshal([]byte(data), &records); err != nil {
+		return nil, oops.Wrap(err)
+	}
+	var checkouts []domain.RepositoryCheckout
+	for _, record := range records {
+		checkouts = append(checkouts, domain.RepositoryCheckout{RepositoryID: record.RepositoryID, CheckedOut: record.CheckedOut, Reason: record.Reason})
+	}
+	return checkouts, nil
 }

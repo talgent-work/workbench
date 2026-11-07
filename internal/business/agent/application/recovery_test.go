@@ -88,7 +88,7 @@ type recoveryFixture struct {
 
 func newRecoveryFixture(app *application.Application, lookups executionLookups, workspaces application.WorkspacePort) *recoveryFixture {
 	f := &recoveryFixture{executions: &commandtest.Executions{}, environment: &commandtest.Environment{}, enqueuer: &recordingEnqueuer{}}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, nil, nil)
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, nil)
 	f.recovery = application.NewRecovery(app, f.enqueuer, f.executions, lookups, reconciliation, workspaces, nil)
 	return f
 }
@@ -153,12 +153,6 @@ func page(ids []string, after string, limit int) []string {
 type idList []string
 
 func (l idList) ListWorkIDs(_ context.Context, after string, limit int) ([]string, error) {
-	return page(l, after, limit), nil
-}
-func (l idList) ListPendingContinuations(_ context.Context, after string, limit int) ([]string, error) {
-	return page(l, after, limit), nil
-}
-func (l idList) ListPendingInitialExecutions(_ context.Context, after string, limit int) ([]string, error) {
 	return page(l, after, limit), nil
 }
 
@@ -301,21 +295,17 @@ func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
 	}
 	works := idList{"work-1", "work-2"}
 	app := &application.Application{Queries: application.Queries{
-		ListRecoveryWorks:            query.NewListRecoveryWorksHandler(works),
-		ListPendingContinuations:     query.NewListPendingContinuationsHandler(idList{"work-2"}),
-		ListInitialExecutionRecovery: query.NewListInitialExecutionRecoveryHandler(idList{"work-1"}),
+		ListRecoveryWorks: query.NewListRecoveryWorksHandler(works),
 	}}
 	f := newRecoveryFixture(app, executionLookups{outstanding: executions}, nil)
 	app.Commands.ReconcileDesks = command.NewReconcileDesksHandler(time.Now, &computertest.Admission{}, &recoveredWorks{}, f.executions)
 	require.NoError(t, f.recovery.Sweep(context.Background()))
 	// Each outstanding execution's reconciliation decides its own steps.
-	require.Len(t, f.enqueuer.keys, 250+2+1+1)
+	require.Len(t, f.enqueuer.keys, 250+2)
 	require.Contains(t, f.enqueuer.keys, "agent:execution:execution-000")
 	require.Contains(t, f.enqueuer.keys, "agent:execution:execution-249")
 	require.Contains(t, f.enqueuer.keys, "agent:work:work-1")
 	require.Contains(t, f.enqueuer.keys, "agent:work:work-2")
-	require.Contains(t, f.enqueuer.keys, "agent:continuation:work-2")
-	require.Contains(t, f.enqueuer.keys, "agent:initial-execution:work-1")
 }
 
 type failingEnqueuer struct{}
@@ -329,10 +319,6 @@ func TestUnavailableQueueFailsTheWake(t *testing.T) {
 	require.Error(t, recovery.WakeExecution(context.Background(), "allocation-1"))
 	_, err := agenttask.NewReconcileExecution("allocation-1")
 	require.NoError(t, err)
-}
-
-func (idList) GetWorkContinuation(context.Context, string) (query.WorkContinuation, error) {
-	return query.WorkContinuation{}, errors.New("not used")
 }
 
 // A credential change wakes the reconciliation of every delivered execution

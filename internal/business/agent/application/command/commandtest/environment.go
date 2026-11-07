@@ -25,6 +25,9 @@ type Environment struct {
 	PrepareFunc func(ctx context.Context) error
 	// Installations is what a preparation reports of its Plugins.
 	Installations []domain.PluginInstallation
+	// Checkouts is what a preparation reports of the repositories it checks
+	// out.
+	Checkouts []domain.RepositoryCheckout
 	// ProcessID is the process Launch starts, "process" unless named.
 	ProcessID string
 	Delivery  domain.CredentialDelivery
@@ -89,17 +92,18 @@ func (e *Environment) WithdrawCredentials(context.Context, *domain.AgentExecutio
 	return e.StepErr
 }
 
-func (e *Environment) Prepare(ctx context.Context, _ *domain.AgentExecution) ([]domain.PluginInstallation, error) {
+func (e *Environment) Prepare(ctx context.Context, _ *domain.AgentExecution) (domain.PreparationReport, error) {
 	e.mu.Lock()
 	e.Prepared++
-	prepare, installations := e.PrepareFunc, slices.Clone(e.Installations)
+	prepare := e.PrepareFunc
+	report := domain.PreparationReport{Installations: slices.Clone(e.Installations), Checkouts: slices.Clone(e.Checkouts)}
 	e.mu.Unlock()
 	if prepare != nil {
 		if err := prepare(ctx); err != nil {
-			return nil, err
+			return domain.PreparationReport{}, err
 		}
 	}
-	return installations, nil
+	return report, nil
 }
 
 func (e *Environment) Launch(context.Context, *domain.AgentExecution) (string, error) {

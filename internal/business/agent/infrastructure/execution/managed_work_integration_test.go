@@ -17,7 +17,6 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
@@ -57,6 +56,11 @@ type machineRelay struct {
 	// unless undecided says otherwise.
 	reconciliation http.Handler
 	undecided      bool
+	// preparation is the report the preparation process writes; empty
+	// reports no Plugin and no checkout.
+	preparation string
+	// launching, when set, runs as the Harness process is created.
+	launching func()
 }
 
 // reconciled is the state of the machine's current round, as its ping
@@ -189,13 +193,23 @@ func (m *machineRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(body.Command, "node -e") {
 			id = "preparation-handle"
 		}
+		launching := m.launching
 		m.mu.Unlock()
+		if launching != nil && id == "harness-handle" {
+			launching()
+		}
 		_, _ = w.Write([]byte(`{"session_id":"` + id + `"}`))
 	case r.Method == http.MethodGet && path == "/pty/preparation-handle/ws":
+		m.mu.Lock()
+		report := m.preparation
+		m.mu.Unlock()
+		if report == "" {
+			report = `{"results":[],"repositories":null}`
+		}
 		websocket.Handler(func(ws *websocket.Conn) {
 			defer ws.Close()
 			_ = websocket.Message.Send(ws, `{"type":"connected","session_id":"preparation-handle","mode":"pipe","role":"holder"}`)
-			_ = websocket.Message.Send(ws, append([]byte{1}, []byte(`{"results":[],"repositories":null}`+"\n")...))
+			_ = websocket.Message.Send(ws, append([]byte{1}, []byte(report+"\n")...))
 			_ = websocket.Message.Send(ws, `{"type":"exit","exit_code":0}`)
 		}).ServeHTTP(w, r)
 	case r.Method == http.MethodDelete && strings.HasPrefix(path, "/pty/"):
@@ -269,7 +283,6 @@ func newManagedWork(t *testing.T) *managedWork {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	initial := infrastructure.NewInitialExecutionRequests(db, time.Now)
 	f := &managedWork{db: db, relay: &machineRelay{computerID: managedComputerID}, place: &managedPlace{}, mounts: &countingMounts{}, inputs: &inputFiles{}, owners: &readingProcess{},
 		works: &workSource{repo: infrastructure.NewAgentWorkRepository(db, time.Now)}}
 	relayServer := httptest.NewServer(f.relay)
@@ -277,7 +290,7 @@ func newManagedWork(t *testing.T) *managedWork {
 	f.relayURL = relayServer.URL
 	machines, err := NewManagedComputers(relayServer.Client(), relayServer.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, API: managedAPIAddress, Telemetry: managedTelemetryAddress}, "computer-control", f.place)
 	require.NoError(t, err)
-	f.provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, initial, nil)
+	f.provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, f.provisioning, lifecycle)
 	f.provisioning.managed, err = NewManagedEnvironment(db, machines, fixtureModels(), f.works, f.inputs, managedInputsRefresh)
 	require.NoError(t, err)
@@ -287,7 +300,7 @@ func newManagedWork(t *testing.T) *managedWork {
 	mux.Handle("/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) { dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, f.receiver) }))
 	dispatcher := httptest.NewServer(mux)
 	t.Cleanup(dispatcher.Close)
-	f.connections, err = NewNativeConnections(f.provisioning, f.provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", command.NewRecordRepositoryCheckoutsHandler(initial))
+	f.connections, err = NewNativeConnections(f.provisioning, f.provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
 	f.steps = newExecutionStepsWith(t, f.provisioning, f.connections, f.owners, f.provisioning.managed, time.Now, f.mounts)
 	return f
@@ -386,6 +399,41 @@ func (f *managedWork) exit(t *testing.T, record allocationRecord) {
 	run.RecordExit(record.ProcessID, domain.HarnessExit{})
 	require.NoError(t, f.steps.executions.Save(ctx, run))
 	require.NoError(t, f.steps.retire(ctx, record.SessionID, domain.RetiredByExit, time.Now()))
+}
+
+// A start with repositories left to check out records their outcomes when
+// its preparation ends, and launches its Harness only afterwards.
+func TestManagedWorkLaunchesItsHarnessOnlyAfterRecordingCheckouts(t *testing.T) {
+	f := newManagedWork(t)
+	f.relay.set(func(m *machineRelay) {
+		m.preparation = `{"results":[],"repositories":[{"repositoryId":"github:1","targetPath":"/workspace/repos/api","checkedOut":true,"reason":""},{"repositoryId":"github:2","targetPath":"/workspace/repos/private","checkedOut":false,"reason":"branch_unavailable"}]}`
+	})
+	input := managedRequest()
+	input.RepositorySelection, input.RemainingRepositories = checkoutSelection(), []string{"github:1", "github:2"}
+	begun := f.begin(t, input)
+	want := []domain.RepositoryCheckout{{RepositoryID: "github:1", CheckedOut: true}, {RepositoryID: "github:2", Reason: domain.CheckoutBranchMissing}}
+
+	var atLaunch *domain.AgentExecution
+	var readErr error
+	f.relay.set(func(m *machineRelay) {
+		m.launching = func() { atLaunch, readErr = f.steps.executions.Get(context.Background(), begun.ID) }
+	})
+
+	f.launch(t, begun.ID)
+
+	require.NoError(t, readErr)
+	require.NotNil(t, atLaunch, "the Harness was launched")
+	require.True(t, atLaunch.Process.PreparationEnded)
+	require.Equal(t, want, atLaunch.CheckoutResults, "every planned outcome is recorded before the Harness process is created")
+	run := current(t, f.steps, begun.ID)
+	require.Equal(t, "harness-handle", run.Process.ID)
+	require.Equal(t, want, run.CheckoutResults)
+	require.Len(t, f.relay.created, 2)
+	require.True(t, strings.HasPrefix(f.relay.created[0].Command, "talgent_checkout_plan='"), "the preparation receives the plan: %s", f.relay.created[0].Command)
+	require.NotContains(t, f.relay.created[1].Command, "talgent_checkout_plan", "the Harness is not the preparation")
+	ended, ok := run.CheckoutsEnded()
+	require.True(t, ok)
+	require.Equal(t, want, ended.Checkouts)
 }
 
 // A Managed Work's execution is reconciled as a Cloud Work's is: its

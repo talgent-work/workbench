@@ -18,11 +18,9 @@ func TestCloseStopsARunningWorkFirstAndClosesItOnceStopped(t *testing.T) {
 	require.NoError(t, s.ObserveTurn(domain.TurnObservation{Sequence: 10, Active: true}, false, false, time.Now()))
 	require.ErrorIs(t, s.Close("finish", domain.ClosureFacts{}), domain.ErrTurnActive)
 	require.NoError(t, s.ObserveTurn(domain.TurnObservation{Sequence: 20, Completed: true}, false, false, time.Now()))
-	for _, fact := range []domain.ClosureFacts{{InputPending: true}, {ContinuationPending: true}} {
-		require.ErrorIs(t, s.Close("finish", fact), domain.ErrWorkTransition)
-		require.Equal(t, domain.WorkWorking, s.State)
-		require.Empty(t, s.CloseRequestReference)
-	}
+	require.ErrorIs(t, s.Close("finish", domain.ClosureFacts{InputPending: true}), domain.ErrInputPending)
+	require.Equal(t, domain.WorkWorking, s.State)
+	require.Empty(t, s.CloseRequestReference)
 
 	require.NoError(t, s.Close("finish", domain.ClosureFacts{}))
 	require.Equal(t, domain.WorkStopping, s.State, "a running Work is stopped before it closes")
@@ -46,8 +44,8 @@ func TestCloseStopsARunningWorkFirstAndClosesItOnceStopped(t *testing.T) {
 	require.False(t, s.KeptCloseApplicable())
 }
 
-// A stopped or failed Work closes directly; a pending Resume or Restart, or
-// input the stopped process still holds, prevents it.
+// A stopped or failed Work closes directly, dropping input the stopped
+// process still holds.
 func TestCloseAppliesDirectlyToAStoppedWork(t *testing.T) {
 	s := newSession(t)
 	port := follow(s)
@@ -56,7 +54,6 @@ func TestCloseAppliesDirectlyToAStoppedWork(t *testing.T) {
 	exited(t, s, domain.HarnessExit{})
 	released(t, s)
 	require.Equal(t, domain.WorkStopped, s.State)
-	require.ErrorIs(t, s.Close("archive", domain.ClosureFacts{ContinuationPending: true}), domain.ErrWorkTransition)
 	require.NoError(t, s.Close("archive", domain.ClosureFacts{InputPending: true}), "input waiting for a Resume is dropped with the Work")
 	require.Equal(t, domain.WorkClosed, s.State)
 	require.Equal(t, []string{"stop"}, port.stops(), "a stopped Work needs no stop")

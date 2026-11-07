@@ -77,6 +77,9 @@ type allocationRecord struct {
 	// ReleasedAt is when, in Unix milliseconds, a retired execution's release
 	// was confirmed; zero while its release is outstanding.
 	ReleasedAt int64 `xorm:"'released_at'"`
+	// CheckoutResults is the JSON of the outcomes of the repositories the
+	// run checked out; JSON null until its checkout ended.
+	CheckoutResults []byte `xorm:"'checkout_results'"`
 	// AuthorizationIDs are the Provider Authorizations the Work selected; its
 	// repository and service access goes through them, so a credential change
 	// finds its Works.

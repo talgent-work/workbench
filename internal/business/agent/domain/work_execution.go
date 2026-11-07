@@ -88,11 +88,12 @@ func (s *AgentWork) startRequest() WorkStartAdmitted {
 }
 
 // LaunchSpecification is what the current start's run launches with, taken
-// from the Work: its context, capabilities, bindings, the Soul it took up
-// and the repositories it selected.
+// from the Work: its context, capabilities, bindings, the Soul it took up,
+// the repositories it selected and those still to check out.
 func (s *AgentWork) LaunchSpecification() LaunchSpecification {
 	return LaunchSpecification{
 		RepositorySelection:    s.RepositorySelection.Clone(),
+		RemainingRepositories:  s.RemainingRepositories(),
 		AuthorizationSelection: s.AuthorizationSelection.Clone(),
 		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, ProjectID: s.ProjectID, Capabilities: s.CapabilitySnapshot.Clone(),
 		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, WorkspaceReference: s.WorkspaceReference, InputSource: s.InputSource, ReadOnlyMounts: slices.Clone(s.ReadOnlyMounts),

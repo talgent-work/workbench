@@ -14,8 +14,6 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -41,7 +39,7 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	input := request()
 	record, err := register(ctx, provisioning, input, testMounts)
@@ -79,7 +77,7 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	mux.Handle(path, handler)
 	dispatcher := httptest.NewServer(mux)
 	defer dispatcher.Close()
-	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
 	// Submission with the first delivery, then preparation with the Harness

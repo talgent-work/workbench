@@ -13,9 +13,7 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -42,7 +40,7 @@ func newPreparingAllocation(t *testing.T) *preparingAllocation {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	input := request()
 	input.Capabilities, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}}, nil)
@@ -78,7 +76,7 @@ func newPreparingAllocation(t *testing.T) *preparingAllocation {
 	mux.Handle(path, handler)
 	dispatcher := httptest.NewServer(mux)
 	t.Cleanup(dispatcher.Close)
-	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
 	f.steps = newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
 	long, err := f.steps.handler.Reconcile(ctx, record.ID)

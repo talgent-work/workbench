@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	shared "github.com/talgent-work/workbench/internal/pkg/opensandbox"
 	"xorm.io/xorm"
@@ -31,7 +30,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, _ := sandboxClient(t)
 	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	live, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
@@ -70,7 +69,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	defer providerAPI.Close()
 	provider.client, err = shared.NewLifecycleClient(providerAPI.Client(), shared.Config{Address: providerAPI.URL + "/v1", APIKey: "fixture"})
 	require.NoError(t, err)
-	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
 

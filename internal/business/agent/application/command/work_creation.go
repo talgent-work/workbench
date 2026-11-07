@@ -137,16 +137,8 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork, fing
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return h.reused(ctx, request, fingerprint, work.ID)
 	}
-	if request.InitialExecution != nil {
-		retained := *request.InitialExecution
-		retained.WorkID = work.ID
-		if err := (InitialExecutionRequest{PrepareWorkExecution: retained}).AdmitRepositoryPreparation(work); err != nil {
-			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
-			return "", err
-		}
-	}
 	record := query.StartRequest{ID: request.RequestID, Kind: query.StartKindStart, WorkID: work.ID, Fingerprint: fingerprint}
-	err = h.sessions.RegisterWork(ctx, work, WorkRegistration{SubjectID: request.SubjectID, Request: record, WorkspaceReference: request.WorkspaceReference, DefinitionVersion: agent.Version, InitialExecution: initialPreparation(request, work.ID)})
+	err = h.sessions.RegisterWork(ctx, work, WorkRegistration{SubjectID: request.SubjectID, Request: record, WorkspaceReference: request.WorkspaceReference, DefinitionVersion: agent.Version})
 	if errors.Is(err, ErrStartRequestCanceled) || errors.Is(err, ErrStartRequestConflict) {
 		// The request can never create this Work: its Desk is not needed.
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
@@ -155,27 +147,9 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork, fing
 	if err != nil {
 		return "", err
 	}
-	if request.InitialExecution == nil {
-		// The start's execution begins once the Work commits.
-		return work.ID, nil
-	}
-	// The first start's execution holds its creation back until its
-	// repository preparation is recorded.
-	return h.created(ctx, request, work.ID)
-}
-
-// initialPreparation is the first start's preparation a new Work retains.
-// It still carries a copy of the initial task input, which the startup view
-// and a repeated preparation compare against; the Work's InitialTaskInput
-// alone decides the hand-off. The copy goes when the initial execution
-// request record is retired in favour of the Work's own facts.
-func initialPreparation(request CreateWork, workID string) *PrepareWorkExecution {
-	if request.InitialExecution == nil {
-		return nil
-	}
-	retained := *request.InitialExecution
-	retained.WorkID = workID
-	return &retained
+	// The start's execution begins once the Work commits; everything after
+	// follows from the Work's facts.
+	return work.ID, nil
 }
 
 // A competing creation may establish this Subject's Work after the first

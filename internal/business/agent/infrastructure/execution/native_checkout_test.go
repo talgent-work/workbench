@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -32,13 +31,13 @@ func TestPreparationChecksOutPlannedRepositoriesInsideTheWorkspace(t *testing.T)
 	}
 	workspace := t.TempDir()
 	report := runPreparation(t, workspace, fixtureAllocationID, plan, "600")
-	require.Equal(t, []command.RepositoryCheckoutResult{
-		{RepositoryID: "github:1", TargetPath: "/workspace/repos/populated", Prepared: true},
-		{RepositoryID: "github:2", TargetPath: "/workspace/repos/empty", Prepared: true},
-		{RepositoryID: "github:3", TargetPath: "/workspace/repos/missing", Reason: command.CheckoutUnavailable},
-		{RepositoryID: "github:4", TargetPath: "/workspace/repos/no-branch", Reason: "branch_unavailable"},
-		{RepositoryID: "github:5", TargetPath: "/workspace/elsewhere", Reason: "target_conflict"},
-	}, report.checkouts())
+	require.Equal(t, []domain.RepositoryCheckout{
+		{RepositoryID: "github:1", CheckedOut: true},
+		{RepositoryID: "github:2", CheckedOut: true},
+		{RepositoryID: "github:3", Reason: domain.CheckoutUnavailable},
+		{RepositoryID: "github:4", Reason: "branch_unavailable"},
+		{RepositoryID: "github:5", Reason: "target_conflict"},
+	}, report.checkouts(plan, domain.CheckoutIncomplete))
 	require.Equal(t, "talgent/TAL-1", gitIn(t, filepath.Join(workspace, "repos", "populated"), "rev-parse", "--abbrev-ref", "HEAD"))
 	require.Equal(t, "base\n", readFile(t, filepath.Join(workspace, "repos", "populated", "README.md")))
 	require.Equal(t, "refs/heads/talgent/TAL-1", gitIn(t, filepath.Join(workspace, "repos", "empty"), "symbolic-ref", "HEAD"), "an empty repository starts its work branch unborn")
@@ -51,7 +50,7 @@ func TestPreparationChecksOutPlannedRepositoriesInsideTheWorkspace(t *testing.T)
 	// working tree are never reset.
 	require.NoError(t, os.WriteFile(filepath.Join(workspace, "repos", "populated", "README.md"), []byte("edited by the Agent\n"), 0o600))
 	again := runPreparation(t, workspace, "01900000-0000-7000-8000-000000000002", plan[:1], "600")
-	require.Equal(t, []command.RepositoryCheckoutResult{{RepositoryID: "github:1", TargetPath: "/workspace/repos/populated", Prepared: true}}, again.checkouts())
+	require.Equal(t, []domain.RepositoryCheckout{{RepositoryID: "github:1", CheckedOut: true}}, again.checkouts(plan[:1], domain.CheckoutIncomplete))
 	require.Equal(t, "edited by the Agent\n", readFile(t, filepath.Join(workspace, "repos", "populated", "README.md")))
 }
 
@@ -59,14 +58,14 @@ func TestCheckoutStillPendingAtThePreparationBoundIsTimedOut(t *testing.T) {
 	requireNodeAndGit(t)
 	plan := []repositoryCheckout{{RepositoryID: "github:1", CloneURL: gitRemote(t, t.TempDir(), "large", "main"), BaseBranch: "main", WorkBranch: "talgent/TAL-1", TargetPath: "/workspace/repos/large"}}
 	report := runPreparation(t, t.TempDir(), fixtureAllocationID, plan, "0")
-	require.Equal(t, []command.RepositoryCheckoutResult{{RepositoryID: "github:1", TargetPath: "/workspace/repos/large", Reason: command.CheckoutTimedOut}}, report.checkouts())
+	require.Equal(t, []domain.RepositoryCheckout{{RepositoryID: "github:1", Reason: domain.CheckoutTimedOut}}, report.checkouts(plan, domain.CheckoutTimedOut))
 	// Ended by timeout before its report, a repository still checking out
 	// timed out; another early end leaves it incomplete.
-	require.Equal(t, command.CheckoutTimedOut, unfinishedCheckout(timeoutExitCode))
-	require.Equal(t, command.CheckoutTimedOut, unfinishedCheckout(timeoutKilledExitCode))
-	require.Equal(t, command.CheckoutIncomplete, unfinishedCheckout(1))
-	foreign := preparationReport{Repositories: []checkoutReport{{RepositoryID: "github:1", TargetPath: "/workspace/repos/large", Reason: "fatal: could not read Username"}}}
-	require.Equal(t, command.CheckoutUnavailable, foreign.checkouts()[0].Reason, "an unknown reason is never shown and never blocks the start")
+	require.Equal(t, domain.CheckoutTimedOut, unfinishedCheckout(timeoutExitCode))
+	require.Equal(t, domain.CheckoutTimedOut, unfinishedCheckout(timeoutKilledExitCode))
+	require.Equal(t, domain.CheckoutIncomplete, unfinishedCheckout(1))
+	foreign := preparationReport{Repositories: []checkoutReport{{RepositoryID: "github:1", Reason: "fatal: could not read Username"}}}
+	require.Equal(t, domain.CheckoutUnavailable, foreign.checkouts(plan, domain.CheckoutTimedOut)[0].Reason, "an unknown reason is never shown and never blocks the start")
 }
 
 // On shared storage every file write waits for its upload, so a repository
@@ -90,7 +89,7 @@ func TestPreparationWritesLargeCheckoutsInParallel(t *testing.T) {
 	plan := []repositoryCheckout{{RepositoryID: "github:1", CloneURL: "file://" + bare, BaseBranch: "main", WorkBranch: "talgent/TAL-1", TargetPath: "/workspace/repos/large"}}
 	workspace := t.TempDir()
 	report := runPreparation(t, workspace, fixtureAllocationID, plan, "600")
-	require.Equal(t, []command.RepositoryCheckoutResult{{RepositoryID: "github:1", TargetPath: "/workspace/repos/large", Prepared: true}}, report.checkouts())
+	require.Equal(t, []domain.RepositoryCheckout{{RepositoryID: "github:1", CheckedOut: true}}, report.checkouts(plan, domain.CheckoutIncomplete))
 	require.Equal(t, "content\n", readFile(t, filepath.Join(workspace, "repos", "large", "file-119.txt")))
 	require.True(t, startedCheckoutWorker(t, trace), "checkout starts parallel workers")
 	require.Equal(t, "8", gitIn(t, filepath.Join(workspace, "repos", "large"), "config", "--local", "--get", "checkout.workers"), "later checkouts in the Work stay parallel")

@@ -7,7 +7,10 @@ import (
 // LaunchSpecification is what one admitted start asks its Computer's
 // execution realization to run.
 type LaunchSpecification struct {
-	RepositorySelection    WorkRepositorySelection
+	RepositorySelection WorkRepositorySelection
+	// RemainingRepositories are the selected repositories this run checks
+	// out: those without a checkout outcome when the start was admitted.
+	RemainingRepositories  []string
 	AuthorizationSelection WorkAuthorizationSelection
 	ThinkingLevel          string
 	// PermissionMode is a Managed Work's; empty on a Cloud, which bypasses.

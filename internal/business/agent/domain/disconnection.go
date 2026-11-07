@@ -187,14 +187,15 @@ func (s *AgentWork) stopBeyondReach(requestID string, reason StopReason) (bool, 
 
 // closeBeyondReach closes a Work during a Disconnection at once: a Working
 // Work is stopped as completed, as any close of a running Work is, and its
-// run ends without reaching its process. Input still awaiting processing, or
-// a start or continuation still owed, refuses it as on any running Work.
+// run ends without reaching its process. Input still awaiting processing, an
+// initial task input not handed off or a retained end refuses it as on any
+// running Work.
 func (s *AgentWork) closeBeyondReach(requestID string, facts ClosureFacts) error {
 	if s.State == WorkWorking {
 		if facts.InputPending {
 			return ErrInputPending
 		}
-		if s.InitialTaskInput != nil || facts.ContinuationPending || s.EndRequestReference != "" {
+		if s.InitialTaskInput != nil || s.EndRequestReference != "" {
 			return ErrWorkTransition
 		}
 		s.admitStop(requestID, StopReasonCompleted)

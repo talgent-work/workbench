@@ -19,11 +19,10 @@ type ReconcileExecutionHandler struct {
 	harness      RunningHarnessPort
 	computers    ComputerPort
 	mounts       SandboxMountPort
-	initial      InitialExecutionReader
 }
 
-func NewReconcileExecutionHandler(now func() time.Time, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness RunningHarnessPort, computers ComputerPort, mounts SandboxMountPort, initial InitialExecutionReader) *ReconcileExecutionHandler {
-	return &ReconcileExecutionHandler{now: now, executions: executions, environments: environments, harness: harness, computers: computers, mounts: mounts, initial: initial}
+func NewReconcileExecutionHandler(now func() time.Time, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness RunningHarnessPort, computers ComputerPort, mounts SandboxMountPort) *ReconcileExecutionHandler {
+	return &ReconcileExecutionHandler{now: now, executions: executions, environments: environments, harness: harness, computers: computers, mounts: mounts}
 }
 
 // reconcileRounds bounds the decisions one reconciliation makes: after a step
@@ -119,20 +118,14 @@ func (h *ReconcileExecutionHandler) decide(ctx context.Context, executionID stri
 	if err != nil {
 		return nil, none, observation, err
 	}
-	rejected, err := h.prerequisite(ctx, execution, &observation)
-	if err != nil {
-		return nil, none, observation, err
-	}
-	held := observation.CreationHeld
 	if observation, err = h.environments.Observe(ctx, execution); err != nil {
 		return nil, none, observation, err
 	}
-	observation.CreationHeld = held
 	decision, err := execution.Reconcile(observation, h.now())
 	if err != nil {
 		return nil, none, observation, err
 	}
-	if seated || rejected || decision.Changed {
+	if seated || decision.Changed {
 		if err := h.executions.Save(ctx, execution); err != nil {
 			return nil, none, observation, err
 		}
@@ -157,27 +150,6 @@ func (h *ReconcileExecutionHandler) seat(ctx context.Context, execution *domain.
 		seatedAt = h.now()
 	}
 	return execution.Seat(seatedAt)
-}
-
-// prerequisite applies the Work's first-start preparation to an execution
-// that has not submitted its creation: a pending one holds the creation back,
-// and a rejected one refuses it.
-func (h *ReconcileExecutionHandler) prerequisite(ctx context.Context, execution *domain.AgentExecution, observation *domain.EnvironmentObservation) (bool, error) {
-	if execution.Creation.Submitted || execution.Retired() || h.initial == nil {
-		return false, nil
-	}
-	initial, err := h.initial.Get(ctx, execution.WorkID)
-	if errors.Is(err, ErrInitialExecutionNotFound) {
-		return false, nil
-	}
-	if err != nil || initial.Prepared {
-		return false, err
-	}
-	if !initial.Rejected {
-		observation.CreationHeld = true
-		return false, nil
-	}
-	return execution.RecordCreationAnswer(domain.CreationAnswer{Refused: true})
 }
 
 // confirmRelease confirms a retired execution's release once it left its

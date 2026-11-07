@@ -29,14 +29,13 @@ import (
 	"xorm.io/xorm"
 )
 
-func TestExecutionArchiveRPCRequiresStoppedSessionWithoutPendingContinuation(t *testing.T) {
+func TestExecutionArchiveRPCRequiresAStoppedWork(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
 	run := newRuns(t, f.db, f.sessions)
 	stoppedRun := run.latest(ctx, id)
 	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	handler := command.NewCloseWorkHandler(f.sessions, authorization, run.executions, receipts, &commandtest.InputBuffer{})
+	handler := command.NewCloseWorkHandler(f.sessions, authorization, run.executions, &commandtest.InputBuffer{})
 	app := &application.Application{Works: f.sessions, Commands: application.Commands{CloseWork: handler}}
 	endpoint := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterAgentServiceHandler(s, agenttransport.NewAgentHandler(app, "control"))
@@ -55,17 +54,11 @@ func TestExecutionArchiveRPCRequiresStoppedSessionWithoutPendingContinuation(t *
 	require.NoError(t, err)
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(archive("other", "control", id)))
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(archive("owner", "wrong", id)))
-	request := command.ContinuationRequest{StartWork: command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}, Operation: "resume"}
-	_, err = receipts.RetainContinuation(ctx, request, before.Version)
-	require.NoError(t, err)
-	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(archive("owner", "control", id)))
 	stillStopped, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, stillStopped.State)
-	require.Equal(t, before.Version+1, stillStopped.Version, "rejected archive must not save another Session revision")
+	require.Equal(t, before.Version, stillStopped.Version, "rejected archive must not save another Session revision")
 	require.Equal(t, stoppedRun, run.latest(ctx, id), "rejected archive asks no execution to exit or release")
-	require.NoError(t, receipts.RecordContinuationRejection(ctx, id, request.RequestID, "capacity"))
-	require.NoError(t, receipts.ResolveContinuation(ctx, id, request.RequestID, false))
 	require.NoError(t, archive("owner", "control", id))
 	require.NoError(t, archive("owner", "control", id), "closed archive remains idempotent")
 	// A caller's completion closing an already closed Work is acknowledged
@@ -113,24 +106,28 @@ func TestExecutionArchiveRPCRequiresStoppedSessionWithoutPendingContinuation(t *
 	require.NotContains(t, ids, created, "a closed Work leaves recovery; Storage owns its workspace reclamation")
 }
 
-type archiveContinuationRead struct {
-	query.ContinuationReader
-	after func() error
+// workReadBarrier runs after once the first read of a Work returns, before
+// its reader decides; no sleeps or fake SQL state.
+type workReadBarrier struct {
+	domain.AgentWorkRepository
+	after func()
+	done  *bool
 }
 
-func (r archiveContinuationRead) GetWorkContinuation(ctx context.Context, id string) (query.WorkContinuation, error) {
-	value, err := r.ContinuationReader.GetWorkContinuation(ctx, id)
-	if err == nil {
-		err = r.after()
+func (r workReadBarrier) Get(ctx context.Context, id string) (*domain.AgentWork, error) {
+	work, err := r.AgentWorkRepository.Get(ctx, id)
+	if err == nil && !*r.done {
+		*r.done = true
+		r.after()
 	}
-	return value, err
+	return work, err
 }
 
-func TestExecutionArchiveAndContinuationCannotBothCommitFromStoppedRevision(t *testing.T) {
-	for _, continuationFirst := range []bool{true, false} {
+func TestExecutionArchiveAndResumeCannotBothCommitFromStoppedRevision(t *testing.T) {
+	for _, resumeFirst := range []bool{true, false} {
 		name := "archive commits first"
-		if continuationFirst {
-			name = "continuation retained after archive read"
+		if resumeFirst {
+			name = "resume commits after archive read"
 		}
 		t.Run(name, func(t *testing.T) {
 			f, id := stoppedContinuationSession(t)
@@ -138,39 +135,26 @@ func TestExecutionArchiveAndContinuationCannotBothCommitFromStoppedRevision(t *t
 			other, err := xorm.NewEngine("mysql", f.dsn)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = other.Close() })
-			before, err := f.sessions.Get(ctx, id)
-			require.NoError(t, err)
-			receipts := infrastructure.NewContinuationRequests(other, time.Now)
-			request := command.ContinuationRequest{StartWork: command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}, Operation: "resume"}
-			var reader query.ContinuationReader = receipts
-			if continuationFirst {
-				reader = archiveContinuationRead{ContinuationReader: receipts, after: func() error {
-					_, err := receipts.RetainContinuation(ctx, request, before.Version)
-					return err
-				}}
-			}
+			observer := infrastructure.NewAgentWorkRepository(other, time.Now)
 			run := newRuns(t, f.db, f.sessions)
 			stoppedRun := run.latest(ctx, id)
 			authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-			archive := command.NewCloseWorkHandler(f.sessions, authorization, run.executions, reader, &commandtest.InputBuffer{})
+			resume := command.NewResumeWorkHandler(time.Now, observer, f.agents, authorization, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+			request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
+			var works domain.AgentWorkRepository = f.sessions
+			if resumeFirst {
+				works = workReadBarrier{AgentWorkRepository: f.sessions, done: new(bool), after: func() { require.NoError(t, resume.Handle(ctx, request)) }}
+			}
+			archive := command.NewCloseWorkHandler(works, authorization, run.executions, &commandtest.InputBuffer{})
 			err = archive.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()})
-			observer := infrastructure.NewAgentWorkRepository(other, time.Now)
-			if continuationFirst {
+			if resumeFirst {
 				require.ErrorIs(t, err, domain.ErrConcurrentModification)
 				stored, err := observer.Get(ctx, id)
-				require.NoError(t, err)
-				require.Equal(t, domain.WorkStopped, stored.State)
-				err = command.NewResumeWorkHandler(time.Now, observer, f.agents, authorization, computertest.Checked(startupAuthority{}), receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request.StartWork)
-				require.NoError(t, err)
-				stored, err = observer.Get(ctx, id)
 				require.NoError(t, err)
 				require.Equal(t, domain.WorkStarting, stored.State)
 			} else {
 				require.NoError(t, err)
-				_, err = receipts.RetainContinuation(ctx, request, before.Version)
-				require.ErrorIs(t, err, domain.ErrConcurrentModification)
-				err = command.NewResumeWorkHandler(time.Now, observer, f.agents, authorization, computertest.Checked(startupAuthority{}), receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request.StartWork)
-				require.ErrorIs(t, err, domain.ErrWorkTransition)
+				require.ErrorIs(t, resume.Handle(ctx, request), domain.ErrWorkTransition)
 				stored, err := observer.Get(ctx, id)
 				require.NoError(t, err)
 				require.Equal(t, domain.WorkClosed, stored.State)
@@ -197,8 +181,7 @@ func TestExecutionArchiveRecoversCloseFromAgentAfterCommitAcknowledgementLoss(t 
 	ctx := context.Background()
 	run := newRuns(t, f.db, f.sessions)
 	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	admitted := run.latest(ctx, ref)
 	require.NotNil(t, admitted, "the admitted start begins its execution")
@@ -210,7 +193,7 @@ func TestExecutionArchiveRecoversCloseFromAgentAfterCommitAcknowledgementLoss(t 
 	require.NoError(t, f.sessions.Save(ctx, failed))
 	lost := errors.New("archive save acknowledgement lost")
 	requestID := uuid.NewString()
-	err = command.NewCloseWorkHandler(archiveLostSave{f.sessions, lost}, authorization, run.executions, receipts, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: requestID})
+	err = command.NewCloseWorkHandler(archiveLostSave{f.sessions, lost}, authorization, run.executions, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: requestID})
 	require.ErrorIs(t, err, lost)
 	unsent, err := run.executions.Latest(ctx, ref)
 	require.NoError(t, err)

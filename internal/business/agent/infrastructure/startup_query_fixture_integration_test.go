@@ -5,7 +5,6 @@ package infrastructure_test
 import (
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -21,7 +20,7 @@ import (
 
 func startupRPCClient(t *testing.T, db *xorm.Engine) agentprivatev1connect.AgentServiceClient {
 	t.Helper()
-	app := &application.Application{Queries: application.Queries{GetWorkStartup: query.NewGetWorkStartupHandler(infrastructure.NewExecutionQueryRepository(db), access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), infrastructure.NewContinuationRequests(db, time.Now))}}
+	app := &application.Application{Queries: application.Queries{GetWorkStartup: query.NewGetWorkStartupHandler(infrastructure.NewExecutionQueryRepository(db), access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)))}}
 	handler := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterAgentServiceHandler(s, agentrpc.NewAgentHandler(app, "control"))
 	})

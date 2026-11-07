@@ -34,10 +34,12 @@ func (h *ReconcileExecutionHandler) RunLongStep(ctx context.Context, executionID
 	return nil
 }
 
-// prepare sees the in-environment preparation through to its exit, no later
-// than the Startup Deadline, recording its Plugins' installation with its
-// end, then launches the Harness and connects it, each outcome recorded
-// before the next. A start past its deadline launches
+// prepare sees the in-environment preparation (Plugins, then the repositories
+// the run checks out) through to its exit, no later than the Startup
+// Deadline, recording its Plugins' installation and its checkout outcomes
+// with its end, then launches the Harness and connects it, each outcome
+// recorded before the next, so the Harness starts only once every remaining
+// repository has an outcome. A start past its deadline launches
 // nothing; the execution records its failure.
 func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *domain.AgentExecution) error {
 	executionID := execution.ID
@@ -48,7 +50,7 @@ func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *doma
 	bounded, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	if !execution.Process.PreparationEnded {
-		installations, err := h.environments.Prepare(bounded, execution)
+		report, err := h.environments.Prepare(bounded, execution)
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			// The Startup Deadline passed while it prepared; the execution's
 			// next reconciliation records the failure.
@@ -58,7 +60,7 @@ func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *doma
 			return err
 		}
 		if err := h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
-			return execution.RecordPreparation(domain.PreparationReport{Installations: installations})
+			return execution.RecordPreparation(report)
 		}); err != nil {
 			return err
 		}

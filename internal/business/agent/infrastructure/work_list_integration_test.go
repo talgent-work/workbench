@@ -56,7 +56,6 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	defer server.Close()
 	client := agentprivatev1connect.NewWorkFactsServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	feedback := newRuns(t, f.db, f.sessions)
-	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
 	project := uuid.NewString()
 	makeSession := func(projectID, key string, stopped bool) string {
 		creation := f.request
@@ -70,10 +69,6 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 		id, e := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels())).Handle(ctx, creation)
 		require.NoError(t, e)
 		if stopped {
-			request, e := initial.Get(ctx, id)
-			require.NoError(t, e)
-			request.Submitted, request.InputPrepared = true, true
-			require.NoError(t, initial.Save(ctx, request))
 			require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 			for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 				require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id}))
@@ -88,7 +83,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	second := makeSession(project, "TAL-2", true)
 	other := makeSession(uuid.NewString(), "OTHER-1", true)
 	starting := makeSession(project, "TAL-3", false)
-	continued, err := continuedRef(second, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, principal, computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: owner, WorkID: second, RequestID: uuid.NewString()}))
+	continued, err := continuedRef(second, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, principal, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: owner, WorkID: second, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted, command.UserInteractionRequired} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: continued, InteractionID: "list-question", ObservationSequence: 1000, RequiredInteractionIDs: []string{"list-question"}}))
@@ -163,7 +158,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 
 	// An older archived Work remains discoverable even when newer live Works fill
 	// the requested page. Filtering must precede LIMIT.
-	require.NoError(t, command.NewCloseWorkHandler(f.sessions, principal, executionsOf(f.db), infrastructure.NewContinuationRequests(f.db, time.Now), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: first, RequestID: uuid.NewString()}))
+	require.NoError(t, command.NewCloseWorkHandler(f.sessions, principal, executionsOf(f.db), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: first, RequestID: uuid.NewString()}))
 	_, err = f.db.Exec("UPDATE agent_session SET updated_at=500 WHERE id=?", first)
 	require.NoError(t, err)
 	archived, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{AgentOwner: owner, ProjectId: project, Recent: true, Limit: 1, Archived: proto.Bool(true)})

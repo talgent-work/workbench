@@ -1,0 +1,87 @@
+package infrastructure
+
+import (
+	"context"
+
+	"github.com/samber/oops"
+
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+)
+
+var _ query.WorkPreparationReader = (*WorkQueryRepository)(nil)
+
+type workPreparationRow struct {
+	ID                  string `xorm:"id"`
+	StartedBy           string `xorm:"started_by"`
+	ThinkingLevel       string `xorm:"thinking_level"`
+	InitialTaskInput    string `xorm:"initial_task_input"`
+	RepositorySelection string `xorm:"repository_selection"`
+	RepositoryCheckouts string `xorm:"repository_checkouts"`
+	CreationRequestID   string `xorm:"creation_request_id"`
+}
+
+// GetWorkPreparation derives the first start of a Work that a creation
+// request created from its facts; a Work without one has none.
+func (r *WorkQueryRepository) GetWorkPreparation(ctx context.Context, workID string) (query.WorkPreparation, bool, error) {
+	preparations, err := r.preparations(ctx, "s.id = ?", workID)
+	if err != nil || len(preparations) == 0 {
+		return query.WorkPreparation{}, false, err
+	}
+	return preparations[0], true, nil
+}
+
+// ListSubmittedPreparations pages, by Work identity, through the first starts
+// of Works that creation requests created: every such start was admitted
+// with its Work.
+func (r *WorkQueryRepository) ListSubmittedPreparations(ctx context.Context, after string, limit int) ([]query.WorkPreparation, error) {
+	return r.preparations(ctx, "s.id > ? ORDER BY s.id LIMIT ?", after, limit)
+}
+
+func (r *WorkQueryRepository) preparations(ctx context.Context, condition string, args ...any) ([]query.WorkPreparation, error) {
+	var rows []workPreparationRow
+	// The creation request is looked up per Work through its session index.
+	creation := string(query.StartKindStart)
+	err := r.db.Context(ctx).SQL(`SELECT s.id, s.started_by, s.thinking_level, s.initial_task_input, s.repository_selection, s.repository_checkouts,
+ (SELECT q.id FROM agent_start_request q WHERE q.session_id = s.id AND q.canceled = 0 AND q.deleted_at = 0 AND q.kind = ? ORDER BY q.created_at, q.id LIMIT 1) AS creation_request_id
+ FROM agent_session s WHERE s.deleted_at = 0
+ AND EXISTS (SELECT 1 FROM agent_start_request q WHERE q.session_id = s.id AND q.canceled = 0 AND q.deleted_at = 0 AND q.kind = ?)
+ AND `+condition, append([]any{creation, creation}, args...)...).Find(&rows)
+	if err != nil {
+		return nil, oops.With("operation", "agent.work_preparations").Wrap(err)
+	}
+	result := make([]query.WorkPreparation, 0, len(rows))
+	for _, row := range rows {
+		preparation, err := workPreparationFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, preparation)
+	}
+	return result, nil
+}
+
+// workPreparationFromRow maps a Work's facts to its first start: prepared and
+// submitted with the Work, its workspace prepared once every selected
+// repository has a checkout outcome, and its initial task input buffered once
+// the Work no longer holds it.
+func workPreparationFromRow(row workPreparationRow) (query.WorkPreparation, error) {
+	initial, err := decodeInitialTaskInput(row.InitialTaskInput)
+	if err != nil {
+		return query.WorkPreparation{}, err
+	}
+	selection, err := decodeWorkRepositories(row.RepositorySelection)
+	if err != nil {
+		return query.WorkPreparation{}, err
+	}
+	checkouts, err := decodeRepositoryCheckouts(row.RepositoryCheckouts)
+	if err != nil {
+		return query.WorkPreparation{}, err
+	}
+	preparation := query.WorkPreparation{ThinkingLevel: row.ThinkingLevel, WorkID: row.ID, RequestID: row.CreationRequestID, SubjectID: row.StartedBy,
+		WorkBranch: selection.WorkBranch, Prepared: true, Submitted: true, InputPrepared: len(checkouts) >= len(selection.Repositories),
+		InputBuffered: initial == nil, Checkouts: query.PlanCheckouts(row.ID, selection)}
+	if initial != nil {
+		preparation.InputID, preparation.Input = initial.ID, initial.Text
+	}
+	return preparation, nil
+}

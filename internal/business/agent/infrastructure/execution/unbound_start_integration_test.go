@@ -62,12 +62,11 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	f := &unboundStart{db: db, at: time.Now()}
 	provider, _, lifecycle := sandboxClient(t)
 	f.lifecycle = lifecycle
-	initial := infrastructure.NewInitialExecutionRequests(db, f.now)
 	works := infrastructure.NewAgentWorkRepository(db, f.now)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, f.now, initial, nil)
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, f.now, nil)
 	// A bound sandbox receives its credentials, so onboarding continues.
 	attachNativeCredentials(t, db, p, lifecycle)
-	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(initial))
+	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
 	require.NoError(t, err)
 	f.works, f.steps = works, newExecutionSteps(t, p, connections, unread{}, nil, f.now)
 	f.coordination = command.NewExecutionCoordination(f.now, works, f.steps.executions, f.steps.desks, f.steps.harness)

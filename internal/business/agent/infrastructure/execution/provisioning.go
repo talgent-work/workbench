@@ -4,12 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"slices"
 	"time"
 
 	"github.com/samber/oops"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"xorm.io/xorm"
 )
@@ -32,15 +30,14 @@ type Provisioning struct {
 	managed *ManagedEnvironment
 	now     func() time.Time
 	native  NativeLaunchConfig
-	initial command.InitialExecutionReader
 	// attemptTimeout bounds one submission attempt against the environment
 	// authority; it is reconciliationAttemptTimeout except in tests that
 	// exercise its expiry.
 	attemptTimeout time.Duration
 }
 
-func NewProvisioning(db *xorm.Engine, sandboxes *Sandboxes, credentials *SandboxCredentials, native NativeLaunchConfig, now func() time.Time, initial command.InitialExecutionReader, managed *ManagedEnvironment) *Provisioning {
-	return &Provisioning{records: records{db: db}, sandboxes: sandboxes, credentials: credentials, managed: managed, native: native, now: now, initial: initial, attemptTimeout: reconciliationAttemptTimeout}
+func NewProvisioning(db *xorm.Engine, sandboxes *Sandboxes, credentials *SandboxCredentials, native NativeLaunchConfig, now func() time.Time, managed *ManagedEnvironment) *Provisioning {
+	return &Provisioning{records: records{db: db}, sandboxes: sandboxes, credentials: credentials, managed: managed, native: native, now: now, attemptTimeout: reconciliationAttemptTimeout}
 }
 
 // specify fixes the execution's environment specification, launch commands
@@ -60,18 +57,7 @@ func (p *Provisioning) specify(ctx context.Context, record allocationRecord, mou
 		return oops.With("operation", "decode_execution_launch").Wrap(err)
 	}
 	owner := Allocation{WorkID: record.SessionID, ID: record.ID}
-	// The initial preparation's thinking level belongs to the Work's first start.
-	thinkingLevel := launch.ThinkingLevel
-	if thinkingLevel == "" && launch.ContextMode == domain.ContextFresh {
-		initial, found, err := p.initialRequest(ctx, record.SessionID)
-		if err != nil {
-			return err
-		}
-		if found {
-			thinkingLevel = initial.ThinkingLevel
-		}
-	}
-	native, err := p.native.prepare(authority.launchLayout(), launch, owner, thinkingLevel)
+	native, err := p.native.prepare(authority.launchLayout(), launch, owner, launch.ThinkingLevel)
 	if err != nil {
 		return err
 	}
@@ -93,18 +79,6 @@ func (p *Provisioning) specify(ctx context.Context, record allocationRecord, mou
 		return oops.With("operation", "specify_execution").Wrap(err)
 	}
 	return nil
-}
-
-// initialRequest reads the Work's retained initial request, if it has one.
-func (p *Provisioning) initialRequest(ctx context.Context, workID string) (command.InitialExecutionRequest, bool, error) {
-	if p.initial == nil {
-		return command.InitialExecutionRequest{}, false, nil
-	}
-	request, err := p.initial.Get(ctx, workID)
-	if errors.Is(err, command.ErrInitialExecutionNotFound) {
-		return command.InitialExecutionRequest{}, false, nil
-	}
-	return request, err == nil, err
 }
 
 // recordRecovery records whether the latest attempt at a step left the start

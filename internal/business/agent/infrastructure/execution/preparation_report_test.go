@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -19,8 +18,9 @@ func TestCheckoutsSettledBeforeATimeoutKillAreKept(t *testing.T) {
 	report := latestReport(output, timeoutExitCode, domain.CapabilitySnapshot{}, plan)
 	require.Nil(t, report.Repositories)
 	report.Repositories = settledCheckouts(output, plan)
-	require.Equal(t, []command.RepositoryCheckoutResult{
-		{RepositoryID: "github:1", TargetPath: "/workspace/repos/a", Prepared: true},
-	}, report.checkouts(), "unplanned or misplaced lines are ignored; github:2 is left to the plan")
-	require.Equal(t, command.CheckoutTimedOut, unfinishedCheckout(timeoutExitCode))
+	require.Equal(t, []domain.RepositoryCheckout{
+		{RepositoryID: "github:1", CheckedOut: true},
+		{RepositoryID: "github:2", Reason: domain.CheckoutTimedOut},
+	}, report.checkouts(plan, unfinishedCheckout(timeoutExitCode)), "unplanned or misplaced lines are ignored; the unfinished github:2 timed out")
+	require.Equal(t, domain.CheckoutTimedOut, unfinishedCheckout(timeoutExitCode))
 }

@@ -226,7 +226,7 @@ func TestAResumeWhoseDeskLeftCannotStart(t *testing.T) {
 	agents, sessions := startupStores(t)
 	stopWork(t, sessions)
 	computer := &deskLedger{}
-	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID}
 	lost := errors.New("connection lost during the commit")
 	sessions.commitErr = lost
@@ -273,7 +273,7 @@ func TestARepeatedResumeReturnsItsOriginalOutcome(t *testing.T) {
 	agents, sessions := startupStores(t)
 	stopWork(t, sessions)
 	computer := &deskLedger{}
-	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID}
 	require.NoError(t, resume.Handle(t.Context(), request))
 	require.Equal(t, domain.WorkStarting, sessions.session.State)

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -55,7 +54,7 @@ func TestSandboxObserverWakesTheOwningAllocation(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, _ := sandboxClient(t)
 	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
@@ -109,7 +108,7 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, _ := sandboxClient(t)
 	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)

@@ -49,7 +49,7 @@ func (r *AgentWorkRepository) Get(ctx context.Context, id string) (*domain.Agent
 // serializes rule changes with creation; the request record's row lock
 // serializes it with the request's cancellation.
 func (r *AgentWorkRepository) RegisterWork(ctx context.Context, session *domain.AgentWork, registration command.WorkRegistration) error {
-	subject, definitionVersion, initial, request := registration.SubjectID, registration.DefinitionVersion, registration.InitialExecution, registration.Request
+	subject, definitionVersion, request := registration.SubjectID, registration.DefinitionVersion, registration.Request
 	if strings.TrimSpace(subject) == "" || len(subject) > 255 || subject != session.StartedBy {
 		return access.ErrAccessDenied
 	}
@@ -60,18 +60,14 @@ func (r *AgentWorkRepository) RegisterWork(ctx context.Context, session *domain.
 	if err != nil {
 		return err
 	}
-	return r.saveWith(ctx, session, subject, definitionVersion, initial, r.startAdmissionHooks(session, request, scope))
+	return r.saveWith(ctx, session, definitionVersion, r.startAdmissionHooks(session, request, scope))
 }
 
 func (r *AgentWorkRepository) Save(ctx context.Context, session *domain.AgentWork) error {
 	if session == nil || session.Version == 0 {
 		return domain.ErrInvalidWork
 	}
-	return r.save(ctx, session, "", 0, nil)
-}
-
-func (r *AgentWorkRepository) save(ctx context.Context, session *domain.AgentWork, subject string, definitionVersion int, initial *command.PrepareWorkExecution) error {
-	return r.saveWith(ctx, session, subject, definitionVersion, initial, saveHooks{})
+	return r.saveWith(ctx, session, 0, saveHooks{})
 }
 
 // saveHooks enlist related writes in the Work's transaction: before runs ahead
@@ -81,7 +77,7 @@ type saveHooks struct {
 	before, after func(*xorm.Session, int64) error
 }
 
-func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.AgentWork, subject string, definitionVersion int, initial *command.PrepareWorkExecution, hooks saveHooks) error {
+func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.AgentWork, definitionVersion int, hooks saveHooks) error {
 	if session == nil {
 		return domain.ErrInvalidWork
 	}
@@ -123,27 +119,13 @@ func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.Agen
 	} else {
 		var affected int64
 		affected, err = tx.Where("id = ? AND version = ? AND deleted_at = 0", row.ID, session.Version).
-			Cols("capabilities", "initial_task_input", "task_execution_begun", "thinking_level", "permission_mode", "work_progress", "state", "context_ref", "harness_process", "holds_process", "stop_request", "close_request", "stop_reason", "disconnected_since", "reach_resume_due", "end_request", "failure_reason", "visibility_public", "display_title", "version", "updated_at").Update(row)
+			Cols("capabilities", "initial_task_input", "repository_checkouts", "task_execution_begun", "thinking_level", "permission_mode", "work_progress", "state", "context_ref", "harness_process", "holds_process", "stop_request", "close_request", "stop_reason", "disconnected_since", "reach_resume_due", "end_request", "failure_reason", "visibility_public", "display_title", "version", "updated_at").Update(row)
 		if err == nil && affected != 1 {
 			return domain.ErrConcurrentModification
 		}
 	}
 	if err != nil {
 		return oops.With("operation", "agent_session.save").With("session_id", session.ID).Wrap(err)
-	}
-	if initial != nil {
-		if session.Version != 0 || initial.WorkID != session.ID || initial.SubjectID != subject {
-			return domain.ErrInvalidWork
-		}
-		receipt, err := initialExecutionRequestToDO(command.InitialExecutionRequest{PrepareWorkExecution: *initial, Submitted: true})
-		if err != nil {
-			return err
-		}
-		receipt.Version = 1
-		receipt.CreatedAt, receipt.UpdatedAt = row.UpdatedAt, row.UpdatedAt
-		if _, err := tx.Insert(&receipt); err != nil {
-			return oops.With("operation", "agent_session.retain_initial_input").Wrap(err)
-		}
 	}
 	if hooks.after != nil {
 		if err := hooks.after(tx, row.UpdatedAt); err != nil {

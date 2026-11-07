@@ -144,7 +144,7 @@ func (h workStartup) admit(ctx context.Context, request StartWork, begin startBe
 // its own error, a concurrent change among them, so the admission is tried
 // again. A failure to ask the Computer is no refusal and records nothing.
 func (h workStartup) refused(ctx context.Context, session *domain.AgentWork, kind query.StartKind, refusal error) error {
-	if kind != query.StartKindResume || continuationRejection(refusal) == "" || !session.RefuseResume(refusal) {
+	if kind != query.StartKindResume || !refusedStart(refusal) || !session.RefuseResume(refusal) {
 		return refusal
 	}
 	if err := h.sessions.Save(ctx, session); err != nil {
@@ -207,23 +207,40 @@ func fixedKind(kind query.StartKind) func(*domain.AgentWork) query.StartKind {
 	return func(*domain.AgentWork) query.StartKind { return kind }
 }
 
-type ResumeWorkHandler struct{ continuation workContinuation }
+// refusedStart reports a definitive refusal of a start: admission answered
+// the request, which retains nothing beyond Reach Resume Due.
+func refusedStart(err error) bool {
+	for _, refusal := range startRefusals {
+		if errors.Is(err, refusal) {
+			return true
+		}
+	}
+	return false
+}
+
+var startRefusals = []error{
+	domain.ErrComputeReclamationPending, domain.ErrCapacityUnavailable, domain.ErrComputerNotUsable,
+	domain.ErrComputerUnreachable, domain.ErrComputerRemoved, domain.ErrComputerOutdated, domain.ErrComputerNoSandbox,
+	domain.ErrModelConfigurationWithdrawn, domain.ErrWorkTransition, domain.ErrExecutionNotPermitted,
+	ErrStartRequestCanceled, ErrStartRequestConflict,
+}
+
+// ResumeWorkHandler admits a Resume and commits its start with its request
+// record at once; a refusal answers the caller and retains nothing beyond
+// Reach Resume Due (Capacity rejection state, Retry on reconnection).
+type ResumeWorkHandler struct{ startup workStartup }
 type RestartWorkHandler struct{ startup workStartup }
 
-func NewResumeWorkHandler(now func() time.Time, sessions AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerPort, requests ContinuationRequests, models query.ModelConfigurations, plugins PluginUpgrades) *ResumeWorkHandler {
-	return &ResumeWorkHandler{continuation: workContinuation{startup: workStartup{now: now, sessions: sessions, agents: agents, authorization: authorization, computers: computers, models: models, plugins: plugins}, requests: requests}}
+func NewResumeWorkHandler(now func() time.Time, sessions AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerPort, models query.ModelConfigurations, plugins PluginUpgrades) *ResumeWorkHandler {
+	return &ResumeWorkHandler{startup: workStartup{now: now, sessions: sessions, agents: agents, authorization: authorization, computers: computers, models: models, plugins: plugins}}
 }
 func NewRestartWorkHandler(now func() time.Time, sessions AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerPort, models query.ModelConfigurations, plugins PluginUpgrades) *RestartWorkHandler {
 	return &RestartWorkHandler{startup: workStartup{now: now, sessions: sessions, agents: agents, authorization: authorization, computers: computers, models: models, plugins: plugins}}
 }
 func (h *ResumeWorkHandler) Handle(ctx context.Context, request StartWork) error {
-	return h.continuation.handle(ctx, request, "resume")
+	_, err := h.startup.apply(ctx, request, (*domain.AgentWork).Resume, fixedKind(query.StartKindResume), query.StartKindResume)
+	return err
 }
 func (h *RestartWorkHandler) Handle(ctx context.Context, request StartWork) (bool, error) {
 	return h.startup.apply(ctx, request, (*domain.AgentWork).Restart, fixedKind(query.StartKindRestart), query.StartKindRestart)
-}
-
-// Recover observes the retained caller outcome; it never submits execution.
-func (h *ResumeWorkHandler) Recover(ctx context.Context, sessionID string) error {
-	return h.continuation.recover(ctx, sessionID)
 }

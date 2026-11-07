@@ -57,12 +57,6 @@ func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
-	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
-	receipt, err := initial.Get(ctx, id)
-	require.NoError(t, err)
-	receipt.Prepared, receipt.Submitted, receipt.Rejected = true, true, true
-	receipt.StartFailed, receipt.FailureReason = true, "Workspace preparation rejected"
-	require.NoError(t, initial.Save(ctx, receipt))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: ref, ProcessID: "process", ExitCode: 1, ExitReason: "native_initialization_failed"}))
 	feedback.release(ctx, ref)
 	reader := infrastructure.NewWorkQueryRepository(f.db)
@@ -84,14 +78,10 @@ func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	ready, err := reader.GetWorkView(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, "working", ready.State)
-	require.Equal(t, "preparing", ready.StartupProgress.Status, "Harness readiness does not prove original input preparation or delivery")
-	require.Equal(t, "active", ready.StartupProgress.Stages[2].Status)
+	require.Equal(t, "preparing", ready.StartupProgress.Status, "Harness readiness does not prove original input delivery")
+	require.Equal(t, "completed", ready.StartupProgress.Stages[2].Status, "the execution's preparation ended the repository's checkout")
+	require.Equal(t, "active", ready.StartupProgress.Stages[4].Status)
 	require.Equal(t, failed.StartupRequest.InitialMessage, ready.StartupRequest.InitialMessage, "Restart retains the original input")
-	retained, err := initial.Get(ctx, id)
-	require.NoError(t, err)
-	require.False(t, retained.Rejected)
-	require.False(t, retained.StartFailed)
-	require.Equal(t, receipt.PrepareWorkExecution, retained.PrepareWorkExecution)
 	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	_, pending := work.PendingInitialTaskInput()
@@ -113,13 +103,12 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 		principal := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 		definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-		requests := infrastructure.NewContinuationRequests(db, time.Now)
 		reader := infrastructure.NewWorkQueryRepository(db)
 		app := &application.Application{WorkPrincipals: principal, WorkViews: reader, Commands: application.Commands{
 			StopWork:    command.NewStopWorkHandler(sessions, principal, executionsOf(db)),
-			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), requests, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
-			CloseWork:   command.NewCloseWorkHandler(sessions, principal, executionsOf(db), requests, &commandtest.InputBuffer{}),
+			CloseWork:   command.NewCloseWorkHandler(sessions, principal, executionsOf(db), &commandtest.InputBuffer{}),
 		}, Queries: application.Queries{GetWorkView: query.NewGetWorkViewHandler(principal, reader)}}
 		handler := connecttest.Handler(func(s *connect.Server) {
 			agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
@@ -162,18 +151,12 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	report(command.ExecutorPrepared, "")
 	report(command.AgentStarted, "")
 	runningView := read("working")
-	require.Equal(t, "workspace", runningView.StartupProgress.Stages[2].Stage)
-	require.Equal(t, "active", runningView.StartupProgress.Stages[2].Status, "running does not finish workspace preparation")
-	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
-	prepared, err := initial.Get(ctx, id)
-	require.NoError(t, err)
-	prepared.Prepared = true
-	prepared.Submitted = true
-	prepared.InputPrepared = true
-	require.NoError(t, initial.Save(ctx, prepared))
-	inputView := read("working")
+	inputView := runningView
+	require.Equal(t, "workspace", inputView.StartupProgress.Stages[2].Stage)
+	require.Equal(t, "completed", inputView.StartupProgress.Stages[2].Status, "preparation ends with an outcome for every repository")
+	require.Equal(t, "not_checked_out", inputView.StartupRequest.Repositories[0].CheckoutStatus, "a repository the preparation did not report is degraded, not retried")
 	require.Equal(t, "active", inputView.StartupProgress.Stages[4].Status)
-	require.Greater(t, inputView.StartupProgress.Revision, runningView.StartupProgress.Revision)
+	require.Greater(t, inputView.StartupProgress.Revision, startingView.StartupProgress.Revision)
 	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 	completeView := read("working")
 	require.Equal(t, "completed", completeView.StartupProgress.Status)
@@ -240,7 +223,8 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.Equal(t, stopping.StopRequestReference, current.StopRequestReference)
 	report(command.ExecutionExited, "")
 	feedback.release(ctx, ref)
-	require.Equal(t, []string{"resume", "archive"}, read("stopped").AllowedActions)
+	stoppedView := read("stopped")
+	require.Equal(t, []string{"resume", "archive"}, stoppedView.AllowedActions)
 	before, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	_, err = client.ResumeWork(workMessageRequest(ctx, messageCollaborator), &agentpublicv1.ResumeWorkRequest{WorkId: id})
@@ -250,8 +234,10 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 	rejected := read("stopped")
 	require.False(t, rejected.ResumePending)
-	require.Equal(t, "failed", rejected.StartupProgress.Status)
-	require.Equal(t, "failed", rejected.StartupProgress.Stages[0].Status)
+	require.Equal(t, stoppedView.Version, rejected.Version, "a refused Resume retains nothing on the Work")
+	require.Equal(t, stoppedView.StartupProgress.GetStatus(), rejected.StartupProgress.GetStatus(), "a refused Resume answers its caller and shows no start")
+	require.Equal(t, stoppedView.StartupProgress.GetRequestId(), rejected.StartupProgress.GetRequestId())
+	require.Equal(t, stoppedView.StartupProgress.GetRevision(), rejected.StartupProgress.GetRevision())
 	capacity.available = true
 	other, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
@@ -261,12 +247,11 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, progressView.WorkProgress.Items[0].Content, progressAfterReconnect.Work.WorkProgress.Items[0].Content)
 	require.Equal(t, progressView.WorkProgress.UpdatedAt.AsTime(), progressAfterReconnect.Work.WorkProgress.UpdatedAt.AsTime())
-	stoppedView := read("stopped")
+	stoppedView = read("stopped")
 	_, err = client.ResumeWork(workMessageRequest(ctx, owner), &agentpublicv1.ResumeWorkRequest{WorkId: id, ExpectedVersion: &runningView.Version})
 	require.Equal(t, connect.CodeAborted, connect.CodeOf(err), "an obsolete Work view must not resume the Work")
 	require.False(t, read("stopped").ResumePending)
-	// Retaining the continuation advances the version the caller observed;
-	// admission must still accept that observation.
+	// Admission accepts the version the caller observed.
 	resumed, err := client.ResumeWork(workMessageRequest(ctx, owner), &agentpublicv1.ResumeWorkRequest{WorkId: id, ExpectedVersion: &stoppedView.Version})
 	require.NoError(t, err)
 	require.Equal(t, "starting", resumed.Work.State)
@@ -295,8 +280,9 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	_, err = client.RestartWork(workMessageRequest(ctx, owner), &agentpublicv1.RestartWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 	failedView := read("failed")
+	require.Equal(t, failed.Version, failedView.Version, "a refused Restart retains nothing on the Work")
 	capacity.available = true
-	_, err = client.RestartWork(workMessageRequest(ctx, owner), &agentpublicv1.RestartWorkRequest{WorkId: id, ExpectedVersion: &failed.Version})
+	_, err = client.RestartWork(workMessageRequest(ctx, owner), &agentpublicv1.RestartWorkRequest{WorkId: id, ExpectedVersion: &stoppedView.Version})
 	require.Equal(t, connect.CodeAborted, connect.CodeOf(err), "an obsolete Work view must not restart the Work")
 	read("failed")
 	restarted, err := client.RestartWork(workMessageRequest(ctx, owner), &agentpublicv1.RestartWorkRequest{WorkId: id, ExpectedVersion: &failedView.Version})
@@ -332,26 +318,26 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	read("closed")
 	// A one-row table may legitimately be cheaper to scan. Populate unrelated
-	// technical requests before checking the point-lookup plan at useful scale.
+	// start requests before checking the point-lookup plan at useful scale.
 	values := make([]string, 256)
 	args := make([]any, 0, 512)
 	for i := range values {
-		values[i] = "(?,?, 'plan-subject', 'resume', '', 0, 1, 1, 1, 0)"
+		values[i] = "(?,?, 'resume', 0, 1, 1, 1, 0)"
 		args = append(args, uuid.Must(uuid.NewV7()).String(), uuid.Must(uuid.NewV7()).String())
 	}
-	_, err = f.db.Exec(append([]any{"INSERT INTO agent_session_continuation_request (id,request_id,subject_id,operation,rejection,pending,version,created_at,updated_at,deleted_at) VALUES " + strings.Join(values, ",")}, args...)...)
+	_, err = f.db.Exec(append([]any{"INSERT INTO agent_start_request (id,session_id,kind,canceled,version,created_at,updated_at,deleted_at) VALUES " + strings.Join(values, ",")}, args...)...)
 	require.NoError(t, err)
-	rows, err := f.db.QueryString(`EXPLAIN SELECT s.id,s.subject_kind,s.subject_id,s.project_ref,s.started_by,s.state,s.harness_process,
- s.stop_reason,s.stop_request,s.failure_reason,s.created_at,s.updated_at,s.version,s.end_request,
- COALESCE(i.request_id,'') AS initial_id, COALESCE(i.request_data,'') AS initial_data,COALESCE(i.version,0) AS initial_version,
- COALESCE(c.version,0) AS continuation_version,COALESCE(c.rejection,'') AS continuation_rejection,
- COALESCE(c.request_id,'') AS continuation_id,COALESCE(c.pending,0) AS continuation_pending
- FROM agent_session s LEFT JOIN agent_session_continuation_request c ON c.id=? AND c.deleted_at=0
- LEFT JOIN agent_initial_execution_request i ON i.id=? AND i.deleted_at=0
- WHERE s.id=? AND s.deleted_at=0`, id, id, id)
+	rows, err := f.db.QueryString(`EXPLAIN SELECT s.id,s.state,s.harness_process,s.initial_task_input,s.repository_selection,s.repository_checkouts,
+ COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at DESC, r.id DESC LIMIT 1),'') AS start_request_id,
+ COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.kind='start' AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at, r.id LIMIT 1),'') AS creation_request_id
+ FROM agent_session s WHERE s.id=? AND s.deleted_at=0`, id)
 	require.NoError(t, err)
 	t.Logf("work Session query plan: %+v", rows)
 	for _, row := range rows {
-		require.Equal(t, "PRIMARY", row["key"], "Session, initial preparation and continuation use primary-key access")
+		want := "PRIMARY"
+		if row["table"] == "r" {
+			want = "idx_session_id_canceled_deleted_at_created_at"
+		}
+		require.Equal(t, want, row["key"], "the Work uses primary-key access and its start requests their Work's index")
 	}
 }

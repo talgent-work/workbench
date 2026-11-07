@@ -16,9 +16,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/google/uuid"
@@ -93,12 +91,12 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	provider, err := NewSandboxes(client, config())
 	require.NoError(t, err)
 	newWorker := func() *executionSteps {
-		p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
-		connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+		p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+		connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
 		require.NoError(t, err)
 		return newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
 	}
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	record, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)

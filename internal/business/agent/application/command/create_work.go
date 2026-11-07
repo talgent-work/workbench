@@ -27,8 +27,8 @@ var (
 type CreateWork struct {
 	RequestID string
 	WorkModel domain.WorkModelSelection
-	// InitialExecution carries the new Work's initial task input and first
-	// start's repository preparation.
+	// InitialExecution carries the new Work's initial task input, initial
+	// thinking level and the repositories its first start checks out.
 	InitialExecution *PrepareWorkExecution
 	AgentID          string
 	SubjectID        string
@@ -62,8 +62,8 @@ type CreateWork struct {
 }
 
 // WorkRegistration is the creation request a new Work is registered with:
-// its request record, its creation correlation, the definition revision used
-// for its creation and its first start's preparation.
+// its request record, its creation correlation and the definition revision
+// used for its creation.
 type WorkRegistration struct {
 	SubjectID string
 	Request   query.StartRequest
@@ -71,7 +71,6 @@ type WorkRegistration struct {
 	// creation correlation even for a Work that keeps no Session Workspace.
 	WorkspaceReference string
 	DefinitionVersion  int
-	InitialExecution   *PrepareWorkExecution
 }
 
 // CreateWorkHandler creates at most one Work per caller request identity: it
@@ -185,7 +184,7 @@ func normalizeCreation(request CreateWork) (CreateWork, error) {
 			return request, ErrStartRequestConflict
 		}
 		completed := *initial
-		completed.SubjectID, completed.WorkspaceReference = request.SubjectID, request.WorkspaceReference
+		completed.SubjectID = request.SubjectID
 		request.RequestID, request.InitialExecution = initial.RequestID, &completed
 	}
 	if uuid.Validate(request.RequestID) != nil {
@@ -203,8 +202,8 @@ func repeatedCreation(record query.StartRequest, fingerprint string) (string, er
 }
 
 // created answers the Work this request created or reused: an authorized
-// caller receives it, and a request carrying an initial execution continues
-// that Work's first start preparation.
+// caller receives it, and a request carrying an initial execution receives it
+// only when it asks for the repositories the Work retained.
 func (h *CreateWorkHandler) created(ctx context.Context, request CreateWork, workID string) (string, error) {
 	if request.InitialExecution == nil {
 		if err := h.authorization.AuthorizeWork(ctx, request.SubjectID, workID); err != nil {

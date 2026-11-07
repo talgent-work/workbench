@@ -82,9 +82,8 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	policy, err := provider.networkPolicy(ctx)
 	require.NoError(t, err)
 	external.vault.policy = policy
-	initial := infrastructure.NewInitialExecutionRequests(db, time.Now)
-	provisioning := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, initial, nil)
-	connections, err := NewNativeConnections(provisioning, credentials, dispatchServer.Client(), dispatchServer.URL, "lifecycle-control", command.NewRecordRepositoryCheckoutsHandler(initial))
+	provisioning := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	connections, err := NewNativeConnections(provisioning, credentials, dispatchServer.Client(), dispatchServer.URL, "lifecycle-control")
 	require.NoError(t, err)
 	readings := &streamReadings{}
 	environment, err := NewExecutionEnvironment(provisioning, connections, readings, nil)
@@ -94,7 +93,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	computers := &cloudDesks{}
 	return &nativeWorkLifecycleFixture{
 		db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, external: external, executions: executions, readings: readings,
-		reconcile:    command.NewReconcileExecutionHandler(time.Now, executions, environment, harness, computers, directoryMounts{root: t.TempDir()}, initial),
+		reconcile:    command.NewReconcileExecutionHandler(time.Now, executions, environment, harness, computers, directoryMounts{root: t.TempDir()}),
 		coordination: command.NewExecutionCoordination(time.Now, works, executions, computers, harness),
 	}
 }

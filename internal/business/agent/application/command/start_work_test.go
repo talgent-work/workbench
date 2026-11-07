@@ -24,7 +24,7 @@ func restartHandler(sessions *feedbackSessionStore, agents *startupAgentStore, c
 }
 
 func resumeHandler(sessions *feedbackSessionStore, agents *startupAgentStore, computers command.ComputerPort) *command.ResumeWorkHandler {
-	return command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computers, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	return command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computers, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 }
 
 // A Restart commits the Work with its start request; the committed Work holds
@@ -60,6 +60,29 @@ func TestRestartCapacityRejectionDoesNotPersistOrScheduleExecution(t *testing.T)
 
 // An admitted start whose execution cannot begin now stays admitted; the
 // Work's recovery begins it.
+// A refused Resume answers its caller and retains nothing: no request
+// record and no save, beyond the Reach Resume Due mark of a Resume refused
+// as unreachable.
+func TestResumeRefusalRetainsNothingButReachResumeDue(t *testing.T) {
+	for name, refusal := range map[string]error{"capacity": domain.ErrCapacityUnavailable, "unreachable": domain.ErrComputerUnreachable} {
+		t.Run(name, func(t *testing.T) {
+			agents, sessions := startupStores(t)
+			sessions.session.State = domain.WorkStopped
+			sessions.session.HarnessProcess.Exited, sessions.session.HarnessProcess.ComputeReclaimed = true, true
+			err := resumeHandler(sessions, agents, capacityCheck{err: refusal}).Handle(context.Background(), command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessions.session.ID})
+			require.ErrorIs(t, err, refusal)
+			require.Empty(t, admittedRequests(sessions))
+			require.Empty(t, sessions.requests, "a refusal keeps no request record")
+			require.Empty(t, sessions.admittedStarts())
+			require.Equal(t, domain.WorkStopped, sessions.session.State)
+			require.Equal(t, name == "unreachable", sessions.session.ReachResumeDue)
+			if name == "capacity" {
+				require.Zero(t, sessions.saves)
+			}
+		})
+	}
+}
+
 func TestRestartRetainsAdmissionWhileItsExecutionCannotBegin(t *testing.T) {
 	ctx := context.Background()
 	agents, sessions := failedStartupStores(t)
@@ -153,7 +176,7 @@ func TestResumeAndRestartRejectAWithdrawnModelConfiguration(t *testing.T) {
 			if restart {
 				_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, provided, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			} else {
-				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, &continuationRequests{}, provided, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
+				err = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, provided, commandtest.UnchangedPlugins{}).Handle(context.Background(), request)
 			}
 			require.ErrorIs(t, err, domain.ErrModelConfigurationWithdrawn)
 			require.Equal(t, state, sessions.session.State, "the Work keeps its state")

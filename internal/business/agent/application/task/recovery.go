@@ -14,20 +14,18 @@ import (
 )
 
 const (
-	// RecoveryQueue carries short recovery steps for executions, Works and requests.
+	// RecoveryQueue carries short recovery steps for executions and Works.
 	RecoveryQueue = "agent-recovery"
 	// PreparationQueue carries work that may hold a worker for minutes: an
-	// execution's long step and initial execution preparation.
+	// execution's long step.
 	PreparationQueue = "agent-preparation"
 )
 
 const (
-	ReconcileExecutionType      taskqueue.TaskType = "agent.execution.reconcile.v1"
-	RunLongExecutionStepType    taskqueue.TaskType = "agent.execution.run-long-step.v1"
-	RecoverWorkType             taskqueue.TaskType = "agent.work.recover.v1"
-	RecoverContinuationType     taskqueue.TaskType = "agent.continuation.recover.v1"
-	PrepareInitialExecutionType taskqueue.TaskType = "agent.initial-execution.prepare.v1"
-	SweepRecoveryType           taskqueue.TaskType = "agent.recovery.sweep.v1"
+	ReconcileExecutionType   taskqueue.TaskType = "agent.execution.reconcile.v1"
+	RunLongExecutionStepType taskqueue.TaskType = "agent.execution.run-long-step.v1"
+	RecoverWorkType          taskqueue.TaskType = "agent.work.recover.v1"
+	SweepRecoveryType        taskqueue.TaskType = "agent.recovery.sweep.v1"
 	// RequestWorkspaceReclamationType delivers a Closed Work's one request to
 	// Storage; it is a delivery, not a recovery obligation of the Work.
 	RequestWorkspaceReclamationType taskqueue.TaskType = "agent.workspace.request-reclamation.v1"
@@ -46,14 +44,6 @@ func NewRunLongExecutionStep(executionID string) (taskqueue.Task, error) {
 
 func NewRecoverWork(workID string) (taskqueue.Task, error) {
 	return keyed(RecoverWorkType, RecoveryQueue, "work", workID, &agenttaskv1.RecoverWorkTaskV1{WorkId: workID})
-}
-
-func NewRecoverContinuation(workID string) (taskqueue.Task, error) {
-	return keyed(RecoverContinuationType, RecoveryQueue, "continuation", workID, &agenttaskv1.RecoverContinuationTaskV1{WorkId: workID})
-}
-
-func NewPrepareInitialExecution(workID string) (taskqueue.Task, error) {
-	return keyed(PrepareInitialExecutionType, PreparationQueue, "initial-execution", workID, &agenttaskv1.PrepareInitialExecutionTaskV1{WorkId: workID})
 }
 
 func NewRequestWorkspaceReclamation(workID, workspaceReference string) (taskqueue.Task, error) {

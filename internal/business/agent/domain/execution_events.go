@@ -19,6 +19,7 @@ const (
 	EventKindExecutionStartAbandoned  EventKind = "agent.execution.start_abandoned"
 	EventKindExecutionEnvironmentLost EventKind = "agent.execution.environment_lost"
 	EventKindExecutionExited          EventKind = "agent.execution.exited"
+	EventKindExecutionCheckoutsEnded  EventKind = "agent.execution.checkouts_ended"
 	EventKindExecutionReleased        EventKind = "agent.execution.released"
 )
 
@@ -120,6 +121,17 @@ type ExecutionExited struct {
 
 func (ExecutionExited) Kind() EventKind { return EventKindExecutionExited }
 func (e ExecutionExited) Key() string   { return e.WorkID }
+
+// ExecutionCheckoutsEnded reports that the run's checkout ended, with the
+// outcome of each repository it checked out.
+type ExecutionCheckoutsEnded struct {
+	WorkID          string
+	StartAdmittedAt time.Time
+	Checkouts       []RepositoryCheckout
+}
+
+func (ExecutionCheckoutsEnded) Kind() EventKind { return EventKindExecutionCheckoutsEnded }
+func (e ExecutionCheckoutsEnded) Key() string   { return e.WorkID }
 
 // ExecutionReleasedEvent is the ExecutionReleased Domain Event: nothing the
 // execution owned remains. The type is named apart from the Released state.

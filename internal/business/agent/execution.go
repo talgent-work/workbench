@@ -100,14 +100,14 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		newManagedComputers,
 		newManagedEnvironment,
 		newManagedWorkspaces,
-		func(db *xorm.Engine, s *execution.Sandboxes, credentials *execution.SandboxCredentials, cfg ExecutionConfig, updates *workStateUpdates, requests command.InitialExecutionReader, managed *execution.ManagedEnvironment) *execution.Provisioning {
-			p := execution.NewProvisioning(db, s, credentials, cfg.Native, time.Now, requests, managed)
+		func(db *xorm.Engine, s *execution.Sandboxes, credentials *execution.SandboxCredentials, cfg ExecutionConfig, updates *workStateUpdates, managed *execution.ManagedEnvironment) *execution.Provisioning {
+			p := execution.NewProvisioning(db, s, credentials, cfg.Native, time.Now, managed)
 			p.ProgressCommitted = updates.publish
 			return p
 		},
 		fx.Annotate(execution.NewWorkCredentials, fx.As(new(query.WorkCredentialVerifier))),
-		func(p *execution.Provisioning, credentials *execution.SandboxCredentials, cfg ExecutionConfig, checkouts *command.RecordRepositoryCheckoutsHandler) (*execution.NativeConnections, error) {
-			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token, checkouts)
+		func(p *execution.Provisioning, credentials *execution.SandboxCredentials, cfg ExecutionConfig) (*execution.NativeConnections, error) {
+			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token)
 		},
 		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.RunningHarnessPort))),
 	),

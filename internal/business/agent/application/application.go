@@ -10,25 +10,24 @@ import (
 )
 
 type Commands struct {
-	EnsureAgentDefinition   *command.EnsureAgentDefinitionHandler
-	ChangeAgentAppearance   *command.ChangeAgentAppearanceHandler
-	ChangeAgentSoul         *command.ChangeAgentSoulHandler
-	SendMessage             *command.SendWorkMessageHandler
-	ReplyToInteraction      *command.ReplyToWorkInteractionHandler
-	PrepareWorkExecution    *command.PrepareWorkExecutionHandler
-	RecoverInitialExecution *command.RecoverInitialExecutionHandler
-	EndWorkExecution        *command.EndWorkExecutionHandler
-	RecoverWork             *command.RecoverWorkHandler
-	ReconcileDesks          *command.ReconcileDesksHandler
-	RespondToInteraction    *command.RespondWorkInteractionHandler
-	ResumeWork              *command.ResumeWorkHandler
-	RestartWork             *command.RestartWorkHandler
-	StopWork                *command.StopWorkHandler
-	CloseWork               *command.CloseWorkHandler
-	DeliverInput            *command.DeliverWorkInputHandler
-	CreateWork              *command.CreateWorkHandler
-	ApplyExecutionFeedback  *command.ApplyExecutionFeedbackHandler
-	ExecutionCoordination   *command.ExecutionCoordination
+	EnsureAgentDefinition  *command.EnsureAgentDefinitionHandler
+	ChangeAgentAppearance  *command.ChangeAgentAppearanceHandler
+	ChangeAgentSoul        *command.ChangeAgentSoulHandler
+	SendMessage            *command.SendWorkMessageHandler
+	ReplyToInteraction     *command.ReplyToWorkInteractionHandler
+	PrepareWorkExecution   *command.PrepareWorkExecutionHandler
+	EndWorkExecution       *command.EndWorkExecutionHandler
+	RecoverWork            *command.RecoverWorkHandler
+	ReconcileDesks         *command.ReconcileDesksHandler
+	RespondToInteraction   *command.RespondWorkInteractionHandler
+	ResumeWork             *command.ResumeWorkHandler
+	RestartWork            *command.RestartWorkHandler
+	StopWork               *command.StopWorkHandler
+	CloseWork              *command.CloseWorkHandler
+	DeliverInput           *command.DeliverWorkInputHandler
+	CreateWork             *command.CreateWorkHandler
+	ApplyExecutionFeedback *command.ApplyExecutionFeedbackHandler
+	ExecutionCoordination  *command.ExecutionCoordination
 }
 
 type Queries struct {
@@ -37,7 +36,6 @@ type Queries struct {
 	ListWorks                    *query.ListWorksHandler
 	GetWorkView                  *query.GetWorkViewHandler
 	ListWorkLifecycleEvents      *query.ListWorkLifecycleEventsHandler
-	ListPendingContinuations     *query.ListPendingContinuationsHandler
 	GetWorkStartup               *query.GetWorkStartupHandler
 	GetWorkOrigin                *query.GetWorkOriginHandler
 	ResolveWorkContextPosition   *query.ResolveWorkContextPositionHandler
@@ -45,7 +43,6 @@ type Queries struct {
 	ResolveAgents                *query.ResolveAgentsHandler
 	GetWorkPreparation           *query.GetWorkPreparationHandler
 	ListSubmittedPreparations    *query.ListSubmittedPreparationsHandler
-	ListInitialExecutionRecovery *query.ListInitialExecutionRecoveryHandler
 	LocateWork                   *query.LocateWorkHandler
 	VerifyWorkCredential         *query.VerifyWorkCredentialHandler
 	GetAgentDefinitionForPurpose *query.GetAgentDefinitionForPurposeHandler
@@ -122,12 +119,9 @@ func NewApplication(
 	locate *query.LocateWorkHandler,
 	endExecution *command.EndWorkExecutionHandler,
 	prepare *command.PrepareWorkExecutionHandler,
-	recoverInitial *command.RecoverInitialExecutionHandler,
-	pendingInitial *query.ListInitialExecutionRecoveryHandler,
 	preparation *query.GetWorkPreparationHandler,
 	submitted *query.ListSubmittedPreparationsHandler,
 	startup *query.GetWorkStartupHandler,
-	pendingContinuation *query.ListPendingContinuationsHandler,
 	reconcileDesks *command.ReconcileDesksHandler,
 	coordination *command.ExecutionCoordination,
 ) *Application {
@@ -145,25 +139,24 @@ func NewApplication(
 		WorkViews:            sessionViews,
 		Logger:               logger,
 		Commands: Commands{
-			EnsureAgentDefinition:   ensure,
-			ChangeAgentAppearance:   appearance,
-			ChangeAgentSoul:         command.NewChangeAgentSoulHandler(definitions),
-			SendMessage:             sendMessage,
-			ReplyToInteraction:      reply,
-			PrepareWorkExecution:    prepare,
-			RecoverInitialExecution: recoverInitial,
-			EndWorkExecution:        endExecution,
-			RecoverWork:             recovery,
-			ReconcileDesks:          reconcileDesks,
-			RespondToInteraction:    interaction,
-			ResumeWork:              resume,
-			RestartWork:             restart,
-			StopWork:                stop,
-			CloseWork:               close,
-			DeliverInput:            input,
-			CreateWork:              createSession,
-			ApplyExecutionFeedback:  feedback,
-			ExecutionCoordination:   coordination,
+			EnsureAgentDefinition:  ensure,
+			ChangeAgentAppearance:  appearance,
+			ChangeAgentSoul:        command.NewChangeAgentSoulHandler(definitions),
+			SendMessage:            sendMessage,
+			ReplyToInteraction:     reply,
+			PrepareWorkExecution:   prepare,
+			EndWorkExecution:       endExecution,
+			RecoverWork:            recovery,
+			ReconcileDesks:         reconcileDesks,
+			RespondToInteraction:   interaction,
+			ResumeWork:             resume,
+			RestartWork:            restart,
+			StopWork:               stop,
+			CloseWork:              close,
+			DeliverInput:           input,
+			CreateWork:             createSession,
+			ApplyExecutionFeedback: feedback,
+			ExecutionCoordination:  coordination,
 		},
 		Queries: Queries{
 			GetAgentSoul:                 query.NewGetAgentSoulHandler(definitions),
@@ -171,7 +164,6 @@ func NewApplication(
 			ListWorks:                    listWorks,
 			GetWorkView:                  workView,
 			ListWorkLifecycleEvents:      lifecycle,
-			ListPendingContinuations:     pendingContinuation,
 			GetWorkStartup:               startup,
 			GetWorkOrigin:                origin,
 			ResolveWorkContextPosition:   resolvePositions,
@@ -179,7 +171,6 @@ func NewApplication(
 			ResolveAgents:                resolveAgents,
 			GetWorkPreparation:           preparation,
 			ListSubmittedPreparations:    submitted,
-			ListInitialExecutionRecovery: pendingInitial,
 			LocateWork:                   locate,
 			VerifyWorkCredential:         identity,
 			GetAgentDefinitionForPurpose: definition,

@@ -52,7 +52,7 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 			release := func() { releaseOnce.Do(func() { close(barrier.proceed) }) }
 			result := make(chan error, 1)
 			go func() {
-				err := command.NewResumeWorkHandler(time.Now, counted(barrier), agents, auth, computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: requestID})
+				err := command.NewResumeWorkHandler(time.Now, counted(barrier), agents, auth, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: requestID})
 				result <- err
 			}()
 			t.Cleanup(release)
@@ -62,7 +62,7 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 				t.Fatal(ctx.Err())
 			}
 			if scenario.closed {
-				require.NoError(t, command.NewCloseWorkHandler(sessions, auth, executionsOf(db), commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: "close-before-admission"}))
+				require.NoError(t, command.NewCloseWorkHandler(sessions, auth, executionsOf(db), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: "close-before-admission"}))
 			}
 			var foreignID string
 			var expectedStarts int32
@@ -196,10 +196,10 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	// A close racing an interrupted Resume must retain the selected continuation
 	// context while obtaining the resumed process's exit.
 	resumeRequest := command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessionID}
-	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
+	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
 	beforeReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
-	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
+	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
 	afterReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
 	require.Equal(t, beforeReplay, afterReplay, "a replay cannot admit a second execution")
@@ -208,7 +208,7 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	require.Equal(t, domain.ContextContinue, continuation.ContextMode)
 	require.Equal(t, original.HarnessSessionReference, continuation.HarnessSessionReference)
 	closeWork := func() *command.CloseWorkHandler {
-		return command.NewCloseWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), executionsOf(db), commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+		return command.NewCloseWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), executionsOf(db), &commandtest.InputBuffer{})
 	}
 	closeRequest := command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: "close"}
 	require.ErrorIs(t, closeWork().Handle(ctx, closeRequest), domain.ErrWorkTransition, "a starting Work cannot be closed")
@@ -236,7 +236,7 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	ids, err = infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
 	require.NoError(t, err)
 	require.Empty(t, ids, "a closed Work leaves recovery; Storage owns its workspace reclamation")
-	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest), "historical request replay returns its original acceptance")
+	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest), "historical request replay returns its original acceptance")
 	require.Equal(t, resumed.ID, run.latest(ctx, sessionID).ID, "replaying a historical acceptance begins no execution")
 	closedAfterReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)

@@ -59,7 +59,7 @@ func (w *world) feedback() *command.ApplyExecutionFeedbackHandler {
 }
 
 func (w *world) reconciliation() *command.ReconcileExecutionHandler {
-	return command.NewReconcileExecutionHandler(w.now, w.executions, w.environment, w.harness, w.computers, noMounts{}, nil)
+	return command.NewReconcileExecutionHandler(w.now, w.executions, w.environment, w.harness, w.computers, noMounts{})
 }
 
 // execution is the Work's most recently begun execution.

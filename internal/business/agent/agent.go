@@ -95,7 +95,7 @@ var Module = fx.Module("domain.agent",
 	// Roots pass the Work's execution requests and the execution's reports.
 	fx.Provide(fx.Annotate(newCommittedExecutions, fx.As(fx.Self()), fx.As(new(domain.AgentExecutionRepository)))),
 	fx.Provide(command.NewExecutionCoordination),
-	fx.Provide(eventhandler.NewBeginExecution, eventhandler.NewRequestProcessExit, eventhandler.NewRetireExecution, eventhandler.NewApplyExecutionReport, eventhandler.NewConfirmComputeRelease),
+	fx.Provide(eventhandler.NewBeginExecution, eventhandler.NewRequestProcessExit, eventhandler.NewRetireExecution, eventhandler.NewApplyExecutionReport, eventhandler.NewRecordCheckouts, eventhandler.NewConfirmComputeRelease),
 	// Storage owns every space a Work uses.
 	fx.Provide(fx.Annotate(newStorageClient, fx.As(fx.Self()), fx.As(new(command.SandboxMountPort)))),
 	// A Work's workspace is read where its files are: Storage's for a Cloud
@@ -111,9 +111,7 @@ var Module = fx.Module("domain.agent",
 	fx.Provide(fx.Annotate(newCommittedWorks, fx.As(new(domain.AgentWorkRepository)), fx.As(new(command.AgentWorkRepository)), fx.As(new(query.StartRequestReader)))),
 	fx.Provide(fx.Annotate(infrastructure.NewWorkAccessReader, fx.As(new(access.WorkAccessReader))), access.NewWorkAuthorizer),
 	fx.Provide(fx.Annotate(command.NewCatalogPluginUpgrades, fx.As(new(command.PluginUpgrades)))),
-	fx.Provide(fx.Annotate(newCommittedContinuations, fx.As(new(command.ContinuationRequests)), fx.As(new(query.ContinuationReader)))),
-	fx.Provide(fx.Annotate(newCommittedInitialExecutions, fx.As(new(command.InitialExecutionRequests)), fx.As(new(command.InitialExecutionReader)), fx.As(new(query.InitialExecutionRecoveryReader)), fx.As(new(query.WorkPreparationReader)))),
-	fx.Provide(fx.Annotate(infrastructure.NewWorkQueryRepository, fx.As(new(personalwork.Works)), fx.As(new(query.WorkQueryRepository)), fx.As(new(query.WorkOriginQueryRepository)), fx.As(fx.Self()), fx.As(new(query.WorkOriginsReader)), fx.As(new(query.WorkLifecycleReader)), fx.As(new(query.WorkListReader)), fx.As(new(query.RecentRepositoryReader)))),
+	fx.Provide(fx.Annotate(infrastructure.NewWorkQueryRepository, fx.As(new(personalwork.Works)), fx.As(new(query.WorkPreparationReader)), fx.As(new(query.WorkQueryRepository)), fx.As(new(query.WorkOriginQueryRepository)), fx.As(fx.Self()), fx.As(new(query.WorkOriginsReader)), fx.As(new(query.WorkLifecycleReader)), fx.As(new(query.WorkListReader)), fx.As(new(query.RecentRepositoryReader)))),
 	fx.Provide(newWorkViewReader),
 	fx.Provide(fx.Annotate(infrastructure.NewExecutionQueryRepository, fx.As(new(query.ExecutionQueryRepository)), fx.As(new(query.WorkStartupReader)), fx.As(new(query.RecoveryWorkQueryRepository)), fx.As(new(query.ExecutionRecoveryReader)), fx.As(new(query.PluginResultReader)), fx.As(new(command.ComputerWorks)), fx.As(new(command.ReachResumeWorks)))),
 	fx.Provide(fx.Annotate(infrastructure.NewWorkReportQueryRepository, fx.As(new(query.WorkReportReader)))),
@@ -128,14 +126,10 @@ var Module = fx.Module("domain.agent",
 		query.NewResolveWorkContextPositionHandler,
 		query.NewResolveWorkStartsHandler,
 		query.NewGetWorkStartupHandler,
-		query.NewListPendingContinuationsHandler,
 		command.NewPrepareWorkExecutionHandler,
-		command.NewRecoverInitialExecutionHandler,
-		command.NewRecordRepositoryCheckoutsHandler,
 		command.NewRecoverWorkHandler,
 		command.NewComputerReachHandler,
 		query.NewListRecoveryWorksHandler,
-		query.NewListInitialExecutionRecoveryHandler,
 		query.NewGetWorkPreparationHandler,
 		query.NewListSubmittedPreparationsHandler,
 		command.NewReconcileDesksHandler,
@@ -217,6 +211,7 @@ type eventSubscriptions struct {
 	Exit        *eventhandler.RequestProcessExit
 	Retire      *eventhandler.RetireExecution
 	Reports     *eventhandler.ApplyExecutionReport
+	Checkouts   *eventhandler.RecordCheckouts
 	Releases    *eventhandler.ConfirmComputeRelease
 	Recovery    *application.Recovery `optional:"true"`
 	Logger      *slog.Logger
@@ -225,7 +220,7 @@ type eventSubscriptions struct {
 func subscribeEventHandlers(in eventSubscriptions) {
 	in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Withdrawals))
 	in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Closures))
-	for _, policy := range []domainevent.Handler{in.Begin, in.Exit, in.Retire, in.Reports, in.Releases} {
+	for _, policy := range []domainevent.Handler{in.Begin, in.Exit, in.Retire, in.Reports, in.Checkouts, in.Releases} {
 		in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, policy))
 	}
 	if in.Recovery != nil {

@@ -5,53 +5,87 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 
-func TestStartupRecoveryUsesTheUnfinishedBoundary(t *testing.T) {
-	initial := command.InitialExecutionRequest{PrepareWorkExecution: command.PrepareWorkExecution{WorkID: "session", RequestID: "initial"}, Submitted: true}
-	encode := func(v any) string { t.Helper(); b, err := json.Marshal(v); require.NoError(t, err); return string(b) }
-	row := workViewRow{ID: "session", State: 2, Version: 3, InitialID: "initial", InitialData: encode(initial), InitialVersion: 4, StartRequestID: "initial", HarnessProcess: encode(harnessProcessRecord{Ready: true}), InitialTaskInput: encode(initialTaskInputRecord{ID: "input", Text: "first task"})}
-	progress, err := startupFromRows(row, true, true, 9)
+func encodeJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
 	require.NoError(t, err)
+	return string(b)
+}
+
+// createdRow is a Work created by the request "creation" that selected the
+// repositories github:1 and github:2 and still holds its initial task input,
+// with its first start admitted and ready.
+func createdRow(t *testing.T) workViewRow {
+	selection := workRepositoryRecord{OwnerUserID: "owner", WorkBranch: "talgent/work", Repositories: []selectedRepositoryRecord{
+		{Provider: "github", RepoID: "github:1", RepoName: "acme/api", CloneURL: "https://github.com/acme/api.git", DefaultBranch: "main", BaseBranch: "main"},
+		{Provider: "github", RepoID: "github:2", RepoName: "acme/web", CloneURL: "https://github.com/acme/web.git", DefaultBranch: "main", BaseBranch: "release"},
+	}}
+	return workViewRow{ID: "session", State: 2, Version: 3, CreationRequestID: "creation", StartRequestID: "creation", ThinkingLevel: "high",
+		Capabilities: encodeJSON(t, snapshotRecord{StartupAgent: "reviewer"}), RepositorySelection: encodeJSON(t, selection), RepositoryCheckouts: "[]",
+		HarnessProcess: encodeJSON(t, harnessProcessRecord{}), InitialTaskInput: encodeJSON(t, initialTaskInputRecord{ID: "01a1462f-06ff-79dc-9916-99a8e062c210", Text: "first task"})}
+}
+
+// The first start prepares the workspace until every selected repository has
+// a checkout outcome on the Work, and hands off the initial task input.
+func TestFirstStartShowsWorkspaceUntilEveryRepositoryHasAnOutcome(t *testing.T) {
+	row := createdRow(t)
+	row.RepositoryCheckouts = encodeJSON(t, []repositoryCheckoutRecord{{RepositoryID: "github:1", CheckedOut: true}})
+	progress, err := startupFromRows(row, true, false, 9)
+	require.NoError(t, err)
+	require.Equal(t, "creation", progress.RequestID)
 	require.True(t, progress.Admitted)
-	require.Equal(t, "preparing", progress.Status, "a reconnect error does not prove workspace preparation is recovering")
-	require.Equal(t, "workspace", progress.Stages[2].Stage, "checkout precedes the agent")
-	require.Equal(t, "active", progress.Stages[2].Status)
-	initial.RecoveryPending = true
-	row.InitialData = encode(initial)
-	row.InitialVersion++
-	recovered, err := startupFromRows(row, true, false, 10)
+	require.Equal(t, "preparing", progress.Status)
+	require.Equal(t, []query.StartupStage{{Stage: "admission", Status: "completed"}, {Stage: "sandbox", Status: "completed"}, {Stage: "workspace", Status: "active"}, {Stage: "agent", Status: "pending"}, {Stage: "input", Status: "pending"}}, progress.Stages)
+
+	recovering, err := startupFromRows(row, true, true, 10)
 	require.NoError(t, err)
-	require.Equal(t, "recovering", recovered.Status)
-	require.Greater(t, recovered.Revision, progress.Revision)
-	// A later start's readiness must not inherit either earlier environment
-	// readiness or the completed stages of the previous startup.
-	initial.InputPrepared = true
+	require.Equal(t, "recovering", recovering.Status, "a step the execution retries shows the start recovering")
+	require.Greater(t, recovering.Revision, progress.Revision)
+
+	row.RepositoryCheckouts = encodeJSON(t, []repositoryCheckoutRecord{{RepositoryID: "github:1", CheckedOut: true}, {RepositoryID: "github:2", Reason: "timed_out"}})
+	row.HarnessProcess = encodeJSON(t, harnessProcessRecord{Ready: true})
+	ready, err := startupFromRows(row, true, false, 11)
+	require.NoError(t, err)
+	require.Equal(t, "input", ready.Stages[4].Stage)
+	require.Equal(t, "active", ready.Stages[4].Status, "a degraded repository ends the workspace stage; the input waits for its hand-off")
+
 	row.InitialTaskInput = ""
-	initial.RecoveryPending = false
-	row.InitialData = encode(initial)
+	completed, err := startupFromRows(row, true, false, 12)
+	require.NoError(t, err)
+	require.Equal(t, "completed", completed.Status)
+}
+
+// A later start shows neither the first start's workspace and input stages
+// nor earlier readiness, and orders after the earlier start.
+func TestALaterStartShowsOnlyItsOwnStages(t *testing.T) {
+	row := createdRow(t)
+	row.HarnessProcess = encodeJSON(t, harnessProcessRecord{Ready: true})
+	first, err := startupFromRows(row, true, false, 9)
+	require.NoError(t, err)
+
+	row.InitialTaskInput = ""
 	row.Version++
 	row.State = 1
 	row.StartRequestID = "resume"
-	row.HarnessProcess = encode(harnessProcessRecord{})
+	row.HarnessProcess = encodeJSON(t, harnessProcessRecord{})
 	resumed, err := startupFromRows(row, false, false, 1)
 	require.NoError(t, err)
 	require.Equal(t, "resume", resumed.RequestID)
-	require.Len(t, resumed.Stages, 3)
-	require.Equal(t, "active", resumed.Stages[1].Status)
-	require.Greater(t, resumed.Revision, recovered.Revision, "a new start orders after the earlier start whatever its execution's update time")
+	require.Equal(t, []query.StartupStage{{Stage: "admission", Status: "completed"}, {Stage: "sandbox", Status: "active"}, {Stage: "agent", Status: "pending"}}, resumed.Stages)
+	require.Greater(t, resumed.Revision, first.Revision, "a new start orders after the earlier start whatever its execution's update time")
 }
 
 // A Restart that reaches its Startup Deadline shows the Work's own failure on
 // the failed stage, while its incomplete first start still shows workspace
 // and task stages.
 func TestStartupDeadlineFailureOfARestartShowsTheWorkFailure(t *testing.T) {
-	initial := command.InitialExecutionRequest{PrepareWorkExecution: command.PrepareWorkExecution{WorkID: "session", RequestID: "initial"}, Submitted: true}
-	encode := func(v any) string { t.Helper(); b, err := json.Marshal(v); require.NoError(t, err); return string(b) }
 	reason := "Startup Deadline reached before the execution environment was ready."
-	row := workViewRow{ID: "session", State: 5, Version: 7, InitialID: "initial", InitialData: encode(initial), InitialVersion: 2, StartRequestID: "restart", Failure: reason, HarnessProcess: encode(harnessProcessRecord{}), InitialTaskInput: encode(initialTaskInputRecord{ID: "input", Text: "first task"})}
+	row := createdRow(t)
+	row.State, row.StartRequestID, row.Failure = 5, "restart", reason
 	progress, err := startupFromRows(row, false, false, 1)
 	require.NoError(t, err)
 	require.Equal(t, "failed", progress.Status)
@@ -59,21 +93,35 @@ func TestStartupDeadlineFailureOfARestartShowsTheWorkFailure(t *testing.T) {
 	require.Equal(t, []query.StartupStage{{Stage: "admission", Status: "completed"}, {Stage: "sandbox", Status: "failed"}, {Stage: "workspace", Status: "pending"}, {Stage: "agent", Status: "pending"}, {Stage: "input", Status: "pending"}}, progress.Stages)
 }
 
-// A Resume its Computer refused as unreachable leaves the earlier start's
-// facts shown, while any other refusal of it shows as the startup it ended.
-func TestAResumeRefusedAsUnreachableShowsNoFailedStartup(t *testing.T) {
-	encode := func(v any) string { t.Helper(); b, err := json.Marshal(v); require.NoError(t, err); return string(b) }
-	row := workViewRow{ID: "session", State: 4, Version: 5, StartRequestID: "first", HarnessProcess: encode(harnessProcessRecord{Ready: true}), ContinuationID: "resume", ContinuationVersion: 2, ContinuationRejection: "unreachable"}
-	progress, err := startupFromRows(row, true, false, 1)
+// A Work created without a creation request record shows no startup.
+func TestAWorkWithoutACreationRequestShowsNoStartupUntilItStarts(t *testing.T) {
+	row := createdRow(t)
+	row.CreationRequestID, row.StartRequestID, row.HarnessProcess = "", "", "null"
+	progress, err := startupFromRows(row, false, false, 1)
 	require.NoError(t, err)
-	require.Equal(t, "first", progress.RequestID)
-	require.Equal(t, "completed", progress.Status)
-	require.Empty(t, progress.Reason)
+	require.Nil(t, progress)
+	request, err := startupRequestFromRow(row)
+	require.NoError(t, err)
+	require.Nil(t, request)
+}
 
-	row.ContinuationRejection = "capacity"
-	refused, err := startupFromRows(row, true, false, 1)
+// The startup request is derived from the Work: its initial task input while
+// held, its thinking level, capabilities and each repository's outcome.
+func TestStartupRequestIsDerivedFromTheWorkFacts(t *testing.T) {
+	row := createdRow(t)
+	row.RepositoryCheckouts = encodeJSON(t, []repositoryCheckoutRecord{{RepositoryID: "github:2", Reason: "branch_unavailable"}})
+	request, err := startupRequestFromRow(row)
 	require.NoError(t, err)
-	require.Equal(t, "resume", refused.RequestID)
-	require.Equal(t, "failed", refused.Status)
-	require.Equal(t, "capacity", refused.Reason)
+	require.Equal(t, &query.WorkStartupRequest{RequestID: "creation", InitialMessage: "first task", InitialThinkingLevel: "high", StartupAgent: "reviewer",
+		Repositories: []query.WorkStartupRepository{
+			{RepositoryID: "github:1", Name: "acme/api", BaseBranch: "main"},
+			{RepositoryID: "github:2", Name: "acme/web", BaseBranch: "release", CheckoutStatus: "not_checked_out", CheckoutReason: "branch_unavailable"},
+		}}, request)
+
+	row.InitialTaskInput = ""
+	row.RepositoryCheckouts = encodeJSON(t, []repositoryCheckoutRecord{{RepositoryID: "github:1", CheckedOut: true}})
+	request, err = startupRequestFromRow(row)
+	require.NoError(t, err)
+	require.Empty(t, request.InitialMessage, "a handed-off input is part of the conversation")
+	require.Equal(t, "checked_out", request.Repositories[0].CheckoutStatus)
 }

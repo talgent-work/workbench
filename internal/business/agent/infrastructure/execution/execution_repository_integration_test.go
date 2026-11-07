@@ -227,3 +227,43 @@ func TestExecutionQueryRepositoryFindsTheExecutionsAChangeConcerns(t *testing.T)
 		require.Empty(t, blank)
 	})
 }
+
+// The checkout outcomes a run's preparation recorded survive the round trip;
+// a run that checked nothing out has none.
+func TestAgentExecutionRepositoryRoundTripsCheckoutResults(t *testing.T) {
+	ctx := context.Background()
+	db := executionDatabase(t)
+	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
+	repository := NewAgentExecutionRepository(db, func() time.Time { return now })
+	launch := request()
+	launch.WorkID = "checkout-round-trip"
+	launch.RepositorySelection, launch.RemainingRepositories = checkoutSelection(), []string{"github:1", "github:2"}
+	run, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: domain.WorkStartAdmitted{WorkID: launch.WorkID, StartAdmittedAt: now, DeskID: "desk-checkout"}, Launch: launch, Realization: domain.RealizationCloud})
+	require.NoError(t, err)
+	require.NoError(t, repository.Save(ctx, run))
+	stored, err := repository.Get(ctx, run.ID)
+	require.NoError(t, err)
+	require.Empty(t, stored.CheckoutResults, "no outcome before its checkout ended")
+	require.Equal(t, []string{"github:1", "github:2"}, stored.Launch.RemainingRepositories)
+	_, ok := stored.CheckoutsEnded()
+	require.False(t, ok)
+
+	require.True(t, stored.RecordSubmission())
+	_, err = stored.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "sandbox-checkout"})
+	require.NoError(t, err)
+	changed, err := stored.RecordPreparation(domain.PreparationReport{Checkouts: []domain.RepositoryCheckout{
+		{RepositoryID: "github:1", CheckedOut: true}, {RepositoryID: "github:2", Reason: domain.CheckoutBranchMissing},
+	}})
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NoError(t, repository.Save(ctx, stored))
+
+	loaded, err := repository.Get(ctx, run.ID)
+	require.NoError(t, err)
+	want := []domain.RepositoryCheckout{{RepositoryID: "github:1", CheckedOut: true}, {RepositoryID: "github:2", Reason: domain.CheckoutBranchMissing}}
+	require.Equal(t, want, loaded.CheckoutResults)
+	require.True(t, loaded.Process.PreparationEnded)
+	ended, ok := loaded.CheckoutsEnded()
+	require.True(t, ok, "a Work that missed the report rebuilds it from the stored outcomes")
+	require.Equal(t, domain.ExecutionCheckoutsEnded{WorkID: launch.WorkID, StartAdmittedAt: loaded.StartAdmittedAt, Checkouts: want}, ended)
+}

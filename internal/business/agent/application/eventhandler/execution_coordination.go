@@ -31,6 +31,10 @@ type RetireExecution struct{ coordination }
 // (Apply execution report).
 type ApplyExecutionReport struct{ coordination }
 
+// RecordCheckouts records an execution's checkout outcomes on its Work
+// (Record checkouts).
+type RecordCheckouts struct{ coordination }
+
 // ConfirmComputeRelease applies an execution's release to its Work (Confirm
 // compute release).
 type ConfirmComputeRelease struct{ coordination }
@@ -40,6 +44,7 @@ var (
 	_ domainevent.Handler = (*RequestProcessExit)(nil)
 	_ domainevent.Handler = (*RetireExecution)(nil)
 	_ domainevent.Handler = (*ApplyExecutionReport)(nil)
+	_ domainevent.Handler = (*RecordCheckouts)(nil)
 	_ domainevent.Handler = (*ConfirmComputeRelease)(nil)
 )
 
@@ -57,6 +62,10 @@ func NewRetireExecution(c *command.ExecutionCoordination, logger *slog.Logger) *
 
 func NewApplyExecutionReport(c *command.ExecutionCoordination, logger *slog.Logger) *ApplyExecutionReport {
 	return &ApplyExecutionReport{coordination{policy: "apply_execution_report", apply: c.ApplyExecutionReports, logger: logger}}
+}
+
+func NewRecordCheckouts(c *command.ExecutionCoordination, logger *slog.Logger) *RecordCheckouts {
+	return &RecordCheckouts{coordination{policy: "record_checkouts", apply: c.RecordCheckouts, logger: logger}}
 }
 
 func NewConfirmComputeRelease(c *command.ExecutionCoordination, logger *slog.Logger) *ConfirmComputeRelease {
@@ -77,6 +86,10 @@ func (*RetireExecution) Listening() []domainevent.Kind {
 
 func (*ApplyExecutionReport) Listening() []domainevent.Kind {
 	return []domainevent.Kind{domain.EventKindExecutionReady, domain.EventKindExecutionStartFailed, domain.EventKindExecutionStartRejected, domain.EventKindExecutionStartAbandoned, domain.EventKindExecutionEnvironmentLost, domain.EventKindExecutionExited}
+}
+
+func (*RecordCheckouts) Listening() []domainevent.Kind {
+	return []domainevent.Kind{domain.EventKindExecutionCheckoutsEnded}
 }
 
 func (*ConfirmComputeRelease) Listening() []domainevent.Kind {
