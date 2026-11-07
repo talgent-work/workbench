@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"time"
 
-
 	"github.com/talgent-work/workbench/internal/business/account/application"
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 )
