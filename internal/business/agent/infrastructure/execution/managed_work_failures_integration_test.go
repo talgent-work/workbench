@@ -37,10 +37,10 @@ func TestManagedSubmissionWaitsForTheMachine(t *testing.T) {
 	require.False(t, record.PreparationRecovering)
 }
 
-// The removal obligation of a Managed allocation stays pending while its
+// The release of a retired Managed allocation stays outstanding while its
 // machine is away, and settles without a call once Computer says the machine
 // was removed: nothing is left there to release.
-func TestManagedRemovalWaitsForTheMachineAndSettlesOnItsRemoval(t *testing.T) {
+func TestManagedReleaseWaitsForTheMachineAndSettlesOnItsRemoval(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
 	input := managedRequest()
@@ -58,7 +58,7 @@ func TestManagedRemovalWaitsForTheMachineAndSettlesOnItsRemoval(t *testing.T) {
 	require.NoError(t, f.port.ReclaimCompute(ctx, input.WorkID))
 	_, err = f.recovery.ReconcileAllocation(ctx, record.ID)
 	require.NoError(t, err)
-	pending, err := pendingRemovals(ctx, f.removals)
+	pending, err := unreleased(ctx, f.db)
 	require.NoError(t, err)
 	require.Len(t, pending, 1, "the run's processes are released once the machine is back")
 	require.Empty(t, f.feedback.requests, "no release is confirmed before it happened")
@@ -72,7 +72,7 @@ func TestManagedRemovalWaitsForTheMachineAndSettlesOnItsRemoval(t *testing.T) {
 	f.place.removed = true
 	_, err = f.recovery.ReconcileAllocation(ctx, record.ID)
 	require.NoError(t, err)
-	pending, err = pendingRemovals(ctx, f.removals)
+	pending, err = unreleased(ctx, f.db)
 	require.NoError(t, err)
 	require.Empty(t, pending)
 	require.Len(t, f.feedback.requests, 1)

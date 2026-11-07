@@ -222,7 +222,6 @@ type managedWork struct {
 	place        *managedPlace
 	provisioning *Provisioning
 	observations *ProcessObservations
-	removals     *Removals
 	port         *Environment
 	mounts       *countingMounts
 	feedback     *reclamationFeedback
@@ -259,8 +258,7 @@ func newManagedWork(t *testing.T) *managedWork {
 	control := NewDispatcherControl(dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	f.observations, err = NewProcessObservations(f.provisioning, control)
 	require.NoError(t, err)
-	f.removals = NewRemovals(db, time.Now)
-	resources, err := NewEnvironments(f.provisioning, f.removals, f.observations)
+	resources, err := NewEnvironments(f.provisioning, f.observations)
 	require.NoError(t, err)
 	f.port, err = NewEnvironment(resources, control, f.mounts, f.place)
 	require.NoError(t, err)
@@ -268,7 +266,7 @@ func newManagedWork(t *testing.T) *managedWork {
 	require.NoError(t, err)
 	reclaimer, err := NewReclaimer(f.feedback)
 	require.NoError(t, err)
-	f.recovery, err = NewEnvironmentRecovery(f.provisioning, f.connections, reclaimer, f.removals, unread{})
+	f.recovery, err = NewEnvironmentRecovery(f.provisioning, f.connections, reclaimer, unread{})
 	require.NoError(t, err)
 	return f
 }
@@ -281,7 +279,7 @@ func newManagedWork(t *testing.T) *managedWork {
 func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
-	db, relay, provisioning, connections, port, recovery, observations, feedback, receiver, removals := f.db, f.relay, f.provisioning, f.connections, f.port, f.recovery, f.observations, f.feedback, f.receiver, f.removals
+	db, relay, provisioning, connections, port, recovery, observations, feedback, receiver := f.db, f.relay, f.provisioning, f.connections, f.port, f.recovery, f.observations, f.feedback, f.receiver
 	mounts := f.mounts
 
 	input := managedRequest()
@@ -339,7 +337,7 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	require.NoError(t, err)
 	require.True(t, exited)
 	// Agent applies the confirmation by observing the process, which a
-	// Managed allocation reports released only from its completed removal;
+	// Managed allocation reports released only once its release is recorded;
 	// Dispatcher no longer holds a connection of the exited process.
 	var confirmed command.WorkProcessObservation
 	feedback.observe = func(ctx context.Context, request command.ExecutionFeedback) error {
@@ -357,7 +355,7 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	observation, err := observations.ObserveProcess(ctx, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, observation.ComputeReclaimed)
-	pending, err := pendingRemovals(ctx, removals)
+	pending, err := unreleased(ctx, db)
 	require.NoError(t, err)
 	require.Empty(t, pending)
 	for _, call := range relay.calls {

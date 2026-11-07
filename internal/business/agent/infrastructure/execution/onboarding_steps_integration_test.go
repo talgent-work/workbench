@@ -52,7 +52,7 @@ func newOnboarding(t *testing.T) *onboardingFixture {
 	reclaimer, err := NewReclaimer(feedback)
 	require.NoError(t, err)
 	owners := &readingProcess{}
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, NewRemovals(db, time.Now), owners)
+	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, owners)
 	require.NoError(t, err)
 	record, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)

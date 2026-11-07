@@ -96,14 +96,19 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 	// its allocation, and a later start registers a new one.
 	t.Run("environment retirement retires only the allocation", func(t *testing.T) {
 		provider, _, _ := sandboxClient(t)
-		p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
-		removals := NewRemovals(db, time.Now)
-		environments, err := NewEnvironments(p, removals, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
+		credentials := fixtureSandboxCredentials(db, provider)
+		// Its Work reaches the run, so nothing reclaims it beyond reach.
+		credentials.works = NewHeldWorks(db, &unreachedWorks{})
+		p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+		environments, err := NewEnvironments(p, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
 		require.NoError(t, err)
 		input := request()
 		input.WorkID = "environment-retirement"
 		require.NoError(t, environments.Create(ctx, input, testMounts))
-		require.ErrorIs(t, environments.Delete(ctx, input.WorkID), errEnvironmentConflict)
+		require.NoError(t, environments.Delete(ctx, input.WorkID), "a start without a sandbox identity is no conflict")
+		unbound, _, err := latestAllocation(ctx, p.db, input.WorkID)
+		require.NoError(t, err)
+		require.Zero(t, unbound.DeletedAt, "a start that has not ended is not retired")
 		require.NoError(t, submitPending(ctx, p))
 		// The acknowledged exit of the bound process authorizes retirement.
 		_, err = db.Exec("UPDATE execution_allocation SET process_id = 'current-process', process_exited = 1 WHERE session_id = ? AND deleted_at = 0", input.WorkID)
@@ -114,10 +119,8 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.NoError(t, err)
 		require.True(t, exists)
 		require.NotZero(t, record.DeletedAt)
-		obligations, err := pendingRemovals(ctx, removals)
-		require.NoError(t, err)
-		require.Len(t, obligations, 1)
-		require.Equal(t, sandboxID, obligations[0].SandboxID)
+		require.Zero(t, record.ReleasedAt, "its release is outstanding")
+		require.Equal(t, sandboxID, record.SandboxID)
 		require.NoError(t, environments.Create(ctx, input, testMounts))
 		next, exists, err := latestAllocation(ctx, p.db, input.WorkID)
 		require.NoError(t, err)
@@ -138,8 +141,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		// Its Work reaches the run, so nothing reclaims it beyond reach.
 		credentials.works = NewHeldWorks(db, &unreachedWorks{})
 		p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
-		removals := NewRemovals(db, time.Now)
-		environments, err := NewEnvironments(p, removals, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
+		environments, err := NewEnvironments(p, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
 		require.NoError(t, err)
 		input := request()
 		input.WorkID = "environment-abandoned"
@@ -156,9 +158,9 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.NoError(t, err)
 		require.True(t, exists)
 		require.NotZero(t, record.DeletedAt)
-		obligations, err := pendingRemovals(ctx, removals)
+		outstanding, err := unreleased(ctx, db)
 		require.NoError(t, err)
-		require.True(t, slices.ContainsFunc(obligations, func(o removalRecord) bool { return o.SandboxID == sandboxID }))
+		require.True(t, slices.ContainsFunc(outstanding, func(o allocationRecord) bool { return o.ID == record.ID && o.SandboxID == sandboxID }))
 	})
 
 	t.Run("restart retains original specification and credential", func(t *testing.T) {
@@ -231,7 +233,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		root, err := os.OpenRoot(t.TempDir())
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = root.Close() })
-		resources, err := NewEnvironments(provisioning, NewRemovals(db, time.Now), observations)
+		resources, err := NewEnvironments(provisioning, observations)
 		require.NoError(t, err)
 		input := request()
 		input.WorkID = "refused"

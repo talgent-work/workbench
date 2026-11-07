@@ -16,14 +16,13 @@ type Environments struct {
 	AllocationChanged func(context.Context, string)
 	processes         *ProcessObservations
 	provisioning      *Provisioning
-	removals          *Removals
 }
 
-func NewEnvironments(provisioning *Provisioning, removals *Removals, processes *ProcessObservations) (*Environments, error) {
-	if provisioning == nil || removals == nil || processes == nil {
-		return nil, errors.New("agent: provisioning, removals and process observations are required")
+func NewEnvironments(provisioning *Provisioning, processes *ProcessObservations) (*Environments, error) {
+	if provisioning == nil || processes == nil {
+		return nil, errors.New("agent: provisioning and process observations are required")
 	}
-	return &Environments{provisioning: provisioning, removals: removals, processes: processes}, nil
+	return &Environments{provisioning: provisioning, processes: processes}, nil
 }
 
 func (e *Environments) Create(ctx context.Context, request domain.StartExecutionRequest, mounts domain.SandboxMounts) error {
@@ -76,9 +75,11 @@ func (e *Environments) StartAbandoned(ctx context.Context, workID string) (bool,
 	return found && record.SandboxID != "" && abandoned(record, e.provisioning.now()), nil
 }
 
-// Delete retires the Work's live allocation after its process exited, or
-// when its Work reclaims the run beyond reach. A repeated request after
-// retirement finds the retained removal obligation.
+// Delete retires the Work's live allocation after its process exited, its
+// start was rejected or abandoned, its environment was lost, or when its
+// Work reclaims the run beyond reach; whether a sandbox identity was ever
+// recorded does not matter, since release finds the allocation's compute by
+// its ownership. A repeated request after retirement changes nothing.
 func (e *Environments) Delete(ctx context.Context, workID string) error {
 	if strings.TrimSpace(workID) == "" {
 		return domain.ErrExecutionRequest
@@ -93,19 +94,17 @@ func (e *Environments) Delete(ctx context.Context, workID string) error {
 		if err != nil {
 			return oops.Wrap(err)
 		}
-		if found && retired.StartRejected && retired.DeletedAt != 0 {
+		if found && retired.DeletedAt != 0 {
 			return nil
 		}
-		return e.removals.retained(ctx, workID)
+		return errEnvironmentConflict
 	}
 	if record.StartRejected && record.SandboxID == "" {
 		// No compute exists: rejection either won the same CAS that guards
 		// submission, or the provider refused the one submitted create.
-		// Retiring this local obligation needs no deletion.
-		return e.provisioning.update(ctx, record, "deleted_at = ?", e.provisioning.now().UnixMilli())
-	}
-	if record.SandboxID == "" {
-		return errEnvironmentConflict
+		// Retiring it releases it at once, with nothing to delete.
+		now := e.provisioning.now().UnixMilli()
+		return e.provisioning.update(ctx, record, "deleted_at = ?, released_at = ?", now, now)
 	}
 	// Save-to-send can span cleanup and a new start. Recheck the specific
 	// resource selected above: only its acknowledged exit, its lost
@@ -123,7 +122,7 @@ func (e *Environments) Delete(ctx context.Context, workID string) error {
 			}
 		}
 	}
-	if err := retire(ctx, e.provisioning, e.removals, record); err != nil {
+	if err := retire(ctx, e.provisioning, record); err != nil {
 		return err
 	}
 	e.changed(ctx, record.ID)
@@ -132,7 +131,7 @@ func (e *Environments) Delete(ctx context.Context, workID string) error {
 
 // RetireFenced retires the Work's live allocation once its Managed Computer
 // fenced the run, as the Work requested: no compute is reclaimed, and the
-// removal deletes the run's process handles once the machine is back. A
+// release deletes the run's process handles once the machine is back. A
 // request that finds no live allocation, or a newer start's, changes nothing.
 func (e *Environments) RetireFenced(ctx context.Context, workID string) error {
 	if strings.TrimSpace(workID) == "" {
@@ -142,7 +141,7 @@ func (e *Environments) RetireFenced(ctx context.Context, workID string) error {
 	if err != nil || !found {
 		return err
 	}
-	retired, err := retireOutlived(ctx, e.provisioning, e.removals, record)
+	retired, err := retireOutlived(ctx, e.provisioning, record)
 	if err != nil || !retired {
 		return err
 	}
@@ -154,21 +153,19 @@ func (e *Environments) RetireFenced(ctx context.Context, workID string) error {
 // no longer holds the run it backs. It is the one place such an allocation
 // retires: on the Work's request to retire its fenced run, and in recovery
 // when that request was lost.
-func retireOutlived(ctx context.Context, provisioning *Provisioning, removals *Removals, record allocationRecord) (bool, error) {
+func retireOutlived(ctx context.Context, provisioning *Provisioning, record allocationRecord) (bool, error) {
 	outlived, err := provisioning.outlived(ctx, record)
 	if err != nil || !outlived {
 		return false, err
 	}
-	return true, retire(ctx, provisioning, removals, record)
+	return true, retire(ctx, provisioning, record)
 }
 
-// retire records the allocation's durable removal obligation and only then
-// retires it, so no further connection is attempted. Repeating it is
-// idempotent; no HOME or workspace content is touched.
-func retire(ctx context.Context, provisioning *Provisioning, removals *Removals, record allocationRecord) error {
-	if err := removals.Request(ctx, Allocation{WorkID: record.SessionID, ID: record.ID}, record.SandboxID); err != nil {
-		return err
-	}
+// retire ends the allocation's wanting of its environment, so no further
+// connection is attempted, and leaves its release outstanding until its
+// recovery confirms it. Repeating it is idempotent; no HOME or workspace
+// content is touched.
+func retire(ctx context.Context, provisioning *Provisioning, record allocationRecord) error {
 	now := provisioning.now().UnixMilli()
 	_, err := provisioning.db.Context(ctx).Exec("UPDATE execution_allocation SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND session_id = ? AND deleted_at = 0", now, now, record.ID, record.SessionID)
 	if err != nil {

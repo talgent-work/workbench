@@ -37,7 +37,6 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	live, _, err := latestAllocation(ctx, p.db, input.WorkID)
 	require.NoError(t, err)
 	history := make([]allocationRecord, 105)
-	removed := make([]removalRecord, len(history))
 	for i := range history {
 		history[i] = live
 		history[i].ID = fmt.Sprintf("retired-%03d", i)
@@ -45,11 +44,9 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 		history[i].AllocationLabel = storageKey(history[i].ID)[:48] // MySQL must derive the same label
 		history[i].Submitted = true
 		history[i].DeletedAt = 1
-		removed[i] = removalRecord{ID: history[i].ID, SessionID: history[i].SessionID, SandboxID: "6c4a0f5e-0000-4000-8000-000000000000", Completed: true, Version: 2}
+		history[i].ReleasedAt = 2
 	}
 	_, err = db.Insert(&history)
-	require.NoError(t, err)
-	_, err = db.Insert(&removed)
 	require.NoError(t, err)
 
 	var mu sync.Mutex
@@ -70,7 +67,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	require.NoError(t, err)
 	reclaimer, err := NewReclaimer(feedback)
 	require.NoError(t, err)
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, NewRemovals(db, time.Now), unread{})
+	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, unread{})
 	require.NoError(t, err)
 
 	outstanding, err := recovery.ListOutstandingAllocations(ctx, "", 1000)
@@ -105,7 +102,7 @@ func TestUnknownSandboxLabelProvesNoOwnership(t *testing.T) {
 	require.NoError(t, err)
 	reclaimer, err := NewReclaimer(&reclamationFeedback{})
 	require.NoError(t, err)
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, NewRemovals(db, time.Now), unread{})
+	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, unread{})
 	require.NoError(t, err)
 	_, found, err := recovery.AllocationForSandbox(ctx, storageKey("not-an-allocation")[:48])
 	require.NoError(t, err)

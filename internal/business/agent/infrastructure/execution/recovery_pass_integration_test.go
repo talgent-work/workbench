@@ -5,6 +5,8 @@ package execution
 import (
 	"context"
 	"errors"
+
+	"xorm.io/xorm"
 )
 
 // Recovery tasks reconcile one allocation at a time. These helpers drive one
@@ -95,23 +97,9 @@ func pruneRetiredAll(ctx context.Context, p *Provisioning) error {
 	})
 }
 
-// reclaimPending advances every unfinished removal obligation of a Cloud
-// sandbox, whose release needs only the removal.
-func reclaimPending(ctx context.Context, r *Reclaimer, removals *Removals, cloud cloudEnvironment) error {
-	var records []removalRecord
-	if err := removals.db.Context(ctx).Where("completed = 0 AND deleted_at = 0").Asc("id").Find(&records); err != nil {
-		return err
-	}
-	var failures []error
-	for _, record := range records {
-		failures = append(failures, r.reconcileRemoval(ctx, removals, record, allocationRecord{}, cloud))
-	}
-	return errors.Join(failures...)
-}
-
-// pendingRemovals lists unfinished removal obligations.
-func pendingRemovals(ctx context.Context, removals *Removals) ([]removalRecord, error) {
-	var records []removalRecord
-	err := removals.db.Context(ctx).Where("completed = 0 AND deleted_at = 0").Asc("id").Find(&records)
+// unreleased lists retired allocations whose release is not confirmed yet.
+func unreleased(ctx context.Context, db *xorm.Engine) ([]allocationRecord, error) {
+	var records []allocationRecord
+	err := db.Context(ctx).Where("deleted_at <> 0 AND released_at = 0").Asc("id").Find(&records)
 	return records, err
 }

@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -89,6 +92,9 @@ type lifecycleFixture struct {
 	vault              *vaultFixture
 	inspectStatus      int
 	endpointStatus     int
+	// others are sandboxes beside info, by identity; the list filters them,
+	// like info, by the owner metadata it is asked for.
+	others map[string]sdk.SandboxInfo
 	// requests counts every call to the environment authority.
 	requests int
 }
@@ -134,8 +140,8 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var items []sdk.SandboxInfo
 		if len(f.pages) > page {
 			items = f.pages[page]
-		} else if f.info != nil {
-			items = []sdk.SandboxInfo{*f.info}
+		} else {
+			items = f.listed(r.URL.Query().Get("metadata"))
 		}
 		_ = json.NewEncoder(w).Encode(sdk.ListSandboxesResponse{Items: items, Pagination: sdk.PaginationInfo{HasNextPage: page+1 < len(f.pages)}})
 	case r.Method == "GET" && strings.HasSuffix(r.URL.Path, fmt.Sprintf("/endpoints/%d", CredentialManagementPort)):
@@ -159,6 +165,15 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(sdk.Endpoint{Endpoint: f.endpoint})
+	case f.others[strings.TrimPrefix(r.URL.Path, "/v1/sandboxes/")].ID != "":
+		id := strings.TrimPrefix(r.URL.Path, "/v1/sandboxes/")
+		if r.Method == "DELETE" {
+			f.deletes++
+			delete(f.others, id)
+			w.WriteHeader(204)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(f.others[id])
 	case r.URL.Path == "/v1/sandboxes/"+sandboxID:
 		if r.Method == "GET" && f.inspectStatus != 0 {
 			w.WriteHeader(f.inspectStatus)
@@ -178,6 +193,29 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(404)
 	}
+}
+
+// listed are the sandboxes carrying every pair of the encoded metadata filter.
+func (f *lifecycleFixture) listed(filter string) []sdk.SandboxInfo {
+	wanted, _ := url.ParseQuery(filter)
+	candidates := []sdk.SandboxInfo{}
+	if f.info != nil {
+		candidates = append(candidates, *f.info)
+	}
+	for _, id := range slices.Sorted(maps.Keys(f.others)) {
+		candidates = append(candidates, f.others[id])
+	}
+	items := []sdk.SandboxInfo{}
+	for _, item := range candidates {
+		matches := true
+		for key, values := range wanted {
+			matches = matches && item.Metadata[key] == values[0]
+		}
+		if matches {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 // testMounts are the Mount Grants Storage issues for request's spaces.

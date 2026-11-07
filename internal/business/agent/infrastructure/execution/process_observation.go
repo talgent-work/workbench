@@ -35,7 +35,7 @@ func NewProcessObservations(provisioning *Provisioning, dispatcher *DispatcherCo
 func (o *ProcessObservations) ObserveProcess(ctx context.Context, workID string) (command.WorkProcessObservation, error) {
 	// A deletion receipt can be replayed after another process has started.
 	// Inspect the latest allocation for this Work, including retired allocations
-	// whose actual sandbox removal is still pending; never trust the hint's owner.
+	// whose release is still outstanding; never trust the hint's owner.
 	var record allocationRecord
 	found, err := o.provisioning.db.Context(ctx).Where("session_id = ?", workID).Desc("created_at", "id").Get(&record)
 	if err != nil {
@@ -100,12 +100,14 @@ func (o *ProcessObservations) environmentLost(ctx context.Context, record alloca
 // Observe the fixed resource binding selected by the caller. Resource deletion
 // must not look up another live allocation after this observation completes.
 func (o *ProcessObservations) observeAllocation(ctx context.Context, record allocationRecord) (command.WorkProcessObservation, error) {
+	if record.DeletedAt != 0 && record.ReleasedAt != 0 {
+		// The retired allocation's release was confirmed, whether or not it
+		// ever recorded a sandbox identity.
+		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true}}, nil
+	}
 	if record.StartRejected {
 		if record.SandboxID != "" {
 			return command.WorkProcessObservation{}, errEnvironmentConflict
-		}
-		if record.DeletedAt != 0 {
-			return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true}}, nil
 		}
 		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessStartRejected}}, nil
 	}
@@ -125,14 +127,6 @@ func (o *ProcessObservations) observeAllocation(ctx context.Context, record allo
 		}
 		return o.dispatcher.ObserveProcess(ctx, workID, record.ProcessID)
 	}
-	released, err := o.retiredReleased(ctx, record)
-	if err != nil {
-		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{}}, err
-	}
-	if released {
-		// A retired allocation belongs to a completed resource obligation.
-		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true}}, nil
-	}
 	if record.ProcessID == "" || record.ProcessExited {
 		// An acknowledged exit was already applied to the Work, and its process
 		// has no connection left for Dispatcher to observe; only the release
@@ -140,24 +134,6 @@ func (o *ProcessObservations) observeAllocation(ctx context.Context, record allo
 		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessPending}}, nil
 	}
 	return o.dispatcher.ObserveProcess(ctx, workID, record.ProcessID)
-}
-
-// retiredReleased reports whether a retired allocation's compute is gone: as
-// its authority observes it, or else as its completed removal obligation
-// records it.
-func (o *ProcessObservations) retiredReleased(ctx context.Context, record allocationRecord) (bool, error) {
-	authority, err := o.provisioning.authority(record)
-	if err != nil {
-		return false, err
-	}
-	if observed, ok := authority.(observedCompute); ok {
-		return observed.released(ctx, record)
-	}
-	released, err := o.provisioning.db.Context(ctx).Where("id = ? AND completed = 1 AND deleted_at = 0", record.ID).Exist(&removalRecord{})
-	if err != nil {
-		return false, oops.Wrap(err)
-	}
-	return released, nil
 }
 
 func (c *DispatcherControl) ObserveProcess(ctx context.Context, workID, processID string) (command.WorkProcessObservation, error) {

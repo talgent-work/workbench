@@ -105,7 +105,6 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 			p.ProgressCommitted = updates.publish
 			return p
 		},
-		func(db *xorm.Engine) *execution.Removals { return execution.NewRemovals(db, time.Now) },
 		fx.Annotate(execution.NewProcessObservations, fx.As(fx.Self()), fx.As(new(command.ProcessObservationPort))),
 		fx.Annotate(execution.NewWorkCredentials, fx.As(new(query.WorkCredentialVerifier))),
 		func(feedback *command.ApplyExecutionFeedbackHandler) (*execution.Reclaimer, error) {

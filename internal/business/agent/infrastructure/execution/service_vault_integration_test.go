@@ -201,7 +201,7 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 		require.NoError(t, err)
 		allocations = append(allocations, record.ID)
 	}
-	recovery, err := NewEnvironmentRecovery(f.provisioning, f.connections, f.reclaimer, f.removals, unread{})
+	recovery, err := NewEnvironmentRecovery(f.provisioning, f.connections, f.reclaimer, unread{})
 	require.NoError(t, err)
 	using, err := recovery.MarkCredentialsChanged(ctx, authorizationID)
 	require.NoError(t, err)
