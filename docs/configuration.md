@@ -125,6 +125,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | Key | Default | Meaning |
 |---|---|---|
 | `sandbox-namespace` | `${SANDBOX_NAMESPACE:talgent-sandbox}` | Required. Where sandboxes are created; the namespace holds only them |
+| `sandbox-creation-timeout` | `${SANDBOX_CREATION_TIMEOUT:5m}` | The OpenSandbox server's `sandbox_create_timeout_seconds` (`deploy/opensandbox/server.yaml`); a create waits 30 seconds longer for its answer. Below 14m30s |
 | `credential-transport` | `encrypted-network` | How credentials reach a sandbox's Vault: `https`, or `encrypted-network` (plain HTTP inside a cluster whose pod network is encrypted) |
 | `models.templates-path` | `${MODEL_TEMPLATES_PATH:/etc/talgent/models/templates.yml}` | Model Templates; base: ConfigMap `agent-models` |
 | `models.configurations-path` | `${MODEL_CONFIGURATIONS_PATH:/etc/talgent/model-configurations/configurations.yml}` | Model Configurations with their keys; base: Secret `agent-model-configurations`. At least one is required. |

@@ -2,6 +2,7 @@ package command_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -35,32 +36,79 @@ func boundWorld(t *testing.T) *world {
 	return w
 }
 
-// The submission is recorded before the creation is submitted, and the
-// creation is submitted once; its answer is decided on at once.
-func TestCreationIsSubmittedOnceAfterItsSubmissionIsRecorded(t *testing.T) {
+// A reconciliation never submits the creation: it reports the long step due.
+// The long step records the submission before it sends the creation, sends
+// it once, and binds the created environment from its answer.
+func TestCreationIsSubmittedOnceByTheLongStepAfterItsSubmissionIsRecorded(t *testing.T) {
 	ctx := context.Background()
 	w := newWorld(t, startingSession(t))
 	execution := w.begin(t)
 	w.environment.Answer = domain.CreationAnswer{EnvironmentID: "environment"}
+	long, err := w.reconciliation().Reconcile(ctx, execution.ID)
+	require.NoError(t, err)
+	require.True(t, long, "the creation's submission is a long step")
+	require.Zero(t, w.environment.Submitted, "a reconciliation never waits for a creation")
+
+	require.NoError(t, w.reconciliation().RunLongStep(ctx, execution.ID))
+	require.Equal(t, 1, w.environment.Submitted)
+	require.True(t, w.environment.SubmittedState[0].Creation.Submitted, "the submission is durable before the creation is sent")
+	require.Equal(t, "environment", w.execution(t).Environment, "the answer binds the created environment")
+
+	require.NoError(t, w.reconciliation().RunLongStep(ctx, execution.ID))
+	_, err = w.reconciliation().Reconcile(ctx, execution.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, w.environment.Submitted, "a creation is never submitted twice")
+}
+
+// While the creation waits for its answer, a reconciliation binds the
+// environment as soon as it is observed and delivers its credentials; the
+// long step then goes on to prepare it.
+func TestAnUnansweredCreationIsBoundByObservation(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t, startingSession(t))
+	execution := w.begin(t)
 	w.environment.Observed = func(execution *domain.AgentExecution) domain.EnvironmentObservation {
 		if execution.Creation.Submitted {
 			return running("environment")
 		}
 		return domain.EnvironmentObservation{}
 	}
+	w.environment.Answer = domain.CreationAnswer{EnvironmentID: "environment"}
+	w.environment.SubmitFunc = func(ctx context.Context) {
+		long, err := w.reconciliation().Reconcile(ctx, execution.ID)
+		require.NoError(t, err)
+		require.True(t, long, "the bound environment's preparation is due")
+		require.Equal(t, "environment", w.execution(t).Environment, "bound before the creation answered")
+		require.True(t, w.execution(t).Credentials.Delivered)
+	}
+	require.NoError(t, w.reconciliation().RunLongStep(ctx, execution.ID))
+	require.Equal(t, 1, w.environment.Submitted)
+	require.Equal(t, 1, w.environment.Prepared, "the long step prepares once the creation answered")
+	require.Equal(t, "process", w.execution(t).Process.ID)
+}
+
+// A lost answer leaves observation and the Startup Deadline to decide: the
+// creation is never sent again, an environment observed later is bound, and
+// one never observed fails the start at its deadline.
+func TestALostCreationAnswerIsNeverSubmittedAgain(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t, startingSession(t))
+	execution := w.begin(t)
+	w.environment.SubmitErr = errors.New("the answer was lost")
+	require.Error(t, w.reconciliation().RunLongStep(ctx, execution.ID))
+	require.True(t, w.execution(t).Creation.Submitted)
+	require.NoError(t, w.reconciliation().RunLongStep(ctx, execution.ID))
 	long, err := w.reconciliation().Reconcile(ctx, execution.ID)
 	require.NoError(t, err)
-	require.Equal(t, 1, w.environment.Submitted)
-	require.True(t, w.environment.SubmittedState[0].Creation.Submitted, "the submission is durable before the creation is sent")
-	require.Equal(t, "environment", w.execution(t).Environment)
-	require.Equal(t, 1, w.environment.Delivered, "the created environment is decided on at once")
-	require.True(t, w.execution(t).Credentials.Delivered)
-	require.True(t, long, "the delivered environment's preparation is due")
-	require.Zero(t, w.environment.Prepared, "a reconciliation never takes a long step")
+	require.False(t, long)
+	require.Equal(t, 1, w.environment.Submitted, "a lost answer never sends the creation again")
 
+	w.at = w.execution(t).StartupDeadlineAt().Add(time.Hour)
 	_, err = w.reconciliation().Reconcile(ctx, execution.ID)
 	require.NoError(t, err)
-	require.Equal(t, 1, w.environment.Submitted, "a creation is never submitted twice")
+	require.NotEmpty(t, w.execution(t).Outcome.StartFailure)
+	require.True(t, w.execution(t).Outcome.Abandoned)
+	require.False(t, w.execution(t).Outcome.Rejected)
 }
 
 // A refused creation rejects the start; nothing more is submitted.
@@ -69,14 +117,15 @@ func TestARefusedCreationRejectsTheStart(t *testing.T) {
 	w := newWorld(t, startingSession(t))
 	execution := w.begin(t)
 	w.environment.Answer = domain.CreationAnswer{Refused: true}
-	_, err := w.reconciliation().Reconcile(ctx, execution.ID)
-	require.NoError(t, err)
+	require.NoError(t, w.reconciliation().RunLongStep(ctx, execution.ID))
 	require.True(t, w.execution(t).Outcome.Rejected)
 	require.NoError(t, w.coordination.ApplyExecutionReports(ctx, w.work().ID))
 	require.True(t, w.work().HarnessProcess.StartRejected)
 	require.False(t, w.work().HoldsActiveProcess())
-	_, err = w.reconciliation().Reconcile(ctx, execution.ID)
+	long, err := w.reconciliation().Reconcile(ctx, execution.ID)
 	require.NoError(t, err)
+	require.False(t, long)
+	require.NoError(t, w.reconciliation().RunLongStep(ctx, execution.ID))
 	require.Equal(t, 1, w.environment.Submitted)
 }
 
@@ -168,11 +217,13 @@ func TestSeatingIsRecoveredFromComputer(t *testing.T) {
 	w.computers.Seat("desk-test", seatedAt)
 	w.environment.Answer = domain.CreationAnswer{EnvironmentID: "environment"}
 	w.environment.Observation = running("environment")
-	_, err = w.reconciliation().Reconcile(context.Background(), execution.ID)
+	long, err := w.reconciliation().Reconcile(context.Background(), execution.ID)
 	require.NoError(t, err)
 	seated := w.execution(t)
 	require.Equal(t, domain.ExecutionStarting, seated.State)
 	require.Equal(t, seatedAt.Add(domain.StartupDeadline).UTC(), seated.StartupDeadlineAt().UTC())
+	require.True(t, long, "the seated start's creation is due")
+	require.NoError(t, w.reconciliation().RunLongStep(context.Background(), execution.ID))
 	require.Equal(t, 1, w.environment.Submitted, "the seated start submits its creation")
 }
 

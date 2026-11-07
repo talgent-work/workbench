@@ -46,8 +46,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: query.StartRequest{ID: input.RequestID, Kind: query.StartKindStart, WorkID: work.ID}, InitialExecution: &input}))
 	require.NoError(t, coordination.BeginExecution(ctx, work.ID), "waiting preparation must not suppress the execution's beginning")
 	reconcile := func(id string) error {
-		_, err := steps.handler.Reconcile(ctx, id)
-		return err
+		return steps.reconcile(ctx, id)
 	}
 	first, found, err := p.live(ctx, work.ID)
 	require.NoError(t, err)
@@ -107,7 +106,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.Zero(t, external.creates, "a stale worker cannot submit the released rejected execution")
 	external.loseCreateResponse = true
 	external.mu.Unlock()
-	require.Error(t, reconcile(restarted.ID))
+	require.Error(t, steps.once(ctx, restarted.ID), "the create's answer is lost")
 	uncertain, found, err := p.live(ctx, work.ID)
 	require.NoError(t, err)
 	require.True(t, found)

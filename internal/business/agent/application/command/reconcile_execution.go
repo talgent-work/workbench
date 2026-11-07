@@ -27,16 +27,16 @@ func NewReconcileExecutionHandler(now func() time.Time, executions domain.AgentE
 }
 
 // reconcileRounds bounds the decisions one reconciliation makes: after a step
-// that changed the execution, such as a submitted creation, a delivery, or a
-// retired execution's deleted environments, the next step is decided at once,
-// not on the next wake, which the running reconciliation would absorb.
+// that changed the execution, such as a delivery, or a retired execution's
+// deleted environments, the next step is decided at once, not on the next
+// wake, which the running reconciliation would absorb.
 const reconcileRounds = 4
 
-// Reconcile decides the execution's steps and takes each short one: its
-// creation's submission, environment deletion, credential delivery and
-// withdrawal, the connection of its launched process, input sync, the exit
-// signal and its Desk's departure, then confirms a retired execution's
-// release. It reports whether the execution's last decision called for a
+// Reconcile decides the execution's steps and takes each short one:
+// environment deletion, credential delivery and withdrawal, the connection of
+// its launched process, input sync, the exit signal and its Desk's departure,
+// then confirms a retired execution's release. It never waits for a creation:
+// a submitted one's environment is bound once observed. It reports whether the execution's last decision called for a
 // long step, which RunLongStep takes apart. Every decision observes the
 // environments carrying the execution's ownership as listed now, so a wake
 // absorbed by a pending reconciliation is observed all the same.

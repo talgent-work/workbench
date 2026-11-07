@@ -47,6 +47,10 @@ type ExecutionConfig struct {
 	Dispatcher          ExecutionClientConfig        `json:"dispatcher" yaml:"dispatcher" toml:"dispatcher"`
 	// SandboxNamespace is where OpenSandbox creates Talgent's sandboxes.
 	SandboxNamespace string `json:"sandbox-namespace" yaml:"sandbox-namespace" toml:"sandbox-namespace"`
+	// SandboxCreationTimeout is the OpenSandbox server's sandbox creation
+	// timeout (its sandbox_create_timeout_seconds); a create waits a little
+	// longer for its answer. Empty is the server's default, five minutes.
+	SandboxCreationTimeout Duration `json:"sandbox-creation-timeout" yaml:"sandbox-creation-timeout" toml:"sandbox-creation-timeout"`
 }
 
 func (cfg ExecutionConfig) Validate() error {
@@ -81,7 +85,7 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, mod
 		}
 		resources.Limits[corev1.ResourceName(name)] = quantity
 	}
-	return execution.NewSandboxes(client, execution.SandboxConfig{Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow})
+	return execution.NewSandboxes(client, execution.SandboxConfig{CreationTimeout: cfg.SandboxCreationTimeout.Duration(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow})
 }
 
 var ExecutionModule = fx.Module("agent.execution-integration",

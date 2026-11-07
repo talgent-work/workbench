@@ -208,6 +208,9 @@ native-authentication:
   agent-control-token: "${AGENT_CONTROL_TOKEN:}"
 agent-execution:
   sandbox-namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
+  # The OpenSandbox server's sandbox_create_timeout_seconds; a create waits
+  # 30 seconds longer for its answer.
+  sandbox-creation-timeout: ${SANDBOX_CREATION_TIMEOUT:5m}
   credential-transport: encrypted-network
   # Model Templates (ConfigMap agent-models) and Model Configurations with
   # their api keys (Secret agent-model-configurations), read once at startup.

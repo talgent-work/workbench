@@ -56,6 +56,24 @@ func (f *unboundStart) advance(by time.Duration) {
 func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart {
 	t.Helper()
 	ctx := context.Background()
+	f := newCloudStart(t)
+	f.lifecycle.mu.Lock()
+	settle(f.lifecycle)
+	f.lifecycle.mu.Unlock()
+	require.True(t, f.reconcile(t), "the creation's submission is a long step")
+	require.Error(t, f.steps.handler.RunLongStep(ctx, f.allocation(t).ID), "the create's answer is lost")
+	record := f.allocation(t)
+	require.True(t, record.Submitted)
+	require.Empty(t, record.SandboxID, "the sandbox's identity is never recorded")
+	require.Equal(t, 1, f.creates())
+	return f
+}
+
+// newCloudStart creates a Cloud Work and begins its start's execution, its
+// creation not yet submitted.
+func newCloudStart(t *testing.T) *unboundStart {
+	t.Helper()
+	ctx := context.Background()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
@@ -87,16 +105,6 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}}))
 	f.workID = work.ID
 	require.NoError(t, f.coordination.BeginExecution(ctx, work.ID))
-
-	lifecycle.mu.Lock()
-	settle(lifecycle)
-	lifecycle.mu.Unlock()
-	_, err = f.steps.handler.Reconcile(ctx, f.allocation(t).ID)
-	require.Error(t, err, "the create's answer is lost")
-	record := f.allocation(t)
-	require.True(t, record.Submitted)
-	require.Empty(t, record.SandboxID, "the sandbox's identity is never recorded")
-	require.Equal(t, 1, f.creates())
 	return f
 }
 

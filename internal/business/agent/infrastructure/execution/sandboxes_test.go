@@ -3,7 +3,6 @@ package execution
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -96,13 +95,23 @@ type lifecycleFixture struct {
 	creates, deletes int
 	createFailure    bool
 	refuseStatus     int
-	createOnRefusal  bool
-	endpoint         string
-	egress           string
-	egressToken      string
-	vault            *vaultFixture
-	inspectStatus    int
-	endpointStatus   int
+	// refuseCode is the OpenSandbox error code a refusal carries.
+	refuseCode      string
+	createOnRefusal bool
+	// answer, when set, holds every create's answer, its sandbox already
+	// created, until it is closed or the caller gives up; never closed, the
+	// create is never answered.
+	answer chan struct{}
+	// failAfterCreate answers a create with this HTTP status and refuseCode
+	// once its answer is released, the sandbox it created deleted first, as
+	// the server does after its readiness timeout.
+	failAfterCreate int
+	endpoint        string
+	egress          string
+	egressToken     string
+	vault           *vaultFixture
+	inspectStatus   int
+	endpointStatus  int
 	// others are sandboxes beside info, by identity; the list filters them,
 	// like info, by the owner metadata it is asked for.
 	others map[string]sdk.SandboxInfo
@@ -112,6 +121,10 @@ type lifecycleFixture struct {
 
 func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
+	if r.Method == "POST" && r.URL.Path == "/v1/sandboxes" && (f.answer != nil || f.failAfterCreate != 0) {
+		f.serveHeldCreate(w, r)
+		return
+	}
 	defer f.mu.Unlock()
 	f.requests++
 	if r.Header.Get("OPEN-SANDBOX-API-KEY") != "lifecycle-secret" {
@@ -133,7 +146,7 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					f.info.Status.State = "Pending"
 				}
 			}
-			http.Error(w, "invalid parameters", f.refuseStatus)
+			f.refuse(w, f.refuseStatus)
 			return
 		}
 		if f.createFailure {
@@ -364,17 +377,6 @@ func TestSandboxCreateFailureDoesNotRetryOrExposeResponseBody(t *testing.T) {
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "must-not-leak-token")
 	require.Equal(t, 1, fixture.creates)
-}
-
-func TestSandboxCreateRefusalIsOnlyAnInvalidSpecificationAnswer(t *testing.T) {
-	for status, refused := range map[int]bool{http.StatusBadRequest: true, http.StatusUnprocessableEntity: true, http.StatusInternalServerError: false, http.StatusServiceUnavailable: false, http.StatusConflict: false} {
-		provider, _, fixture := sandboxClient(t)
-		fixture.refuseStatus = status
-		_, err := provider.submitRequest(context.Background(), request(), "execd-secret")
-		require.Error(t, err)
-		require.Equal(t, refused, errors.Is(err, errCreationRefused), "HTTP %d", status)
-		require.NotContains(t, err.Error(), "invalid parameters", "response bodies never leave the adapter")
-	}
 }
 
 func TestSandboxWithoutInputSourceMountsNoInputsClaim(t *testing.T) {

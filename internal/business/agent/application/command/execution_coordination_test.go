@@ -122,8 +122,7 @@ func TestRetireExecutionTakesTheCauseOfTheRunsEnd(t *testing.T) {
 		"rejected": {end: func(t *testing.T, w *world) {
 			w.begin(t)
 			w.environment.Answer = domain.CreationAnswer{Refused: true}
-			_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID)
-			require.NoError(t, err)
+			require.NoError(t, w.reconciliation().RunLongStep(context.Background(), w.execution(t).ID))
 			require.NoError(t, w.coordination.ApplyExecutionReports(context.Background(), w.work().ID))
 			require.True(t, w.work().HarnessProcess.StartRejected)
 		}, want: domain.RetiredByRejection},

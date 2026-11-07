@@ -20,8 +20,10 @@ type ExecutionEnvironmentPort interface {
 	// execution and its Mount Grants and what its submission freezes. It is
 	// repeatable and creates nothing.
 	PrepareCreation(ctx context.Context, execution *domain.AgentExecution, mounts domain.SandboxMounts) error
-	// SubmitCreation submits the environment's creation once. An error means
-	// the answer is lost; a definite answer binds or refuses.
+	// SubmitCreation submits the environment's creation once and waits for
+	// its answer, longer than the authority takes to create it. An error
+	// means the answer is lost; a definite answer binds, or refuses after a
+	// refusal or failure that left nothing created.
 	SubmitCreation(ctx context.Context, execution *domain.AgentExecution) (domain.CreationAnswer, error)
 	// DeleteEnvironment deletes one environment carrying the execution's
 	// ownership, clearing its Vault first; a gone one is deleted already.

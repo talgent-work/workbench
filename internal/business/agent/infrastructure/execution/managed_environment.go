@@ -104,7 +104,9 @@ func (m ManagedEnvironment) create(ctx context.Context, record allocationRecord)
 	if err != nil {
 		return "", err
 	}
-	err = m.machines.open(ctx, spec, record.SessionID)
+	attempt, cancel := context.WithTimeout(ctx, reconciliationAttemptTimeout)
+	defer cancel()
+	err = m.machines.open(attempt, spec, record.SessionID)
 	if errors.Is(err, errMachineUnreachable) {
 		return "", nil
 	}

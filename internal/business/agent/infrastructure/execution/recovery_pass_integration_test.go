@@ -77,13 +77,31 @@ func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeCon
 }
 
 // reconcile reconciles one execution and takes the long step it decided,
-// though a short step failed, as its long step task would.
+// though a short step failed, as its long step task would. A creation it
+// submitted wakes the reconciliation again, as the commit of its submission
+// and answer does, and so the steps that follow.
 func (s *executionSteps) reconcile(ctx context.Context, id string) error {
+	submitted := s.submitted(ctx, id)
+	err := s.once(ctx, id)
+	if submitted || !s.submitted(ctx, id) {
+		return err
+	}
+	return errors.Join(err, s.once(ctx, id))
+}
+
+func (s *executionSteps) once(ctx context.Context, id string) error {
 	long, err := s.handler.Reconcile(ctx, id)
 	if !long {
 		return err
 	}
 	return errors.Join(err, s.handler.RunLongStep(ctx, id))
+}
+
+// submitted reports whether the execution recorded its creation's
+// submission.
+func (s *executionSteps) submitted(ctx context.Context, id string) bool {
+	execution, err := s.executions.Get(ctx, id)
+	return err == nil && execution.Creation.Submitted
 }
 
 // shortSteps reconciles one execution, taking only its short steps, as its

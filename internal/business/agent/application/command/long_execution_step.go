@@ -3,35 +3,89 @@ package command
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// longStep reports a step that may wait minutes. Such a step is taken by
-// RunLongStep on its own workers, so it never delays the short steps of the
-// same or any other execution.
+// longStep reports a step that may wait minutes: the creation's submission,
+// which waits for the environment to be ready or to fail, and preparation.
+// Such a step is taken by RunLongStep on its own workers, so it never delays
+// the short steps of the same or any other execution.
 func longStep(kind domain.ExecutionStepKind) bool {
-	return kind == domain.StepPrepare
+	return kind == domain.StepSubmitCreation || kind == domain.StepPrepare
 }
 
 // launchTimeout bounds starting the Harness and connecting it.
 const launchTimeout = 30 * time.Second
 
-// RunLongStep takes the long step the execution's current facts call for, if
-// any; a step no longer decided is not taken.
+// longStepsPerRun bounds the long steps one run takes: the creation's
+// submission, then the preparation that a reconciliation made due while the
+// creation awaited its answer. That reconciliation's wake of the long step
+// found this run still active and was absorbed, so this run decides again.
+const longStepsPerRun = 2
+
+// RunLongStep takes the long steps the execution's current facts call for, if
+// any, deciding again after each; a step no longer decided is not taken.
 func (h *ReconcileExecutionHandler) RunLongStep(ctx context.Context, executionID string) error {
-	execution, decision, _, err := h.decide(ctx, executionID)
-	if err != nil || execution == nil {
-		return err
-	}
-	for _, step := range decision.Steps {
-		switch step.Kind {
+	for range longStepsPerRun {
+		execution, decision, _, err := h.decide(ctx, executionID)
+		if err != nil || execution == nil {
+			return err
+		}
+		i := slices.IndexFunc(decision.Steps, func(step domain.ExecutionStep) bool { return longStep(step.Kind) })
+		if i < 0 {
+			return nil
+		}
+		switch decision.Steps[i].Kind {
+		case domain.StepSubmitCreation:
+			if err := h.submit(ctx, execution); err != nil {
+				return err
+			}
 		case domain.StepPrepare:
 			return h.prepare(ctx, execution)
 		}
 	}
 	return nil
+}
+
+// submit fixes the environment's specification with the Mount Grants
+// Storage issues on a Cloud, records the submission, and only then submits
+// the creation once, waiting for its answer (Single creation). Its answer is
+// recorded: a created environment is bound unless one is already, and a
+// definite refusal or failure rejects a start that bound nothing (Creation
+// refusal). A lost answer is returned and the creation is never sent again;
+// observation and the Startup Deadline decide the start (Lost creation
+// answer).
+func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domain.AgentExecution) error {
+	var mounts domain.SandboxMounts
+	if execution.Realization == domain.RealizationCloud {
+		var err error
+		if mounts, err = h.mounts.AcquireMounts(ctx, execution.Launch.MountRequest()); err != nil {
+			return err
+		}
+	}
+	if err := h.environments.PrepareCreation(ctx, execution, mounts); err != nil {
+		return err
+	}
+	if !execution.RecordSubmission() {
+		return nil
+	}
+	if err := h.executions.Save(ctx, execution); err != nil {
+		return err
+	}
+	submitted, err := h.executions.Get(ctx, execution.ID)
+	if err != nil {
+		return err
+	}
+	answer, err := h.environments.SubmitCreation(ctx, submitted)
+	if err != nil {
+		return err
+	}
+	return h.record(ctx, submitted.ID, func(execution *domain.AgentExecution) (bool, error) {
+		return execution.RecordCreationAnswer(answer)
+	})
 }
 
 // prepare sees the in-environment preparation through to its exit, no later

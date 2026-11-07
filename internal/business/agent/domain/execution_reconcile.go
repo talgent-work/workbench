@@ -52,7 +52,8 @@ func (o EnvironmentObservation) find(id string) (ObservedEnvironment, bool) {
 type ExecutionStepKind string
 
 const (
-	// StepSubmitCreation submits its environment's creation, once.
+	// StepSubmitCreation submits its environment's creation, once, and
+	// waits for its answer, which may take minutes.
 	StepSubmitCreation ExecutionStepKind = "submit_creation"
 	// StepDeleteEnvironment deletes one environment it owns but does not keep.
 	StepDeleteEnvironment ExecutionStepKind = "delete_environment"

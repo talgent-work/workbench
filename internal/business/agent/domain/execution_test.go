@@ -43,29 +43,88 @@ func TestBeginExecutionSeatsOrQueuesItsStart(t *testing.T) {
 	}
 }
 
-// A refused creation while nothing is bound rejects the start and reports it;
-// a refusal after binding changes nothing, since the bound environment's loss
-// is observed instead. An answer naming neither is invalid.
-func TestCreationAnswerBindsOrRejects(t *testing.T) {
-	work := newSession(t)
-	execution := beginOf(t, work, domain.RealizationCloud)
+// A successful creation answer binds the created environment while none is
+// bound; once one is bound, by observation or an earlier answer, it stands.
+// An answer naming neither an environment nor a refusal is invalid.
+func TestASuccessfulCreationAnswerBindsOnlyWhileNothingIsBound(t *testing.T) {
+	execution := beginOf(t, newSession(t), domain.RealizationCloud)
 	require.True(t, execution.RecordSubmission())
 	require.False(t, execution.RecordSubmission(), "a creation is submitted once")
 	_, err := execution.RecordCreationAnswer(domain.CreationAnswer{})
 	require.ErrorIs(t, err, domain.ErrInvalidExecution)
+	_, err = execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-1", Refused: true})
+	require.ErrorIs(t, err, domain.ErrInvalidExecution)
+
+	changed, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-1"})
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "env-1", execution.Environment)
+	require.Empty(t, executionEvents(execution), "a binding reports nothing")
+
+	changed, err = execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-2"})
+	require.NoError(t, err)
+	require.False(t, changed, "the bound environment stands")
+	require.Equal(t, "env-1", execution.Environment)
+}
+
+// A definite refusal or failure while nothing is bound rejects the start and
+// reports it once; the rejected start decides nothing more and waits for its
+// Work to retire it.
+func TestADefiniteCreationFailureBeforeBindingRejectsTheStart(t *testing.T) {
+	work := newSession(t)
+	execution := beginOf(t, work, domain.RealizationCloud)
+	require.True(t, execution.RecordSubmission())
 	changed, err := execution.RecordCreationAnswer(domain.CreationAnswer{Refused: true})
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.True(t, execution.Outcome.Rejected)
 	require.Equal(t, []domain.Event{domain.ExecutionStartRejected{WorkID: work.ID, StartAdmittedAt: execution.StartAdmittedAt}}, executionEvents(execution))
+	changed, err = execution.RecordCreationAnswer(domain.CreationAnswer{Refused: true})
+	require.NoError(t, err)
+	require.False(t, changed, "a rejection is reported once")
 	require.Empty(t, decide(t, execution, runningEnvironment("late"), time.Now()).Steps, "a rejected start waits for its Work to retire it")
+	require.Empty(t, execution.Environment)
+}
 
-	_, bound := boundExecution(t)
-	changed, err = bound.RecordCreationAnswer(domain.CreationAnswer{Refused: true})
+// A definite failure after the environment was bound changes nothing: the
+// bound environment's disappearance is observed as its loss instead.
+func TestADefiniteCreationFailureAfterBindingIsObservedAsLoss(t *testing.T) {
+	work := newSession(t)
+	execution := beginOf(t, work, domain.RealizationCloud)
+	require.True(t, execution.RecordSubmission())
+	decide(t, execution, domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "env-1"}}}, execution.Desk.SeatedAt)
+	require.Equal(t, "env-1", execution.Environment, "the observed environment is bound before any answer")
+
+	changed, err := execution.RecordCreationAnswer(domain.CreationAnswer{Refused: true})
 	require.NoError(t, err)
 	require.False(t, changed)
-	require.False(t, bound.Outcome.Rejected)
-	require.Equal(t, "env-1", bound.Environment)
+	require.False(t, execution.Outcome.Rejected)
+	require.Empty(t, executionEvents(execution))
+
+	require.True(t, decide(t, execution, domain.EnvironmentObservation{}, execution.Desk.SeatedAt).Changed)
+	require.True(t, execution.Outcome.Lost)
+	require.Equal(t, []domain.Event{domain.ExecutionEnvironmentLost{WorkID: work.ID, StartAdmittedAt: execution.StartAdmittedAt}}, executionEvents(execution))
+}
+
+// A lost creation answer leaves observation and the Startup Deadline to
+// decide: an environment observed later is bound, and a start whose creation
+// produced nothing fails at its deadline and is then abandoned.
+func TestALostCreationAnswerLeavesObservationAndTheDeadlineToDecide(t *testing.T) {
+	observed := beginOf(t, newSession(t), domain.RealizationCloud)
+	require.True(t, observed.RecordSubmission())
+	require.Empty(t, decide(t, observed, domain.EnvironmentObservation{}, observed.Desk.SeatedAt).Steps, "an unanswered creation submits nothing again")
+	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, kinds(decide(t, observed, runningEnvironment("env-1"), observed.Desk.SeatedAt)))
+	require.Equal(t, "env-1", observed.Environment)
+
+	work := newSession(t)
+	absent := beginOf(t, work, domain.RealizationCloud)
+	require.True(t, absent.RecordSubmission())
+	deadline := absent.StartupDeadlineAt()
+	require.False(t, decide(t, absent, domain.EnvironmentObservation{}, deadline.Add(-time.Second)).Changed)
+	require.True(t, decide(t, absent, domain.EnvironmentObservation{}, deadline.Add(time.Hour)).Changed)
+	require.NotEmpty(t, absent.Outcome.StartFailure)
+	require.True(t, absent.Outcome.Abandoned)
+	require.False(t, absent.Outcome.Rejected, "only a definite answer rejects the start")
 }
 
 // Its Work's exit request is recorded once, keeps its first stop identity,

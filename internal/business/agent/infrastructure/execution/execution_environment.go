@@ -129,9 +129,10 @@ func (e *ExecutionEnvironment) PrepareCreation(ctx context.Context, execution *d
 	return withExecution(e.provisioning.specify(ctx, record, mounts), execution)
 }
 
-// SubmitCreation submits the specified environment's creation once and
-// answers what the authority answered: the created environment, or its
-// refusal. An answer not known now is errCreationUnresolved.
+// SubmitCreation submits the specified environment's creation once, waiting
+// as long as its authority takes to answer, and answers what the authority
+// answered: the created environment, or its definite refusal or failure. An
+// answer not known is errCreationUnresolved.
 func (e *ExecutionEnvironment) SubmitCreation(ctx context.Context, execution *domain.AgentExecution) (domain.CreationAnswer, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
@@ -144,12 +145,10 @@ func (e *ExecutionEnvironment) SubmitCreation(ctx context.Context, execution *do
 	if err != nil {
 		return domain.CreationAnswer{}, withExecution(err, execution)
 	}
-	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
-	defer cancel()
-	id, err := authority.create(attempt, record)
+	id, err := authority.create(ctx, record)
 	switch {
 	case errors.Is(err, errCreationRefused):
-		return e.settleRefusal(attempt, execution, authority, record, err)
+		return e.settleRefusal(ctx, execution, authority, record, err)
 	case err != nil:
 		return domain.CreationAnswer{}, withExecution(err, execution)
 	case id == "":
@@ -163,7 +162,9 @@ func (e *ExecutionEnvironment) SubmitCreation(ctx context.Context, execution *do
 // was created regardless and is answered instead, so no compute is ever
 // judged absent while it exists.
 func (e *ExecutionEnvironment) settleRefusal(ctx context.Context, execution *domain.AgentExecution, authority environmentAuthority, record allocationRecord, refusal error) (domain.CreationAnswer, error) {
-	view, err := authority.observe(ctx, record, false)
+	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
+	defer cancel()
+	view, err := authority.observe(attempt, record, false)
 	if err != nil {
 		return domain.CreationAnswer{}, withExecution(errors.Join(refusal, err), execution)
 	}

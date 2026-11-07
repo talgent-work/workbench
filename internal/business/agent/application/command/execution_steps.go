@@ -14,8 +14,6 @@ import (
 // again unchanged.
 func (h *ReconcileExecutionHandler) takeShortStep(ctx context.Context, execution *domain.AgentExecution, step domain.ExecutionStep) (bool, error) {
 	switch step.Kind {
-	case domain.StepSubmitCreation:
-		return h.submit(ctx, execution)
 	case domain.StepDeleteEnvironment:
 		return false, h.environments.DeleteEnvironment(ctx, execution, step.EnvironmentID)
 	case domain.StepDeliverCredentials:
@@ -57,41 +55,6 @@ func (h *ReconcileExecutionHandler) syncInputs(ctx context.Context, execution *d
 	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
 		return execution.RecordInputSync(synced, h.now()), nil
 	})
-}
-
-// submit fixes the environment's specification with the Mount Grants
-// Storage issues on a Cloud, records the submission, and only then submits it
-// once; a lost answer leaves observation and the Startup Deadline to decide.
-func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
-	var mounts domain.SandboxMounts
-	if execution.Realization == domain.RealizationCloud {
-		var err error
-		if mounts, err = h.mounts.AcquireMounts(ctx, execution.Launch.MountRequest()); err != nil {
-			return false, err
-		}
-	}
-	if err := h.environments.PrepareCreation(ctx, execution, mounts); err != nil {
-		return false, err
-	}
-	if !execution.RecordSubmission() {
-		return false, nil
-	}
-	if err := h.executions.Save(ctx, execution); err != nil {
-		return false, err
-	}
-	submitted, err := h.executions.Get(ctx, execution.ID)
-	if err != nil {
-		return false, err
-	}
-	answer, err := h.environments.SubmitCreation(ctx, submitted)
-	if err != nil {
-		return false, err
-	}
-	// The recorded submission changed the execution whatever its answer.
-	_, err = h.recorded(ctx, submitted.ID, func(execution *domain.AgentExecution) (bool, error) {
-		return execution.RecordCreationAnswer(answer)
-	})
-	return true, err
 }
 
 func (h *ReconcileExecutionHandler) withdraw(ctx context.Context, execution *domain.AgentExecution) (bool, error) {

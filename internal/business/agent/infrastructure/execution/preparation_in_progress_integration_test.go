@@ -81,6 +81,7 @@ func newPreparingAllocation(t *testing.T) *preparingAllocation {
 	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
 	require.NoError(t, err)
 	f.steps = newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
+	require.NoError(t, f.steps.once(ctx, record.ID), "the creation is submitted and its sandbox bound")
 	long, err := f.steps.handler.Reconcile(ctx, record.ID)
 	require.NoError(t, err)
 	require.True(t, long, "the preparation follows the first delivery")

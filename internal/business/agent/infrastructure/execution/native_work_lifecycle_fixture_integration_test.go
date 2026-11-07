@@ -129,8 +129,7 @@ func (c *cloudDesks) departures() []string {
 
 // createWithAuthorization registers a Work admitted on the Cloud with the
 // authorization it uses, begins its start's execution as the Policies would,
-// and submits its environment's creation as the execution's reconciliation
-// does.
+// and submits its environment's creation as the execution's long step does.
 func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx context.Context, snapshot domain.CapabilitySnapshot, authorization domain.WorkAuthorizationInput) (*domain.AgentWork, string) {
 	t.Helper()
 	snapshot.Connectors = request().Capabilities.Connectors
@@ -146,8 +145,10 @@ func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx c
 	require.NoError(t, f.coordination.BeginExecution(ctx, work.ID))
 	run, err := f.executions.Latest(ctx, work.ID)
 	require.NoError(t, err)
-	_, err = f.reconcile.Reconcile(ctx, run.ID)
+	long, err := f.reconcile.Reconcile(ctx, run.ID)
 	require.NoError(t, err)
+	require.True(t, long, "the creation's submission is due")
+	require.NoError(t, f.reconcile.RunLongStep(ctx, run.ID))
 	return work, startID
 }
 
