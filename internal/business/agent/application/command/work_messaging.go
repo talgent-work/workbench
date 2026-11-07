@@ -26,6 +26,9 @@ type WorkInputs interface {
 	// AcceptInput reports how the Work's buffer received the input.
 	AcceptInput(ctx context.Context, workID string, input ExecutionInput) (InputHandOff, error)
 	AcceptResponse(ctx context.Context, workID string, response InteractionResponse) error
+	// HandOffInitialTaskInput hands a pending initial task input to the
+	// Work's input buffer ahead of any later input.
+	HandOffInitialTaskInput(ctx context.Context, workID string) error
 }
 
 // InputHandOff is how the Work's input buffer received an input.

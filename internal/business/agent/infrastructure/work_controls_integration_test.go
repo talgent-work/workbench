@@ -50,8 +50,7 @@ func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}).Handle(ctx, f.request.Creation)
-	require.NoError(t, err)
+	id := f.committedCreation(t)
 	factory := executionPort{}
 	capacity := &workCapacity{available: true}
 	ref := id
@@ -95,7 +94,10 @@ func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	require.False(t, retained.Rejected)
 	require.False(t, retained.StartFailed)
 	require.Equal(t, receipt.PrepareWorkExecution, retained.PrepareWorkExecution)
-	require.False(t, retained.InputBuffered, "Restart must not invent delivery of the retained input")
+	work, err := f.sessions.Get(ctx, id)
+	require.NoError(t, err)
+	_, pending := work.PendingInitialTaskInput()
+	require.True(t, pending, "Restart must not invent delivery of the retained input")
 }
 
 // The database contains Agent tables only. Execution is supplied at its
@@ -104,13 +106,10 @@ func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	const owner = "123456789012345680"
 	const viewer = "123456789012345679"
-	f := newWorkCreationFixtureForSubject(t, owner)
+	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}).Handle(ctx, f.request.Creation)
-	require.NoError(t, err)
-	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id))
-	require.NoError(t, f.requests.CompleteWorkCreation(ctx, f.request.ID))
+	var err error
+	id := f.committedCreation(t)
 	capacity := &workCapacity{available: true}
 	factory := executionPort{}
 	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
@@ -123,7 +122,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 			StopWork:    command.NewStopWorkHandler(sessions, principal, factory),
 			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), factory, requests, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), factory, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
-			CloseWork:   command.NewCloseWorkHandler(sessions, principal, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, requests, &commandtest.InputBuffer{}),
+			CloseWork:   command.NewCloseWorkHandler(sessions, principal, factory, requests, &commandtest.InputBuffer{}),
 		}, Queries: application.Queries{GetWorkView: query.NewGetWorkViewHandler(principal, reader)}}
 		handler := connecttest.Handler(func(s *connect.Server) {
 			agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
@@ -178,10 +177,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	inputView := read("working")
 	require.Equal(t, "active", inputView.StartupProgress.Stages[4].Status)
 	require.Greater(t, inputView.StartupProgress.Revision, runningView.StartupProgress.Revision)
-	prepared, err = initial.Get(ctx, id)
-	require.NoError(t, err)
-	prepared.InputBuffered = true
-	require.NoError(t, initial.Save(ctx, prepared))
+	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 	completeView := read("working")
 	require.Equal(t, "completed", completeView.StartupProgress.Status)
 	require.Greater(t, completeView.StartupProgress.Revision, inputView.StartupProgress.Revision)

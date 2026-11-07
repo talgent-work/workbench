@@ -15,7 +15,6 @@ type Commands struct {
 	ChangeAgentSoul         *command.ChangeAgentSoulHandler
 	SendMessage             *command.SendWorkMessageHandler
 	ReplyToInteraction      *command.ReplyToWorkInteractionHandler
-	CreateRequestedWork     *command.CreateRequestedWorkHandler
 	PrepareWorkExecution    *command.PrepareWorkExecutionHandler
 	RecoverInitialExecution *command.RecoverInitialExecutionHandler
 	EndWorkExecution        *command.EndWorkExecutionHandler
@@ -39,7 +38,6 @@ type Queries struct {
 	ListWorkLifecycleEvents      *query.ListWorkLifecycleEventsHandler
 	ListPendingContinuations     *query.ListPendingContinuationsHandler
 	GetWorkStartup               *query.GetWorkStartupHandler
-	ListWorkCreationRecovery     *query.ListWorkCreationRecoveryHandler
 	GetWorkOrigin                *query.GetWorkOriginHandler
 	ResolveWorkContextPosition   *query.ResolveWorkContextPositionHandler
 	ResolveWorkStarts            *query.ResolveWorkStartsHandler
@@ -127,8 +125,6 @@ func NewApplication(
 	pendingInitial *query.ListInitialExecutionRecoveryHandler,
 	preparation *query.GetWorkPreparationHandler,
 	submitted *query.ListSubmittedPreparationsHandler,
-	createWork *command.CreateRequestedWorkHandler,
-	pendingCreation *query.ListWorkCreationRecoveryHandler,
 	startup *query.GetWorkStartupHandler,
 	pendingContinuation *query.ListPendingContinuationsHandler,
 	reconcileDesks *command.ReconcileDesksHandler,
@@ -152,7 +148,6 @@ func NewApplication(
 			ChangeAgentSoul:         command.NewChangeAgentSoulHandler(definitions),
 			SendMessage:             sendMessage,
 			ReplyToInteraction:      reply,
-			CreateRequestedWork:     createWork,
 			PrepareWorkExecution:    prepare,
 			RecoverInitialExecution: recoverInitial,
 			EndWorkExecution:        endExecution,
@@ -175,7 +170,6 @@ func NewApplication(
 			ListWorkLifecycleEvents:      lifecycle,
 			ListPendingContinuations:     pendingContinuation,
 			GetWorkStartup:               startup,
-			ListWorkCreationRecovery:     pendingCreation,
 			GetWorkOrigin:                origin,
 			ResolveWorkContextPosition:   resolvePositions,
 			ResolveWorkStarts:            resolveStarts,

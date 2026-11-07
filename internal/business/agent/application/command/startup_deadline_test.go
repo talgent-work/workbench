@@ -30,7 +30,7 @@ func (*stopRecordingPort) RetireFencedRun(context.Context, string) error { retur
 
 func recoverAt(t *testing.T, at time.Time, sessions *feedbackSessionStore, agents *startupAgentStore, port domain.ExecutionPort, initial command.InitialExecutionReader) {
 	t.Helper()
-	handler := command.NewRecoverWorkHandler(func() time.Time { return at }, sessions, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
+	handler := command.NewRecoverWorkHandler(func() time.Time { return at }, sessions, port, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil)
 	require.NoError(t, handler.Handle(context.Background(), sessions.session.ID))
 }
 
@@ -83,7 +83,7 @@ func TestRestartCountsItsOwnStartupDeadline(t *testing.T) {
 	require.NoError(t, sessions.session.RecordExit(ctx, domain.HarnessExit{}, &feedbackPort{}))
 	require.NoError(t, sessions.session.ConfirmComputeReclaimed())
 
-	sessions.starts = map[string]query.AdmittedStart{}
+	sessions.requests = map[string]query.StartRequest{}
 	restart := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, &stopRecordingPort{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	_, err := restart.Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID})
 	require.NoError(t, err)

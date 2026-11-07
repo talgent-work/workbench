@@ -127,6 +127,9 @@ type WorkCreationRequest struct {
 	// StartingContext, when supplied, starts a new Work from another Work's
 	// context; reuse neither compares nor replaces it.
 	StartingContext *StartingContextSource
+	// InitialTaskInput, when supplied, is the new Work's first task input;
+	// a reused Work keeps its own.
+	InitialTaskInput *InitialTaskInput
 }
 
 // RepresentsHuman reports whether this definition's Works belong to a human:
@@ -348,7 +351,7 @@ func (a *AgentDefinition) CreateWork(ctx context.Context, request WorkCreationRe
 		ThinkingLevel:      request.ThinkingLevel,
 		ID:                 workID, AgentID: a.ID, Subject: request.Subject, ProjectID: request.ProjectID, DisplayTitle: request.DisplayTitle,
 		WorkModel: request.WorkModel, Capabilities: request.Capabilities, HomeBinding: a.HomeBinding, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, TraceAttributes: request.TraceAttributes,
-		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, Harness: request.Harness,
+		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, Harness: request.Harness, InitialTaskInput: request.InitialTaskInput,
 	}, request.Admission, execution)
 	if err != nil {
 		return nil, false, err

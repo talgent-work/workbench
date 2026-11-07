@@ -44,21 +44,23 @@ func (r *AgentWorkRepository) Get(ctx context.Context, id string) (*domain.Agent
 	return session, err
 }
 
-// RegisterWork persists the definition's association and its controlling
-// principal together. The definition lock serializes rule changes with creation.
+// RegisterWork persists the definition's association, its controlling
+// principal and its creation request record together. The definition lock
+// serializes rule changes with creation; the request record's row lock
+// serializes it with the request's cancellation.
 func (r *AgentWorkRepository) RegisterWork(ctx context.Context, session *domain.AgentWork, registration command.WorkRegistration) error {
-	subject, definitionVersion, initial := registration.SubjectID, registration.DefinitionVersion, registration.InitialExecution
+	subject, definitionVersion, initial, request := registration.SubjectID, registration.DefinitionVersion, registration.InitialExecution, registration.Request
 	if strings.TrimSpace(subject) == "" || len(subject) > 255 || subject != session.StartedBy {
 		return access.ErrAccessDenied
 	}
-	if session == nil || session.Version != 0 || definitionVersion < 1 || session.State != domain.WorkStarting || !session.HoldsProcess() || uuid.Validate(registration.RequestID) != nil {
+	if session == nil || session.Version != 0 || definitionVersion < 1 || session.State != domain.WorkStarting || !session.HoldsProcess() || uuid.Validate(request.ID) != nil || request.Kind != query.StartKindStart || request.WorkID != session.ID || request.Canceled {
 		return domain.ErrInvalidWork
 	}
 	scope, err := registrationScope(subject, session.AgentID, registration.WorkspaceReference, session.Subject, session.ProjectID)
 	if err != nil {
 		return err
 	}
-	return r.saveWith(ctx, session, subject, definitionVersion, initial, r.startAdmissionHooks(session, query.AdmittedStart{WorkID: session.ID, Kind: query.StartKindStart}, registration.RequestID, scope))
+	return r.saveWith(ctx, session, subject, definitionVersion, initial, r.startAdmissionHooks(session, request, scope))
 }
 
 func (r *AgentWorkRepository) Save(ctx context.Context, session *domain.AgentWork) error {
@@ -113,11 +115,6 @@ func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.Agen
 		if definition.Version != definitionVersion {
 			return domain.ErrConcurrentModification
 		}
-		if initial != nil && initial.CreationRequestID != "" {
-			if err := r.lockWorkCreationRegistration(tx, session, subject, initial); err != nil {
-				return err
-			}
-		}
 		row.CreatedAt = row.UpdatedAt
 		_, err = tx.Insert(row)
 		if duplicateKey(err) {
@@ -126,7 +123,7 @@ func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.Agen
 	} else {
 		var affected int64
 		affected, err = tx.Where("id = ? AND version = ? AND deleted_at = 0", row.ID, session.Version).
-			Cols("capabilities", "task_execution_begun", "thinking_level", "permission_mode", "work_progress", "state", "context_ref", "harness_process", "holds_process", "stop_request", "close_request", "stop_reason", "disconnected_since", "reach_resume_due", "end_request", "failure_reason", "visibility_public", "display_title", "version", "updated_at").Update(row)
+			Cols("capabilities", "initial_task_input", "task_execution_begun", "thinking_level", "permission_mode", "work_progress", "state", "context_ref", "harness_process", "holds_process", "stop_request", "close_request", "stop_reason", "disconnected_since", "reach_resume_due", "end_request", "failure_reason", "visibility_public", "display_title", "version", "updated_at").Update(row)
 		if err == nil && affected != 1 {
 			return domain.ErrConcurrentModification
 		}

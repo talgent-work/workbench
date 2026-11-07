@@ -47,7 +47,7 @@ func TestRecoveryAppliesAMissedComputerRemoval(t *testing.T) {
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, Removed: true}}
 	factory := &feedbackPort{}
 	reach := command.NewComputerReachHandler(time.Now, sessions, place, computerWorks{id: sessions.session.ID}, factory, nil, &commandtest.InputBuffer{}, nil)
-	recover := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
+	recover := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, reach)
 
 	require.NoError(t, recover.Handle(ctx, sessions.session.ID))
 	require.Equal(t, domain.WorkFailed, sessions.session.State)

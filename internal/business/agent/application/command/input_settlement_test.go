@@ -51,7 +51,7 @@ func TestClosingReportsTheInputsItDropped(t *testing.T) {
 	first, second := command.ExecutionInput{ID: uuid.NewString(), Text: "one"}, command.ExecutionInput{ID: uuid.NewString(), Text: "two"}
 	buffer := &commandtest.InputBuffer{Inputs: []command.ExecutionInput{first, second}}
 	settlements := &commandtest.InputSettlements{}
-	recover := command.NewRecoverWorkHandler(time.Now, sessions, &startupPort{}, buffer, settlements, nil, nil)
+	recover := command.NewRecoverWorkHandler(time.Now, sessions, &startupPort{}, buffer, command.NewInputAcceptance(sessions, buffer), settlements, nil, nil)
 
 	settlements.Err = errors.New("bus down")
 	require.ErrorIs(t, recover.Handle(ctx, sessions.session.ID), settlements.Err)

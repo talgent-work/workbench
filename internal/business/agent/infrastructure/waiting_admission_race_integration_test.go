@@ -41,7 +41,7 @@ func TestIdleTimeoutAndInputAcceptanceShareCommitOrder(t *testing.T) {
 			// A Turn ending at origin leaves the Work idle since then.
 			require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.TurnStarted, ObservationSequence: 1}))
 			require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.TurnFinished, ObservationSequence: 2}))
-			recover := command.NewRecoverWorkHandler(func() time.Time { return now }, f.sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
+			recover := command.NewRecoverWorkHandler(func() time.Time { return now }, f.sessions, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil)
 			input := command.ExecutionInput{ID: uuid.NewString(), Text: "new accepted task"}
 			buffer := &commandtest.InputBuffer{}
 			delivery := command.NewInputAcceptance(f.sessions, buffer)
@@ -57,7 +57,7 @@ func TestIdleTimeoutAndInputAcceptanceShareCommitOrder(t *testing.T) {
 				require.Equal(t, domain.WorkStopping, work.State)
 			} else {
 				stale := beforeTimeoutSave{AgentWorkRepository: f.sessions, before: func() { require.NoError(t, acceptance(delivery.AcceptInput(ctx, ref, input))) }}
-				staleRecovery := command.NewRecoverWorkHandler(func() time.Time { return now }, stale, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
+				staleRecovery := command.NewRecoverWorkHandler(func() time.Time { return now }, stale, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(stale, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil)
 				require.ErrorIs(t, staleRecovery.Handle(ctx, ref), domain.ErrConcurrentModification)
 				require.Empty(t, port.stops, "a rejected timeout cannot send a stop")
 				require.Len(t, buffer.Inputs, 1)

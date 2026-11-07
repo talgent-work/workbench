@@ -19,27 +19,24 @@ func TestReadyHarnessWaitsForReportedCheckoutOutcomes(t *testing.T) {
 	_, sessions := startupStores(t)
 	store := &initialRequestStore{}
 	factory := &startupPort{}
-	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, factory, nil, agentquery.ModelConfigurations{})
+	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, factory, agentquery.ModelConfigurations{})
 	input := command.PrepareWorkExecution{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "OP-8", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "work on the repository"}}
 	input.WorkspaceReference = sessions.session.WorkspaceReference
 	store.request = command.InitialExecutionRequest{PrepareWorkExecution: input, Version: 1, Submitted: true}
 	_, err := prepare.Handle(ctx, input)
 	require.NoError(t, err)
 	store.request.Checkouts = []command.RepositoryCheckout{{RepoID: "github:1210538796", RepoName: "example/talgent", CloneURL: "https://github.com/example/talgent.git", TargetPath: "/workspace/repos/talgent", AccessID: "grant-1"}}
-	received := &commandtest.InputBuffer{}
 	// Harness readiness can be observed before the checkout receipt commits;
 	// it must not manufacture a failed checkout outcome.
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutorPrepared, WorkID: sessions.session.ID}))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.AgentStarted, WorkID: sessions.session.ID}))
-	recover := command.NewRecoverInitialExecutionHandler(store, sessions, prepare, command.NewInputAcceptance(sessions, received), factory)
+	recover := command.NewRecoverInitialExecutionHandler(store, sessions, prepare, factory)
 	require.ErrorIs(t, recover.Handle(ctx, input.WorkID), command.ErrInitialExecutionPending)
 	receipt, err := store.Get(ctx, input.WorkID)
 	require.NoError(t, err)
 	require.Empty(t, receipt.CheckoutResults)
 	require.False(t, receipt.InputPrepared)
-	require.True(t, receipt.InputBuffered)
-	require.Equal(t, "work on the repository", received.Inputs[0].Text)
 }
 
 func TestReportedCheckoutOutcomesAreKeptOnceAndFollowThePlan(t *testing.T) {
@@ -115,15 +112,14 @@ func TestRestartCompletesAFirstStartThatFailedBeforeItsCheckout(t *testing.T) {
 	agents, sessions := startupStores(t)
 	store := &initialRequestStore{}
 	factory := &startupPort{}
-	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, factory, nil, agentquery.ModelConfigurations{})
+	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, factory, agentquery.ModelConfigurations{})
 	input := command.PrepareWorkExecution{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "OP-8", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "work on the repository"}}
 	input.WorkspaceReference = sessions.session.WorkspaceReference
 	store.request = command.InitialExecutionRequest{PrepareWorkExecution: input, Version: 1, Submitted: true}
 	_, err := prepare.Handle(ctx, input)
 	require.NoError(t, err)
 	store.request.Checkouts = []command.RepositoryCheckout{{RepoID: "github:1", TargetPath: "/workspace/repos/talgent"}}
-	received := &commandtest.InputBuffer{}
-	recover := command.NewRecoverInitialExecutionHandler(store, sessions, prepare, command.NewInputAcceptance(sessions, received), factory)
+	recover := command.NewRecoverInitialExecutionHandler(store, sessions, prepare, factory)
 
 	// The sandbox never became ready: the first start fails before its checkout.
 	recoverAt(t, sessions.session.HarnessProcess.StartingSince.Add(domain.StartupDeadline), sessions, agents, &stopRecordingPort{}, store)
@@ -133,7 +129,7 @@ func TestRestartCompletesAFirstStartThatFailedBeforeItsCheckout(t *testing.T) {
 
 	require.NoError(t, sessions.session.RecordExit(ctx, domain.HarnessExit{}, &feedbackPort{}))
 	require.NoError(t, sessions.session.ConfirmComputeReclaimed())
-	sessions.starts = map[string]agentquery.AdmittedStart{}
+	sessions.requests = map[string]agentquery.StartRequest{}
 	restart := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, factory, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	_, err = restart.Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: input.WorkID})
 	require.NoError(t, err)
@@ -147,7 +143,6 @@ func TestRestartCompletesAFirstStartThatFailedBeforeItsCheckout(t *testing.T) {
 	require.NoError(t, recover.Handle(ctx, input.WorkID))
 	receipt, err := store.Get(ctx, input.WorkID)
 	require.NoError(t, err)
-	require.True(t, receipt.InputBuffered)
+	require.True(t, receipt.FirstStartRecovered())
 	require.Equal(t, []command.RepositoryCheckoutResult{{RepositoryID: "github:1", TargetPath: "/workspace/repos/talgent", Prepared: true}}, receipt.CheckoutResults)
-	require.Equal(t, "work on the repository", received.Inputs[0].Text)
 }

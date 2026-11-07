@@ -38,12 +38,12 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	requests := port
 	app := &application.Application{Definitions: agents, Works: sessions,
 		Commands: application.Commands{
-			CreateWork:             command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, permissions, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(rpcPluginCatalog{}, authorizationcatalogtest.Empty{}), capacity, requests),
+			CreateWork:             command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, permissions, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(rpcPluginCatalog{}, authorizationcatalogtest.Empty{}), capacity, requests, nil),
 			ResumeWork:             command.NewResumeWorkHandler(time.Now, sessions, agents, permissions, capacity, requests, &rpcContinuations{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			RestartWork:            command.NewRestartWorkHandler(time.Now, sessions, agents, permissions, capacity, requests, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			StopWork:               command.NewStopWorkHandler(sessions, permissions, requests),
-			CloseWork:              command.NewCloseWorkHandler(sessions, permissions, requests, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}),
-			DeliverInput:           command.NewDeliverWorkInputHandler(sessions, permissions, port, rpcInitialInputs{}),
+			CloseWork:              command.NewCloseWorkHandler(sessions, permissions, requests, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}),
+			DeliverInput:           command.NewDeliverWorkInputHandler(sessions, permissions, port),
 			RespondToInteraction:   command.NewRespondWorkInteractionHandler(sessions, permissions, port),
 			ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(func() time.Time { return observationTime }, sessions, processes, requests, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}),
 		}, Queries: application.Queries{LocateWork: query.NewLocateWorkHandler(agents, sessions, permissions), GetStartAdmission: query.NewGetStartAdmissionHandler(sessions, permissions), GetAgentDefinition: query.NewGetAgentDefinitionHandler(agents, application.AssembleAgentDefinition), GetWork: query.NewGetWorkHandler(agents, sessions, permissions, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse)},
@@ -73,20 +73,26 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	createSession.Subject = nil
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "a Work with neither a Subject nor a Project is a Personal Work, which no caller creates")
+	// A refused creation settles its request identity; the corrected request
+	// carries a new one.
+	createSession.RequestId = uuid.NewString()
 	createSession.ProjectId, createSession.ReadOnlyMounts = "project-a", []*agentprivatev1.ReadOnlyMount{{Name: "inputs", Reference: "space"}}
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a read-only mount never takes the input source's place")
 	require.Empty(t, sessions.items)
-	createSession.ReadOnlyMounts = nil
+	createSession.RequestId, createSession.ReadOnlyMounts = uuid.NewString(), nil
 	createSession.Subject, createSession.ProjectId = &agentprivatev1.WorkSubject{Kind: "case", Id: "work-a"}, "project-a"
 	capacity.SetFull(true)
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 	require.Empty(t, sessions.items)
-	require.Empty(t, sessions.starts)
+	require.Empty(t, sessions.admitted())
 	require.Empty(t, port.starts)
 	capacity.SetFull(false)
 	require.Empty(t, port.starts, "restored capacity does not execute a rejected creation")
+	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "the refusal settled its request identity")
+	createSession.RequestId = uuid.NewString()
 	session, err := client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.NoError(t, err)
 	require.NotEmpty(t, session.GetWorkId())

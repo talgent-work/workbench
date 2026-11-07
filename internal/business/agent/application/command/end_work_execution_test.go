@@ -22,7 +22,7 @@ func continueWork(t *testing.T, agents *startupAgentStore, sessions *feedbackSes
 	t.Helper()
 	requestID := uuid.NewString()
 	if sessions.session.State == domain.WorkStarting {
-		sessions.starts = map[string]query.AdmittedStart{requestID: {WorkID: sessions.session.ID, Kind: query.StartKindStart}}
+		sessions.requests = map[string]query.StartRequest{requestID: {ID: requestID, WorkID: sessions.session.ID, Kind: query.StartKindStart}}
 		return requestID
 	}
 	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, &startupPort{}, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: requestID}))
@@ -49,7 +49,7 @@ func TestEndStartingExecutionRetainsStopUntilReadyAndPreservesConversation(t *te
 	require.Equal(t, domain.WorkStarting, sessions.session.State)
 	require.Equal(t, "first-end", sessions.session.EndRequestReference)
 	require.Empty(t, sessions.session.StopRequestReference)
-	recover := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
+	recover := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil)
 	require.NoError(t, recover.Handle(ctx, sessions.session.ID))
 	require.Zero(t, stops, "startup recovery must not send stop before readiness")
 	require.NoError(t, sessions.session.ConfirmPrepared(context.Background(), time.Now(), nil))
@@ -114,7 +114,7 @@ func TestRecoverPendingEndSaveFailureDoesNotStopExecutor(t *testing.T) {
 	failure := errors.New("database unavailable")
 	sessions.saveErr = failure
 	port := observingControlPort{onStop: func() { t.Fatal("stop sent before persistence") }}
-	require.ErrorIs(t, command.NewRecoverWorkHandler(time.Now, sessions, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID), failure)
+	require.ErrorIs(t, command.NewRecoverWorkHandler(time.Now, sessions, port, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID), failure)
 	require.Equal(t, domain.WorkWorking, sessions.session.State)
 }
 
@@ -148,7 +148,7 @@ func TestPendingEndStillConvergesWhenStartupFails(t *testing.T) {
 		require.Equal(t, domain.WorkFailed, sessions.session.State)
 		require.Equal(t, "end", sessions.session.StopRequestReference)
 	}}
-	require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
+	require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, port, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
 	require.True(t, stopped)
 	processes := exitedProcess()
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, processes, &feedbackPort{}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})

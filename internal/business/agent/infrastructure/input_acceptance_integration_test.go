@@ -55,7 +55,7 @@ func TestInputAcceptanceAndPermanentCloseShareOneOrder(t *testing.T) {
 	buffer := closingBuffer{InputBuffer: &commandtest.InputBuffer{}}
 	// The close read the buffer before the input was appended, so it saw
 	// nothing pending, and its stop commits after the append.
-	closeSession := command.NewCloseWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionPort{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+	closeSession := command.NewCloseWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionPort{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
 	buffer.during = func() {
 		require.NoError(t, closeSession.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: ref, RequestID: uuid.NewString()}))
 	}

@@ -34,14 +34,14 @@ func newCommitBarrier(sessions *infrastructure.AgentWorkRepository) commitBarrie
 	return commitBarrier{AgentWorkRepository: sessions, arrived: make(chan struct{}), proceed: make(chan struct{}), once: &sync.Once{}}
 }
 
-func (b commitBarrier) CommitStart(ctx context.Context, work *domain.AgentWork, start agentquery.AdmittedStart, requestID string) error {
+func (b commitBarrier) CommitStart(ctx context.Context, work *domain.AgentWork, request agentquery.StartRequest) error {
 	b.once.Do(func() { close(b.arrived) })
 	select {
 	case <-b.proceed:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	return b.AgentWorkRepository.CommitStart(ctx, work, start, requestID)
+	return b.AgentWorkRepository.CommitStart(ctx, work, request)
 }
 
 // Ending a start request whose admission is in flight

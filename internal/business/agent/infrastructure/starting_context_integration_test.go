@@ -22,8 +22,8 @@ import (
 func TestStartingContextSurvivesReload(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
 	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
-		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
-	base := f.request.Creation
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}, creationPreparation(f.db, executionPort{}, creationModels()))
+	base := f.request
 	base.InitialExecution = nil
 	create := func(subject string, starting *domain.StartingContextSource) (string, error) {
 		creation := base

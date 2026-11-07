@@ -5,6 +5,7 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,7 +42,7 @@ func TestPreparationReportRecordsTheFirstStartsCheckouts(t *testing.T) {
 	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, executionDiscard{})
 	require.NoError(t, err)
 	input := command.PrepareWorkExecution{WorkID: work.ID, SubjectID: "owner", WorkspaceReference: work.WorkspaceReference, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-396", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "work on the repositories"}}
-	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, RequestID: input.RequestID, InitialExecution: &input}))
+	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: agentquery.StartRequest{ID: input.RequestID, Kind: agentquery.StartKindStart, WorkID: work.ID}, InitialExecution: &input}))
 	retained, err := initial.Get(ctx, work.ID)
 	require.NoError(t, err)
 	retained.Prepared = true

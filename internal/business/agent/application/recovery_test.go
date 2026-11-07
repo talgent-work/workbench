@@ -98,9 +98,6 @@ func (l idList) ListWorkIDs(_ context.Context, after string, limit int) ([]strin
 func (l idList) ListPendingContinuations(_ context.Context, after string, limit int) ([]string, error) {
 	return page(l, after, limit), nil
 }
-func (l idList) ListPendingWorkCreations(_ context.Context, after string, limit int) ([]string, error) {
-	return page(l, after, limit), nil
-}
 func (l idList) ListPendingInitialExecutions(_ context.Context, after string, limit int) ([]string, error) {
 	return page(l, after, limit), nil
 }
@@ -164,7 +161,6 @@ func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
 	}, Queries: application.Queries{
 		ListRecoveryWorks:            query.NewListRecoveryWorksHandler(works),
 		ListPendingContinuations:     query.NewListPendingContinuationsHandler(idList{"work-2"}),
-		ListWorkCreationRecovery:     query.NewListWorkCreationRecoveryHandler(idList{"request-1"}),
 		ListInitialExecutionRecovery: query.NewListInitialExecutionRecoveryHandler(idList{"work-1"}),
 	}}
 	enqueuer := &recordingEnqueuer{}
@@ -172,13 +168,12 @@ func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
 	require.NoError(t, recovery.Sweep(context.Background()))
 	// Settled allocations, every fourth, are not woken; the others only for
 	// their missing step.
-	require.Len(t, enqueuer.keys, 250-63+2+1+1+1)
+	require.Len(t, enqueuer.keys, 250-63+2+1+1)
 	require.NotContains(t, enqueuer.keys, "agent:allocation:allocation-248")
 	require.Contains(t, enqueuer.keys, "agent:allocation:allocation-249")
 	require.Contains(t, enqueuer.keys, "agent:allocation-preparation:allocation-246")
 	require.Contains(t, enqueuer.keys, "agent:allocation-reconnect:allocation-247")
 	require.Contains(t, enqueuer.keys, "agent:continuation:work-2")
-	require.Contains(t, enqueuer.keys, "agent:creation:request-1")
 	require.Contains(t, enqueuer.keys, "agent:initial-execution:work-1")
 }
 

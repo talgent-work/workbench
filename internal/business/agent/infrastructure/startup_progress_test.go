@@ -12,7 +12,7 @@ import (
 func TestStartupRecoveryUsesTheUnfinishedBoundary(t *testing.T) {
 	initial := command.InitialExecutionRequest{PrepareWorkExecution: command.PrepareWorkExecution{WorkID: "session", RequestID: "initial"}, Submitted: true}
 	encode := func(v any) string { t.Helper(); b, err := json.Marshal(v); require.NoError(t, err); return string(b) }
-	row := workViewRow{ID: "session", State: 2, Version: 3, InitialID: "initial", InitialData: encode(initial), InitialVersion: 4, StartRequestID: "initial", HarnessProcess: encode(harnessProcessRecord{Prepared: true, Started: true})}
+	row := workViewRow{ID: "session", State: 2, Version: 3, InitialID: "initial", InitialData: encode(initial), InitialVersion: 4, StartRequestID: "initial", HarnessProcess: encode(harnessProcessRecord{Prepared: true, Started: true}), InitialTaskInput: encode(initialTaskInputRecord{ID: "input", Text: "first task"})}
 	progress, err := startupFromRows(row, true, true, 9)
 	require.NoError(t, err)
 	require.True(t, progress.Admitted)
@@ -29,7 +29,7 @@ func TestStartupRecoveryUsesTheUnfinishedBoundary(t *testing.T) {
 	// A later start's readiness must not inherit either earlier environment
 	// readiness or the completed stages of the previous startup.
 	initial.InputPrepared = true
-	initial.InputBuffered = true
+	row.InitialTaskInput = ""
 	initial.RecoveryPending = false
 	row.InitialData = encode(initial)
 	row.Version++
@@ -51,7 +51,7 @@ func TestStartupDeadlineFailureOfARestartShowsTheWorkFailure(t *testing.T) {
 	initial := command.InitialExecutionRequest{PrepareWorkExecution: command.PrepareWorkExecution{WorkID: "session", RequestID: "initial"}, Submitted: true}
 	encode := func(v any) string { t.Helper(); b, err := json.Marshal(v); require.NoError(t, err); return string(b) }
 	reason := "Startup Deadline reached before the execution environment was ready."
-	row := workViewRow{ID: "session", State: 5, Version: 7, InitialID: "initial", InitialData: encode(initial), InitialVersion: 2, StartRequestID: "restart", Failure: reason, HarnessProcess: encode(harnessProcessRecord{})}
+	row := workViewRow{ID: "session", State: 5, Version: 7, InitialID: "initial", InitialData: encode(initial), InitialVersion: 2, StartRequestID: "restart", Failure: reason, HarnessProcess: encode(harnessProcessRecord{}), InitialTaskInput: encode(initialTaskInputRecord{ID: "input", Text: "first task"})}
 	progress, err := startupFromRows(row, false, false, 1)
 	require.NoError(t, err)
 	require.Equal(t, "failed", progress.Status)

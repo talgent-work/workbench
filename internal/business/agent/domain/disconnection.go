@@ -197,7 +197,7 @@ func (s *AgentWork) closeBeyondReach(ctx context.Context, requestID string, fact
 		if facts.InputPending {
 			return ErrInputPending
 		}
-		if facts.StartupPending || facts.ContinuationPending || s.EndRequestReference != "" {
+		if s.InitialTaskInput != nil || facts.ContinuationPending || s.EndRequestReference != "" {
 			return ErrWorkTransition
 		}
 		s.admitStop(requestID, StopReasonCompleted)

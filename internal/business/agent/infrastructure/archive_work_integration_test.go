@@ -36,7 +36,7 @@ func TestExecutionArchiveRPCRequiresStoppedSessionWithoutPendingContinuation(t *
 	factory := port
 	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	handler := command.NewCloseWorkHandler(f.sessions, authorization, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, receipts, &commandtest.InputBuffer{})
+	handler := command.NewCloseWorkHandler(f.sessions, authorization, factory, receipts, &commandtest.InputBuffer{})
 	app := &application.Application{Works: f.sessions, Commands: application.Commands{CloseWork: handler}}
 	endpoint := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterAgentServiceHandler(s, agenttransport.NewAgentHandler(app, "control"))
@@ -82,7 +82,7 @@ func TestExecutionArchiveRPCRequiresStoppedSessionWithoutPendingContinuation(t *
 	require.Equal(t, domain.WorkClosed, closed.State)
 	require.Equal(t, before.WorkspaceReference, closed.WorkspaceReference)
 	require.Equal(t, before.HarnessProcess, closed.HarnessProcess, "archive keeps the last process facts")
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, authorization, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory)
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, authorization, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory, creationPreparation(f.db, factory, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
 	created, err := create.Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: before.ProjectID, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID, WorkspaceReference: uuid.NewString()})
 	require.NoError(t, err)
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(archive("owner", "control", created)), "a newly admitted Starting Work cannot be archived")
@@ -155,7 +155,7 @@ func TestExecutionArchiveAndContinuationCannotBothCommitFromStoppedRevision(t *t
 			port := &recoveryExecutionPort{}
 			factory := port
 			authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-			archive := command.NewCloseWorkHandler(f.sessions, authorization, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, reader, &commandtest.InputBuffer{})
+			archive := command.NewCloseWorkHandler(f.sessions, authorization, factory, reader, &commandtest.InputBuffer{})
 			err = archive.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()})
 			observer := infrastructure.NewAgentWorkRepository(other, time.Now)
 			if continuationFirst {
@@ -212,7 +212,7 @@ func TestExecutionArchiveRecoversCloseFromAgentAfterCommitAcknowledgementLoss(t 
 	require.NoError(t, f.sessions.Save(ctx, failed))
 	lost := errors.New("archive save acknowledgement lost")
 	requestID := uuid.NewString()
-	err = command.NewCloseWorkHandler(archiveLostSave{f.sessions, lost}, authorization, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, receipts, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: requestID})
+	err = command.NewCloseWorkHandler(archiveLostSave{f.sessions, lost}, authorization, factory, receipts, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: requestID})
 	require.ErrorIs(t, err, lost)
 	require.Empty(t, port.stops, "lost save acknowledgement prevents immediate control send")
 	other, err := xorm.NewEngine("mysql", f.dsn)
@@ -223,7 +223,7 @@ func TestExecutionArchiveRecoversCloseFromAgentAfterCommitAcknowledgementLoss(t 
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosing, closing.State)
 	require.Equal(t, requestID, closing.StopRequestReference)
-	recovery := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
+	recovery := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil)
 	require.NoError(t, recovery.Handle(ctx, id))
 	require.Equal(t, []string{requestID}, port.stops)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutionExited, command.ComputeReclaimed} {

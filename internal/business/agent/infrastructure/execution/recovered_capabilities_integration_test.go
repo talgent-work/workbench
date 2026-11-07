@@ -4,6 +4,7 @@ package execution
 
 import (
 	"context"
+	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, HomeBinding: definition.HomeBinding, WorkspaceReference: uuid.NewString()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, pending)
 			require.NoError(t, err)
 			works := infrastructure.NewAgentWorkRepository(db, time.Now)
-			require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", RequestID: uuid.NewString(), DefinitionVersion: definition.Version}))
+			require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}, DefinitionVersion: definition.Version}))
 			require.NoError(t, pending.Send(ctx))
 			original, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)

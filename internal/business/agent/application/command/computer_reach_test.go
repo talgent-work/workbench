@@ -99,7 +99,7 @@ func TestRecoveryStopsAManagedWorkBeyondReach(t *testing.T) {
 	factory := port
 	clock := &testClock{at: time.Now().Add(domain.DisconnectionTimeout + time.Minute)}
 	reach := command.NewComputerReachHandler(clock.now, sessions, place, computerWorks{id: sessions.session.ID}, factory, nil, &commandtest.InputBuffer{}, nil)
-	recover := command.NewRecoverWorkHandler(clock.now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
+	recover := command.NewRecoverWorkHandler(clock.now, sessions, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, reach)
 
 	require.NoError(t, recover.Handle(ctx, sessions.session.ID))
 	require.False(t, sessions.session.Disconnected(), "a reachable Computer ends the Disconnection")
@@ -150,7 +150,7 @@ func TestRecoveriesShareARecentPresenceRead(t *testing.T) {
 	clock := &testClock{at: time.Now()}
 	factory := &feedbackPort{}
 	reach := command.NewComputerReachHandler(clock.now, sessions, place, computerWorks{id: sessions.session.ID}, factory, nil, &commandtest.InputBuffer{}, nil)
-	recover := command.NewRecoverWorkHandler(clock.now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
+	recover := command.NewRecoverWorkHandler(clock.now, sessions, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, reach)
 
 	require.NoError(t, recover.Handle(ctx, sessions.session.ID))
 	require.NoError(t, recover.Handle(ctx, sessions.session.ID))
@@ -175,7 +175,7 @@ func TestAnUnreadablePresenceHoldsBackNoOtherRecovery(t *testing.T) {
 	port := &turnCancelPort{}
 	factory := port
 	reach := command.NewComputerReachHandler(time.Now, sessions, place, computerWorks{id: sessions.session.ID}, factory, nil, &commandtest.InputBuffer{}, nil)
-	recover := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
+	recover := command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, reach)
 
 	require.ErrorIs(t, recover.Handle(ctx, sessions.session.ID), unavailable)
 	require.Equal(t, domain.WorkStopping, sessions.session.State, "the waiting timeout still stops the Work")

@@ -18,28 +18,18 @@ func NewExecutionQueryRepository(db *xorm.Engine) *ExecutionQueryRepository {
 	return &ExecutionQueryRepository{db: db}
 }
 
-// One transaction observes both retained request records in one snapshot. In
-// particular, an explicit retry can precede a new initial receipt and can still
-// have an empty session_id in its creation recovery record; it is correlated by
-// the Work's Subject instead.
+// GetWorkStartup reads the Work's first-start request facts. A creation is
+// pending while the Work still holds its initial task input, not yet handed
+// off to its input buffer.
 func (r *ExecutionQueryRepository) GetWorkStartup(ctx context.Context, sessionID string) (query.WorkStartup, error) {
 	var row struct {
-		SessionID   string  `xorm:"session_id"`
-		AgentID     string  `xorm:"agent_id"`
-		SubjectKind *string `xorm:"subject_kind"`
-		SubjectID   *string `xorm:"subject_id"`
-		RequestID   string  `xorm:"request_id"`
-		RequestData string  `xorm:"request_data"`
-		Version     int     `xorm:"version"`
+		SessionID        string `xorm:"session_id"`
+		InitialTaskInput string `xorm:"initial_task_input"`
+		RequestID        string `xorm:"request_id"`
+		RequestData      string `xorm:"request_data"`
+		Version          int    `xorm:"version"`
 	}
-	tx := r.db.NewSession()
-	defer tx.Close()
-	tx = tx.Context(ctx)
-	if err := tx.Begin(); err != nil {
-		return query.WorkStartup{}, oops.Wrap(err)
-	}
-	defer tx.Rollback()
-	found, err := tx.SQL(`SELECT s.id AS session_id, s.agent_id, s.subject_kind, s.subject_id,
+	found, err := r.db.Context(ctx).SQL(`SELECT s.id AS session_id, s.initial_task_input,
  COALESCE(i.request_id,'') AS request_id, COALESCE(i.request_data,'') AS request_data,
  COALESCE(i.version,0) AS version
  FROM agent_session s LEFT JOIN agent_initial_execution_request i
@@ -51,11 +41,7 @@ func (r *ExecutionQueryRepository) GetWorkStartup(ctx context.Context, sessionID
 	if !found {
 		return query.WorkStartup{}, domain.ErrWorkNotFound
 	}
-	pending, err := creationPending(tx, row.AgentID, subjectFromColumns(row.SubjectKind, row.SubjectID), row.RequestID)
-	if err != nil {
-		return query.WorkStartup{}, oops.With("operation", "agent.session_startup").Wrap(err)
-	}
-	result := query.WorkStartup{WorkID: row.SessionID, InitialRequestID: row.RequestID, CreationPending: pending}
+	result := query.WorkStartup{WorkID: row.SessionID, InitialRequestID: row.RequestID, CreationPending: row.InitialTaskInput != ""}
 	if row.RequestID != "" {
 		initial, err := initialExecutionRequestFromDO(initialExecutionRequestDO{ID: row.SessionID, RequestID: row.RequestID, RequestData: row.RequestData, Version: row.Version})
 		if err != nil {
@@ -63,13 +49,13 @@ func (r *ExecutionQueryRepository) GetWorkStartup(ctx context.Context, sessionID
 		}
 		result.Rejected, result.CleanupConfirmed = initial.Rejected, initial.CleanupConfirmed
 	}
-	return result, oops.Wrap(tx.Commit())
+	return result, nil
 }
 
 func (r *ExecutionQueryRepository) ListWorkIDs(ctx context.Context, afterID string, limit int) ([]string, error) {
 	// Scan Works whose Harness process has outstanding obligations, permanent
-	// closure, a close kept while the Work stopped and a Resume owed on its
-	// Computer's reconnection. Completed historical conversations do not
+	// closure, a close kept while the Work stopped, a Resume owed on its
+	// Computer's reconnection and an initial task input not handed off. Completed historical conversations do not
 	// lengthen the recovery scan.
 	var ids []string
 	err := r.db.Context(ctx).SQL(`SELECT session_id FROM (
@@ -81,6 +67,8 @@ func (r *ExecutionQueryRepository) ListWorkIDs(ctx context.Context, afterID stri
  SELECT id AS session_id FROM agent_session WHERE state IN (4, 5) AND close_request <> '' AND deleted_at = 0
  UNION
  SELECT id AS session_id FROM agent_session WHERE state = 4 AND reach_resume_due = 1 AND deleted_at = 0
+ UNION
+ SELECT id AS session_id FROM agent_session WHERE state IN (1, 2, 3, 4, 5) AND initial_task_input <> '' AND deleted_at = 0
  ) AS pending WHERE session_id > ? ORDER BY session_id LIMIT ?`, afterID, limit).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "agent.list_recovery_sessions").Wrap(err)
@@ -135,22 +123,4 @@ func (r *ExecutionQueryRepository) ListHeldWorkIDs(ctx context.Context, computer
 		return nil, oops.With("operation", "agent.list_computer_held_works").Wrap(err)
 	}
 	return ids, nil
-}
-
-// creationPending tells whether a creation request for the Work is still
-// pending: one for the same definition and Subject, or, for a Work without a
-// Subject, the request that created it.
-func creationPending(tx *xorm.Session, agentID string, subject domain.WorkSubject, requestID string) (bool, error) {
-	pending := tx.Table("agent_session_creation_request").Where("pending=1 AND deleted_at=0")
-	if !subject.Present() {
-		if requestID == "" {
-			return false, nil
-		}
-		return pending.And("id=?", requestID).Exist()
-	}
-	digest, err := subjectDigest(agentID, subject)
-	if err != nil {
-		return false, err
-	}
-	return pending.And("subject_digest=?", digest).Exist()
 }

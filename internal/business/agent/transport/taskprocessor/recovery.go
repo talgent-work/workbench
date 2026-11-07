@@ -44,10 +44,6 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 			func(ctx context.Context, p *agenttaskv1.RecoverContinuationTaskV1) error {
 				return recovery.RecoverContinuation(ctx, p.GetWorkId())
 			}),
-		processor(logger, agenttask.RecoverWorkCreationType, func() *agenttaskv1.RecoverWorkCreationTaskV1 { return &agenttaskv1.RecoverWorkCreationTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.RecoverWorkCreationTaskV1) error {
-				return recovery.RecoverWorkCreation(ctx, p.GetRequestId())
-			}),
 		processor(logger, agenttask.RequestWorkspaceReclamationType, func() *agenttaskv1.RequestWorkspaceReclamationTaskV1 {
 			return &agenttaskv1.RequestWorkspaceReclamationTaskV1{}
 		},

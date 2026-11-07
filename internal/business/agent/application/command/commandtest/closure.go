@@ -3,27 +3,14 @@ package commandtest
 import (
 	"context"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 
-// NoClosureObligations reports a Work with no startup, initial input or continuation
-// outstanding, for tests whose close is not about those obligations.
+// NoClosureObligations reports a Work with no continuation outstanding, for
+// tests whose close is not about it.
 type NoClosureObligations struct{}
 
-var (
-	_ command.InitialExecutionReader = NoClosureObligations{}
-	_ query.WorkStartupReader        = NoClosureObligations{}
-	_ query.ContinuationReader       = NoClosureObligations{}
-)
-
-func (NoClosureObligations) Get(context.Context, string) (command.InitialExecutionRequest, error) {
-	return command.InitialExecutionRequest{}, command.ErrInitialExecutionNotFound
-}
-
-func (NoClosureObligations) GetWorkStartup(context.Context, string) (query.WorkStartup, error) {
-	return query.WorkStartup{}, nil
-}
+var _ query.ContinuationReader = NoClosureObligations{}
 
 func (NoClosureObligations) GetWorkContinuation(context.Context, string) (query.WorkContinuation, error) {
 	return query.WorkContinuation{}, nil

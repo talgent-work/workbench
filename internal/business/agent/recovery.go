@@ -122,12 +122,11 @@ func sweepOnStart(lc fx.Lifecycle, cfg RecoveryConfig, recovery *application.Rec
 }
 
 // wireRecoveryWakes connects commits to recovery.
-func wireRecoveryWakes(recovery *application.Recovery, updates *workStateUpdates, creations *committedCreations, closures *eventhandler.WorkClosures, logger *slog.Logger) {
+func wireRecoveryWakes(recovery *application.Recovery, updates *workStateUpdates, closures *eventhandler.WorkClosures, logger *slog.Logger) {
 	updates.wakeWork = deferredWake(logger, "work", recovery.WakeWork)
 	closures.Wake = deferredWake(logger, "work_closure", recovery.WakeWork)
 	updates.wakeInitialExecution = deferredWake(logger, "initial_execution", recovery.WakeInitialExecution)
 	updates.wakeContinuation = deferredWake(logger, "continuation", recovery.WakeContinuation)
-	creations.wake = deferredWake(logger, "work_creation", recovery.WakeWorkCreation)
 }
 
 // deferredWake never fails the committed change that triggers it: a failed wake

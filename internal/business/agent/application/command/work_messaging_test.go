@@ -47,7 +47,7 @@ func TestInputCommandPreservesPayloadAndRejectsInvalidDelivery(t *testing.T) {
 	ctx := context.Background()
 	_, sessions := runningMessagingSession(t)
 	control, received := dispatcherBuffer(t)
-	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control), &initialRequestStore{})
+	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control))
 	input := command.ExecutionInput{ID: "f28f3171-1268-4f97-b7d2-1ac831099012", Text: "  exact task\n下一步  "}
 	request := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: input}
 	for _, invalid := range []command.ExecutionInput{{ID: "invalid", Text: "task"}, {ID: input.ID, Text: " \n\t"}} {
@@ -112,9 +112,10 @@ func runningMessagingSessionForPurpose(t *testing.T, purpose string) (*startupAg
 	t.Helper()
 	ctx := context.Background()
 	agents, sessions := startupStoresForPurpose(t, purpose)
-	sessions.starts = map[string]query.AdmittedStart{uuid.NewString(): {WorkID: sessions.session.ID, Kind: query.StartKindStart}}
+	requestID := uuid.NewString()
+	sessions.requests = map[string]query.StartRequest{requestID: {ID: requestID, WorkID: sessions.session.ID, Kind: query.StartKindStart}}
 	factory := &startupPort{}
-	require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
+	require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutorPrepared, WorkID: sessions.session.ID}))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.AgentStarted, WorkID: sessions.session.ID}))
@@ -127,7 +128,7 @@ func TestOrdinaryInputEntryDelegatesWaitingWork(t *testing.T) {
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), controlPort{}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", ObservationSequence: 1000, RequiredInteractionIDs: []string{"coordinator-question"}, Kind: command.UserInteractionRequired, WorkID: sessions.session.ID, InteractionID: "coordinator-question"}))
 	control, received := dispatcherBuffer(t)
-	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control), &initialRequestStore{})
+	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control))
 	input := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: command.ExecutionInput{ID: uuid.NewString(), Text: "accepted business handoff"}}
 	require.NoError(t, deliveryErr(handler.Deliver(ctx, input)))
 	select {

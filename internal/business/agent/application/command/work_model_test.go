@@ -26,7 +26,7 @@ func modelHandler(t *testing.T, store *sessionStore, port *startupPort) (*domain
 	require.NoError(t, err)
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: deploymentModel, ThinkingLevels: []string{"low"}, DefaultThinkingLevel: "low"})
 	computers := capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}
-	return agent, command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computers, port)
+	return agent, command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computers, port, store.preparation(port, models))
 }
 
 func modelCreation(agentID, computerID string, model domain.WorkModelSelection, thinking string) command.CreateWork {
@@ -85,7 +85,7 @@ func TestThePMCoordinatorRunsOnlyOnACloud(t *testing.T) {
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: deploymentModel, ThinkingLevels: []string{"low"}, DefaultThinkingLevel: "low"})
 	for computer, refused := range map[string]bool{managedComputer: true, "": false} {
 		store, seats := &sessionStore{}, &seatCount{capacityCheck: capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}}
-		handler := command.NewCreateWorkHandler(time.Now, agentStore{coordinator}, store, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), seats, &startupPort{})
+		handler := command.NewCreateWorkHandler(time.Now, agentStore{coordinator}, store, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), seats, &startupPort{}, store.preparation(&startupPort{}, models))
 		_, err := handler.Handle(t.Context(), modelCreation(coordinator.ID, computer, deploymentModel, ""))
 		if !refused {
 			require.NoError(t, err)
@@ -188,7 +188,7 @@ func TestAManagedWorkIsCreatedWithoutProviderAuthorizedConnectors(t *testing.T) 
 	require.NoError(t, err)
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: deploymentModel, ThinkingLevels: []string{"low"}, DefaultThinkingLevel: "low"})
 	computers := capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, models, commandtest.StartCatalog(githubCatalog{}, authorizationcatalogtest.Empty{}), computers, &startupPort{})
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, models, commandtest.StartCatalog(githubCatalog{}, authorizationcatalogtest.Empty{}), computers, &startupPort{}, store.preparation(&startupPort{}, models))
 	creation := modelCreation(agent.ID, managedComputer, domain.MachineLoginModel(), "")
 	creation.CapabilityDifferences.Connectors = []domain.ConnectorChoice{{Name: "github", Include: true}}
 	_, err = handler.Handle(t.Context(), creation)

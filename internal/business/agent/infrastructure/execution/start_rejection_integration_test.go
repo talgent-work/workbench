@@ -50,7 +50,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.NoError(t, err)
 	works := infrastructure.NewAgentWorkRepository(db, time.Now)
 	input := command.PrepareWorkExecution{WorkID: work.ID, SubjectID: "owner", WorkspaceReference: work.WorkspaceReference, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-368", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "original input"}}
-	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, RequestID: input.RequestID, InitialExecution: &input}))
+	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: query.StartRequest{ID: input.RequestID, Kind: query.StartKindStart, WorkID: work.ID}, InitialExecution: &input}))
 	start := request()
 	start.WorkID, start.AgentID, start.ContextMode = work.ID, work.AgentID, domain.ContextFresh
 	start.Capabilities, start.HomeBinding, start.HarnessSessionReference = work.CapabilitySnapshot.Clone(), work.HomeBinding, work.HarnessSessionReference
@@ -94,7 +94,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.NoError(t, err)
 	require.NoError(t, work.Restart(ctx, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, commandtest.Hold(factory)))
 	restartID := uuid.NewString()
-	require.NoError(t, works.CommitStart(ctx, work, query.AdmittedStart{WorkID: work.ID, Kind: query.StartKindRestart}, restartID))
+	require.NoError(t, works.CommitStart(ctx, work, query.StartRequest{ID: restartID, Kind: query.StartKindRestart, WorkID: work.ID}))
 	after, err := initial.Get(ctx, work.ID)
 	require.NoError(t, err)
 	require.False(t, after.Rejected)

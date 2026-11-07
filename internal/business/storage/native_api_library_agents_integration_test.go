@@ -84,7 +84,7 @@ func (a *libraryAgents) start(person, workspace, projectID string) libraryWork {
 	require.NoError(a.t, err)
 	require.Empty(a.t, started.CapabilitySnapshot.Connectors, "the Work starts without a platform Connector")
 	require.NoError(a.t, a.works.RegisterWork(ctx, started, agentcommand.WorkRegistration{
-		SubjectID: person, RequestID: uuid.NewString(), WorkspaceReference: workspace, DefinitionVersion: definition.Version,
+		SubjectID: person, Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: started.ID}, WorkspaceReference: workspace, DefinitionVersion: definition.Version,
 	}))
 	return work
 }

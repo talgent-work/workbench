@@ -89,7 +89,7 @@ func TestRecoveryFollowsDispatchersAttachment(t *testing.T) {
 	processes := &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessRunning}, attachment: command.AttachmentHeld}
 	clock := &testClock{at: time.Now()}
 	reach := command.NewComputerReachHandler(clock.now, store, &presencePlace{}, computerWorks{id: store.session.ID}, factory, processes, &commandtest.InputBuffer{}, nil)
-	recover := command.NewRecoverWorkHandler(clock.now, store, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
+	recover := command.NewRecoverWorkHandler(clock.now, store, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(store, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, reach)
 
 	calls := processes.calls
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
@@ -133,7 +133,7 @@ func TestRecoveryStopsBeyondReachOnlyOnAnObservedLoss(t *testing.T) {
 	processes := &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessRunning}, observeErr: outage}
 	clock := &testClock{at: time.Now()}
 	reach := command.NewComputerReachHandler(clock.now, store, &presencePlace{}, computerWorks{id: store.session.ID}, factory, processes, &commandtest.InputBuffer{}, nil)
-	recover := command.NewRecoverWorkHandler(clock.now, store, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
+	recover := command.NewRecoverWorkHandler(clock.now, store, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(store, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, reach)
 	store.session.HarnessProcess.StartingSince = clock.at.Add(-time.Hour)
 	_, err := store.session.RecordDisconnection(clock.at.Add(-domain.DisconnectionTimeout))
 	require.NoError(t, err)

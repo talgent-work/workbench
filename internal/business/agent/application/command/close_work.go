@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"errors"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -14,14 +13,12 @@ import (
 // request applies once it has stopped, through ApplyKeptClose.
 type CloseWorkHandler struct {
 	control       sessionControl
-	initial       InitialExecutionReader
-	startup       query.WorkStartupReader
 	continuations query.ContinuationReader
 	buffer        RunningHarnessPort
 }
 
-func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort, initial InitialExecutionReader, startup query.WorkStartupReader, continuations query.ContinuationReader, buffer RunningHarnessPort) *CloseWorkHandler {
-	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, execution: execution}, initial: initial, startup: startup, continuations: continuations, buffer: buffer}
+func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort, continuations query.ContinuationReader, buffer RunningHarnessPort) *CloseWorkHandler {
+	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, execution: execution}, continuations: continuations, buffer: buffer}
 }
 
 func (h *CloseWorkHandler) Handle(ctx context.Context, request WorkControl) error {
@@ -71,18 +68,6 @@ func (h *CloseWorkHandler) facts(ctx context.Context, work *domain.AgentWork) (d
 		return facts, err
 	}
 	facts.ContinuationPending = continuation.Pending
-	startup, err := h.startup.GetWorkStartup(ctx, work.ID)
-	if err != nil {
-		return facts, err
-	}
-	facts.StartupPending = startup.CreationPending
-	initial, err := h.initial.Get(ctx, work.ID)
-	if err != nil && !errors.Is(err, ErrInitialExecutionNotFound) {
-		return facts, err
-	}
-	if err == nil && !initial.InputBuffered && !(initial.Rejected && initial.CleanupConfirmed) {
-		facts.StartupPending = true
-	}
 	buffered, err := h.buffer.ReadBuffer(ctx, work.ID)
 	facts.InputPending = buffered.Pending()
 	return facts, err

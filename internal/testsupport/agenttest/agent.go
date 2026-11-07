@@ -127,19 +127,18 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	lookup := infrastructure.NewAgentDefinitionLookup(db)
 	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
-	requests := infrastructure.NewWorkCreationRequests(db, time.Now)
 	queries := infrastructure.NewWorkQueryRepository(db)
 	execution := executionPort{onStart: cfg.OnStart}
 	start := startCatalog{catalog: catalog, connections: repositories}
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), execution)
-	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), works, authorizer, execution, requests, models)
+	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), works, authorizer, execution, models)
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), execution, prepare)
 	views := query.NewModelOptionViews(queries, models)
 	app := &application.Application{
 		RecentRepositories: queries, Catalog: start, Definitions: definitions, DefinitionLookup: lookup,
 		Works: works, WorkPrincipals: authorizer, WorkViews: views, Models: models,
 		Commands: application.Commands{
 			EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup),
-			CreateRequestedWork:   command.NewCreateRequestedWorkHandler(requests, create, prepare),
+			CreateWork:            create,
 		},
 		Queries: application.Queries{
 			GetWorkPreparation: query.NewGetWorkPreparationHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), authorizer),

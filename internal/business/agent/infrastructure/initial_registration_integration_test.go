@@ -43,16 +43,11 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	creation := command.CreateWork{AgentID: definition.ID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project"}
 	lost := errors.New("registration committed; acknowledgement lost")
 	registrar := registrationLostAcknowledgement{AgentWorkRepository: sessions, err: lost}
-	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
-	prepare := command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, nil, nil, agentquery.ModelConfigurations{})
+	prepare := command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, nil, agentquery.ModelConfigurations{})
+	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}, prepare)
 	prepareNew := func(ctx context.Context, creation command.CreateWork, input command.PrepareWorkExecution) (string, error) {
-		creation.SubjectID, creation.InitialExecution = input.SubjectID, &input
-		id, err := create.Handle(ctx, creation)
-		if err != nil {
-			return "", err
-		}
-		input.WorkID = id
-		return prepare.Handle(ctx, input)
+		creation.SubjectID, creation.RequestID, creation.InitialExecution = input.SubjectID, input.RequestID, &input
+		return create.Handle(ctx, creation)
 	}
 	_, err = prepareNew(ctx, creation, input)
 	require.ErrorIs(t, err, lost)
@@ -77,12 +72,12 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.Equal(t, input, retained.PrepareWorkExecution)
 	require.False(t, retained.Prepared)
 	require.True(t, retained.Submitted, "first admission is committed with the original input")
-	resources := &registrationResources{}
+	buffer := &commandtest.InputBuffer{}
 	var starts []domain.StartExecutionRequest
 	requests := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }}
-	create = command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
-	prepare = command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, requests, nil, agentquery.ModelConfigurations{})
-	recover := command.NewRecoverInitialExecutionHandler(receipts, sessions, prepare, resources, requests)
+	prepare = command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, requests, agentquery.ModelConfigurations{})
+	create = command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}, prepare)
+	recover := command.NewRecoverInitialExecutionHandler(receipts, sessions, prepare, requests)
 	require.ErrorIs(t, recover.Handle(ctx, session.ID), command.ErrInitialExecutionPending)
 	require.Len(t, starts, 1)
 	// The start's preparation process reports its planned checkout before the
@@ -99,11 +94,11 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.NoError(t, session.ConfirmStarted(context.Background(), time.Now(), nil))
 	require.NoError(t, sessions.Save(ctx, session))
 	require.NoError(t, recover.Handle(ctx, session.ID))
-	require.Equal(t, []command.ExecutionInput{input.Input}, resources.inputs)
+	require.NoError(t, command.NewInputAcceptance(sessions, buffer).HandOffInitialTaskInput(ctx, session.ID))
+	require.Equal(t, []command.ExecutionInput{input.Input}, buffer.Inputs)
 	prepared, err := receipts.Get(ctx, session.ID)
 	require.NoError(t, err)
 	require.True(t, prepared.InputPrepared)
-	require.True(t, prepared.InputBuffered)
 	require.Len(t, prepared.CheckoutResults, 1)
 	require.Equal(t, command.RepositoryCheckoutResult{RepositoryID: prepared.Checkouts[0].RepoID, TargetPath: prepared.Checkouts[0].TargetPath, Reason: "checkout_unavailable"}, prepared.CheckoutResults[0])
 	require.False(t, prepared.Rejected)
@@ -132,11 +127,16 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	repeated, err := prepareNew(ctx, creation, repeat)
 	require.NoError(t, err)
 	require.Equal(t, ref, repeated)
+	// Repeating that request identity with other content is a conflict; a new
+	// request with another task cannot replace the original one.
 	repeat.Input.Text = "different task"
+	_, err = prepareNew(ctx, creation, repeat)
+	require.ErrorIs(t, err, command.ErrWorkCreationConflict)
+	repeat.RequestID, repeat.Input.ID = uuid.NewString(), uuid.NewString()
 	_, err = prepareNew(ctx, creation, repeat)
 	require.ErrorIs(t, err, command.ErrInitialExecutionConflict)
 	require.Len(t, starts, 1)
-	require.Len(t, resources.inputs, 1)
+	require.Len(t, buffer.Inputs, 1)
 }
 
 type registrationLostAcknowledgement struct {
@@ -149,18 +149,4 @@ func (r registrationLostAcknowledgement) RegisterWork(ctx context.Context, s *do
 		return err
 	}
 	return r.err
-}
-
-// registrationResources records the initial input reaching the Work.
-type registrationResources struct {
-	inputs []command.ExecutionInput
-}
-
-func (r *registrationResources) AcceptInput(_ context.Context, _ string, input command.ExecutionInput) (command.InputHandOff, error) {
-	r.inputs = append(r.inputs, input)
-	return command.InputBuffered, nil
-}
-
-func (*registrationResources) AcceptResponse(context.Context, string, command.InteractionResponse) error {
-	panic("initial input recovery must not answer interactions")
 }

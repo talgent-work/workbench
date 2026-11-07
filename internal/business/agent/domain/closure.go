@@ -12,8 +12,6 @@ type ClosureFacts struct {
 	// InputPending: accepted input still awaits processing. Only a running
 	// Work's close waits for it; a stopped or failed Work's close drops it.
 	InputPending bool
-	// StartupPending: the first start still owes its initial task input.
-	StartupPending bool
 	// ContinuationPending: a Resume or Restart request is not yet settled.
 	ContinuationPending bool
 }
@@ -62,7 +60,7 @@ func (s *AgentWork) Close(ctx context.Context, requestID string, facts ClosureFa
 		if facts.InputPending {
 			return ErrInputPending
 		}
-		if facts.StartupPending || facts.ContinuationPending || s.EndRequestReference != "" {
+		if s.InitialTaskInput != nil || facts.ContinuationPending || s.EndRequestReference != "" {
 			return ErrWorkTransition
 		}
 		s.CloseRequestReference = requestID
@@ -82,6 +80,9 @@ func (s *AgentWork) close(requestID string) {
 		s.HarnessProcess.IdleSince, s.HarnessProcess.WaitingSince = time.Time{}, time.Time{}
 	}
 	s.State = WorkClosing
+	// Closing empties input: an initial task input not yet handed off is
+	// dropped with the rest.
+	s.InitialTaskInput = nil
 	s.record(WorkClosingEntered{WorkID: s.ID})
 	s.confirmTermination()
 	if s.State == WorkClosed {

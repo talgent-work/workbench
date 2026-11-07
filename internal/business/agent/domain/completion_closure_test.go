@@ -22,7 +22,7 @@ func TestCloseStopsARunningWorkFirstAndClosesItOnceStopped(t *testing.T) {
 	require.NoError(t, s.ObserveTurn(domain.TurnObservation{Sequence: 10, Active: true}, false, false, time.Now()))
 	require.ErrorIs(t, s.Close(ctx, "finish", domain.ClosureFacts{}, port), domain.ErrTurnActive)
 	require.NoError(t, s.ObserveTurn(domain.TurnObservation{Sequence: 20, Completed: true}, false, false, time.Now()))
-	for _, fact := range []domain.ClosureFacts{{InputPending: true}, {StartupPending: true}, {ContinuationPending: true}} {
+	for _, fact := range []domain.ClosureFacts{{InputPending: true}, {ContinuationPending: true}} {
 		require.ErrorIs(t, s.Close(ctx, "finish", fact, port), domain.ErrWorkTransition)
 		require.Equal(t, domain.WorkWorking, s.State)
 		require.Empty(t, s.CloseRequestReference)

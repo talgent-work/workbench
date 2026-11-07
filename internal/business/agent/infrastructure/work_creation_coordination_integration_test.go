@@ -8,179 +8,184 @@ import (
 	"testing"
 	"time"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"xorm.io/xorm"
+
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
+	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
-	"xorm.io/xorm"
 )
 
 type creationCapacity struct{ err error }
 
 func (c *creationCapacity) AdmitRoom(context.Context) error { return c.err }
 
-// creationCoordinator uses production coordination, registration, preparation
-// and recovery storage; only execution delivery and catalogs are fixtures.
-func creationCoordinator(db *xorm.Engine, records command.WorkCreationRequests, capacity computertest.RoomCheck, resources *registrationResources, starts *[]domain.StartExecutionRequest, registrar command.AgentWorkRepository, options agentquery.ModelConfigurations, catalog commandtest.PluginCatalog) (*command.CreateRequestedWorkHandler, *command.RecoverInitialExecutionHandler) {
+// creationCoordinator uses production creation, registration, preparation and
+// recovery storage; only execution delivery and catalogs are fixtures.
+func creationCoordinator(db *xorm.Engine, capacity computertest.RoomCheck, starts *[]domain.StartExecutionRequest, registrar command.AgentWorkRepository, options agentquery.ModelConfigurations, catalog commandtest.PluginCatalog) (*command.CreateWorkHandler, *command.RecoverInitialExecutionHandler) {
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	if registrar == nil {
 		registrar = sessions
 	}
-	initial := infrastructure.NewInitialExecutionRequests(db, time.Now)
 	execution := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { *starts = append(*starts, r); return nil }}
-	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, options, commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), execution)
-	prepare := command.NewPrepareWorkExecutionHandler(initial, sessions, auth, execution, records, options)
-	return command.NewCreateRequestedWorkHandler(records, create, prepare), command.NewRecoverInitialExecutionHandler(initial, sessions, prepare, resources, execution)
+	prepare := creationPreparation(db, execution, options)
+	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, options, commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), execution, prepare)
+	return create, command.NewRecoverInitialExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), sessions, prepare, execution)
 }
 
-func TestWorkCreationCoordinatorRecoversOriginalRegisteredSession(t *testing.T) {
-	for _, lostAt := range []string{"registration"} {
-		t.Run(lostAt, func(t *testing.T) {
-			f := newWorkCreationFixture(t)
-			ctx := context.Background()
-			lost := errors.New("acknowledgement lost")
-			registrar := registrationLostAcknowledgement{AgentWorkRepository: f.sessions, err: lost}
-			resources := &registrationResources{}
-			var starts []domain.StartExecutionRequest
-			handler, _ := creationCoordinator(f.db, f.requests, startupAuthority{}, resources, &starts, registrar, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
-			_, err := handler.Handle(ctx, f.request.Creation)
-			require.ErrorIs(t, err, lost)
-			retained, err := f.requests.GetWorkCreation(ctx, f.request.ID)
-			require.NoError(t, err)
-			require.NotEmpty(t, retained.WorkID)
-			require.False(t, retained.BindingConfirmed)
-			require.Empty(t, starts)
-			require.Empty(t, resources.inputs)
-			require.NoError(t, f.db.Close())
-			db, err := xorm.NewEngine("mysql", f.dsn)
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = db.Close() })
-			records := infrastructure.NewWorkCreationRequests(db, time.Now)
-			pending, err := records.ListPendingWorkCreations(ctx, "", 100)
-			require.NoError(t, err)
-			require.Equal(t, []string{f.request.ID}, pending)
-			handler, recovery := creationCoordinator(db, records, startupAuthority{}, resources, &starts, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
-			require.NoError(t, handler.Recover(ctx, pending[0]))
-			require.Len(t, starts, 1)
-			require.Equal(t, retained.WorkID, starts[0].WorkID)
-			admitted, found, err := infrastructure.NewAgentWorkRepository(db, time.Now).FindAdmittedStart(ctx, f.request.ID)
-			require.NoError(t, err)
-			require.True(t, found, "the original creation request is the admitted start request")
-			require.Equal(t, retained.WorkID, admitted.WorkID)
-			sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-			session, err := sessions.Get(ctx, retained.WorkID)
-			require.NoError(t, err)
-			completeCreationCheckout(t, db, session.ID)
-			require.NoError(t, session.ConfirmPrepared(context.Background(), time.Now(), nil))
-			require.NoError(t, session.ConfirmStarted(context.Background(), time.Now(), nil))
-			require.NoError(t, sessions.Save(ctx, session))
-			require.NoError(t, recovery.Handle(ctx, session.ID))
-			require.NoError(t, recovery.Handle(ctx, session.ID))
-			require.Equal(t, []command.ExecutionInput{f.request.Creation.InitialExecution.Input}, resources.inputs)
-			pending, err = records.ListPendingWorkCreations(ctx, "", 100)
-			require.NoError(t, err)
-			require.Empty(t, pending)
-		})
-	}
-}
-
-type confirmationLostAfterCommit struct {
-	command.WorkCreationRequests
-	err error
-}
-
-func (s confirmationLostAfterCommit) ConfirmWorkCreation(ctx context.Context, id, session string) error {
-	if err := s.WorkCreationRequests.ConfirmWorkCreation(ctx, id, session); err != nil {
-		return err
-	}
-	return s.err
-}
-
-// Rejected admission creates no Work. A new explicit request can be admitted;
-// its original input is durable even when association confirmation loses its reply.
-// Restored capacity cannot turn the canceled request into background admission.
-func TestWorkCreationRetryHandoffSurvivesConfirmationCommit(t *testing.T) {
+// A creation whose acknowledgement was lost after its commit is answered by
+// its repeat through reconstructed stores: the same Work, one request record,
+// and the first start continuing from the committed initial execution. The
+// initial task input reaches the input buffer once, before any later input.
+func TestALostCreationAcknowledgementIsAnsweredByItsRepeat(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	capacity := &creationCapacity{err: domain.ErrCapacityUnavailable}
-	resources := &registrationResources{}
+	lost := errors.New("acknowledgement lost")
+	registrar := registrationLostAcknowledgement{AgentWorkRepository: f.sessions, err: lost}
 	var starts []domain.StartExecutionRequest
-	handler, _ := creationCoordinator(f.db, f.requests, capacity, resources, &starts, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
-	_, err := handler.Handle(ctx, f.request.Creation)
-	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
-	first, err := f.requests.GetWorkCreation(ctx, f.request.ID)
-	require.NoError(t, err)
-	require.False(t, first.BindingConfirmed)
-	require.Empty(t, first.WorkID)
-	require.True(t, first.Canceled, "a definitive refusal fences the identity")
-	actual, err := f.sessions.FindWork(ctx, first.Creation.AgentID, first.Creation.Subject)
-	require.NoError(t, err)
-	require.Nil(t, actual)
-	pending, err := f.requests.ListPendingWorkCreations(ctx, "", 100)
-	require.NoError(t, err)
-	require.Empty(t, pending)
-	capacity.err = nil
-	require.NoError(t, handler.Recover(ctx, first.ID), "recovery has nothing left to advance")
-	_, err = handler.Handle(ctx, first.Creation)
-	require.ErrorIs(t, err, command.ErrWorkCreationCanceled, "repeating a refused identity answers its original outcome")
-	require.Empty(t, starts, "restored capacity cannot silently retry rejected admission")
-	retry := first.Creation
-	initial := *retry.InitialExecution
-	initial.RequestID, initial.CreationRequestID, initial.Input.ID = uuid.NewString(), "", uuid.NewString()
-	initial.Input.Text = "explicit retry after capacity rejection"
-	retry.InitialExecution = &initial
-	retry.RequestID = initial.RequestID
-	lost := errors.New("Agent confirmation committed before handoff; response lost")
-	handler, _ = creationCoordinator(f.db, confirmationLostAfterCommit{WorkCreationRequests: f.requests, err: lost}, capacity, resources, &starts, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
-	_, err = handler.Handle(ctx, retry)
+	handler, _ := creationCoordinator(f.db, startupAuthority{}, &starts, registrar, deploymentModels(), &creationCatalog{})
+	_, err := handler.Handle(ctx, f.request)
 	require.ErrorIs(t, err, lost)
-	pending, err = f.requests.ListPendingWorkCreations(ctx, "", 100)
-	require.NoError(t, err)
-	require.Equal(t, []string{initial.RequestID}, pending)
-	registered, err := f.requests.GetWorkCreation(ctx, initial.RequestID)
-	require.NoError(t, err)
-	require.NotEmpty(t, registered.WorkID)
-	require.True(t, registered.BindingConfirmed)
-	current, err := infrastructure.NewInitialExecutionRequests(f.db, time.Now).Get(ctx, registered.WorkID)
-	require.NoError(t, err)
-	require.Equal(t, initial.RequestID, current.RequestID, "input and first admission commit with the new Work")
-	require.Equal(t, initial.Input, current.Input)
-	require.True(t, current.Submitted)
-	require.False(t, current.Rejected)
-	require.Empty(t, starts)
+	require.Empty(t, starts, "nothing starts on an unacknowledged commit")
 	require.NoError(t, f.db.Close())
+
 	db, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	records := infrastructure.NewWorkCreationRequests(db, time.Now)
-	handler, recovery := creationCoordinator(db, records, capacity, resources, &starts, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
-	require.NoError(t, handler.Recover(ctx, initial.RequestID))
+	handler, recovery := creationCoordinator(db, startupAuthority{}, &starts, nil, deploymentModels(), &creationCatalog{})
+	id, err := handler.Handle(ctx, f.request)
+	require.NoError(t, err)
 	require.Len(t, starts, 1)
-	require.Equal(t, registered.WorkID, starts[0].WorkID)
-	admitted, found, err := infrastructure.NewAgentWorkRepository(db, time.Now).FindAdmittedStart(ctx, initial.RequestID)
+	require.Equal(t, id, starts[0].WorkID)
+	require.Equal(t, 1, startRequestRows(t, db), "one request identity, one record")
+	outcome, found, err := handler.Outcome(ctx, f.request.RequestID)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, registered.WorkID, admitted.WorkID)
+	require.Equal(t, id, outcome.WorkID)
+
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	session, err := sessions.Get(ctx, registered.WorkID)
+	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
 	completeCreationCheckout(t, db, session.ID)
 	require.NoError(t, session.ConfirmPrepared(context.Background(), time.Now(), nil))
 	require.NoError(t, session.ConfirmStarted(context.Background(), time.Now(), nil))
 	require.NoError(t, sessions.Save(ctx, session))
 	require.NoError(t, recovery.Handle(ctx, session.ID))
-	require.Equal(t, []command.ExecutionInput{initial.Input}, resources.inputs)
-	pending, err = records.ListPendingWorkCreations(ctx, "", 100)
+	buffer := &commandtest.InputBuffer{}
+	acceptance := command.NewInputAcceptance(sessions, buffer)
+	require.NoError(t, acceptance.HandOffInitialTaskInput(ctx, id))
+	require.NoError(t, acceptance.HandOffInitialTaskInput(ctx, id))
+	require.Equal(t, []command.ExecutionInput{f.request.InitialExecution.Input}, buffer.Inputs)
+	pending, err := infrastructure.NewInitialExecutionRequests(db, time.Now).ListPendingInitialExecutions(ctx, "", 100)
 	require.NoError(t, err)
 	require.Empty(t, pending)
+}
+
+// A definitive refusal settles its request identity: the repeat answers the
+// cancellation even after capacity returns, while a new request identity is
+// admitted and commits its Work, initial task input and first start together.
+func TestADefinitiveCreationRefusalSettlesItsRequestIdentity(t *testing.T) {
+	f := newWorkCreationFixture(t)
+	ctx := context.Background()
+	capacity := &creationCapacity{err: domain.ErrCapacityUnavailable}
+	var starts []domain.StartExecutionRequest
+	handler, _ := creationCoordinator(f.db, capacity, &starts, nil, deploymentModels(), &creationCatalog{})
+	_, err := handler.Handle(ctx, f.request)
+	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
+	require.ErrorIs(t, err, command.ErrWorkCreationCanceled)
+	outcome, found, err := handler.Outcome(ctx, f.request.RequestID)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, outcome.Canceled, "a definitive refusal settles the identity")
+	actual, err := f.sessions.FindWork(ctx, f.request.AgentID, f.request.Subject)
+	require.NoError(t, err)
+	require.Nil(t, actual)
+
+	capacity.err = nil
+	_, err = handler.Handle(ctx, f.request)
+	require.ErrorIs(t, err, command.ErrWorkCreationCanceled, "repeating a refused identity answers its original outcome")
+	require.Empty(t, starts, "restored capacity cannot silently retry a refused admission")
+
+	retry := f.request
+	initial := *retry.InitialExecution
+	initial.RequestID, initial.Input.ID = uuid.NewString(), uuid.NewString()
+	initial.Input.Text = "explicit retry after capacity rejection"
+	retry.InitialExecution, retry.RequestID = &initial, initial.RequestID
+	id, err := handler.Handle(ctx, retry)
+	require.NoError(t, err)
+	current, err := infrastructure.NewInitialExecutionRequests(f.db, time.Now).Get(ctx, id)
+	require.NoError(t, err)
+	require.Equal(t, initial.RequestID, current.RequestID, "the first start commits with the new Work")
+	require.True(t, current.Submitted)
+	require.False(t, current.Rejected)
+	require.Len(t, starts, 1)
+	work, err := f.sessions.Get(ctx, id)
+	require.NoError(t, err)
+	pendingInput, pending := work.PendingInitialTaskInput()
+	require.True(t, pending)
+	require.Equal(t, domain.InitialTaskInput{ID: initial.Input.ID, Text: initial.Input.Text}, pendingInput)
+}
+
+// failedCommit loses the creation's transaction before it commits.
+type failedCommit struct {
+	command.AgentWorkRepository
+	err error
+}
+
+func (r *failedCommit) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
+	if r.err != nil {
+		return r.err
+	}
+	return r.AgentWorkRepository.RegisterWork(ctx, work, registration)
+}
+
+// A commit failure after admission keeps the admitted Desk for the repeat,
+// which asks for the same Desk and commits; a creation its caller cancelled
+// first releases the Desk at once.
+func TestACreationCommitFailureKeepsItsDesk(t *testing.T) {
+	f := newWorkCreationFixture(t)
+	ctx := context.Background()
+	computer := &computertest.Admission{}
+	registrar := &failedCommit{AgentWorkRepository: f.sessions, err: errors.New("connection lost during the commit")}
+	create := f.creation(registrar, computer, executionPort{})
+	_, err := create.Handle(ctx, f.request)
+	require.ErrorIs(t, err, registrar.err)
+	require.Equal(t, 1, computer.Open(), "an uncertain commit leaves its Desk to the repeat or the reconciliation")
+
+	registrar.err = nil
+	id, err := create.Handle(ctx, f.request)
+	require.NoError(t, err)
+	require.Equal(t, 1, computer.Open(), "the repeat is seated on the same Desk")
+	work, err := f.sessions.Get(ctx, id)
+	require.NoError(t, err)
+	require.Equal(t, domain.WorkStarting, work.State)
+
+	cancelled := f.request
+	initial := *cancelled.InitialExecution
+	initial.RequestID = uuid.NewString()
+	cancelled.InitialExecution, cancelled.RequestID = &initial, initial.RequestID
+	cancelled.Subject = domain.WorkSubject{Kind: "case", ID: uuid.NewString()}
+	paused := &pausedRegistration{AgentWorkRepository: f.sessions, reached: make(chan struct{}), release: make(chan struct{})}
+	result := make(chan error, 1)
+	go func() { _, err := f.creation(paused, computer, executionPort{}).Handle(ctx, cancelled); result <- err }()
+	select {
+	case <-paused.reached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("creation did not reach registration")
+	}
+	require.Equal(t, 2, computer.Open())
+	_, err = create.Cancel(ctx, cancelled.RequestID)
+	close(paused.release)
+	require.NoError(t, err)
+	require.ErrorIs(t, <-result, command.ErrWorkCreationCanceled)
+	require.Equal(t, 1, computer.Open(), "a cancelled creation releases its Desk")
 }
 
 // The real preparation reports checkout outcomes before the Harness starts.

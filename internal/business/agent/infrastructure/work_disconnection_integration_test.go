@@ -24,8 +24,8 @@ func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
 	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
-		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
-	id, err := handler.Handle(ctx, f.request.Creation)
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}, creationPreparation(f.db, executionPort{}, creationModels()))
+	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -88,9 +88,11 @@ func TestAReachResumeMarkPersistsAndIsFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
 	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
-		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
-	id, err := handler.Handle(ctx, f.request.Creation)
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}, creationPreparation(f.db, executionPort{}, creationModels()))
+	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
+	// The Work recovery its creation wakes hands off its initial task input.
+	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.NoError(t, work.ConfirmPrepared(ctx, time.Now(), nil))

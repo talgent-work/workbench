@@ -91,6 +91,9 @@ type WorkInput struct {
 	ComputerManaged bool
 	// Harness is its starter's choice, admitted only on a Managed Computer.
 	Harness HarnessChoice
+	// InitialTaskInput is the creating caller's first task input, when it
+	// supplied one.
+	InitialTaskInput *InitialTaskInput
 }
 
 // StartAdmission carries the AgentDefinition, Computer and Model
@@ -218,7 +221,11 @@ type AgentWork struct {
 	StartedBy              string `validate:"max=255"`
 	RepositorySelection    WorkRepositorySelection
 	AuthorizationSelection WorkAuthorizationSelection
-	ThinkingLevel          string
+	// InitialTaskInput is the creating caller's first task input, held until
+	// it is handed to the Work's input buffer; nil once handed off, or for a
+	// Work created without one.
+	InitialTaskInput *InitialTaskInput
+	ThinkingLevel    string
 	// PermissionMode is a Managed Work's Harness permission mode, the one its
 	// Harness last reported; empty for a Cloud Work, which always bypasses.
 	PermissionMode PermissionMode
@@ -303,6 +310,13 @@ func NewAgentWork(ctx context.Context, input WorkInput, admission StartAdmission
 		CapabilitySnapshot: capabilities, HarnessSessionReference: uuid.Must(uuid.NewV7()).String(),
 		WorkspaceReference: workspace, InputSource: input.InputSource, ReadOnlyMounts: mounts, DisplayTitle: strings.TrimSpace(input.DisplayTitle), HomeBinding: input.HomeBinding, TraceAttributes: maps.Clone(input.TraceAttributes),
 		Visibility: WorkVisibility{Public: input.Visibility.Public && strings.TrimSpace(input.ProjectID) != ""}, StartingContext: input.StartingContext.clone(), Events: NewEventCollection(),
+	}
+	if initial := input.InitialTaskInput; initial != nil {
+		established, err := NewInitialTaskInput(initial.ID, initial.Text)
+		if err != nil {
+			return nil, err
+		}
+		session.InitialTaskInput = &established
 	}
 	if err := session.determineAuthorizationSelection(input.AuthorizationInput); err != nil {
 		return nil, err

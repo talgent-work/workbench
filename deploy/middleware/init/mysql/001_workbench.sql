@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `capabilities` json NOT NULL COMMENT 'Resolved Work capabilities; initial Failed corrections retain releases',
   `authorization_selection` json NOT NULL DEFAULT (json_object()) COMMENT 'Creation-time personal authorization references; no credentials',
   `repository_selection` json NOT NULL DEFAULT (json_object()) COMMENT 'Creation-time repository identities and branches; no credentials',
+  `initial_task_input` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT (_utf8mb4'') COMMENT 'JSON of the creating caller''s first task input until it reaches the Work''s input buffer; empty once handed off or when none was supplied',
   `task_execution_begun` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Retained task admission: whether its execution began; every write sets it',
   `model_configuration_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Model Configuration retained by the Work, whose current Model Template each start uses; empty with model_machine_login',
   `model_machine_login` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The Work uses its Managed Computer''s own Claude login instead of a Model Configuration',
@@ -151,23 +152,6 @@ CREATE TABLE IF NOT EXISTS `agent_session_continuation_request` (
   KEY `idx_session_continuation_pending` (`pending`, `deleted_at`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent application explicit continuation request outcome recovery';
 
-CREATE TABLE IF NOT EXISTS `agent_session_creation_request` (
-  `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Original explicit creation request identity',
-  `subject_digest` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Digest of the requested definition and Work Subject; empty for a request without a Subject or an identity cancelled before receipt',
-  `session_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Actual registered or reused AgentSession identity',
-  `request_data` json NOT NULL COMMENT 'Immutable creation context and original initial input; {} for an identity cancelled before receipt',
-  `binding_confirmed` boolean NOT NULL DEFAULT false COMMENT 'The created or reused Work is confirmed for this request',
-  `canceled` boolean NOT NULL DEFAULT false COMMENT 'Registration is durably forbidden for this request',
-  `pending` boolean NOT NULL DEFAULT true COMMENT 'Creation, binding confirmation or initial-input handoff remains outstanding',
-  `version` int unsigned NOT NULL DEFAULT 1 COMMENT 'Application recovery record version',
-  `created_at` bigint NOT NULL DEFAULT 0 COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT 0 COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT 0 COMMENT 'Deletion time in Unix milliseconds; zero is active',
-  PRIMARY KEY (`id`),
-  KEY `idx_session_creation_pending` (`pending`, `deleted_at`, `id`),
-  KEY `idx_session_creation_subject_pending` (`subject_digest`, `pending`, `deleted_at`, `id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent unique creation per request identity, recovery and cancellation fence';
-
 CREATE TABLE IF NOT EXISTS `agent_session_state_history` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Persisted snapshot identity',
   `session_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Owning AgentSession identity',
@@ -197,8 +181,9 @@ CREATE TABLE IF NOT EXISTS `agent_work_share` (
 
 CREATE TABLE IF NOT EXISTS `agent_start_request` (
   `id` varchar(36) NOT NULL COMMENT 'Caller-selected start request UUID',
-  `session_id` varchar(36) NOT NULL COMMENT 'Target Work; empty when initial creation was canceled before registration',
-  `kind` varchar(16) NOT NULL DEFAULT '' COMMENT 'Admitted start, resume or restart; empty when canceled',
+  `session_id` varchar(36) NOT NULL COMMENT 'Target Work; empty for a creation cancelled or refused before it created one',
+  `kind` varchar(16) NOT NULL DEFAULT '' COMMENT 'Start (creation), resume or restart; empty when a start was canceled before its operation was known',
+  `fingerprint` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'SHA-256 digest of the request content; a repeat with other content is a conflict; empty for an identity cancelled before receipt',
   `creation_scope` varchar(64) NOT NULL DEFAULT '' COMMENT 'Original scope digest for cancellation before Work registration',
   `canceled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'True when the request was canceled before admission',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Immutable receipt version',
@@ -207,7 +192,7 @@ CREATE TABLE IF NOT EXISTS `agent_start_request` (
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; zero is retained',
   PRIMARY KEY (`id`),
   KEY `idx_session_id_canceled_deleted_at_created_at` (`session_id`, `canceled`, `deleted_at`, `created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Start request correlation, not a process run';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='The single record of caller request identities for Work creation, Resume and Restart; not a process run';
 
 CREATE TABLE IF NOT EXISTS `computer` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Computer UUIDv7 identity; a Cloud''s is fixed by its cluster''s configuration',

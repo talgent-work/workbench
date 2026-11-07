@@ -2,7 +2,6 @@ package infrastructure
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -75,28 +74,40 @@ func (r *InitialExecutionRequests) ListPendingInitialExecutions(ctx context.Cont
 }
 
 func (r *InitialExecutionRequests) GetWorkPreparation(ctx context.Context, sessionID string) (query.WorkPreparation, bool, error) {
-	request, err := r.Get(ctx, sessionID)
-	if errors.Is(err, command.ErrInitialExecutionNotFound) {
-		return query.WorkPreparation{}, false, nil
-	}
-	if err != nil {
+	preparations, err := r.preparations(ctx, "i.id = ?", sessionID)
+	if err != nil || len(preparations) == 0 {
 		return query.WorkPreparation{}, false, err
 	}
-	return sessionPreparationFromRequest(request), true, nil
+	return preparations[0], true, nil
 }
 
 func (r *InitialExecutionRequests) ListSubmittedPreparations(ctx context.Context, after string, limit int) ([]query.WorkPreparation, error) {
-	var rows []initialExecutionRequestDO
-	if err := r.db.Context(ctx).Cols("id", "request_id", "request_data", "version").Where("submitted=1 AND id>? AND deleted_at=0", after).Asc("id").Limit(limit).Find(&rows); err != nil {
+	return r.preparations(ctx, "i.submitted = 1 AND i.id > ? ORDER BY i.id LIMIT ?", after, limit)
+}
+
+// preparations reads first-start preparations with whether their Work still
+// holds its initial task input.
+func (r *InitialExecutionRequests) preparations(ctx context.Context, condition string, args ...any) ([]query.WorkPreparation, error) {
+	var rows []struct {
+		ID               string `xorm:"id"`
+		RequestID        string `xorm:"request_id"`
+		RequestData      string `xorm:"request_data"`
+		Version          int    `xorm:"version"`
+		InitialTaskInput string `xorm:"initial_task_input"`
+	}
+	err := r.db.Context(ctx).SQL(`SELECT i.id, i.request_id, i.request_data, i.version, COALESCE(s.initial_task_input, '') AS initial_task_input
+ FROM agent_initial_execution_request i LEFT JOIN agent_session s ON s.id = i.id AND s.deleted_at = 0
+ WHERE i.deleted_at = 0 AND `+condition, args...).Find(&rows)
+	if err != nil {
 		return nil, oops.Wrap(err)
 	}
 	result := make([]query.WorkPreparation, 0, len(rows))
 	for _, row := range rows {
-		request, err := initialExecutionRequestFromDO(row)
+		request, err := initialExecutionRequestFromDO(initialExecutionRequestDO{ID: row.ID, RequestID: row.RequestID, RequestData: row.RequestData, Version: row.Version})
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, sessionPreparationFromRequest(request))
+		result = append(result, sessionPreparationFromRequest(request, row.InitialTaskInput == ""))
 	}
 	return result, nil
 }

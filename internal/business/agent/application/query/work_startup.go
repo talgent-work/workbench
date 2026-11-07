@@ -6,9 +6,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 )
 
-// WorkStartup reports application-owned request facts, not Session lifecycle.
-// CreationPending includes a later explicit request before its initial-input
-// handoff; the preceding rejected initial request alone cannot prove quiescence.
+// WorkStartup reports first-start request facts, not Session lifecycle.
+// CreationPending reports that the Work still holds its initial task input,
+// not yet handed off to its input buffer.
 type WorkStartup struct {
 	ContinuationRequestID      string
 	ContinuationPending        bool

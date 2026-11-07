@@ -4,6 +4,7 @@ package execution
 
 import (
 	"context"
+	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -83,7 +84,7 @@ func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx c
 	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: uuid.NewString(), HomeBinding: definition.HomeBinding, Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, requests)
 	require.NoError(t, err)
 	startID := uuid.NewString()
-	require.NoError(t, f.works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "lifecycle-owner", DefinitionVersion: definition.Version, RequestID: startID}))
+	require.NoError(t, f.works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "lifecycle-owner", DefinitionVersion: definition.Version, Request: agentquery.StartRequest{ID: startID, Kind: agentquery.StartKindStart, WorkID: work.ID}}))
 	require.NoError(t, requests.Send(ctx))
 	require.NoError(t, submitPending(ctx, f.provisioning))
 	return work, startID

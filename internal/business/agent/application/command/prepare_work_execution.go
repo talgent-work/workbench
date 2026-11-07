@@ -14,15 +14,14 @@ import (
 
 type PrepareWorkExecutionHandler struct {
 	models        query.ModelConfigurations
-	creations     WorkCreationReader
 	requests      InitialExecutionRequests
 	sessions      domain.AgentWorkRepository
 	authorization access.WorkAuthorizer
 	execution     domain.ExecutionPort
 }
 
-func NewPrepareWorkExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort, creations WorkCreationReader, models query.ModelConfigurations) *PrepareWorkExecutionHandler {
-	return &PrepareWorkExecutionHandler{models: models, creations: creations, requests: requests, sessions: sessions, authorization: authorization, execution: execution}
+func NewPrepareWorkExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort, models query.ModelConfigurations) *PrepareWorkExecutionHandler {
+	return &PrepareWorkExecutionHandler{models: models, requests: requests, sessions: sessions, authorization: authorization, execution: execution}
 }
 
 func (h *PrepareWorkExecutionHandler) Handle(ctx context.Context, input PrepareWorkExecution) (string, error) {
@@ -50,10 +49,9 @@ func (h *PrepareWorkExecutionHandler) Handle(ctx context.Context, input PrepareW
 	// only when its immutable preparation and input content still match.
 	matched := input
 	matched.RequestID, matched.Input.ID = request.RequestID, request.Input.ID
-	// The creation prerequisite and correlation belong to the retained
-	// original request; a caller retrying the public preparation operation
-	// never selects them.
-	matched.CreationRequestID, matched.WorkspaceReference = request.CreationRequestID, request.WorkspaceReference
+	// The creation correlation belongs to the retained original request; a
+	// caller retrying the public preparation operation never selects it.
+	matched.WorkspaceReference = request.WorkspaceReference
 	if !reflect.DeepEqual(request.PrepareWorkExecution, matched) {
 		return "", ErrInitialExecutionConflict
 	}
@@ -61,9 +59,6 @@ func (h *PrepareWorkExecutionHandler) Handle(ctx context.Context, input PrepareW
 }
 
 func (h *PrepareWorkExecutionHandler) advance(ctx context.Context, request InitialExecutionRequest) (string, error) {
-	if err := h.requireCreationConfirmation(ctx, request); err != nil {
-		return "", err
-	}
 	if request.Rejected {
 		return "", ErrInitialExecutionRejected
 	}
@@ -108,26 +103,6 @@ func (h *PrepareWorkExecutionHandler) advance(ctx context.Context, request Initi
 	}
 
 	return request.WorkID, nil
-}
-
-func (h *PrepareWorkExecutionHandler) requireCreationConfirmation(ctx context.Context, request InitialExecutionRequest) error {
-	if request.CreationRequestID == "" {
-		return nil
-	}
-	creation, err := h.creations.GetWorkCreation(ctx, request.CreationRequestID)
-	if err != nil {
-		return err
-	}
-	if creation.Canceled {
-		return ErrWorkCreationCanceled
-	}
-	if creation.WorkID != request.WorkID {
-		return ErrWorkCreationConflict
-	}
-	if !creation.BindingConfirmed {
-		return ErrInitialExecutionPending
-	}
-	return nil
 }
 
 func (h *PrepareWorkExecutionHandler) reject(ctx context.Context, request InitialExecutionRequest, cause error) (string, error) {

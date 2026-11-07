@@ -20,7 +20,7 @@ func TestPreparationUsesOnlyRetainedCreationRequest(t *testing.T) {
 	_, sessions := startupStores(t)
 	store := retainedPreparation(sessions)
 	port := &startupPort{}
-	handler := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, port, nil, agentquery.ModelConfigurations{})
+	handler := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, port, agentquery.ModelConfigurations{})
 	input := store.request.PrepareWorkExecution
 	unsupported := input
 	unsupported.ThinkingLevel = "not-a-harness-level"
@@ -50,7 +50,7 @@ func TestPreparationCannotInventInitialRequest(t *testing.T) {
 	_, sessions := startupStores(t)
 	input := retainedPreparation(sessions).request.PrepareWorkExecution
 	port := &startupPort{}
-	handler := command.NewPrepareWorkExecutionHandler(&initialRequestStore{}, sessions, sessionAccess{}, port, nil, agentquery.ModelConfigurations{})
+	handler := command.NewPrepareWorkExecutionHandler(&initialRequestStore{}, sessions, sessionAccess{}, port, agentquery.ModelConfigurations{})
 	_, err := handler.Handle(t.Context(), input)
 	require.ErrorIs(t, err, command.ErrInitialExecutionNotFound)
 	require.Zero(t, port.calls)
@@ -63,7 +63,7 @@ func TestPreparationForClosedSessionDoesNotAcquireResources(t *testing.T) {
 	require.NoError(t, sessions.session.Close(context.Background(), "already-closed", domain.ClosureFacts{}, &startupPort{}))
 	store := retainedPreparation(sessions)
 	port := &startupPort{}
-	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, port, nil, agentquery.ModelConfigurations{})
+	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, port, agentquery.ModelConfigurations{})
 	_, err := prepare.Handle(t.Context(), store.request.PrepareWorkExecution)
 	require.ErrorIs(t, err, domain.ErrWorkTransition)
 	require.Equal(t, domain.WorkClosed, sessions.session.State)
@@ -71,8 +71,7 @@ func TestPreparationForClosedSessionDoesNotAcquireResources(t *testing.T) {
 }
 
 type initialRequestStore struct {
-	request         command.InitialExecutionRequest
-	deliverySaveErr error
+	request command.InitialExecutionRequest
 }
 
 func (s *initialRequestStore) Get(context.Context, string) (command.InitialExecutionRequest, error) {
@@ -82,9 +81,6 @@ func (s *initialRequestStore) Get(context.Context, string) (command.InitialExecu
 	return s.request, nil
 }
 func (s *initialRequestStore) Save(_ context.Context, request command.InitialExecutionRequest) error {
-	if request.InputBuffered && s.deliverySaveErr != nil {
-		return s.deliverySaveErr
-	}
 	if s.request.Version != request.Version {
 		return domain.ErrConcurrentModification
 	}

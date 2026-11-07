@@ -10,15 +10,17 @@ import (
 )
 
 // feedbackSessionStore holds one Work and its start-request records, standing
-// in for the AgentWork repository and its start admissions.
+// in for the AgentWork repository and its request records.
 type feedbackSessionStore struct {
 	command.AgentWorkRepository
 	mu       sync.Mutex
 	session  *domain.AgentWork
 	saves    int
 	saveErr  error
-	starts   map[string]query.AdmittedStart
-	canceled map[string]bool
+	requests map[string]query.StartRequest
+	// commitErr fails the next commit of a start request once, after its
+	// Work and record were not written.
+	commitErr error
 }
 
 var _ command.AgentWorkRepository = (*feedbackSessionStore)(nil)
@@ -40,43 +42,63 @@ func (s *feedbackSessionStore) Save(_ context.Context, session *domain.AgentWork
 	return nil
 }
 
-func (s *feedbackSessionStore) FindAdmittedStart(_ context.Context, requestID string) (query.AdmittedStart, bool, error) {
+func (s *feedbackSessionStore) FindStartRequest(_ context.Context, requestID string) (query.StartRequest, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	start, found := s.starts[requestID]
-	return start, found, nil
+	record, found := s.requests[requestID]
+	return record, found, nil
 }
 
-func (s *feedbackSessionStore) CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error {
-	s.mu.Lock()
-	canceled := s.canceled[requestID]
-	s.mu.Unlock()
-	if canceled {
-		return command.ErrStartRequestCanceled
-	}
-	if err := s.Save(ctx, work); err != nil {
-		return err
-	}
+// record retains a request unless its identity is recorded, as the first
+// writer decides it, and answers the retained record.
+func (s *feedbackSessionStore) record(request query.StartRequest) query.StartRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.starts == nil {
-		s.starts = map[string]query.AdmittedStart{}
+	if s.requests == nil {
+		s.requests = map[string]query.StartRequest{}
 	}
-	s.starts[requestID] = start
+	if retained, found := s.requests[request.ID]; found {
+		return retained
+	}
+	s.requests[request.ID] = request
+	return request
+}
+
+func (s *feedbackSessionStore) forget(requestID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.requests, requestID)
+}
+
+func (s *feedbackSessionStore) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
+	if err := s.failCommit(); err != nil {
+		return err
+	}
+	if err := command.AnswerRetained(s.record(request), request); err != nil {
+		return err
+	}
+	if err := s.Save(ctx, work); err != nil {
+		s.forget(request.ID)
+		return err
+	}
 	return nil
 }
 
-func (s *feedbackSessionStore) CancelStart(_ context.Context, _ string, requestID string) (bool, error) {
+func (s *feedbackSessionStore) failCommit() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, admitted := s.starts[requestID]; admitted {
-		return false, nil
-	}
-	if s.canceled == nil {
-		s.canceled = map[string]bool{}
-	}
-	s.canceled[requestID] = true
-	return true, nil
+	err := s.commitErr
+	s.commitErr = nil
+	return err
+}
+
+func (s *feedbackSessionStore) CancelStart(_ context.Context, workID string, requestID string) (bool, error) {
+	retained := s.record(query.StartRequest{ID: requestID, WorkID: workID, Canceled: true})
+	return retained.Canceled, nil
+}
+
+func (s *feedbackSessionStore) RecordCreation(_ context.Context, request query.StartRequest) (query.StartRequest, error) {
+	return s.record(request), nil
 }
 
 // observedProcess supplies a fixed current observation of the Work's process.

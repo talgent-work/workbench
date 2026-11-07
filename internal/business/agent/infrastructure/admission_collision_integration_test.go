@@ -67,7 +67,7 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	var starts atomic.Int32
 	factory := startupExecutionPort{onStart: func(domain.StartExecutionRequest) error { starts.Add(1); return nil }}
 	barrier := admissionSaveBarrier{AgentWorkRepository: sessions, arrived: make(chan struct{}, 2), proceed: make(chan struct{})}
-	create := command.NewCreateWorkHandler(time.Now, agents, barrier, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory)
+	create := command.NewCreateWorkHandler(time.Now, agents, barrier, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory, creationPreparation(db, factory, creationModels()))
 	type result struct {
 		id  string
 		err error
@@ -99,8 +99,7 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, winner.State)
 	require.True(t, winner.HoldsProcess())
-	accepted, found, err := sessions.FindAdmittedStart(ctx, requestID)
-	require.NoError(t, err)
+	accepted, found := admittedStart(t, sessions, requestID)
 	require.True(t, found)
 	require.Equal(t, agentquery.AdmittedStart{WorkID: winner.ID, Kind: agentquery.StartKindStart}, accepted)
 	loserCreation := creations[0]
@@ -126,7 +125,7 @@ func TestConcurrentIndependentDefinitionsAdmitTheirFirstWorks(t *testing.T) {
 	defer cancel()
 	barrier := admissionSaveBarrier{AgentWorkRepository: works, arrived: make(chan struct{}, 2), proceed: make(chan struct{})}
 	execution := &creationExecution{db: db}
-	create := command.NewCreateWorkHandler(time.Now, definitions, barrier, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), execution)
+	create := command.NewCreateWorkHandler(time.Now, definitions, barrier, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), execution, creationPreparation(db, execution, creationModels()))
 	type result struct {
 		id  string
 		err error

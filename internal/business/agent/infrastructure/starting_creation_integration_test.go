@@ -29,14 +29,20 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	catalog := &creationCatalog{}
 	capacity := &initialCreationCapacity{err: domain.ErrCapacityUnavailable}
 	execution := &creationExecution{db: db}
-	handler := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), execution)
+	handler := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), execution, creationPreparation(db, execution, creationModels()))
 	request := creationInput(agent.ID, "first")
 	workID, err := handler.Handle(t.Context(), request)
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
 	require.Empty(t, workID)
-	assertCreationRows(t, db, 0)
 	require.Zero(t, execution.starts.Load())
+	// The refusal settles the request identity and creates no Work.
+	assertCreationRows(t, db, 0, 1)
+	_, found := admittedStart(t, works, request.RequestID)
+	require.False(t, found)
 	capacity.err = nil
+	_, err = handler.Handle(t.Context(), request)
+	require.ErrorIs(t, err, command.ErrWorkCreationCanceled, "a settled refusal is not retried")
+	request.RequestID = uuid.NewString()
 	workID, err = handler.Handle(t.Context(), request)
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), workID)
@@ -44,12 +50,11 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	require.Equal(t, domain.WorkStarting, work.State)
 	require.True(t, work.HoldsProcess())
 	require.Equal(t, "1", work.CapabilitySnapshot.Plugins[0].Release.Version)
-	admitted, found, err := works.FindAdmittedStart(t.Context(), request.RequestID)
-	require.NoError(t, err)
+	admitted, found := admittedStart(t, works, request.RequestID)
 	require.True(t, found)
 	require.Equal(t, query.AdmittedStart{WorkID: workID, Kind: query.StartKindStart}, admitted)
 	require.EqualValues(t, 1, execution.starts.Load())
-	assertCreationRows(t, db, 1)
+	assertCreationRows(t, db, 1, 2)
 	// Response-loss recovery is lookup-only even if catalog and capacity are down.
 	catalog.unavailable = true
 	capacity.err = domain.ErrCapacityUnavailable
@@ -62,13 +67,13 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	other.RequestID = request.RequestID
 	_, err = handler.Handle(t.Context(), other)
 	require.ErrorIs(t, err, command.ErrStartRequestConflict)
-	assertCreationRows(t, db, 1)
+	assertCreationRows(t, db, 1, 2)
 }
 
 func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 	db, definitions, works, agent := startingCreationDatabase(t)
 	port := &creationExecution{db: db}
-	winner := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), port)
+	winner := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), port, creationPreparation(db, port, creationModels()))
 	winning := creationInput(agent.ID, "same-subject")
 	var winnerID string
 	// The winner commits the same Subject after the loser's lookup, and the
@@ -78,11 +83,11 @@ func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 		winnerID, err = winner.Handle(t.Context(), winning)
 		return err
 	}, err: domain.ErrCapacityUnavailable}
-	loser := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(capacity), port)
+	loser := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(capacity), port, creationPreparation(db, port, creationModels()))
 	reused, err := loser.Handle(t.Context(), creationInput(agent.ID, "same-subject"))
 	require.NoError(t, err)
 	require.Equal(t, winnerID, reused)
-	assertCreationRows(t, db, 1)
+	assertCreationRows(t, db, 1, 2) // the reuse is recorded on the loser's request identity
 	require.EqualValues(t, 1, port.starts.Load(), "reuse cannot send another initial startup")
 }
 
@@ -123,9 +128,9 @@ func creationInput(agentID, reference string) command.CreateWork {
 func creationModels() query.ModelConfigurations {
 	return query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "fixture"}})
 }
-func assertCreationRows(t *testing.T, db *xorm.Engine, want int) {
+func assertCreationRows(t *testing.T, db *xorm.Engine, works, requests int) {
 	t.Helper()
-	for _, table := range []string{"agent_session", "agent_start_request"} {
+	for table, want := range map[string]int{"agent_session": works, "agent_start_request": requests} {
 		var counts []int
 		require.NoError(t, db.SQL("SELECT COUNT(*) FROM "+table).Find(&counts))
 		require.Equal(t, []int{want}, counts, table)

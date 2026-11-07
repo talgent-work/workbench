@@ -32,8 +32,7 @@ func (r *rpcAgents) Save(_ context.Context, a *domain.AgentDefinition) error {
 type rpcSessions struct {
 	command.AgentWorkRepository
 	items    map[string]*domain.AgentWork
-	starts   map[string]query.AdmittedStart
-	canceled map[string]bool
+	requests map[string]query.StartRequest
 	// events receives the Work's Domain Events once a change is saved, as the
 	// production repository dispatches them.
 	events domainevent.Dispatcher
@@ -100,7 +99,13 @@ func (p *rpcExecution) ReclaimCompute(_ context.Context, r string) error {
 func (*rpcExecution) RetireFencedRun(context.Context, string) error { return nil }
 
 func (r *rpcSessions) RegisterWork(ctx context.Context, s *domain.AgentWork, registration command.WorkRegistration) error {
-	return r.CommitStart(ctx, s, query.AdmittedStart{WorkID: s.ID, Kind: query.StartKindStart}, registration.RequestID)
+	if retained := r.record(registration.Request); retained != registration.Request {
+		if retained.Canceled {
+			return command.ErrWorkCreationCanceled
+		}
+		return command.ErrStartRequestConflict
+	}
+	return r.Save(ctx, s)
 }
 
 func (p *rpcExecution) AcceptResponse(_ context.Context, _ string, response command.InteractionResponse) error {
@@ -108,34 +113,48 @@ func (p *rpcExecution) AcceptResponse(_ context.Context, _ string, response comm
 	return nil
 }
 
-func (r *rpcSessions) FindAdmittedStart(_ context.Context, requestID string) (query.AdmittedStart, bool, error) {
-	start, found := r.starts[requestID]
-	return start, found, nil
+func (r *rpcSessions) FindStartRequest(_ context.Context, requestID string) (query.StartRequest, bool, error) {
+	record, found := r.requests[requestID]
+	return record, found, nil
 }
 
-func (r *rpcSessions) CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error {
-	if r.canceled[requestID] {
-		return command.ErrStartRequestCanceled
+// record retains a request unless its identity is recorded, as the first
+// writer decides it, and answers the retained record.
+func (r *rpcSessions) record(request query.StartRequest) query.StartRequest {
+	if retained, found := r.requests[request.ID]; found {
+		return retained
 	}
-	if err := r.Save(ctx, work); err != nil {
+	if r.requests == nil {
+		r.requests = map[string]query.StartRequest{}
+	}
+	r.requests[request.ID] = request
+	return request
+}
+
+func (r *rpcSessions) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
+	if err := command.AnswerRetained(r.record(request), request); err != nil {
 		return err
 	}
-	if r.starts == nil {
-		r.starts = map[string]query.AdmittedStart{}
-	}
-	r.starts[requestID] = start
-	return nil
+	return r.Save(ctx, work)
 }
 
-func (r *rpcSessions) CancelStart(_ context.Context, _ string, requestID string) (bool, error) {
-	if _, admitted := r.starts[requestID]; admitted {
-		return false, nil
+func (r *rpcSessions) CancelStart(_ context.Context, workID string, requestID string) (bool, error) {
+	return r.record(query.StartRequest{ID: requestID, WorkID: workID, Canceled: true}).Canceled, nil
+}
+
+func (r *rpcSessions) RecordCreation(_ context.Context, request query.StartRequest) (query.StartRequest, error) {
+	return r.record(request), nil
+}
+
+// admitted are the start requests committed with a start.
+func (r *rpcSessions) admitted() []query.StartRequest {
+	var admitted []query.StartRequest
+	for _, record := range r.requests {
+		if record.Admitted() {
+			admitted = append(admitted, record)
+		}
 	}
-	if r.canceled == nil {
-		r.canceled = map[string]bool{}
-	}
-	r.canceled[requestID] = true
-	return true, nil
+	return admitted
 }
 
 type rpcProcesses struct{ observation domain.ProcessObservation }
@@ -171,10 +190,6 @@ func (r *rpcSessions) FindWork(_ context.Context, agentID string, subject domain
 	return nil, nil
 }
 
-type rpcInitialInputs struct{}
-
-func (rpcInitialInputs) Get(context.Context, string) (command.InitialExecutionRequest, error) {
-	return command.InitialExecutionRequest{}, command.ErrInitialExecutionNotFound
-}
+func (*rpcExecution) HandOffInitialTaskInput(context.Context, string) error { return nil }
 
 func (*rpcExecution) CancelRunningTurn(context.Context, string) error { return nil }

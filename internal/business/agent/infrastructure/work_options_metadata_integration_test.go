@@ -81,7 +81,7 @@ func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T)
 	require.Len(t, options.Plugins, 1)
 	require.Equal(t, "runtime", options.Plugins[0].Name)
 	require.Equal(t, map[string][2]bool{"talgent": {true, true}, "github": {false, false}}, connectorOptions(options), "another caller may only add GitHub")
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, access, creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), &creationExecution{db: db})
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, access, creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), &creationExecution{db: db}, creationPreparation(db, &creationExecution{db: db}, creationModels()))
 	id, err := create.Handle(t.Context(), creationInput(definition.ID, "retained"))
 	require.NoError(t, err)
 	catalog.version = "2"

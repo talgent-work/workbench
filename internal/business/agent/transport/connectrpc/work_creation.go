@@ -2,11 +2,9 @@ package connectrpc
 
 import (
 	"context"
-	"errors"
 
 	"github.com/google/uuid"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 
@@ -17,18 +15,18 @@ func (h *AgentHandler) GetWorkCreation(ctx context.Context, request *agentprivat
 	if uuid.Validate(request.GetRequestId()) != nil {
 		return nil, mapAgentError(query.ErrInvalidStartRequest)
 	}
-	outcome, err := h.application.Commands.CreateRequestedWork.Outcome(ctx, request.GetRequestId())
-	if errors.Is(err, command.ErrWorkCreationNotFound) {
-		return &agentprivatev1.GetWorkCreationResponse{Outcome: agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_UNKNOWN}, nil
-	}
+	outcome, found, err := h.application.Commands.CreateWork.Outcome(ctx, request.GetRequestId())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	response := &agentprivatev1.GetWorkCreationResponse{Outcome: agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_PENDING}
+	// A creation is recorded only once it committed or was settled, so an
+	// identity without a record is one Agent has not received or answered.
+	response := &agentprivatev1.GetWorkCreationResponse{Outcome: agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_UNKNOWN}
 	switch {
+	case !found:
 	case outcome.Canceled:
 		response.Outcome = agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_CANCELLED
-	case outcome.BindingConfirmed:
+	default:
 		response.Outcome, response.WorkId = agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_CREATED, outcome.WorkID
 	}
 	return response, nil
@@ -41,7 +39,7 @@ func (h *AgentHandler) CancelWorkCreation(ctx context.Context, request *agentpri
 	if uuid.Validate(request.GetRequestId()) != nil {
 		return nil, mapAgentError(query.ErrInvalidStartRequest)
 	}
-	workID, err := h.application.Commands.CreateRequestedWork.Cancel(ctx, request.GetRequestId())
+	workID, err := h.application.Commands.CreateWork.Cancel(ctx, request.GetRequestId())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}

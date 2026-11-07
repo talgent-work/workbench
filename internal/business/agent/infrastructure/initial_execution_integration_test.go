@@ -28,16 +28,12 @@ func TestInitialExecutionReceiptPreservesInputAndRestartAcrossReconnect(t *testi
 	db := f.db
 	t.Cleanup(func() { _ = db.Close() })
 	factory := executionPort{}
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory)
-	id, err := create.Handle(ctx, f.request.Creation)
-	require.NoError(t, err)
-	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id))
-	require.NoError(t, f.requests.CompleteWorkCreation(ctx, f.request.ID))
+	id := f.committedCreation(t)
 	store := infrastructure.NewInitialExecutionRequests(db, time.Now)
 	reserved, err := store.Get(ctx, id)
 	require.NoError(t, err)
-	input := *f.request.Creation.InitialExecution
-	input.WorkID, input.WorkspaceReference = id, f.request.Creation.WorkspaceReference
+	input := *f.request.InitialExecution
+	input.WorkID, input.WorkspaceReference = id, f.request.WorkspaceReference
 	require.Equal(t, input, reserved.PrepareWorkExecution)
 	require.Equal(t, 1, reserved.Version)
 	require.True(t, reserved.Submitted, "first admission and original input commit together")
@@ -68,7 +64,7 @@ func TestInitialExecutionReceiptPreservesInputAndRestartAcrossReconnect(t *testi
 	require.Equal(t, input, retained.PrepareWorkExecution)
 	require.Equal(t, reserved.Checkouts, retained.Checkouts)
 	require.True(t, retained.Prepared)
-	prepare := command.NewPrepareWorkExecutionHandler(store, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), factory, infrastructure.NewWorkCreationRequests(db, time.Now), creationModels())
+	prepare := command.NewPrepareWorkExecutionHandler(store, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), factory, creationModels())
 	conflict := input
 	conflict.RequestID, conflict.Input.ID, conflict.Input.Text = uuid.NewString(), uuid.NewString(), "another task"
 	_, err = prepare.Handle(ctx, conflict)
@@ -96,11 +92,10 @@ func TestInitialExecutionReceiptPreservesInputAndRestartAcrossReconnect(t *testi
 	pending, err = store.ListPendingInitialExecutions(ctx, "", 100)
 	require.NoError(t, err)
 	require.Equal(t, []string{id}, pending)
-	next.InputBuffered = true
-	require.NoError(t, store.Save(ctx, next))
+	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 	pending, err = store.ListPendingInitialExecutions(ctx, "", 100)
 	require.NoError(t, err)
-	require.Equal(t, []string{id}, pending, "the first start still owes its checkout")
+	require.Equal(t, []string{id}, pending, "the first start still owes its checkout after its input is handed off")
 	if next, err = store.Get(ctx, id); err != nil {
 		t.Fatal(err)
 	}
@@ -127,9 +122,7 @@ func TestInitialExecutionReceiptPreservesInputAndRestartAcrossReconnect(t *testi
 func TestInitialExecutionCleanupPreservesOriginalInput(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := t.Context()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
-	id, err := create.Handle(ctx, f.request.Creation)
-	require.NoError(t, err)
+	id := f.committedCreation(t)
 	store := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
 	original, err := store.Get(ctx, id)
 	require.NoError(t, err)
@@ -170,7 +163,7 @@ func TestInitialExecutionCleanupPreservesOriginalInput(t *testing.T) {
 func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
 	ctx := t.Context()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}, creationPreparation(f.db, executionPort{}, creationModels()))
 	type result struct {
 		workID string
 		err    error
@@ -180,9 +173,8 @@ func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	start := make(chan struct{})
 	var group sync.WaitGroup
 	for i := range 4 {
-		creation := f.request.Creation
+		creation := f.request
 		input := *creation.InitialExecution
-		input.CreationRequestID = ""
 		input.RequestID, input.Input.ID, input.Input.Text = uuid.NewString(), uuid.NewString(), fmt.Sprintf("request-%d", i)
 		inputs[input.RequestID] = input
 		creation.RequestID, creation.InitialExecution = input.RequestID, &input
@@ -195,20 +187,24 @@ func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	close(start)
 	group.Wait()
 	close(results)
+	// One request establishes the Subject's Work; the others reuse it with
+	// another initial task input, which its first start refuses.
 	id := ""
 	for r := range results {
-		require.NoError(t, r.err)
-		if id == "" {
-			id = r.workID
+		if r.err != nil {
+			require.ErrorIs(t, r.err, command.ErrInitialExecutionConflict)
+			continue
 		}
-		require.Equal(t, id, r.workID)
+		require.Empty(t, id, "one request establishes the Work")
+		id = r.workID
 	}
+	require.NotEmpty(t, id)
 	store := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
 	retained, err := store.Get(ctx, id)
 	require.NoError(t, err)
 	expected, found := inputs[retained.RequestID]
 	require.True(t, found)
-	expected.WorkID, expected.WorkspaceReference = id, f.request.Creation.WorkspaceReference
+	expected.WorkID, expected.WorkspaceReference = id, f.request.WorkspaceReference
 	require.Equal(t, expected, retained.PrepareWorkExecution, "concurrent callers cannot mix input identity, body and selections")
 	rows, err := f.db.QueryString("SELECT id FROM agent_initial_execution_request WHERE deleted_at=0")
 	require.NoError(t, err)

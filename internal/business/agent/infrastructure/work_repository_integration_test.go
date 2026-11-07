@@ -4,6 +4,7 @@ package infrastructure_test
 
 import (
 	"context"
+	"github.com/google/uuid"
 	"testing"
 	"time"
 
@@ -29,8 +30,8 @@ func (creationConnections) ListAccessibleRepositories(_ context.Context, owner s
 func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
-		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
-	id, err := handler.Handle(t.Context(), f.request.Creation)
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}, creationPreparation(f.db, executionPort{}, creationModels()))
+	id, err := handler.Handle(t.Context(), f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
@@ -44,11 +45,21 @@ func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	require.Equal(t, want, work.RepositorySelection)
 	// A repository no longer reachable cannot stop reuse or change the original selection.
 	handler = command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
-		creationModels(), commandtest.StartCatalog(&creationCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(startupAuthority{}), executionPort{})
-	f.request.Creation.InitialExecution.Selections[0].BaseBranch = "changed"
-	reused, err := handler.Handle(t.Context(), f.request.Creation)
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(startupAuthority{}), executionPort{}, creationPreparation(f.db, executionPort{}, creationModels()))
+	reuse := f.request
+	initial := *f.request.InitialExecution
+	initial.RequestID, initial.Input.ID = uuid.NewString(), uuid.NewString()
+	reuse.RequestID, reuse.InitialExecution = initial.RequestID, &initial
+	reused, err := handler.Handle(t.Context(), reuse)
 	require.NoError(t, err)
 	require.Equal(t, id, reused)
+	// The original request identity cannot be repeated with another selection.
+	changed := *f.request.InitialExecution
+	changed.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "changed"}}
+	repeat := f.request
+	repeat.InitialExecution = &changed
+	_, err = handler.Handle(t.Context(), repeat)
+	require.ErrorIs(t, err, command.ErrWorkCreationConflict)
 	work, err = f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, want, work.RepositorySelection)

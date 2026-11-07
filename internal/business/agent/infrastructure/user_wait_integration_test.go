@@ -46,7 +46,7 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 		require.Equal(t, requestID, durable.StopRequestReference, "request must be committed before external stop")
 	}}
 	factory := port
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID, WorkspaceReference: "workspace"})
+	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory, creationPreparation(db, factory, creationModels())).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID, WorkspaceReference: "workspace"})
 	require.NoError(t, err)
 	feedback := func(kind command.ExecutionFeedbackKind, interaction, stop string) error {
 		return command.NewApplyExecutionFeedbackHandler(clock, sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}).Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id, InteractionID: interaction, ObservationSequence: 1000, RequiredInteractionIDs: []string{interaction}})
@@ -73,14 +73,14 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	require.NoError(t, err)
 	require.Contains(t, ids, id, "existing production recovery scan includes the waiting execution")
 	recover := func() error {
-		return command.NewRecoverWorkHandler(clock, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, id)
+		return command.NewRecoverWorkHandler(clock, sessions, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil).Handle(ctx, id)
 	}
 	now = origin.Add(30*time.Minute - time.Millisecond)
 	require.NoError(t, recover())
 	require.Empty(t, port.stops)
 	now = origin.Add(30 * time.Minute)
 	// An optimistic-lock rejection must not deliver a stop.
-	err = command.NewRecoverWorkHandler(clock, rejectedTimeoutSave{sessions}, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, id)
+	err = command.NewRecoverWorkHandler(clock, rejectedTimeoutSave{sessions}, factory, &commandtest.InputBuffer{}, command.NewInputAcceptance(rejectedTimeoutSave{sessions}, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil, nil).Handle(ctx, id)
 	require.ErrorIs(t, err, domain.ErrConcurrentModification)
 	require.Empty(t, port.stops)
 	// The timeout admits the stop and cancels the paused Turn first; the

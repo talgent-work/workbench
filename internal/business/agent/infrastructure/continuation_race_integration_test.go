@@ -28,8 +28,8 @@ type admissionReadAfterWinner struct {
 	completeWinner func()
 }
 
-func (r *admissionReadAfterWinner) FindAdmittedStart(ctx context.Context, requestID string) (agentquery.AdmittedStart, bool, error) {
-	result, found, err := r.AgentWorkRepository.FindAdmittedStart(ctx, requestID)
+func (r *admissionReadAfterWinner) FindStartRequest(ctx context.Context, requestID string) (agentquery.StartRequest, bool, error) {
+	result, found, err := r.AgentWorkRepository.FindStartRequest(ctx, requestID)
 	r.lookups++
 	if err == nil && !found && r.lookups == 2 {
 		r.completeWinner()
@@ -56,8 +56,7 @@ func TestConcurrentContinuationRecognizesAlreadyResolvedAdmission(t *testing.T) 
 	require.True(t, found)
 	require.True(t, retained.Resolved)
 	require.Empty(t, retained.Rejection)
-	admitted, found, err := f.sessions.FindAdmittedStart(ctx, request.RequestID)
-	require.NoError(t, err)
+	admitted, found := admittedStart(t, f.sessions, request.RequestID)
 	require.True(t, found)
 	require.Equal(t, id, admitted.WorkID)
 }

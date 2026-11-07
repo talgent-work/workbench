@@ -18,8 +18,8 @@ func TestControlDeniesUnauthorizedCallerBeforeAccessingSession(t *testing.T) {
 	access := sessionAccess{err: denied}
 	request := command.WorkControl{SubjectID: "other-user", WorkID: "private-session", RequestID: "stop"}
 	require.ErrorIs(t, command.NewStopWorkHandler(nil, access, nil).Handle(context.Background(), request), denied)
-	require.ErrorIs(t, command.NewCloseWorkHandler(nil, access, nil, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request), denied)
-	require.ErrorIs(t, deliveryErr(command.NewDeliverWorkInputHandler(nil, access, nil, nil).Deliver(context.Background(), command.DeliverWorkInput{SubjectID: "other-user", WorkID: "private-session", Input: command.ExecutionInput{Text: "message"}})), denied)
+	require.ErrorIs(t, command.NewCloseWorkHandler(nil, access, nil, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request), denied)
+	require.ErrorIs(t, deliveryErr(command.NewDeliverWorkInputHandler(nil, access, nil).Deliver(context.Background(), command.DeliverWorkInput{SubjectID: "other-user", WorkID: "private-session", Input: command.ExecutionInput{Text: "message"}})), denied)
 	require.ErrorIs(t, command.NewRespondWorkInteractionHandler(nil, access, nil).Handle(context.Background(), command.RespondWorkInteraction{SubjectID: "other-user", WorkID: "private-session"}), denied)
 }
 
@@ -39,7 +39,7 @@ func TestCloseAcceptanceDoesNotWaitForExecutionControl(t *testing.T) {
 	session := stoppingSession(t)
 	store := &feedbackSessionStore{session: session}
 	port := observingControlPort{onStop: func() { t.Fatal("closure acceptance must not call the executor") }}
-	err := command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
+	err := command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopping, store.session.State, "a stopping Work closes once it has stopped")
 	require.Equal(t, "close", store.session.CloseRequestReference)
@@ -73,7 +73,7 @@ func TestControlPersistsBeforeSendingToExecutor(t *testing.T) {
 			}}
 			request := command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop"}
 			if closeSession {
-				require.NoError(t, command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request))
+				require.NoError(t, command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request))
 				require.Zero(t, calls, "permanent close is delivered by recovery")
 			} else {
 				require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), request))
@@ -89,7 +89,7 @@ func TestControlSaveFailureDoesNotStopExecutor(t *testing.T) {
 	store := &feedbackSessionStore{session: session, saveErr: failure}
 	sent := false
 	port := observingControlPort{onStop: func() { sent = true }}
-	err := command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
+	err := command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
 	require.ErrorIs(t, err, failure)
 	require.False(t, sent, "rejected persistence must not change the external execution")
 	require.Equal(t, domain.WorkStopping, store.session.State)
