@@ -9,7 +9,8 @@ import (
 // ClosureFacts are current application-owned obligations. Their observation
 // and the Close commit share the input and execution admission order.
 type ClosureFacts struct {
-	// InputPending: accepted input still awaits processing.
+	// InputPending: accepted input still awaits processing. Only a running
+	// Work's close waits for it; a stopped or failed Work's close drops it.
 	InputPending bool
 	// StartupPending: the first start still owes its initial task input.
 	StartupPending bool
@@ -49,13 +50,8 @@ func (s *AgentWork) Close(ctx context.Context, requestID string, facts ClosureFa
 		if facts.ContinuationPending {
 			return ErrWorkTransition
 		}
-		if facts.InputPending && (s.HarnessProcess == nil || !s.HarnessProcess.ComputeReclaimed) {
-			// A kept close waits for the compute release; a new one is refused.
-			if s.CloseRequestReference != "" {
-				return nil
-			}
-			return ErrInputPending
-		}
+		// Buffered input never holds back a stopped or failed Work's close:
+		// entering Closing drops it, whether or not compute is released.
 		s.close(requestID)
 		return nil
 	case WorkWorking:
