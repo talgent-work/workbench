@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	storageeventsv1 "github.com/talgent-work/workbench/gen/go/talgent/storage/events/v1"
+	storageintegrationv1 "github.com/talgent-work/contracts/gen/storage/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
@@ -20,12 +20,12 @@ func TestFileChangeMessageNamesTheChange(t *testing.T) {
 		Operation: application.FileRenamed, Writer: person, OccurredAt: at,
 	})
 	if msg.GetEventId() == "" || !msg.GetOccurredAt().AsTime().Equal(at) || msg.GetOwner() != "owner-1" ||
-		msg.GetKind() != storageeventsv1.FileKind_FILE_KIND_ATTACHMENT || msg.GetName() != "final.md" || msg.GetPreviousName() != "brief.md" ||
-		msg.GetOperation() != storageeventsv1.FileOperation_FILE_OPERATION_RENAMED || msg.GetActorUserId() != "user-1" || msg.GetActorWorkId() != "" {
+		msg.GetKind() != storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT || msg.GetName() != "final.md" || msg.GetPreviousName() != "brief.md" ||
+		msg.GetOperation() != storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED || msg.GetActorUserId() != "user-1" || msg.GetActorWorkId() != "" {
 		t.Fatalf("message = %v", msg)
 	}
 	artifact := fileChangeMessage(application.FileChange{Kind: domain.FileKindArtifact, Operation: application.FileDeleted, Writer: work, OccurredAt: at})
-	if artifact.GetKind() != storageeventsv1.FileKind_FILE_KIND_ARTIFACT || artifact.GetOperation() != storageeventsv1.FileOperation_FILE_OPERATION_DELETED ||
+	if artifact.GetKind() != storageintegrationv1.FileKind_FILE_KIND_ARTIFACT || artifact.GetOperation() != storageintegrationv1.FileOperation_FILE_OPERATION_DELETED ||
 		artifact.GetActorWorkId() != "work-1" || artifact.GetEventId() == msg.GetEventId() {
 		t.Fatalf("artifact message = %v", artifact)
 	}

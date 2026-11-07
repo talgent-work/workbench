@@ -2,10 +2,9 @@ package connectrpc
 
 import (
 	"crypto/subtle"
-	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 )
 
 // controlToken admits the trusted platform services calling Computer's
@@ -14,7 +13,7 @@ type controlToken string
 
 func (t controlToken) authenticate(header string) error {
 	if strings.TrimSpace(string(t)) == "" || subtle.ConstantTimeCompare([]byte(header), []byte("Bearer "+string(t))) != 1 {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("computer: control authentication required"))
+		return connect.NewError(connect.CodeUnauthenticated, "computer: control authentication required")
 	}
 	return nil
 }

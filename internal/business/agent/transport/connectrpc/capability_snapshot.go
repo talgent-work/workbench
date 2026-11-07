@@ -3,8 +3,8 @@ package connectrpc
 import (
 	"slices"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 	"google.golang.org/protobuf/types/known/structpb"

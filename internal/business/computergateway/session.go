@@ -9,12 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 
-	computerprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1/computerprivatev1connect"
+	computerprivatev1 "github.com/talgent-work/contracts/gen/computer/private/v1"
+	"github.com/talgent-work/contracts/gen/computer/private/v1/computerprivatev1connect"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
 )
 
@@ -142,7 +141,7 @@ func (g *Gateway) ServeConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), callTimeout)
-	authenticated, err := g.computers.Authenticate(ctx, connect.NewRequest(&computerprivatev1.AuthenticateRequest{Credential: credential}))
+	authenticated, err := g.computers.Authenticate(ctx, &computerprivatev1.AuthenticateRequest{Credential: credential})
 	cancel()
 	// Only a refusal Computer answers turns the machine away for good; an
 	// error leaves the credential unchecked, and the machine retries.
@@ -151,7 +150,7 @@ func (g *Gateway) ServeConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "computer unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	switch authenticated.Msg.GetRefusal() {
+	switch authenticated.GetRefusal() {
 	case computerprivatev1.CredentialRefusal_CREDENTIAL_REFUSAL_UNSPECIFIED:
 	case computerprivatev1.CredentialRefusal_CREDENTIAL_REFUSAL_COMPUTER_REMOVED:
 		http.Error(w, "computer removed", http.StatusForbidden)
@@ -160,7 +159,7 @@ func (g *Gateway) ServeConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "computer credential rejected", http.StatusUnauthorized)
 		return
 	default:
-		g.logger.WarnContext(r.Context(), "computer gateway: authentication unavailable", "refusal", authenticated.Msg.GetRefusal().String())
+		g.logger.WarnContext(r.Context(), "computer gateway: authentication unavailable", "refusal", authenticated.GetRefusal().String())
 		http.Error(w, "computer unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -175,7 +174,7 @@ func (g *Gateway) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	defer g.untrack(conn)
 	conn.SetReadLimit(machineReadLimit)
 	g.hold(context.WithoutCancel(r.Context()), conn, machine{
-		computerID: authenticated.Msg.GetComputerId(), credential: credential, rotationDue: authenticated.Msg.GetRotationDue(),
+		computerID: authenticated.GetComputerId(), credential: credential, rotationDue: authenticated.GetRotationDue(),
 		rotates: strings.TrimSpace(r.Header.Get(HeaderCredentialRotation)) == "supported", report: report,
 	})
 }
@@ -300,11 +299,11 @@ type machineTold struct {
 func (g *Gateway) reportReachable(ctx context.Context, computerID string, report machineReport) (machineTold, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	response, err := g.computers.ReportReachable(ctx, connect.NewRequest(&computerprivatev1.ReportReachableRequest{ComputerId: computerID, Versions: report.versions, ClaudeCodeSandbox: report.sandbox}))
+	response, err := g.computers.ReportReachable(ctx, &computerprivatev1.ReportReachableRequest{ComputerId: computerID, Versions: report.versions, ClaudeCodeSandbox: report.sandbox})
 	if err != nil {
 		return machineTold{}, err
 	}
-	return machineTold{minimum: response.Msg.GetMinimumVersion(), reconciles: response.Msg.GetReconciles()}, nil
+	return machineTold{minimum: response.GetMinimumVersion(), reconciles: response.GetReconciles()}, nil
 }
 
 // release forgets the connection's record while it still holds it and
@@ -322,7 +321,7 @@ func (g *Gateway) release(ctx context.Context, computerID, connectionID string, 
 	if !released || g.isStopping() {
 		return
 	}
-	if _, err := g.computers.ReportUnreachable(ctx, connect.NewRequest(&computerprivatev1.ReportUnreachableRequest{ComputerId: computerID, SinceUnixMs: g.now().UnixMilli()})); err != nil {
+	if _, err := g.computers.ReportUnreachable(ctx, &computerprivatev1.ReportUnreachableRequest{ComputerId: computerID, SinceUnixMs: g.now().UnixMilli()}); err != nil {
 		logger.WarnContext(ctx, "computer gateway: loss of reach left to the sweep", "error", err)
 	}
 }

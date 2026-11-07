@@ -17,11 +17,12 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -83,16 +84,16 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 			})
 		}
 		t.Cleanup(stop)
-		return agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL), stop
+		return agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), stop
 	}
 	client, stop := start(false)
-	created, err := client.CreateAgentDefinition(ctx, sessionControlRequest(&agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee"}, AgentName: "Fixture Agent", UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "employee"}, Purpose: "work", HomeBinding: &agentprivatev1.HomeBinding{OwnerId: "employee", Namespace: "personal"}}))
+	created, err := client.CreateAgentDefinition(sessionControlRequest(ctx), &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee"}, AgentName: "Fixture Agent", UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "employee"}, Purpose: "work", HomeBinding: &agentprivatev1.HomeBinding{OwnerId: "employee", Namespace: "personal"}})
 	require.NoError(t, err)
-	conversation, err := client.CreateWork(ctx, sessionControlRequest(&agentprivatev1.CreateWorkRequest{SubjectId: "employee", AgentId: created.Msg.AgentId, RequestId: uuid.NewString(), WorkspaceReference: "work", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project"}))
+	conversation, err := client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{SubjectId: "employee", AgentId: created.AgentId, RequestId: uuid.NewString(), WorkspaceReference: "work", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project"})
 	require.NoError(t, err)
 	// Complete the initial process before reproducing a Resume that was
 	// rejected for capacity before its caller observed the outcome.
-	workID, abandoned := conversation.Msg.WorkId, uuid.NewString()
+	workID, abandoned := conversation.WorkId, uuid.NewString()
 	sessions := infrastructure.NewAgentWorkRepository(observer, time.Now)
 	retainedSession, err := sessions.Get(ctx, workID)
 	require.NoError(t, err)
@@ -118,15 +119,15 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 	for _, action := range kube.Actions() {
 		require.NotEqual(t, "resourcequotas", action.GetResource().Resource, "recovery must not request capacity again")
 	}
-	state, err := client.GetWork(ctx, sessionControlRequest(&agentprivatev1.GetWorkRequest{SubjectId: "employee", WorkId: workID}))
+	state, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "employee", WorkId: workID})
 	require.NoError(t, err)
-	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPED, state.Msg.State)
+	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPED, state.State)
 	require.Len(t, port.startRequests(), 1, "recovery must not admit the abandoned request")
-	_, err = client.ResumeWork(ctx, sessionControlRequest(&agentprivatev1.ResumeWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: abandoned}))
+	_, err = client.ResumeWork(sessionControlRequest(ctx), &agentprivatev1.ResumeWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: abandoned})
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err), "the same request retains its original capacity rejection")
 	require.Len(t, port.startRequests(), 1)
 	next := uuid.NewString()
-	_, err = client.ResumeWork(ctx, sessionControlRequest(&agentprivatev1.ResumeWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: next}))
+	_, err = client.ResumeWork(sessionControlRequest(ctx), &agentprivatev1.ResumeWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: next})
 	require.NoError(t, err)
 	stop()
 	// The running recovery module may redeliver the resumed start while the

@@ -7,7 +7,7 @@ import (
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 
-	marketplaceeventsv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/events/v1"
+	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/marketplace/integration/v1"
 )
 
 // CredentialChanges follows a credential change of a Provider Authorization.
@@ -27,11 +27,11 @@ func NewCredentialChangedHandler(changes CredentialChanges) *CredentialChangedHa
 }
 
 func (h *CredentialChangedHandler) Listening() []integrationmessage.Kind {
-	return []integrationmessage.Kind{integrationmessage.KindOf(&marketplaceeventsv1.CredentialChanged{})}
+	return []integrationmessage.Kind{integrationmessage.KindOf(&marketplaceintegrationv1.CredentialChangedV1{})}
 }
 
 func (h *CredentialChangedHandler) Handle(ctx context.Context, msg integrationmessage.Message) error {
-	payload, ok := msg.Payload().(*marketplaceeventsv1.CredentialChanged)
+	payload, ok := msg.Payload().(*marketplaceintegrationv1.CredentialChangedV1)
 	if !ok {
 		return fmt.Errorf("agent credential changed: unexpected payload %T", msg.Payload())
 	}

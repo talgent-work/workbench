@@ -16,13 +16,13 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
 
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
 	"github.com/talgent-work/workbench/internal/business/dispatcher"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
@@ -192,11 +192,11 @@ func TestHandoverResumesFromTheExactPositionWithoutDuplicates(t *testing.T) {
 	// A command reaching a replica that does not own the stream is forwarded
 	// one hop to the owner, which answers ObserveProcess from memory.
 	_, ingress := replicas.servedReplica("ingress", records, delivery)
-	observed, err := ingress.ObserveProcess(ctx, nativeRequest(&dispatcherprivatev1.ObserveProcessRequest{WorkId: target.WorkID, ProcessId: target.ProcessID}))
+	observed, err := ingress.ObserveProcess(nativeCall(ctx), &dispatcherprivatev1.ObserveProcessRequest{WorkId: target.WorkID, ProcessId: target.ProcessID})
 	require.NoError(t, err)
-	require.Equal(t, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING, observed.Msg.GetState())
-	require.True(t, observed.Msg.GetReady())
-	_, err = ingress.ObserveProcess(ctx, nativeRequest(&dispatcherprivatev1.ObserveProcessRequest{WorkId: "unowned", ProcessId: "process"}))
+	require.Equal(t, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING, observed.GetState())
+	require.True(t, observed.GetReady())
+	_, err = ingress.ObserveProcess(nativeCall(ctx), &dispatcherprivatev1.ObserveProcessRequest{WorkId: "unowned", ProcessId: "process"})
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err), "without a live owner the answer is retryable")
 }
 

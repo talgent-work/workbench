@@ -58,7 +58,6 @@
     "@heroui/styles": "^3.1.0",
     "@streamdown/code": "1.1.1",
     "@streamdown/mermaid": "1.0.3",
-    "@talgent/workbench-contracts": "workspace:*",
     "@tanstack/react-query": "^5.99.0",
     "lucide-react": "^1.8.0",
     "react": "^19.2.4",
@@ -66,9 +65,13 @@
     "react-router-dom": "^7.18.2",
     "streamdown": "2.6.0"
   },
+  "peerDependencies": {
+    "@talgent/contracts": ">=0.1.1"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@tailwindcss/vite": "^4.2.2",
+    "@talgent/contracts": "workspace:*",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

@@ -4,15 +4,14 @@ import (
 	"context"
 	"strings"
 
-	"connectrpc.com/connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
-func (h *WorkHandler) GetWorkServiceAccess(ctx context.Context, request *connect.Request[agentpublicv1.GetWorkServiceAccessRequest]) (*connect.Response[agentpublicv1.GetWorkServiceAccessResponse], error) {
+func (h *WorkHandler) GetWorkServiceAccess(ctx context.Context, request *agentpublicv1.GetWorkServiceAccessRequest) (*agentpublicv1.GetWorkServiceAccessResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	result, err := h.application.GetWorkServiceAccess(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.WorkId)})
+	result, err := h.application.GetWorkServiceAccess(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.WorkId)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -23,5 +22,5 @@ func (h *WorkHandler) GetWorkServiceAccess(ctx context.Context, request *connect
 	for _, repository := range result.Repositories {
 		response.Repositories = append(response.Repositories, &agentpublicv1.WorkRepositoryPreparation{RepositoryId: repository.RepositoryID, TargetPath: repository.TargetPath, Prepared: repository.Prepared, Reason: repository.Reason})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }

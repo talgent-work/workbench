@@ -1,5 +1,5 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import type { Span } from "@talgent/workbench-contracts/trace/public/v1/trace_pb";
+import type { Span } from "@talgent/contracts/trace/public/v1/trace_pb";
 import { addTokenUsage, emptyTokenUsage, tokenUsageFromAttributes, type TokenUsage } from "../../../lib/token-usage";
 
 export type TimeRange = { start: number; end: number };

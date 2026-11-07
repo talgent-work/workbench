@@ -1,6 +1,6 @@
 package nativeprocess
 
-import dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+import dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
 
 // AppendCommandInput records an admitted command when its native disposition
 // arrives without a user echo (for example, an unknown slash command). Native

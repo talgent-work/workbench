@@ -11,11 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"golang.org/x/net/websocket"
 	"xorm.io/xorm"
@@ -78,7 +80,7 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	lifecycle.mu.Unlock()
 	receiver := &nativeConnectionReceiver{provisioning: provisioning}
 	mux := http.NewServeMux()
-	path, handler := dispatcherprivatev1connect.NewExecutionServiceHandler(receiver)
+	path, handler := "/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) { dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, receiver) })
 	mux.Handle(path, handler)
 	dispatcher := httptest.NewServer(mux)
 	defer dispatcher.Close()

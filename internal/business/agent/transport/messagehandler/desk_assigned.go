@@ -8,7 +8,7 @@ import (
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 
-	computereventsv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -27,7 +27,7 @@ func NewDeskAssignedHandler(assignments DeskAssignments) *DeskAssignedHandler {
 }
 
 func (h *DeskAssignedHandler) Listening() []integrationmessage.Kind {
-	return []integrationmessage.Kind{integrationmessage.KindOf(&computereventsv1.DeskAssigned{})}
+	return []integrationmessage.Kind{integrationmessage.KindOf(&computerintegrationv1.DeskAssignedV1{})}
 }
 
 // concurrentAttempts bounds retries of a seating that lost a concurrent
@@ -40,7 +40,7 @@ const concurrentAttempts = 3
 // under the consumer's retry policy; once its attempts run out the Work's
 // recovery still finds the seated Desk.
 func (h *DeskAssignedHandler) Handle(ctx context.Context, msg integrationmessage.Message) error {
-	fact, ok := msg.Payload().(*computereventsv1.DeskAssigned)
+	fact, ok := msg.Payload().(*computerintegrationv1.DeskAssignedV1)
 	if !ok || fact == nil {
 		return fmt.Errorf("agent desk assigned: unexpected payload %T", msg.Payload())
 	}

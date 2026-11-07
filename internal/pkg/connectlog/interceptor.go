@@ -6,42 +6,28 @@ import (
 	"log/slog"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/go-jimu/components/sloghelper"
 )
 
 // NewInterceptor logs ConnectRPC execution-boundary completion once per call.
-func NewInterceptor(logger *slog.Logger) connect.Interceptor {
+func NewInterceptor(logger *slog.Logger) connect.ServerInterceptor {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &interceptor{logger: logger}
+	i := &interceptor{logger: logger}
+	return func(next connect.ServerFunc) connect.ServerFunc {
+		return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+			start := time.Now()
+			err := next(ctx, spec, stream)
+			i.log(ctx, spec, start, err)
+			return err
+		}
+	}
 }
 
 type interceptor struct {
 	logger *slog.Logger
-}
-
-func (i *interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
-	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		start := time.Now()
-		resp, err := next(ctx, req)
-		i.log(ctx, req.Spec(), start, err)
-		return resp, err
-	}
-}
-
-func (i *interceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return next
-}
-
-func (i *interceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		start := time.Now()
-		err := next(ctx, conn)
-		i.log(ctx, conn.Spec(), start, err)
-		return err
-	}
 }
 
 func (i *interceptor) log(ctx context.Context, spec connect.Spec, start time.Time, err error) {

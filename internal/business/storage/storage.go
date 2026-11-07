@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2/connecthttp"
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"go.uber.org/fx"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
+	"github.com/talgent-work/contracts/gen/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/application/messagepublisher"
 	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"
@@ -26,7 +26,7 @@ import (
 	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
 	"github.com/talgent-work/workbench/internal/business/storage/transport/taskprocessor"
-	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 )
@@ -214,15 +214,12 @@ var AgentArtifactProcedures = []string{
 }
 
 func registerHandlers(app *application.Application, config Config, mux *http.ServeMux, logger *slog.Logger) {
-	options := connect.WithInterceptors(connectlog.NewInterceptor(logger))
-	path, handler := storageprivatev1connect.NewFileSpaceServiceHandler(storageconnect.NewFileSpaceHandler(app, append([]string{config.AgentToken}, config.FileSpaceTokens...), config.ReferenceSpaceTokens), options)
-	mux.Handle(path, handler)
-	path, handler = storageprivatev1connect.NewSandboxMountServiceHandler(storageconnect.NewSandboxMountHandler(app, config.AgentToken), options)
-	mux.Handle(path, handler)
-	path, handler = storageprivatev1connect.NewReferenceSpaceServiceHandler(storageconnect.NewReferenceSpaceHandler(app, config.ReferenceSpaceTokens...), options)
-	mux.Handle(path, handler)
-	path, handler = artifactServiceHandler(app, options)
-	mux.Handle(path, handler)
+	server := connectserver.New(logger)
+	storageprivatev1connect.RegisterFileSpaceServiceHandler(server, storageconnect.NewFileSpaceHandler(app, append([]string{config.AgentToken}, config.FileSpaceTokens...), config.ReferenceSpaceTokens))
+	storageprivatev1connect.RegisterSandboxMountServiceHandler(server, storageconnect.NewSandboxMountHandler(app, config.AgentToken))
+	storageprivatev1connect.RegisterReferenceSpaceServiceHandler(server, storageconnect.NewReferenceSpaceHandler(app, config.ReferenceSpaceTokens...))
+	connectserver.Mount(mux, server)
+	mountArtifactService(mux, app, logger)
 	limit := config.MaxUploadBytes
 	if limit == 0 {
 		limit = defaultMaxUploadBytes
@@ -230,12 +227,13 @@ func registerHandlers(app *application.Application, config Config, mux *http.Ser
 	storagehttp.Register(mux, app, limit)
 }
 
-// artifactServiceHandler serves the Work Agent's Artifact commands; a
+// mountArtifactService serves the Work Agent's Artifact commands; a
 // publication carries at most the content a Work sends, with room for the
 // rest of its message.
-func artifactServiceHandler(app *application.Application, options ...connect.HandlerOption) (string, http.Handler) {
-	options = append(options, connect.WithReadMaxBytes(app.SentContentLimit()+artifactMessageOverhead))
-	return storageprivatev1connect.NewArtifactServiceHandler(storageconnect.NewArtifactHandler(app), options...)
+func mountArtifactService(mux connecthttp.ServeMux, app *application.Application, logger *slog.Logger) {
+	server := connectserver.New(logger)
+	storageprivatev1connect.RegisterArtifactServiceHandler(server, storageconnect.NewArtifactHandler(app))
+	connectserver.Mount(mux, server, connecthttp.WithReadMaxBytes(app.SentContentLimit()+artifactMessageOverhead))
 }
 
 // previewSweepInterval is how often lapsed Preview Copies and recorded

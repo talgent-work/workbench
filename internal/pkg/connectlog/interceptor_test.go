@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -19,18 +21,7 @@ import (
 // a stable operation name and duration so application calls are observable.
 func TestInterceptorLogsUnarySuccessCompletion(t *testing.T) {
 	logger, logs := testLogger()
-	handler := connect.NewUnaryHandler(
-		"/test.Service/Success",
-		func(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[emptypb.Empty], error) {
-			return connect.NewResponse(&emptypb.Empty{}), nil
-		},
-		connect.WithInterceptors(NewInterceptor(logger)),
-	)
-	server := httptest.NewServer(handler)
-	defer server.Close()
-
-	client := connect.NewClient[emptypb.Empty, emptypb.Empty](server.Client(), server.URL+"/test.Service/Success")
-	if _, err := client.CallUnary(context.Background(), connect.NewRequest(&emptypb.Empty{})); err != nil {
+	if err := callUnary(t, logger, "/test.Service/Success", nil); err != nil {
 		t.Fatalf("CallUnary: %v", err)
 	}
 
@@ -72,22 +63,11 @@ func TestInterceptorLogsUnaryFailureLevelByCode(t *testing.T) {
 	} {
 		err := tc.err
 		if err == nil {
-			err = connect.NewError(tc.code, errors.New("refused"))
+			err = connect.NewError(tc.code, "refused")
 		}
 		t.Run(tc.code.String()+"/"+fmt.Sprintf("%T", err), func(t *testing.T) {
 			logger, logs := testLogger()
-			handler := connect.NewUnaryHandler(
-				"/test.Service/Fail",
-				func(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[emptypb.Empty], error) {
-					return nil, err
-				},
-				connect.WithInterceptors(NewInterceptor(logger)),
-			)
-			server := httptest.NewServer(handler)
-			defer server.Close()
-
-			client := connect.NewClient[emptypb.Empty, emptypb.Empty](server.Client(), server.URL+"/test.Service/Fail")
-			if _, err := client.CallUnary(context.Background(), connect.NewRequest(&emptypb.Empty{})); err == nil {
+			if err := callUnary(t, logger, "/test.Service/Fail", err); err == nil {
 				t.Fatal("CallUnary succeeded, want error")
 			}
 
@@ -107,6 +87,29 @@ func TestInterceptorLogsUnaryFailureLevelByCode(t *testing.T) {
 			}
 		})
 	}
+}
+
+// callUnary calls procedure on a server logging through the interceptor; its
+// handler answers fail when it is set.
+func callUnary(t *testing.T, logger *slog.Logger, procedure string, fail error) error {
+	t.Helper()
+	spec := connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: procedure}
+	server := connect.NewServer(NewInterceptor(logger))
+	server.Register(connect.Method{Spec: spec, Handler: func(_ context.Context, _ connect.Spec, stream connect.ServerStream) error {
+		if err := stream.Receive(&emptypb.Empty{}); err != nil {
+			return err
+		}
+		if fail != nil {
+			return fail
+		}
+		return stream.Send(&emptypb.Empty{})
+	}})
+	mux := http.NewServeMux()
+	connecthttp.Mount(mux, server)
+	httpServer := httptest.NewServer(mux)
+	t.Cleanup(httpServer.Close)
+	client := connect.NewClient(connecthttp.NewTransport(httpServer.Client(), httpServer.URL))
+	return client.CallUnary(context.Background(), spec, &emptypb.Empty{}, &emptypb.Empty{})
 }
 
 func testLogger() (*slog.Logger, *bytes.Buffer) {

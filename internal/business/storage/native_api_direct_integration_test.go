@@ -44,7 +44,7 @@ func TestAWorkPublishesAndDownloadsThroughTheNativeAPIWithoutAGateway(t *testing
 	require.NoError(t, err)
 
 	business := http.NewServeMux()
-	business.Handle(artifactServiceHandler(f.app))
+	mountArtifactService(business, f.app, slog.Default())
 	storagehttp.Register(business, f.app, fixtureMaxUploadBytes)
 	agentmodule.RegisterPersonalWorkHandlers(business, agents.personalWorks(), live, slog.Default())
 	native, err := nativeapi.NewHandler(business, "", live, nativeapi.Calls{SpaceTokenProcedures: AgentArtifactProcedures},
@@ -71,26 +71,26 @@ func TestAWorkPublishesAndDownloadsThroughTheNativeAPIWithoutAGateway(t *testing
 		require.NoError(t, json.NewDecoder(response.Body).Decode(&decoded))
 		return response.StatusCode, decoded
 	}
-	const listLibrary = "/talgent.agent.public.v1.PersonalWorkService/ListLibraryFiles"
-	const createAccessLink = "/talgent.agent.public.v1.WorkFileService/CreateWorkFileAccessLink"
+	const listLibrary = "/agent.public.v1.PersonalWorkService/ListLibraryFiles"
+	const createAccessLink = "/agent.public.v1.WorkFileService/CreateWorkFileAccessLink"
 	accessLinkTo := func(work libraryWork, name string) string {
 		return `{"workId":"` + work.id + `","kind":"WORK_FILE_KIND_ARTIFACT","name":"` + name + `","disposition":"WORK_FILE_ACCESS_DISPOSITION_DOWNLOAD"}`
 	}
 
 	f.workspaceFile(own.workspace, "dist/report.md", "# Report")
-	status, published := call("/talgent.storage.private.v1.ArtifactService/CreateArtifact", `{"name":"report.md","path":"dist/report.md"}`, injected(own))
+	status, published := call("/storage.private.v1.ArtifactService/CreateArtifact", `{"name":"report.md","path":"dist/report.md"}`, injected(own))
 	require.Equal(t, http.StatusOK, status, published)
 	require.Equal(t, "report.md", published["outcome"].(map[string]any)["artifact"].(map[string]any)["name"])
 	require.Contains(t, f.files(own.id), "artifact/report.md")
-	status, refused := call("/talgent.storage.private.v1.ArtifactService/CreateArtifact", `{"name":"report.md","path":"dist/report.md"}`, injected(own))
+	status, refused := call("/storage.private.v1.ArtifactService/CreateArtifact", `{"name":"report.md","path":"dist/report.md"}`, injected(own))
 	require.Equal(t, http.StatusConflict, status, "an existing name is refused: replace it on purpose")
 	require.Equal(t, "already_exists", refused["code"])
-	status, _ = call("/talgent.storage.private.v1.ArtifactService/CreateArtifact", `{"name":"other.md","path":"dist/report.md"}`, map[string]string{authn.HeaderNativeWorkID: own.id, authn.HeaderNativeCredential: "guess"})
+	status, _ = call("/storage.private.v1.ArtifactService/CreateArtifact", `{"name":"other.md","path":"dist/report.md"}`, map[string]string{authn.HeaderNativeWorkID: own.id, authn.HeaderNativeCredential: "guess"})
 	require.Equal(t, http.StatusUnauthorized, status, "only the Work's current credential is admitted")
 
 	// Another person's Agent publishes into that person's own Personal Work.
 	f.workspaceFile(other.workspace, "dist/report-secret.md", "# Secret")
-	status, published = call("/talgent.storage.private.v1.ArtifactService/CreateArtifact", `{"name":"report-secret.md","path":"dist/report-secret.md"}`, injected(other))
+	status, published = call("/storage.private.v1.ArtifactService/CreateArtifact", `{"name":"report-secret.md","path":"dist/report-secret.md"}`, injected(other))
 	require.Equal(t, http.StatusOK, status, published)
 
 	status, found := call(listLibrary, `{"nameQuery":"report"}`, injected(own))

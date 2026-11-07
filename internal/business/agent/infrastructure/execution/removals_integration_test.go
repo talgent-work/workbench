@@ -4,13 +4,12 @@ package execution
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"xorm.io/xorm"
@@ -39,7 +38,7 @@ func TestRemovalSurvivesReconnectUntilSandboxAbsence(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	removals = NewRemovals(db, time.Now)
 
-	feedback := &reclamationFeedback{err: connect.NewError(connect.CodeUnavailable, errors.New("Agent offline"))}
+	feedback := &reclamationFeedback{err: connect.NewError(connect.CodeUnavailable, "Agent offline")}
 	reclaimer, err := NewReclaimer(feedback)
 	require.NoError(t, err)
 	cloud := cloudEnvironment{sandboxes: sandboxes, credentials: fixtureSandboxCredentials(db, sandboxes)}

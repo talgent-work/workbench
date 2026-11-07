@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/adapter/claudecode"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"

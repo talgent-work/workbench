@@ -6,10 +6,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1/marketplacepublicv1connect"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
+	"github.com/talgent-work/contracts/gen/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -20,7 +21,9 @@ import (
 func TestAccessibleRepositoriesAreReadUnderTheDelegatedOwner(t *testing.T) {
 	service := &repositoryService{}
 	mux := http.NewServeMux()
-	mux.Handle(marketplacepublicv1connect.NewMarketplaceServiceHandler(service))
+	srv := connect.NewServer()
+	marketplacepublicv1connect.RegisterMarketplaceServiceHandler(srv, service)
+	connecthttp.Mount(mux, srv, connecthttp.WithReadMaxBytes(0))
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	client, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL})
@@ -40,11 +43,12 @@ type repositoryService struct {
 	reject bool
 }
 
-func (s *repositoryService) ListAccessibleRepositories(_ context.Context, request *connect.Request[marketplacepublicv1.ListAccessibleRepositoriesRequest]) (*connect.Response[marketplacepublicv1.ListAccessibleRepositoriesResponse], error) {
-	if s.reject || request.Header().Get(authn.HeaderServiceID) != "agent" || request.Header().Get(authn.HeaderDelegatedUserID) != "represented-user" {
-		return nil, connect.NewError(connect.CodePermissionDenied, nil)
+func (s *repositoryService) ListAccessibleRepositories(ctx context.Context, request *marketplacepublicv1.ListAccessibleRepositoriesRequest) (*marketplacepublicv1.ListAccessibleRepositoriesResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if s.reject || info.RequestHeader().Get(authn.HeaderServiceID) != "agent" || info.RequestHeader().Get(authn.HeaderDelegatedUserID) != "represented-user" {
+		return nil, connect.NewError(connect.CodePermissionDenied, "")
 	}
-	return connect.NewResponse(&marketplacepublicv1.ListAccessibleRepositoriesResponse{Repositories: []*marketplacepublicv1.AccessibleRepository{{Id: "github:123",
+	return &marketplacepublicv1.ListAccessibleRepositoriesResponse{Repositories: []*marketplacepublicv1.AccessibleRepository{{Id: "github:123",
 		Provider: "github", Name: "example/project", CloneUrl: "https://github.com/example/project.git",
-		WebUrl: "https://github.com/example/project", DefaultBranch: "release"}}}), nil
+		WebUrl: "https://github.com/example/project", DefaultBranch: "release"}}}, nil
 }

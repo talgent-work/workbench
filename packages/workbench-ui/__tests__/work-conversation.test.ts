@@ -1,6 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
-import { UnifiedMessageKind, UnifiedMessageSchema } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { UnifiedMessageKind, UnifiedMessageSchema } from "@talgent/contracts/dispatcher/public/v1/unified_message_pb";
 import { expect, it } from "vitest";
 import { WorkConversation } from "../lib/work-conversation";
 
@@ -18,7 +18,7 @@ it("groups by native turn and keeps unrelated turns stable when late messages ar
   const unknown = message("unattributed", "", 4);
   unknown.agent = undefined;
   unknown.kind = UnifiedMessageKind.ERROR;
-  unknown.payload = { case: "error", value: { $typeName: "talgent.dispatcher.public.v1.ErrorPayload", code: "api_failure", message: "Original error" } };
+  unknown.payload = { case: "error", value: { $typeName: "dispatcher.public.v1.ErrorPayload", code: "api_failure", message: "Original error" } };
   const rootError = { ...unknown, id: "root-error", agent: "" };
   store.add([unknown, rootError, { ...message("child", "child-turn", 5), agent: "member" }], "live");
   // A process diagnostic has no Agent and stays out; the root Agent's error stays.

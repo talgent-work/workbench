@@ -1,8 +1,9 @@
 package authn
 
 import (
-	"net/http"
 	"strings"
+
+	"connectrpc.com/connect/v2"
 )
 
 // HeaderReaderAdmission carries a trusted internal service's statement that
@@ -13,7 +14,7 @@ const HeaderReaderAdmission = "x-talgent-reader-admission"
 
 // ReaderAdmission returns the admission of a delegated service call; a
 // request a client sent directly carries none.
-func ReaderAdmission(header http.Header) (reference, value string, ok bool) {
+func ReaderAdmission(header *connect.Header) (reference, value string, ok bool) {
 	if strings.TrimSpace(header.Get(HeaderServiceID)) == "" || strings.TrimSpace(header.Get(HeaderDelegatedUserID)) == "" {
 		return "", "", false
 	}
@@ -22,9 +23,4 @@ func ReaderAdmission(header http.Header) (reference, value string, ok bool) {
 		return "", "", false
 	}
 	return reference, value, true
-}
-
-// SetReaderAdmission states a delegated reader's admission on an outbound call.
-func SetReaderAdmission(header http.Header, reference, value string) {
-	header.Set(HeaderReaderAdmission, reference+"="+value)
 }

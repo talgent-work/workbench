@@ -7,11 +7,11 @@ import (
 	"errors"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 )
 
@@ -21,23 +21,24 @@ func assertWaitingResponseAdmission(t *testing.T, ctx context.Context, client ag
 	t.Helper()
 	report := func(kind agentprivatev1.FeedbackKind, sequence int64, interaction string) {
 		t.Helper()
-		r := connect.NewRequest(&agentprivatev1.ReportRequest{ProcessId: "process", WorkId: work, Kind: kind, ObservationSequence: sequence, InteractionId: interaction, RequiredInteractionIds: func() []string {
+		r := &agentprivatev1.ReportRequest{ProcessId: "process", WorkId: work, Kind: kind, ObservationSequence: sequence, InteractionId: interaction, RequiredInteractionIds: func() []string {
 			var ids []string
 			for _, item := range port.pending {
 				ids = append(ids, item.ID)
 			}
 			return ids
-		}()})
-		r.Header().Set("Authorization", "Bearer feedback")
-		_, err := feedback.Report(ctx, r)
+		}()}
+		rCtx, rInfo := connect.NewClientContext(ctx)
+		rInfo.RequestHeader().Set("Authorization", "Bearer feedback")
+		_, err := feedback.Report(rCtx, r)
 		require.NoError(t, err)
 	}
 	waiting := func() bool {
 		t.Helper()
-		response, err := client.GetWork(ctx, sessionControlRequest(&agentprivatev1.GetWorkRequest{SubjectId: "employee-a", WorkId: work}))
+		response, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "employee-a", WorkId: work})
 		require.NoError(t, err)
-		require.Equal(t, agentprivatev1.WorkState_WORK_STATE_WORKING, response.Msg.State, "Waiting is not a Work State")
-		return response.Msg.GetWaiting()
+		require.Equal(t, agentprivatev1.WorkState_WORK_STATE_WORKING, response.State, "Waiting is not a Work State")
+		return response.GetWaiting()
 	}
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_TURN_STARTED, 2, "")
 	port.pending = []application.PendingInteraction{{ID: "approval-a"}, {ID: "question-b"}}
@@ -45,7 +46,7 @@ func assertWaitingResponseAdmission(t *testing.T, ctx context.Context, client ag
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_USER_INTERACTION_REQUIRED, 4, "question-b")
 	require.True(t, waiting())
 	respond := func(id string) error {
-		_, err := client.RespondToInteraction(ctx, sessionControlRequest(&agentprivatev1.RespondToInteractionRequest{SubjectId: "employee-a", WorkId: work, InteractionId: id, Allow: true}))
+		_, err := client.RespondToInteraction(sessionControlRequest(ctx), &agentprivatev1.RespondToInteractionRequest{SubjectId: "employee-a", WorkId: work, InteractionId: id, Allow: true})
 		return err
 	}
 	port.replyError = errors.New("input buffer unavailable")
@@ -71,11 +72,11 @@ func assertWaitingResponseAdmission(t *testing.T, ctx context.Context, client ag
 	require.True(t, waiting())
 	port.inputError = errors.New("input buffer unavailable")
 	inputID := uuid.NewString()
-	_, err := client.DeliverInput(ctx, sessionControlRequest(&agentprivatev1.DeliverInputRequest{SubjectId: "employee-a", WorkId: work, InputId: inputID, Input: "accepted after the request"}))
+	_, err := client.DeliverInput(sessionControlRequest(ctx), &agentprivatev1.DeliverInputRequest{SubjectId: "employee-a", WorkId: work, InputId: inputID, Input: "accepted after the request"})
 	require.Error(t, err)
 	require.True(t, waiting())
 	port.inputError = nil
-	_, err = client.DeliverInput(ctx, sessionControlRequest(&agentprivatev1.DeliverInputRequest{SubjectId: "employee-a", WorkId: work, InputId: inputID, Input: "accepted after the request"}))
+	_, err = client.DeliverInput(sessionControlRequest(ctx), &agentprivatev1.DeliverInputRequest{SubjectId: "employee-a", WorkId: work, InputId: inputID, Input: "accepted after the request"})
 	require.NoError(t, err)
 	require.True(t, waiting(), "input held behind the unanswered request keeps the Turn Waiting")
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_USER_INTERACTION_REQUIRED, 7, "question-c")

@@ -8,13 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -58,37 +60,40 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 	require.NoError(t, db.Close())
 	origins := infrastructure.NewWorkQueryRepository(open())
 	app := &application.Application{Queries: application.Queries{GetWorkOrigin: query.NewGetWorkOriginHandler(origins), ResolveWorkStarts: query.NewResolveWorkStartsHandler(origins)}}
-	_, handler := agentprivatev1connect.NewAgentServiceHandler(transport.NewAgentHandler(app, "control"))
+	handler := connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterAgentServiceHandler(s, transport.NewAgentHandler(app, "control"))
+	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	client := agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL)
+	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	authorized, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer control")
 	for purpose, id := range ids {
-		request := connect.NewRequest(&agentprivatev1.GetWorkOriginRequest{WorkId: id})
-		request.Header().Set("Authorization", "Bearer control")
-		response, err := client.GetWorkOrigin(ctx, request)
+		request := &agentprivatev1.GetWorkOriginRequest{WorkId: id}
+		response, err := client.GetWorkOrigin(authorized, request)
 		require.NoError(t, err)
-		require.Equal(t, id, response.Msg.GetWorkId())
-		require.Equal(t, definitions[purpose], response.Msg.GetAgentId())
-		require.Equal(t, purpose, response.Msg.GetPurpose())
-		require.Equal(t, "project", response.Msg.GetProjectId())
-		require.Equal(t, "case", response.Msg.GetSubject().GetId())
+		require.Equal(t, id, response.GetWorkId())
+		require.Equal(t, definitions[purpose], response.GetAgentId())
+		require.Equal(t, purpose, response.GetPurpose())
+		require.Equal(t, "project", response.GetProjectId())
+		require.Equal(t, "case", response.GetSubject().GetId())
 	}
-	request := connect.NewRequest(&agentprivatev1.GetWorkOriginRequest{WorkId: ids["work"]})
+	request := &agentprivatev1.GetWorkOriginRequest{WorkId: ids["work"]}
 	_, err := client.GetWorkOrigin(ctx, request)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	request.Header().Set("Authorization", "Bearer control")
-	request.Msg.WorkId = "missing"
-	_, err = client.GetWorkOrigin(ctx, request)
+	request.WorkId = "missing"
+	_, err = client.GetWorkOrigin(authorized, request)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
 	// Work starts resolve in one read for the Project's Works; a missing Work
 	// and every Work asked about under another Project are unknown.
 	starts := func(project string) []*agentprivatev1.ResolvedWorkStart {
-		request := connect.NewRequest(&agentprivatev1.ResolveWorkStartsRequest{ProjectId: project, WorkIds: []string{ids["work"], ids["case_coordinator"], "missing"}})
-		request.Header().Set("Authorization", "Bearer control")
+		request := &agentprivatev1.ResolveWorkStartsRequest{ProjectId: project, WorkIds: []string{ids["work"], ids["case_coordinator"], "missing"}}
+		ctx, info := connect.NewClientContext(ctx)
+		info.RequestHeader().Set("Authorization", "Bearer control")
 		response, err := client.ResolveWorkStarts(ctx, request)
 		require.NoError(t, err)
-		return response.Msg.GetWorks()
+		return response.GetWorks()
 	}
 	known := starts("project")
 	require.Len(t, known, 3)
@@ -103,7 +108,7 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 		require.False(t, work.GetKnown())
 		require.Empty(t, work.GetStartedBy())
 	}
-	unauthenticated := connect.NewRequest(&agentprivatev1.ResolveWorkStartsRequest{ProjectId: "project", WorkIds: []string{ids["work"]}})
+	unauthenticated := &agentprivatev1.ResolveWorkStartsRequest{ProjectId: "project", WorkIds: []string{ids["work"]}}
 	_, err = client.ResolveWorkStarts(ctx, unauthenticated)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 	retained, err := infrastructure.NewAgentWorkRepository(open(), time.Now).Get(ctx, ids["work"])

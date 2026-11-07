@@ -1,7 +1,7 @@
 import { toJson } from "@bufbuild/protobuf";
 import { ValueSchema } from "@bufbuild/protobuf/wkt";
 import { Description, FieldError, Input, Label, ListBox, Select, Switch, TextArea, TextField } from "@heroui/react";
-import type { ParameterDeclaration } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import type { ParameterDeclaration } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { hasDefault, parameterLabel, type ParameterDrafts, type ParameterErrors } from "../../lib/plugin-parameters";
 
 function defaultText(declaration: ParameterDeclaration) {

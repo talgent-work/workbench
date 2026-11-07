@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	marketplaceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/marketplace/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 )
 
@@ -16,16 +16,16 @@ func (c *Client) SupplyRepositoryCredential(ctx context.Context, input applicati
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	request, err := delegated(ctx, input.OwnerUserID, &marketplaceprivatev1.SupplyRepositoryCredentialRequest{OwnerUserId: input.OwnerUserID, AuthorizationId: input.AuthorizationID, RepositoryId: input.RepositoryID, CloneUrl: input.CloneURL})
+	ctx, info, err := delegated(ctx, input.OwnerUserID)
 	if err != nil {
 		return application.RepositoryCredentialMaterial{}, err
 	}
-	request.Header().Set("Authorization", "Bearer "+c.credentialToken)
-	response, err := c.credentials.SupplyRepositoryCredential(ctx, request)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
+	response, err := c.credentials.SupplyRepositoryCredential(ctx, &marketplaceprivatev1.SupplyRepositoryCredentialRequest{OwnerUserId: input.OwnerUserID, AuthorizationId: input.AuthorizationID, RepositoryId: input.RepositoryID, CloneUrl: input.CloneURL})
 	if err != nil {
-		return application.RepositoryCredentialMaterial{}, credentialUnavailable(err)
+		return application.RepositoryCredentialMaterial{}, credentialUnavailable(err, info)
 	}
-	return application.RepositoryCredentialMaterial{Username: response.Msg.GetUsername(), Password: response.Msg.GetPassword(), ExpiresAt: declaredExpiry(response.Msg.GetExpiresAtUnixMs())}, nil
+	return application.RepositoryCredentialMaterial{Username: response.GetUsername(), Password: response.GetPassword(), ExpiresAt: declaredExpiry(response.GetExpiresAtUnixMs())}, nil
 }
 
 // declaredExpiry maps Marketplace's declared expiry; 0 declares none.

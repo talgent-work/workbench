@@ -17,12 +17,13 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	"github.com/talgent-work/contracts/gen/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -151,19 +152,15 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 		},
 	}
 	mux := http.NewServeMux()
-	mux.Handle(agentpublicv1connect.NewAgentWorkServiceHandler(transport.NewWorkHandler(app), connect.WithInterceptors(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))))
-	mux.Handle(agentprivatev1connect.NewAgentServiceHandler(transport.NewAgentHandler(app, Token)))
+	public := connect.NewServer(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	agentpublicv1connect.RegisterAgentWorkServiceHandler(public, transport.NewWorkHandler(app))
+	connecthttp.Mount(mux, public)
+	private := connect.NewServer()
+	agentprivatev1connect.RegisterAgentServiceHandler(private, transport.NewAgentHandler(app, Token))
+	connecthttp.Mount(mux, private)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return &Agent{URL: server.URL, Client: server.Client(), DB: db}
-}
-
-// Request is a user's request to the public API as the gateway delegates it.
-func Request[T any](user string, message *T) *connect.Request[T] {
-	request := connect.NewRequest(message)
-	request.Header().Set(authn.HeaderServiceID, "gateway-test")
-	request.Header().Set(authn.HeaderDelegatedUserID, user)
-	return request
 }
 
 // Work is what the Agent retains of a Work beyond its public view.

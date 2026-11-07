@@ -1,15 +1,17 @@
 package github
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	marketplaceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/marketplace/private/v1"
+	"github.com/talgent-work/contracts/gen/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
@@ -26,50 +28,64 @@ func TestServiceCredentialHTTPChecksAuthorityTargetAndCurrentGrant(t *testing.T)
 	require.NoError(t, err)
 	app := application.NewPersonalConnections(repo, nil, nil, nil, supplier, nil, nil, supplier, nil)
 	mux := http.NewServeMux()
-	mux.Handle(marketplaceprivatev1connect.NewCredentialServiceHandler(transport.NewCredentialHandler(app, "control-secret")))
+	srv := connect.NewServer()
+	marketplaceprivatev1connect.RegisterCredentialServiceHandler(srv, transport.NewCredentialHandler(app, "control-secret"))
+	connecthttp.Mount(mux, srv)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	client := marketplaceprivatev1connect.NewCredentialServiceClient(server.Client(), server.URL)
-	request := func(target string) *connect.Request[marketplaceprivatev1.SupplyServiceCredentialRequest] {
-		r := connect.NewRequest(&marketplaceprivatev1.SupplyServiceCredentialRequest{OwnerUserId: "owner", AuthorizationId: authorization.ID, Target: target})
-		r.Header().Set("Authorization", "Bearer control-secret")
-		return r
+	client := marketplaceprivatev1connect.NewCredentialServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
+	request := func(target string) *marketplaceprivatev1.SupplyServiceCredentialRequest {
+		return &marketplaceprivatev1.SupplyServiceCredentialRequest{OwnerUserId: "owner", AuthorizationId: authorization.ID, Target: target}
+	}
+	// consumer is the context of a call by the trusted credential consumer,
+	// with any further header pairs.
+	consumer := func(pairs ...string) (context.Context, *connect.CallInfo) {
+		ctx, info := connect.NewClientContext(t.Context())
+		info.RequestHeader().Set("Authorization", "Bearer control-secret")
+		for i := 0; i+1 < len(pairs); i += 2 {
+			info.RequestHeader().Set(pairs[i], pairs[i+1])
+		}
+		return ctx, info
 	}
 	for _, target := range []string{"github-api", "github-remote-mcp"} {
-		response, err := client.SupplyServiceCredential(t.Context(), request(target))
+		ctx, _ := consumer()
+		response, err := client.SupplyServiceCredential(ctx, request(target))
 		require.NoError(t, err)
-		require.Equal(t, "first-provider-token", response.Msg.Token)
+		require.Equal(t, "first-provider-token", response.Token)
 	}
 	for _, scenario := range []string{"wrong consumer", "native workload", "foreign owner", "unsupported target"} {
 		r := request("github-api")
+		ctx, _ := consumer()
 		switch scenario {
 		case "wrong consumer":
-			r.Header().Set("Authorization", "Bearer wrong")
+			ctx, _ = consumer("Authorization", "Bearer wrong")
 		case "native workload":
-			r.Header().Set(authn.HeaderNativeWorkID, "work")
+			ctx, _ = consumer(authn.HeaderNativeWorkID, "work")
 		case "foreign owner":
-			r.Msg.OwnerUserId = "foreign"
+			r.OwnerUserId = "foreign"
 		case "unsupported target":
-			r.Msg.Target = "https://other.example/mcp"
+			r.Target = "https://other.example/mcp"
 		}
-		response, err := client.SupplyServiceCredential(t.Context(), r)
+		response, err := client.SupplyServiceCredential(ctx, r)
 		require.Error(t, err, scenario)
 		require.Nil(t, response)
 		require.NotContains(t, err.Error(), "first-provider-token")
 	}
 	var revocation *connect.Error
 	require.NoError(t, repo.authorization.MarkRevoked(time.Now()))
-	_, err = client.SupplyServiceCredential(t.Context(), request("github-api"))
+	ctx, info := consumer()
+	_, err = client.SupplyServiceCredential(ctx, request("github-api"))
 	require.ErrorAs(t, err, &revocation)
-	require.Equal(t, "revoked", revocation.Meta().Get("X-Talgent-Credential-Status"))
+	require.Equal(t, "revoked", info.ResponseHeader().Get(transport.CredentialStatusHeader))
 	// Reauthorization restores supply through the same stored authorization ID.
 	ciphertext, err = protected.Encrypt("replacement-provider-token")
 	require.NoError(t, err)
 	require.NoError(t, repo.authorization.ReplaceWith(domain.ProviderAuthorizationInput{OwnerUserID: "owner", Provider: domain.ProviderGitHub,
 		ProviderAccountID: "new-account", ProviderLogin: "new-login", AccessTokenCiphertext: ciphertext, ExpiresAt: time.Now().Add(time.Hour)}))
-	response, err := client.SupplyServiceCredential(t.Context(), request("github-api"))
+	ctx, _ = consumer()
+	response, err := client.SupplyServiceCredential(ctx, request("github-api"))
 	require.NoError(t, err)
-	require.Equal(t, "replacement-provider-token", response.Msg.Token)
+	require.Equal(t, "replacement-provider-token", response.Token)
 }
 
 func TestServiceCredentialRejectsUnverifiedEnterpriseContract(t *testing.T) {

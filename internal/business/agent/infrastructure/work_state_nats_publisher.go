@@ -3,7 +3,7 @@ package infrastructure
 import (
 	"context"
 
-	streamgatewaypublicv1 "github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/streamgateway/public/v1"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 	"google.golang.org/protobuf/proto"
 )

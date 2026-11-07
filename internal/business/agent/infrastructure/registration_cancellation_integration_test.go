@@ -9,17 +9,19 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	agentrpc "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"xorm.io/xorm"
 )
 
@@ -47,9 +49,9 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 		}
 	}()
 	client := registrationCancellationClient(t, db, works)
-	canceled, err := client.CancelWorkRegistration(t.Context(), cancellationRPC(request, "control"))
+	canceled, err := client.CancelWorkRegistration(cancellationRPC(t.Context(), request, "control"))
 	require.NoError(t, err)
-	require.Empty(t, canceled.Msg.WorkId)
+	require.Empty(t, canceled.WorkId)
 	close(paused.release)
 	released = true
 	require.ErrorIs(t, <-result, command.ErrStartRequestCanceled)
@@ -67,9 +69,9 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 	require.NoError(t, err)
 	defer reopened.Close()
 	replay := registrationCancellationClient(t, reopened, infrastructure.NewAgentWorkRepository(reopened, time.Now))
-	repeated, err := replay.CancelWorkRegistration(t.Context(), cancellationRPC(request, "control"))
+	repeated, err := replay.CancelWorkRegistration(cancellationRPC(t.Context(), request, "control"))
 	require.NoError(t, err)
-	require.Empty(t, repeated.Msg.WorkId)
+	require.Empty(t, repeated.WorkId)
 	for _, mutation := range []func(*command.CreateWork){
 		func(r *command.CreateWork) { r.SubjectID = "intruder" },
 		func(r *command.CreateWork) { r.AgentID = uuid.NewString() },
@@ -80,7 +82,7 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 	} {
 		different := request
 		mutation(&different)
-		_, err := replay.CancelWorkRegistration(t.Context(), cancellationRPC(different, "control"))
+		_, err := replay.CancelWorkRegistration(cancellationRPC(t.Context(), different, "control"))
 		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	}
 	// A new explicit request identity remains eligible; no auto retry was queued.
@@ -111,9 +113,9 @@ func TestCancelWorkRegistrationRecoversCommittedCreation(t *testing.T) {
 	require.NoError(t, err)
 	client := registrationCancellationClient(t, db, works)
 	for range 2 {
-		reply, err := client.CancelWorkRegistration(t.Context(), cancellationRPC(request, "control"))
+		reply, err := client.CancelWorkRegistration(cancellationRPC(t.Context(), request, "control"))
 		require.NoError(t, err)
-		require.Equal(t, original.ID, reply.Msg.WorkId)
+		require.Equal(t, original.ID, reply.WorkId)
 	}
 	after, err := works.Get(t.Context(), original.ID)
 	require.NoError(t, err)
@@ -121,29 +123,34 @@ func TestCancelWorkRegistrationRecoversCommittedCreation(t *testing.T) {
 	require.Zero(t, execution.starts.Load(), "the creation delivery failed; cancellation does not start it")
 	unauthorized := request
 	unauthorized.SubjectID = "intruder"
-	_, err = client.CancelWorkRegistration(t.Context(), cancellationRPC(unauthorized, "control"))
+	_, err = client.CancelWorkRegistration(cancellationRPC(t.Context(), unauthorized, "control"))
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	wrong := request
 	wrong.WorkspaceReference = "wrong"
-	_, err = client.CancelWorkRegistration(t.Context(), cancellationRPC(wrong, "control"))
+	_, err = client.CancelWorkRegistration(cancellationRPC(t.Context(), wrong, "control"))
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
-	_, err = client.CancelWorkRegistration(t.Context(), cancellationRPC(request, "wrong-token"))
+	_, err = client.CancelWorkRegistration(cancellationRPC(t.Context(), request, "wrong-token"))
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 }
 
 func registrationCancellationClient(t *testing.T, db *xorm.Engine, works *infrastructure.AgentWorkRepository) agentprivatev1connect.AgentServiceClient {
 	t.Helper()
 	app := &application.Application{RegistrationCancellation: works, WorkPrincipals: infrastructure.NewWorkAuthorizer(db), Works: works}
-	_, handler := agentprivatev1connect.NewAgentServiceHandler(agentrpc.NewAgentHandler(app, "control"))
+	handler := connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterAgentServiceHandler(s, agentrpc.NewAgentHandler(app, "control"))
+	})
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	return agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL)
+	return agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 }
 
-func cancellationRPC(request command.CreateWork, token string) *connect.Request[agentprivatev1.CancelWorkRegistrationRequest] {
-	rpc := connect.NewRequest(&agentprivatev1.CancelWorkRegistrationRequest{RequestId: request.RequestID, SubjectId: request.SubjectID, AgentId: request.AgentID, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: request.Subject.ID}, ProjectId: request.ProjectID, WorkspaceReference: request.WorkspaceReference})
-	rpc.Header().Set("Authorization", "Bearer "+token)
-	return rpc
+// cancellationRPC is the cancellation of request under token, and the
+// context of its call.
+func cancellationRPC(ctx context.Context, request command.CreateWork, token string) (context.Context, *agentprivatev1.CancelWorkRegistrationRequest) {
+	rpc := &agentprivatev1.CancelWorkRegistrationRequest{RequestId: request.RequestID, SubjectId: request.SubjectID, AgentId: request.AgentID, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: request.Subject.ID}, ProjectId: request.ProjectID, WorkspaceReference: request.WorkspaceReference}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+token)
+	return ctx, rpc
 }
 
 type pausedRegistration struct {

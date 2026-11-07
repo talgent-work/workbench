@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"connectrpc.com/connect"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1/marketplacepublicv1connect"
+	"connectrpc.com/connect/v2"
+	"github.com/talgent-work/contracts/gen/marketplace/private/v1/marketplaceprivatev1connect"
+	"github.com/talgent-work/contracts/gen/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
@@ -17,7 +17,7 @@ import (
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
@@ -86,16 +86,15 @@ var Module = fx.Module("domain.marketplace",
 	fx.Provide(fx.Annotate(infrastructure.NewProviderAuthorizationQueries, fx.As(new(query.ProviderAuthorizationQueryRepository)))),
 	fx.Provide(application.NewApplication, marketplaceconnect.NewHandler, marketplacehttp.NewCatalogHandler),
 	fx.Invoke(func(params handlerParams) {
-		path, handler := marketplacepublicv1connect.NewMarketplaceServiceHandler(params.Handler,
-			connect.WithInterceptors(connectlog.NewInterceptor(params.Logger), gatewayActor()))
-		params.Mux.Handle(path, handler)
-		selectionPath, selectionHandler := marketplaceprivatev1connect.NewSelectionServiceHandler(marketplaceconnect.NewSelectionHandler(params.App, params.Config.Connections.CredentialToken), connect.WithInterceptors(connectlog.NewInterceptor(params.Logger), gatewayActor()))
-		params.Mux.Handle(selectionPath, selectionHandler)
+		server := connectserver.New(params.Logger, gatewayActor())
+		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(server, params.Handler)
+		marketplaceprivatev1connect.RegisterSelectionServiceHandler(server, marketplaceconnect.NewSelectionHandler(params.App, params.Config.Connections.CredentialToken))
+		connectserver.Mount(params.Mux, server)
 		params.Mux.Handle(marketplacehttp.ContentPath, params.Catalog)
 	}),
 )
 
 // gatewayActor admits only calls the gateway made for an authenticated person.
-func gatewayActor() connect.Interceptor {
+func gatewayActor() connect.ServerInterceptor {
 	return authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})
 }

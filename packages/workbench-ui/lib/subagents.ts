@@ -1,4 +1,4 @@
-import type { SubAgent as ProtoSubAgent } from "@talgent/workbench-contracts/agent/public/v1/subagents_pb";
+import type { SubAgent as ProtoSubAgent } from "@talgent/contracts/agent/public/v1/subagents_pb";
 
 // The SubAgents the main Agent of the Work's current Harness process delegated
 // to, as the Work reports them; the page never derives a state itself.

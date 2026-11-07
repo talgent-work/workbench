@@ -11,7 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
@@ -168,5 +169,5 @@ func identity(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, code connect.Code, message string) {
-	_ = connect.NewErrorWriter().Write(w, r, connect.NewError(code, errors.New(message)))
+	_ = connecthttp.NewErrorWriter().Write(w, r, connect.NewError(code, message))
 }

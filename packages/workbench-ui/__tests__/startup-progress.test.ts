@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { StartupProgressSchema } from "@talgent/workbench-contracts/agent/public/v1/startup_pb";
+import { StartupProgressSchema } from "@talgent/contracts/agent/public/v1/startup_pb";
 import { describe, expect, it } from "vitest";
 import { newestStartupProgress } from "../lib/startup-progress";
 

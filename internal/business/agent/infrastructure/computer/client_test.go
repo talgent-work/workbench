@@ -2,26 +2,25 @@ package computer
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	computerprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1/computerprivatev1connect"
+	computerprivatev1 "github.com/talgent-work/contracts/gen/computer/private/v1"
+	"github.com/talgent-work/contracts/gen/computer/private/v1/computerprivatev1connect"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 func TestCallErrorTellsAnUnknownComputerFromAnUnansweredCall(t *testing.T) {
-	notFound := callError(connect.NewError(connect.CodeNotFound, errors.New("computer not found")))
+	notFound := callError(connect.NewError(connect.CodeNotFound, "computer not found"))
 	require.ErrorIs(t, notFound, domain.ErrComputerNotUsable)
 	require.NotErrorIs(t, notFound, command.ErrComputerUnavailable)
-	unavailable := callError(connect.NewError(connect.CodeUnavailable, errors.New("down")))
+	unavailable := callError(connect.NewError(connect.CodeUnavailable, "down"))
 	require.ErrorIs(t, unavailable, command.ErrComputerUnavailable)
 }
 
@@ -30,11 +29,11 @@ type desks struct {
 	response *computerprivatev1.GetDeskResponse
 }
 
-func (d desks) GetDesk(context.Context, *connect.Request[computerprivatev1.GetDeskRequest]) (*connect.Response[computerprivatev1.GetDeskResponse], error) {
+func (d desks) GetDesk(context.Context, *computerprivatev1.GetDeskRequest) (*computerprivatev1.GetDeskResponse, error) {
 	if d.response == nil {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("desk not found"))
+		return nil, connect.NewError(connect.CodeNotFound, "desk not found")
 	}
-	return connect.NewResponse(d.response), nil
+	return d.response, nil
 }
 
 // A seated Desk carries the time its Computer seated it; a waiting, unknown

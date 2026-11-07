@@ -4,23 +4,22 @@ import (
 	"context"
 	"errors"
 
-	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 
-func (h *AgentHandler) GetWorkCreation(ctx context.Context, request *connect.Request[agentprivatev1.GetWorkCreationRequest]) (*connect.Response[agentprivatev1.GetWorkCreationResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) GetWorkCreation(ctx context.Context, request *agentprivatev1.GetWorkCreationRequest) (*agentprivatev1.GetWorkCreationResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	if uuid.Validate(request.Msg.GetRequestId()) != nil {
+	if uuid.Validate(request.GetRequestId()) != nil {
 		return nil, mapAgentError(query.ErrInvalidStartRequest)
 	}
-	outcome, err := h.application.Commands.CreateRequestedWork.Outcome(ctx, request.Msg.GetRequestId())
+	outcome, err := h.application.Commands.CreateRequestedWork.Outcome(ctx, request.GetRequestId())
 	if errors.Is(err, command.ErrWorkCreationNotFound) {
-		return connect.NewResponse(&agentprivatev1.GetWorkCreationResponse{Outcome: agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_UNKNOWN}), nil
+		return &agentprivatev1.GetWorkCreationResponse{Outcome: agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_UNKNOWN}, nil
 	}
 	if err != nil {
 		return nil, mapAgentError(err)
@@ -32,19 +31,19 @@ func (h *AgentHandler) GetWorkCreation(ctx context.Context, request *connect.Req
 	case outcome.BindingConfirmed:
 		response.Outcome, response.WorkId = agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_CREATED, outcome.WorkID
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *AgentHandler) CancelWorkCreation(ctx context.Context, request *connect.Request[agentprivatev1.CancelWorkCreationRequest]) (*connect.Response[agentprivatev1.CancelWorkCreationResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) CancelWorkCreation(ctx context.Context, request *agentprivatev1.CancelWorkCreationRequest) (*agentprivatev1.CancelWorkCreationResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	if uuid.Validate(request.Msg.GetRequestId()) != nil {
+	if uuid.Validate(request.GetRequestId()) != nil {
 		return nil, mapAgentError(query.ErrInvalidStartRequest)
 	}
-	workID, err := h.application.Commands.CreateRequestedWork.Cancel(ctx, request.Msg.GetRequestId())
+	workID, err := h.application.Commands.CreateRequestedWork.Cancel(ctx, request.GetRequestId())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.CancelWorkCreationResponse{WorkId: workID}), nil
+	return &agentprivatev1.CancelWorkCreationResponse{WorkId: workID}, nil
 }

@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"connectrpc.com/connect"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
+	"connectrpc.com/connect/v2"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -16,11 +16,11 @@ func appearanceToProto(appearance domain.AgentAppearance) *agentpublicv1.AgentAp
 	return &agentpublicv1.AgentAppearance{Name: appearance.Name, Icon: &agentpublicv1.AgentIcon{Glyph: appearance.Icon.Glyph, Color: appearance.Icon.Color}}
 }
 
-func (h *AgentHandler) ResolveEmployeeAgents(ctx context.Context, request *connect.Request[agentprivatev1.ResolveEmployeeAgentsRequest]) (*connect.Response[agentprivatev1.ResolveEmployeeAgentsResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) ResolveEmployeeAgents(ctx context.Context, request *agentprivatev1.ResolveEmployeeAgentsRequest) (*agentprivatev1.ResolveEmployeeAgentsResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	results, err := h.application.Queries.ResolveAgents.ByEmployee(ctx, request.Msg.GetPurpose(), request.Msg.GetEmployeeIds())
+	results, err := h.application.Queries.ResolveAgents.ByEmployee(ctx, request.GetPurpose(), request.GetEmployeeIds())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -32,25 +32,25 @@ func (h *AgentHandler) ResolveEmployeeAgents(ctx context.Context, request *conne
 		}
 		response.Agents[index] = resolved
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *AgentHandler) GetEmployeeAgent(ctx context.Context, request *connect.Request[agentprivatev1.GetEmployeeAgentRequest]) (*connect.Response[agentprivatev1.GetEmployeeAgentResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) GetEmployeeAgent(ctx context.Context, request *agentprivatev1.GetEmployeeAgentRequest) (*agentprivatev1.GetEmployeeAgentResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	agent, err := h.application.Queries.ResolveAgents.OfEmployee(ctx, request.Msg.GetPurpose(), request.Msg.GetEmployeeId(), request.Msg.GetEmployeeDisplayName())
+	agent, err := h.application.Queries.ResolveAgents.OfEmployee(ctx, request.GetPurpose(), request.GetEmployeeId(), request.GetEmployeeDisplayName())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.GetEmployeeAgentResponse{AgentId: agent.AgentID, Appearance: appearanceToProto(agent.Appearance)}), nil
+	return &agentprivatev1.GetEmployeeAgentResponse{AgentId: agent.AgentID, Appearance: appearanceToProto(agent.Appearance)}, nil
 }
 
-func (h *AgentHandler) ResolveWorkAgents(ctx context.Context, request *connect.Request[agentprivatev1.ResolveWorkAgentsRequest]) (*connect.Response[agentprivatev1.ResolveWorkAgentsResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) ResolveWorkAgents(ctx context.Context, request *agentprivatev1.ResolveWorkAgentsRequest) (*agentprivatev1.ResolveWorkAgentsResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	results, err := h.application.Queries.ResolveAgents.ByWork(ctx, request.Msg.GetWorkIds())
+	results, err := h.application.Queries.ResolveAgents.ByWork(ctx, request.GetWorkIds())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -62,22 +62,22 @@ func (h *AgentHandler) ResolveWorkAgents(ctx context.Context, request *connect.R
 		}
 		response.Agents[index] = resolved
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
 // ChangeWorkAgentAppearance lets the signed-in human change the Work Agent
 // that represents them; the definition decides whether they are that human.
-func (h *WorkHandler) ChangeWorkAgentAppearance(ctx context.Context, request *connect.Request[agentpublicv1.ChangeWorkAgentAppearanceRequest]) (*connect.Response[agentpublicv1.ChangeWorkAgentAppearanceResponse], error) {
+func (h *WorkHandler) ChangeWorkAgentAppearance(ctx context.Context, request *agentpublicv1.ChangeWorkAgentAppearanceRequest) (*agentpublicv1.ChangeWorkAgentAppearanceResponse, error) {
 	actor, ok := authn.CurrentUserID(ctx)
 	if !ok || actor == "" {
-		return nil, connect.NewError(connect.CodeUnauthenticated, domain.ErrAgentAppearanceForbidden)
+		return nil, connect.NewError(connect.CodeUnauthenticated, domain.ErrAgentAppearanceForbidden.Error()).WithCause(domain.ErrAgentAppearanceForbidden)
 	}
 	appearance, err := h.application.Commands.ChangeAgentAppearance.Handle(ctx, command.ChangeAgentAppearance{
-		AgentID: strings.TrimSpace(request.Msg.GetAgentId()), Actor: actor, Name: request.Msg.GetName(),
-		Glyph: request.Msg.GetIcon().GetGlyph(), Color: request.Msg.GetIcon().GetColor(),
+		AgentID: strings.TrimSpace(request.GetAgentId()), Actor: actor, Name: request.GetName(),
+		Glyph: request.GetIcon().GetGlyph(), Color: request.GetIcon().GetColor(),
 	})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.ChangeWorkAgentAppearanceResponse{Appearance: appearanceToProto(appearance)}), nil
+	return &agentpublicv1.ChangeWorkAgentAppearanceResponse{Appearance: appearanceToProto(appearance)}, nil
 }

@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/samber/oops"
 
-	computerprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1/computerprivatev1connect"
+	computerprivatev1 "github.com/talgent-work/contracts/gen/computer/private/v1"
+	"github.com/talgent-work/contracts/gen/computer/private/v1/computerprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -67,45 +68,46 @@ var (
 	_ command.ComputerDescriptionPort = (*Client)(nil)
 )
 
-func NewClient(httpClient connect.HTTPClient, config Config, logger *slog.Logger) (*Client, error) {
+func NewClient(httpClient connecthttp.HTTPClient, config Config, logger *slog.Logger) (*Client, error) {
 	if strings.TrimSpace(config.Address) == "" || strings.TrimSpace(config.Token) == "" {
 		return nil, errors.New("agent: Computer address and control token are required")
 	}
-	return &Client{admission: computerprivatev1connect.NewAdmissionServiceClient(httpClient, config.Address), token: config.Token, logger: logger}, nil
+	return &Client{admission: computerprivatev1connect.NewAdmissionServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, config.Address, connecthttp.WithReadMaxBytes(0)))), token: config.Token, logger: logger}, nil
 }
 
-func request[T any](message *T, token string) *connect.Request[T] {
-	req := connect.NewRequest(message)
-	req.Header().Set("Authorization", "Bearer "+token)
-	return req
+// authorized is the context of a call under the control token.
+func authorized(ctx context.Context, token string) context.Context {
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+token)
+	return ctx
 }
 
 func (c *Client) ListUsableComputers(ctx context.Context, personID string) ([]command.UsableComputer, error) {
-	response, err := c.admission.ListUsableComputers(ctx, request(&computerprivatev1.ListUsableComputersRequest{PersonId: personID}, c.token))
+	response, err := c.admission.ListUsableComputers(authorized(ctx, c.token), &computerprivatev1.ListUsableComputersRequest{PersonId: personID})
 	if err != nil {
 		return nil, callError(err)
 	}
-	computers := make([]command.UsableComputer, 0, len(response.Msg.GetComputers()))
-	for _, computer := range response.Msg.GetComputers() {
+	computers := make([]command.UsableComputer, 0, len(response.GetComputers()))
+	for _, computer := range response.GetComputers() {
 		computers = append(computers, command.UsableComputer{ID: computer.GetId(), Cloud: computer.GetKind() == computerprivatev1.ComputerKind_COMPUTER_KIND_CLOUD})
 	}
 	return computers, nil
 }
 
 func (c *Client) AdmitRun(ctx context.Context, run command.RunAdmission) (command.ComputerAnswer, error) {
-	response, err := c.admission.AdmitRun(ctx, request(&computerprivatev1.AdmitRunRequest{
+	response, err := c.admission.AdmitRun(authorized(ctx, c.token), &computerprivatev1.AdmitRunRequest{
 		ComputerId: run.ComputerID, DeskId: run.DeskID, WorkId: run.WorkID, WorkOwnerId: run.WorkOwnerID, StarterId: run.StarterID, Sandbox: run.Sandbox,
-	}, c.token))
+	})
 	if err != nil {
 		return command.ComputerAnswer{}, callError(err)
 	}
-	switch response.Msg.GetAnswer() {
+	switch response.GetAnswer() {
 	case computerprivatev1.AdmissionAnswer_ADMISSION_ANSWER_SEATED:
 		return command.ComputerAnswer{Kind: command.ComputerSeated}, nil
 	case computerprivatev1.AdmissionAnswer_ADMISSION_ANSWER_WAITING:
 		return command.ComputerAnswer{Kind: command.ComputerWaiting}, nil
 	default:
-		return command.ComputerAnswer{Kind: command.ComputerRejected, Rejection: rejection(response.Msg.GetReason(), response.Msg.GetComputerKind())}, nil
+		return command.ComputerAnswer{Kind: command.ComputerRejected, Rejection: rejection(response.GetReason(), response.GetComputerKind())}, nil
 	}
 }
 
@@ -133,7 +135,7 @@ func rejection(reason computerprivatev1.RejectionReason, kind computerprivatev1.
 }
 
 func (c *Client) LeaveDesk(ctx context.Context, deskID string) error {
-	if _, err := c.admission.LeaveDesk(ctx, request(&computerprivatev1.LeaveDeskRequest{DeskId: deskID}, c.token)); err != nil {
+	if _, err := c.admission.LeaveDesk(authorized(ctx, c.token), &computerprivatev1.LeaveDeskRequest{DeskId: deskID}); err != nil {
 		return callError(err)
 	}
 	return nil
@@ -155,12 +157,12 @@ func (c *Client) ReleaseUnusedDesk(ctx context.Context, deskID string) {
 }
 
 func (c *Client) ListOpenDesks(ctx context.Context, openedBefore time.Time, afterDeskID string) ([]command.OpenDesk, error) {
-	response, err := c.admission.ListOpenDesks(ctx, request(&computerprivatev1.ListOpenDesksRequest{OpenedBeforeUnixMs: openedBefore.UnixMilli(), AfterDeskId: afterDeskID}, c.token))
+	response, err := c.admission.ListOpenDesks(authorized(ctx, c.token), &computerprivatev1.ListOpenDesksRequest{OpenedBeforeUnixMs: openedBefore.UnixMilli(), AfterDeskId: afterDeskID})
 	if err != nil {
 		return nil, callError(err)
 	}
-	desks := make([]command.OpenDesk, 0, len(response.Msg.GetDesks()))
-	for _, desk := range response.Msg.GetDesks() {
+	desks := make([]command.OpenDesk, 0, len(response.GetDesks()))
+	for _, desk := range response.GetDesks() {
 		desks = append(desks, command.OpenDesk{DeskID: desk.GetDeskId(), WorkID: desk.GetWorkId()})
 	}
 	return desks, nil
@@ -169,18 +171,18 @@ func (c *Client) ListOpenDesks(ctx context.Context, openedBefore time.Time, afte
 // DeskSeated asks Computer whether a Desk is seated now, and when. A Desk
 // Computer does not know was never opened, so it is not seated.
 func (c *Client) DeskSeated(ctx context.Context, deskID string) (time.Time, bool, error) {
-	response, err := c.admission.GetDesk(ctx, request(&computerprivatev1.GetDeskRequest{DeskId: deskID}, c.token))
+	response, err := c.admission.GetDesk(authorized(ctx, c.token), &computerprivatev1.GetDeskRequest{DeskId: deskID})
 	if connect.CodeOf(err) == connect.CodeNotFound {
 		return time.Time{}, false, nil
 	}
 	if err != nil {
 		return time.Time{}, false, oops.Wrap(errors.Join(command.ErrComputerUnavailable, err))
 	}
-	if response.Msg.GetState() != computerprivatev1.DeskState_DESK_STATE_OCCUPIED {
+	if response.GetState() != computerprivatev1.DeskState_DESK_STATE_OCCUPIED {
 		return time.Time{}, false, nil
 	}
 	var seatedAt time.Time
-	if at := response.Msg.GetSeatedAt(); at != nil {
+	if at := response.GetSeatedAt(); at != nil {
 		seatedAt = at.AsTime()
 	}
 	return seatedAt, true, nil
@@ -189,12 +191,12 @@ func (c *Client) DeskSeated(ctx context.Context, deskID string) (time.Time, bool
 // DescribeComputer asks Computer what a Computer is. An unknown Computer is
 // one this Work cannot use.
 func (c *Client) DescribeComputer(ctx context.Context, computerID string) (command.ComputerDescription, error) {
-	response, err := c.admission.DescribeComputer(ctx, request(&computerprivatev1.DescribeComputerRequest{ComputerId: computerID}, c.token))
+	response, err := c.admission.DescribeComputer(authorized(ctx, c.token), &computerprivatev1.DescribeComputerRequest{ComputerId: computerID})
 	if err != nil {
 		return command.ComputerDescription{}, callError(err)
 	}
-	description := command.ComputerDescription{Managed: response.Msg.GetKind() == computerprivatev1.ComputerKind_COMPUTER_KIND_MANAGED, Name: response.Msg.GetName(), Removed: response.Msg.GetRemoved(), Reachable: response.Msg.GetReachable()}
-	if since := response.Msg.GetUnreachableSince(); since != nil && !description.Reachable {
+	description := command.ComputerDescription{Managed: response.GetKind() == computerprivatev1.ComputerKind_COMPUTER_KIND_MANAGED, Name: response.GetName(), Removed: response.GetRemoved(), Reachable: response.GetReachable()}
+	if since := response.GetUnreachableSince(); since != nil && !description.Reachable {
 		description.UnreachableSince = since.AsTime()
 	}
 	return description, nil

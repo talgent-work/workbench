@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package marketplace.task.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/marketplace/task/v1;marketplacetaskv1";
+
+// SynchronizeCatalogTaskV1 is an internal deferred publication request.
+message SynchronizeCatalogTaskV1 {
+  // Empty for a periodic trigger; otherwise the reserved operation identity.
+  string run_id = 1;
+}

@@ -6,11 +6,12 @@ import (
 	"sync"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // liveAgent stands in for Agent: it verifies one live sandbox's credential
@@ -26,25 +27,25 @@ type liveAgent struct {
 	asked  []bool
 }
 
-func (a *liveAgent) VerifyWorkCredential(_ context.Context, r *connect.Request[agentprivatev1.VerifyWorkCredentialRequest]) (*connect.Response[agentprivatev1.VerifyWorkCredentialResponse], error) {
+func (a *liveAgent) VerifyWorkCredential(ctx context.Context, r *agentprivatev1.VerifyWorkCredentialRequest) (*agentprivatev1.VerifyWorkCredentialResponse, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if r.Header().Get("Authorization") != "Bearer control" {
-		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
+	if info, _ := connect.CallInfoForServerContext(ctx); info.RequestHeader().Get("Authorization") != "Bearer control" {
+		return nil, connect.NewError(connect.CodeUnauthenticated, "")
 	}
-	if !a.live || r.Msg.GetCredential() != "sandbox-credential" {
-		return nil, connect.NewError(connect.CodePermissionDenied, nil)
+	if !a.live || r.GetCredential() != "sandbox-credential" {
+		return nil, connect.NewError(connect.CodePermissionDenied, "")
 	}
-	a.asked = append(a.asked, r.Msg.GetRequireActing())
-	if r.Msg.GetRequireActing() && !a.acting {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, nil)
+	a.asked = append(a.asked, r.GetRequireActing())
+	if r.GetRequireActing() && !a.acting {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "")
 	}
-	return connect.NewResponse(&agentprivatev1.VerifyWorkCredentialResponse{WorkId: r.Msg.GetWorkId(), SubjectId: "owner", AgentId: "agent", ProjectId: a.projectID, Subject: a.subject, Purpose: "work"}), nil
+	return &agentprivatev1.VerifyWorkCredentialResponse{WorkId: r.GetWorkId(), SubjectId: "owner", AgentId: "agent", ProjectId: a.projectID, Subject: a.subject, Purpose: "work"}, nil
 }
 
 func liveClient(t *testing.T, agent *liveAgent) *LiveWorkClient {
 	t.Helper()
-	_, handler := agentprivatev1connect.NewAgentServiceHandler(agent)
+	handler := connecttest.Handler(func(s *connect.Server) { agentprivatev1connect.RegisterAgentServiceHandler(s, agent) })
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client, err := NewLiveWorkClient(server.Client(), server.URL, "control")

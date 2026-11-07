@@ -10,13 +10,14 @@ import (
 	"net/url"
 	"strings"
 
-	traceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/trace/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/trace/private/v1/traceprivatev1connect"
+	traceprivatev1 "github.com/talgent-work/contracts/gen/trace/private/v1"
+	"github.com/talgent-work/contracts/gen/trace/private/v1/traceprivatev1connect"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
@@ -65,16 +66,17 @@ func NewProjectAccess(client *http.Client, cfg Config) (query.ProjectAccessDecis
 		return nil, errors.New("trace: Project access address and HTTP client are required")
 	}
 	address := strings.TrimRight(strings.TrimSpace(cfg.ProjectAccessAddress), "/")
-	return &ProjectAccess{client: traceprivatev1connect.NewProjectAccessServiceClient(client, address)}, nil
+	return &ProjectAccess{client: traceprivatev1connect.NewProjectAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0))))}, nil
 }
 
 func (a *ProjectAccess) AuthorizeProjectReader(ctx context.Context, readerID, projectID string) error {
 	if err := check(readerID, projectID); err != nil {
 		return err
 	}
-	req := connect.NewRequest(&traceprivatev1.DecideProjectAccessRequest{ProjectId: projectID})
-	req.Header().Set(authn.HeaderServiceID, "trace")
-	req.Header().Set(authn.HeaderDelegatedUserID, readerID)
+	req := &traceprivatev1.DecideProjectAccessRequest{ProjectId: projectID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set(authn.HeaderServiceID, "trace")
+	info.RequestHeader().Set(authn.HeaderDelegatedUserID, readerID)
 	if _, err := a.client.DecideProjectAccess(ctx, req); err != nil {
 		return authorityError(err)
 	}
@@ -95,20 +97,21 @@ func NewWorkAccess(client *http.Client, cfg Config) (*WorkAccess, error) {
 		return nil, errors.New("trace: Agent address, control token and HTTP client are required")
 	}
 	address := strings.TrimRight(strings.TrimSpace(cfg.AgentAddress), "/")
-	return &WorkAccess{client: agentprivatev1connect.NewWorkAccessServiceClient(client, address), token: strings.TrimSpace(cfg.AgentControlToken)}, nil
+	return &WorkAccess{client: agentprivatev1connect.NewWorkAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0)))), token: strings.TrimSpace(cfg.AgentControlToken)}, nil
 }
 
 func (a *WorkAccess) AuthorizeWorkReader(ctx context.Context, readerID, workID string) error {
 	if err := check(readerID, workID); err != nil {
 		return err
 	}
-	req := connect.NewRequest(&agentprivatev1.AdmitWorkReaderRequest{WorkId: workID, ReaderId: readerID})
-	req.Header().Set("Authorization", "Bearer "+a.token)
+	req := &agentprivatev1.AdmitWorkReaderRequest{WorkId: workID, ReaderId: readerID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+a.token)
 	response, err := a.client.AdmitWorkReader(ctx, req)
 	if err != nil {
 		return authorityError(err)
 	}
-	switch response.Msg.GetBasis() {
+	switch response.GetBasis() {
 	case agentprivatev1.WorkReadBasis_WORK_READ_BASIS_OWNER, agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE:
 		return nil
 	default:

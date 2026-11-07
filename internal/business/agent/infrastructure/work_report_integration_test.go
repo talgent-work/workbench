@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -21,6 +22,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"xorm.io/xorm"
 )
@@ -69,22 +71,24 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	observed = end
 	report := query.NewGetWorkReportHandler(infrastructure.NewWorkReportQueryRepository(db), clock)
 	app := &application.Application{Queries: application.Queries{GetWorkReport: report}}
-	_, handler := agentprivatev1connect.NewWorkFactsServiceHandler(transport.NewWorkFactsHandler(app, "control"))
+	handler := connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterWorkFactsServiceHandler(s, transport.NewWorkFactsHandler(app, "control"))
+	})
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	client := agentprivatev1connect.NewWorkFactsServiceClient(server.Client(), server.URL)
-	request := controlRequest(&agentprivatev1.GetWorkReportRequest{ProjectId: project, Purpose: "work", Window: "24h", End: timestamppb.New(end)})
-	response, err := client.GetWorkReport(ctx, request)
+	client := agentprivatev1connect.NewWorkFactsServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	request := &agentprivatev1.GetWorkReportRequest{ProjectId: project, Purpose: "work", Window: "24h", End: timestamppb.New(end)}
+	response, err := client.GetWorkReport(controlRequest(ctx), request)
 	require.NoError(t, err)
-	require.True(t, response.Msg.Current.HistoryComplete)
-	require.Equal(t, []string{id}, response.Msg.Current.EligibleWorkIds, "the caller classifies eligible Works by its own facts")
-	require.EqualValues(t, 1, response.Msg.Current.GetClosed())
-	require.EqualValues(t, 1, response.Msg.Previous.GetActive(), "period-end Running snapshot survives later closure and adapter recreation")
-	require.EqualValues(t, 0, response.Msg.Previous.GetClosed())
-	require.EqualValues(t, 1, response.Msg.Current.Buckets[1].GetClosed())
-	require.Equal(t, 180.0, response.Msg.Current.Buckets[1].GetP50Minutes())
-	require.Equal(t, "owner", response.Msg.Current.Owners[0].Key, "archived Work is reported")
-	_, err = client.GetWorkReport(ctx, connect.NewRequest(request.Msg))
+	require.True(t, response.Current.HistoryComplete)
+	require.Equal(t, []string{id}, response.Current.EligibleWorkIds, "the caller classifies eligible Works by its own facts")
+	require.EqualValues(t, 1, response.Current.GetClosed())
+	require.EqualValues(t, 1, response.Previous.GetActive(), "period-end Running snapshot survives later closure and adapter recreation")
+	require.EqualValues(t, 0, response.Previous.GetClosed())
+	require.EqualValues(t, 1, response.Current.Buckets[1].GetClosed())
+	require.Equal(t, 180.0, response.Current.Buckets[1].GetP50Minutes())
+	require.Equal(t, "owner", response.Current.Owners[0].Key, "archived Work is reported")
+	_, err = client.GetWorkReport(ctx, request)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err), "only a trusted caller, which authorizes its scope, reads the report")
 	rows, err := db.QueryString("EXPLAIN SELECT id FROM agent_session WHERE project_ref=? AND deleted_at=0 AND created_at<?", project, end.UnixMilli())
 	require.NoError(t, err)
@@ -106,21 +110,21 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: coordinator.ID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: project, WorkspaceReference: uuid.NewString()})
 	require.NoError(t, err)
 	observed = end
-	response, err = client.GetWorkReport(ctx, request)
+	response, err = client.GetWorkReport(controlRequest(ctx), request)
 	require.NoError(t, err)
-	require.Len(t, response.Msg.Current.EligibleWorkIds, 105, "another Project's Work and another purpose's Work stay out")
-	require.EqualValues(t, 104, response.Msg.Current.GetCreated())
-	require.EqualValues(t, 105, response.Msg.Current.Owners[0].Count)
-	require.EqualValues(t, 1, response.Msg.Current.GetClosed())
+	require.Len(t, response.Current.EligibleWorkIds, 105, "another Project's Work and another purpose's Work stay out")
+	require.EqualValues(t, 104, response.Current.GetCreated())
+	require.EqualValues(t, 105, response.Current.Owners[0].Count)
+	require.EqualValues(t, 1, response.Current.GetClosed())
 	// Existing Work can retain its current state without any historical facts.
 	_, err = db.Exec("DELETE FROM agent_session_state_history WHERE session_id=?", id)
 	require.NoError(t, err)
-	response, err = client.GetWorkReport(ctx, request)
+	response, err = client.GetWorkReport(controlRequest(ctx), request)
 	require.NoError(t, err)
-	require.True(t, response.Msg.Current.HistoryComplete)
-	require.EqualValues(t, 104, response.Msg.Current.GetCreated())
-	require.EqualValues(t, 1, response.Msg.Current.GetClosed())
-	require.Nil(t, response.Msg.Previous.Active, "do not reconstruct previous Running from current Closed")
-	require.Nil(t, response.Msg.Current.Buckets[1].Closed, "unknown closure time affects the time series only")
-	require.EqualValues(t, 105, response.Msg.Current.Owners[0].Count)
+	require.True(t, response.Current.HistoryComplete)
+	require.EqualValues(t, 104, response.Current.GetCreated())
+	require.EqualValues(t, 1, response.Current.GetClosed())
+	require.Nil(t, response.Previous.Active, "do not reconstruct previous Running from current Closed")
+	require.Nil(t, response.Current.Buckets[1].Closed, "unknown closure time affects the time series only")
+	require.EqualValues(t, 105, response.Current.Owners[0].Count)
 }

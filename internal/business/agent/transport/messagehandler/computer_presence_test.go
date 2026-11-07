@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	computereventsv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
 )
 
@@ -51,17 +51,17 @@ func presenceFact(t *testing.T, fact proto.Message) integrationmessage.Message {
 func TestPresenceChangesApplyTheComputersPresence(t *testing.T) {
 	r, back := &reach{}, &reconnection{}
 	handler := messagehandler.NewComputerPresenceHandler(r, back)
-	require.Equal(t, []integrationmessage.Kind{"talgent.computer.events.v1.ComputerBecameUnreachable", "talgent.computer.events.v1.ComputerBecameReachable", "talgent.computer.events.v1.ComputerRemoved"}, handler.Listening())
-	require.NoError(t, handler.Handle(context.Background(), presenceFact(t, &computereventsv1.ComputerBecameUnreachable{ComputerId: "lost"})))
-	require.NoError(t, handler.Handle(context.Background(), presenceFact(t, &computereventsv1.ComputerBecameReachable{ComputerId: "back"})))
+	require.Equal(t, []integrationmessage.Kind{"computer.integration.v1.ComputerBecameUnreachableV1", "computer.integration.v1.ComputerBecameReachableV1", "computer.integration.v1.ComputerRemovedV1"}, handler.Listening())
+	require.NoError(t, handler.Handle(context.Background(), presenceFact(t, &computerintegrationv1.ComputerBecameUnreachableV1{ComputerId: "lost"})))
+	require.NoError(t, handler.Handle(context.Background(), presenceFact(t, &computerintegrationv1.ComputerBecameReachableV1{ComputerId: "back"})))
 	require.Equal(t, []string{"lost", "back"}, r.computers)
 	require.Equal(t, []string{"back"}, back.computers, "only a return of reach reconciles the machine and retries refused Resumes")
-	require.NoError(t, handler.Handle(context.Background(), presenceFact(t, &computereventsv1.ComputerRemoved{ComputerId: "gone"})))
+	require.NoError(t, handler.Handle(context.Background(), presenceFact(t, &computerintegrationv1.ComputerRemovedV1{ComputerId: "gone"})))
 	require.Equal(t, []string{"gone"}, r.removed, "a removal loses the environments of the Computer's Works")
 
 	failing := &reach{err: errors.New("computer unavailable")}
-	require.ErrorIs(t, messagehandler.NewComputerPresenceHandler(failing, &reconnection{}).Handle(context.Background(), presenceFact(t, &computereventsv1.ComputerBecameReachable{ComputerId: "back"})), failing.err)
+	require.ErrorIs(t, messagehandler.NewComputerPresenceHandler(failing, &reconnection{}).Handle(context.Background(), presenceFact(t, &computerintegrationv1.ComputerBecameReachableV1{ComputerId: "back"})), failing.err)
 	unreconciled := &reconnection{err: errors.New("machine did not answer")}
-	require.ErrorIs(t, messagehandler.NewComputerPresenceHandler(&reach{}, unreconciled).Handle(context.Background(), presenceFact(t, &computereventsv1.ComputerBecameReachable{ComputerId: "back"})), unreconciled.err, "a failed reconnection is retried")
-	require.Error(t, handler.Handle(context.Background(), presenceFact(t, &computereventsv1.DeskAssigned{})))
+	require.ErrorIs(t, messagehandler.NewComputerPresenceHandler(&reach{}, unreconciled).Handle(context.Background(), presenceFact(t, &computerintegrationv1.ComputerBecameReachableV1{ComputerId: "back"})), unreconciled.err, "a failed reconnection is retried")
+	require.Error(t, handler.Handle(context.Background(), presenceFact(t, &computerintegrationv1.DeskAssignedV1{})))
 }

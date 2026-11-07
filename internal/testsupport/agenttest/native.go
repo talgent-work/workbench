@@ -6,11 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
+	"github.com/talgent-work/contracts/gen/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
@@ -53,7 +54,9 @@ func platformConnector(t testing.TB, dsn, address string) domain.SelectedConnect
 	ctx := context.Background()
 	require.NoError(t, app.PublishConnector(ctx, marketapp.ConnectorPublication{Name: "talgent", Configuration: marketdomain.MCPConfiguration{Type: "http", URL: address}}))
 	mux := http.NewServeMux()
-	mux.Handle(marketplaceprivatev1connect.NewSelectionServiceHandler(markettransport.NewSelectionHandler(app, "fixture-token"), connect.WithInterceptors(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))))
+	srv := connect.NewServer(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	marketplaceprivatev1connect.RegisterSelectionServiceHandler(srv, markettransport.NewSelectionHandler(app, "fixture-token"))
+	connecthttp.Mount(mux, srv)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	client, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL, CredentialToken: "fixture-token"})

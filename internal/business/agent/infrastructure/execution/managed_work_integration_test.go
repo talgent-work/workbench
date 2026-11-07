@@ -13,11 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"golang.org/x/net/websocket"
 	"xorm.io/xorm"
@@ -251,7 +253,7 @@ func newManagedWork(t *testing.T) *managedWork {
 
 	f.receiver = &nativeConnectionReceiver{provisioning: f.provisioning}
 	mux := http.NewServeMux()
-	mux.Handle(dispatcherprivatev1connect.NewExecutionServiceHandler(f.receiver))
+	mux.Handle("/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) { dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, f.receiver) }))
 	dispatcher := httptest.NewServer(mux)
 	t.Cleanup(dispatcher.Close)
 	control := NewDispatcherControl(dispatcher.Client(), dispatcher.URL, "dispatcher-secret")

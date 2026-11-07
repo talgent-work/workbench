@@ -1,0 +1,28 @@
+{
+  "name": "@talgent/contracts",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Placeholder until the contracts repository ships @talgent/contracts: the TypeScript of contracts v0.1.1, generated once from its proto. Replace this package with that release (a pnpm git dependency on github:talgent-work/contracts#vX.Y.Z) and delete it; do not regenerate it.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "rebuild": "rm -rf dist node_modules/.tmp/tsconfig.tsbuildinfo && pnpm run build",
+    "test:runtime": "node scripts/verify-runtime-imports.mjs"
+  },
+  "exports": {
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.11.0"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2"
+  }
+}

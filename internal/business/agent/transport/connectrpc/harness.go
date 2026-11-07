@@ -5,8 +5,9 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -15,7 +16,7 @@ import (
 
 // errorDetail serializes a registered message, which always succeeds.
 func errorDetail(message proto.Message) *connect.ErrorDetail {
-	detail, err := connect.NewErrorDetail(message)
+	detail, err := connectproto.NewErrorDetail(message)
 	if err != nil {
 		panic(err)
 	}
@@ -36,9 +37,9 @@ var (
 func withRefusalDetail(refused *connect.Error, err error) *connect.Error {
 	switch {
 	case errors.Is(err, domain.ErrComputerNoSandbox):
-		refused.AddDetail(sandboxUnavailable)
+		refused = refused.WithDetail(sandboxUnavailable)
 	case errors.Is(err, domain.ErrComputerOutdated):
-		refused.AddDetail(computerOutdated)
+		refused = refused.WithDetail(computerOutdated)
 	}
 	return refused
 }
@@ -75,15 +76,15 @@ func harnessChoiceFromProto(choice *agentpublicv1.HarnessChoice) domain.HarnessC
 	return domain.HarnessChoice{PermissionMode: permissionModeFromProto(choice.GetPermissionMode()), Sandbox: choice.GetSandbox()}
 }
 
-func (h *WorkHandler) SetPermissionMode(ctx context.Context, request *connect.Request[agentpublicv1.SetPermissionModeRequest]) (*connect.Response[agentpublicv1.SetPermissionModeResponse], error) {
+func (h *WorkHandler) SetPermissionMode(ctx context.Context, request *agentpublicv1.SetPermissionModeRequest) (*agentpublicv1.SetPermissionModeResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	mode := permissionModeFromProto(request.Msg.GetPermissionMode())
+	mode := permissionModeFromProto(request.GetPermissionMode())
 	if mode == "" {
 		return nil, mapAgentError(domain.ErrInvalidWork)
 	}
-	accepted, err := h.application.SetPermissionMode(ctx, application.SetPermissionMode{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), Mode: mode})
+	accepted, err := h.application.SetPermissionMode(ctx, application.SetPermissionMode{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Mode: mode})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.SetPermissionModeResponse{PermissionMode: permissionModeToProto(accepted)}), nil
+	return &agentpublicv1.SetPermissionModeResponse{PermissionMode: permissionModeToProto(accepted)}, nil
 }

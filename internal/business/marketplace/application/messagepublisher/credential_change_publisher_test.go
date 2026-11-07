@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	marketplaceeventsv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/events/v1"
+	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/marketplace/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
@@ -30,15 +30,15 @@ func TestEveryCredentialChangeIsPublishedWithoutCredentials(t *testing.T) {
 	for change, published := range changes {
 		publisher.Handle(context.Background(), domain.CredentialChanged{AuthorizationID: "authorization-1", Change: change, OccurredAt: now})
 		msg := bus.messages[len(bus.messages)-1]
-		require.Equal(t, integrationmessage.Kind("talgent.marketplace.events.v1.CredentialChanged"), msg.Kind())
+		require.Equal(t, integrationmessage.Kind("marketplace.integration.v1.CredentialChangedV1"), msg.Kind())
 		require.Equal(t, "authorization-1", msg.Key())
-		payload := msg.Payload().(*marketplaceeventsv1.CredentialChanged)
+		payload := msg.Payload().(*marketplaceintegrationv1.CredentialChangedV1)
 		require.Equal(t, "authorization-1", payload.GetAuthorizationId())
 		require.Equal(t, published, payload.GetChange())
 		require.True(t, payload.GetOccurredAt().AsTime().Equal(now))
 	}
 	require.Len(t, bus.messages, 4, "renewed, reauthorized, revoked and reconnect required")
-	fields := (&marketplaceeventsv1.CredentialChanged{}).ProtoReflect().Descriptor().Fields()
+	fields := (&marketplaceintegrationv1.CredentialChangedV1{}).ProtoReflect().Descriptor().Fields()
 	var names []protoreflect.Name
 	for i := range fields.Len() {
 		names = append(names, fields.Get(i).Name())

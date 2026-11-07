@@ -7,14 +7,15 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/talgent-work/workbench/internal/pkg/otelsetup"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 
 	"go.opentelemetry.io/otel/propagation"
 
-	"connectrpc.com/connect"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
+	"connectrpc.com/connect/v2"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -35,18 +36,18 @@ func NewAgentHandler(app *application.Application, token string) *AgentHandler {
 	return &AgentHandler{application: app, token: token}
 }
 
-func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *connect.Request[agentprivatev1.PrepareWorkExecutionRequest]) (*connect.Response[agentprivatev1.PrepareWorkExecutionResponse], error) {
-	if err := authenticateCaller(h.token, request.Header().Get("Authorization"), request.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *agentprivatev1.PrepareWorkExecutionRequest) (*agentprivatev1.PrepareWorkExecutionResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), request.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	ctx = propagation.TraceContext{}.Extract(ctx, propagation.HeaderCarrier(request.Header()))
-	input := command.PrepareWorkExecution{ThinkingLevel: request.Msg.GetThinkingLevel(), SubjectID: request.Msg.GetSubjectId(), WorkID: request.Msg.GetWorkId(), RequestID: request.Msg.GetRequestId(), WorkBranch: request.Msg.GetWorkBranch(), Input: command.ExecutionInput{ID: request.Msg.GetInputId(), Text: request.Msg.GetInput()}}
-	for _, selection := range request.Msg.GetSelections() {
+	ctx = propagation.TraceContext{}.Extract(ctx, otelsetup.ConnectCarrier{Header: requestHeader(ctx)})
+	input := command.PrepareWorkExecution{ThinkingLevel: request.GetThinkingLevel(), SubjectID: request.GetSubjectId(), WorkID: request.GetWorkId(), RequestID: request.GetRequestId(), WorkBranch: request.GetWorkBranch(), Input: command.ExecutionInput{ID: request.GetInputId(), Text: request.GetInput()}}
+	for _, selection := range request.GetSelections() {
 		input.Selections = append(input.Selections, command.RepositorySelection{RepositoryID: selection.GetRepositoryId(), BaseBranch: selection.GetBaseBranch()})
 	}
 	var workID string
 	var err error
-	if creation := request.Msg.GetCreation(); creation != nil {
+	if creation := request.GetCreation(); creation != nil {
 		if err := h.application.AdmitCallerCreation(subjectFromProto(creation.GetSubject()), creation.GetProjectId()); err != nil {
 			return nil, mapAgentError(err)
 		}
@@ -66,122 +67,122 @@ func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *connec
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.PrepareWorkExecutionResponse{WorkId: workID}), nil
+	return &agentprivatev1.PrepareWorkExecutionResponse{WorkId: workID}, nil
 }
 
-func (h *AgentHandler) CreateAgentDefinition(ctx context.Context, req *connect.Request[agentprivatev1.CreateAgentDefinitionRequest]) (*connect.Response[agentprivatev1.CreateAgentDefinitionResponse], error) {
-	if err := authenticateIntegration(h.token, req.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) CreateAgentDefinition(ctx context.Context, req *agentprivatev1.CreateAgentDefinitionRequest) (*agentprivatev1.CreateAgentDefinitionResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	id, err := h.application.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: req.Msg.GetOwners(), AgentName: req.Msg.GetAgentName(), Purpose: req.Msg.GetPurpose(), UsageScope: domain.UsageScope{Kind: req.Msg.GetUsageScope().GetKind(), Reference: req.Msg.GetUsageScope().GetReference()}, HomeBinding: domain.HomeBinding{OwnerID: req.Msg.GetHomeBinding().GetOwnerId(), Namespace: req.Msg.GetHomeBinding().GetNamespace()}, Visibility: visibilityRuleFromProto(req.Msg.GetVisibilityRule()), Capabilities: capabilitiesFromProto(req.Msg.GetCapabilities())})
+	id, err := h.application.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: req.GetOwners(), AgentName: req.GetAgentName(), Purpose: req.GetPurpose(), UsageScope: domain.UsageScope{Kind: req.GetUsageScope().GetKind(), Reference: req.GetUsageScope().GetReference()}, HomeBinding: domain.HomeBinding{OwnerID: req.GetHomeBinding().GetOwnerId(), Namespace: req.GetHomeBinding().GetNamespace()}, Visibility: visibilityRuleFromProto(req.GetVisibilityRule()), Capabilities: capabilitiesFromProto(req.GetCapabilities())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.CreateAgentDefinitionResponse{AgentId: id}), nil
+	return &agentprivatev1.CreateAgentDefinitionResponse{AgentId: id}, nil
 }
-func (h *AgentHandler) CreateWork(ctx context.Context, req *connect.Request[agentprivatev1.CreateWorkRequest]) (*connect.Response[agentprivatev1.CreateWorkResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) CreateWork(ctx context.Context, req *agentprivatev1.CreateWorkRequest) (*agentprivatev1.CreateWorkResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	if err := h.application.AdmitCallerCreation(subjectFromProto(req.Msg.GetSubject()), req.Msg.GetProjectId()); err != nil {
+	if err := h.application.AdmitCallerCreation(subjectFromProto(req.GetSubject()), req.GetProjectId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	id, err := h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: req.Msg.GetStartingUserId(), RequestID: req.Msg.GetRequestId(), WorkModel: workModelFromProto(req.Msg.GetModel()), Subject: subjectFromProto(req.Msg.GetSubject()), ProjectID: req.Msg.GetProjectId(), CapabilityDifferences: capabilityDifferencesFromProto(req.Msg.GetCapabilityDifferences()), StartingContext: startingContextFromProto(req.Msg.GetStartingContext()), SubjectID: req.Msg.GetSubjectId(), AgentID: req.Msg.GetAgentId(), WorkspaceReference: req.Msg.GetWorkspaceReference(), InputSource: domain.WorkInputSource{Reference: req.Msg.GetInputSource(), SpaceToken: req.Msg.GetInputSpaceToken()}, ReadOnlyMounts: readOnlyMountsFromProto(req.Msg.GetReadOnlyMounts()), TraceAttributes: maps.Clone(req.Msg.GetTraceAttributes()), ComputerID: strings.TrimSpace(req.Msg.GetComputerId()), Harness: harnessChoiceFromProto(req.Msg.GetHarness())})
+	id, err := h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: req.GetStartingUserId(), RequestID: req.GetRequestId(), WorkModel: workModelFromProto(req.GetModel()), Subject: subjectFromProto(req.GetSubject()), ProjectID: req.GetProjectId(), CapabilityDifferences: capabilityDifferencesFromProto(req.GetCapabilityDifferences()), StartingContext: startingContextFromProto(req.GetStartingContext()), SubjectID: req.GetSubjectId(), AgentID: req.GetAgentId(), WorkspaceReference: req.GetWorkspaceReference(), InputSource: domain.WorkInputSource{Reference: req.GetInputSource(), SpaceToken: req.GetInputSpaceToken()}, ReadOnlyMounts: readOnlyMountsFromProto(req.GetReadOnlyMounts()), TraceAttributes: maps.Clone(req.GetTraceAttributes()), ComputerID: strings.TrimSpace(req.GetComputerId()), Harness: harnessChoiceFromProto(req.GetHarness())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.CreateWorkResponse{WorkId: id}), nil
-}
-
-func (h *AgentHandler) ResumeWork(ctx context.Context, req *connect.Request[agentprivatev1.ResumeWorkRequest]) (*connect.Response[agentprivatev1.ResumeWorkResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
-		return nil, err
-	}
-	if err := h.application.AdmitDelegatedControl(ctx, req.Msg.GetWorkId()); err != nil {
-		return nil, mapAgentError(err)
-	}
-	ctx = propagation.TraceContext{}.Extract(ctx, propagation.HeaderCarrier(req.Header()))
-	err := h.application.Commands.ResumeWork.Handle(ctx, command.StartWork{RequestID: req.Msg.GetRequestId(), SubjectID: req.Msg.GetSubjectId(), WorkID: req.Msg.GetWorkId()})
-	if err != nil {
-		return nil, mapAgentError(err)
-	}
-	return connect.NewResponse(&agentprivatev1.ResumeWorkResponse{WorkId: req.Msg.GetWorkId()}), nil
+	return &agentprivatev1.CreateWorkResponse{WorkId: id}, nil
 }
 
-func (h *AgentHandler) RestartWork(ctx context.Context, req *connect.Request[agentprivatev1.RestartWorkRequest]) (*connect.Response[agentprivatev1.RestartWorkResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) ResumeWork(ctx context.Context, req *agentprivatev1.ResumeWorkRequest) (*agentprivatev1.ResumeWorkResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	if err := h.application.AdmitDelegatedControl(ctx, req.Msg.GetWorkId()); err != nil {
+	if err := h.application.AdmitDelegatedControl(ctx, req.GetWorkId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	ctx = propagation.TraceContext{}.Extract(ctx, propagation.HeaderCarrier(req.Header()))
-	_, err := h.application.Commands.RestartWork.Handle(ctx, command.StartWork{RequestID: req.Msg.GetRequestId(), SubjectID: req.Msg.GetSubjectId(), WorkID: req.Msg.GetWorkId()})
+	ctx = propagation.TraceContext{}.Extract(ctx, otelsetup.ConnectCarrier{Header: requestHeader(ctx)})
+	err := h.application.Commands.ResumeWork.Handle(ctx, command.StartWork{RequestID: req.GetRequestId(), SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.RestartWorkResponse{WorkId: req.Msg.GetWorkId()}), nil
+	return &agentprivatev1.ResumeWorkResponse{WorkId: req.GetWorkId()}, nil
 }
 
-func (h *AgentHandler) StopWork(ctx context.Context, req *connect.Request[agentprivatev1.StopWorkRequest]) (*connect.Response[agentprivatev1.StopWorkResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) RestartWork(ctx context.Context, req *agentprivatev1.RestartWorkRequest) (*agentprivatev1.RestartWorkResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	if err := h.application.AdmitDelegatedControl(ctx, req.Msg.GetWorkId()); err != nil {
+	if err := h.application.AdmitDelegatedControl(ctx, req.GetWorkId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	err := h.application.Commands.StopWork.Handle(ctx, command.WorkControl{SubjectID: req.Msg.GetSubjectId(), WorkID: req.Msg.GetWorkId(), RequestID: req.Msg.GetRequestId(), ExpectedVersion: expectedVersion(req.Msg.ExpectedVersion)})
+	ctx = propagation.TraceContext{}.Extract(ctx, otelsetup.ConnectCarrier{Header: requestHeader(ctx)})
+	_, err := h.application.Commands.RestartWork.Handle(ctx, command.StartWork{RequestID: req.GetRequestId(), SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.StopWorkResponse{}), nil
+	return &agentprivatev1.RestartWorkResponse{WorkId: req.GetWorkId()}, nil
 }
 
-func (h *AgentHandler) CloseWork(ctx context.Context, req *connect.Request[agentprivatev1.CloseWorkRequest]) (*connect.Response[agentprivatev1.CloseWorkResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) StopWork(ctx context.Context, req *agentprivatev1.StopWorkRequest) (*agentprivatev1.StopWorkResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	if err := h.application.AdmitDelegatedControl(ctx, req.Msg.GetWorkId()); err != nil {
+	if err := h.application.AdmitDelegatedControl(ctx, req.GetWorkId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	err := h.application.Commands.CloseWork.Handle(ctx, command.WorkControl{SubjectID: req.Msg.GetSubjectId(), WorkID: req.Msg.GetWorkId(), RequestID: req.Msg.GetRequestId(), ExpectedVersion: expectedVersion(req.Msg.ExpectedVersion)})
+	err := h.application.Commands.StopWork.Handle(ctx, command.WorkControl{SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId(), RequestID: req.GetRequestId(), ExpectedVersion: expectedVersion(req.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.CloseWorkResponse{WorkId: req.Msg.GetWorkId(), RequestId: req.Msg.GetRequestId()}), nil
+	return &agentprivatev1.StopWorkResponse{}, nil
 }
 
-func (h *AgentHandler) DeliverInput(ctx context.Context, req *connect.Request[agentprivatev1.DeliverInputRequest]) (*connect.Response[agentprivatev1.DeliverInputResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) CloseWork(ctx context.Context, req *agentprivatev1.CloseWorkRequest) (*agentprivatev1.CloseWorkResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	if err := h.application.AdmitDelegatedControl(ctx, req.Msg.GetWorkId()); err != nil {
+	if err := h.application.AdmitDelegatedControl(ctx, req.GetWorkId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	input := command.ExecutionInput{ID: req.Msg.GetInputId(), Text: req.Msg.GetInput()}
-	handOff, err := h.application.Commands.DeliverInput.Deliver(ctx, command.DeliverWorkInput{SubjectID: req.Msg.GetSubjectId(), WorkID: req.Msg.GetWorkId(), Input: input})
+	err := h.application.Commands.CloseWork.Handle(ctx, command.WorkControl{SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId(), RequestID: req.GetRequestId(), ExpectedVersion: expectedVersion(req.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.DeliverInputResponse{AlreadySettled: handOff == command.InputAlreadySettled}), nil
+	return &agentprivatev1.CloseWorkResponse{WorkId: req.GetWorkId(), RequestId: req.GetRequestId()}, nil
 }
-func (h *AgentHandler) GetWork(ctx context.Context, req *connect.Request[agentprivatev1.GetWorkRequest]) (*connect.Response[agentprivatev1.GetWorkResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
+
+func (h *AgentHandler) DeliverInput(ctx context.Context, req *agentprivatev1.DeliverInputRequest) (*agentprivatev1.DeliverInputResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	session, err := h.application.Queries.GetWork.Handle(ctx, query.GetWork{SubjectID: req.Msg.GetSubjectId(), WorkID: req.Msg.GetWorkId()})
+	if err := h.application.AdmitDelegatedControl(ctx, req.GetWorkId()); err != nil {
+		return nil, mapAgentError(err)
+	}
+	input := command.ExecutionInput{ID: req.GetInputId(), Text: req.GetInput()}
+	handOff, err := h.application.Commands.DeliverInput.Deliver(ctx, command.DeliverWorkInput{SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId(), Input: input})
+	if err != nil {
+		return nil, mapAgentError(err)
+	}
+	return &agentprivatev1.DeliverInputResponse{AlreadySettled: handOff == command.InputAlreadySettled}, nil
+}
+func (h *AgentHandler) GetWork(ctx context.Context, req *agentprivatev1.GetWorkRequest) (*agentprivatev1.GetWorkResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
+		return nil, err
+	}
+	session, err := h.application.Queries.GetWork.Handle(ctx, query.GetWork{SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
 	state, ok := sessionStates[session.State]
 	if !ok {
-		return nil, connect.NewError(connect.CodeInternal, domain.ErrInvalidWork)
+		return nil, connect.NewError(connect.CodeInternal, domain.ErrInvalidWork.Error()).WithCause(domain.ErrInvalidWork)
 	}
 	capabilities, err := capabilitySnapshotToProto(session.Capabilities)
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.GetWorkResponse{WorkProgress: workProgressToProto(session.Progress), AgentName: session.AgentName, WorkspaceReference: session.WorkspaceReference, Version: int64(session.Version), StopRequestId: session.StopRequestID, StopReason: string(session.StopReason), Waiting: session.Waiting, WorkId: session.ID, AgentId: session.AgentID, State: state, Capabilities: capabilities, ContextReference: session.HarnessSessionReference, RequiredResponse: session.RequiredResponse, FailureReason: session.FailureReason}), nil
+	return &agentprivatev1.GetWorkResponse{WorkProgress: workProgressToProto(session.Progress), AgentName: session.AgentName, WorkspaceReference: session.WorkspaceReference, Version: int64(session.Version), StopRequestId: session.StopRequestID, StopReason: string(session.StopReason), Waiting: session.Waiting, WorkId: session.ID, AgentId: session.AgentID, State: state, Capabilities: capabilities, ContextReference: session.HarnessSessionReference, RequiredResponse: session.RequiredResponse, FailureReason: session.FailureReason}, nil
 }
 
 func authenticateCaller(token, authorization, subject string) error {
@@ -189,7 +190,7 @@ func authenticateCaller(token, authorization, subject string) error {
 		return err
 	}
 	if strings.TrimSpace(subject) == "" {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("delegated principal required"))
+		return connect.NewError(connect.CodeUnauthenticated, "delegated principal required")
 	}
 	return nil
 }
@@ -269,49 +270,49 @@ func mapAgentError(err error) error {
 	case errors.Is(err, context.DeadlineExceeded):
 		code = connect.CodeDeadlineExceeded
 	}
-	return withRefusalDetail(connect.NewError(code, err), err)
+	return withRefusalDetail(connect.NewError(code, err.Error()).WithCause(err), err)
 }
 
-func (h *AgentHandler) ChangeAgentDefinitionCapabilities(ctx context.Context, req *connect.Request[agentprivatev1.ChangeAgentDefinitionCapabilitiesRequest]) (*connect.Response[agentprivatev1.ChangeAgentDefinitionCapabilitiesResponse], error) {
-	if err := authenticateIntegration(h.token, req.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) ChangeAgentDefinitionCapabilities(ctx context.Context, req *agentprivatev1.ChangeAgentDefinitionCapabilitiesRequest) (*agentprivatev1.ChangeAgentDefinitionCapabilitiesResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	err := h.application.ChangeAgentDefinitionCapabilities(ctx, application.ChangeAgentDefinitionCapabilities{AgentID: req.Msg.GetAgentId(), Capabilities: capabilitiesFromProto(req.Msg.GetCapabilities())})
+	err := h.application.ChangeAgentDefinitionCapabilities(ctx, application.ChangeAgentDefinitionCapabilities{AgentID: req.GetAgentId(), Capabilities: capabilitiesFromProto(req.GetCapabilities())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.ChangeAgentDefinitionCapabilitiesResponse{}), nil
+	return &agentprivatev1.ChangeAgentDefinitionCapabilitiesResponse{}, nil
 }
-func (h *AgentHandler) GetAgentDefinition(ctx context.Context, req *connect.Request[agentprivatev1.GetAgentDefinitionRequest]) (*connect.Response[agentprivatev1.GetAgentDefinitionResponse], error) {
-	if err := authenticateIntegration(h.token, req.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) GetAgentDefinition(ctx context.Context, req *agentprivatev1.GetAgentDefinitionRequest) (*agentprivatev1.GetAgentDefinitionResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	agent, err := h.application.Queries.GetAgentDefinition.Handle(ctx, req.Msg.GetAgentId())
+	agent, err := h.application.Queries.GetAgentDefinition.Handle(ctx, req.GetAgentId())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.GetAgentDefinitionResponse{Owners: agent.Owners, AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: &agentprivatev1.UsageScope{Kind: agent.UsageScope.Kind, Reference: agent.UsageScope.Reference}, HomeBinding: &agentprivatev1.HomeBinding{OwnerId: agent.HomeBinding.OwnerID, Namespace: agent.HomeBinding.Namespace}, VisibilityRule: &agentprivatev1.VisibilityRule{Public: agent.Visibility.Public}, AgentId: agent.ID, Capabilities: capabilitiesToProto(agent.Capabilities)}), nil
+	return &agentprivatev1.GetAgentDefinitionResponse{Owners: agent.Owners, AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: &agentprivatev1.UsageScope{Kind: agent.UsageScope.Kind, Reference: agent.UsageScope.Reference}, HomeBinding: &agentprivatev1.HomeBinding{OwnerId: agent.HomeBinding.OwnerID, Namespace: agent.HomeBinding.Namespace}, VisibilityRule: &agentprivatev1.VisibilityRule{Public: agent.Visibility.Public}, AgentId: agent.ID, Capabilities: capabilitiesToProto(agent.Capabilities)}, nil
 }
 
-func (h *AgentHandler) RespondToInteraction(ctx context.Context, req *connect.Request[agentprivatev1.RespondToInteractionRequest]) (*connect.Response[agentprivatev1.RespondToInteractionResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) RespondToInteraction(ctx context.Context, req *agentprivatev1.RespondToInteractionRequest) (*agentprivatev1.RespondToInteractionResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	if err := h.application.AdmitDelegatedControl(ctx, req.Msg.GetWorkId()); err != nil {
+	if err := h.application.AdmitDelegatedControl(ctx, req.GetWorkId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	err := h.application.Commands.RespondToInteraction.Handle(ctx, command.RespondWorkInteraction{SubjectID: req.Msg.GetSubjectId(), WorkID: req.Msg.GetWorkId(), Response: command.InteractionResponse{InteractionID: req.Msg.GetInteractionId(), Allow: req.Msg.GetAllow(), AlwaysAllow: req.Msg.GetAlwaysAllow(), Reason: req.Msg.GetReason(), UpdatedInputJSON: req.Msg.GetUpdatedInputJson()}})
+	err := h.application.Commands.RespondToInteraction.Handle(ctx, command.RespondWorkInteraction{SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId(), Response: command.InteractionResponse{InteractionID: req.GetInteractionId(), Allow: req.GetAllow(), AlwaysAllow: req.GetAlwaysAllow(), Reason: req.GetReason(), UpdatedInputJSON: req.GetUpdatedInputJson()}})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.RespondToInteractionResponse{}), nil
+	return &agentprivatev1.RespondToInteractionResponse{}, nil
 }
 
-func (h *AgentHandler) GetStartAdmission(ctx context.Context, req *connect.Request[agentprivatev1.GetStartAdmissionRequest]) (*connect.Response[agentprivatev1.GetStartAdmissionResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) GetStartAdmission(ctx context.Context, req *agentprivatev1.GetStartAdmissionRequest) (*agentprivatev1.GetStartAdmissionResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	admitted, found, err := h.application.Queries.GetStartAdmission.Handle(ctx, query.GetStartAdmission{SubjectID: req.Msg.GetSubjectId(), WorkID: req.Msg.GetWorkId(), RequestID: req.Msg.GetRequestId()})
+	admitted, found, err := h.application.Queries.GetStartAdmission.Handle(ctx, query.GetStartAdmission{SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId(), RequestID: req.GetRequestId()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -325,23 +326,23 @@ func (h *AgentHandler) GetStartAdmission(ctx context.Context, req *connect.Reque
 		case query.StartKindRestart:
 			kind = agentprivatev1.StartKind_START_KIND_RESTART
 		default:
-			return nil, connect.NewError(connect.CodeInternal, errors.New("invalid retained start kind"))
+			return nil, connect.NewError(connect.CodeInternal, "invalid retained start kind")
 		}
 	}
-	return connect.NewResponse(&agentprivatev1.GetStartAdmissionResponse{Accepted: found, Kind: kind}), nil
+	return &agentprivatev1.GetStartAdmissionResponse{Accepted: found, Kind: kind}, nil
 }
 
-func (h *AgentHandler) VerifyWorkCredential(ctx context.Context, req *connect.Request[agentprivatev1.VerifyWorkCredentialRequest]) (*connect.Response[agentprivatev1.VerifyWorkCredentialResponse], error) {
-	if err := authenticateIntegration(h.token, req.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) VerifyWorkCredential(ctx context.Context, req *agentprivatev1.VerifyWorkCredentialRequest) (*agentprivatev1.VerifyWorkCredentialResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	identity, err := h.application.Queries.VerifyWorkCredential.Handle(ctx, query.VerifyWorkCredential{WorkID: req.Msg.GetWorkId(), Credential: req.Msg.GetCredential(), RequireActing: req.Msg.GetRequireActing()})
+	identity, err := h.application.Queries.VerifyWorkCredential.Handle(ctx, query.VerifyWorkCredential{WorkID: req.GetWorkId(), Credential: req.GetCredential(), RequireActing: req.GetRequireActing()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
 	response := &agentprivatev1.VerifyWorkCredentialResponse{AgentName: identity.AgentName, WorkId: identity.WorkID, AgentId: identity.AgentID, SubjectId: identity.SubjectID, WorkspaceReference: identity.WorkspaceReference,
 		ProjectId: identity.ProjectID, Subject: subjectToProto(identity.Subject), Purpose: identity.Purpose}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
 // expectedVersion maps the optional observed Work version of a control request.
@@ -353,71 +354,71 @@ func expectedVersion(value *int64) *int {
 	return &version
 }
 
-func (h *AgentHandler) LocateWork(ctx context.Context, request *connect.Request[agentprivatev1.LocateWorkRequest]) (*connect.Response[agentprivatev1.LocateWorkResponse], error) {
-	if err := authenticateCaller(h.token, request.Header().Get("Authorization"), request.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) LocateWork(ctx context.Context, request *agentprivatev1.LocateWorkRequest) (*agentprivatev1.LocateWorkResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), request.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	id, found, err := h.application.Queries.LocateWork.Handle(ctx, query.LocateWork{SubjectID: request.Msg.GetSubjectId(), AgentID: request.Msg.GetAgentId(), Subject: subjectFromProto(request.Msg.GetSubject())})
+	id, found, err := h.application.Queries.LocateWork.Handle(ctx, query.LocateWork{SubjectID: request.GetSubjectId(), AgentID: request.GetAgentId(), Subject: subjectFromProto(request.GetSubject())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.LocateWorkResponse{Found: found, WorkId: id}), nil
+	return &agentprivatev1.LocateWorkResponse{Found: found, WorkId: id}, nil
 }
 
-func (h *AgentHandler) EndWorkExecution(ctx context.Context, req *connect.Request[agentprivatev1.EndWorkExecutionRequest]) (*connect.Response[agentprivatev1.EndWorkExecutionResponse], error) {
-	if err := authenticateCaller(h.token, req.Header().Get("Authorization"), req.Msg.GetSubjectId()); err != nil {
+func (h *AgentHandler) EndWorkExecution(ctx context.Context, req *agentprivatev1.EndWorkExecutionRequest) (*agentprivatev1.EndWorkExecutionResponse, error) {
+	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	if err := h.application.AdmitDelegatedControl(ctx, req.Msg.GetWorkId()); err != nil {
+	if err := h.application.AdmitDelegatedControl(ctx, req.GetWorkId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	err := h.application.Commands.EndWorkExecution.Handle(ctx, command.EndWorkExecution{SubjectID: req.Msg.GetSubjectId(), WorkID: req.Msg.GetWorkId(), StartRequestID: req.Msg.GetStartRequestId(), RequestID: req.Msg.GetRequestId()})
+	err := h.application.Commands.EndWorkExecution.Handle(ctx, command.EndWorkExecution{SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId(), StartRequestID: req.GetStartRequestId(), RequestID: req.GetRequestId()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.EndWorkExecutionResponse{}), nil
+	return &agentprivatev1.EndWorkExecutionResponse{}, nil
 }
 
-func (h *AgentHandler) GetAgentDefinitionForPurpose(ctx context.Context, req *connect.Request[agentprivatev1.GetAgentDefinitionForPurposeRequest]) (*connect.Response[agentprivatev1.GetAgentDefinitionForPurposeResponse], error) {
-	if err := authenticateIntegration(h.token, req.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) GetAgentDefinitionForPurpose(ctx context.Context, req *agentprivatev1.GetAgentDefinitionForPurposeRequest) (*agentprivatev1.GetAgentDefinitionForPurposeResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	id, err := h.application.Queries.GetAgentDefinitionForPurpose.Handle(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: req.Msg.GetUsageScope().GetKind(), ScopeReference: req.Msg.GetUsageScope().GetReference(), Purpose: req.Msg.GetPurpose()})
+	id, err := h.application.Queries.GetAgentDefinitionForPurpose.Handle(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: req.GetUsageScope().GetKind(), ScopeReference: req.GetUsageScope().GetReference(), Purpose: req.GetPurpose()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.GetAgentDefinitionForPurposeResponse{AgentId: id}), nil
+	return &agentprivatev1.GetAgentDefinitionForPurposeResponse{AgentId: id}, nil
 }
 
-func (h *AgentHandler) GetWorkOrigin(ctx context.Context, request *connect.Request[agentprivatev1.GetWorkOriginRequest]) (*connect.Response[agentprivatev1.GetWorkOriginResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) GetWorkOrigin(ctx context.Context, request *agentprivatev1.GetWorkOriginRequest) (*agentprivatev1.GetWorkOriginResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	ctx = propagation.TraceContext{}.Extract(ctx, propagation.HeaderCarrier(request.Header()))
-	origin, err := h.application.Queries.GetWorkOrigin.Handle(ctx, request.Msg.GetWorkId())
+	ctx = propagation.TraceContext{}.Extract(ctx, otelsetup.ConnectCarrier{Header: requestHeader(ctx)})
+	origin, err := h.application.Queries.GetWorkOrigin.Handle(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.GetWorkOriginResponse{WorkId: origin.WorkID, AgentId: origin.AgentID, Purpose: origin.Purpose, Subject: subjectToProto(origin.Subject), ProjectId: origin.ProjectID}), nil
+	return &agentprivatev1.GetWorkOriginResponse{WorkId: origin.WorkID, AgentId: origin.AgentID, Purpose: origin.Purpose, Subject: subjectToProto(origin.Subject), ProjectId: origin.ProjectID}, nil
 }
 
 // ResolveWorkContextPosition is the Work Context Position Query.
-func (h *AgentHandler) ResolveWorkContextPosition(ctx context.Context, request *connect.Request[agentprivatev1.ResolveWorkContextPositionRequest]) (*connect.Response[agentprivatev1.ResolveWorkContextPositionResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) ResolveWorkContextPosition(ctx context.Context, request *agentprivatev1.ResolveWorkContextPositionRequest) (*agentprivatev1.ResolveWorkContextPositionResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	position, err := h.application.Queries.ResolveWorkContextPosition.Handle(ctx, request.Msg.GetProjectId(), request.Msg.GetWorkId(), request.Msg.GetCallId())
+	position, err := h.application.Queries.ResolveWorkContextPosition.Handle(ctx, request.GetProjectId(), request.GetWorkId(), request.GetCallId())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.ResolveWorkContextPositionResponse{Returned: position.Returned, Position: position.Position}), nil
+	return &agentprivatev1.ResolveWorkContextPositionResponse{Returned: position.Returned, Position: position.Position}, nil
 }
 
-func (h *AgentHandler) ResolveWorkStarts(ctx context.Context, request *connect.Request[agentprivatev1.ResolveWorkStartsRequest]) (*connect.Response[agentprivatev1.ResolveWorkStartsResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) ResolveWorkStarts(ctx context.Context, request *agentprivatev1.ResolveWorkStartsRequest) (*agentprivatev1.ResolveWorkStartsResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	results, err := h.application.Queries.ResolveWorkStarts.Handle(ctx, request.Msg.GetProjectId(), request.Msg.GetWorkIds())
+	results, err := h.application.Queries.ResolveWorkStarts.Handle(ctx, request.GetProjectId(), request.GetWorkIds())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -429,69 +430,69 @@ func (h *AgentHandler) ResolveWorkStarts(ctx context.Context, request *connect.R
 		}
 		response.Works[index] = work
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *AgentHandler) EnsureAgentDefinition(ctx context.Context, req *connect.Request[agentprivatev1.EnsureAgentDefinitionRequest]) (*connect.Response[agentprivatev1.EnsureAgentDefinitionResponse], error) {
-	if err := authenticateIntegration(h.token, req.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) EnsureAgentDefinition(ctx context.Context, req *agentprivatev1.EnsureAgentDefinitionRequest) (*agentprivatev1.EnsureAgentDefinitionResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	result, err := h.application.Commands.EnsureAgentDefinition.Handle(ctx, command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: req.Msg.GetOwners(), UsageScope: domain.UsageScope{Kind: req.Msg.GetUsageScope().GetKind(), Reference: req.Msg.GetUsageScope().GetReference()},
-		Purpose: req.Msg.GetPurpose(), AgentName: req.Msg.GetAgentName(),
-		HomeBinding:  domain.HomeBinding{OwnerID: req.Msg.GetHomeBinding().GetOwnerId(), Namespace: req.Msg.GetHomeBinding().GetNamespace()},
-		Visibility:   visibilityRuleFromProto(req.Msg.GetVisibilityRule()),
-		Capabilities: capabilitiesFromProto(req.Msg.GetCapabilities()),
-	}, EmployeeDisplayName: req.Msg.GetEmployeeDisplayName()})
+	result, err := h.application.Commands.EnsureAgentDefinition.Handle(ctx, command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: req.GetOwners(), UsageScope: domain.UsageScope{Kind: req.GetUsageScope().GetKind(), Reference: req.GetUsageScope().GetReference()},
+		Purpose: req.GetPurpose(), AgentName: req.GetAgentName(),
+		HomeBinding:  domain.HomeBinding{OwnerID: req.GetHomeBinding().GetOwnerId(), Namespace: req.GetHomeBinding().GetNamespace()},
+		Visibility:   visibilityRuleFromProto(req.GetVisibilityRule()),
+		Capabilities: capabilitiesFromProto(req.GetCapabilities()),
+	}, EmployeeDisplayName: req.GetEmployeeDisplayName()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
 	appearance := appearanceToProto(result.Appearance)
-	return connect.NewResponse(&agentprivatev1.EnsureAgentDefinitionResponse{AgentId: result.AgentID, AgentName: appearance.GetName(), AgentIcon: appearance.GetIcon(), Owners: result.Owners}), nil
+	return &agentprivatev1.EnsureAgentDefinitionResponse{AgentId: result.AgentID, AgentName: appearance.GetName(), AgentIcon: appearance.GetIcon(), Owners: result.Owners}, nil
 }
 
-func (h *AgentHandler) TransferAgentDefinitionOwners(ctx context.Context, req *connect.Request[agentprivatev1.TransferAgentDefinitionOwnersRequest]) (*connect.Response[agentprivatev1.TransferAgentDefinitionOwnersResponse], error) {
-	if err := authenticateIntegration(h.token, req.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) TransferAgentDefinitionOwners(ctx context.Context, req *agentprivatev1.TransferAgentDefinitionOwnersRequest) (*agentprivatev1.TransferAgentDefinitionOwnersResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	changed, err := h.application.TransferAgentDefinitionOwners(ctx, application.TransferAgentDefinitionOwners{AgentID: req.Msg.GetAgentId(), Owners: req.Msg.GetOwners()})
+	changed, err := h.application.TransferAgentDefinitionOwners(ctx, application.TransferAgentDefinitionOwners{AgentID: req.GetAgentId(), Owners: req.GetOwners()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.TransferAgentDefinitionOwnersResponse{Changed: changed}), nil
+	return &agentprivatev1.TransferAgentDefinitionOwnersResponse{Changed: changed}, nil
 }
 
-func (h *AgentHandler) GetWorkStartOptions(ctx context.Context, request *connect.Request[agentprivatev1.GetWorkStartOptionsRequest]) (*connect.Response[agentpublicv1.GetWorkStartOptionsResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) GetWorkStartOptions(ctx context.Context, request *agentprivatev1.GetWorkStartOptionsRequest) (*agentpublicv1.GetWorkStartOptionsResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
 	value, err := h.application.GetWorkStartOptions(ctx, query.WorkStartOptionsQuery{
-		SubjectID: request.Msg.GetSubjectId(), WorkID: request.Msg.GetWorkId(), EmployeeID: request.Msg.GetEmployeeId(), RequiredPlugins: slices.Clone(request.Msg.GetRequiredPlugins()),
+		SubjectID: request.GetSubjectId(), WorkID: request.GetWorkId(), EmployeeID: request.GetEmployeeId(), RequiredPlugins: slices.Clone(request.GetRequiredPlugins()),
 	})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(workStartOptionsToProto(value)), nil
+	return workStartOptionsToProto(value), nil
 }
 
-func (h *AgentHandler) ListWorkStartRepositories(ctx context.Context, request *connect.Request[agentprivatev1.ListWorkStartRepositoriesRequest]) (*connect.Response[agentpublicv1.WorkStartRepositories], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) ListWorkStartRepositories(ctx context.Context, request *agentprivatev1.ListWorkStartRepositoriesRequest) (*agentpublicv1.WorkStartRepositories, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	value, err := h.application.ListWorkStartRepositories(ctx, request.Msg.GetRepositoryOwnerId())
+	value, err := h.application.ListWorkStartRepositories(ctx, request.GetRepositoryOwnerId())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(workStartRepositoriesToProto(value)), nil
+	return workStartRepositoriesToProto(value), nil
 }
 
-func (h *AgentHandler) EnsureEmployeeAgent(ctx context.Context, req *connect.Request[agentprivatev1.EnsureEmployeeAgentRequest]) (*connect.Response[agentprivatev1.EnsureEmployeeAgentResponse], error) {
-	if err := authenticateIntegration(h.token, req.Header().Get("Authorization")); err != nil {
+func (h *AgentHandler) EnsureEmployeeAgent(ctx context.Context, req *agentprivatev1.EnsureEmployeeAgentRequest) (*agentprivatev1.EnsureEmployeeAgentResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	result, err := h.application.EnsureEmployeeAgent(ctx, req.Msg.GetEmployeeId(), req.Msg.GetEmployeeDisplayName())
+	result, err := h.application.EnsureEmployeeAgent(ctx, req.GetEmployeeId(), req.GetEmployeeDisplayName())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
 	appearance := appearanceToProto(result.Appearance)
-	return connect.NewResponse(&agentprivatev1.EnsureEmployeeAgentResponse{AgentId: result.AgentID, AgentName: appearance.GetName(), AgentIcon: appearance.GetIcon()}), nil
+	return &agentprivatev1.EnsureEmployeeAgentResponse{AgentId: result.AgentID, AgentName: appearance.GetName(), AgentIcon: appearance.GetIcon()}, nil
 }

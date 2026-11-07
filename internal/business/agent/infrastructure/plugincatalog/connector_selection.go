@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/samber/oops"
-	marketplaceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/marketplace/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -17,17 +17,17 @@ import (
 func (c *Client) ReadConnectorSelection(ctx context.Context, user string) (command.ConnectorSelection, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	request, err := delegated(ctx, user, &marketplaceprivatev1.ReadConnectorSelectionRequest{})
+	ctx, info, err := delegated(ctx, user)
 	if err != nil {
 		return command.ConnectorSelection{}, err
 	}
-	request.Header().Set("Authorization", "Bearer "+c.credentialToken)
-	response, err := c.selection.ReadConnectorSelection(ctx, request)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
+	response, err := c.selection.ReadConnectorSelection(ctx, &marketplaceprivatev1.ReadConnectorSelectionRequest{})
 	if err != nil {
 		return command.ConnectorSelection{}, oops.With("operation", "agent.connector_selection.read").Wrap(err)
 	}
-	result := command.ConnectorSelection{EnabledConnectors: slices.Clone(response.Msg.GetEnabledConnectorIds())}
-	for _, m := range response.Msg.GetConnectors() {
+	result := command.ConnectorSelection{EnabledConnectors: slices.Clone(response.GetEnabledConnectorIds())}
+	for _, m := range response.GetConnectors() {
 		connector := domain.CatalogConnector{Offered: m.GetOffered(), SelectedConnector: domain.SelectedConnector{
 			ID: m.GetId(), Name: m.GetName(), Required: m.GetRequired(), Authentication: m.GetAuthentication(),
 			Type: m.GetType(), URL: m.GetUrl(), Command: m.GetCommand(), Arguments: slices.Clone(m.GetArguments()),

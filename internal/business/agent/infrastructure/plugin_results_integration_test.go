@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
+	"github.com/talgent-work/contracts/gen/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -26,6 +27,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/agentfeedback"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 type pluginResultAccess struct{ workID string }
@@ -52,20 +54,27 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	require.NoError(t, err)
 	app := &application.Application{Works: works, WorkPrincipals: pluginResultAccess{workID: id}, PluginResults: infrastructure.NewPluginResults(db, time.Now)}
 	mux := http.NewServeMux()
-	path, handler := agentpublicv1connect.NewAgentWorkServiceHandler(transport.NewWorkHandler(app), connect.WithInterceptors(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})))
+	path, handler := "/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
+	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
 	mux.Handle(path, handler)
-	path, handler = agentprivatev1connect.NewExecutionFeedbackServiceHandler(transport.NewFeedbackHandler(app, nil, "feedback-test"))
+	path, handler = "/"+agentprivatev1connect.ExecutionFeedbackServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(app, nil, "feedback-test"))
+	})
 	mux.Handle(path, handler)
 	server := httptest.NewServer(mux)
 	defer server.Close()
-	client := agentpublicv1connect.NewAgentWorkServiceClient(server.Client(), server.URL)
-	read := func(actor, workID string) (*connect.Response[agentpublicv1.GetWorkPluginResultsResponse], error) {
-		request := connect.NewRequest(&agentpublicv1.GetWorkPluginResultsRequest{WorkId: workID})
+	client := agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	read := func(actor, workID string) (*agentpublicv1.GetWorkPluginResultsResponse, error) {
+		request := &agentpublicv1.GetWorkPluginResultsRequest{WorkId: workID}
+		ctx := t.Context()
 		if actor != "" {
-			request.Header().Set(authn.HeaderAuthenticatedBy, "envoy")
-			request.Header().Set(authn.HeaderSubject, actor)
+			var info *connect.CallInfo
+			ctx, info = connect.NewClientContext(ctx)
+			info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+			info.RequestHeader().Set(authn.HeaderSubject, actor)
 		}
-		return client.GetWorkPluginResults(t.Context(), request)
+		return client.GetWorkPluginResults(ctx, request)
 	}
 	_, err = read("", id)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
@@ -75,8 +84,8 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	response, err := read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
 	require.NoError(t, err)
-	require.Len(t, response.Msg.Plugins, 1)
-	result := response.Msg.Plugins[0]
+	require.Len(t, response.Plugins, 1)
+	result := response.Plugins[0]
 	require.Equal(t, "runtime", result.Slug)
 	require.Equal(t, "1", result.ReleaseVersion)
 	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_UNSPECIFIED, result.Installation)
@@ -87,34 +96,35 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	require.NoError(t, feedback.ReportExecution(t.Context(), observation))
 	response, err = read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
 	require.NoError(t, err)
-	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_SUCCEEDED, response.Msg.Plugins[0].Loading)
-	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_UNSPECIFIED, response.Msg.Plugins[0].Installation, "loading feedback does not invent installation observations")
+	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_SUCCEEDED, response.Plugins[0].Loading)
+	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_UNSPECIFIED, response.Plugins[0].Installation, "loading feedback does not invent installation observations")
 	// A lower sequence is allowed to replace the projection, without a run fence.
 	observation.ObservationSequence, observation.LoadedPlugins = 1, nil
 	require.NoError(t, feedback.ReportExecution(t.Context(), observation))
 	response, err = read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
 	require.NoError(t, err)
-	require.Equal(t, "not_loaded", response.Msg.Plugins[0].LoadingReason)
-	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_FAILED, response.Msg.Plugins[0].Loading)
+	require.Equal(t, "not_loaded", response.Plugins[0].LoadingReason)
+	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_FAILED, response.Plugins[0].Loading)
 	unauthorized := agentfeedback.NewClient(server.Client(), server.URL, "wrong")
 	observation.LoadedPlugins = []dispatchercommand.LoadedPlugin{{Slug: "runtime", Version: "2"}}
 	require.Error(t, unauthorized.ReportExecution(t.Context(), observation))
 	require.NoError(t, feedback.ReportExecution(t.Context(), observation))
 	response, err = read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
 	require.NoError(t, err)
-	require.Equal(t, "version_mismatch", response.Msg.Plugins[0].LoadingReason)
+	require.Equal(t, "version_mismatch", response.Plugins[0].LoadingReason)
 	observation.LoadedPlugins[0].Version = "1"
 	require.NoError(t, feedback.ReportExecution(t.Context(), observation))
 	// Reject malformed feedback atomically instead of replacing existing facts.
-	rpc := agentprivatev1connect.NewExecutionFeedbackServiceClient(server.Client(), server.URL)
-	bad := connect.NewRequest(&agentprivatev1.ReportRequest{WorkId: id, Kind: agentprivatev1.FeedbackKind_FEEDBACK_KIND_PLUGIN_LOADS_OBSERVED, LoadedPlugins: []*agentprivatev1.LoadedPlugin{{Slug: "runtime"}, {Slug: "runtime"}}})
-	bad.Header().Set("Authorization", "Bearer feedback-test")
-	_, err = rpc.Report(t.Context(), bad)
+	rpc := agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	bad := &agentprivatev1.ReportRequest{WorkId: id, Kind: agentprivatev1.FeedbackKind_FEEDBACK_KIND_PLUGIN_LOADS_OBSERVED, LoadedPlugins: []*agentprivatev1.LoadedPlugin{{Slug: "runtime"}, {Slug: "runtime"}}}
+	badCtx, badInfo := connect.NewClientContext(t.Context())
+	badInfo.RequestHeader().Set("Authorization", "Bearer feedback-test")
+	_, err = rpc.Report(badCtx, bad)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	app.PluginResults = infrastructure.NewPluginResults(db, time.Now)
 	response, err = read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
 	require.NoError(t, err)
-	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_SUCCEEDED, response.Msg.Plugins[0].Loading)
+	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_SUCCEEDED, response.Plugins[0].Loading)
 	retained, err := works.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkWorking, retained.State, "a missing required plugin does not itself fail a usable Work")

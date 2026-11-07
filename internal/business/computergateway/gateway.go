@@ -12,11 +12,12 @@ import (
 	"net/http"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1/computerprivatev1connect"
+	"github.com/talgent-work/contracts/gen/computer/private/v1/computerprivatev1connect"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
 )
 
@@ -56,13 +57,16 @@ func newGateway(lc fx.Lifecycle, config Config, client *http.Client, rdb *goredi
 		return nil, err
 	}
 	token := "Bearer " + config.ControlToken
-	computers := computerprivatev1connect.NewConnectionServiceClient(client, strings.TrimRight(config.ComputerAddress, "/"),
-		connect.WithInterceptors(connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-			return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-				req.Header().Set("Authorization", token)
-				return next(ctx, req)
+	computers := computerprivatev1connect.NewConnectionServiceClient(connect.NewClient(connecthttp.NewTransport(client, strings.TrimRight(config.ComputerAddress, "/"),
+		connecthttp.WithReadMaxBytes(0),
+	), func(next connect.ClientFunc) connect.ClientFunc {
+		return func(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
+			if info, ok := connect.CallInfoForClientContext(ctx); ok {
+				info.RequestHeader().Set("Authorization", token)
 			}
-		})))
+			return next(ctx, spec)
+		}
+	}))
 	gateway := NewGateway(computers, computerconnection.NewWriter(rdb), computerconnection.NewReader(rdb), Replica{Name: config.Replica, Endpoint: config.Endpoint, ControlToken: config.ControlToken, TargetVersion: config.ReleaseVersion}, logger)
 	lc.Append(fx.StopHook(gateway.Stop))
 	return gateway, nil

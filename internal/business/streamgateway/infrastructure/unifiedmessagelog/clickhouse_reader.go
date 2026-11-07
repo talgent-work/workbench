@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/infrastructure"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"

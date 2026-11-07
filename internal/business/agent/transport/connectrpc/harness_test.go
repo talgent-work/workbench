@@ -4,10 +4,11 @@ import (
 	"errors"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 	"github.com/stretchr/testify/require"
 
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -19,14 +20,14 @@ func TestASandboxRefusalCarriesItsDetail(t *testing.T) {
 	require.ErrorAs(t, mapAgentError(domain.ErrComputerNoSandbox), &refused)
 	require.Equal(t, connect.CodeFailedPrecondition, refused.Code())
 	require.Len(t, refused.Details(), 1)
-	value, err := refused.Details()[0].Value()
+	value, err := connectproto.UnmarshalErrorDetail(refused.Details()[0])
 	require.NoError(t, err)
 	require.IsType(t, &agentpublicv1.SandboxUnavailable{}, value)
 
 	require.ErrorAs(t, mapAgentError(domain.ErrComputerOutdated), &refused)
 	require.Equal(t, connect.CodeFailedPrecondition, refused.Code())
 	require.Len(t, refused.Details(), 1)
-	value, err = refused.Details()[0].Value()
+	value, err = connectproto.UnmarshalErrorDetail(refused.Details()[0])
 	require.NoError(t, err)
 	require.IsType(t, &agentpublicv1.ComputerOutdated{}, value)
 

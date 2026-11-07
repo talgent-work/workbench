@@ -6,10 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"connectrpc.com/connect"
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/messagedelivery"
@@ -17,7 +16,7 @@ import (
 	dispatcherredis "github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/redis"
 	dispatchertransport "github.com/talgent-work/workbench/internal/business/dispatcher/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/transport/routing"
-	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 )
 
 type NativeExecutionConfig struct {
@@ -37,8 +36,9 @@ var nativeExecutionModule = fx.Module("dispatcher.native-execution",
 	fx.Invoke(func(app *application.Application, cfg NativeExecutionConfig, mux *http.ServeMux, logger *slog.Logger, ownership *dispatcherredis.Ownership, client *http.Client) {
 		local := dispatchertransport.NewExecutionHandler(app, cfg.ControlToken)
 		routed := routing.NewNativeExecutionHandler(local, ownership, ownership.Self(), cfg.ControlToken, peer.NewNativeClients(client))
-		path, handler := dispatcherprivatev1connect.NewExecutionServiceHandler(routed, connect.WithInterceptors(connectlog.NewInterceptor(logger)))
-		mux.Handle(path, handler)
+		server := connectserver.New(logger)
+		dispatcherprivatev1connect.RegisterExecutionServiceHandler(server, routed)
+		connectserver.Mount(mux, server)
 	}),
 )
 

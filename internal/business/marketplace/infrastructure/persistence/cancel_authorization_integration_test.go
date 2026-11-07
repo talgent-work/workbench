@@ -12,15 +12,17 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	domainevent "github.com/go-jimu/components/ddd/event"
 	"github.com/stretchr/testify/require"
-	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1/marketplacepublicv1connect"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
+	"github.com/talgent-work/contracts/gen/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"xorm.io/xorm"
 )
@@ -87,35 +89,33 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	store := application.NewCredentialChangeDispatch(repo, changes, slog.Default())
 	connections := application.NewPersonalConnections(store, unobservableAccess{}, nil, reauthorization, nil, port, repo, nil, NewAuthorizationMaintenanceQueries(db))
 	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
-	path, handler := marketplacepublicv1connect.NewMarketplaceServiceHandler(transport.NewHandler(app), connect.WithInterceptors(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})))
+	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app))
+	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	client := marketplacepublicv1connect.NewMarketplaceServiceClient(server.Client(), server.URL)
-	state, err := client.GetProviderConnectionState(ctx, personalRequest(&marketplacepublicv1.GetProviderConnectionStateRequest{Provider: "github"}, owner))
+	client := marketplacepublicv1connect.NewMarketplaceServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
+	state, err := client.GetProviderConnectionState(personal(ctx, owner), &marketplacepublicv1.GetProviderConnectionStateRequest{Provider: "github"})
 	require.NoError(t, err)
-	require.Equal(t, auth.ID, state.Msg.State.AuthorizationId)
-	foreignState, err := client.GetProviderConnectionState(ctx, personalRequest(&marketplacepublicv1.GetProviderConnectionStateRequest{Provider: "github"}, other))
+	require.Equal(t, auth.ID, state.State.AuthorizationId)
+	foreignState, err := client.GetProviderConnectionState(personal(ctx, other), &marketplacepublicv1.GetProviderConnectionStateRequest{Provider: "github"})
 	require.NoError(t, err)
-	require.Equal(t, "none", foreignState.Msg.State.Status)
-	require.Empty(t, foreignState.Msg.State.AuthorizationId)
-	request := func(actor string) *connect.Request[marketplacepublicv1.CancelPersonalAuthorizationRequest] {
-		r := connect.NewRequest(&marketplacepublicv1.CancelPersonalAuthorizationRequest{AuthorizationId: auth.ID})
-		if actor != "" {
-			r.Header().Set(authn.HeaderAuthenticatedBy, "envoy")
-			r.Header().Set(authn.HeaderSubject, actor)
-		}
-		return r
-	}
-	_, err = client.CancelPersonalAuthorization(ctx, request(""))
+	require.Equal(t, "none", foreignState.State.Status)
+	require.Empty(t, foreignState.State.AuthorizationId)
+	cancellation := &marketplacepublicv1.CancelPersonalAuthorizationRequest{AuthorizationId: auth.ID}
+	_, err = client.CancelPersonalAuthorization(personal(ctx, ""), cancellation)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = client.CancelPersonalAuthorization(ctx, request(other))
+	_, err = client.CancelPersonalAuthorization(personal(ctx, other), cancellation)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 	require.Zero(t, port.revocations.Load())
 
 	result := make(chan error, 1)
-	go func() { _, err := client.CancelPersonalAuthorization(ctx, request(owner)); result <- err }()
+	go func() {
+		_, err := client.CancelPersonalAuthorization(personal(ctx, owner), cancellation)
+		result <- err
+	}()
 	select {
 	case <-port.entered:
 	case <-time.After(5 * time.Second):
@@ -125,9 +125,10 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	require.NoError(t, err)
 	_, err = repo.AcquireCredentialLease(ctx, current, "competing-renewal", time.Now().Add(time.Minute), time.Now())
 	require.ErrorIs(t, err, domain.ErrConcurrentModification)
-	reconnectRequest := connect.NewRequest(&marketplacepublicv1.CompleteProviderAuthorizationRequest{Provider: "github", Code: "test-code", State: "test-state"})
-	reconnectRequest.Header().Set(authn.HeaderAuthenticatedBy, "envoy")
-	reconnectRequest.Header().Set(authn.HeaderSubject, owner)
+	reconnectRequest := &marketplacepublicv1.CompleteProviderAuthorizationRequest{Provider: "github", Code: "test-code", State: "test-state"}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+	info.RequestHeader().Set(authn.HeaderSubject, owner)
 	_, err = client.CompleteProviderAuthorization(ctx, reconnectRequest)
 	require.Equal(t, connect.CodeAborted, connect.CodeOf(err), "reconnection must wait for the in-flight credential operation")
 	require.Zero(t, reauthorization.calls.Load(), "a blocked operation must not consume the OAuth callback")
@@ -142,22 +143,22 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 
 	// Completion released the lease, allowing cancellation to be retried now.
 	port.confirm <- true
-	response, err := client.CancelPersonalAuthorization(ctx, request(owner))
+	response, err := client.CancelPersonalAuthorization(personal(ctx, owner), cancellation)
 	require.NoError(t, err)
-	require.Equal(t, auth.ID, response.Msg.Authorization.Id)
-	require.Equal(t, "revoked", response.Msg.Authorization.Status)
+	require.Equal(t, auth.ID, response.Authorization.Id)
+	require.Equal(t, "revoked", response.Authorization.Status)
 	current, err = repo.Get(ctx, auth.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.ProviderAuthorizationRevoked, current.Status)
 	require.Equal(t, []domain.CredentialChange{domain.CredentialRevoked}, changes.take())
-	_, err = client.CancelPersonalAuthorization(ctx, request(owner))
+	_, err = client.CancelPersonalAuthorization(personal(ctx, owner), cancellation)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, port.revocations.Load(), "repeat cancellation must not invoke the Provider again")
 	require.Empty(t, changes.take(), "a repeated revocation publishes nothing")
 	reauthorized, err := client.CompleteProviderAuthorization(ctx, reconnectRequest)
 	require.NoError(t, err)
-	require.Equal(t, auth.ID, reauthorized.Msg.Authorization.Id)
-	require.Equal(t, "active", reauthorized.Msg.Authorization.Status)
+	require.Equal(t, auth.ID, reauthorized.Authorization.Id)
+	require.Equal(t, "active", reauthorized.Authorization.Status)
 	reconnected, err := repo.GetByOwnerAndProvider(ctx, owner, domain.ProviderGitHub)
 	require.NoError(t, err)
 	require.Equal(t, auth.ID, reconnected.ID)
@@ -170,18 +171,18 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	// without replacing the identity retained by existing Works.
 	require.NoError(t, reconnected.MarkReconnectRequired("github_reconnect_required", "provider requires reauthorization", time.Now()))
 	require.NoError(t, repo.Save(ctx, reconnected))
-	state, err = client.GetProviderConnectionState(ctx, personalRequest(&marketplacepublicv1.GetProviderConnectionStateRequest{Provider: "github"}, owner))
+	state, err = client.GetProviderConnectionState(personal(ctx, owner), &marketplacepublicv1.GetProviderConnectionStateRequest{Provider: "github"})
 	require.NoError(t, err)
-	require.Equal(t, "reconnect_required", state.Msg.State.Status)
-	require.Equal(t, "reconnect", state.Msg.State.RecommendedAction)
+	require.Equal(t, "reconnect_required", state.State.Status)
+	require.Equal(t, "reconnect", state.State.RecommendedAction)
 	reauthorized, err = client.CompleteProviderAuthorization(ctx, reconnectRequest)
 	require.NoError(t, err)
-	require.Equal(t, auth.ID, reauthorized.Msg.Authorization.Id)
-	state, err = client.GetProviderConnectionState(ctx, personalRequest(&marketplacepublicv1.GetProviderConnectionStateRequest{Provider: "github"}, owner))
+	require.Equal(t, auth.ID, reauthorized.Authorization.Id)
+	state, err = client.GetProviderConnectionState(personal(ctx, owner), &marketplacepublicv1.GetProviderConnectionStateRequest{Provider: "github"})
 	require.NoError(t, err)
-	require.Equal(t, "active", state.Msg.State.Status)
-	require.Empty(t, state.Msg.State.ReasonCode)
-	require.True(t, state.Msg.State.CanListRepositories)
+	require.Equal(t, "active", state.State.Status)
+	require.Empty(t, state.State.ReasonCode)
+	require.True(t, state.State.CanListRepositories)
 	reconnected, err = repo.Get(ctx, auth.ID)
 	require.NoError(t, err)
 	credentials, err := reconnected.SupplyValidCredentials(ctx, domain.CredentialRequirement{OwnerUserID: owner, Provider: domain.ProviderGitHub, Applicable: true}, time.Now(), 0, port)
@@ -204,11 +205,15 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	require.NoError(t, repo.Save(ctx, recovered))
 }
 
-func personalRequest[T any](message *T, actor string) *connect.Request[T] {
-	request := connect.NewRequest(message)
-	request.Header().Set(authn.HeaderAuthenticatedBy, "envoy")
-	request.Header().Set(authn.HeaderSubject, actor)
-	return request
+// personal is the context of a call the gateway made for actor; an empty
+// actor signs no one in.
+func personal(ctx context.Context, actor string) context.Context {
+	ctx, info := connect.NewClientContext(ctx)
+	if actor != "" {
+		info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+		info.RequestHeader().Set(authn.HeaderSubject, actor)
+	}
+	return ctx
 }
 
 // unobservableAccess is a Provider whose reach cannot be observed; observation

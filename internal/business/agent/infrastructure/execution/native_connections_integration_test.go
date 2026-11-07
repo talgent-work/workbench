@@ -12,16 +12,17 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
@@ -36,25 +37,26 @@ type nativeConnectionReceiver struct {
 	unavailable  bool
 }
 
-func (h *nativeConnectionReceiver) Connect(ctx context.Context, r *connect.Request[dispatcherprivatev1.ConnectRequest]) (*connect.Response[dispatcherprivatev1.ConnectResponse], error) {
-	if r.Header().Get("Authorization") != "Bearer dispatcher-secret" {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid token"))
+func (h *nativeConnectionReceiver) Connect(ctx context.Context, r *dispatcherprivatev1.ConnectRequest) (*dispatcherprivatev1.ConnectResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if info.RequestHeader().Get("Authorization") != "Bearer dispatcher-secret" {
+		return nil, connect.NewError(connect.CodeUnauthenticated, "invalid token")
 	}
-	record, found, err := h.provisioning.live(ctx, r.Msg.WorkId)
+	record, found, err := h.provisioning.live(ctx, r.WorkId)
 	if err != nil {
 		return nil, err
 	}
 	if !record.SandboxReady || !record.EnvironmentPrepared {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("environment readiness was not committed before native connect"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "environment readiness was not committed before native connect")
 	}
-	if !found || record.ProcessID != r.Msg.ProcessId || record.NativeSessionID != r.Msg.NativeSessionId || record.SessionID != r.Msg.WorkId {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("process binding was not durably stored before connection"))
+	if !found || record.ProcessID != r.ProcessId || record.NativeSessionID != r.NativeSessionId || record.SessionID != r.WorkId {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "process binding was not durably stored before connection")
 	}
-	h.requests = append(h.requests, r.Msg)
+	h.requests = append(h.requests, r)
 	if h.unavailable {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("Dispatcher unavailable"))
+		return nil, connect.NewError(connect.CodeUnavailable, "Dispatcher unavailable")
 	}
-	return connect.NewResponse(&dispatcherprivatev1.ConnectResponse{}), nil
+	return &dispatcherprivatev1.ConnectResponse{}, nil
 }
 
 func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
@@ -112,7 +114,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	lifecycle.endpoint = processAPI.URL
 	receiver := &nativeConnectionReceiver{provisioning: provisioning, unavailable: true}
 	mux := http.NewServeMux()
-	path, handler := dispatcherprivatev1connect.NewExecutionServiceHandler(receiver)
+	path, handler := "/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) { dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, receiver) })
 	mux.Handle(path, handler)
 	dispatcher := httptest.NewServer(mux)
 	defer dispatcher.Close()

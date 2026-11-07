@@ -7,10 +7,11 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/samber/oops"
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -25,8 +26,8 @@ type DispatcherControl struct {
 
 var _ command.InputBufferPort = (*DispatcherControl)(nil)
 
-func NewDispatcherControl(client connect.HTTPClient, address, token string, options ...connect.ClientOption) *DispatcherControl {
-	return &DispatcherControl{client: dispatcherprivatev1connect.NewExecutionServiceClient(client, address, options...), token: token}
+func NewDispatcherControl(client connecthttp.HTTPClient, address, token string) *DispatcherControl {
+	return &DispatcherControl{client: dispatcherprivatev1connect.NewExecutionServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0)))), token: token}
 }
 
 func (c *DispatcherControl) BufferInput(ctx context.Context, workID string, input command.ExecutionInput) (command.InputHandOff, error) {
@@ -55,8 +56,9 @@ func (c *DispatcherControl) enqueue(ctx context.Context, message *dispatcherpriv
 	if strings.TrimSpace(message.WorkId) == "" || strings.TrimSpace(c.token) == "" {
 		return "", domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(message)
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := message
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	response, err := c.client.EnqueueInput(ctx, request)
 	switch connect.CodeOf(err) {
 	case connect.CodeAlreadyExists:
@@ -67,9 +69,9 @@ func (c *DispatcherControl) enqueue(ctx context.Context, message *dispatcherpriv
 	if err != nil {
 		return "", controlError(ctx, message.WorkId, "buffer input", err)
 	}
-	handOff, ok := handOffs[response.Msg.GetHandOff()]
+	handOff, ok := handOffs[response.GetHandOff()]
 	if !ok {
-		return "", oops.With("agent_work_id", message.WorkId).Errorf("unknown input hand-off %v", response.Msg.GetHandOff())
+		return "", oops.With("agent_work_id", message.WorkId).Errorf("unknown input hand-off %v", response.GetHandOff())
 	}
 	return handOff, nil
 }
@@ -78,21 +80,23 @@ func (c *DispatcherControl) ReadBuffer(ctx context.Context, workID string) (comm
 	if strings.TrimSpace(workID) == "" || strings.TrimSpace(c.token) == "" {
 		return command.BufferedInputs{}, domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(&dispatcherprivatev1.ListBufferedInputRequest{WorkId: workID})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &dispatcherprivatev1.ListBufferedInputRequest{WorkId: workID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	response, err := c.client.ListBufferedInput(ctx, request)
 	if err != nil {
 		return command.BufferedInputs{}, controlError(ctx, workID, "read input buffer", err)
 	}
-	return command.BufferedInputs{InputIDs: response.Msg.GetInputIds(), RepliedInteractionIDs: response.Msg.GetRepliedInteractionIds()}, nil
+	return command.BufferedInputs{InputIDs: response.GetInputIds(), RepliedInteractionIDs: response.GetRepliedInteractionIds()}, nil
 }
 
 func (c *DispatcherControl) DropBuffer(ctx context.Context, workID string) error {
 	if strings.TrimSpace(workID) == "" || strings.TrimSpace(c.token) == "" {
 		return domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(&dispatcherprivatev1.DropInputRequest{WorkId: workID})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &dispatcherprivatev1.DropInputRequest{WorkId: workID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	_, err := c.client.DropInput(ctx, request)
 	return controlError(ctx, workID, "drop input buffer", err)
 }
@@ -107,8 +111,9 @@ func (c *DispatcherControl) StopExecution(ctx context.Context, workID string, st
 	if strings.TrimSpace(c.token) == "" {
 		return domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(&dispatcherprivatev1.StopRequest{WorkId: workID, StopRequestId: stopRequestID})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &dispatcherprivatev1.StopRequest{WorkId: workID, StopRequestId: stopRequestID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	_, err := c.client.Stop(ctx, request)
 	return controlError(ctx, workID, "stop", err)
 }
@@ -120,8 +125,9 @@ func (c *DispatcherControl) SetThinkingLevel(ctx context.Context, workID string,
 	if strings.TrimSpace(c.token) == "" {
 		return domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(&dispatcherprivatev1.SetThinkingLevelRequest{WorkId: workID, Level: level})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &dispatcherprivatev1.SetThinkingLevelRequest{WorkId: workID, Level: level}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	_, err := c.client.SetThinkingLevel(ctx, request)
 	return controlError(ctx, workID, "thinking level", err)
 }
@@ -132,13 +138,14 @@ func (c *DispatcherControl) SetPermissionMode(ctx context.Context, workID string
 	if strings.TrimSpace(workID) == "" || strings.TrimSpace(c.token) == "" {
 		return "", domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(&dispatcherprivatev1.SetPermissionModeRequest{WorkId: workID, Mode: string(mode)})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &dispatcherprivatev1.SetPermissionModeRequest{WorkId: workID, Mode: string(mode)}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	response, err := c.client.SetPermissionMode(ctx, request)
 	if err != nil {
 		return "", controlError(ctx, workID, "permission mode", err)
 	}
-	return domain.PermissionMode(response.Msg.GetMode()), nil
+	return domain.PermissionMode(response.GetMode()), nil
 }
 
 func (c *DispatcherControl) GetThinkingLevel(ctx context.Context, workID string) (string, error) {
@@ -148,13 +155,14 @@ func (c *DispatcherControl) GetThinkingLevel(ctx context.Context, workID string)
 	if strings.TrimSpace(c.token) == "" {
 		return "", domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(&dispatcherprivatev1.GetThinkingLevelRequest{WorkId: workID})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &dispatcherprivatev1.GetThinkingLevelRequest{WorkId: workID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	response, err := c.client.GetThinkingLevel(ctx, request)
 	if err != nil {
 		return "", controlError(ctx, workID, "read thinking level", err)
 	}
-	return response.Msg.Level, nil
+	return response.Level, nil
 }
 
 // unobservedError reports that Dispatcher does not observe the Work's live

@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
+	"github.com/talgent-work/contracts/gen/storage/private/v1/storageprivatev1connect"
 	agentapplication "github.com/talgent-work/workbench/internal/business/agent/application"
 	agentcommand "github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
@@ -23,6 +24,7 @@ import (
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -92,7 +94,9 @@ func (a *libraryAgents) start(person, workspace, projectID string) libraryWork {
 func (a *libraryAgents) personalWorks() *personalwork.PersonalWorks {
 	a.t.Helper()
 	mux := http.NewServeMux()
-	mux.Handle(storageprivatev1connect.NewFileSpaceServiceHandler(storageconnect.NewFileSpaceHandler(a.f.app, []string{libraryAgentToken}, nil)))
+	mux.Handle("/"+storageprivatev1connect.FileSpaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		storageprivatev1connect.RegisterFileSpaceServiceHandler(s, storageconnect.NewFileSpaceHandler(a.f.app, []string{libraryAgentToken}, nil))
+	}))
 	server := httptest.NewServer(mux)
 	a.t.Cleanup(server.Close)
 	spaces, err := agentstorage.NewFileSpaces(server.Client(), agentstorage.Config{Address: server.URL, Token: libraryAgentToken})

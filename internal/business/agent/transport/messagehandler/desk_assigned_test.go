@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	computereventsv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
@@ -37,7 +37,7 @@ var seatedAt = time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)
 
 func deskAssigned(t *testing.T, occurredAt *timestamppb.Timestamp) integrationmessage.Message {
 	t.Helper()
-	fact := &computereventsv1.DeskAssigned{ComputerId: "computer", DeskId: "desk", WorkId: "work", OccurredAt: occurredAt}
+	fact := &computerintegrationv1.DeskAssignedV1{ComputerId: "computer", DeskId: "desk", WorkId: "work", OccurredAt: occurredAt}
 	msg, err := integrationmessage.New(integrationmessage.KindOf(fact), fact)
 	require.NoError(t, err)
 	return msg
@@ -47,7 +47,7 @@ func deskAssigned(t *testing.T, occurredAt *timestamppb.Timestamp) integrationme
 // concurrent change of its Work is applied again to the Work as it is now.
 func TestDeskAssignedBeginsTheWaitingStartOfItsWork(t *testing.T) {
 	handler := messagehandler.NewDeskAssignedHandler(&seatings{})
-	require.Equal(t, []integrationmessage.Kind{"talgent.computer.events.v1.DeskAssigned"}, handler.Listening())
+	require.Equal(t, []integrationmessage.Kind{"computer.integration.v1.DeskAssignedV1"}, handler.Listening())
 
 	retried := &seatings{results: []error{domain.ErrConcurrentModification, nil}}
 	require.NoError(t, messagehandler.NewDeskAssignedHandler(retried).Handle(context.Background(), deskAssigned(t, timestamppb.New(seatedAt))))

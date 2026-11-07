@@ -2,15 +2,17 @@ package agenttest
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1/marketplacepublicv1connect"
+	"github.com/talgent-work/contracts/gen/marketplace/public/v1/marketplacepublicv1connect"
 	marketapp "github.com/talgent-work/workbench/internal/business/marketplace/application"
 	marketdomain "github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	marketinfra "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
@@ -60,8 +62,11 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 		require.NoError(t, personal.ObserveAccessScope(ctx, id))
 	}
 	market := marketapp.NewApplication(nil, nil, nil, marketinfra.NewProviderAuthorizationQueries(db), personal, marketapp.ConnectorRepositories{})
-	_, handler := marketplacepublicv1connect.NewMarketplaceServiceHandler(markettransport.NewHandler(market), connect.WithInterceptors(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})))
-	server := httptest.NewServer(handler)
+	marketplace := connect.NewServer(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	marketplacepublicv1connect.RegisterMarketplaceServiceHandler(marketplace, markettransport.NewHandler(market))
+	mux := http.NewServeMux()
+	connecthttp.Mount(mux, marketplace)
+	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server.URL, ids
 }

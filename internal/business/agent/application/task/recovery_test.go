@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
-	agenttaskv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/task/v1"
+	agenttaskv1 "github.com/talgent-work/workbench/gen/agent/task/v1"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"google.golang.org/protobuf/proto"
 )
@@ -19,11 +19,11 @@ func TestRecoveryTasksAreKeyedByTheObjectTheyRecover(t *testing.T) {
 		payload proto.Message
 		id      func(proto.Message) string
 	}{
-		"allocation":   {agenttask.NewReconcileAllocation, agenttask.ReconcileAllocationType, agenttask.RecoveryQueue, "agent:allocation:id-1", &agenttaskv1.ReconcileAllocationTask{}, func(m proto.Message) string { return m.(*agenttaskv1.ReconcileAllocationTask).GetAllocationId() }},
-		"work":         {agenttask.NewRecoverWork, agenttask.RecoverWorkType, agenttask.RecoveryQueue, "agent:work:id-1", &agenttaskv1.RecoverWorkTask{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkTask).GetWorkId() }},
-		"continuation": {agenttask.NewRecoverContinuation, agenttask.RecoverContinuationType, agenttask.RecoveryQueue, "agent:continuation:id-1", &agenttaskv1.RecoverContinuationTask{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverContinuationTask).GetWorkId() }},
-		"creation":     {agenttask.NewRecoverWorkCreation, agenttask.RecoverWorkCreationType, agenttask.RecoveryQueue, "agent:creation:id-1", &agenttaskv1.RecoverWorkCreationTask{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkCreationTask).GetRequestId() }},
-		"preparation":  {agenttask.NewPrepareInitialExecution, agenttask.PrepareInitialExecutionType, agenttask.PreparationQueue, "agent:initial-execution:id-1", &agenttaskv1.PrepareInitialExecutionTask{}, func(m proto.Message) string { return m.(*agenttaskv1.PrepareInitialExecutionTask).GetWorkId() }},
+		"allocation":   {agenttask.NewReconcileAllocation, agenttask.ReconcileAllocationType, agenttask.RecoveryQueue, "agent:allocation:id-1", &agenttaskv1.ReconcileAllocationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.ReconcileAllocationTaskV1).GetAllocationId() }},
+		"work":         {agenttask.NewRecoverWork, agenttask.RecoverWorkType, agenttask.RecoveryQueue, "agent:work:id-1", &agenttaskv1.RecoverWorkTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkTaskV1).GetWorkId() }},
+		"continuation": {agenttask.NewRecoverContinuation, agenttask.RecoverContinuationType, agenttask.RecoveryQueue, "agent:continuation:id-1", &agenttaskv1.RecoverContinuationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverContinuationTaskV1).GetWorkId() }},
+		"creation":     {agenttask.NewRecoverWorkCreation, agenttask.RecoverWorkCreationType, agenttask.RecoveryQueue, "agent:creation:id-1", &agenttaskv1.RecoverWorkCreationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkCreationTaskV1).GetRequestId() }},
+		"preparation":  {agenttask.NewPrepareInitialExecution, agenttask.PrepareInitialExecutionType, agenttask.PreparationQueue, "agent:initial-execution:id-1", &agenttaskv1.PrepareInitialExecutionTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.PrepareInitialExecutionTaskV1).GetWorkId() }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			task, err := tc.build("id-1")

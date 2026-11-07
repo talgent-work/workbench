@@ -2,14 +2,13 @@ package connectrpc
 
 import (
 	"context"
-	"errors"
 	"net/url"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
-	computerpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/public/v1/computerpublicv1connect"
+	computerpublicv1 "github.com/talgent-work/contracts/gen/computer/public/v1"
+	"github.com/talgent-work/contracts/gen/computer/public/v1/computerpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -30,34 +29,34 @@ func NewRegistrationHandler(app *application.Application, verificationURI string
 	return &RegistrationHandler{application: app, verificationURI: verificationURI}
 }
 
-func (h *RegistrationHandler) StartRegistration(ctx context.Context, req *connect.Request[computerpublicv1.StartRegistrationRequest]) (*connect.Response[computerpublicv1.StartRegistrationResponse], error) {
-	started, err := h.application.StartRegistration(ctx, req.Msg.GetMachineName())
+func (h *RegistrationHandler) StartRegistration(ctx context.Context, req *computerpublicv1.StartRegistrationRequest) (*computerpublicv1.StartRegistrationResponse, error) {
+	started, err := h.application.StartRegistration(ctx, req.GetMachineName())
 	if err != nil {
 		return nil, publicError(err)
 	}
 	display := started.UserCode[:4] + "-" + started.UserCode[4:]
 	complete := h.verificationURI + "?" + url.Values{"code": {display}}.Encode()
-	return connect.NewResponse(&computerpublicv1.StartRegistrationResponse{
+	return &computerpublicv1.StartRegistrationResponse{
 		DeviceCode: started.DeviceCode, UserCode: display, VerificationUri: h.verificationURI, VerificationUriComplete: complete,
 		ExpiresInSeconds: int32(time.Until(started.ExpiresAt).Round(time.Second).Seconds()), IntervalSeconds: int32(started.Interval.Seconds()),
-	}), nil
+	}, nil
 }
 
-func (h *RegistrationHandler) RedeemRegistration(ctx context.Context, req *connect.Request[computerpublicv1.RedeemRegistrationRequest]) (*connect.Response[computerpublicv1.RedeemRegistrationResponse], error) {
-	if req.Msg.GetDeviceCode() == "" {
+func (h *RegistrationHandler) RedeemRegistration(ctx context.Context, req *computerpublicv1.RedeemRegistrationRequest) (*computerpublicv1.RedeemRegistrationResponse, error) {
+	if req.GetDeviceCode() == "" {
 		return nil, publicError(application.ErrRegistrationNotFound)
 	}
-	redemption, err := h.application.RedeemRegistration(ctx, req.Msg.GetDeviceCode())
+	redemption, err := h.application.RedeemRegistration(ctx, req.GetDeviceCode())
 	if err != nil {
 		return nil, publicError(err)
 	}
 	if redemption.Pending {
-		return connect.NewResponse(&computerpublicv1.RedeemRegistrationResponse{Status: computerpublicv1.RedemptionStatus_REDEMPTION_STATUS_PENDING}), nil
+		return &computerpublicv1.RedeemRegistrationResponse{Status: computerpublicv1.RedemptionStatus_REDEMPTION_STATUS_PENDING}, nil
 	}
-	return connect.NewResponse(&computerpublicv1.RedeemRegistrationResponse{
+	return &computerpublicv1.RedeemRegistrationResponse{
 		Status: computerpublicv1.RedemptionStatus_REDEMPTION_STATUS_REGISTERED, ComputerId: redemption.ComputerID, Name: redemption.Name,
 		Credential: redemption.Credential, CredentialExpiresAtUnixMs: redemption.ExpiresAt.UnixMilli(),
-	}), nil
+	}, nil
 }
 
 // ComputerHandler serves the signed-in person's own Managed Computers.
@@ -74,12 +73,12 @@ func NewComputerHandler(app *application.Application) *ComputerHandler {
 func person(ctx context.Context) (string, error) {
 	id, ok := authn.CurrentUserID(ctx)
 	if !ok {
-		return "", connect.NewError(connect.CodeUnauthenticated, errors.New("computer: sign-in required"))
+		return "", connect.NewError(connect.CodeUnauthenticated, "computer: sign-in required")
 	}
 	return id, nil
 }
 
-func (h *ComputerHandler) ListComputers(ctx context.Context, _ *connect.Request[computerpublicv1.ListComputersRequest]) (*connect.Response[computerpublicv1.ListComputersResponse], error) {
+func (h *ComputerHandler) ListComputers(ctx context.Context, _ *computerpublicv1.ListComputersRequest) (*computerpublicv1.ListComputersResponse, error) {
 	owner, err := person(ctx)
 	if err != nil {
 		return nil, err
@@ -92,10 +91,10 @@ func (h *ComputerHandler) ListComputers(ctx context.Context, _ *connect.Request[
 	for _, computer := range computers {
 		response.Computers = append(response.Computers, managedToProto(computer))
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *ComputerHandler) ListUsableComputers(ctx context.Context, _ *connect.Request[computerpublicv1.ListUsableComputersRequest]) (*connect.Response[computerpublicv1.ListUsableComputersResponse], error) {
+func (h *ComputerHandler) ListUsableComputers(ctx context.Context, _ *computerpublicv1.ListUsableComputersRequest) (*computerpublicv1.ListUsableComputersResponse, error) {
 	starter, err := person(ctx)
 	if err != nil {
 		return nil, err
@@ -112,46 +111,46 @@ func (h *ComputerHandler) ListUsableComputers(ctx context.Context, _ *connect.Re
 		}
 		response.Computers = append(response.Computers, &computerpublicv1.UsableComputer{Id: computer.ID, Name: computer.Name, Kind: kind, Reachable: computer.Reachable, ClaudeCodeSandbox: computer.Sandbox})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *ComputerHandler) RenameComputer(ctx context.Context, req *connect.Request[computerpublicv1.RenameComputerRequest]) (*connect.Response[computerpublicv1.RenameComputerResponse], error) {
+func (h *ComputerHandler) RenameComputer(ctx context.Context, req *computerpublicv1.RenameComputerRequest) (*computerpublicv1.RenameComputerResponse, error) {
 	owner, err := person(ctx)
 	if err != nil {
 		return nil, err
 	}
-	computer, err := h.application.RenameComputer(ctx, owner, req.Msg.GetComputerId(), req.Msg.GetName())
+	computer, err := h.application.RenameComputer(ctx, owner, req.GetComputerId(), req.GetName())
 	if err != nil {
 		return nil, publicError(err)
 	}
-	return connect.NewResponse(&computerpublicv1.RenameComputerResponse{Computer: managedToProto(computer)}), nil
+	return &computerpublicv1.RenameComputerResponse{Computer: managedToProto(computer)}, nil
 }
 
-func (h *ComputerHandler) SetRoomRules(ctx context.Context, req *connect.Request[computerpublicv1.SetRoomRulesRequest]) (*connect.Response[computerpublicv1.SetRoomRulesResponse], error) {
+func (h *ComputerHandler) SetRoomRules(ctx context.Context, req *computerpublicv1.SetRoomRulesRequest) (*computerpublicv1.SetRoomRulesResponse, error) {
 	owner, err := person(ctx)
 	if err != nil {
 		return nil, err
 	}
-	policy, ok := policyFromProto[req.Msg.GetAdmissionPolicy()]
+	policy, ok := policyFromProto[req.GetAdmissionPolicy()]
 	if !ok {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("computer: an admission policy is required"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "computer: an admission policy is required")
 	}
-	computer, err := h.application.SetRoomRules(ctx, application.SetRoomRules{OwnerID: owner, ComputerID: req.Msg.GetComputerId(), Desks: req.Msg.GetCapacity(), Policy: policy})
+	computer, err := h.application.SetRoomRules(ctx, application.SetRoomRules{OwnerID: owner, ComputerID: req.GetComputerId(), Desks: req.GetCapacity(), Policy: policy})
 	if err != nil {
 		return nil, publicError(err)
 	}
-	return connect.NewResponse(&computerpublicv1.SetRoomRulesResponse{Computer: managedToProto(computer)}), nil
+	return &computerpublicv1.SetRoomRulesResponse{Computer: managedToProto(computer)}, nil
 }
 
-func (h *ComputerHandler) RemoveComputer(ctx context.Context, req *connect.Request[computerpublicv1.RemoveComputerRequest]) (*connect.Response[computerpublicv1.RemoveComputerResponse], error) {
+func (h *ComputerHandler) RemoveComputer(ctx context.Context, req *computerpublicv1.RemoveComputerRequest) (*computerpublicv1.RemoveComputerResponse, error) {
 	owner, err := person(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := h.application.RemoveComputer(ctx, owner, req.Msg.GetComputerId()); err != nil {
+	if err := h.application.RemoveComputer(ctx, owner, req.GetComputerId()); err != nil {
 		return nil, publicError(err)
 	}
-	return connect.NewResponse(&computerpublicv1.RemoveComputerResponse{}), nil
+	return &computerpublicv1.RemoveComputerResponse{}, nil
 }
 
 var policyFromProto = map[computerpublicv1.AdmissionPolicy]domain.AdmissionPolicy{
@@ -168,29 +167,29 @@ func policyToProto(policy domain.AdmissionPolicy) computerpublicv1.AdmissionPoli
 	return computerpublicv1.AdmissionPolicy_ADMISSION_POLICY_UNSPECIFIED
 }
 
-func (h *ComputerHandler) GetRegistration(ctx context.Context, req *connect.Request[computerpublicv1.GetRegistrationRequest]) (*connect.Response[computerpublicv1.GetRegistrationResponse], error) {
+func (h *ComputerHandler) GetRegistration(ctx context.Context, req *computerpublicv1.GetRegistrationRequest) (*computerpublicv1.GetRegistrationResponse, error) {
 	approver, err := person(ctx)
 	if err != nil {
 		return nil, err
 	}
-	pending, err := h.application.GetRegistration(ctx, req.Msg.GetUserCode(), approver)
+	pending, err := h.application.GetRegistration(ctx, req.GetUserCode(), approver)
 	if err != nil {
 		return nil, publicError(err)
 	}
-	return connect.NewResponse(&computerpublicv1.GetRegistrationResponse{
+	return &computerpublicv1.GetRegistrationResponse{
 		MachineName: pending.MachineName, ExpiresAtUnixMs: pending.ExpiresAt.UnixMilli(), Approved: pending.Approved,
-	}), nil
+	}, nil
 }
 
-func (h *ComputerHandler) ApproveRegistration(ctx context.Context, req *connect.Request[computerpublicv1.ApproveRegistrationRequest]) (*connect.Response[computerpublicv1.ApproveRegistrationResponse], error) {
+func (h *ComputerHandler) ApproveRegistration(ctx context.Context, req *computerpublicv1.ApproveRegistrationRequest) (*computerpublicv1.ApproveRegistrationResponse, error) {
 	approver, err := person(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := h.application.ApproveRegistration(ctx, req.Msg.GetUserCode(), approver); err != nil {
+	if err := h.application.ApproveRegistration(ctx, req.GetUserCode(), approver); err != nil {
 		return nil, publicError(err)
 	}
-	return connect.NewResponse(&computerpublicv1.ApproveRegistrationResponse{}), nil
+	return &computerpublicv1.ApproveRegistrationResponse{}, nil
 }
 
 func managedToProto(computer application.ManagedComputer) *computerpublicv1.ManagedComputer {

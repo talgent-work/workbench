@@ -1,4 +1,4 @@
-import { WorkFilePreviewDisplay as Display, WorkFilePreviewMode as Mode, WorkFilePreviewRefusal as Refusal } from "@talgent/workbench-contracts/agent/public/v1/work_file_pb";
+import { WorkFilePreviewDisplay as Display, WorkFilePreviewMode as Mode, WorkFilePreviewRefusal as Refusal } from "@talgent/contracts/agent/public/v1/work_file_pb";
 import type { PreviewVerdict } from "../components/preview/preview-verdict";
 
 // Storage's file preview as a context relays it. Agent's preview contract

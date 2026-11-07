@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -39,11 +39,11 @@ func (f fakeWorkspaces) WorkspaceFileLink(context.Context, application.ViewedWor
 
 func (f *accessFixture) browse(t *testing.T, work, reader string, admission *agentprivatev1.ReaderAdmission, path string) (*agentprivatev1.BrowseWorkspaceResponse, connect.Code) {
 	t.Helper()
-	response, err := f.workspaces.BrowseWorkspace(context.Background(), authenticated(&agentprivatev1.BrowseWorkspaceRequest{WorkId: work, ReaderId: reader, Admission: admission, Path: path}, "control"))
+	response, err := f.workspaces.BrowseWorkspace(authenticated(context.Background(), "control"), &agentprivatev1.BrowseWorkspaceRequest{WorkId: work, ReaderId: reader, Admission: admission, Path: path})
 	if err != nil {
 		return nil, connect.CodeOf(err)
 	}
-	return response.Msg, 0
+	return response, 0
 }
 
 // The workspace has the readers of the Work page, and no other.
@@ -59,25 +59,25 @@ func TestWorkspaceReadersAreTheWorkReaders(t *testing.T) {
 	_, code = f.admit(t, f.humanWork, "member", memberOfProjectA)
 	require.Equal(t, connect.CodePermissionDenied, code, "the same refusal as reading the Work")
 
-	_, err := f.access.GrantWorkShare(ctx, authenticated(&agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "reader", Admission: memberOfProjectA}, "control"))
+	_, err := f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "reader", Admission: memberOfProjectA})
 	require.NoError(t, err)
 	listing, _ = f.browse(t, f.humanWork, "reader", memberOfProjectA, "")
 	require.Equal(t, agentprivatev1.WorkspaceState_WORKSPACE_STATE_AVAILABLE, listing.GetState(), "a Work Share holder reads it")
 
-	_, err = f.public.ChangeWorkVisibility(ctx, asUser("owner", &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: true}))
+	_, err = f.public.ChangeWorkVisibility(asUser(ctx, "owner"), &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: true})
 	require.NoError(t, err)
 	listing, _ = f.browse(t, f.humanWork, "member", memberOfProjectA, "inputs")
 	require.Equal(t, "brief.md", listing.GetEntries()[0].GetAttachmentName(), "inputs/ entries are the caller's Attachments")
 	_, code = f.browse(t, f.humanWork, "member", &agentprivatev1.ReaderAdmission{Reference: "project", Value: "project-b"}, "")
 	require.Equal(t, connect.CodePermissionDenied, code)
 
-	preview, err := f.workspaces.PreviewWorkspaceFile(ctx, authenticated(&agentprivatev1.PreviewWorkspaceFileRequest{WorkId: f.humanWork, ReaderId: "member", Admission: memberOfProjectA, Path: "notes.md"}, "control"))
+	preview, err := f.workspaces.PreviewWorkspaceFile(authenticated(ctx, "control"), &agentprivatev1.PreviewWorkspaceFileRequest{WorkId: f.humanWork, ReaderId: "member", Admission: memberOfProjectA, Path: "notes.md"})
 	require.NoError(t, err)
-	require.Equal(t, "/content?grant=preview", preview.Msg.GetAccessUrl())
-	download, err := f.workspaces.DownloadWorkspaceFile(ctx, authenticated(&agentprivatev1.DownloadWorkspaceFileRequest{WorkId: f.humanWork, ReaderId: "member", Admission: memberOfProjectA, Path: "notes.md"}, "control"))
+	require.Equal(t, "/content?grant=preview", preview.GetAccessUrl())
+	download, err := f.workspaces.DownloadWorkspaceFile(authenticated(ctx, "control"), &agentprivatev1.DownloadWorkspaceFileRequest{WorkId: f.humanWork, ReaderId: "member", Admission: memberOfProjectA, Path: "notes.md"})
 	require.NoError(t, err)
-	require.Equal(t, "/content?grant=download", download.Msg.GetAccessUrl())
-	_, err = f.workspaces.BrowseWorkspace(ctx, connect.NewRequest(&agentprivatev1.BrowseWorkspaceRequest{WorkId: f.humanWork, ReaderId: "owner"}))
+	require.Equal(t, "/content?grant=download", download.GetAccessUrl())
+	_, err = f.workspaces.BrowseWorkspace(ctx, &agentprivatev1.BrowseWorkspaceRequest{WorkId: f.humanWork, ReaderId: "owner"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err), "only a trusted caller reads on a reader's behalf")
 }
 
@@ -89,10 +89,10 @@ func TestWorkspaceStates(t *testing.T) {
 	listing, _ := f.browse(t, f.humanWork, "owner", memberOfProjectA, "")
 	require.Equal(t, agentprivatev1.WorkspaceState_WORKSPACE_STATE_CLOSED, listing.GetState())
 	require.Empty(t, listing.GetEntries())
-	preview, err := f.workspaces.PreviewWorkspaceFile(context.Background(), authenticated(&agentprivatev1.PreviewWorkspaceFileRequest{WorkId: f.humanWork, ReaderId: "owner", Path: "notes.md"}, "control"))
+	preview, err := f.workspaces.PreviewWorkspaceFile(authenticated(context.Background(), "control"), &agentprivatev1.PreviewWorkspaceFileRequest{WorkId: f.humanWork, ReaderId: "owner", Path: "notes.md"})
 	require.NoError(t, err)
-	require.Equal(t, agentprivatev1.WorkspaceState_WORKSPACE_STATE_CLOSED, preview.Msg.GetState())
-	require.Empty(t, preview.Msg.GetAccessUrl())
+	require.Equal(t, agentprivatev1.WorkspaceState_WORKSPACE_STATE_CLOSED, preview.GetState())
+	require.Empty(t, preview.GetAccessUrl())
 
 	for missing, state := range map[error]agentprivatev1.WorkspaceState{
 		application.ErrWorkspaceNotCreated: agentprivatev1.WorkspaceState_WORKSPACE_STATE_NOT_CREATED,

@@ -13,10 +13,10 @@ import (
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -233,12 +233,13 @@ func TestContinuationRetainsOriginalRequestBeforeAnyAdmission(t *testing.T) {
 	client := startupRPCClient(t, f.db)
 	readStartup := func() *agentprivatev1.GetWorkStartupResponse {
 		t.Helper()
-		req := connect.NewRequest(&agentprivatev1.GetWorkStartupRequest{SubjectId: "owner", WorkId: id})
-		req.Header().Set("Authorization", "Bearer control")
-		result, err := client.GetWorkStartup(ctx, req)
+		req := &agentprivatev1.GetWorkStartupRequest{SubjectId: "owner", WorkId: id}
+		reqCtx, reqInfo := connect.NewClientContext(ctx)
+		reqInfo.RequestHeader().Set("Authorization", "Bearer control")
+		result, err := client.GetWorkStartup(reqCtx, req)
 		require.NoError(t, err)
-		require.Equal(t, request.RequestID, result.Msg.ContinuationRequestId)
-		return result.Msg
+		require.Equal(t, request.RequestID, result.ContinuationRequestId)
+		return result
 	}
 	require.True(t, readStartup().ContinuationPending)
 	// A lifecycle mutation based on a pre-reservation snapshot must reload;

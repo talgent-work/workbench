@@ -8,14 +8,16 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
-	marketplaceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1/marketplacepublicv1connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/marketplace/private/v1"
+	"github.com/talgent-work/contracts/gen/marketplace/private/v1/marketplaceprivatev1connect"
+	"github.com/talgent-work/contracts/gen/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/otelsetup"
 	"go.opentelemetry.io/otel/propagation"
 )
 
@@ -54,24 +56,26 @@ func NewClient(httpClient *http.Client, config Config) (*Client, error) {
 	trustedClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	address := strings.TrimRight(config.Address, "/")
 	return &Client{
-		client:          marketplacepublicv1connect.NewMarketplaceServiceClient(&trustedClient, address),
-		credentials:     marketplaceprivatev1connect.NewCredentialServiceClient(&trustedClient, address),
-		selection:       marketplaceprivatev1connect.NewSelectionServiceClient(&trustedClient, address),
+		client:          marketplacepublicv1connect.NewMarketplaceServiceClient(connect.NewClient(connecthttp.NewTransport(&trustedClient, address, connecthttp.WithReadMaxBytes(0)))),
+		credentials:     marketplaceprivatev1connect.NewCredentialServiceClient(connect.NewClient(connecthttp.NewTransport(&trustedClient, address, connecthttp.WithReadMaxBytes(0)))),
+		selection:       marketplaceprivatev1connect.NewSelectionServiceClient(connect.NewClient(connecthttp.NewTransport(&trustedClient, address, connecthttp.WithReadMaxBytes(0)))),
 		credentialToken: config.CredentialToken,
 	}, nil
 }
 
-func delegated[T any](ctx context.Context, user string, message *T) (*connect.Request[T], error) {
+// delegated is the context of a call made for user under the internal
+// service delegation contract, and the call's metadata.
+func delegated(ctx context.Context, user string) (context.Context, *connect.CallInfo, error) {
 	if strings.TrimSpace(user) == "" {
-		return nil, access.ErrAccessDenied
+		return nil, nil, access.ErrAccessDenied
 	}
-	request := connect.NewRequest(message)
+	ctx, info := connect.NewClientContext(ctx)
 	// This is the existing internal service delegation contract. The public
 	// gateway strips these headers; they are never copied from client input.
-	request.Header().Set(authn.HeaderServiceID, "agent")
-	request.Header().Set(authn.HeaderDelegatedUserID, user)
-	propagation.TraceContext{}.Inject(ctx, propagation.HeaderCarrier(request.Header()))
-	return request, nil
+	info.RequestHeader().Set(authn.HeaderServiceID, "agent")
+	info.RequestHeader().Set(authn.HeaderDelegatedUserID, user)
+	propagation.TraceContext{}.Inject(ctx, otelsetup.ConnectCarrier{Header: info.RequestHeader()})
+	return ctx, info, nil
 }
 
 func (c *Client) ListPersonalPlugins(ctx context.Context, user string) ([]domain.PersonalPlugin, error) {
@@ -80,16 +84,16 @@ func (c *Client) ListPersonalPlugins(ctx context.Context, user string) ([]domain
 	var result []domain.PersonalPlugin
 	cursor := ""
 	for {
-		request, err := delegated(ctx, user, &marketplaceprivatev1.ReadPersonalPluginsRequest{Cursor: cursor, PageSize: 100})
+		ctx, info, err := delegated(ctx, user)
 		if err != nil {
 			return nil, err
 		}
-		request.Header().Set("Authorization", "Bearer "+c.credentialToken)
-		response, err := c.selection.ReadPersonalPlugins(ctx, request)
+		info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
+		response, err := c.selection.ReadPersonalPlugins(ctx, &marketplaceprivatev1.ReadPersonalPluginsRequest{Cursor: cursor, PageSize: 100})
 		if err != nil {
 			return nil, err
 		}
-		for _, record := range response.Msg.GetPlugins() {
+		for _, record := range response.GetPlugins() {
 			plugin, err := personalPlugin(record)
 			if err != nil {
 				return nil, err
@@ -100,10 +104,10 @@ func (c *Client) ListPersonalPlugins(ctx context.Context, user string) ([]domain
 			cursor = plugin.Slug
 			result = append(result, plugin)
 		}
-		if response.Msg.GetNextCursor() == "" {
+		if response.GetNextCursor() == "" {
 			return result, nil
 		}
-		if len(response.Msg.GetPlugins()) == 0 || response.Msg.GetNextCursor() != cursor {
+		if len(response.GetPlugins()) == 0 || response.GetNextCursor() != cursor {
 			return nil, errors.New("agent: Marketplace returned an invalid personal page")
 		}
 	}
@@ -112,16 +116,16 @@ func (c *Client) ListPersonalPlugins(ctx context.Context, user string) ([]domain
 func (c *Client) ResolvePlugin(ctx context.Context, user, slug string) (domain.PluginRelease, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	request, err := delegated(ctx, user, &marketplaceprivatev1.ResolvePluginRequest{Slug: slug})
+	ctx, info, err := delegated(ctx, user)
 	if err != nil {
 		return domain.PluginRelease{}, err
 	}
-	request.Header().Set("Authorization", "Bearer "+c.credentialToken)
-	response, err := c.selection.ResolvePlugin(ctx, request)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
+	response, err := c.selection.ResolvePlugin(ctx, &marketplaceprivatev1.ResolvePluginRequest{Slug: slug})
 	if err != nil {
 		return domain.PluginRelease{}, err
 	}
-	release, err := pluginRelease(response.Msg.GetPlugin())
+	release, err := pluginRelease(response.GetPlugin())
 	if err != nil {
 		return domain.PluginRelease{}, err
 	}

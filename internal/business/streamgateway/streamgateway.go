@@ -5,17 +5,16 @@ import (
 	"log/slog"
 	"net/http"
 
-	"connectrpc.com/connect"
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1/streamgatewaypublicv1connect"
+	"github.com/talgent-work/contracts/gen/streamgateway/public/v1/streamgatewaypublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/infrastructure/unifiedmessagelog"
 	streamrpc "github.com/talgent-work/workbench/internal/business/streamgateway/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
-	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 )
 
 // AgentConfig reaches Agent's private Work access API.
@@ -42,10 +41,8 @@ var Module = fx.Module(
 	)),
 	fx.Provide(query.NewWatchStream, query.NewListMessagesBySessionHandler, application.NewApplication),
 	fx.Invoke(func(app *application.Application, mux *http.ServeMux, logger *slog.Logger) {
-		path, handler := streamgatewaypublicv1connect.NewStreamGatewayServiceHandler(
-			streamrpc.NewHandler(app),
-			connect.WithInterceptors(connectlog.NewInterceptor(logger), authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})),
-		)
-		mux.Handle(path, handler)
+		server := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(server, streamrpc.NewHandler(app))
+		connectserver.Mount(mux, server)
 	}),
 )

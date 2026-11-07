@@ -11,16 +11,16 @@ import (
 	"github.com/samber/oops"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	agenteventsv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/events/v1"
+	agentintegrationv1 "github.com/talgent-work/contracts/gen/agent/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 )
 
 const publishTimeout = 5 * time.Second
 
-var outcomes = map[command.InputOutcome]agenteventsv1.PlatformInputOutcome{
-	command.InputCompleted: agenteventsv1.PlatformInputOutcome_PLATFORM_INPUT_OUTCOME_COMPLETED,
-	command.InputAbandoned: agenteventsv1.PlatformInputOutcome_PLATFORM_INPUT_OUTCOME_ABANDONED,
-	command.InputDropped:   agenteventsv1.PlatformInputOutcome_PLATFORM_INPUT_OUTCOME_DROPPED,
+var outcomes = map[command.InputOutcome]agentintegrationv1.PlatformInputOutcome{
+	command.InputCompleted: agentintegrationv1.PlatformInputOutcome_PLATFORM_INPUT_OUTCOME_COMPLETED,
+	command.InputAbandoned: agentintegrationv1.PlatformInputOutcome_PLATFORM_INPUT_OUTCOME_ABANDONED,
+	command.InputDropped:   agentintegrationv1.PlatformInputOutcome_PLATFORM_INPUT_OUTCOME_DROPPED,
 }
 
 // Publisher publishes each settlement as a PlatformInputSettled Integration
@@ -36,7 +36,7 @@ func (p *Publisher) Settled(parent context.Context, settlement command.InputSett
 	if !ok {
 		return fmt.Errorf("agent: unknown input outcome %q", settlement.Outcome)
 	}
-	payload := &agenteventsv1.PlatformInputSettled{
+	payload := &agentintegrationv1.PlatformInputSettledV1{
 		EventId: uuid.Must(uuid.NewV7()).String(), OccurredAt: timestamppb.New(settlement.At),
 		WorkId: settlement.WorkID, InputId: settlement.InputID, Outcome: outcome,
 	}

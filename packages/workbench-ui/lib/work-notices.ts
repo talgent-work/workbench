@@ -1,4 +1,4 @@
-import type { StreamDiagnosticFrame } from "@talgent/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
+import type { StreamDiagnosticFrame } from "@talgent/contracts/streamgateway/public/v1/streamgateway_pb";
 import { notify } from "./notifications";
 
 // Model provider refusals the Harness or a SubAgent recovers from are told live

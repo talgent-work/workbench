@@ -1,6 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
-import { ContentBlockType, UnifiedMessageSchema, type UnifiedMessage, type UnifiedMessageKind } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { ContentBlockType, UnifiedMessageSchema, type UnifiedMessage, type UnifiedMessageKind } from "@talgent/contracts/dispatcher/public/v1/unified_message_pb";
 import type { Mock } from "vitest";
 
 // A Work's live message stream for conversation tests: the watch mock yields

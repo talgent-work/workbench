@@ -14,22 +14,24 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
-	streamgatewaypublicv1 "github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1/streamgatewaypublicv1connect"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/streamgateway/public/v1"
+	"github.com/talgent-work/contracts/gen/streamgateway/public/v1/streamgatewaypublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	streamrpc "github.com/talgent-work/workbench/internal/business/streamgateway/transport/connectrpc"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // Removing the legacy activity surface must preserve WatchStream without
 // retaining the old project activity RPC.
 func TestStreamGatewayServiceDescriptorExposesRuntimeStreamOnly(t *testing.T) {
-	methods := streamgatewaypublicv1.File_talgent_streamgateway_public_v1_streamgateway_proto.Services().
+	methods := streamgatewaypublicv1.File_streamgateway_public_v1_streamgateway_proto.Services().
 		ByName("StreamGatewayService").
 		Methods()
 	if methods.ByName("WatchStream") == nil {
@@ -69,16 +71,18 @@ func TestApplication_WatchStream_ReplayThenLive(t *testing.T) {
 	app.Queries.WatchStream.SetSettleDelay(0)
 
 	mux := http.NewServeMux()
-	path, handler := streamgatewaypublicv1connect.NewStreamGatewayServiceHandler(streamrpc.NewHandler(app))
+	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
+	})
 	mux.Handle(path, handler)
 
 	srv, httpClient := newH2CTestServer(t, mux)
-	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(httpClient, srv.URL)
+	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	streamConn, err := client.WatchStream(ctx, connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
+	streamConn, err := watch(client.WatchStream(ctx, &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
 	if err != nil {
 		t.Fatalf("WatchStream: %v", err)
 	}
@@ -114,16 +118,18 @@ func TestApplication_WatchStream_ForwardsWorkStateFrames(t *testing.T) {
 	app.Queries.WatchStream.SetSettleDelay(0)
 
 	mux := http.NewServeMux()
-	path, handler := streamgatewaypublicv1connect.NewStreamGatewayServiceHandler(streamrpc.NewHandler(app))
+	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
+	})
 	mux.Handle(path, handler)
 
 	srv, httpClient := newH2CTestServer(t, mux)
-	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(httpClient, srv.URL)
+	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	streamConn, err := client.WatchStream(ctx, connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
+	streamConn, err := watch(client.WatchStream(ctx, &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
 	if err != nil {
 		t.Fatalf("WatchStream: %v", err)
 	}
@@ -172,16 +178,18 @@ func TestApplication_WatchStream_ForwardsDiagnosticWithoutExtraReplay(t *testing
 	app.Queries.WatchStream.SetSettleDelay(0)
 
 	mux := http.NewServeMux()
-	path, handler := streamgatewaypublicv1connect.NewStreamGatewayServiceHandler(streamrpc.NewHandler(app))
+	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
+	})
 	mux.Handle(path, handler)
 
 	srv, httpClient := newH2CTestServer(t, mux)
-	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(httpClient, srv.URL)
+	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	streamConn, err := client.WatchStream(ctx, connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
+	streamConn, err := watch(client.WatchStream(ctx, &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
 	if err != nil {
 		t.Fatalf("WatchStream: %v", err)
 	}
@@ -232,16 +240,18 @@ func TestApplication_WatchStream_PropagatesStoreError(t *testing.T) {
 	app.Queries.WatchStream.SetSettleDelay(0)
 
 	mux := http.NewServeMux()
-	path, handler := streamgatewaypublicv1connect.NewStreamGatewayServiceHandler(streamrpc.NewHandler(app))
+	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
+	})
 	mux.Handle(path, handler)
 
 	srv, httpClient := newH2CTestServer(t, mux)
-	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(httpClient, srv.URL)
+	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	streamConn, err := client.WatchStream(ctx, connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
+	streamConn, err := watch(client.WatchStream(ctx, &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
 	if err != nil {
 		t.Fatalf("WatchStream: %v", err)
 	}
@@ -272,16 +282,18 @@ func TestApplication_WatchStream_LiveSubscribeFailureReturnsUnavailable(t *testi
 	app.Queries.WatchStream.SetSettleDelay(0)
 
 	mux := http.NewServeMux()
-	path, handler := streamgatewaypublicv1connect.NewStreamGatewayServiceHandler(streamrpc.NewHandler(app))
+	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
+	})
 	mux.Handle(path, handler)
 
 	srv, httpClient := newH2CTestServer(t, mux)
-	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(httpClient, srv.URL)
+	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	streamConn, err := client.WatchStream(ctx, connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
+	streamConn, err := watch(client.WatchStream(ctx, &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
 	if err != nil {
 		t.Fatalf("WatchStream: %v", err)
 	}
@@ -306,16 +318,18 @@ func TestApplication_WatchStream_LogsLiveSubscriptionClosure(t *testing.T) {
 	app.Queries.WatchStream.SetSettleDelay(0)
 
 	mux := http.NewServeMux()
-	path, handler := streamgatewaypublicv1connect.NewStreamGatewayServiceHandler(streamrpc.NewHandler(app))
+	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
+	})
 	mux.Handle(path, handler)
 
 	srv, httpClient := newH2CTestServer(t, mux)
-	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(httpClient, srv.URL)
+	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	streamConn, err := client.WatchStream(ctx, connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
+	streamConn, err := watch(client.WatchStream(ctx, &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}))
 	if err != nil {
 		t.Fatalf("WatchStream: %v", err)
 	}
@@ -359,9 +373,9 @@ func TestApplication_WatchStream_LogsLiveSubscriptionClosure(t *testing.T) {
 func TestApplication_ListMessagesBySession_RequiresAgentWorkID(t *testing.T) {
 	app := newTestApplication(&fakeStore{}, newFakeStream(), slogDiscard(t))
 
-	_, err := streamrpc.NewHandler(app).ListMessagesBySession(context.Background(), connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{
+	_, err := served(app).ListMessagesBySession(context.Background(), &streamgatewaypublicv1.ListMessagesBySessionRequest{
 		ToolCallIds: []string{"tool-1"},
-	}))
+	})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code = %s, want InvalidArgument (err=%v)", connect.CodeOf(err), err)
 	}
@@ -373,10 +387,10 @@ func TestApplication_ListMessagesBySession_AllowsSessionOnlyRecentHistory(t *tes
 	store := &fakeStore{}
 	app := newTestApplication(store, newFakeStream(), slogDiscard(t))
 
-	_, err := streamrpc.NewHandler(app).ListMessagesBySession(context.Background(), connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{
+	_, err := served(app).ListMessagesBySession(context.Background(), &streamgatewaypublicv1.ListMessagesBySessionRequest{
 		AgentWorkId: "w1",
 		Limit:       120,
-	}))
+	})
 	if err != nil {
 		t.Fatalf("ListMessagesBySession: %v", err)
 	}
@@ -399,11 +413,11 @@ func TestApplication_ListMessagesBySession_IgnoresBlankFiltersForSessionOnlyHist
 	store := &fakeStore{}
 	app := newTestApplication(store, newFakeStream(), slogDiscard(t))
 
-	_, err := streamrpc.NewHandler(app).ListMessagesBySession(context.Background(), connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{
+	_, err := served(app).ListMessagesBySession(context.Background(), &streamgatewaypublicv1.ListMessagesBySessionRequest{
 		AgentWorkId:    "w1",
 		ToolCallIds:    []string{" ", ""},
 		InteractionIds: []string{" "},
-	}))
+	})
 	if err != nil {
 		t.Fatalf("ListMessagesBySession: %v", err)
 	}
@@ -413,10 +427,10 @@ func TestApplication_ListMessagesBySession_AllowsInteractionFilter(t *testing.T)
 	store := &fakeStore{}
 	app := newTestApplication(store, newFakeStream(), slogDiscard(t))
 
-	_, err := streamrpc.NewHandler(app).ListMessagesBySession(context.Background(), connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{
+	_, err := served(app).ListMessagesBySession(context.Background(), &streamgatewaypublicv1.ListMessagesBySessionRequest{
 		AgentWorkId:    "w1",
 		InteractionIds: []string{" interaction-1 "},
-	}))
+	})
 	if err != nil {
 		t.Fatalf("ListMessagesBySession: %v", err)
 	}
@@ -435,12 +449,12 @@ func TestApplication_ListMessagesBySession_CapsLimitAndReturnsMessages(t *testin
 	store := &fakeStore{messageRows: []*query.Message{msg}}
 	app := newTestApplication(store, newFakeStream(), slogDiscard(t))
 
-	resp, err := streamrpc.NewHandler(app).ListMessagesBySession(context.Background(), connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{
+	resp, err := served(app).ListMessagesBySession(context.Background(), &streamgatewaypublicv1.ListMessagesBySessionRequest{
 		AgentWorkId:    "w1",
 		ToolCallIds:    []string{" tool-1 "},
 		InteractionIds: []string{" interaction-1 "},
 		Limit:          999,
-	}))
+	})
 	if err != nil {
 		t.Fatalf("ListMessagesBySession: %v", err)
 	}
@@ -459,7 +473,7 @@ func TestApplication_ListMessagesBySession_CapsLimitAndReturnsMessages(t *testin
 		t.Fatalf("interaction ids = %v, want [interaction-1]", got)
 	}
 
-	msgs := resp.Msg.GetMessages()
+	msgs := resp.GetMessages()
 	if len(msgs) != 1 {
 		t.Fatalf("messages = %d, want 1", len(msgs))
 	}
@@ -483,8 +497,8 @@ func TestHistoryCursorMappingAndRejection(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &fakeStore{}
-			handler := streamrpc.NewHandler(newTestApplication(store, newFakeStream(), slogDiscard(t)))
-			_, err := handler.ListMessagesBySession(context.Background(), connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{AgentWorkId: "session", Before: tc.cursor, ToolCallIds: tc.filters}))
+			handler := served(newTestApplication(store, newFakeStream(), slogDiscard(t)))
+			_, err := handler.ListMessagesBySession(context.Background(), &streamgatewaypublicv1.ListMessagesBySessionRequest{AgentWorkId: "session", Before: tc.cursor, ToolCallIds: tc.filters})
 			if connect.CodeOf(err) != connect.CodeInvalidArgument {
 				t.Fatalf("expected invalid cursor, got %v", err)
 			}
@@ -494,13 +508,13 @@ func TestHistoryCursorMappingAndRejection(t *testing.T) {
 		})
 	}
 	store := &fakeStore{messageRows: []*query.Message{unifiedMessage("a", "session", ts.AsTime()), unifiedMessage("b", "session", ts.AsTime()), unifiedMessage("c", "session", ts.AsTime())}}
-	handler := streamrpc.NewHandler(newTestApplication(store, newFakeStream(), slogDiscard(t)))
-	resp, err := handler.ListMessagesBySession(context.Background(), connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{AgentWorkId: "session", Kinds: []dispatcherpublicv1.UnifiedMessageKind{dispatcherpublicv1.UnifiedMessageKind_UNIFIED_MESSAGE_KIND_RESULT}, ToolCallIds: []string{"tool"}, Limit: 2, Before: &streamgatewaypublicv1.MessageHistoryCursor{Timestamp: ts, Id: "z"}}))
+	handler := served(newTestApplication(store, newFakeStream(), slogDiscard(t)))
+	resp, err := handler.ListMessagesBySession(context.Background(), &streamgatewaypublicv1.ListMessagesBySessionRequest{AgentWorkId: "session", Kinds: []dispatcherpublicv1.UnifiedMessageKind{dispatcherpublicv1.UnifiedMessageKind_UNIFIED_MESSAGE_KIND_RESULT}, ToolCallIds: []string{"tool"}, Limit: 2, Before: &streamgatewaypublicv1.MessageHistoryCursor{Timestamp: ts, Id: "z"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !resp.Msg.HasMore || len(resp.Msg.Messages) != 2 || resp.Msg.Messages[0].Id != "b" || resp.Msg.NextBefore.Id != "b" || !resp.Msg.NextBefore.Timestamp.AsTime().Equal(ts.AsTime()) {
-		t.Fatalf("unexpected page: %v", resp.Msg)
+	if !resp.HasMore || len(resp.Messages) != 2 || resp.Messages[0].Id != "b" || resp.NextBefore.Id != "b" || !resp.NextBefore.Timestamp.AsTime().Equal(ts.AsTime()) {
+		t.Fatalf("unexpected page: %v", resp)
 	}
 	call := store.recordedMessageCalls()[0]
 	if call.Before.ID != "z" || !call.Before.Timestamp.Equal(ts.AsTime()) || call.Limit != 3 || len(call.Kinds) != 1 || call.Kinds[0] != "UNIFIED_MESSAGE_KIND_RESULT" || len(call.ToolCallIDs) != 1 {
@@ -518,20 +532,20 @@ func TestHistoryFromCursorIncludesAnchorAndRejectsInvalidBoundaries(t *testing.T
 		{AgentWorkId: "session", From: cursor, Before: cursor},
 	} {
 		store := &fakeStore{}
-		handler := streamrpc.NewHandler(newTestApplication(store, newFakeStream(), slogDiscard(t)))
-		_, err := handler.ListMessagesBySession(context.Background(), connect.NewRequest(request))
+		handler := served(newTestApplication(store, newFakeStream(), slogDiscard(t)))
+		_, err := handler.ListMessagesBySession(context.Background(), request)
 		if connect.CodeOf(err) != connect.CodeInvalidArgument || len(store.recordedMessageCalls()) != 0 {
 			t.Fatalf("invalid forward cursor reached reader: %v", err)
 		}
 	}
 	store := &fakeStore{messageRows: []*query.Message{unifiedMessage("a", "session", ts.AsTime()), unifiedMessage("b", "session", ts.AsTime()), unifiedMessage("c", "session", ts.AsTime())}}
-	handler := streamrpc.NewHandler(newTestApplication(store, newFakeStream(), slogDiscard(t)))
-	response, err := handler.ListMessagesBySession(context.Background(), connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{AgentWorkId: "session", From: cursor, Limit: 2}))
+	handler := served(newTestApplication(store, newFakeStream(), slogDiscard(t)))
+	response, err := handler.ListMessagesBySession(context.Background(), &streamgatewaypublicv1.ListMessagesBySessionRequest{AgentWorkId: "session", From: cursor, Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !response.Msg.HasMore || len(response.Msg.Messages) != 2 || response.Msg.Messages[0].Id != "a" || response.Msg.Messages[1].Id != "b" {
-		t.Fatalf("forward page lost its anchor: %v", response.Msg)
+	if !response.HasMore || len(response.Messages) != 2 || response.Messages[0].Id != "a" || response.Messages[1].Id != "b" {
+		t.Fatalf("forward page lost its anchor: %v", response)
 	}
 	call := store.recordedMessageCalls()[0]
 	if call.From == nil || call.From.ID != "a" || !call.From.Timestamp.Equal(ts.AsTime()) || call.Before != nil || call.Limit != 3 {

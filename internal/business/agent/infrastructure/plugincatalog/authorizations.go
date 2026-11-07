@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -14,16 +14,16 @@ var _ command.PersonalConnectionsPort = (*Client)(nil)
 func (c *Client) ListPersonalAuthorizations(ctx context.Context, owner string) ([]domain.PersonalAuthorization, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	request, err := delegated(ctx, owner, &marketplacepublicv1.ListPersonalAuthorizationsRequest{})
+	ctx, _, err := delegated(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
-	response, err := c.client.ListPersonalAuthorizations(ctx, request)
+	response, err := c.client.ListPersonalAuthorizations(ctx, &marketplacepublicv1.ListPersonalAuthorizationsRequest{})
 	if err != nil {
 		return nil, err
 	}
 	var facts []domain.PersonalAuthorization
-	for _, record := range response.Msg.GetAuthorizations() {
+	for _, record := range response.GetAuthorizations() {
 		// GitHub is the only supported service. Unknown providers cannot
 		// establish a service relationship merely from their names.
 		if record.GetProvider() != "github" {
@@ -41,16 +41,16 @@ func (c *Client) ListPersonalAuthorizations(ctx context.Context, owner string) (
 func (c *Client) ListAccessibleRepositories(ctx context.Context, owner string) ([]domain.AccessibleRepository, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	request, err := delegated(ctx, owner, &marketplacepublicv1.ListAccessibleRepositoriesRequest{})
+	ctx, _, err := delegated(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
-	response, err := c.client.ListAccessibleRepositories(ctx, request)
+	response, err := c.client.ListAccessibleRepositories(ctx, &marketplacepublicv1.ListAccessibleRepositoriesRequest{})
 	if err != nil {
 		return nil, err
 	}
 	var facts []domain.AccessibleRepository
-	for _, record := range response.Msg.GetRepositories() {
+	for _, record := range response.GetRepositories() {
 		facts = append(facts, domain.AccessibleRepository{OwnerUserID: owner, Provider: record.GetProvider(), RepoID: record.GetId(), RepoName: record.GetName(),
 			CloneURL: record.GetCloneUrl(), WebURL: record.GetWebUrl(), DefaultBranch: record.GetDefaultBranch()})
 	}

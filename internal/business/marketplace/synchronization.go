@@ -6,15 +6,14 @@ import (
 	"net/http"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/go-jimu/components/taskqueue"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
+	"github.com/talgent-work/contracts/gen/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	catalogtask "github.com/talgent-work/workbench/internal/business/marketplace/application/task"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/marketplace/transport/taskprocessor"
-	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
 )
@@ -54,8 +53,9 @@ var SynchronizationModule = fx.Module("marketplace.synchronization",
 	fx.Invoke(func(config Config, app *application.CatalogSynchronization, mux *http.ServeMux, logger *slog.Logger) {
 		// This private service authenticates the platform token itself; it does not
 		// require a delegated human or expose its methods through the public gateway.
-		path, handler := marketplaceprivatev1connect.NewSynchronizationServiceHandler(transport.NewSynchronizationHandler(app, config.Connections.CredentialToken), connect.WithInterceptors(connectlog.NewInterceptor(logger)))
-		mux.Handle(path, handler)
+		server := connectserver.New(logger)
+		marketplaceprivatev1connect.RegisterSynchronizationServiceHandler(server, transport.NewSynchronizationHandler(app, config.Connections.CredentialToken))
+		connectserver.Mount(mux, server)
 	}),
 )
 

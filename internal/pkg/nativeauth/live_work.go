@@ -9,10 +9,11 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
@@ -26,14 +27,14 @@ type LiveWorkClient struct {
 
 var _ authn.NativeProcessVerifier = (*LiveWorkClient)(nil)
 
-func NewLiveWorkClient(http connect.HTTPClient, address, token string) (*LiveWorkClient, error) {
+func NewLiveWorkClient(http connecthttp.HTTPClient, address, token string) (*LiveWorkClient, error) {
 	if http == nil || strings.TrimSpace(address) == "" || strings.TrimSpace(token) == "" {
 		return nil, errors.New("native authentication requires the Agent address and control token")
 	}
-	return &LiveWorkClient{agent: agentprivatev1connect.NewAgentServiceClient(http, address), token: token}, nil
+	return &LiveWorkClient{agent: agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(http, address, connecthttp.WithReadMaxBytes(0)))), token: token}, nil
 }
 
-var errRejected = connect.NewError(connect.CodeUnauthenticated, errors.New("native process credential rejected"))
+var errRejected = connect.NewError(connect.CodeUnauthenticated, "native process credential rejected")
 
 func (c *LiveWorkClient) VerifyNativeProcess(ctx context.Context, workID, credential string) (authn.NativeProcess, error) {
 	return c.verify(ctx, workID, credential, false)
@@ -46,10 +47,12 @@ func (c *LiveWorkClient) verify(ctx context.Context, workID, credential string, 
 	if workID == "" || credential == "" {
 		return authn.NativeProcess{}, errRejected
 	}
-	request := connect.NewRequest(&agentprivatev1.VerifyWorkCredentialRequest{WorkId: workID, Credential: credential, RequireActing: acting})
-	// The platform authenticates to Agent; the sandbox's own credential
-	// travels only in the request body being verified.
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &agentprivatev1.VerifyWorkCredentialRequest{WorkId: workID, Credential: credential, RequireActing: acting}
+	ctx, info := connect.NewClientContext(ctx)
+	info.
+		// The platform authenticates to Agent; the sandbox's own credential
+		// travels only in the request body being verified.
+		RequestHeader().Set("Authorization", "Bearer "+c.token)
 	verified, err := c.agent.VerifyWorkCredential(ctx, request)
 	if err != nil {
 		switch connect.CodeOf(err) {
@@ -62,7 +65,7 @@ func (c *LiveWorkClient) verify(ctx context.Context, workID, credential string, 
 		}
 		return authn.NativeProcess{}, err
 	}
-	work := verified.Msg
+	work := verified
 	if work.GetWorkId() != workID || strings.TrimSpace(work.GetSubjectId()) == "" {
 		return authn.NativeProcess{}, errRejected
 	}
@@ -85,7 +88,7 @@ func NewActingWorkClient(live *LiveWorkClient) *ActingWorkClient {
 	return &ActingWorkClient{live: live}
 }
 
-var errNotActing = connect.NewError(connect.CodeUnauthenticated, errors.New("the Work is not acting"))
+var errNotActing = connect.NewError(connect.CodeUnauthenticated, "the Work is not acting")
 
 func (c *ActingWorkClient) VerifyNativeProcess(ctx context.Context, workID, credential string) (authn.NativeProcess, error) {
 	return c.live.verify(ctx, workID, credential, true)

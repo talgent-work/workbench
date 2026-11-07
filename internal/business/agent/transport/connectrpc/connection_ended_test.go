@@ -6,14 +6,16 @@ import (
 	"sync"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/agentfeedback"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 type wakeRecorder struct {
@@ -60,7 +62,9 @@ func TestConnectionEndedFromDispatcherReconnectsTheLiveAllocation(t *testing.T) 
 	ctx := context.Background()
 	wakes := &wakeRecorder{}
 	recovery := application.NewRecovery(&application.Application{}, wakes, liveAllocations{"work-1": "allocation-1"}, nil, nil)
-	_, handler := agentprivatev1connect.NewExecutionFeedbackServiceHandler(transport.NewFeedbackHandler(&application.Application{}, recovery, "integration-secret"))
+	handler := connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(&application.Application{}, recovery, "integration-secret"))
+	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
@@ -69,14 +73,16 @@ func TestConnectionEndedFromDispatcherReconnectsTheLiveAllocation(t *testing.T) 
 	require.NoError(t, agentfeedback.NewClient(server.Client(), server.URL, "integration-secret").ReportConnectionEnded(ctx, "stopped-work", "process-1"), "a Work without a live allocation has nothing to reconnect")
 	require.Len(t, wakes.keys, 1)
 
-	unauthenticated := agentprivatev1connect.NewExecutionFeedbackServiceClient(server.Client(), server.URL)
-	_, err := unauthenticated.ConnectionEnded(ctx, connect.NewRequest(&agentprivatev1.ConnectionEndedRequest{WorkId: "work-1"}))
+	unauthenticated := agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	_, err := unauthenticated.ConnectionEnded(ctx, &agentprivatev1.ConnectionEndedRequest{WorkId: "work-1"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 	require.Len(t, wakes.keys, 1)
 }
 
 func TestConnectionEndedIsRefusedWhereNoRecoveryRuns(t *testing.T) {
-	_, handler := agentprivatev1connect.NewExecutionFeedbackServiceHandler(transport.NewFeedbackHandler(&application.Application{}, nil, "integration-secret"))
+	handler := connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(&application.Application{}, nil, "integration-secret"))
+	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
 	err := agentfeedback.NewClient(server.Client(), server.URL, "integration-secret").ReportConnectionEnded(context.Background(), "work-1", "process-1")

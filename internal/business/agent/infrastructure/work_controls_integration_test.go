@@ -13,12 +13,13 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/nativeprocess"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/agent/public/v1"
+	"github.com/talgent-work/contracts/gen/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -31,6 +32,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/agentfeedback"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"xorm.io/xorm"
 )
 
@@ -122,27 +124,29 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), factory, sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			CloseWork:   command.NewCloseWorkHandler(sessions, principal, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, requests, &commandtest.InputBuffer{}),
 		}, Queries: application.Queries{GetWorkView: query.NewGetWorkViewHandler(principal, reader)}}
-		_, handler := agentpublicv1connect.NewAgentWorkServiceHandler(transport.NewWorkHandler(app), connect.WithInterceptors(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})))
+		handler := connecttest.Handler(func(s *connect.Server) {
+			agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
+		}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
 		server := httptest.NewServer(handler)
 		t.Cleanup(server.Close)
-		return agentpublicv1connect.NewAgentWorkServiceClient(server.Client(), server.URL)
+		return agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	}
 	client := clientFor(f.db)
 	read := func(state string) *agentpublicv1.WorkInfo {
-		result, err := client.GetWork(ctx, workMessageRequest(owner, &agentpublicv1.GetWorkRequest{WorkId: id}))
+		result, err := client.GetWork(workMessageRequest(ctx, owner), &agentpublicv1.GetWorkRequest{WorkId: id})
 		require.NoError(t, err)
-		require.Equal(t, state, result.Msg.Work.State)
-		require.Equal(t, id, result.Msg.Work.WorkId)
-		return result.Msg.Work
+		require.Equal(t, state, result.Work.State)
+		require.Equal(t, id, result.Work.WorkId)
+		return result.Work
 	}
 	created := read("starting")
 	require.False(t, created.VisibilityPublic, "an employee's Work starts private")
 	require.False(t, created.CreatedAt.AsTime().IsZero())
-	_, err = client.GetWork(ctx, workMessageRequest(viewer, &agentpublicv1.GetWorkRequest{WorkId: id}))
+	_, err = client.GetWork(workMessageRequest(ctx, viewer), &agentpublicv1.GetWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "another member reads collaboration facts through the caller")
-	_, err = client.GetWork(ctx, connect.NewRequest(&agentpublicv1.GetWorkRequest{WorkId: id}))
+	_, err = client.GetWork(ctx, &agentpublicv1.GetWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = client.ArchiveWork(ctx, workMessageRequest(owner, &agentpublicv1.ArchiveWorkRequest{WorkId: id}))
+	_, err = client.ArchiveWork(workMessageRequest(ctx, owner), &agentpublicv1.ArchiveWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	ref := id
 	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
@@ -180,7 +184,9 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	completeView := read("working")
 	require.Equal(t, "completed", completeView.StartupProgress.Status)
 	require.Greater(t, completeView.StartupProgress.Revision, inputView.StartupProgress.Revision)
-	_, feedbackHTTP := agentprivatev1connect.NewExecutionFeedbackServiceHandler(transport.NewFeedbackHandler(&application.Application{Commands: application.Commands{ApplyExecutionFeedback: feedback}}, nil, "progress-test"))
+	feedbackHTTP := connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(&application.Application{Commands: application.Commands{ApplyExecutionFeedback: feedback}}, nil, "progress-test"))
+	})
 	feedbackServer := httptest.NewServer(feedbackHTTP)
 	t.Cleanup(feedbackServer.Close)
 	reporter := agentfeedback.NewClient(feedbackServer.Client(), feedbackServer.URL, "progress-test")
@@ -213,11 +219,11 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.Equal(t, "in_progress", progressView.WorkProgress.Items[0].Status)
 	require.Positive(t, runningView.Version)
 	require.Greater(t, progressView.Version, runningView.Version)
-	_, err = client.StopWork(ctx, workMessageRequest(owner, &agentpublicv1.StopWorkRequest{WorkId: id, ExpectedVersion: &runningView.Version}))
+	_, err = client.StopWork(workMessageRequest(ctx, owner), &agentpublicv1.StopWorkRequest{WorkId: id, ExpectedVersion: &runningView.Version})
 	require.Equal(t, connect.CodeAborted, connect.CodeOf(err), "an obsolete Work view must not stop the current process")
 	read("working")
 	for _, actor := range []string{viewer, messageCollaborator} {
-		_, err = client.StopWork(ctx, workMessageRequest(actor, &agentpublicv1.StopWorkRequest{WorkId: id}))
+		_, err = client.StopWork(workMessageRequest(ctx, actor), &agentpublicv1.StopWorkRequest{WorkId: id})
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "only the owner controls its Work")
 	}
 	report(command.UserInteractionRequired, "question")
@@ -228,12 +234,12 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	repeated, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, waiting.HarnessProcess.WaitingSince, repeated.HarnessProcess.WaitingSince, "a repeated request keeps the Waiting origin")
-	stop, err := client.StopWork(ctx, workMessageRequest(owner, &agentpublicv1.StopWorkRequest{WorkId: id}))
+	stop, err := client.StopWork(workMessageRequest(ctx, owner), &agentpublicv1.StopWorkRequest{WorkId: id})
 	require.NoError(t, err)
-	require.Equal(t, "stopping", stop.Msg.Work.State)
+	require.Equal(t, "stopping", stop.Work.State)
 	stopping, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	_, err = client.StopWork(ctx, workMessageRequest(owner, &agentpublicv1.StopWorkRequest{WorkId: id}))
+	_, err = client.StopWork(workMessageRequest(ctx, owner), &agentpublicv1.StopWorkRequest{WorkId: id})
 	require.NoError(t, err)
 	current, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -243,10 +249,10 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.Equal(t, []string{"resume", "archive"}, read("stopped").AllowedActions)
 	before, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	_, err = client.ResumeWork(ctx, workMessageRequest(messageCollaborator, &agentpublicv1.ResumeWorkRequest{WorkId: id}))
+	_, err = client.ResumeWork(workMessageRequest(ctx, messageCollaborator), &agentpublicv1.ResumeWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	capacity.available = false
-	_, err = client.ResumeWork(ctx, workMessageRequest(owner, &agentpublicv1.ResumeWorkRequest{WorkId: id}))
+	_, err = client.ResumeWork(workMessageRequest(ctx, owner), &agentpublicv1.ResumeWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 	rejected := read("stopped")
 	require.False(t, rejected.ResumePending)
@@ -257,22 +263,22 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.NoError(t, err)
 	defer other.Close()
 	client = clientFor(other)
-	progressAfterReconnect, err := client.GetWork(ctx, workMessageRequest(owner, &agentpublicv1.GetWorkRequest{WorkId: id}))
+	progressAfterReconnect, err := client.GetWork(workMessageRequest(ctx, owner), &agentpublicv1.GetWorkRequest{WorkId: id})
 	require.NoError(t, err)
-	require.Equal(t, progressView.WorkProgress.Items[0].Content, progressAfterReconnect.Msg.Work.WorkProgress.Items[0].Content)
-	require.Equal(t, progressView.WorkProgress.UpdatedAt.AsTime(), progressAfterReconnect.Msg.Work.WorkProgress.UpdatedAt.AsTime())
+	require.Equal(t, progressView.WorkProgress.Items[0].Content, progressAfterReconnect.Work.WorkProgress.Items[0].Content)
+	require.Equal(t, progressView.WorkProgress.UpdatedAt.AsTime(), progressAfterReconnect.Work.WorkProgress.UpdatedAt.AsTime())
 	stoppedView := read("stopped")
-	_, err = client.ResumeWork(ctx, workMessageRequest(owner, &agentpublicv1.ResumeWorkRequest{WorkId: id, ExpectedVersion: &runningView.Version}))
+	_, err = client.ResumeWork(workMessageRequest(ctx, owner), &agentpublicv1.ResumeWorkRequest{WorkId: id, ExpectedVersion: &runningView.Version})
 	require.Equal(t, connect.CodeAborted, connect.CodeOf(err), "an obsolete Work view must not resume the Work")
 	require.False(t, read("stopped").ResumePending)
 	// Retaining the continuation advances the version the caller observed;
 	// admission must still accept that observation.
-	resumed, err := client.ResumeWork(ctx, workMessageRequest(owner, &agentpublicv1.ResumeWorkRequest{WorkId: id, ExpectedVersion: &stoppedView.Version}))
+	resumed, err := client.ResumeWork(workMessageRequest(ctx, owner), &agentpublicv1.ResumeWorkRequest{WorkId: id, ExpectedVersion: &stoppedView.Version})
 	require.NoError(t, err)
-	require.Equal(t, "starting", resumed.Msg.Work.State)
-	require.Len(t, resumed.Msg.Work.StartupProgress.Stages, 3, "normal Resume reuses the completed initial preparation")
-	require.Greater(t, resumed.Msg.Work.StartupProgress.Revision, rejected.StartupProgress.Revision)
-	require.True(t, resumed.Msg.Work.ResumePending, "completed admission still awaits execution readiness")
+	require.Equal(t, "starting", resumed.Work.State)
+	require.Len(t, resumed.Work.StartupProgress.Stages, 3, "normal Resume reuses the completed initial preparation")
+	require.Greater(t, resumed.Work.StartupProgress.Revision, rejected.StartupProgress.Revision)
+	require.True(t, resumed.Work.ResumePending, "completed admission still awaits execution readiness")
 	current, err = f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, before.HarnessSessionReference, current.HarnessSessionReference)
@@ -286,24 +292,24 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	report(command.ComputeReclaimed, "")
 	failed := read("failed")
 	require.Equal(t, "failed", failed.StartupProgress.Status)
-	_, err = client.ResumeWork(ctx, workMessageRequest(owner, &agentpublicv1.ResumeWorkRequest{WorkId: id}))
+	_, err = client.ResumeWork(workMessageRequest(ctx, owner), &agentpublicv1.ResumeWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	for _, actor := range []string{viewer, messageCollaborator} {
-		_, err = client.RestartWork(ctx, workMessageRequest(actor, &agentpublicv1.RestartWorkRequest{WorkId: id}))
+		_, err = client.RestartWork(workMessageRequest(ctx, actor), &agentpublicv1.RestartWorkRequest{WorkId: id})
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	}
 	capacity.available = false
-	_, err = client.RestartWork(ctx, workMessageRequest(owner, &agentpublicv1.RestartWorkRequest{WorkId: id}))
+	_, err = client.RestartWork(workMessageRequest(ctx, owner), &agentpublicv1.RestartWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 	failedView := read("failed")
 	capacity.available = true
-	_, err = client.RestartWork(ctx, workMessageRequest(owner, &agentpublicv1.RestartWorkRequest{WorkId: id, ExpectedVersion: &failed.Version}))
+	_, err = client.RestartWork(workMessageRequest(ctx, owner), &agentpublicv1.RestartWorkRequest{WorkId: id, ExpectedVersion: &failed.Version})
 	require.Equal(t, connect.CodeAborted, connect.CodeOf(err), "an obsolete Work view must not restart the Work")
 	read("failed")
-	restarted, err := client.RestartWork(ctx, workMessageRequest(owner, &agentpublicv1.RestartWorkRequest{WorkId: id, ExpectedVersion: &failedView.Version}))
+	restarted, err := client.RestartWork(workMessageRequest(ctx, owner), &agentpublicv1.RestartWorkRequest{WorkId: id, ExpectedVersion: &failedView.Version})
 	require.NoError(t, err)
-	require.Equal(t, id, restarted.Msg.Work.WorkId)
-	require.Equal(t, "starting", restarted.Msg.Work.State)
+	require.Equal(t, id, restarted.Work.WorkId)
+	require.Equal(t, "starting", restarted.Work.State)
 	current, err = f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, before.HarnessSessionReference, current.HarnessSessionReference)
@@ -313,23 +319,23 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	report(command.ExecutorPrepared, "")
 	report(command.AgentStarted, "")
 	require.False(t, read("working").ResumePending)
-	stopped, err := client.StopWork(ctx, workMessageRequest(owner, &agentpublicv1.StopWorkRequest{WorkId: id}))
+	stopped, err := client.StopWork(workMessageRequest(ctx, owner), &agentpublicv1.StopWorkRequest{WorkId: id})
 	require.NoError(t, err)
-	require.Equal(t, "stopping", stopped.Msg.Work.State)
+	require.Equal(t, "stopping", stopped.Work.State)
 	report(command.ExecutionExited, "")
 	report(command.ComputeReclaimed, "")
-	_, err = client.ArchiveWork(ctx, workMessageRequest(messageCollaborator, &agentpublicv1.ArchiveWorkRequest{WorkId: id}))
+	_, err = client.ArchiveWork(workMessageRequest(ctx, messageCollaborator), &agentpublicv1.ArchiveWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	_, err = client.ArchiveWork(ctx, workMessageRequest(owner, &agentpublicv1.ArchiveWorkRequest{WorkId: id, ExpectedVersion: &failedView.Version}))
+	_, err = client.ArchiveWork(workMessageRequest(ctx, owner), &agentpublicv1.ArchiveWorkRequest{WorkId: id, ExpectedVersion: &failedView.Version})
 	require.Equal(t, connect.CodeAborted, connect.CodeOf(err), "an obsolete Work view must not archive the Work")
 	archivable := read("stopped")
-	archived, err := client.ArchiveWork(ctx, workMessageRequest(owner, &agentpublicv1.ArchiveWorkRequest{WorkId: id, ExpectedVersion: &archivable.Version}))
+	archived, err := client.ArchiveWork(workMessageRequest(ctx, owner), &agentpublicv1.ArchiveWorkRequest{WorkId: id, ExpectedVersion: &archivable.Version})
 	require.NoError(t, err)
-	require.Equal(t, "closed", archived.Msg.Work.State)
-	require.False(t, archived.Msg.Work.ArchivePending)
-	_, err = client.ArchiveWork(ctx, workMessageRequest(owner, &agentpublicv1.ArchiveWorkRequest{WorkId: id}))
+	require.Equal(t, "closed", archived.Work.State)
+	require.False(t, archived.Work.ArchivePending)
+	_, err = client.ArchiveWork(workMessageRequest(ctx, owner), &agentpublicv1.ArchiveWorkRequest{WorkId: id})
 	require.NoError(t, err)
-	_, err = client.ResumeWork(ctx, workMessageRequest(owner, &agentpublicv1.ResumeWorkRequest{WorkId: id}))
+	_, err = client.ResumeWork(workMessageRequest(ctx, owner), &agentpublicv1.ResumeWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	read("closed")
 	// A one-row table may legitimately be cheaper to scan. Populate unrelated

@@ -7,7 +7,7 @@
 // A file is reported unless it provably compiles to the same thing at both
 // revisions:
 //   - Go source is compared after parsing without comments and printing back.
-//   - Generated TypeScript under gen/ts/ is compared with comments and layout
+//   - Generated TypeScript under packages/contracts/src/ is compared with comments and layout
 //     removed by a lexer for its fixed protobuf-es output. Hand-written
 //     TypeScript may hold regular-expression literals that lexer cannot read,
 //     so it always counts as changed.
@@ -72,7 +72,7 @@ func equivalent(dir, base, head, file string) (bool, error) {
 	switch {
 	case strings.HasSuffix(file, ".go"):
 		normalize = goCode
-	case strings.HasPrefix(file, "gen/ts/") && strings.HasSuffix(file, ".ts"):
+	case strings.HasPrefix(file, "packages/contracts/src/") && strings.HasSuffix(file, ".ts"):
 		normalize = generatedTSCode
 	default:
 		return false, nil

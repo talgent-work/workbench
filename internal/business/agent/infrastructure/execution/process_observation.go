@@ -6,9 +6,9 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/samber/oops"
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -164,25 +164,26 @@ func (c *DispatcherControl) ObserveProcess(ctx context.Context, workID, processI
 	if strings.TrimSpace(workID) == "" || strings.TrimSpace(processID) == "" || strings.TrimSpace(c.token) == "" {
 		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{}}, domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(&dispatcherprivatev1.ObserveProcessRequest{WorkId: workID, ProcessId: processID})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &dispatcherprivatev1.ObserveProcessRequest{WorkId: workID, ProcessId: processID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	response, err := c.client.ObserveProcess(ctx, request)
 	if err != nil {
 		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{}}, controlError(ctx, workID, "observe process", err)
 	}
-	switch response.Msg.GetState() {
+	switch response.GetState() {
 	case dispatcherprivatev1.ProcessState_PROCESS_STATE_PENDING:
 		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessPending}}, nil
 	case dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING:
-		turn := response.Msg.GetTurn()
+		turn := response.GetTurn()
 		return command.WorkProcessObservation{
-			ProcessObservation: domain.ProcessObservation{State: domain.ProcessRunning, Ready: response.Msg.Ready},
+			ProcessObservation: domain.ProcessObservation{State: domain.ProcessRunning, Ready: response.Ready},
 			Turn:               domain.TurnObservation{Sequence: turn.GetSequence(), Active: turn.GetActive(), Completed: turn.GetCompleted()},
-			PhaseSequence:      response.Msg.PhaseSequence, RequiredInteractionIDs: response.Msg.RequiredInteractionIds,
-			Attachment: sandboxAttachment(response.Msg),
+			PhaseSequence:      response.PhaseSequence, RequiredInteractionIDs: response.RequiredInteractionIds,
+			Attachment: sandboxAttachment(response),
 		}, nil
 	default:
-		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{}}, oops.With("agent_work_id", workID).Errorf("unknown native process state %v", response.Msg.GetState())
+		return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{}}, oops.With("agent_work_id", workID).Errorf("unknown native process state %v", response.GetState())
 	}
 }
 

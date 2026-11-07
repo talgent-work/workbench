@@ -11,11 +11,12 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/agent/private/v1/agentprivatev1connect"
 	agentmodule "github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -49,34 +50,34 @@ func TestWorkCredentialAuthenticatesOnlyTheCurrentLiveSandbox(t *testing.T) {
 	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "integration", FeedbackToken: "feedback"}, slog.Default(), nil)
 	server := httptest.NewServer(mux)
 	defer server.Close()
-	client := agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL)
+	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	first := &agentprivatev1.VerifyWorkCredentialRequest{WorkId: session.ID, Credential: "first-sandbox-credential"}
-	_, err = client.VerifyWorkCredential(ctx, authenticated(first, "feedback"))
+	_, err = client.VerifyWorkCredential(authenticated(ctx, "feedback"), first)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err), "a process credential does not authenticate an integration caller")
-	verified, err := client.VerifyWorkCredential(ctx, authenticated(first, "integration"))
+	verified, err := client.VerifyWorkCredential(authenticated(ctx, "integration"), first)
 	require.NoError(t, err)
-	require.Equal(t, "owner", verified.Msg.SubjectId, "a person's Agent acts for its Owner")
-	require.Equal(t, session.ID, verified.Msg.WorkId)
-	require.Equal(t, agent.ID, verified.Msg.AgentId)
-	require.Equal(t, "authorized-workspace", verified.Msg.WorkspaceReference)
-	require.Equal(t, "project", verified.Msg.ProjectId)
-	require.Equal(t, "case", verified.Msg.GetSubject().GetKind())
-	require.Equal(t, "case", verified.Msg.GetSubject().GetId())
-	require.Equal(t, "work", verified.Msg.Purpose)
-	_, err = client.VerifyWorkCredential(ctx, authenticated(&agentprivatev1.VerifyWorkCredentialRequest{WorkId: session.ID, Credential: first.Credential, RequireActing: true}, "integration"))
+	require.Equal(t, "owner", verified.SubjectId, "a person's Agent acts for its Owner")
+	require.Equal(t, session.ID, verified.WorkId)
+	require.Equal(t, agent.ID, verified.AgentId)
+	require.Equal(t, "authorized-workspace", verified.WorkspaceReference)
+	require.Equal(t, "project", verified.ProjectId)
+	require.Equal(t, "case", verified.GetSubject().GetKind())
+	require.Equal(t, "case", verified.GetSubject().GetId())
+	require.Equal(t, "work", verified.Purpose)
+	_, err = client.VerifyWorkCredential(authenticated(ctx, "integration"), &agentprivatev1.VerifyWorkCredentialRequest{WorkId: session.ID, Credential: first.Credential, RequireActing: true})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a Work not yet Working does not act")
 	for _, invalid := range []*agentprivatev1.VerifyWorkCredentialRequest{
 		{WorkId: session.ID, Credential: "forged"},
 		{WorkId: "other-work", Credential: first.Credential},
 	} {
-		_, err = client.VerifyWorkCredential(ctx, authenticated(invalid, "integration"))
+		_, err = client.VerifyWorkCredential(authenticated(ctx, "integration"), invalid)
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	}
 	// The earlier sandbox is retired and a resumed process runs in a new one.
 	credentials.live[session.ID] = "second-sandbox-credential"
-	_, err = client.VerifyWorkCredential(ctx, authenticated(first, "integration"))
+	_, err = client.VerifyWorkCredential(authenticated(ctx, "integration"), first)
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "an earlier sandbox's credential grants nothing")
-	_, err = client.VerifyWorkCredential(ctx, authenticated(&agentprivatev1.VerifyWorkCredentialRequest{WorkId: session.ID, Credential: "second-sandbox-credential"}, "integration"))
+	_, err = client.VerifyWorkCredential(authenticated(ctx, "integration"), &agentprivatev1.VerifyWorkCredentialRequest{WorkId: session.ID, Credential: "second-sandbox-credential"})
 	require.NoError(t, err)
 }
 

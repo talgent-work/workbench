@@ -21,10 +21,11 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1/marketplacepublicv1connect"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
+	"github.com/talgent-work/contracts/gen/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/scopemaintenance"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
@@ -32,6 +33,7 @@ import (
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"xorm.io/xorm"
 )
@@ -142,7 +144,9 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	connections := application.NewPersonalConnections(repo, observer, scheduler, nil, nil, nil, repo, nil, queries)
 	scheduler.connections = connections
 	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
-	path, handler := marketplacepublicv1connect.NewMarketplaceServiceHandler(transport.NewHandler(app), connect.WithInterceptors(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})))
+	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app))
+	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	server := httptest.NewServer(mux)
@@ -151,7 +155,7 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	require.NoError(t, err)
 	return &providerAccessFixture{
 		github: github, owner: owner, webhook: webhook,
-		client: marketplacepublicv1connect.NewMarketplaceServiceClient(server.Client(), server.URL),
+		client: marketplacepublicv1connect.NewMarketplaceServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL))),
 		reconcile: func(now time.Time) error {
 			return scopemaintenance.NewReconcileScanProcessor(queries, scheduler, func() time.Time { return now }).Process(ctx)
 		},
@@ -160,23 +164,23 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 
 func (f *providerAccessFixture) access(t *testing.T) *marketplacepublicv1.GetProviderAccessResponse {
 	t.Helper()
-	response, err := f.client.GetProviderAccess(t.Context(), personalRequest(&marketplacepublicv1.GetProviderAccessRequest{Provider: "github"}, f.owner))
+	response, err := f.client.GetProviderAccess(personal(t.Context(), f.owner), &marketplacepublicv1.GetProviderAccessRequest{Provider: "github"})
 	require.NoError(t, err)
-	return response.Msg
+	return response
 }
 
 func (f *providerAccessFixture) refresh(t *testing.T) *marketplacepublicv1.GetProviderAccessResponse {
 	t.Helper()
-	response, err := f.client.RefreshProviderAccess(t.Context(), personalRequest(&marketplacepublicv1.RefreshProviderAccessRequest{Provider: "github"}, f.owner))
+	response, err := f.client.RefreshProviderAccess(personal(t.Context(), f.owner), &marketplacepublicv1.RefreshProviderAccessRequest{Provider: "github"})
 	require.NoError(t, err)
-	return response.Msg.Access
+	return response.Access
 }
 
 func (f *providerAccessFixture) repositories(t *testing.T) []string {
 	t.Helper()
-	response, err := f.client.ListAccessibleRepositories(t.Context(), personalRequest(&marketplacepublicv1.ListAccessibleRepositoriesRequest{Provider: "github"}, f.owner))
+	response, err := f.client.ListAccessibleRepositories(personal(t.Context(), f.owner), &marketplacepublicv1.ListAccessibleRepositoriesRequest{Provider: "github"})
 	require.NoError(t, err)
-	return repositoryNames(response.Msg.Repositories)
+	return repositoryNames(response.Repositories)
 }
 
 func (f *providerAccessFixture) deliverWebhook(t *testing.T, event, body string) {
@@ -248,13 +252,13 @@ func TestProviderAccessIsTheCallersOwn(t *testing.T) {
 	f.github.set(map[int][]string{1: {"org-1/api"}})
 	f.refresh(t)
 	other := "cfe58e71-efc6-5336-8009-449ad568c42b"
-	unconnected, err := f.client.GetProviderAccess(t.Context(), personalRequest(&marketplacepublicv1.GetProviderAccessRequest{Provider: "github"}, other))
+	unconnected, err := f.client.GetProviderAccess(personal(t.Context(), other), &marketplacepublicv1.GetProviderAccessRequest{Provider: "github"})
 	require.NoError(t, err)
-	require.Equal(t, "none", unconnected.Msg.State.Status)
-	require.Empty(t, unconnected.Msg.Accounts, "another user never sees the owner's installations")
-	_, err = f.client.GetProviderAccess(t.Context(), connect.NewRequest(&marketplacepublicv1.GetProviderAccessRequest{Provider: "github"}))
+	require.Equal(t, "none", unconnected.State.Status)
+	require.Empty(t, unconnected.Accounts, "another user never sees the owner's installations")
+	_, err = f.client.GetProviderAccess(t.Context(), &marketplacepublicv1.GetProviderAccessRequest{Provider: "github"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = f.client.GetProviderAccess(t.Context(), personalRequest(&marketplacepublicv1.GetProviderAccessRequest{Provider: "linear"}, f.owner))
+	_, err = f.client.GetProviderAccess(personal(t.Context(), f.owner), &marketplacepublicv1.GetProviderAccessRequest{Provider: "linear"})
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "only supported Providers are described")
 }
 

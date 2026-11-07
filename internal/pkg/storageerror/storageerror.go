@@ -1,15 +1,16 @@
 // Package storageerror reads and writes the reason Storage's private
-// contracts give a refusal (talgent.storage.private.v1.ErrorReason), so callers tell
+// contracts give a refusal (storage.private.v1.ErrorReason), so callers tell
 // refusals with the same status code apart.
 package storageerror
 
 import (
 	"errors"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
-	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/storage/private/v1"
 )
 
 // Domain is the google.rpc.ErrorInfo domain of Storage's refusals.
@@ -21,7 +22,7 @@ var details = func() map[storageprivatev1.ErrorReason]*connect.ErrorDetail {
 	built := make(map[storageprivatev1.ErrorReason]*connect.ErrorDetail, len(storageprivatev1.ErrorReason_name))
 	for value := range storageprivatev1.ErrorReason_name {
 		reason := storageprivatev1.ErrorReason(value)
-		detail, err := connect.NewErrorDetail(&errdetails.ErrorInfo{Domain: Domain, Reason: reason.String()})
+		detail, err := connectproto.NewErrorDetail(&errdetails.ErrorInfo{Domain: Domain, Reason: reason.String()})
 		if err != nil {
 			panic(err)
 		}
@@ -32,9 +33,9 @@ var details = func() map[storageprivatev1.ErrorReason]*connect.ErrorDetail {
 
 // New is a refusal with its code and reason.
 func New(code connect.Code, reason storageprivatev1.ErrorReason, err error) *connect.Error {
-	refused := connect.NewError(code, err)
+	refused := connect.NewError(code, err.Error()).WithCause(err)
 	if detail, ok := details[reason]; ok {
-		refused.AddDetail(detail)
+		refused = refused.WithDetail(detail)
 	}
 	return refused
 }
@@ -46,7 +47,7 @@ func ReasonOf(err error) storageprivatev1.ErrorReason {
 		return storageprivatev1.ErrorReason_ERROR_REASON_UNSPECIFIED
 	}
 	for _, detail := range connectErr.Details() {
-		value, valueErr := detail.Value()
+		value, valueErr := connectproto.UnmarshalErrorDetail(detail)
 		if info, ok := value.(*errdetails.ErrorInfo); valueErr == nil && ok && info.GetDomain() == Domain {
 			return storageprivatev1.ErrorReason(storageprivatev1.ErrorReason_value[info.GetReason()])
 		}

@@ -9,7 +9,7 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	streamgatewaypublicv1 "github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/streamgateway/public/v1"
 )
 
 // Delivery diagnostics are non-durable live evidence and must use their

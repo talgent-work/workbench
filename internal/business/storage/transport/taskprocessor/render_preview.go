@@ -10,7 +10,7 @@ import (
 	"github.com/go-jimu/components/taskqueue"
 	"google.golang.org/protobuf/proto"
 
-	storagetaskv1 "github.com/talgent-work/workbench/gen/go/talgent/storage/task/v1"
+	storagetaskv1 "github.com/talgent-work/workbench/gen/storage/task/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
@@ -41,7 +41,7 @@ func (*RenderPreviewProcessor) TaskType() taskqueue.TaskType {
 }
 
 func (p *RenderPreviewProcessor) Process(ctx context.Context, queued taskqueue.Task) error {
-	payload := &storagetaskv1.RenderPreviewTask{}
+	payload := &storagetaskv1.RenderPreviewTaskV1{}
 	if err := proto.Unmarshal(queued.Payload(), payload); err != nil {
 		p.logger.ErrorContext(ctx, "preview rendering task is unreadable", slog.Any("error", err))
 		return taskqueue.ErrSkipRetry

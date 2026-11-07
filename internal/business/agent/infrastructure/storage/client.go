@@ -6,11 +6,12 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/samber/oops"
 
-	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/storage/private/v1"
+	"github.com/talgent-work/contracts/gen/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/storageerror"
@@ -34,17 +35,18 @@ var (
 	_ application.WorkspaceViewPort          = (*Client)(nil)
 )
 
-func NewClient(httpClient connect.HTTPClient, config Config) (*Client, error) {
+func NewClient(httpClient connecthttp.HTTPClient, config Config) (*Client, error) {
 	if strings.TrimSpace(config.Address) == "" || strings.TrimSpace(config.Token) == "" {
 		return nil, errors.New("agent: Storage address and control token are required")
 	}
-	return &Client{mounts: storageprivatev1connect.NewSandboxMountServiceClient(httpClient, config.Address), token: config.Token}, nil
+	return &Client{mounts: storageprivatev1connect.NewSandboxMountServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, config.Address, connecthttp.WithReadMaxBytes(0)))), token: config.Token}, nil
 }
 
-func request[T any](message *T, token string) *connect.Request[T] {
-	req := connect.NewRequest(message)
-	req.Header().Set("Authorization", "Bearer "+token)
-	return req
+// authorized is the context of a call under the control token.
+func authorized(ctx context.Context, token string) context.Context {
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+token)
+	return ctx
 }
 
 func referenceMounts(mounts []domain.ReadOnlyMount) []*storageprivatev1.ReferenceMount {
@@ -56,23 +58,23 @@ func referenceMounts(mounts []domain.ReadOnlyMount) []*storageprivatev1.Referenc
 }
 
 func (c *Client) AcquireMounts(ctx context.Context, input domain.SandboxMountRequest) (domain.SandboxMounts, error) {
-	response, err := c.mounts.AcquireMounts(ctx, request(&storageprivatev1.AcquireMountsRequest{
+	response, err := c.mounts.AcquireMounts(authorized(ctx, c.token), &storageprivatev1.AcquireMountsRequest{
 		HomeOwner: input.HomeOwner, WorkId: input.WorkID, WorkspaceReference: input.WorkspaceReference,
 		InputSource: input.InputSource.Reference, SpaceToken: input.InputSource.SpaceToken, ReferenceMounts: referenceMounts(input.ReadOnlyMounts),
-	}, c.token))
+	})
 	if err != nil {
 		return domain.SandboxMounts{}, oops.With("operation", "storage.acquire_mounts", "work_id", input.WorkID).Wrap(err)
 	}
-	mounts := domain.SandboxMounts{Home: grantFromProto(response.Msg.GetHome())}
-	if workspace := response.Msg.GetWorkspace(); workspace != nil {
+	mounts := domain.SandboxMounts{Home: grantFromProto(response.GetHome())}
+	if workspace := response.GetWorkspace(); workspace != nil {
 		grant := grantFromProto(workspace)
 		mounts.Workspace = &grant
 	}
-	if inputs := response.Msg.GetInputs(); inputs != nil {
+	if inputs := response.GetInputs(); inputs != nil {
 		grant := grantFromProto(inputs)
 		mounts.Inputs = &grant
 	}
-	for _, reference := range response.Msg.GetReferences() {
+	for _, reference := range response.GetReferences() {
 		if mounts.ReadOnly == nil {
 			mounts.ReadOnly = make(map[string]domain.MountGrant)
 		}
@@ -82,7 +84,7 @@ func (c *Client) AcquireMounts(ctx context.Context, input domain.SandboxMountReq
 }
 
 func (c *Client) RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error {
-	_, err := c.mounts.RequestWorkspaceReclamation(ctx, request(&storageprivatev1.RequestWorkspaceReclamationRequest{WorkId: workID, WorkspaceReference: workspaceReference}, c.token))
+	_, err := c.mounts.RequestWorkspaceReclamation(authorized(ctx, c.token), &storageprivatev1.RequestWorkspaceReclamationRequest{WorkId: workID, WorkspaceReference: workspaceReference})
 	if err != nil {
 		return oops.With("operation", "storage.request_reclamation", "work_id", workID).Wrap(err)
 	}
@@ -90,12 +92,12 @@ func (c *Client) RequestWorkspaceReclamation(ctx context.Context, workID, worksp
 }
 
 func (c *Client) WorkspaceView(ctx context.Context, workspace application.ViewedWorkspace, path string) (application.WorkspaceListing, error) {
-	response, err := c.mounts.GetWorkspaceView(ctx, request(&storageprivatev1.GetWorkspaceViewRequest{WorkspaceReference: workspace.Reference, InputSource: workspace.InputSource.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path}, c.token))
+	response, err := c.mounts.GetWorkspaceView(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceViewRequest{WorkspaceReference: workspace.Reference, InputSource: workspace.InputSource.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
 	if err != nil {
 		return application.WorkspaceListing{}, workspaceError("storage.workspace_view", err)
 	}
-	listing := application.WorkspaceListing{Total: int(response.Msg.GetTotal()), Entries: make([]application.WorkspaceEntry, 0, len(response.Msg.GetEntries()))}
-	for _, entry := range response.Msg.GetEntries() {
+	listing := application.WorkspaceListing{Total: int(response.GetTotal()), Entries: make([]application.WorkspaceEntry, 0, len(response.GetEntries()))}
+	for _, entry := range response.GetEntries() {
 		listing.Entries = append(listing.Entries, application.WorkspaceEntry{
 			Name: entry.GetName(), Kind: workspaceEntryKinds[entry.GetKind()], SizeBytes: entry.GetSizeBytes(),
 			ModifiedAt: entry.GetModifiedAt().AsTime(), AttachmentName: entry.GetAttachmentName(),
@@ -105,26 +107,26 @@ func (c *Client) WorkspaceView(ctx context.Context, workspace application.Viewed
 }
 
 func (c *Client) PreviewWorkspaceFile(ctx context.Context, workspace application.ViewedWorkspace, path string) (application.WorkspaceFilePreview, error) {
-	response, err := c.mounts.GetWorkspaceFilePreview(ctx, request(&storageprivatev1.GetWorkspaceFilePreviewRequest{WorkspaceReference: workspace.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path}, c.token))
+	response, err := c.mounts.GetWorkspaceFilePreview(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceFilePreviewRequest{WorkspaceReference: workspace.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
 	if err != nil {
 		return application.WorkspaceFilePreview{}, workspaceError("storage.workspace_file_preview", err)
 	}
-	return workspacePreviewFromProto(response.Msg.GetPreview()), nil
+	return workspacePreviewFromProto(response.GetPreview()), nil
 }
 
 // JudgeFilePreview asks Storage how a Managed Work's file is shown, judged
 // from its name, size and leading bytes as a Session Workspace file is, and
 // the most bytes its reader is served.
 func (c *Client) JudgeFilePreview(ctx context.Context, name string, size int64, head []byte) (application.WorkspaceFilePreview, int64, error) {
-	response, err := c.mounts.JudgeFilePreview(ctx, request(&storageprivatev1.JudgeFilePreviewRequest{Name: name, SizeBytes: size, Head: head}, c.token))
+	response, err := c.mounts.JudgeFilePreview(authorized(ctx, c.token), &storageprivatev1.JudgeFilePreviewRequest{Name: name, SizeBytes: size, Head: head})
 	if err != nil {
 		return application.WorkspaceFilePreview{}, 0, oops.With("operation", "storage.judge_file_preview").Wrap(err)
 	}
-	preview := workspacePreviewFromProto(response.Msg.GetPreview())
+	preview := workspacePreviewFromProto(response.GetPreview())
 	if preview.Mode == application.WorkspacePreviewRefused {
 		return preview, 0, nil
 	}
-	return preview, response.Msg.GetReadLimitBytes(), nil
+	return preview, response.GetReadLimitBytes(), nil
 }
 
 // workspacePreviewFromProto maps Storage's verdict on a workspace file; a
@@ -144,11 +146,11 @@ func workspacePreviewFromProto(preview *storageprivatev1.FilePreview) applicatio
 }
 
 func (c *Client) WorkspaceFileLink(ctx context.Context, workspace application.ViewedWorkspace, path string) (application.WorkspaceFileLink, error) {
-	response, err := c.mounts.IssueWorkspaceFileLink(ctx, request(&storageprivatev1.IssueWorkspaceFileLinkRequest{WorkspaceReference: workspace.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path}, c.token))
+	response, err := c.mounts.IssueWorkspaceFileLink(authorized(ctx, c.token), &storageprivatev1.IssueWorkspaceFileLinkRequest{WorkspaceReference: workspace.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
 	if err != nil {
 		return application.WorkspaceFileLink{}, workspaceError("storage.workspace_file_link", err)
 	}
-	return application.WorkspaceFileLink{URL: response.Msg.GetAccessUrl(), ExpiresAt: response.Msg.GetExpiresAt().AsTime()}, nil
+	return application.WorkspaceFileLink{URL: response.GetAccessUrl(), ExpiresAt: response.GetExpiresAt().AsTime()}, nil
 }
 
 // workspaceError maps Storage's refusals to Agent's workspace outcomes.

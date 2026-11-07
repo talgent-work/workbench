@@ -48,15 +48,15 @@ const goBase = "package p\n\n// Old comment.\ntype T struct {\n\tA string `json:
 
 func TestOnlySubstantiveChangesAreReported(t *testing.T) {
 	dir, base, head := repo(t, map[string]string{
-		"comment.go":        goBase,
-		"code.go":           goBase,
-		"tag.go":            goBase,
-		"deleted.go":        goBase,
-		"broken.go":         goBase,
-		"gen/ts/a_pb.ts":    "/**\n * Old.\n */\nexport const a = \"x//y\"; // trailing\n",
-		"gen/ts/b_pb.ts":    "export const b = \"x\";\n",
-		"apps/web/src/c.ts": "export const c = 1;\n",
-		"docs/readme.md":    "old\n",
+		"comment.go":                     goBase,
+		"code.go":                        goBase,
+		"tag.go":                         goBase,
+		"deleted.go":                     goBase,
+		"broken.go":                      goBase,
+		"packages/contracts/src/a_pb.ts": "/**\n * Old.\n */\nexport const a = \"x//y\"; // trailing\n",
+		"packages/contracts/src/b_pb.ts": "export const b = \"x\";\n",
+		"apps/web/src/c.ts":              "export const c = 1;\n",
+		"docs/readme.md":                 "old\n",
 	}, map[string]string{
 		// Comments rewritten and fields realigned: no change to the compiled code.
 		"comment.go": "package p\n\n// New comment, longer.\ntype T struct {\n\tA string `json:\"a\"` // documented\n}\n\n// F returns one.\nfunc F() int {\n\treturn 1\n}\n",
@@ -66,19 +66,19 @@ func TestOnlySubstantiveChangesAreReported(t *testing.T) {
 		"broken.go":  "package p\nfunc (",
 		"added.go":   "package p\n",
 		// Generated TS: only comments and layout differ; a "//" inside a string is code.
-		"gen/ts/a_pb.ts": "/**\n * New, longer.\n */\nexport const a =\n  \"x//y\";\n",
-		"gen/ts/b_pb.ts": "export const b = \"x// y\";\n",
+		"packages/contracts/src/a_pb.ts": "/**\n * New, longer.\n */\nexport const a =\n  \"x//y\";\n",
+		"packages/contracts/src/b_pb.ts": "export const b = \"x// y\";\n",
 		// Hand-written TS is always a change: it may hold regex literals the lexer cannot read.
 		"apps/web/src/c.ts": "// note\nexport const c = 1;\n",
 		"docs/readme.md":    "new\n",
 	})
-	files := []string{"comment.go", "code.go", "tag.go", "deleted.go", "broken.go", "added.go", "gen/ts/a_pb.ts", "gen/ts/b_pb.ts", "apps/web/src/c.ts", "docs/readme.md"}
+	files := []string{"comment.go", "code.go", "tag.go", "deleted.go", "broken.go", "added.go", "packages/contracts/src/a_pb.ts", "packages/contracts/src/b_pb.ts", "apps/web/src/c.ts", "docs/readme.md"}
 
 	got, err := substantive(dir, base, head, files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"code.go", "tag.go", "deleted.go", "broken.go", "added.go", "gen/ts/b_pb.ts", "apps/web/src/c.ts", "docs/readme.md"}
+	want := []string{"code.go", "tag.go", "deleted.go", "broken.go", "added.go", "packages/contracts/src/b_pb.ts", "apps/web/src/c.ts", "docs/readme.md"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("substantive changes\n got: %v\nwant: %v", got, want)
 	}

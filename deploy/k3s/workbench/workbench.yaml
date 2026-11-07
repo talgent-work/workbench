@@ -1345,13 +1345,13 @@ spec:
       matches:
         - path:
             type: PathPrefix
-            value: /api/talgent.account.public.v1.SessionService
+            value: /api/account.public.v1.SessionService
       filters:
         - type: URLRewrite
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /talgent.account.public.v1.SessionService
+              replacePrefixMatch: /account.public.v1.SessionService
         - type: RequestHeaderModifier
           requestHeaderModifier:
             remove:
@@ -1370,13 +1370,13 @@ spec:
       matches:
         - path:
             type: PathPrefix
-            value: /api/talgent.agent.public.v1.AgentWorkService
+            value: /api/agent.public.v1.AgentWorkService
       filters:
         - type: URLRewrite
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /talgent.agent.public.v1.AgentWorkService
+              replacePrefixMatch: /agent.public.v1.AgentWorkService
         - type: RequestHeaderModifier
           requestHeaderModifier:
             remove:
@@ -1395,13 +1395,13 @@ spec:
       matches:
         - path:
             type: PathPrefix
-            value: /api/talgent.agent.public.v1.PersonalWorkService
+            value: /api/agent.public.v1.PersonalWorkService
       filters:
         - type: URLRewrite
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /talgent.agent.public.v1.PersonalWorkService
+              replacePrefixMatch: /agent.public.v1.PersonalWorkService
         - type: RequestHeaderModifier
           requestHeaderModifier:
             remove:
@@ -1420,13 +1420,13 @@ spec:
       matches:
         - path:
             type: PathPrefix
-            value: /api/talgent.agent.public.v1.WorkFileService
+            value: /api/agent.public.v1.WorkFileService
       filters:
         - type: URLRewrite
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /talgent.agent.public.v1.WorkFileService
+              replacePrefixMatch: /agent.public.v1.WorkFileService
         - type: RequestHeaderModifier
           requestHeaderModifier:
             remove:
@@ -1445,13 +1445,13 @@ spec:
       matches:
         - path:
             type: PathPrefix
-            value: /api/talgent.computer.public.v1.ComputerService
+            value: /api/computer.public.v1.ComputerService
       filters:
         - type: URLRewrite
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /talgent.computer.public.v1.ComputerService
+              replacePrefixMatch: /computer.public.v1.ComputerService
         - type: RequestHeaderModifier
           requestHeaderModifier:
             remove:
@@ -1470,13 +1470,13 @@ spec:
       matches:
         - path:
             type: PathPrefix
-            value: /api/talgent.marketplace.public.v1.MarketplaceService
+            value: /api/marketplace.public.v1.MarketplaceService
       filters:
         - type: URLRewrite
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /talgent.marketplace.public.v1.MarketplaceService
+              replacePrefixMatch: /marketplace.public.v1.MarketplaceService
         - type: RequestHeaderModifier
           requestHeaderModifier:
             remove:
@@ -1578,7 +1578,7 @@ spec:
       matches:
         - path:
             type: PathPrefix
-            value: /api/talgent.streamgateway.public.v1.StreamGatewayService
+            value: /api/streamgateway.public.v1.StreamGatewayService
       timeouts:
         request: 0s
         backendRequest: 0s
@@ -1587,7 +1587,7 @@ spec:
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /talgent.streamgateway.public.v1.StreamGatewayService
+              replacePrefixMatch: /streamgateway.public.v1.StreamGatewayService
         - type: RequestHeaderModifier
           requestHeaderModifier:
             remove:
@@ -1607,13 +1607,13 @@ spec:
       matches:
         - path:
             type: PathPrefix
-            value: /api/talgent.trace.public.v1.TraceQueryService
+            value: /api/trace.public.v1.TraceQueryService
       filters:
         - type: URLRewrite
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /talgent.trace.public.v1.TraceQueryService
+              replacePrefixMatch: /trace.public.v1.TraceQueryService
         - type: RequestHeaderModifier
           requestHeaderModifier:
             remove:
@@ -1811,13 +1811,13 @@ spec:
       matches:
         - path:
             type: PathPrefix
-            value: /api/talgent.computer.public.v1.RegistrationService
+            value: /api/computer.public.v1.RegistrationService
       filters:
         - type: URLRewrite
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /talgent.computer.public.v1.RegistrationService
+              replacePrefixMatch: /computer.public.v1.RegistrationService
         - type: RequestHeaderModifier
           requestHeaderModifier:
             remove:

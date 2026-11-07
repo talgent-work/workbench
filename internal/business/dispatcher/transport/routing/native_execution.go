@@ -6,9 +6,9 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	"connectrpc.com/connect/v2"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 )
 
@@ -36,164 +36,175 @@ func NewNativeExecutionHandler(next dispatcherprivatev1connect.ExecutionServiceH
 	return &NativeExecutionHandler{next: next, owners: owners, self: self, token: token, peers: peers}
 }
 
-func (h *NativeExecutionHandler) route(ctx context.Context, request connect.AnyRequest, workID string) (dispatcherprivatev1connect.ExecutionServiceClient, error) {
-	if err := h.authenticate(request); err != nil {
+func (h *NativeExecutionHandler) route(ctx context.Context, workID string) (dispatcherprivatev1connect.ExecutionServiceClient, error) {
+	if err := h.authenticate(ctx); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(workID) == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, command.ErrExecutionConnection)
+		return nil, connect.NewError(connect.CodeInvalidArgument, command.ErrExecutionConnection.Error()).WithCause(command.ErrExecutionConnection)
 	}
 	owner, exists, err := h.owners.Locate(ctx, workID)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+		return nil, connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
 	}
 	if !exists || !owner.Alive || owner.Instance == h.self {
 		return nil, nil
 	}
-	if request.Header().Get(PeerHopHeader) != "" {
-		return nil, connect.NewError(connect.CodeUnavailable, ErrPeerHopExceeded)
+	if requestHeader(ctx).Get(PeerHopHeader) != "" {
+		return nil, connect.NewError(connect.CodeUnavailable, ErrPeerHopExceeded.Error()).WithCause(ErrPeerHopExceeded)
 	}
 	return h.peers.ForAddress(owner.Addr), nil
 }
 
-func forwardNativeRequest[T any](request *connect.Request[T]) *connect.Request[T] {
-	forwarded := connect.NewRequest(request.Msg)
-	forwarded.Header().Set("Authorization", request.Header().Get("Authorization"))
-	forwarded.Header().Set(PeerHopHeader, "1")
-	for _, key := range []string{"Traceparent", "Tracestate"} {
-		if value := request.Header().Get(key); value != "" {
-			forwarded.Header().Set(key, value)
-		}
+// requestHeader is the inbound call's metadata.
+func requestHeader(ctx context.Context) *connect.Header {
+	if info, ok := connect.CallInfoForServerContext(ctx); ok {
+		return info.RequestHeader()
 	}
-	return forwarded
+	return new(connect.Header)
 }
 
-func (h *NativeExecutionHandler) Connect(ctx context.Context, request *connect.Request[dispatcherprivatev1.ConnectRequest]) (*connect.Response[dispatcherprivatev1.ConnectResponse], error) {
-	peer, err := h.route(ctx, request, request.Msg.GetWorkId())
+// forwarded is the context of the call that hands the inbound call to its
+// owner, with the inbound authentication and trace context, after one hop.
+func forwarded(ctx context.Context) context.Context {
+	inbound := requestHeader(ctx)
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", inbound.Get("Authorization"))
+	info.RequestHeader().Set(PeerHopHeader, "1")
+	for _, key := range []string{"Traceparent", "Tracestate"} {
+		if value := inbound.Get(key); value != "" {
+			info.RequestHeader().Set(key, value)
+		}
+	}
+	return ctx
+}
+
+func (h *NativeExecutionHandler) Connect(ctx context.Context, request *dispatcherprivatev1.ConnectRequest) (*dispatcherprivatev1.ConnectResponse, error) {
+	peer, err := h.route(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
 		return h.next.Connect(ctx, request)
 	}
-	return peer.Connect(ctx, forwardNativeRequest(request))
+	return peer.Connect(forwarded(ctx), request)
 }
 
 // The input buffer lives in Redis, so any replica answers buffer requests
 // itself; the Work's reader learns of a change from the buffer.
-func (h *NativeExecutionHandler) authenticate(request connect.AnyRequest) error {
-	if h.token == "" || subtle.ConstantTimeCompare([]byte(request.Header().Get("Authorization")), []byte("Bearer "+h.token)) != 1 {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("native execution control authentication required"))
+func (h *NativeExecutionHandler) authenticate(ctx context.Context) error {
+	if h.token == "" || subtle.ConstantTimeCompare([]byte(requestHeader(ctx).Get("Authorization")), []byte("Bearer "+h.token)) != 1 {
+		return connect.NewError(connect.CodeUnauthenticated, "native execution control authentication required")
 	}
 	return nil
 }
 
-func (h *NativeExecutionHandler) EnqueueInput(ctx context.Context, request *connect.Request[dispatcherprivatev1.EnqueueInputRequest]) (*connect.Response[dispatcherprivatev1.EnqueueInputResponse], error) {
-	if err := h.authenticate(request); err != nil {
+func (h *NativeExecutionHandler) EnqueueInput(ctx context.Context, request *dispatcherprivatev1.EnqueueInputRequest) (*dispatcherprivatev1.EnqueueInputResponse, error) {
+	if err := h.authenticate(ctx); err != nil {
 		return nil, err
 	}
 	return h.next.EnqueueInput(ctx, request)
 }
 
-func (h *NativeExecutionHandler) ListBufferedInput(ctx context.Context, request *connect.Request[dispatcherprivatev1.ListBufferedInputRequest]) (*connect.Response[dispatcherprivatev1.ListBufferedInputResponse], error) {
-	if err := h.authenticate(request); err != nil {
+func (h *NativeExecutionHandler) ListBufferedInput(ctx context.Context, request *dispatcherprivatev1.ListBufferedInputRequest) (*dispatcherprivatev1.ListBufferedInputResponse, error) {
+	if err := h.authenticate(ctx); err != nil {
 		return nil, err
 	}
 	return h.next.ListBufferedInput(ctx, request)
 }
 
-func (h *NativeExecutionHandler) DropInput(ctx context.Context, request *connect.Request[dispatcherprivatev1.DropInputRequest]) (*connect.Response[dispatcherprivatev1.DropInputResponse], error) {
-	if err := h.authenticate(request); err != nil {
+func (h *NativeExecutionHandler) DropInput(ctx context.Context, request *dispatcherprivatev1.DropInputRequest) (*dispatcherprivatev1.DropInputResponse, error) {
+	if err := h.authenticate(ctx); err != nil {
 		return nil, err
 	}
 	return h.next.DropInput(ctx, request)
 }
 
-func (h *NativeExecutionHandler) Stop(ctx context.Context, request *connect.Request[dispatcherprivatev1.StopRequest]) (*connect.Response[dispatcherprivatev1.StopResponse], error) {
-	peer, err := h.route(ctx, request, request.Msg.GetWorkId())
+func (h *NativeExecutionHandler) Stop(ctx context.Context, request *dispatcherprivatev1.StopRequest) (*dispatcherprivatev1.StopResponse, error) {
+	peer, err := h.route(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
 		return h.next.Stop(ctx, request)
 	}
-	return peer.Stop(ctx, forwardNativeRequest(request))
+	return peer.Stop(forwarded(ctx), request)
 }
 
-func (h *NativeExecutionHandler) SetThinkingLevel(ctx context.Context, request *connect.Request[dispatcherprivatev1.SetThinkingLevelRequest]) (*connect.Response[dispatcherprivatev1.SetThinkingLevelResponse], error) {
-	peer, err := h.route(ctx, request, request.Msg.GetWorkId())
+func (h *NativeExecutionHandler) SetThinkingLevel(ctx context.Context, request *dispatcherprivatev1.SetThinkingLevelRequest) (*dispatcherprivatev1.SetThinkingLevelResponse, error) {
+	peer, err := h.route(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
 		return h.next.SetThinkingLevel(ctx, request)
 	}
-	return peer.SetThinkingLevel(ctx, forwardNativeRequest(request))
+	return peer.SetThinkingLevel(forwarded(ctx), request)
 }
 
-func (h *NativeExecutionHandler) SetPermissionMode(ctx context.Context, request *connect.Request[dispatcherprivatev1.SetPermissionModeRequest]) (*connect.Response[dispatcherprivatev1.SetPermissionModeResponse], error) {
-	peer, err := h.route(ctx, request, request.Msg.GetWorkId())
+func (h *NativeExecutionHandler) SetPermissionMode(ctx context.Context, request *dispatcherprivatev1.SetPermissionModeRequest) (*dispatcherprivatev1.SetPermissionModeResponse, error) {
+	peer, err := h.route(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
 		return h.next.SetPermissionMode(ctx, request)
 	}
-	return peer.SetPermissionMode(ctx, forwardNativeRequest(request))
+	return peer.SetPermissionMode(forwarded(ctx), request)
 }
 
-func (h *NativeExecutionHandler) GetThinkingLevel(ctx context.Context, request *connect.Request[dispatcherprivatev1.GetThinkingLevelRequest]) (*connect.Response[dispatcherprivatev1.GetThinkingLevelResponse], error) {
-	peer, err := h.route(ctx, request, request.Msg.GetWorkId())
+func (h *NativeExecutionHandler) GetThinkingLevel(ctx context.Context, request *dispatcherprivatev1.GetThinkingLevelRequest) (*dispatcherprivatev1.GetThinkingLevelResponse, error) {
+	peer, err := h.route(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
 		return h.next.GetThinkingLevel(ctx, request)
 	}
-	return peer.GetThinkingLevel(ctx, forwardNativeRequest(request))
+	return peer.GetThinkingLevel(forwarded(ctx), request)
 }
 
-func (h *NativeExecutionHandler) ListPendingInteractions(ctx context.Context, request *connect.Request[dispatcherprivatev1.ListPendingInteractionsRequest]) (*connect.Response[dispatcherprivatev1.ListPendingInteractionsResponse], error) {
-	peer, err := h.route(ctx, request, request.Msg.GetWorkId())
+func (h *NativeExecutionHandler) ListPendingInteractions(ctx context.Context, request *dispatcherprivatev1.ListPendingInteractionsRequest) (*dispatcherprivatev1.ListPendingInteractionsResponse, error) {
+	peer, err := h.route(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
 		return h.next.ListPendingInteractions(ctx, request)
 	}
-	return peer.ListPendingInteractions(ctx, forwardNativeRequest(request))
+	return peer.ListPendingInteractions(forwarded(ctx), request)
 }
 
-func (h *NativeExecutionHandler) CancelTurn(ctx context.Context, request *connect.Request[dispatcherprivatev1.CancelTurnRequest]) (*connect.Response[dispatcherprivatev1.CancelTurnResponse], error) {
-	peer, err := h.route(ctx, request, request.Msg.GetWorkId())
+func (h *NativeExecutionHandler) CancelTurn(ctx context.Context, request *dispatcherprivatev1.CancelTurnRequest) (*dispatcherprivatev1.CancelTurnResponse, error) {
+	peer, err := h.route(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
 		return h.next.CancelTurn(ctx, request)
 	}
-	return peer.CancelTurn(ctx, forwardNativeRequest(request))
+	return peer.CancelTurn(forwarded(ctx), request)
 }
 
-func (h *NativeExecutionHandler) GetCurrentTurn(ctx context.Context, request *connect.Request[dispatcherprivatev1.GetCurrentTurnRequest]) (*connect.Response[dispatcherprivatev1.GetCurrentTurnResponse], error) {
-	peer, err := h.route(ctx, request, request.Msg.GetWorkId())
+func (h *NativeExecutionHandler) GetCurrentTurn(ctx context.Context, request *dispatcherprivatev1.GetCurrentTurnRequest) (*dispatcherprivatev1.GetCurrentTurnResponse, error) {
+	peer, err := h.route(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
 		return h.next.GetCurrentTurn(ctx, request)
 	}
-	return peer.GetCurrentTurn(ctx, forwardNativeRequest(request))
+	return peer.GetCurrentTurn(forwarded(ctx), request)
 }
 
 // ObserveProcess is answered from the memory of the replica reading the stream.
-func (h *NativeExecutionHandler) ObserveProcess(ctx context.Context, request *connect.Request[dispatcherprivatev1.ObserveProcessRequest]) (*connect.Response[dispatcherprivatev1.ObserveProcessResponse], error) {
-	peer, err := h.route(ctx, request, request.Msg.GetWorkId())
+func (h *NativeExecutionHandler) ObserveProcess(ctx context.Context, request *dispatcherprivatev1.ObserveProcessRequest) (*dispatcherprivatev1.ObserveProcessResponse, error) {
+	peer, err := h.route(ctx, request.GetWorkId())
 	if err != nil {
 		return nil, err
 	}
 	if peer == nil {
 		return h.next.ObserveProcess(ctx, request)
 	}
-	return peer.ObserveProcess(ctx, forwardNativeRequest(request))
+	return peer.ObserveProcess(forwarded(ctx), request)
 }

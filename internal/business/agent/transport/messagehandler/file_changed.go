@@ -6,7 +6,7 @@ import (
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 
-	storageeventsv1 "github.com/talgent-work/workbench/gen/go/talgent/storage/events/v1"
+	storageintegrationv1 "github.com/talgent-work/contracts/gen/storage/integration/v1"
 )
 
 // InputChanges follows a change of the Attachments in a File Space.
@@ -26,15 +26,15 @@ func NewFileChangedHandler(changes InputChanges) *FileChangedHandler {
 }
 
 func (h *FileChangedHandler) Listening() []integrationmessage.Kind {
-	return []integrationmessage.Kind{integrationmessage.KindOf(&storageeventsv1.FileChanged{})}
+	return []integrationmessage.Kind{integrationmessage.KindOf(&storageintegrationv1.FileChangedV1{})}
 }
 
 func (h *FileChangedHandler) Handle(ctx context.Context, msg integrationmessage.Message) error {
-	fact, ok := msg.Payload().(*storageeventsv1.FileChanged)
+	fact, ok := msg.Payload().(*storageintegrationv1.FileChangedV1)
 	if !ok || fact == nil {
 		return fmt.Errorf("agent file changed: unexpected payload %T", msg.Payload())
 	}
-	if fact.GetKind() != storageeventsv1.FileKind_FILE_KIND_ATTACHMENT {
+	if fact.GetKind() != storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT {
 		return nil
 	}
 	return h.changes.InputsChanged(ctx, fact.GetOwner())

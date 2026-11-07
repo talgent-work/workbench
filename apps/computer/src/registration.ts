@@ -1,7 +1,7 @@
 import { callUnary, ConnectError, type Fetch } from './connect-json.ts'
 import type { Credential } from './store.ts'
 
-const SERVICE = 'talgent.computer.public.v1.RegistrationService'
+const SERVICE = 'computer.public.v1.RegistrationService'
 
 export interface StartedRegistration {
   deviceCode: string

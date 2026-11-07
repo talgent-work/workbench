@@ -3,13 +3,12 @@ package connectrpc
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
-	accountprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/account/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/account/private/v1/accountprivatev1connect"
+	accountprivatev1 "github.com/talgent-work/contracts/gen/account/private/v1"
+	"github.com/talgent-work/contracts/gen/account/private/v1/accountprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/account/application"
 	"github.com/talgent-work/workbench/internal/business/account/application/query"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -28,40 +27,42 @@ func NewUserDirectory(app *application.Application) *UserDirectory {
 	return &UserDirectory{app: app}
 }
 
-func (h *UserDirectory) SearchUsers(ctx context.Context, req *connect.Request[accountprivatev1.SearchUsersRequest]) (*connect.Response[accountprivatev1.SearchUsersResponse], error) {
-	if err := requireService(req.Header()); err != nil {
+func (h *UserDirectory) SearchUsers(ctx context.Context, req *accountprivatev1.SearchUsersRequest) (*accountprivatev1.SearchUsersResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := requireService(info.RequestHeader()); err != nil {
 		return nil, err
 	}
-	users, err := h.app.SearchUsers(ctx, req.Msg.GetUsernameQuery(), int(req.Msg.GetLimit()))
+	users, err := h.app.SearchUsers(ctx, req.GetUsernameQuery(), int(req.GetLimit()))
 	if err != nil {
 		return nil, mapError(err)
 	}
-	return connect.NewResponse(&accountprivatev1.SearchUsersResponse{Users: directoryUsers(users)}), nil
+	return &accountprivatev1.SearchUsersResponse{Users: directoryUsers(users)}, nil
 }
 
-func (h *UserDirectory) GetUsers(ctx context.Context, req *connect.Request[accountprivatev1.GetUsersRequest]) (*connect.Response[accountprivatev1.GetUsersResponse], error) {
-	if err := requireService(req.Header()); err != nil {
+func (h *UserDirectory) GetUsers(ctx context.Context, req *accountprivatev1.GetUsersRequest) (*accountprivatev1.GetUsersResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := requireService(info.RequestHeader()); err != nil {
 		return nil, err
 	}
-	users, err := h.app.GetUsers(ctx, req.Msg.GetUserIds())
+	users, err := h.app.GetUsers(ctx, req.GetUserIds())
 	if err != nil {
 		return nil, mapError(err)
 	}
-	return connect.NewResponse(&accountprivatev1.GetUsersResponse{Users: directoryUsers(users)}), nil
+	return &accountprivatev1.GetUsersResponse{Users: directoryUsers(users)}, nil
 }
 
-func requireService(header http.Header) error {
+func requireService(header *connect.Header) error {
 	if strings.TrimSpace(header.Get(authn.HeaderServiceID)) == "" {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("trusted service caller required"))
+		return connect.NewError(connect.CodeUnauthenticated, "trusted service caller required")
 	}
 	return nil
 }
 
 func mapError(err error) error {
 	if errors.Is(err, application.ErrDirectoryQueryInvalid) {
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	}
-	return connect.NewError(connect.CodeInternal, err)
+	return connect.NewError(connect.CodeInternal, err.Error()).WithCause(err)
 }
 
 func directoryUsers(users []query.User) []*accountprivatev1.DirectoryUser {

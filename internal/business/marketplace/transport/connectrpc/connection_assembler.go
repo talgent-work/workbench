@@ -1,7 +1,7 @@
 package connectrpc
 
 import (
-	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
 )

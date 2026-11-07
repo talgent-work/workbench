@@ -9,7 +9,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/adapter"
 
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/dispatcher/public/v1"
 )
 
 // UpstreamToMessages translates one native frame into Work Message Stream

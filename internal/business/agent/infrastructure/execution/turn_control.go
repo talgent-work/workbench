@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
+	"connectrpc.com/connect/v2"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/dispatcher/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -20,8 +20,9 @@ func (c *DispatcherControl) CancelTurn(ctx context.Context, workID string, turnI
 	if strings.TrimSpace(c.token) == "" {
 		return domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(&dispatcherprivatev1.CancelTurnRequest{WorkId: workID, TurnId: turnID})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &dispatcherprivatev1.CancelTurnRequest{WorkId: workID, TurnId: turnID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	_, err := c.client.CancelTurn(ctx, request)
 	switch connect.CodeOf(err) {
 	case connect.CodeFailedPrecondition:
@@ -39,8 +40,9 @@ func (c *DispatcherControl) GetCurrentTurn(ctx context.Context, workID string) (
 	if strings.TrimSpace(c.token) == "" {
 		return application.CurrentTurn{}, domain.ErrExecutionRequest
 	}
-	request := connect.NewRequest(&dispatcherprivatev1.GetCurrentTurnRequest{WorkId: workID})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &dispatcherprivatev1.GetCurrentTurnRequest{WorkId: workID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	response, err := c.client.GetCurrentTurn(ctx, request)
 	if connect.CodeOf(err) == connect.CodeUnavailable {
 		return application.CurrentTurn{}, unobservedError(ctx, workID, "current turn", err)
@@ -48,5 +50,5 @@ func (c *DispatcherControl) GetCurrentTurn(ctx context.Context, workID string) (
 	if err != nil {
 		return application.CurrentTurn{}, controlError(ctx, workID, "current turn", err)
 	}
-	return application.CurrentTurn{ID: response.Msg.TurnId, CancelRequested: response.Msg.CancelRequested, Active: response.Msg.Active}, nil
+	return application.CurrentTurn{ID: response.TurnId, CancelRequested: response.CancelRequested, Active: response.Active}, nil
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,14 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/coder/websocket"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
-	computerprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1/computerprivatev1connect"
+	computerprivatev1 "github.com/talgent-work/contracts/gen/computer/private/v1"
+	"github.com/talgent-work/contracts/gen/computer/private/v1/computerprivatev1connect"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
 )
 
@@ -41,17 +41,17 @@ type computer struct {
 	removed, revoked, callerRefused bool
 }
 
-func (c *computer) Authenticate(_ context.Context, req *connect.Request[computerprivatev1.AuthenticateRequest]) (*connect.Response[computerprivatev1.AuthenticateResponse], error) {
+func (c *computer) Authenticate(_ context.Context, req *computerprivatev1.AuthenticateRequest) (*computerprivatev1.AuthenticateResponse, error) {
 	c.mu.Lock()
 	removed, revoked, callerRefused := c.removed, c.revoked, c.callerRefused
 	c.mu.Unlock()
-	refused := func(refusal computerprivatev1.CredentialRefusal) (*connect.Response[computerprivatev1.AuthenticateResponse], error) {
-		return connect.NewResponse(&computerprivatev1.AuthenticateResponse{Refusal: refusal}), nil
+	refused := func(refusal computerprivatev1.CredentialRefusal) (*computerprivatev1.AuthenticateResponse, error) {
+		return &computerprivatev1.AuthenticateResponse{Refusal: refusal}, nil
 	}
 	if callerRefused {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("control authentication required"))
+		return nil, connect.NewError(connect.CodeUnauthenticated, "control authentication required")
 	}
-	switch req.Msg.GetCredential() {
+	switch req.GetCredential() {
 	case "good", "next":
 		if removed {
 			return refused(computerprivatev1.CredentialRefusal_CREDENTIAL_REFUSAL_COMPUTER_REMOVED)
@@ -59,43 +59,43 @@ func (c *computer) Authenticate(_ context.Context, req *connect.Request[computer
 		if revoked {
 			return refused(computerprivatev1.CredentialRefusal_CREDENTIAL_REFUSAL_REJECTED)
 		}
-		return connect.NewResponse(&computerprivatev1.AuthenticateResponse{ComputerId: "c1"}), nil
+		return &computerprivatev1.AuthenticateResponse{ComputerId: "c1"}, nil
 	case "due":
-		return connect.NewResponse(&computerprivatev1.AuthenticateResponse{ComputerId: "c1", RotationDue: true}), nil
+		return &computerprivatev1.AuthenticateResponse{ComputerId: "c1", RotationDue: true}, nil
 	case "removed":
 		return refused(computerprivatev1.CredentialRefusal_CREDENTIAL_REFUSAL_COMPUTER_REMOVED)
 	case "outage":
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("down"))
+		return nil, connect.NewError(connect.CodeUnavailable, "down")
 	default:
 		return refused(computerprivatev1.CredentialRefusal_CREDENTIAL_REFUSAL_REJECTED)
 	}
 }
 
-func (c *computer) ReportReachable(_ context.Context, req *connect.Request[computerprivatev1.ReportReachableRequest]) (*connect.Response[computerprivatev1.ReportReachableResponse], error) {
-	c.record("reachable " + req.Msg.GetComputerId() + " " + req.Msg.GetVersions().GetTalgentComputer())
+func (c *computer) ReportReachable(_ context.Context, req *computerprivatev1.ReportReachableRequest) (*computerprivatev1.ReportReachableResponse, error) {
+	c.record("reachable " + req.GetComputerId() + " " + req.GetVersions().GetTalgentComputer())
 	c.mu.Lock()
-	c.sandboxes = append(c.sandboxes, req.Msg.GetClaudeCodeSandbox())
+	c.sandboxes = append(c.sandboxes, req.GetClaudeCodeSandbox())
 	minimum, reconciles := c.minimum, !c.unreconciling
 	c.mu.Unlock()
 	if minimum == "" {
 		minimum = "0.2.0"
 	}
-	return connect.NewResponse(&computerprivatev1.ReportReachableResponse{MinimumVersion: minimum, Reconciles: reconciles}), nil
+	return &computerprivatev1.ReportReachableResponse{MinimumVersion: minimum, Reconciles: reconciles}, nil
 }
 
-func (c *computer) ReportUnreachable(_ context.Context, req *connect.Request[computerprivatev1.ReportUnreachableRequest]) (*connect.Response[computerprivatev1.ReportUnreachableResponse], error) {
-	c.record("unreachable " + req.Msg.GetComputerId())
-	return connect.NewResponse(&computerprivatev1.ReportUnreachableResponse{}), nil
+func (c *computer) ReportUnreachable(_ context.Context, req *computerprivatev1.ReportUnreachableRequest) (*computerprivatev1.ReportUnreachableResponse, error) {
+	c.record("unreachable " + req.GetComputerId())
+	return &computerprivatev1.ReportUnreachableResponse{}, nil
 }
 
-func (c *computer) RotateCredential(_ context.Context, req *connect.Request[computerprivatev1.RotateCredentialRequest]) (*connect.Response[computerprivatev1.RotateCredentialResponse], error) {
-	c.record("rotate " + req.Msg.GetComputerId() + " " + req.Msg.GetCredential())
-	return connect.NewResponse(&computerprivatev1.RotateCredentialResponse{Credential: "next", ExpiresAtUnixMs: 1_900_000_000_000}), nil
+func (c *computer) RotateCredential(_ context.Context, req *computerprivatev1.RotateCredentialRequest) (*computerprivatev1.RotateCredentialResponse, error) {
+	c.record("rotate " + req.GetComputerId() + " " + req.GetCredential())
+	return &computerprivatev1.RotateCredentialResponse{Credential: "next", ExpiresAtUnixMs: 1_900_000_000_000}, nil
 }
 
-func (c *computer) ConfirmCredential(_ context.Context, req *connect.Request[computerprivatev1.ConfirmCredentialRequest]) (*connect.Response[computerprivatev1.ConfirmCredentialResponse], error) {
-	c.record("confirm " + req.Msg.GetComputerId() + " " + req.Msg.GetCredential())
-	return connect.NewResponse(&computerprivatev1.ConfirmCredentialResponse{}), nil
+func (c *computer) ConfirmCredential(_ context.Context, req *computerprivatev1.ConfirmCredentialRequest) (*computerprivatev1.ConfirmCredentialResponse, error) {
+	c.record("confirm " + req.GetComputerId() + " " + req.GetCredential())
+	return &computerprivatev1.ConfirmCredentialResponse{}, nil
 }
 
 func (c *computer) record(report string) {
@@ -127,11 +127,13 @@ func newFixtureLogging(t *testing.T, logger *slog.Logger) *fixture {
 	t.Helper()
 	stand := &computer{}
 	mux := http.NewServeMux()
-	mux.Handle(computerprivatev1connect.NewConnectionServiceHandler(stand))
+	srv := connect.NewServer()
+	computerprivatev1connect.RegisterConnectionServiceHandler(srv, stand)
+	connecthttp.Mount(mux, srv, connecthttp.WithReadMaxBytes(0))
 	backend := httptest.NewServer(mux)
 	t.Cleanup(backend.Close)
 	rdb := goredis.NewClient(&goredis.Options{Addr: miniredis.RunT(t).Addr()})
-	gateway := NewGateway(computerprivatev1connect.NewConnectionServiceClient(http.DefaultClient, backend.URL), computerconnection.NewWriter(rdb), computerconnection.NewReader(rdb), Replica{Name: "replica-a", Endpoint: "192.0.2.1:8085", ControlToken: "control", TargetVersion: "0.3.0"}, logger)
+	gateway := NewGateway(computerprivatev1connect.NewConnectionServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, backend.URL, connecthttp.WithReadMaxBytes(0)))), computerconnection.NewWriter(rdb), computerconnection.NewReader(rdb), Replica{Name: "replica-a", Endpoint: "192.0.2.1:8085", ControlToken: "control", TargetVersion: "0.3.0"}, logger)
 	front := http.NewServeMux()
 	front.HandleFunc("GET /computer/v1/connect", gateway.ServeConnect)
 	server := httptest.NewServer(front)

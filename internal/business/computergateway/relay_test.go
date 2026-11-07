@@ -14,13 +14,15 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1/computerprivatev1connect"
+	"github.com/talgent-work/contracts/gen/computer/private/v1/computerprivatev1connect"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
@@ -42,13 +44,15 @@ func startReplicasIdle(t *testing.T, fileIdle time.Duration) *replicas {
 	t.Helper()
 	stand := &computer{}
 	backendMux := http.NewServeMux()
-	backendMux.Handle(computerprivatev1connect.NewConnectionServiceHandler(stand))
+	server := connect.NewServer()
+	computerprivatev1connect.RegisterConnectionServiceHandler(server, stand)
+	connecthttp.Mount(backendMux, server, connecthttp.WithReadMaxBytes(0))
 	backend := httptest.NewServer(backendMux)
 	t.Cleanup(backend.Close)
 	rdb := goredis.NewClient(&goredis.Options{Addr: miniredis.RunT(t).Addr()})
 	start := func(name string) *httptest.Server {
 		server := httptest.NewUnstartedServer(nil)
-		gateway := NewGateway(computerprivatev1connect.NewConnectionServiceClient(http.DefaultClient, backend.URL), computerconnection.NewWriter(rdb), computerconnection.NewReader(rdb),
+		gateway := NewGateway(computerprivatev1connect.NewConnectionServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, backend.URL, connecthttp.WithReadMaxBytes(0)))), computerconnection.NewWriter(rdb), computerconnection.NewReader(rdb),
 			Replica{Name: name, Endpoint: server.Listener.Addr().String(), ControlToken: "control"}, slog.Default())
 		gateway.fileIdle = fileIdle
 		mux := http.NewServeMux()

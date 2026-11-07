@@ -2,7 +2,6 @@ package execution_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -10,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -156,7 +155,7 @@ func TestSessionEnvironmentIntegrationPreservesSnapshotContinuityAndCompletionAu
 func TestEnvironmentFailureDoesNotRetryOrChangeTheRequest(t *testing.T) {
 	for _, code := range []connect.Code{connect.CodeResourceExhausted, connect.CodeUnavailable} {
 		t.Run(code.String(), func(t *testing.T) {
-			remote := &environmentServer{calls: make(chan resourceCall, 4), failure: connect.NewError(code, errors.New("allocation unavailable"))}
+			remote := &environmentServer{calls: make(chan resourceCall, 4), failure: connect.NewError(code, "allocation unavailable")}
 			port := environmentClient(t, remote, &dispatcherServer{})
 			request := domain.StartExecutionRequest{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, WorkID: "work", HarnessSessionReference: "context", ContextMode: domain.ContextContinue, WorkspaceReference: "workspace"}
 			err := port.StartExecution(context.Background(), request)
