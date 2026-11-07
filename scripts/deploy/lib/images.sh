@@ -10,7 +10,12 @@ REGISTRY="${TALGENT_REGISTRY:-ghcr.io/talgent-work}"
 WORKBENCH_IMAGES=(
   controlplane dispatcher streamgateway computer-gateway workbench-web execd sandbox sandbox-base
 )
-TAG="${TALGENT_IMAGE_TAG:-v0.15.6}"
+# A tree carries no release of its own images: the tag names them.
+if [[ -z "${TALGENT_IMAGE_TAG:-}" ]]; then
+  echo "set TALGENT_IMAGE_TAG to the tag of the Workbench's images, such as a release vX.Y.Z" >&2
+  exit 2
+fi
+TAG="${TALGENT_IMAGE_TAG}"
 OVERLAY_TAG="${TALGENT_OVERLAY_IMAGE_TAG:-}"
 PUSH_IMAGES="${TALGENT_PUSH_IMAGES:-0}"
 

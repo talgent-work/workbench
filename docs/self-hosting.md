@@ -298,7 +298,7 @@ scripts/deploy/apply-k3s.sh deploy/k3s/workbench
 1. Resolves the environment (`TALGENT_ENVIRONMENT_FILE` or the cluster's ConfigMap) and creates
    the namespace.
 2. Renders the base with `render-k3s.sh`: the environment in place of the placeholders, every
-   `ghcr.io/talgent-work/workbench-<image>` at `TALGENT_REGISTRY` (default `ghcr.io/talgent-work`)
+   Workbench image of `ghcr.io/talgent-work` at `TALGENT_REGISTRY` (default `ghcr.io/talgent-work`)
    and `TALGENT_IMAGE_TAG`, and, for a `vX.Y.Z` tag, that release as the Talgent Computer version
    the Computers page offers. An overlay kept in another repository names the base
    `../workbench`, where the render places it, and its own images take
@@ -320,9 +320,8 @@ objects that a newer base no longer has; delete them by hand.
 ### Images
 
 A release publishes `ghcr.io/talgent-work/controlplane`, `dispatcher`, `streamgateway`,
-`computer-gateway`, `sandbox`, `execd` and `workbench-web`, all tagged `vX.Y.Z`. Always set `TALGENT_IMAGE_TAG`: without it the scripts
-deploy the tag written in `scripts/deploy/lib/images.sh`, which need not be the release you
-checked out.
+`computer-gateway`, `sandbox`, `execd` and `workbench-web`, all tagged `vX.Y.Z`. The scripts refuse
+to run without `TALGENT_IMAGE_TAG`.
 
 To build your own, from the root of this tree:
 
