@@ -14,7 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	streamrpc "github.com/talgent-work/workbench/internal/business/streamgateway/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // recordingAccess admits every reader and records the admission it was given.

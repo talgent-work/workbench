@@ -14,8 +14,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
-	"github.com/talgent-work/workbench/pkg/authn"
 )
 
 // PersonalWorkHandler serves a person's own Works for the gateway-asserted

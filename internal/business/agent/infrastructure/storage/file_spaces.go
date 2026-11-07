@@ -12,7 +12,7 @@ import (
 	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/pkg/storageerror"
+	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
 // FileSpaces is Agent's client of Storage's File Space Contract and Owner

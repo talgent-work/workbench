@@ -11,7 +11,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/turnresults"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
 )
 
 // TurnResultModule serves the Work queries answered from the durable message

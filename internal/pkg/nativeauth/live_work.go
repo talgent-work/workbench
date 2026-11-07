@@ -13,7 +13,7 @@ import (
 
 	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
 	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // LiveWorkClient resolves a native process whose credential belongs to its

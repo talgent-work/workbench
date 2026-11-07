@@ -8,7 +8,7 @@ import (
 
 	accountpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/account/public/v1"
 	"github.com/talgent-work/workbench/gen/go/talgent/account/public/v1/accountpublicv1connect"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // Session tells the browser who is signed in. It answers from the identity

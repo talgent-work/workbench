@@ -160,7 +160,7 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
     ("branch docs only", "false", "", "docs/guide.md", "push", set(), "false"),
     # These run the real substantive filter: the listed files are identical at
     # both revisions, as a comment-only change compiles to the same code.
-    ("REAL Go comments only", "false", "", "pkg/taskqueue/runtime.go", "push", set(), "false"),
+    ("REAL Go comments only", "false", "", "internal/pkg/taskqueue/runtime.go", "push", set(), "false"),
     ("REAL generated TS comments only", "false", "", "gen/ts/talgent/trace/public/v1/trace_pb.ts", "push", set(), "false"),
     ("REAL hand-written TS is always a change", "false", "", "apps/workbench-web/src/app.tsx", "push", {"workbench-web"}, "false"),
 ]:
@@ -214,7 +214,7 @@ script = script.replace('go run ./scripts/ci/substantive "$1" "$2"', 'cat')
 everything = {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web", "execd", "sandbox"}
 for name, changed, missing, built, sandbox in [
     ("release of a Workbench web change", "apps/workbench-web/src/app.tsx", "", {"workbench-web"}, "false"),
-    ("release of a shared Go change", "pkg/taskqueue/runtime.go", "", {"controlplane", "dispatcher", "streamgateway", "computer-gateway"}, "false"),
+    ("release of a shared Go change", "internal/pkg/taskqueue/runtime.go", "", {"controlplane", "dispatcher", "streamgateway", "computer-gateway"}, "false"),
     ("release of a Talgent Computer change", "apps/computer/src/cli.ts", "", set(), "false"),
     ("release with nothing to build", "docs/guide.md", "", set(), "false"),
     ("release missing a previous image", "docs/guide.md", "streamgateway:v0.0.1", {"streamgateway"}, "false"),

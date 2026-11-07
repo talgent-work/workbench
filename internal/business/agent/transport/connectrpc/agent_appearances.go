@@ -9,7 +9,7 @@ import (
 	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func appearanceToProto(appearance domain.AgentAppearance) *agentpublicv1.AgentAppearance {

@@ -14,7 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

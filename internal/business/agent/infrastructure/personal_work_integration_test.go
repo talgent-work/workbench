@@ -21,7 +21,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 // librarySpaces stands in for Storage's File Space Contract: a space opens

@@ -29,7 +29,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/computer"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 // managedLaptop is employee-a's Managed Computer: one Desk, queuing runs

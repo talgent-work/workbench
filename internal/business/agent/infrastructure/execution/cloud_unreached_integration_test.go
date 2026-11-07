@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"xorm.io/xorm"
 )
 

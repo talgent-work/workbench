@@ -28,7 +28,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/computer"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 // A Cloud with room for one run, admitting through the real Agent and

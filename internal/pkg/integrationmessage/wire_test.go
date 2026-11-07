@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	pkgintegrationmessage "github.com/talgent-work/workbench/pkg/integrationmessage"
-	pkgkafka "github.com/talgent-work/workbench/pkg/kafka"
+	pkgintegrationmessage "github.com/talgent-work/workbench/internal/pkg/integrationmessage"
+	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
 )
 
 // Integration-message config must own consumer group semantics, not Kafka

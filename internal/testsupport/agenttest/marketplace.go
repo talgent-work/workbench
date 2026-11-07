@@ -16,7 +16,7 @@ import (
 	marketinfra "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	marketstore "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	markettransport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // SecretCanary is the access token every Marketplace authorization holds: no

@@ -14,7 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 

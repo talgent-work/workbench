@@ -31,8 +31,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
-	"github.com/talgent-work/workbench/pkg/authn"
 )
 
 // Token is the service token the Agent's private API admits a caller by.

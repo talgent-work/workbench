@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"connectrpc.com/connect"
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"

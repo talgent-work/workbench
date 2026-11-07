@@ -12,7 +12,7 @@ import (
 	"github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1/streamgatewaypublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

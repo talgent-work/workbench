@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/nativeapi"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/nativeapi"
 )
 
 // verifier accepts the Work's credential; interactive reports whether the

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"

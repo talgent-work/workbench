@@ -14,7 +14,7 @@ import (
 	accountprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/account/private/v1"
 	"github.com/talgent-work/workbench/gen/go/talgent/account/private/v1/accountprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // Config locates Account's private User Directory service.

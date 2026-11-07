@@ -25,8 +25,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
-	"github.com/talgent-work/workbench/pkg/authn"
 )
 
 // accessFixture serves Agent's handlers over in-memory Works: a human's Work

@@ -13,7 +13,7 @@ import (
 
 	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // respond answers every call with one status, or with message on success.

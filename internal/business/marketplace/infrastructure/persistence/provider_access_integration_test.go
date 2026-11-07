@@ -31,8 +31,8 @@ import (
 	scmgithub "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/github"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"xorm.io/xorm"
 )
 

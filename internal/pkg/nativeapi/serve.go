@@ -6,8 +6,8 @@ import (
 
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/httpserver"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/httpserver"
 )
 
 // Serve runs a process's native API on its own port, in front of the

@@ -14,8 +14,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/marketplace/transport/taskprocessor"
-	"github.com/talgent-work/workbench/pkg/connectlog"
-	pkgtaskqueue "github.com/talgent-work/workbench/pkg/taskqueue"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
 )
 

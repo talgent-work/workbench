@@ -13,7 +13,7 @@ import (
 	storagetaskv1 "github.com/talgent-work/workbench/gen/go/talgent/storage/task/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"
-	pkgtaskqueue "github.com/talgent-work/workbench/pkg/taskqueue"
+	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 )
 
 // Rendering is the use case the task delegates to.

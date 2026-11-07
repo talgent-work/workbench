@@ -13,7 +13,7 @@ import (
 	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
 	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // FileSpaceHandler serves the File Space Contract to the contexts that name

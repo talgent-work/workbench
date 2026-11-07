@@ -10,8 +10,8 @@ import (
 	"github.com/go-jimu/components/ddd/message"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 
+	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
-	"github.com/talgent-work/workbench/pkg/nativeauth"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"

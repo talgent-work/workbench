@@ -9,7 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

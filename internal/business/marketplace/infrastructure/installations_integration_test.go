@@ -19,8 +19,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"google.golang.org/protobuf/types/known/structpb"
 	"xorm.io/xorm"
 )

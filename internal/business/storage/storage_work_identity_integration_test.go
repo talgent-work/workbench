@@ -21,9 +21,9 @@ import (
 	agentapplication "github.com/talgent-work/workbench/internal/business/agent/application"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	agentdomain "github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/nativeauth"
 )
 
 // A Work's identity reaches Storage as Agent assembles it: a Work started on

@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/storagepath"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 // AccessLinkPath is where Storage serves Access Links; a Work downloads the

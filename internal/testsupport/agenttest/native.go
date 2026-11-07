@@ -18,7 +18,7 @@ import (
 	marketdomain "github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	marketinfra "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	markettransport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // CloudLaunch is the Harness launch of a Work as a Cloud sandbox runs it.

@@ -11,7 +11,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	streamrpc "github.com/talgent-work/workbench/internal/business/streamgateway/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type workAccessFunc func(context.Context, string, string) error

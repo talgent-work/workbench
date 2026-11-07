@@ -8,7 +8,7 @@ import (
 	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func (h *Handler) BeginProviderAuthorization(ctx context.Context, req *connect.Request[marketplacepublicv1.BeginProviderAuthorizationRequest]) (*connect.Response[marketplacepublicv1.BeginProviderAuthorizationResponse], error) {

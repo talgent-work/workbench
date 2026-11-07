@@ -10,7 +10,7 @@ import (
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/marketplace"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"go.uber.org/fx"
 	"xorm.io/xorm"
 )

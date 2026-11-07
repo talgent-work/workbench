@@ -29,8 +29,8 @@ import (
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	dispatchercommand "github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/agentfeedback"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
-	"github.com/talgent-work/workbench/pkg/authn"
 	"xorm.io/xorm"
 )
 

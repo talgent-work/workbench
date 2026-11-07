@@ -20,7 +20,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func TestServiceAccessResultsThroughAuthenticatedPublicAPI(t *testing.T) {

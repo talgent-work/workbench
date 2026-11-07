@@ -6,7 +6,7 @@ import (
 	"connectrpc.com/connect"
 	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func (h *Handler) ListConnectors(ctx context.Context, _ *connect.Request[marketplacepublicv1.ListConnectorsRequest]) (*connect.Response[marketplacepublicv1.ListConnectorsResponse], error) {

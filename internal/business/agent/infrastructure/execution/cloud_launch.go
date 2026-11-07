@@ -15,7 +15,7 @@ type CloudLaunch struct {
 // CloudLaunch renders the Harness launch of request in allocation as a Cloud
 // sandbox runs it, for a caller that runs the Harness outside one: the
 // integration tests of a module that cannot reach this package's internals
-// (pkg/agenttest). Production starts go through Sandboxes.
+// (internal/testsupport/agenttest). Production starts go through Sandboxes.
 func (c NativeLaunchConfig) CloudLaunch(request domain.StartExecutionRequest, allocation Allocation) (CloudLaunch, error) {
 	launch, err := c.prepare(sandboxLayout, request, allocation, "")
 	if err != nil {

@@ -23,9 +23,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
-	"github.com/talgent-work/workbench/pkg/connectlog"
-	"github.com/talgent-work/workbench/pkg/eventlog"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/eventlog"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 type ConnectionConfig struct {

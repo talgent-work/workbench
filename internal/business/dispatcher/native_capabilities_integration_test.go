@@ -27,7 +27,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/nativeprocess"
 	transport "github.com/talgent-work/workbench/internal/business/dispatcher/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"golang.org/x/net/websocket"
 )
 

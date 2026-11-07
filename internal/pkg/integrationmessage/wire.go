@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-jimu/components/ddd/message"
 	contribkafka "github.com/go-jimu/contrib/message/kafka"
-	pkgkafka "github.com/talgent-work/workbench/pkg/kafka"
+	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 

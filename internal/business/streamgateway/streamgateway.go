@@ -14,8 +14,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/streamgateway/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/infrastructure/unifiedmessagelog"
 	streamrpc "github.com/talgent-work/workbench/internal/business/streamgateway/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
 )
 
 // AgentConfig reaches Agent's private Work access API.

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // Only a verified Work Agent with a workspace publishes Artifacts, from its

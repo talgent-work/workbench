@@ -15,9 +15,9 @@ import (
 
 	agentmodule "github.com/talgent-work/workbench/internal/business/agent"
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/nativeapi"
-	"github.com/talgent-work/workbench/pkg/nativeauth"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/nativeapi"
+	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 )
 
 // Without a platform Connector, a Work's Agent calls the controlplane's

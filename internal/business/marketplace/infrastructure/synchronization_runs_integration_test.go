@@ -26,9 +26,9 @@ import (
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/business/marketplace/transport/taskprocessor"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	runtimequeue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
-	"github.com/talgent-work/workbench/pkg/authn"
-	runtimequeue "github.com/talgent-work/workbench/pkg/taskqueue"
 	"go.uber.org/fx/fxtest"
 )
 

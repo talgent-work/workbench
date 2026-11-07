@@ -12,7 +12,7 @@ import (
 	"go.uber.org/fx/fxtest"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 // Combining modules must not cause repositories to use another module's

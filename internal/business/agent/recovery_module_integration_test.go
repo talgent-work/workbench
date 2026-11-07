@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"

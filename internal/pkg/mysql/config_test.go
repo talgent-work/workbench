@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/talgent-work/workbench/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 func TestConfigYAMLUnmarshal(t *testing.T) {

@@ -25,9 +25,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/account/infrastructure"
 	accountconnect "github.com/talgent-work/workbench/internal/business/account/transport/connectrpc"
 	accounthttp "github.com/talgent-work/workbench/internal/business/account/transport/http"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/connectlog"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 // Database is the name of Account's own MySQL connection (talgent_account).

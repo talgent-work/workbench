@@ -14,7 +14,7 @@ import (
 	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func TestServiceSupplyTransmitsRetainedAuthorityAndCurrentMaterial(t *testing.T) {

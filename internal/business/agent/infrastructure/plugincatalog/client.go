@@ -15,7 +15,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"go.opentelemetry.io/otel/propagation"
 )
 

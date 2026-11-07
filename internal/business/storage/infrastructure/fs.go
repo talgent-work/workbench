@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/talgent-work/workbench/internal/business/storage/application"
-	"github.com/talgent-work/workbench/pkg/storagepath"
+	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 // openDirectory opens a directory relative to root without following any

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	accountpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/account/public/v1"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // The session is the gateway-verified identity, and nothing without one.

@@ -8,15 +8,15 @@ import (
 	"time"
 
 	domainevent "github.com/go-jimu/components/ddd/event"
-	"github.com/talgent-work/workbench/pkg/eventlog"
-	"github.com/talgent-work/workbench/pkg/nativeauth"
+	"github.com/talgent-work/workbench/internal/pkg/eventlog"
+	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 
 	"connectrpc.com/connect"
 	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
 
 	"go.uber.org/fx"
 
@@ -33,7 +33,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/inputsettlements"
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/userdirectory"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 // StorageConfig locates Storage's Sandbox Mount Contract.

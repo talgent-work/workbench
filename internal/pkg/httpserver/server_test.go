@@ -15,7 +15,7 @@ import (
 	"go.uber.org/fx"
 	"gopkg.in/yaml.v3"
 
-	"github.com/talgent-work/workbench/pkg/httpserver"
+	"github.com/talgent-work/workbench/internal/pkg/httpserver"
 )
 
 func TestConfigYAMLUnmarshal(t *testing.T) {

@@ -9,11 +9,11 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/workbench/internal/business/streamgateway"
+	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
+	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
+	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
-	internalpkg "github.com/talgent-work/workbench/pkg"
-	pkghttpserver "github.com/talgent-work/workbench/pkg/httpserver"
-	"github.com/talgent-work/workbench/pkg/lifecyclelog"
 )
 
 // Option is the top-level configuration tree for the streamgateway service.

@@ -10,7 +10,7 @@ import (
 
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/workbench/pkg/lifecyclelog"
+	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 )
 
 func stopFirst(lc fx.Lifecycle) { lc.Append(fx.StopHook(func() {})) }

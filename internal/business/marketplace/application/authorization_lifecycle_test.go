@@ -3,7 +3,7 @@ package application
 import (
 	"context"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"testing"
 	"time"
 )

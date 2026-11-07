@@ -5,7 +5,7 @@ import (
 
 	"connectrpc.com/connect"
 	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func (h *Handler) ListPersonalAuthorizations(ctx context.Context, _ *connect.Request[marketplacepublicv1.ListPersonalAuthorizationsRequest]) (*connect.Response[marketplacepublicv1.ListPersonalAuthorizationsResponse], error) {

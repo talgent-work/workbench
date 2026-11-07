@@ -15,8 +15,8 @@ import (
 
 	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
 	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/storagepath"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 // sentContentBound stands in for the 64 MiB bound, which costs seconds to

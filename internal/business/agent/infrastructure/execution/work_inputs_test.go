@@ -8,7 +8,7 @@ import (
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func withInputs(input domain.StartExecutionRequest) domain.StartExecutionRequest {

@@ -17,12 +17,12 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/talgent-work/workbench/internal/pkg/clickhouse"
+	"github.com/talgent-work/workbench/internal/pkg/httpserver"
+	pkgintegrationmessage "github.com/talgent-work/workbench/internal/pkg/integrationmessage"
+	"github.com/talgent-work/workbench/internal/pkg/kafka"
 	"github.com/talgent-work/workbench/internal/pkg/nats"
 	"github.com/talgent-work/workbench/internal/pkg/otelsetup"
-	"github.com/talgent-work/workbench/pkg/httpserver"
-	pkgintegrationmessage "github.com/talgent-work/workbench/pkg/integrationmessage"
-	"github.com/talgent-work/workbench/pkg/kafka"
-	"github.com/talgent-work/workbench/pkg/redis"
+	"github.com/talgent-work/workbench/internal/pkg/redis"
 )
 
 // MetricsModule provides the service's MeterProvider, exporting to the OTLP

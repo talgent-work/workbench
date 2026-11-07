@@ -23,7 +23,7 @@ import (
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 // libraryAgents is Agent over its own MySQL schema: people's employee

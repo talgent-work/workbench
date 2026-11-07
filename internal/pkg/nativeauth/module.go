@@ -5,7 +5,7 @@ import (
 
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type Config struct {

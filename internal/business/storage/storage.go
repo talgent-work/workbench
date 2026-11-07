@@ -26,9 +26,9 @@ import (
 	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
 	"github.com/talgent-work/workbench/internal/business/storage/transport/taskprocessor"
-	"github.com/talgent-work/workbench/pkg/connectlog"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
-	pkgtaskqueue "github.com/talgent-work/workbench/pkg/taskqueue"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 )
 
 // defaultMaxUploadBytes bounds one upload when none is configured.

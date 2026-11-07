@@ -27,8 +27,8 @@ import (
 	computerpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/public/v1"
 	"github.com/talgent-work/workbench/gen/go/talgent/computer/public/v1/computerpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/computer"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 type clients struct {

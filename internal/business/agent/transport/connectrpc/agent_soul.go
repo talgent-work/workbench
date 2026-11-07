@@ -8,7 +8,7 @@ import (
 	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // GetAgentSoul reads an Agent's Soul for the signed-in person, who must be one

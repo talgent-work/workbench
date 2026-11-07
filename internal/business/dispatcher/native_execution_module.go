@@ -17,7 +17,7 @@ import (
 	dispatcherredis "github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/redis"
 	dispatchertransport "github.com/talgent-work/workbench/internal/business/dispatcher/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/transport/routing"
-	"github.com/talgent-work/workbench/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
 )
 
 type NativeExecutionConfig struct {

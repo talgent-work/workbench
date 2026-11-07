@@ -81,8 +81,7 @@ Credential Proxy adds; the core runtime plugin (`plugins/talgent-runtime`) teach
 | Path | Contents |
 |---|---|
 | `cmd/` | The four Go services |
-| `internal/` | Bounded contexts and shared infrastructure |
-| `pkg/` | What a service built on the Workbench uses: service assembly and test kits |
+| `internal/` | Bounded contexts, shared infrastructure (`internal/pkg`) and test kits (`internal/testsupport`) |
 | `proto/`, `gen/` | Contracts (ConnectRPC) and the code generated from them; `gen/ts` is `@talgent/workbench-contracts` |
 | `apps/workbench-web/` | The web app |
 | `apps/computer/` | Talgent Computer |

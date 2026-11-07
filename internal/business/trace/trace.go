@@ -17,9 +17,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/trace/infrastructure/access"
 	"github.com/talgent-work/workbench/internal/business/trace/infrastructure/clickhouse"
 	tracerpc "github.com/talgent-work/workbench/internal/business/trace/transport/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
 )
 
 // ClickHouseConfig addresses the native telemetry database, apart from any

@@ -9,8 +9,8 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
-	pkgintegrationmessage "github.com/talgent-work/workbench/pkg/integrationmessage"
-	pkgkafka "github.com/talgent-work/workbench/pkg/kafka"
+	pkgintegrationmessage "github.com/talgent-work/workbench/internal/pkg/integrationmessage"
+	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
 )
 
 // DeskAssignmentConfig names Agent's own consumer group for Computer's Desk

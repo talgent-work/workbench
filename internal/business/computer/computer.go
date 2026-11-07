@@ -32,10 +32,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/computer/infrastructure/cluster"
 	"github.com/talgent-work/workbench/internal/business/computer/infrastructure/registration"
 	transport "github.com/talgent-work/workbench/internal/business/computer/transport/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/connectlog"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/connectlog"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 // Database is the Workbench core's MySQL engine, holding Computers and Desks.

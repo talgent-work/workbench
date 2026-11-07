@@ -14,7 +14,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/pkg/storagepath"
+	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 // ContentApplication is the Storage use cases these endpoints delegate to.

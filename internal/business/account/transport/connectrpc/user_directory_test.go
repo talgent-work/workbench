@@ -13,7 +13,7 @@ import (
 	"github.com/talgent-work/workbench/gen/go/talgent/account/private/v1/accountprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/account/application"
 	"github.com/talgent-work/workbench/internal/business/account/application/query"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type directory struct{ users []query.User }

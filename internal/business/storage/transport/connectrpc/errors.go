@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
-	"github.com/talgent-work/workbench/pkg/storageerror"
+	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 
 	"connectrpc.com/connect"
 

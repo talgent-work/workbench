@@ -12,7 +12,7 @@ import (
 	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // Repository facts are read under the delegated owner and attributed to that

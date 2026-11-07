@@ -12,7 +12,7 @@ import (
 	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func TestSensitiveSelectionIsAvailableOnlyToTrustedOwnerScopedExecution(t *testing.T) {

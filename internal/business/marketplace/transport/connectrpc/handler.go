@@ -9,7 +9,7 @@ import (
 	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type Handler struct{ application *application.Application }

@@ -21,8 +21,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
-	"github.com/talgent-work/workbench/pkg/authn"
 	"xorm.io/xorm"
 )
 

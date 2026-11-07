@@ -7,7 +7,7 @@ import (
 	"connectrpc.com/connect"
 	marketplaceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type SelectionHandler struct {

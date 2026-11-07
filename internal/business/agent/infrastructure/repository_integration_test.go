@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/google/uuid"
 

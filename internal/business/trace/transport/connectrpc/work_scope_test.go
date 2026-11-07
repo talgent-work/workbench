@@ -10,7 +10,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // A Work without a Project is read under Agent's Work access, never the

@@ -12,7 +12,7 @@ import (
 	"github.com/talgent-work/workbench/gen/go/talgent/computer/public/v1/computerpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // RegistrationHandler serves Talgent Computer before it holds a credential;
