@@ -33,7 +33,7 @@ type repositoryCheckout struct {
 // entries reach the native installer. The Work namespace also isolates
 // different retained versions in Claude's HOME-wide package cache.
 // The layout decides how the script runs (see machineLayout).
-func (c NativeLaunchConfig) preparationCommand(layout launchLayout, request domain.StartExecutionRequest, owner Allocation) (string, string, error) {
+func (c NativeLaunchConfig) preparationCommand(layout launchLayout, request domain.LaunchSpecification, owner Allocation) (string, string, error) {
 	name := "talgent-work-" + storageKey(request.WorkID)
 	entries := make([]json.RawMessage, 0, len(request.Capabilities.Plugins))
 	for _, plugin := range request.Capabilities.Plugins {

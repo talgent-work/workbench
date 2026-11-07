@@ -39,12 +39,11 @@ type workStartup struct {
 	agents        domain.AgentDefinitionRepository
 	authorization access.WorkAuthorizer
 	computers     ComputerPort
-	execution     domain.ExecutionPort
 	models        query.ModelConfigurations
 	plugins       PluginUpgrades
 }
 
-type startBehavior func(*domain.AgentWork, context.Context, domain.StartAdmission, domain.ExecutionPort) error
+type startBehavior func(*domain.AgentWork, domain.StartAdmission) error
 
 // admissionAttempts bounds retries after the Work changed between reading it
 // and committing this start.
@@ -107,12 +106,12 @@ func (h workStartup) admit(ctx context.Context, request StartWork, begin startBe
 		admission.DefinitionAdmitted, admission.Seat = true, seat
 	}
 	start := query.AdmittedStart{WorkID: session.ID, Kind: kind(session)}
-	requests := deferExecution(h.execution)
-	if err := begin(session, ctx, admission, requests); err != nil {
+	if err := begin(session, admission); err != nil {
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return false, err
 	}
-	// No external execution starts until the Work and its start request commit.
+	// The start's execution begins only once the Work and its start request
+	// commit.
 	if err := h.sessions.CommitStart(ctx, session, start, request.RequestID); err != nil {
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		if errors.Is(err, domain.ErrConcurrentModification) {
@@ -123,7 +122,7 @@ func (h workStartup) admit(ctx context.Context, request StartWork, begin startBe
 		}
 		return false, err
 	}
-	return true, requests.send(ctx)
+	return true, nil
 }
 
 // refused records on the Work what its Computer's refusal of a Resume leaves
@@ -170,11 +169,11 @@ func fixedKind(kind query.StartKind) func(*domain.AgentWork) query.StartKind {
 type ResumeWorkHandler struct{ continuation workContinuation }
 type RestartWorkHandler struct{ startup workStartup }
 
-func NewResumeWorkHandler(now func() time.Time, sessions AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerPort, execution domain.ExecutionPort, requests ContinuationRequests, models query.ModelConfigurations, plugins PluginUpgrades) *ResumeWorkHandler {
-	return &ResumeWorkHandler{continuation: workContinuation{startup: workStartup{now: now, sessions: sessions, agents: agents, authorization: authorization, computers: computers, execution: execution, models: models, plugins: plugins}, requests: requests}}
+func NewResumeWorkHandler(now func() time.Time, sessions AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerPort, requests ContinuationRequests, models query.ModelConfigurations, plugins PluginUpgrades) *ResumeWorkHandler {
+	return &ResumeWorkHandler{continuation: workContinuation{startup: workStartup{now: now, sessions: sessions, agents: agents, authorization: authorization, computers: computers, models: models, plugins: plugins}, requests: requests}}
 }
-func NewRestartWorkHandler(now func() time.Time, sessions AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerPort, execution domain.ExecutionPort, models query.ModelConfigurations, plugins PluginUpgrades) *RestartWorkHandler {
-	return &RestartWorkHandler{startup: workStartup{now: now, sessions: sessions, agents: agents, authorization: authorization, computers: computers, execution: execution, models: models, plugins: plugins}}
+func NewRestartWorkHandler(now func() time.Time, sessions AgentWorkRepository, agents domain.AgentDefinitionRepository, authorization access.WorkAuthorizer, computers ComputerPort, models query.ModelConfigurations, plugins PluginUpgrades) *RestartWorkHandler {
+	return &RestartWorkHandler{startup: workStartup{now: now, sessions: sessions, agents: agents, authorization: authorization, computers: computers, models: models, plugins: plugins}}
 }
 func (h *ResumeWorkHandler) Handle(ctx context.Context, request StartWork) error {
 	return h.continuation.handle(ctx, request, "resume")

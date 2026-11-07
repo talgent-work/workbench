@@ -74,11 +74,11 @@ type Config struct {
 	// offers each user's repositories and service authorizations. Without
 	// one, every user reaches the repository "123", example/project.
 	Marketplace string
-	// OnStart observes each execution start the Agent delivers.
+	// OnStart observes each start the Agent admits.
 	OnStart func(Start)
 }
 
-// Start is an execution start the Agent delivered.
+// Start is a start the Agent admitted.
 type Start struct {
 	WorkID, ModelConfigurationID, ThinkingLevel string
 	// InputSource and SpaceToken are the Work's read-only inputs.
@@ -123,16 +123,15 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 		require.NoError(t, err)
 		repositories = client
 	}
-	works := infrastructure.NewAgentWorkRepository(db, time.Now)
+	works := startedWorks{AgentWorkRepository: infrastructure.NewAgentWorkRepository(db, time.Now), onStart: cfg.OnStart}
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	lookup := infrastructure.NewAgentDefinitionLookup(db)
 	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	requests := infrastructure.NewWorkCreationRequests(db, time.Now)
 	queries := infrastructure.NewWorkQueryRepository(db)
-	execution := executionPort{onStart: cfg.OnStart}
 	start := startCatalog{catalog: catalog, connections: repositories}
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), execution)
-	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), works, authorizer, execution, requests, models)
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}))
+	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), works, authorizer, requests, models)
 	views := query.NewModelOptionViews(queries, models)
 	app := &application.Application{
 		RecentRepositories: queries, Catalog: start, Definitions: definitions, DefinitionLookup: lookup,
@@ -248,21 +247,50 @@ func authorizations(selection domain.WorkAuthorizationSelection) Authorizations 
 	return result
 }
 
-// executionPort delivers nothing: it reports each start and accepts every
-// stop, reclaim and retirement.
-type executionPort struct{ onStart func(Start) }
+// startedWorks reports each start a committed Work admitted, in place of
+// beginning its execution: nothing runs.
+type startedWorks struct {
+	*infrastructure.AgentWorkRepository
+	onStart func(Start)
+}
 
-func (p executionPort) StartExecution(_ context.Context, request domain.StartExecutionRequest) error {
-	if p.onStart != nil {
-		p.onStart(Start{WorkID: request.WorkID, ModelConfigurationID: request.WorkModel.ConfigurationID, ThinkingLevel: request.ThinkingLevel,
-			InputSource: request.InputSource.Reference, SpaceToken: request.InputSource.SpaceToken, Authorizations: authorizations(request.AuthorizationSelection)})
+func (w startedWorks) Save(ctx context.Context, work *domain.AgentWork) error {
+	if err := w.AgentWorkRepository.Save(ctx, work); err != nil {
+		return err
 	}
+	w.started(work)
 	return nil
 }
-func (executionPort) StopExecution(context.Context, string, string) error { return nil }
-func (executionPort) ReclaimCompute(context.Context, string) error        { return nil }
-func (executionPort) RetireFencedRun(context.Context, string) error       { return nil }
-func (executionPort) CancelRunningTurn(context.Context, string) error     { return nil }
+
+func (w startedWorks) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
+	if err := w.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
+		return err
+	}
+	w.started(work)
+	return nil
+}
+
+func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error {
+	if err := w.AgentWorkRepository.CommitStart(ctx, work, start, requestID); err != nil {
+		return err
+	}
+	w.started(work)
+	return nil
+}
+
+func (w startedWorks) started(work *domain.AgentWork) {
+	if work.Events == nil {
+		return
+	}
+	for _, event := range work.Events.Drain() {
+		if _, admitted := event.(domain.WorkStartAdmitted); !admitted || w.onStart == nil {
+			continue
+		}
+		launch := work.LaunchSpecification()
+		w.onStart(Start{WorkID: launch.WorkID, ModelConfigurationID: launch.WorkModel.ConfigurationID, ThinkingLevel: launch.ThinkingLevel,
+			InputSource: launch.InputSource.Reference, SpaceToken: launch.InputSource.SpaceToken, Authorizations: authorizations(launch.AuthorizationSelection)})
+	}
+}
 
 // admission admits by the caller's decision.
 type admission struct{ admit func(context.Context) error }

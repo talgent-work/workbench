@@ -20,12 +20,12 @@ type WorkControl struct {
 // sessionControl applies one owner control to a Work. The WorkAuthorizer
 // admits the requester by the Agent Owner rule on the Work's definition.
 type sessionControl struct {
-	sessions  domain.AgentWorkRepository
-	access    access.WorkAuthorizer
-	execution domain.ExecutionPort
+	sessions   domain.AgentWorkRepository
+	access     access.WorkAuthorizer
+	executions domain.AgentExecutionRepository
 }
 
-func (h sessionControl) apply(ctx context.Context, request WorkControl, change func(*domain.AgentWork, context.Context, string, domain.ExecutionPort) error) error {
+func (h sessionControl) apply(ctx context.Context, request WorkControl, change func(context.Context, *domain.AgentWork, string) error) error {
 	if err := h.access.AuthorizeWork(ctx, request.SubjectID, request.WorkID); err != nil {
 		return err
 	}
@@ -36,23 +36,27 @@ func (h sessionControl) apply(ctx context.Context, request WorkControl, change f
 	if request.ExpectedVersion != nil && *request.ExpectedVersion != session.Version {
 		return domain.ErrConcurrentModification
 	}
-	requests := deferExecution(h.execution)
-	if err := change(session, ctx, request.RequestID, requests); err != nil {
+	if err := change(ctx, session, request.RequestID); err != nil {
 		return err
 	}
-	if err := h.sessions.Save(ctx, session); err != nil {
-		return err
-	}
-	return requests.send(ctx)
+	return h.sessions.Save(ctx, session)
 }
 
 type StopWorkHandler struct{ control sessionControl }
 
-func NewStopWorkHandler(sessions domain.AgentWorkRepository, access access.WorkAuthorizer, execution domain.ExecutionPort) *StopWorkHandler {
-	return &StopWorkHandler{control: sessionControl{sessions: sessions, access: access, execution: execution}}
+func NewStopWorkHandler(sessions domain.AgentWorkRepository, access access.WorkAuthorizer, executions domain.AgentExecutionRepository) *StopWorkHandler {
+	return &StopWorkHandler{control: sessionControl{sessions: sessions, access: access, executions: executions}}
 }
+
+// Handle stops the Work, withdrawing a start that still waits for its Desk.
 func (h *StopWorkHandler) Handle(ctx context.Context, request WorkControl) error {
-	return h.control.apply(ctx, request, (*domain.AgentWork).Stop)
+	return h.control.apply(ctx, request, func(ctx context.Context, work *domain.AgentWork, requestID string) error {
+		queued, err := startQueued(ctx, h.control.executions, work)
+		if err != nil {
+			return err
+		}
+		return work.Stop(requestID, queued)
+	})
 }
 
 type DeliverWorkInput struct {

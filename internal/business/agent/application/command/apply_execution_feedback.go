@@ -19,15 +19,11 @@ const (
 	UserInteractionRequired ExecutionFeedbackKind = "user_interaction_required"
 	UserInteractionResolved ExecutionFeedbackKind = "user_interaction_resolved"
 	ExecutionExited         ExecutionFeedbackKind = "exited"
-	ComputeReclaimed        ExecutionFeedbackKind = "compute_reclaimed"
-	// EnvironmentLost is the authority's finding that the Work's current
-	// environment is permanently gone; its emitter vouches that it is current.
-	EnvironmentLost     ExecutionFeedbackKind = "environment_lost"
-	TurnStarted         ExecutionFeedbackKind = "turn_started"
-	TurnFinished        ExecutionFeedbackKind = "turn_finished"
-	InputSettled        ExecutionFeedbackKind = "input_settled"
-	WorkProgressUpdated ExecutionFeedbackKind = "work_progress_updated"
-	SubAgentsUpdated    ExecutionFeedbackKind = "subagents_updated"
+	TurnStarted             ExecutionFeedbackKind = "turn_started"
+	TurnFinished            ExecutionFeedbackKind = "turn_finished"
+	InputSettled            ExecutionFeedbackKind = "input_settled"
+	WorkProgressUpdated     ExecutionFeedbackKind = "work_progress_updated"
+	SubAgentsUpdated        ExecutionFeedbackKind = "subagents_updated"
 	// PermissionModeObserved is the permission mode the process reports it
 	// now applies.
 	PermissionModeObserved ExecutionFeedbackKind = "permission_mode_observed"
@@ -67,103 +63,53 @@ type ExecutionFeedback struct {
 	DetachedSince time.Time
 }
 
-// ProcessObservationPort supplies the environment authority's current
-// observation of the Work's Harness process, and records the acknowledgement
-// of an exit fact for the process it names.
-type ProcessObservationPort interface {
-	ObserveProcess(ctx context.Context, workID string) (WorkProcessObservation, error)
-	// IsCurrentProcess reports whether the process is the Work's current one.
-	IsCurrentProcess(ctx context.Context, workID, processID string) (bool, error)
-	// AcknowledgeExit records that the named process exited, reporting false
-	// when it is not the process of the Work's current allocation.
-	AcknowledgeExit(ctx context.Context, workID, processID string) (bool, error)
-}
-
 type ApplyExecutionFeedbackHandler struct {
 	buffer      RunningHarnessPort
 	settlements integrationmessage.Publisher
 	sessions    domain.AgentWorkRepository
-	processes   ProcessObservationPort
-	execution   domain.ExecutionPort
+	executions  domain.AgentExecutionRepository
+	reports     *ExecutionCoordination
 	now         func() time.Time
 }
 
-func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, processes ProcessObservationPort, execution domain.ExecutionPort, buffer RunningHarnessPort, settlements integrationmessage.Publisher) *ApplyExecutionFeedbackHandler {
-	return &ApplyExecutionFeedbackHandler{now: now, sessions: sessions, processes: processes, execution: execution, buffer: buffer, settlements: settlements}
+func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, executions domain.AgentExecutionRepository, reports *ExecutionCoordination, buffer RunningHarnessPort, settlements integrationmessage.Publisher) *ApplyExecutionFeedbackHandler {
+	return &ApplyExecutionFeedbackHandler{now: now, sessions: sessions, executions: executions, reports: reports, buffer: buffer, settlements: settlements}
 }
 
 func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback ExecutionFeedback) error {
 	if strings.TrimSpace(feedback.WorkID) == "" {
 		return domain.ErrInvalidWork
 	}
+	if feedback.Kind != ProcessObserved && strings.TrimSpace(feedback.ProcessID) == "" {
+		// Positions order one process's stream, and an exit fact names its
+		// process; feedback without one is no fact (feedback ordering).
+		return domain.ErrInvalidWork
+	}
+	execution, err := h.executions.Latest(ctx, feedback.WorkID)
+	if err != nil && !errors.Is(err, domain.ErrExecutionNotFound) {
+		return err
+	}
 	switch feedback.Kind {
-	case ProcessObserved, EnvironmentLost, ComputeReclaimed, ExecutionExited:
-	default:
-		// Positions order one process's stream; another process's late
-		// feedback must not shadow the current one's (feedback ordering).
-		if strings.TrimSpace(feedback.ProcessID) == "" {
-			return domain.ErrInvalidWork
+	case ExecutionExited:
+		return h.recordExit(ctx, execution, feedback)
+	case ExecutorPrepared, AgentStarted:
+		if !launched(execution, feedback.ProcessID) {
+			return nil
 		}
-		current, err := h.processes.IsCurrentProcess(ctx, feedback.WorkID, feedback.ProcessID)
-		if err != nil {
-			return err
-		}
-		if !current {
-			// An exiting process's input still settled in the buffer: its
-			// caller is told, though the Work's state follows the current one.
-			return h.reportSettlement(ctx, feedback)
-		}
+		return h.confirmReady(ctx, execution.ID, domain.ReadinessReport{Prepared: feedback.Kind == ExecutorPrepared, Started: feedback.Kind == AgentStarted})
+	case ProcessObserved:
+		return h.observeProcess(ctx, execution)
+	}
+	if !launched(execution, feedback.ProcessID) || execution.Retired() {
+		// An exiting process's input still settled in the buffer: its
+		// caller is told, though the Work's state follows the current one.
+		return h.reportSettlement(ctx, feedback)
 	}
 	session, err := h.sessions.Get(ctx, feedback.WorkID)
 	if err != nil {
 		return err
 	}
-	previousState := session.State
-	var previousProcess domain.HarnessProcess
-	if p := session.HarnessProcess; p != nil {
-		previousProcess = *p
-	}
-	var observation WorkProcessObservation
 	switch feedback.Kind {
-	case ExecutionExited:
-		if session.HarnessProcess == nil || session.HarnessProcess.ComputeReclaimed {
-			return nil
-		}
-		// An exit fact of another process changes nothing (Lifecycle observation).
-		current, err := h.processes.AcknowledgeExit(ctx, feedback.WorkID, feedback.ProcessID)
-		if err != nil || !current {
-			return err
-		}
-	case ComputeReclaimed, EnvironmentLost, ProcessObserved:
-		if session.HarnessProcess == nil || session.HarnessProcess.ComputeReclaimed {
-			return nil
-		}
-		if feedback.Kind == EnvironmentLost {
-			// The environment authority already found the live allocation's
-			// sandbox permanently absent; that is the observation. Observing a
-			// live allocation asks only Dispatcher, which can never
-			// report the loss of a sandbox it no longer reaches.
-			observation.ProcessObservation = domain.ProcessObservation{State: domain.ProcessEnvironmentLost, ComputeReclaimed: true}
-		} else {
-			// Retain the Work version before observing. Concurrent stop/resume makes
-			// Save reject this observation before any outbound resource request.
-			var err error
-			if observation, err = h.processes.ObserveProcess(ctx, feedback.WorkID); err != nil {
-				return err
-			}
-		}
-		observation.ObservedAt = h.now()
-	}
-	requests := deferExecution(h.execution)
-	switch feedback.Kind {
-	case ExecutorPrepared:
-		if err = session.ConfirmPrepared(ctx, h.now(), requests); err == nil {
-			err = h.recordIdleness(ctx, session)
-		}
-	case AgentStarted:
-		if err = session.ConfirmStarted(ctx, h.now(), requests); err == nil {
-			err = h.recordIdleness(ctx, session)
-		}
 	case UserInteractionRequired, UserInteractionResolved:
 		if feedback.Kind == UserInteractionResolved && strings.TrimSpace(feedback.InteractionID) == "" {
 			return domain.ErrInvalidWork
@@ -179,19 +125,6 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 		if err == nil && !required && feedback.Kind == UserInteractionResolved {
 			err = session.RecordIdleness(buffered.Pending(), h.now())
 		}
-	case ExecutionExited:
-		err = session.RecordExit(ctx, domain.HarnessExit{ExitCode: feedback.ExitCode, Reason: feedback.ExitReason}, requests)
-	case EnvironmentLost, ComputeReclaimed, ProcessObserved:
-		err = session.ReconcileProcess(ctx, observation.ProcessObservation, requests)
-		if err == nil && observation.State == domain.ProcessRunning {
-			err = h.reconcileNativePhase(ctx, session, observation)
-		}
-		if err == nil && observation.ComputeReclaimed {
-			err = session.ConfirmComputeReclaimed()
-		}
-		if err == nil && (observation.State == domain.ProcessRunning || observation.State == domain.ProcessPending) && session.State == previousState && session.HarnessProcess.Equal(previousProcess) {
-			return nil
-		}
 	case TurnStarted, TurnFinished:
 		var buffered BufferedInputs
 		buffered, err = h.buffer.ReadBuffer(ctx, session.ID)
@@ -201,7 +134,7 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 		if err == nil && feedback.Kind == TurnFinished {
 			// A stop, end or closure waiting for the Turn proceeds now
 			// (Stop between Turns).
-			_, err = session.RecoverExecution(ctx, requests)
+			_, err = session.RecoverExecution()
 		}
 	case WorkProgressUpdated:
 		err = session.RecordWorkProgress(feedback.ObservationSequence, feedback.WorkProgress, h.now())
@@ -220,7 +153,7 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 		}
 	case AttachmentLost, AttachmentReturned:
 		var changed bool
-		if changed, err = h.applyAttachment(ctx, session, feedback, requests); err == nil && !changed {
+		if changed, err = h.applyAttachment(session, feedback); err == nil && !changed {
 			return nil
 		}
 	default:
@@ -232,10 +165,78 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 	if err := h.sessions.Save(ctx, session); err != nil {
 		return err
 	}
-	if err := requests.send(ctx); err != nil {
+	return h.reportSettlement(ctx, feedback)
+}
+
+// launched reports whether the feedback names the execution's launched
+// process.
+func launched(execution *domain.AgentExecution, processID string) bool {
+	return execution != nil && processID != "" && execution.Process.ID == processID
+}
+
+// recordExit acknowledges an exit fact on the execution whose launched
+// process it names; its report reaches the Work once saved. A fact naming
+// another process changes nothing (Foreign exit), and either way it is
+// acknowledged, so Dispatcher stops redelivering it.
+func (h *ApplyExecutionFeedbackHandler) recordExit(ctx context.Context, execution *domain.AgentExecution, feedback ExecutionFeedback) error {
+	if !launched(execution, feedback.ProcessID) {
+		return nil
+	}
+	if _, changed := execution.RecordExit(feedback.ProcessID, domain.HarnessExit{ExitCode: feedback.ExitCode, Reason: feedback.ExitReason}); !changed {
+		return nil
+	}
+	if err := h.executions.Save(ctx, execution); err != nil {
 		return err
 	}
-	return h.reportSettlement(ctx, feedback)
+	return h.reports.ApplyExecutionReports(ctx, feedback.WorkID)
+}
+
+// confirmReady applies a readiness report to the execution; its ready report
+// reaches the Work once saved.
+func (h *ApplyExecutionFeedbackHandler) confirmReady(ctx context.Context, executionID string, report domain.ReadinessReport) error {
+	execution, err := h.executions.Get(ctx, executionID)
+	if err != nil {
+		return err
+	}
+	changed, err := execution.ConfirmReady(report, h.now())
+	if err != nil || !changed {
+		return err
+	}
+	if err := h.executions.Save(ctx, execution); err != nil {
+		return err
+	}
+	return h.reports.ApplyExecutionReports(ctx, execution.WorkID)
+}
+
+// observeProcess applies Dispatcher's current observation of the launched
+// process: its readiness to the execution, its Turn and required responses to
+// the Work, which restores the Work's phase after lost feedback.
+func (h *ApplyExecutionFeedbackHandler) observeProcess(ctx context.Context, execution *domain.AgentExecution) error {
+	if execution == nil || execution.Process.ID == "" || execution.Process.Exited || execution.Retired() {
+		return nil
+	}
+	observation, err := h.buffer.ObserveProcess(ctx, execution.WorkID, execution.Process.ID)
+	if err != nil || !observation.Running {
+		return err
+	}
+	if observation.Ready {
+		if err := h.confirmReady(ctx, execution.ID, domain.ReadinessReport{Prepared: true, Started: true}); err != nil {
+			return err
+		}
+	}
+	session, err := h.sessions.Get(ctx, execution.WorkID)
+	if err != nil {
+		return err
+	}
+	previousState := session.State
+	previousProcess := *session.HarnessProcess
+	if err := h.reconcileNativePhase(ctx, session, observation); err != nil {
+		return err
+	}
+	if session.State == previousState && session.HarnessProcess.Equal(previousProcess) {
+		return nil
+	}
+	return h.sessions.Save(ctx, session)
 }
 
 // applyAttachment records or ends a Cloud Work's Disconnection from
@@ -243,7 +244,7 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 // loss has lasted the Disconnection timeout. The report names the current
 // process, and a return ends only the loss it follows, never a later one. A
 // Managed Work's Disconnection follows its Computer's Presence instead.
-func (h *ApplyExecutionFeedbackHandler) applyAttachment(ctx context.Context, session *domain.AgentWork, feedback ExecutionFeedback, requests *deferredExecution) (bool, error) {
+func (h *ApplyExecutionFeedbackHandler) applyAttachment(session *domain.AgentWork, feedback ExecutionFeedback) (bool, error) {
 	if session.OnManagedComputer() {
 		return false, nil
 	}
@@ -259,8 +260,8 @@ func (h *ApplyExecutionFeedbackHandler) applyAttachment(ctx context.Context, ses
 	}
 	// A Cloud Work stops beyond reach into Stopping, and no reconnection
 	// owes it a Resume.
-	stopped, err := session.StopBeyondReach(ctx, h.now(), false, requests)
-	return recorded || stopped, err
+	stopped := session.StopBeyondReach(h.now(), false)
+	return recorded || stopped, nil
 }
 
 // reportSettlement tells the input's caller that it settled, for settlement

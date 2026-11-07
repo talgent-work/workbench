@@ -12,11 +12,10 @@ type RecoverInitialExecutionHandler struct {
 	sessions    domain.AgentWorkRepository
 	preparation *PrepareWorkExecutionHandler
 	inputs      WorkInputs
-	execution   domain.ExecutionPort
 }
 
-func NewRecoverInitialExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, preparation *PrepareWorkExecutionHandler, inputs WorkInputs, execution domain.ExecutionPort) *RecoverInitialExecutionHandler {
-	return &RecoverInitialExecutionHandler{requests: requests, sessions: sessions, preparation: preparation, inputs: inputs, execution: execution}
+func NewRecoverInitialExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, preparation *PrepareWorkExecutionHandler, inputs WorkInputs) *RecoverInitialExecutionHandler {
+	return &RecoverInitialExecutionHandler{requests: requests, sessions: sessions, preparation: preparation, inputs: inputs}
 }
 
 func (h *RecoverInitialExecutionHandler) Handle(ctx context.Context, sessionID string) (result error) {
@@ -100,20 +99,13 @@ func (h *RecoverInitialExecutionHandler) finishRejected(ctx context.Context, req
 		return domain.ErrConcurrentModification
 	}
 	if session.HoldsProcess() {
-		requests := deferExecution(h.execution)
-		if session.State == domain.WorkStopping {
-			_, err = session.RecoverExecution(ctx, requests)
-		} else {
-			err = session.RequestExecutionEnd(ctx, request.RequestID, requests)
-		}
-		if err != nil {
-			return err
-		}
-		if err := h.sessions.Save(ctx, session); err != nil {
-			return err
-		}
-		if err := requests.send(ctx); err != nil {
-			return err
+		if session.State != domain.WorkStopping {
+			if err := session.RequestExecutionEnd(request.RequestID); err != nil {
+				return err
+			}
+			if err := h.sessions.Save(ctx, session); err != nil {
+				return err
+			}
 		}
 	}
 	latest.RejectionApplied = true

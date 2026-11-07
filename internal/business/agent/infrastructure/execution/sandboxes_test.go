@@ -49,18 +49,18 @@ func config() SandboxConfig {
 		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("1Gi")},
 	}}
 }
-func request() domain.StartExecutionRequest {
-	return domain.StartExecutionRequest{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "session", Capabilities: domain.CapabilitySnapshot{Prompt: "fixed prompt\n", Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, HarnessSessionReference: "context", ContextMode: domain.ContextContinue, WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}}
+func request() domain.LaunchSpecification {
+	return domain.LaunchSpecification{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "session", Capabilities: domain.CapabilitySnapshot{Prompt: "fixed prompt\n", Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, HarnessSessionReference: "context", ContextMode: domain.ContextContinue, WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}}
 }
 
 const fixtureAllocationID = "01900000-0000-7000-8000-000000000001"
 
-func owner(r domain.StartExecutionRequest) Allocation {
+func owner(r domain.LaunchSpecification) Allocation {
 	return Allocation{WorkID: r.WorkID, ID: fixtureAllocationID}
 }
 
 // submit allocates the fixture sandbox for the request's live allocation.
-func (s *Sandboxes) submitRequest(ctx context.Context, r domain.StartExecutionRequest, token string) (string, error) {
+func (s *Sandboxes) submitRequest(ctx context.Context, r domain.LaunchSpecification, token string) (string, error) {
 	spec, err := s.specification(ctx, r, testMounts, owner(r), token, "work-credential-fixture")
 	if err != nil {
 		return "", err
@@ -68,12 +68,18 @@ func (s *Sandboxes) submitRequest(ctx context.Context, r domain.StartExecutionRe
 	return s.submit(ctx, owner(r), spec)
 }
 
-func (s *Sandboxes) lookupRequest(ctx context.Context, r domain.StartExecutionRequest, token string) (string, error) {
+// ownedRequest lists the sandboxes carrying the request's ownership.
+func (s *Sandboxes) ownedRequest(ctx context.Context, r domain.LaunchSpecification, token string) ([]string, error) {
 	spec, err := s.specification(ctx, r, testMounts, owner(r), token, "work-credential-fixture")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return s.lookup(ctx, owner(r), spec)
+	owned, err := s.owned(ctx, owner(r), spec)
+	ids := make([]string, 0, len(owned))
+	for _, info := range owned {
+		ids = append(ids, info.ID)
+	}
+	return ids, err
 }
 
 type lifecycleFixture struct {
@@ -286,25 +292,29 @@ func TestNativeSandboxSubmissionRetainsHomeAndWorkspaceWithoutExecutor(t *testin
 	require.NotEqual(t, projectDirectory, fixture.create.Env["CLAUDE_CODE_PROJECT_DIR_NAME"])
 }
 
-func TestSandboxLookupRejectsChangedSpecAndDuplicateAcrossPages(t *testing.T) {
+// Observation lists only the sandboxes carrying the execution's exact
+// ownership, each once, however the server pages them.
+func TestSandboxOwnershipListingOmitsOtherSpecificationsAndDuplicates(t *testing.T) {
 	provider, _, fixture := sandboxClient(t)
 	input := request()
 	_, err := provider.submitRequest(context.Background(), input, "execd-secret")
 	require.NoError(t, err)
-	id, err := provider.lookupRequest(context.Background(), input, "execd-secret")
+	ids, err := provider.ownedRequest(context.Background(), input, "execd-secret")
 	require.NoError(t, err)
-	require.Equal(t, sandboxID, id)
+	require.Equal(t, []string{sandboxID}, ids)
 	changed := input
 	changed.Capabilities.Prompt = "changed"
-	_, err = provider.lookupRequest(context.Background(), changed, "execd-secret")
-	require.ErrorIs(t, err, errEnvironmentConflict)
+	ids, err = provider.ownedRequest(context.Background(), changed, "execd-secret")
+	require.NoError(t, err)
+	require.Empty(t, ids, "a sandbox of another specification is not the execution's")
 	fixture.pages = [][]sdk.SandboxInfo{{*fixture.info}, {*fixture.info}}
-	_, err = provider.lookupRequest(context.Background(), input, "execd-secret")
-	require.ErrorIs(t, err, errEnvironmentConflict)
-	require.Equal(t, 1, fixture.creates, "lookup must never allocate")
+	ids, err = provider.ownedRequest(context.Background(), input, "execd-secret")
+	require.NoError(t, err)
+	require.Equal(t, []string{sandboxID}, ids, "a sandbox listed on two pages is one environment")
+	require.Equal(t, 1, fixture.creates, "observation must never allocate")
 }
 
-func TestSandboxSurplusCleanupRechecksImmutableOwnershipBeforeDelete(t *testing.T) {
+func TestSandboxDeletionRechecksImmutableOwnershipBeforeDelete(t *testing.T) {
 	provider, _, fixture := sandboxClient(t)
 	input := request()
 	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "execd-secret", "work-credential-fixture")
@@ -312,11 +322,13 @@ func TestSandboxSurplusCleanupRechecksImmutableOwnershipBeforeDelete(t *testing.
 	fixture.pages = [][]sdk.SandboxInfo{{{ID: sandboxID, Metadata: spec.Metadata}}}
 	other := Allocation{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
 	fixture.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: correlation(other)}
-	require.ErrorIs(t, provider.prune(context.Background(), owner(input), spec, "", fixtureSandboxCredentials(nil, provider)), errEnvironmentConflict)
-	require.Zero(t, fixture.deletes, "a stale list cannot authorize deleting another allocation")
+	_, err = provider.Delete(context.Background(), owner(input), spec, sandboxID, fixtureSandboxCredentials(nil, provider))
+	require.ErrorIs(t, err, errEnvironmentConflict)
+	require.Zero(t, fixture.deletes, "a stale list cannot authorize deleting another execution's sandbox")
 	fixture.info.Metadata = correlation(owner(input))
 	fixture.info.Metadata[sandboxSpecLabel] = "changed-specification"
-	require.ErrorIs(t, provider.prune(context.Background(), owner(input), spec, "", fixtureSandboxCredentials(nil, provider)), errEnvironmentConflict)
+	_, err = provider.Delete(context.Background(), owner(input), spec, sandboxID, fixtureSandboxCredentials(nil, provider))
+	require.ErrorIs(t, err, errEnvironmentConflict)
 	require.Zero(t, fixture.deletes, "correlation without the immutable specification is insufficient")
 }
 

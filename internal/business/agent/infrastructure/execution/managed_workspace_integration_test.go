@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // managedInputsRefresh is how long synced inputs stay current here.
@@ -45,7 +45,7 @@ func lastManifest(t *testing.T, relay *machineRelay) []manifestFile {
 // Storage's report of a change in that File Space marks its inputs due on
 // their own, never its credentials, and their own step syncs them; a change
 // in any other space leaves it alone. A failing sync never fails the start:
-// the inputs stay due for the recovery sweep.
+// the inputs stay due for the next reconciliation.
 func TestManagedWorkReceivesItsCurrentInputs(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
@@ -55,54 +55,48 @@ func TestManagedWorkReceivesItsCurrentInputs(t *testing.T) {
 	f.inputs.attachments = map[string][]InputAttachment{owner: {{Name: "brief.pdf", SizeBytes: 1024, UpdatedAt: updated, AccessPath: "/v1/storage/content?grant=first"}}}
 
 	input := withInputs(managedRequest())
-	require.NoError(t, f.port.StartExecution(ctx, input))
-	require.NoError(t, submitPending(ctx, f.provisioning))
-	require.NoError(t, connectLive(ctx, f.connections))
+	record := f.launch(t, f.begin(t, input).ID)
 	require.Equal(t, []manifestFile{{Name: "brief.pdf", Size: 1024, UpdatedAt: "2026-11-02T10:00:00Z", URL: managedContentAddress + "?grant=first"}}, lastManifest(t, f.relay))
 	require.True(t, f.relay.afterDelivery[0], "the machine downloads with the Work credential delivered first")
 	require.Positive(t, f.inputs.bound)
-	require.LessOrEqual(t, f.inputs.bound, firstInputsSyncBound, "the first sync never holds up the start for long")
+	require.LessOrEqual(t, f.inputs.bound, reconciliationAttemptTimeout, "a sync never holds up the start for long")
 	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, owner, record.InputOwner)
 	require.Zero(t, record.InputsDue)
+	require.Positive(t, record.InputsSyncedAt)
 
-	unrelated, err := f.recovery.MarkInputsChanged(ctx, "case-other")
-	require.NoError(t, err)
-	require.Empty(t, unrelated)
+	require.Empty(t, f.markInputsChanged(t, "case-other"))
 
 	f.inputs.attachments[owner] = append(f.inputs.attachments[owner], InputAttachment{Name: "data.csv", SizeBytes: 3, UpdatedAt: updated, AccessPath: "/v1/storage/content?grant=second"})
-	due, err := f.recovery.MarkInputsChanged(ctx, owner)
-	require.NoError(t, err)
-	require.Equal(t, []string{record.ID}, due)
+	require.Equal(t, []string{record.ID}, f.markInputsChanged(t, owner))
 	marked, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, marked.InputsDue, "the change stays due until it is synced")
 	require.Equal(t, record.CredentialsExpireAt, marked.CredentialsExpireAt, "the credentials are not due")
-	require.Equal(t, record.Version, marked.Version, "a mark never conflicts with the allocation's other steps")
 	// Dispatcher reads the Work's process, so nothing else is missing.
-	f.recovery.owners = &readingProcess{reading: StreamReading{ProcessID: marked.ProcessID}}
-	step, err := f.recovery.missingStep(ctx, marked)
-	require.NoError(t, err)
-	require.Equal(t, command.AllocationSyncInputs, step, "the sweep finds the due inputs")
+	f.owners.reading = StreamReading{ProcessID: marked.ProcessID}
+	require.Equal(t, []domain.ExecutionStepKind{domain.StepSyncInputs}, f.decided(t, record.ID), "the due inputs are found")
 
-	// The machine is away: the inputs stay due for the sweep.
+	// The machine is away: the inputs stay due.
 	f.relay.set(func(m *machineRelay) { m.unreachable = true })
-	require.Error(t, f.recovery.SyncInputs(ctx, record.ID))
+	require.Error(t, f.steps.handler.SyncInputs(ctx, record.ID))
 	f.relay.set(func(m *machineRelay) { m.unreachable = false })
-	require.NoError(t, f.recovery.SyncInputs(ctx, record.ID))
+	require.NoError(t, f.steps.handler.SyncInputs(ctx, record.ID))
 	require.Len(t, lastManifest(t, f.relay), 2)
 	synced, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.Zero(t, synced.InputsDue)
 	deliveries := f.relay.deliveries
-	require.NoError(t, f.recovery.SyncInputs(ctx, record.ID), "nothing is due")
+	manifests := len(f.relay.manifests)
+	require.NoError(t, f.steps.handler.SyncInputs(ctx, record.ID), "nothing is due")
+	require.Equal(t, manifests, len(f.relay.manifests), "nothing is synced again")
 	require.Equal(t, deliveries, f.relay.deliveries, "a sync delivers no credentials")
 }
 
 // Synced inputs are synced again once they are older than the refresh
-// interval, with fresh Access Links, though nothing changed: the sweep marks
-// them due and syncs them. Fresh ones are left alone.
+// interval, with fresh Access Links, though nothing changed. Fresh ones are
+// left alone.
 func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
@@ -110,39 +104,26 @@ func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 	f.inputs.owners = map[string]string{"file-space/case-1": owner}
 	f.inputs.attachments = map[string][]InputAttachment{owner: {{Name: "brief.pdf", SizeBytes: 1, UpdatedAt: time.Now(), AccessPath: "/v1/storage/content?grant=first"}}}
 	input := withInputs(managedRequest())
-	require.NoError(t, f.port.StartExecution(ctx, input))
-	require.NoError(t, submitPending(ctx, f.provisioning))
-	require.NoError(t, connectLive(ctx, f.connections))
+	synced := f.launch(t, f.begin(t, input).ID)
 	synced, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.Positive(t, synced.InputsSyncedAt, "a sync records when it happened")
 	require.Zero(t, synced.InputsDue)
-	f.recovery.owners = &readingProcess{reading: StreamReading{ProcessID: synced.ProcessID}}
-	step := func() command.AllocationStep {
-		statuses, err := f.recovery.ListOutstandingAllocations(ctx, "", 100)
-		require.NoError(t, err)
-		for _, status := range statuses {
-			if status.AllocationID == synced.ID {
-				return status.Step
-			}
-		}
-		t.Fatalf("allocation %s not listed", synced.ID)
-		return 0
-	}
-	require.Equal(t, command.AllocationSettled, step(), "fresh inputs need nothing")
+	f.owners.reading = StreamReading{ProcessID: synced.ProcessID}
+	require.Empty(t, f.decided(t, synced.ID), "fresh inputs need nothing")
 
 	stale := time.Now().Add(-managedInputsRefresh - time.Minute).UnixMilli()
-	_, err = f.db.Exec(`UPDATE execution_allocation SET inputs_synced_at = ? WHERE id = ?`, stale, synced.ID)
+	_, err = f.db.Exec(`UPDATE execution_allocation SET inputs_synced_at = ?, version = version + 1 WHERE id = ?`, stale, synced.ID)
 	require.NoError(t, err)
 	f.inputs.attachments[owner][0].AccessPath = "/v1/storage/content?grant=second"
-	require.Equal(t, command.AllocationSyncInputs, step(), "the sweep syncs inputs older than the refresh interval")
-	require.NoError(t, f.recovery.SyncInputs(ctx, synced.ID))
+	require.Equal(t, []domain.ExecutionStepKind{domain.StepSyncInputs}, f.decided(t, synced.ID), "inputs older than the refresh interval are synced")
+	require.NoError(t, f.steps.handler.SyncInputs(ctx, synced.ID))
 	require.Equal(t, managedContentAddress+"?grant=second", lastManifest(t, f.relay)[0].URL)
 	refreshed, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.Zero(t, refreshed.InputsDue)
 	require.Greater(t, refreshed.InputsSyncedAt, stale)
-	require.Equal(t, command.AllocationSettled, step())
+	require.Empty(t, f.decided(t, synced.ID))
 }
 
 // A start whose inputs cannot be listed still becomes ready: its inputs stay
@@ -152,24 +133,21 @@ func TestAFailingInputsSyncLeavesTheStartReady(t *testing.T) {
 	f := newManagedWork(t)
 	f.inputs.err = errors.New("storage unavailable")
 	input := withInputs(managedRequest())
-	require.NoError(t, f.port.StartExecution(ctx, input))
-	require.NoError(t, submitPending(ctx, f.provisioning))
-	require.NoError(t, connectLive(ctx, f.connections))
-	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
-	require.NoError(t, err)
+	record := f.launch(t, f.begin(t, input).ID)
 	require.True(t, record.SandboxReady, "the inputs are not a Required Startup Step")
-	require.EqualValues(t, 1, record.InputsDue)
+	require.Zero(t, record.InputsSyncedAt, "the inputs stay due")
 	require.Empty(t, f.relay.manifests)
 
 	f.inputs.err = nil
 	owner := "case-" + uuid.NewString()
 	f.inputs.owners = map[string]string{"file-space/case-1": owner}
-	require.NoError(t, f.recovery.SyncInputs(ctx, record.ID))
+	require.NoError(t, f.steps.handler.SyncInputs(ctx, record.ID))
 	require.Empty(t, lastManifest(t, f.relay))
 	synced, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, owner, synced.InputOwner)
 	require.Zero(t, synced.InputsDue)
+	require.Positive(t, synced.InputsSyncedAt)
 }
 
 // cloudViews stands for Storage's Workspace View of a Cloud Work.
@@ -200,9 +178,7 @@ func TestManagedWorkspaceIsReadThroughTheRelay(t *testing.T) {
 	f := newManagedWork(t)
 	f.relay.set(func(m *machineRelay) { m.files = map[string]string{"notes.md": "# notes\n"} })
 	input := managedRequest()
-	require.NoError(t, f.port.StartExecution(ctx, input))
-	require.NoError(t, submitPending(ctx, f.provisioning))
-	require.NoError(t, connectLive(ctx, f.connections))
+	f.launch(t, f.begin(t, input).ID)
 
 	links, err := NewWorkspaceFileLinks("/api/v1/agent/workspace-files", "computer-control", time.Now)
 	require.NoError(t, err)

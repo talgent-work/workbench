@@ -19,9 +19,10 @@ type pluginInstallationResult struct {
 	Reason    string `json:"reason"`
 }
 
-// Discard only the fixed preparation handle while the Work is draining. This
-// does not establish Harness exit or successful plugin preparation. If the
-// commit is lost, recovery repeats deletion of the same handle before clearing it.
+// discardPluginPreparation terminates and forgets an unfinished preparation
+// once the Work asked its process to exit. This does not establish Harness
+// exit or successful plugin preparation. If the record is lost, the next
+// withdrawal repeats deletion of the same handle before clearing it.
 func (n *NativeConnections) discardPluginPreparation(ctx context.Context, record *allocationRecord, client *execd.Client) error {
 	if record.PreparationProcessID == "" || record.EnvironmentPrepared {
 		return nil
@@ -31,11 +32,10 @@ func (n *NativeConnections) discardPluginPreparation(ctx context.Context, record
 	if err := client.Terminate(ctx, record.PreparationProcessID); err != nil {
 		return err
 	}
-	if err := n.update(ctx, *record, "preparation_process_id = ''"); err != nil {
+	if err := n.provisioning.technical(ctx, *record, "preparation_process_id = ''"); err != nil {
 		return err
 	}
 	record.PreparationProcessID = ""
-	record.Version++
 	return nil
 }
 
@@ -58,11 +58,10 @@ func (n *NativeConnections) startPreparation(ctx context.Context, record *alloca
 	if err != nil {
 		return err
 	}
-	if err := n.update(ctx, *record, "preparation_process_id = ?, checkout_plan = ?", id, encoded); err != nil {
+	if err := n.provisioning.technical(ctx, *record, "preparation_process_id = ?, checkout_plan = ?", id, encoded); err != nil {
 		return err
 	}
 	record.PreparationProcessID, record.CheckoutPlan = id, encoded
-	record.Version++
 	return nil
 }
 
@@ -70,8 +69,9 @@ func (n *NativeConnections) startPreparation(ctx context.Context, record *alloca
 // which installs Plugins and then checks out the planned repositories before
 // the Harness starts, and waits for its exit until ctx ends. An
 // interrupted wait detaches only; the retained handle is reattached from
-// offset zero. Outcomes are recorded before preparation counts as finished,
-// so a ready Harness always follows recorded checkout outcomes.
+// offset zero. Outcomes are recorded before it returns, and only then does
+// the execution record its preparation ended, so a ready Harness always
+// follows recorded checkout outcomes.
 func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *allocationRecord, client *execd.Client, snapshot domain.CapabilitySnapshot) error {
 	if record.EnvironmentPrepared {
 		return nil
@@ -117,21 +117,15 @@ func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *allo
 					return err
 				}
 			}
-			// The wait may outlast other writes to the allocation; finishing
-			// applies to the same preparation process at its current version.
-			current, err := n.current(ctx, *record)
+			// The wait may outlast other steps; it ended the preparation process
+			// still recorded for the execution.
+			current, found, err := n.provisioning.get(ctx, record.ID)
 			if err != nil {
 				return err
 			}
-			if current.PreparationProcessID != record.PreparationProcessID {
+			if !found || current.PreparationProcessID != record.PreparationProcessID {
 				return errEnvironmentConflict
 			}
-			if err := n.update(ctx, current, "plugins_prepared = 1"); err != nil {
-				return err
-			}
-			*record = current
-			record.EnvironmentPrepared = true
-			record.Version++
 			return nil
 		}
 	}

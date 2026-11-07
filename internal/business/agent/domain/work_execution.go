@@ -1,24 +1,23 @@
 package domain
 
 import (
-	"context"
 	"maps"
 	"slices"
 	"time"
 )
 
-func (s *AgentWork) Resume(ctx context.Context, admission StartAdmission, port ExecutionPort) error {
+func (s *AgentWork) Resume(admission StartAdmission) error {
 	if err := s.AdmitResume(); err != nil {
 		return err
 	}
-	return s.begin(ctx, admission, ContextContinue, port)
+	return s.begin(admission, ContextContinue)
 }
 
-func (s *AgentWork) Restart(ctx context.Context, admission StartAdmission, port ExecutionPort) error {
+func (s *AgentWork) Restart(admission StartAdmission) error {
 	if err := s.AdmitRestart(); err != nil {
 		return err
 	}
-	return s.begin(ctx, admission, ContextRecover, port)
+	return s.begin(admission, ContextRecover)
 }
 
 // AdmitResume reports whether a Resume may begin now, so its Computer is
@@ -45,8 +44,8 @@ func (s *AgentWork) admitNewRun() error {
 	return nil
 }
 
-func (s *AgentWork) begin(ctx context.Context, admission StartAdmission, mode ContextMode, port ExecutionPort) error {
-	if err := validateStartAdmission(s.AgentID, s.WorkModel, admission, port); err != nil {
+func (s *AgentWork) begin(admission StartAdmission, mode ContextMode) error {
+	if err := validateStartAdmission(s.AgentID, s.WorkModel, admission); err != nil {
 		return err
 	}
 	// A Work stays on its Computer: every run is admitted there.
@@ -73,19 +72,30 @@ func (s *AgentWork) begin(ctx context.Context, admission StartAdmission, mode Co
 	s.StopReason = ""
 	s.ReachResumeDue = false
 	s.State = WorkStarting
-	// A start waiting for its Desk is started once it is seated.
-	if s.HarnessProcess.DeskWaiting {
-		return nil
-	}
-	return executionRequestError(s.startExecution(ctx, port))
+	s.admitStart()
+	return nil
 }
 
-func (s *AgentWork) executionRequest() StartExecutionRequest {
-	return StartExecutionRequest{
+// admitStart records the admitted start, whose AgentExecution begins with
+// its Desk (Begin execution).
+func (s *AgentWork) admitStart() {
+	s.record(s.startIntent())
+}
+
+func (s *AgentWork) startIntent() WorkStartAdmitted {
+	p := s.HarnessProcess
+	return WorkStartAdmitted{WorkID: s.ID, StartAdmittedAt: p.StartingSince, DeskID: p.DeskID, Waiting: p.DeskWaiting}
+}
+
+// LaunchSpecification is what the current start's run launches with, taken
+// from the Work: its context, capabilities, bindings, the Soul it took up
+// and the repositories it selected.
+func (s *AgentWork) LaunchSpecification() LaunchSpecification {
+	return LaunchSpecification{
 		RepositorySelection:    s.RepositorySelection.Clone(),
 		AuthorizationSelection: s.AuthorizationSelection.Clone(),
 		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, ProjectID: s.ProjectID, Capabilities: s.CapabilitySnapshot.Clone(),
-		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, PreparationBound: s.HarnessProcess.degradableStepBound(preparationFollowingSteps), WorkspaceReference: s.WorkspaceReference, InputSource: s.InputSource, ReadOnlyMounts: slices.Clone(s.ReadOnlyMounts),
+		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, WorkspaceReference: s.WorkspaceReference, InputSource: s.InputSource, ReadOnlyMounts: slices.Clone(s.ReadOnlyMounts),
 		HomeBinding: s.HomeBinding, TraceAttributes: s.executionTraceAttributes(), StartingContext: s.StartingContext.clone(),
 	}
 }
@@ -110,117 +120,107 @@ func (s *AgentWork) executionTraceAttributes() map[string]string {
 	return attributes
 }
 
-// RecoverExecution advances retained execution obligations without new admission
-// or context selection. Its result indicates a Domain state change to persist.
-func (s *AgentWork) RecoverExecution(ctx context.Context, port ExecutionPort) (bool, error) {
+// RecoverExecution advances a retained end without new admission or context
+// selection: an end that waited for its Turn stops the process once the Turn
+// ended, and a Failed start's end asks its process to exit. Its result
+// indicates a Domain state change to persist.
+func (s *AgentWork) RecoverExecution() (bool, error) {
 	p := s.HarnessProcess
-	if p == nil || p.ComputeReclaimed {
+	if p == nil || p.ComputeReclaimed || s.EndRequestReference == "" {
 		return false, nil
 	}
-	if port == nil {
-		return false, ErrInvalidWork
-	}
-	if s.processing() && s.EndRequestReference != "" {
+	if s.processing() {
 		if p.Turn.Active {
 			return false, nil
 		}
-		return true, s.stop(ctx, s.EndRequestReference, StopReasonCompleted, port)
+		return true, s.stop(s.EndRequestReference, StopReasonCompleted)
 	}
-	if s.State == WorkFailed && !p.ended() && s.EndRequestReference != "" && s.StopRequestReference == "" {
-		return true, s.RequestExecutionEnd(ctx, s.EndRequestReference, port)
+	if s.State == WorkFailed && !p.ended() && s.StopRequestReference == "" {
+		return true, s.RequestExecutionEnd(s.EndRequestReference)
 	}
-	if s.State == WorkStarting {
-		if p.DeskWaiting {
-			return false, nil
-		}
-		return false, executionRequestError(s.startExecution(ctx, port))
-	}
-	if s.State != WorkStopping && s.State != WorkClosing && s.State != WorkFailed {
-		return false, nil
-	}
-	if p.ended() || p.Unreached {
-		return false, executionRequestError(port.ReclaimCompute(ctx, s.ID))
-	}
-	if s.StopRequestReference == "" {
-		return false, nil
-	}
-	// A close can race the first outbound start. Complete delivery of that
-	// already admitted start so its process can be asked to exit.
-	if !p.Prepared {
-		if err := s.startExecution(ctx, port); err != nil {
-			return false, executionRequestError(err)
-		}
-	}
-	// A waiting timeout ended the Turn a Required Response held open; the
-	// cancellation is repeated until the stop it waits for succeeds.
-	if s.State == WorkStopping && s.StopReason == StopReasonWaitingTimeout && p.Turn.Active {
-		if err := port.CancelRunningTurn(ctx, s.ID); err != nil {
-			return false, executionRequestError(err)
-		}
-	}
-	return false, executionRequestError(port.StopExecution(ctx, s.ID, s.StopRequestReference))
+	return false, nil
 }
 
-// ConfirmPrepared applies supplied preparation feedback for the current process
-// at the supplied current time. Feedback after the start's Startup Deadline
-// does not complete the start; the Work fails instead.
-func (s *AgentWork) ConfirmPrepared(ctx context.Context, now time.Time, port ExecutionPort) error {
+// Intents rebuilds, from its facts, the intents its current start still
+// holds for its AgentExecution, so one whose event was lost is passed again
+// (Begin execution, Request process exit, Retire execution).
+func (s *AgentWork) Intents() []Event {
 	p := s.HarnessProcess
-	// An abandoned start's environment is being released; a late report
-	// cannot revive it.
-	if p == nil || p.Prepared || p.StartAbandoned {
+	if p == nil {
 		return nil
 	}
-	if s.State != WorkStarting && !s.processing() && s.State != WorkStopping && s.State != WorkClosing && s.State != WorkFailed {
-		return nil
+	var intents []Event
+	if !p.StartWithdrawn && !p.ComputeReclaimed {
+		intents = append(intents, s.startIntent())
 	}
-	if failed, err := s.failLateCompletion(ctx, now, port); failed || err != nil {
-		return err
+	if stop, ok := s.stopIntent(); ok {
+		intents = append(intents, stop)
 	}
-	p.Prepared = true
-	s.confirmReadiness()
-	return nil
+	if release, ok := s.releaseIntent(); ok {
+		intents = append(intents, release)
+	}
+	return intents
 }
 
-// ConfirmStarted applies supplied Agent startup feedback for the current process
-// at the supplied current time, under the same Startup Deadline as preparation.
-func (s *AgentWork) ConfirmStarted(ctx context.Context, now time.Time, port ExecutionPort) error {
+// stopIntent is the request that the current start's process exit, held
+// while a stop is admitted and the process has not ended.
+func (s *AgentWork) stopIntent() (WorkStopRequested, bool) {
 	p := s.HarnessProcess
-	if p == nil || p.Started || p.StartAbandoned {
-		return nil
+	if s.StopRequestReference == "" || p.ended() || p.EnvironmentLost || p.Unreached {
+		return WorkStopRequested{}, false
 	}
-	if s.State != WorkStarting && !s.processing() && s.State != WorkStopping && s.State != WorkClosing && s.State != WorkFailed {
-		return nil
+	switch s.State {
+	case WorkStopping, WorkFailed, WorkClosing:
+	default:
+		return WorkStopRequested{}, false
 	}
-	if failed, err := s.failLateCompletion(ctx, now, port); failed || err != nil {
-		return err
-	}
-	p.Started = true
-	s.confirmReadiness()
-	return nil
+	cancel := s.StopReason == StopReasonWaitingTimeout && p.Turn.Active
+	return WorkStopRequested{WorkID: s.ID, StartAdmittedAt: p.StartingSince, StopRequestID: s.StopRequestReference, CancelWaitingTurn: cancel}, true
 }
 
-// failLateCompletion keeps a completion reported after the Startup Deadline
-// from completing a start that is still Starting. The failure is decided before
-// the late fact is applied, so its reason names the earliest step incomplete
-// at the deadline.
-func (s *AgentWork) failLateCompletion(ctx context.Context, now time.Time, port ExecutionPort) (bool, error) {
-	if s.State != WorkStarting {
-		return false, nil
+// releaseIntent is the request that the current start's execution retire,
+// held once the Work's execution ended.
+func (s *AgentWork) releaseIntent() (WorkComputeReleaseRequested, bool) {
+	p := s.HarnessProcess
+	var cause RetirementCause
+	switch {
+	case p.StartWithdrawn:
+		cause = RetiredWithdrawn
+	case p.StartRejected:
+		cause = RetiredByRejection
+	case p.StartAbandoned:
+		cause = RetiredByAbandonment
+	case p.EnvironmentLost:
+		cause = RetiredByLoss
+	case p.Fenced:
+		cause = RetiredFenced
+	case p.Exited:
+		cause = RetiredByExit
+	case p.Unreached:
+		cause = RetiredUnreached
+	default:
+		return WorkComputeReleaseRequested{}, false
 	}
-	if now.IsZero() {
-		return false, ErrInvalidWork
-	}
-	return s.FailAtStartupDeadline(ctx, now, port)
+	return WorkComputeReleaseRequested{WorkID: s.ID, StartAdmittedAt: p.StartingSince, Cause: cause}, true
 }
 
-func (s *AgentWork) confirmReadiness() {
-	if s.State == WorkStarting && s.HarnessProcess.Prepared && s.HarnessProcess.Started {
-		s.State = WorkWorking
+// requestComputeRelease records that the current start's execution ended, so
+// its AgentExecution retires (Retire execution).
+func (s *AgentWork) requestComputeRelease() {
+	if release, ok := s.releaseIntent(); ok {
+		s.record(release)
 	}
 }
 
-func validateStartAdmission(agentID string, model WorkModelSelection, admission StartAdmission, port ExecutionPort) error {
+// requestStop records the admitted stop's request that the process exit
+// (Request process exit).
+func (s *AgentWork) requestStop() {
+	if stop, ok := s.stopIntent(); ok {
+		s.record(stop)
+	}
+}
+
+func validateStartAdmission(agentID string, model WorkModelSelection, admission StartAdmission) error {
 	if !model.Available(admission.ModelConfigurationProvided) {
 		return ErrModelConfigurationWithdrawn
 	}
@@ -230,15 +230,8 @@ func validateStartAdmission(agentID string, model WorkModelSelection, admission 
 	if !admission.Seat.admitted() {
 		return ErrCapacityUnavailable
 	}
-	if admission.AdmittedAt.IsZero() || port == nil {
+	if admission.AdmittedAt.IsZero() {
 		return ErrInvalidWork
 	}
 	return nil
-}
-
-func (s *AgentWork) startExecution(ctx context.Context, port ExecutionPort) error {
-	if err := s.CapabilitySnapshot.Validate(); err != nil {
-		return err
-	}
-	return port.StartExecution(ctx, s.executionRequest())
 }

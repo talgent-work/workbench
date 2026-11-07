@@ -3,7 +3,7 @@
 package execution
 
 import (
-	"os"
+	"net/http"
 	"testing"
 	"time"
 
@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -27,39 +26,34 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	initial := infrastructure.NewInitialExecutionRequests(db, time.Now)
 	provider, _, external := sandboxClient(t)
 	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, initial, nil)
-	dispatcher := NewDispatcherControl(nil, "http://unused.invalid", "unused")
-	observations, err := NewProcessObservations(p, dispatcher)
+	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(initial))
 	require.NoError(t, err)
-	root, err := os.OpenRoot(t.TempDir())
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = root.Close() })
-	resources, err := NewEnvironments(p, observations)
-	require.NoError(t, err)
-	// Domain delivery is buffered; direct provisioning below exercises the
-	// registration boundary without requiring native UID ownership in this test.
-	environment, err := NewEnvironment(resources, dispatcher, directoryMounts{root: t.TempDir()}, cloudComputers{})
-	require.NoError(t, err)
-	factory := environment
+	steps := newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
+	works := infrastructure.NewAgentWorkRepository(db, time.Now)
+	coordination := command.NewExecutionCoordination(time.Now, works, steps.executions, steps.desks, steps.harness)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Fixture Agent", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
 	require.NoError(t, err)
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	require.NoError(t, definitions.Save(ctx, definition))
 	definition, err = definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
-	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "retained task capabilities"}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, commandtest.Hold(factory))
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "retained task capabilities"}}, admission)
 	require.NoError(t, err)
-	works := infrastructure.NewAgentWorkRepository(db, time.Now)
 	input := command.PrepareWorkExecution{WorkID: work.ID, SubjectID: "owner", WorkspaceReference: work.WorkspaceReference, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-368", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "original input"}}
 	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, RequestID: input.RequestID, InitialExecution: &input}))
-	start := request()
-	start.WorkID, start.AgentID, start.ContextMode = work.ID, work.AgentID, domain.ContextFresh
-	start.Capabilities, start.HomeBinding, start.HarnessSessionReference = work.CapabilitySnapshot.Clone(), work.HomeBinding, work.HarnessSessionReference
-	require.NoError(t, p.Register(ctx, start, testMounts), "waiting preparation must not suppress durable registration")
-	require.NoError(t, submitPending(ctx, p))
+	require.NoError(t, coordination.BeginExecution(ctx, work.ID), "waiting preparation must not suppress the execution's beginning")
+	reconcile := func(id string) error {
+		_, err := steps.handler.Reconcile(ctx, id, false)
+		return err
+	}
 	first, found, err := p.live(ctx, work.ID)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.False(t, first.Submitted)
+	require.NoError(t, reconcile(first.ID))
+	first, _, err = p.live(ctx, work.ID)
+	require.NoError(t, err)
+	require.False(t, first.Submitted, "the first start's preparation holds its creation back")
 	retained, err := initial.Get(ctx, work.ID)
 	require.NoError(t, err)
 	retained.Rejected, retained.StartFailed = true, true
@@ -67,17 +61,13 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.NoError(t, initial.Save(ctx, retained))
 	retained, err = initial.Get(ctx, work.ID)
 	require.NoError(t, err)
-	require.NoError(t, submitPending(ctx, p))
-	observation, err := observations.ObserveProcess(ctx, work.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.ProcessStartRejected, observation.State)
-	work, err = works.Get(ctx, work.ID)
-	require.NoError(t, err)
-	outbound := commandtest.Hold(factory)
-	require.NoError(t, work.ReconcileProcess(ctx, observation.ProcessObservation, outbound))
-	require.NoError(t, works.Save(ctx, work))
-	require.NoError(t, outbound.Send(ctx))
-	require.NoError(t, resources.Delete(ctx, work.ID), "retirement is idempotent without a provider deletion")
+	require.NoError(t, reconcile(first.ID))
+	rejected := current(t, steps, first.ID)
+	require.True(t, rejected.Outcome.Rejected)
+	require.True(t, reported(rejected, domain.ExecutionStartRejected{WorkID: work.ID, StartAdmittedAt: rejected.StartAdmittedAt}))
+	require.NoError(t, coordination.Coordinate(ctx, work.ID))
+	require.NoError(t, reconcile(first.ID), "the rejected execution releases without a provider deletion")
+	require.NoError(t, coordination.Coordinate(ctx, work.ID))
 	work, err = works.Get(ctx, work.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkFailed, work.State)
@@ -85,14 +75,9 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.False(t, work.HarnessProcess.Exited)
 	require.False(t, work.HarnessProcess.EnvironmentLost)
 	require.False(t, work.HoldsProcess())
-	observation, err = observations.ObserveProcess(ctx, work.ID)
-	require.NoError(t, err)
-	require.True(t, observation.ComputeReclaimed)
-	require.NoError(t, work.ConfirmComputeReclaimed())
-	require.NoError(t, works.Save(ctx, work))
-	work, err = works.Get(ctx, work.ID)
-	require.NoError(t, err)
-	require.NoError(t, work.Restart(ctx, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, commandtest.Hold(factory)))
+	require.True(t, work.HarnessProcess.ComputeReclaimed, "the release is confirmed to the Work")
+	admission.AdmittedAt = time.Now()
+	require.NoError(t, work.Restart(admission))
 	restartID := uuid.NewString()
 	require.NoError(t, works.CommitStart(ctx, work, query.AdmittedStart{WorkID: work.ID, Kind: query.StartKindRestart}, restartID))
 	after, err := initial.Get(ctx, work.ID)
@@ -102,23 +87,25 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.Equal(t, retained.Input, after.Input)
 	require.Equal(t, retained.RequestID, after.RequestID)
 	require.ErrorIs(t, initial.Save(ctx, retained), domain.ErrConcurrentModification, "old recovery cannot restore its rejection")
-	start.ContextMode = domain.ContextRecover
-	require.NoError(t, p.Register(ctx, start, testMounts))
-	observation, err = observations.ObserveProcess(ctx, work.ID)
+	require.NoError(t, coordination.BeginExecution(ctx, work.ID))
+	restarted, err := steps.executions.Latest(ctx, work.ID)
 	require.NoError(t, err)
-	require.Equal(t, domain.ProcessPending, observation.State, "the old rejected allocation cannot fail the new start")
-	require.NoError(t, submitPending(ctx, p))
+	require.NotEqual(t, first.ID, restarted.ID)
+	require.Equal(t, domain.ContextRecover, restarted.Launch.ContextMode)
+	require.NoError(t, reconcile(restarted.ID))
+	require.False(t, current(t, steps, restarted.ID).Outcome.Rejected, "the old rejected execution cannot fail the new start")
 	external.mu.Lock()
 	require.Zero(t, external.creates)
 	require.Zero(t, external.deletes)
 	external.mu.Unlock()
 	after.Prepared = true // the same prerequisite subsequently succeeds
 	require.NoError(t, initial.Save(ctx, after))
-	require.ErrorIs(t, p.reconcile(ctx, first), errEnvironmentConflict, "a stale worker cannot submit the retired rejected allocation")
+	require.NoError(t, reconcile(first.ID))
 	external.mu.Lock()
+	require.Zero(t, external.creates, "a stale worker cannot submit the released rejected execution")
 	external.loseCreateResponse = true
 	external.mu.Unlock()
-	require.Error(t, submitPending(ctx, p))
+	require.Error(t, reconcile(restarted.ID))
 	uncertain, found, err := p.live(ctx, work.ID)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -128,15 +115,15 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.NoError(t, err)
 	after.Prepared, after.Rejected = false, true
 	require.NoError(t, initial.Save(ctx, after))
-	require.NoError(t, submitPending(ctx, p), "late prerequisite rejection cannot prove an uncertain submission never created compute")
-	current, found, err := p.live(ctx, work.ID)
+	require.NoError(t, reconcile(restarted.ID), "late prerequisite rejection cannot prove an uncertain submission never created compute")
+	live, found, err := p.live(ctx, work.ID)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.NotEqual(t, first.ID, current.ID)
-	require.True(t, current.Submitted)
-	require.False(t, current.StartRejected)
-	require.NotEmpty(t, current.SandboxID)
-	require.NotEqual(t, "null", string(current.CredentialPlanJSON))
+	require.NotEqual(t, first.ID, live.ID)
+	require.True(t, live.Submitted)
+	require.False(t, live.StartRejected)
+	require.NotEmpty(t, live.SandboxID)
+	require.NotEqual(t, "null", string(live.CredentialPlanJSON))
 	external.mu.Lock()
 	require.Equal(t, 1, external.creates)
 	external.mu.Unlock()

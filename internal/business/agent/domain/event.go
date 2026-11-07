@@ -18,7 +18,6 @@ const (
 	EventKindExecutionEnded   EventKind = "agent.work.execution_ended"
 	EventKindClosing          EventKind = "agent.work.closing"
 	EventKindClosed           EventKind = "agent.work.closed"
-	EventKindDeskReleased     EventKind = "agent.work.desk_released"
 )
 
 // WorkExecutionEnded records that a Work stopped or failed. A close request
@@ -72,15 +71,3 @@ type WorkMadePrivate struct {
 
 func (WorkMadePrivate) Kind() EventKind { return EventKindWorkMadePrivate }
 func (e WorkMadePrivate) Key() string   { return e.WorkID }
-
-// WorkDeskReleased records that a Work's run no longer holds its Desk's room:
-// its process ended and its compute is released, or its start was rejected
-// before any compute existed. Agent reports the Desk's departure to its
-// Computer.
-type WorkDeskReleased struct {
-	WorkID string
-	DeskID string
-}
-
-func (WorkDeskReleased) Kind() EventKind { return EventKindDeskReleased }
-func (e WorkDeskReleased) Key() string   { return e.WorkID }

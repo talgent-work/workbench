@@ -92,7 +92,12 @@ var Module = fx.Module("domain.agent",
 	fx.Provide(eventhandler.NewWorkClosures),
 	// Every run of a Work takes a Desk on its Computer.
 	fx.Provide(fx.Annotate(newComputerClient, fx.As(new(command.ComputerPort)))),
-	fx.Provide(eventhandler.NewDeskReleases),
+	// Each run of a Work is an AgentExecution; the Policies between the two
+	// Roots pass the Work's intents and the execution's reports.
+	fx.Provide(fx.Annotate(newCommittedExecutions, fx.As(fx.Self()), fx.As(new(domain.AgentExecutionRepository)))),
+	fx.Provide(fx.Annotate(execution.NewExecutionLookups, fx.As(new(query.ExecutionRecoveryReader)))),
+	fx.Provide(command.NewExecutionCoordination),
+	fx.Provide(eventhandler.NewBeginExecution, eventhandler.NewRequestProcessExit, eventhandler.NewRetireExecution, eventhandler.NewApplyExecutionReport, eventhandler.NewConfirmComputeRelease),
 	// Storage owns every space a Work uses.
 	fx.Provide(fx.Annotate(newStorageClient, fx.As(fx.Self()), fx.As(new(command.SandboxMountPort)))),
 	// A Work's workspace is read where its files are: Storage's for a Cloud
@@ -105,7 +110,7 @@ var Module = fx.Module("domain.agent",
 	fx.Provide(fx.Annotate(infrastructure.NewAgentDefinitionLookup, fx.As(new(query.AgentDefinitionLookup)), fx.As(new(query.AgentAppearanceReader)))),
 	fx.Provide(func() func() time.Time { return time.Now }, fx.Private),
 	fx.Provide(fx.Annotate(infrastructure.NewAgentDefinitionRepository, fx.As(new(domain.AgentDefinitionRepository)))),
-	fx.Provide(fx.Annotate(newCommittedWorks, fx.As(new(domain.AgentWorkRepository)), fx.As(new(command.AgentWorkRepository)), fx.As(new(domain.WorkLookupPort)), fx.As(new(query.StartAdmissionReader)))),
+	fx.Provide(fx.Annotate(newCommittedWorks, fx.As(new(domain.AgentWorkRepository)), fx.As(new(command.AgentWorkRepository)), fx.As(new(query.StartAdmissionReader)))),
 	fx.Provide(fx.Annotate(infrastructure.NewWorkAccessReader, fx.As(new(access.WorkAccessReader))), access.NewWorkAuthorizer),
 	fx.Provide(fx.Annotate(command.NewCatalogPluginUpgrades, fx.As(new(command.PluginUpgrades)))),
 	fx.Provide(fx.Annotate(newCommittedContinuations, fx.As(new(command.ContinuationRequests)), fx.As(new(query.ContinuationReader)))),
@@ -133,7 +138,6 @@ var Module = fx.Module("domain.agent",
 		command.NewRecoverInitialExecutionHandler,
 		command.NewRecordRepositoryCheckoutsHandler,
 		command.NewRecoverWorkHandler,
-		command.NewSeatWaitingStartHandler,
 		command.NewComputerReachHandler,
 		query.NewListRecoveryWorksHandler,
 		query.NewListInitialExecutionRecoveryHandler,
@@ -214,7 +218,11 @@ type eventSubscriptions struct {
 	Dispatcher  *domainevent.InMemoryDispatcher
 	Withdrawals *eventhandler.WorkAccessWithdrawals
 	Closures    *eventhandler.WorkClosures
-	Desks       *eventhandler.DeskReleases
+	Begin       *eventhandler.BeginExecution
+	Exit        *eventhandler.RequestProcessExit
+	Retire      *eventhandler.RetireExecution
+	Reports     *eventhandler.ApplyExecutionReport
+	Releases    *eventhandler.ConfirmComputeRelease
 	Recovery    *application.Recovery `optional:"true"`
 	Logger      *slog.Logger
 }
@@ -222,7 +230,9 @@ type eventSubscriptions struct {
 func subscribeEventHandlers(in eventSubscriptions) {
 	in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Withdrawals))
 	in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Closures))
-	in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Desks))
+	for _, policy := range []domainevent.Handler{in.Begin, in.Exit, in.Retire, in.Reports, in.Releases} {
+		in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, policy))
+	}
 	if in.Recovery != nil {
 		in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, eventhandler.NewWorkspaceReclamations(in.Recovery, in.Logger)))
 	}

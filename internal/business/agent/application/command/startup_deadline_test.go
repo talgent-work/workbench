@@ -7,31 +7,30 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// stopRecordingPort records the process end requested by a Work.
-type stopRecordingPort struct{ stops []string }
-
-func (*stopRecordingPort) StartExecution(context.Context, domain.StartExecutionRequest) error {
-	return nil
-}
-func (p *stopRecordingPort) StopExecution(_ context.Context, _ string, requestID string) error {
-	p.stops = append(p.stops, requestID)
-	return nil
-}
-func (*stopRecordingPort) ReclaimCompute(context.Context, string) error { return nil }
-
-func (*stopRecordingPort) RetireFencedRun(context.Context, string) error { return nil }
-
-func recoverAt(t *testing.T, at time.Time, sessions *feedbackSessionStore, agents *startupAgentStore, port domain.ExecutionPort, initial command.InitialExecutionReader) {
+// reconcileAt reconciles the Work's current execution at a time, observing
+// its bound environment running, and applies what it reported to the Work,
+// passing the Work's intents back.
+func reconcileAt(t *testing.T, w *world, at time.Time) {
 	t.Helper()
-	handler := command.NewRecoverWorkHandler(func() time.Time { return at }, sessions, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil)
-	require.NoError(t, handler.Handle(context.Background(), sessions.session.ID))
+	ctx := context.Background()
+	w.at = at
+	execution := w.execution(t)
+	w.environment.Observation = domain.EnvironmentObservation{Attached: true}
+	if execution.Environment != "" {
+		w.environment.Observation.Environments = []domain.ObservedEnvironment{{ID: execution.Environment, Running: true}}
+	}
+	_, err := w.reconciliation().Reconcile(ctx, execution.ID, false)
+	require.NoError(t, err)
+	// The execution's report event applies its reports; the intents they
+	// leave on the Work are passed by the events the Work's save commits.
+	require.NoError(t, w.coordination.ApplyExecutionReports(ctx, w.work().ID))
+	require.NoError(t, w.coordination.Coordinate(ctx, w.work().ID))
 }
 
 func TestStartStuckOnARequiredStartupStepFailsAtTheStartupDeadline(t *testing.T) {
@@ -43,83 +42,90 @@ func TestStartStuckOnARequiredStartupStepFailsAtTheStartupDeadline(t *testing.T)
 		"Harness":               {prepared: true, reason: "Startup Deadline reached before the Harness started."},
 	} {
 		t.Run(name, func(t *testing.T) {
-			agents, sessions := startupStores(t)
+			w := newWorld(t, startingSession(t))
+			w.launch(t, "process")
 			if tc.prepared {
-				require.NoError(t, sessions.session.ConfirmPrepared(context.Background(), time.Now(), nil))
+				w.change(t, func(execution *domain.AgentExecution) {
+					_, err := execution.ConfirmReady(domain.ReadinessReport{Prepared: true}, w.now())
+					require.NoError(t, err)
+				})
 			}
-			port := &stopRecordingPort{}
-			deadline := sessions.session.HarnessProcess.StartingSince.Add(domain.StartupDeadline)
+			deadline := w.execution(t).StartupDeadlineAt()
 
-			recoverAt(t, deadline.Add(-time.Second), sessions, agents, port, noInitialExecution{})
-			require.Equal(t, domain.WorkStarting, sessions.session.State, "the start still has time")
+			reconcileAt(t, w, deadline.Add(-time.Second))
+			require.Equal(t, domain.WorkStarting, w.work().State, "the start still has time")
 
-			recoverAt(t, deadline, sessions, agents, port, noInitialExecution{})
-			require.Equal(t, domain.WorkFailed, sessions.session.State)
-			require.Equal(t, tc.reason, sessions.session.FailureReason)
-			require.Len(t, port.stops, 1, "the held process is asked to end")
-			require.True(t, sessions.session.HoldsProcess(), "the process is held until its end is confirmed")
+			reconcileAt(t, w, deadline)
+			require.Equal(t, domain.WorkFailed, w.work().State)
+			require.Equal(t, tc.reason, w.work().FailureReason)
+			require.NotEmpty(t, w.execution(t).ExitRequest.StopRequestID, "the launched process is asked to end")
+			reconcileAt(t, w, deadline)
+			reconcileAt(t, w, deadline)
+			require.Len(t, w.harness.Stops, 2, "each reconciliation signals the one exit request again until the exit is reported")
+			require.Equal(t, w.harness.Stops[0], w.harness.Stops[1])
+			require.True(t, w.work().HoldsProcess(), "the process is held until its end is confirmed")
 		})
 	}
 }
 
 func TestReadinessAfterAStartupDeadlineFailureDoesNotReviveTheWork(t *testing.T) {
 	ctx := context.Background()
-	agents, sessions := startupStores(t)
-	recoverAt(t, sessions.session.HarnessProcess.StartingSince.Add(domain.StartupDeadline), sessions, agents, &stopRecordingPort{}, noInitialExecution{})
-	require.Equal(t, domain.WorkFailed, sessions.session.State)
+	w := newWorld(t, startingSession(t))
+	w.launch(t, "process")
+	reconcileAt(t, w, w.execution(t).StartupDeadlineAt())
+	require.Equal(t, domain.WorkFailed, w.work().State)
 
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), &feedbackPort{}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutorPrepared, WorkID: sessions.session.ID}))
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.AgentStarted, WorkID: sessions.session.ID}))
-	require.Equal(t, domain.WorkFailed, sessions.session.State, "only an explicit Restart continues a failed Work")
+	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
+		require.NoError(t, w.feedback().Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: w.work().ID}))
+	}
+	require.Equal(t, domain.WorkFailed, w.work().State, "only an explicit Restart continues a failed Work")
+	require.NotEqual(t, domain.ExecutionRunning, w.execution(t).State)
 }
 
 func TestRestartCountsItsOwnStartupDeadline(t *testing.T) {
 	ctx := context.Background()
 	agents, sessions := startupStores(t)
-	firstDeadline := sessions.session.HarnessProcess.StartingSince.Add(domain.StartupDeadline)
-	recoverAt(t, firstDeadline, sessions, agents, &stopRecordingPort{}, noInitialExecution{})
-	require.Equal(t, domain.WorkFailed, sessions.session.State)
-	require.NoError(t, sessions.session.RecordExit(ctx, domain.HarnessExit{}, &feedbackPort{}))
-	require.NoError(t, sessions.session.ConfirmComputeReclaimed())
+	w := worldOver(t, sessions)
+	w.launch(t, "process")
+	firstDeadline := w.execution(t).StartupDeadlineAt()
+	reconcileAt(t, w, firstDeadline)
+	require.Equal(t, domain.WorkFailed, w.work().State)
+	w.at = time.Now()
+	w.exit(t, 0)
+	w.release(t)
 
 	sessions.starts = map[string]query.AdmittedStart{}
-	restart := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, &stopRecordingPort{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
-	_, err := restart.Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID})
+	_, err := restartHandler(sessions, agents, capacityCheck{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID})
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, sessions.session.State)
-	restarted := sessions.session.HarnessProcess.StartingSince
-	require.True(t, restarted.After(firstDeadline.Add(-domain.StartupDeadline)), "Restart enters Starting anew")
+	w.launch(t, "restarted")
+	restarted := w.execution(t).StartupDeadlineAt()
+	require.True(t, restarted.After(firstDeadline), "Restart enters Starting anew")
 
-	recoverAt(t, restarted.Add(domain.StartupDeadline-time.Second), sessions, agents, &stopRecordingPort{}, noInitialExecution{})
+	reconcileAt(t, w, restarted.Add(-time.Second))
 	require.Equal(t, domain.WorkStarting, sessions.session.State, "the earlier start's deadline does not bound the Restart")
-	recoverAt(t, restarted.Add(domain.StartupDeadline), sessions, agents, &stopRecordingPort{}, noInitialExecution{})
+	reconcileAt(t, w, restarted)
 	require.Equal(t, domain.WorkFailed, sessions.session.State)
 }
 
-func (*stopRecordingPort) CancelRunningTurn(context.Context, string) error { return nil }
+// A start that failed before it launched a Harness process is abandoned once
+// it can no longer launch one; its execution retires and its release is
+// confirmed, so the Work may restart.
+func TestAbandonedStartIsReleasedThroughReconciliation(t *testing.T) {
+	w := newWorld(t, startingSession(t))
+	w.begin(t)
+	w.change(t, func(execution *domain.AgentExecution) { require.True(t, execution.RecordSubmission()) })
+	deadline := w.execution(t).StartupDeadlineAt()
+	reconcileAt(t, w, deadline)
+	require.Equal(t, domain.WorkFailed, w.work().State)
+	require.False(t, w.execution(t).Retired(), "the failure alone releases nothing yet")
 
-// Through the production path, where execution requests are sent after the
-// Work is saved: a start that failed before it launched a Harness process is
-// reported abandoned by observation, and its environment release is sent.
-func TestAbandonedStartIsReleasedThroughRecoveryAndObservation(t *testing.T) {
-	ctx := context.Background()
-	agents, sessions := startupStores(t)
-	deadline := sessions.session.HarnessProcess.StartingSince.Add(domain.StartupDeadline)
-	port := &feedbackPort{}
-	recoverAt(t, deadline, sessions, agents, port, noInitialExecution{})
-	require.Equal(t, domain.WorkFailed, sessions.session.State)
-	require.Zero(t, port.reclaims, "the failure alone releases nothing yet")
+	reconcileAt(t, w, deadline.Add(time.Minute))
+	require.True(t, w.work().HarnessProcess.StartAbandoned, "the abandonment is applied")
+	require.False(t, w.work().HoldsProcess())
+	require.Equal(t, domain.RetiredByAbandonment, w.execution(t).Retirement, "the abandoned execution retires")
 
-	processes := exitedProcess()
-	processes.observation = domain.ProcessObservation{State: domain.ProcessStartAbandoned}
-	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return deadline }, sessions, processes, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{WorkID: sessions.session.ID, Kind: command.ProcessObserved}))
-	require.True(t, sessions.session.HarnessProcess.StartAbandoned, "the abandonment is saved")
-	require.Equal(t, 1, port.reclaims, "the release is sent after the save")
-	require.False(t, sessions.session.HoldsProcess())
-
-	processes.observation = domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true}
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{WorkID: sessions.session.ID, Kind: command.ComputeReclaimed}))
-	require.True(t, sessions.session.HarnessProcess.ComputeReclaimed, "the Work may now restart")
+	w.release(t)
+	require.True(t, w.work().HarnessProcess.ComputeReclaimed, "the Work may now restart")
+	require.NoError(t, w.work().AdmitRestart())
 }

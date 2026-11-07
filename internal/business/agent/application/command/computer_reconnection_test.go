@@ -59,12 +59,9 @@ type reconnectionFixture struct {
 	sessions       *feedbackSessionStore
 	computer       *switchableComputer
 	buffer         *commandtest.InputBuffer
-	port           *startupPort
 	resume         *command.ResumeWorkHandler
 	reconciliation *reconciliations
 	reconnection   *command.ComputerReconnectionHandler
-	// launched are the start requests the execution port received.
-	launched []domain.StartExecutionRequest
 }
 
 func newReconnectionFixture(t *testing.T, buffered bool) *reconnectionFixture {
@@ -73,15 +70,11 @@ func newReconnectionFixture(t *testing.T, buffered bool) *reconnectionFixture {
 	sessions.session.State = domain.WorkStopped
 	sessions.session.HarnessProcess.Exited, sessions.session.HarnessProcess.ComputeReclaimed = true, true
 	f := &reconnectionFixture{agents: agents, sessions: sessions, computer: &switchableComputer{unreachable: true}, buffer: &commandtest.InputBuffer{}, reconciliation: &reconciliations{}}
-	f.port = &startupPort{start: func(request domain.StartExecutionRequest) error {
-		f.launched = append(f.launched, request)
-		return nil
-	}}
 	if buffered {
 		_, err := f.buffer.BufferInput(context.Background(), sessions.session.ID, command.ExecutionInput{ID: "message-1", Text: "a message arrived while the machine was away"})
 		require.NoError(t, err)
 	}
-	f.resume = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, f.computer, f.port, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	f.resume = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, f.computer, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, Reachable: true}}
 	var err error
 	f.reconnection, err = command.NewComputerReconnectionHandler(place, sessions, agents, markedWorks{sessions: sessions}, f.buffer, f.resume, f.reconciliation, nil)
@@ -107,15 +100,15 @@ func TestAReconnectionRetriesTheRefusedResumeOnceWhenInputAwaits(t *testing.T) {
 	require.Equal(t, domain.WorkStarting, f.sessions.session.State)
 	require.False(t, f.sessions.session.ReachResumeDue, "the admitted start clears the mark")
 	require.Equal(t, domain.ContextContinue, f.sessions.session.HarnessProcess.ContextMode, "Resume continues the native session")
-	require.Equal(t, 1, f.port.calls)
-	// The start the launch receives continues the Work's native session.
-	require.Len(t, f.launched, 1)
-	require.Equal(t, domain.ContextContinue, f.launched[0].ContextMode)
-	require.Equal(t, f.sessions.session.HarnessSessionReference, f.launched[0].HarnessSessionReference)
-	require.NotEmpty(t, f.launched[0].HarnessSessionReference)
+	require.Len(t, f.sessions.admittedStarts(), 1)
+	// The start its execution launches continues the Work's native session.
+	launch := f.sessions.session.LaunchSpecification()
+	require.Equal(t, domain.ContextContinue, launch.ContextMode)
+	require.Equal(t, f.sessions.session.HarnessSessionReference, launch.HarnessSessionReference)
+	require.NotEmpty(t, launch.HarnessSessionReference)
 	require.NoError(t, f.reconnection.Reconnected(ctx, computerID))
 	require.Equal(t, 1, f.computer.admitted, "a repeated reconnection resumes nothing more")
-	require.Equal(t, 1, f.port.calls)
+	require.Len(t, f.sessions.admittedStarts(), 1)
 }
 
 // Without buffered input the reconnection resumes nothing and the mark is
@@ -134,7 +127,7 @@ func TestAReconnectionResumesNoWorkWithoutInputOrWithoutTheMark(t *testing.T) {
 	require.NoError(t, unmarked.reconnection.Reconnected(ctx, computerID))
 	require.Equal(t, domain.WorkStopped, unmarked.sessions.session.State)
 	require.Zero(t, unmarked.computer.admitted)
-	require.Zero(t, unmarked.port.calls)
+	require.Empty(t, unmarked.sessions.admittedStarts())
 }
 
 // The one request consumes the mark whatever the Computer answers: refused
@@ -194,9 +187,9 @@ func TestTheWorksRecoveryRetriesAnOwedResumeTheReconnectionMissed(t *testing.T) 
 	f.buffer.Err = nil
 	require.NoError(t, f.reconnection.RetryOwedResume(ctx, f.sessions.session.ID))
 	require.Equal(t, domain.WorkStarting, f.sessions.session.State)
-	require.Len(t, f.launched, 1)
+	require.Len(t, f.sessions.admittedStarts(), 1)
 	require.NoError(t, f.reconnection.RetryOwedResume(ctx, f.sessions.session.ID))
-	require.Len(t, f.launched, 1, "an unmarked Work is not retried")
+	require.Len(t, f.sessions.admittedStarts(), 1, "an unmarked Work is not retried")
 
 	away := newReconnectionFixture(t, true)
 	reconnection, err := command.NewComputerReconnectionHandler(&presencePlace{description: command.ComputerDescription{Managed: true}}, away.sessions, away.agents, markedWorks{sessions: away.sessions}, away.buffer, away.resume, away.reconciliation, nil)
@@ -212,13 +205,14 @@ func TestTheWorksRecoveryRetriesAnOwedResumeTheReconnectionMissed(t *testing.T) 
 // once.
 func TestAMailBufferedDuringTheGraceIsReadOnceAfterReconnection(t *testing.T) {
 	ctx := context.Background()
-	agents, sessions := runningMessagingSession(t)
+	agents, w := runningMessagingWorld(t, "work")
+	sessions := w.works
 	sessions.session.PermissionMode = domain.PermissionBypass
-	buffer := &commandtest.InputBuffer{}
+	buffer := w.harness.InputBuffer
 	lost := time.Now()
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, UnreachableSince: lost}}
 	clock := &testClock{at: lost}
-	reach := command.NewComputerReachHandler(clock.now, sessions, place, computerWorks{id: sessions.session.ID}, &feedbackPort{}, nil, buffer, nil)
+	reach := command.NewComputerReachHandler(clock.now, sessions, place, computerWorks{id: sessions.session.ID}, w.executions, w.coordination, w.harness, nil)
 	require.NoError(t, reach.PresenceChanged(ctx, sessions.session.ComputerID))
 	require.True(t, sessions.session.Disconnected())
 	_, err := buffer.BufferInput(ctx, sessions.session.ID, command.ExecutionInput{ID: "message-1", Text: "a message during the grace"})
@@ -229,13 +223,9 @@ func TestAMailBufferedDuringTheGraceIsReadOnceAfterReconnection(t *testing.T) {
 	require.Equal(t, domain.WorkStopped, sessions.session.State)
 	require.True(t, sessions.session.ReachResumeDue, "the message awaits the machine's return")
 
-	var launched []domain.StartExecutionRequest
-	port := &startupPort{start: func(request domain.StartExecutionRequest) error {
-		launched = append(launched, request)
-		return nil
-	}}
+	starts := len(sessions.admittedStarts())
 	computer := &switchableComputer{}
-	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, port, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, &continuationRequests{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	place.description = command.ComputerDescription{Managed: true, Reachable: true}
 	reconnection, err := command.NewComputerReconnectionHandler(place, sessions, agents, markedWorks{sessions: sessions}, buffer, resume, &reconciliations{}, nil)
 	require.NoError(t, err)
@@ -243,8 +233,8 @@ func TestAMailBufferedDuringTheGraceIsReadOnceAfterReconnection(t *testing.T) {
 	require.NoError(t, reconnection.Reconnected(ctx, sessions.session.ComputerID))
 	require.NoError(t, reconnection.RetryOwedResume(ctx, sessions.session.ID))
 	require.Equal(t, domain.WorkStarting, sessions.session.State)
-	require.Len(t, launched, 1, "the machine's return resumes the Work once")
-	require.Equal(t, domain.ContextContinue, launched[0].ContextMode)
+	require.Len(t, sessions.admittedStarts(), starts+1, "the machine's return resumes the Work once")
+	require.Equal(t, domain.ContextContinue, sessions.session.LaunchSpecification().ContextMode)
 	buffered, err := buffer.ReadBuffer(ctx, sessions.session.ID)
 	require.NoError(t, err)
 	require.Equal(t, []string{"message-1"}, buffered.InputIDs, "the message waits once for the resumed Harness")

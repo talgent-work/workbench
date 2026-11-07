@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,24 +57,10 @@ func (s ComputerSeat) admitted() bool {
 	return strings.TrimSpace(s.ComputerID) != "" && strings.TrimSpace(s.DeskID) != ""
 }
 
-// process is the Harness process an admitted start begins: seated at
-// admission, or waiting for its Desk.
+// process is the Harness process an admitted start begins, with the Desk its
+// Computer admitted it to, seated or waiting in its line.
 func (a StartAdmission) process(mode ContextMode, waitingSince time.Time) *HarnessProcess {
-	process := &HarnessProcess{ContextMode: mode, StartingSince: a.AdmittedAt.UTC(), DeskID: a.Seat.DeskID, DeskWaiting: a.Seat.Waiting, WaitingSince: waitingSince, Soul: a.Soul}
-	if !a.Seat.Waiting {
-		process.SeatedAt = process.StartingSince
-	}
-	return process
-}
-
-// holdsRoom reports whether the run still holds its Desk's room: until its
-// process ended or its environment was lost and its compute is released, or
-// its start was rejected before any compute existed.
-func (p *HarnessProcess) holdsRoom() bool {
-	if p == nil || p.StartRejected {
-		return false
-	}
-	return !((p.ended() || p.EnvironmentLost) && p.ComputeReclaimed)
+	return &HarnessProcess{ContextMode: mode, StartingSince: a.AdmittedAt.UTC(), DeskID: a.Seat.DeskID, DeskWaiting: a.Seat.Waiting, WaitingSince: waitingSince, Soul: a.Soul}
 }
 
 // MayHoldEnvironment reports whether the Work's current run may still be in
@@ -87,19 +72,3 @@ func (s *AgentWork) MayHoldEnvironment() bool {
 // ComputerRemovedReason explains the failure of a run whose Managed Computer
 // its owner removed.
 const ComputerRemovedReason = "The Work's Computer was removed."
-
-// ApplyComputerRemoval applies the removal of the Work's Managed Computer,
-// which confirms the permanent loss of its execution environment there
-// (Agent model: Computer removal), through Reconcile process: a Starting,
-// Working or Stopping Work becomes Failed, a start still waiting for its
-// Desk included, and a Closing one Closed. A Work whose run already left its
-// environment is unchanged; a Stopped or Failed Work can then only be
-// closed, since its removed Computer rejects every run. The result reports
-// whether the Work changed.
-func (s *AgentWork) ApplyComputerRemoval(ctx context.Context) (bool, error) {
-	if !s.MayHoldEnvironment() {
-		return false, nil
-	}
-	err := s.ReconcileProcess(ctx, ProcessObservation{State: ProcessEnvironmentLost, ComputeReclaimed: true, LossReason: ComputerRemovedReason}, nil)
-	return true, err
-}

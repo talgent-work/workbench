@@ -30,6 +30,6 @@ type SandboxMountRequest struct {
 
 // MountRequest names the spaces of this start: the definition's HOME owner,
 // this Work's Session Workspace, its input source and its read-only mounts.
-func (r StartExecutionRequest) MountRequest() SandboxMountRequest {
+func (r LaunchSpecification) MountRequest() SandboxMountRequest {
 	return SandboxMountRequest{HomeOwner: r.HomeBinding.OwnerID, WorkID: r.WorkID, WorkspaceReference: r.WorkspaceReference, InputSource: r.InputSource, ReadOnlyMounts: r.ReadOnlyMounts}
 }

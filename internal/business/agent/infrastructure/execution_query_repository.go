@@ -68,9 +68,11 @@ func (r *ExecutionQueryRepository) GetWorkStartup(ctx context.Context, sessionID
 
 func (r *ExecutionQueryRepository) ListWorkIDs(ctx context.Context, afterID string, limit int) ([]string, error) {
 	// Scan Works whose Harness process has outstanding obligations, permanent
-	// closure, a close kept while the Work stopped and a Resume owed on its
-	// Computer's reconnection. Completed historical conversations do not
-	// lengthen the recovery scan.
+	// closure, a close kept while the Work stopped, a Resume owed on its
+	// Computer's reconnection, and an execution not yet retired, whose
+	// retirement request a Work that stopped waiting for its release (a
+	// withdrawn or fenced start) passes again. Completed historical
+	// conversations do not lengthen the recovery scan.
 	var ids []string
 	err := r.db.Context(ctx).SQL(`SELECT session_id FROM (
  SELECT id AS session_id FROM agent_session
@@ -81,6 +83,8 @@ func (r *ExecutionQueryRepository) ListWorkIDs(ctx context.Context, afterID stri
  SELECT id AS session_id FROM agent_session WHERE state IN (4, 5) AND close_request <> '' AND deleted_at = 0
  UNION
  SELECT id AS session_id FROM agent_session WHERE state = 4 AND reach_resume_due = 1 AND deleted_at = 0
+ UNION
+ SELECT live_session_id AS session_id FROM execution_allocation WHERE live_session_id IS NOT NULL
  ) AS pending WHERE session_id > ? ORDER BY session_id LIMIT ?`, afterID, limit).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "agent.list_recovery_sessions").Wrap(err)

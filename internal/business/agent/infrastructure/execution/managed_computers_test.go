@@ -78,7 +78,7 @@ func (f *inputFiles) InputAttachments(_ context.Context, owner string) ([]InputA
 	return f.attachments[owner], f.err
 }
 
-func managedRequest() domain.StartExecutionRequest {
+func managedRequest() domain.LaunchSpecification {
 	input := request()
 	input.ComputerID = managedComputerID
 	input.WorkModel = domain.WorkModelSelection{MachineLogin: true}
@@ -331,7 +331,7 @@ func TestPreparationChecksOutIntoTheWorkRoot(t *testing.T) {
 	require.FileExists(t, filepath.Join(workRoot, "repos", "layout", "README.md"))
 }
 
-// An allocation's recorded realization chooses its environment authority; a
+// An execution's recorded realization chooses its environment authority; a
 // Managed one in a deployment without the relay fails there, and an
 // unrecorded realization is never taken for either.
 func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
@@ -339,35 +339,29 @@ func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 	authority, err := cloudOnly.authority(allocationRecord{Realization: realizationCloud})
 	require.NoError(t, err)
 	require.IsType(t, cloudEnvironment{}, authority)
-	_, err = cloudOnly.unreached(context.Background(), allocationRecord{Realization: realizationCloud})
-	require.Error(t, err, "a Cloud authority without its Works cannot say whether a run is reclaimed beyond reach")
 	_, err = cloudOnly.authority(allocationRecord{Realization: realizationManaged})
 	require.ErrorIs(t, err, errManagedNotConfigured)
-	require.ErrorIs(t, cloudOnly.RegisterManaged(context.Background(), managedRequest()), errManagedNotConfigured, "a Managed start is refused before anything is recorded")
+	require.ErrorIs(t, cloudOnly.specify(context.Background(), allocationRecord{Realization: realizationManaged, SpecificationJSON: []byte("null")}, domain.SandboxMounts{}), errManagedNotConfigured, "a Managed execution's creation is refused before anything is specified")
 	_, err = cloudOnly.authority(allocationRecord{Realization: "kubernetes"})
 	require.Error(t, err)
 
 	machines, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
-	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, nil, NewHeldWorks(nil, nil), &inputFiles{}, time.Minute, nil)
+	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, nil, unusedWorks{}, &inputFiles{}, time.Minute)
 	require.Error(t, err, "the Managed realization needs the Model Configurations")
-	_, err = NewManagedEnvironment(nil, machines, fixtureModels(), NewHeldWorks(nil, nil), &inputFiles{}, time.Minute, nil)
-	require.Error(t, err, "the Managed realization keeps its marks on the allocations")
-	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), NewHeldWorks(nil, nil), &inputFiles{}, 0, nil)
+	_, err = NewManagedEnvironment(nil, machines, fixtureModels(), unusedWorks{}, &inputFiles{}, time.Minute)
+	require.Error(t, err, "the Managed realization keeps its marks on the executions")
+	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, &inputFiles{}, 0)
 	require.Error(t, err, "inputs are refreshed at a positive interval")
-	managed, err := NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), NewHeldWorks(nil, nil), &inputFiles{}, time.Minute, nil)
+	managed, err := NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, &inputFiles{}, time.Minute)
 	require.NoError(t, err)
 	authority, err = NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, nil, managed).authority(allocationRecord{Realization: realizationManaged})
 	require.NoError(t, err)
 	require.IsType(t, ManagedEnvironment{}, authority)
-	var record allocationRecord
-	record.BeforeInsert()
-	require.Equal(t, realizationCloud, record.Realization, "an allocation inserted without one is a Cloud's, as the column defaults")
-	require.Zero(t, record.InputsDue, "a Cloud Work mounts its inputs")
-	record = allocationRecord{Realization: realizationManaged}
-	record.BeforeInsert()
-	require.EqualValues(t, 1, record.InputsDue, "a Managed Work's inputs are due from its start")
 }
+
+// unusedWorks stands in for the Works a test never reads.
+type unusedWorks struct{ domain.AgentWorkRepository }
 
 // The Work's credentials reach the machine through the relay with the control
 // token; the machine forgets them on DELETE, and a machine away is transient
@@ -463,7 +457,7 @@ func TestManagedModelDigestFollowsTheCurrentKey(t *testing.T) {
 		require.NoError(t, err)
 		document, err := json.Marshal(spec)
 		require.NoError(t, err)
-		request, err := json.Marshal(allocationRequestFromStart(input))
+		request, err := encodeLaunch(input)
 		require.NoError(t, err)
 		return allocationRecord{SpecificationJSON: document, RequestJSON: request}
 	}
@@ -478,7 +472,7 @@ func TestManagedModelDigestFollowsTheCurrentKey(t *testing.T) {
 
 // startedSpecification is the specification a start records, as
 // ManagedEnvironment.specify builds it, telemetry included.
-func startedSpecification(request domain.StartExecutionRequest) (managedSpecification, error) {
+func startedSpecification(request domain.LaunchSpecification) (managedSpecification, error) {
 	spec, err := managedSpecificationFor(request, fixtureModels(), "execd-token", "work-credential")
 	if err != nil {
 		return spec, err

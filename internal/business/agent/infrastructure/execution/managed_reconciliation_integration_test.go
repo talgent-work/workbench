@@ -95,6 +95,7 @@ func (m *machineRounds) reconnect() {
 
 // reconciledWorks holds Works as Agent records them for the reconciliation.
 type reconciledWorks struct {
+	domain.AgentWorkRepository
 	mu    sync.Mutex
 	works map[string]*domain.AgentWork
 }
@@ -136,10 +137,7 @@ func TestAReconnectedMachineEndsLeftoversAndRemovesClosedWorksBeforeAnythingStar
 		closed:    {ID: closed, ComputerID: managedComputerID, State: domain.WorkClosed, HarnessProcess: &domain.HarnessProcess{Exited: true, ComputeReclaimed: true}},
 		elsewhere: {ID: elsewhere, ComputerID: "01900000-0000-7000-8000-0000000000c2", State: domain.WorkClosed},
 	}}
-	held := NewHeldWorks(f.db, works)
-	f.provisioning.credentials.works = held
-	f.provisioning.managed.works = held
-	f.provisioning.managed.reconciliation.works = held
+	f.works.set(works)
 	startManaged(t, f, running)
 
 	rounds := &machineRounds{holds: map[string][]string{

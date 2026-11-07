@@ -27,7 +27,7 @@ func (c *creationCapacity) AdmitRoom(context.Context) error { return c.err }
 
 // creationCoordinator uses production coordination, registration, preparation
 // and recovery storage; only execution delivery and catalogs are fixtures.
-func creationCoordinator(db *xorm.Engine, records command.WorkCreationRequests, capacity computertest.RoomCheck, resources *registrationResources, starts *[]domain.StartExecutionRequest, registrar command.AgentWorkRepository, options agentquery.ModelConfigurations, catalog commandtest.PluginCatalog) (*command.CreateRequestedWorkHandler, *command.RecoverInitialExecutionHandler) {
+func creationCoordinator(db *xorm.Engine, records command.WorkCreationRequests, capacity computertest.RoomCheck, resources *registrationResources, registrar command.AgentWorkRepository, options agentquery.ModelConfigurations, catalog commandtest.PluginCatalog) (*command.CreateRequestedWorkHandler, *command.RecoverInitialExecutionHandler) {
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
@@ -35,10 +35,9 @@ func creationCoordinator(db *xorm.Engine, records command.WorkCreationRequests, 
 		registrar = sessions
 	}
 	initial := infrastructure.NewInitialExecutionRequests(db, time.Now)
-	execution := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { *starts = append(*starts, r); return nil }}
-	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, options, commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), execution)
-	prepare := command.NewPrepareWorkExecutionHandler(initial, sessions, auth, execution, records, options)
-	return command.NewCreateRequestedWorkHandler(records, create, prepare), command.NewRecoverInitialExecutionHandler(initial, sessions, prepare, resources, execution)
+	create := command.NewCreateWorkHandler(time.Now, agents, registrar, auth, options, commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity))
+	prepare := command.NewPrepareWorkExecutionHandler(initial, sessions, auth, records, options)
+	return command.NewCreateRequestedWorkHandler(records, create, prepare), command.NewRecoverInitialExecutionHandler(initial, sessions, prepare, resources)
 }
 
 func TestWorkCreationCoordinatorRecoversOriginalRegisteredSession(t *testing.T) {
@@ -49,15 +48,14 @@ func TestWorkCreationCoordinatorRecoversOriginalRegisteredSession(t *testing.T) 
 			lost := errors.New("acknowledgement lost")
 			registrar := registrationLostAcknowledgement{AgentWorkRepository: f.sessions, err: lost}
 			resources := &registrationResources{}
-			var starts []domain.StartExecutionRequest
-			handler, _ := creationCoordinator(f.db, f.requests, startupAuthority{}, resources, &starts, registrar, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
+			handler, _ := creationCoordinator(f.db, f.requests, startupAuthority{}, resources, registrar, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
 			_, err := handler.Handle(ctx, f.request.Creation)
 			require.ErrorIs(t, err, lost)
 			retained, err := f.requests.GetWorkCreation(ctx, f.request.ID)
 			require.NoError(t, err)
 			require.NotEmpty(t, retained.WorkID)
 			require.False(t, retained.BindingConfirmed)
-			require.Empty(t, starts)
+			requireCreationHeld(t, f.db, retained.WorkID)
 			require.Empty(t, resources.inputs)
 			require.NoError(t, f.db.Close())
 			db, err := xorm.NewEngine("mysql", f.dsn)
@@ -67,10 +65,9 @@ func TestWorkCreationCoordinatorRecoversOriginalRegisteredSession(t *testing.T) 
 			pending, err := records.ListPendingWorkCreations(ctx, "", 100)
 			require.NoError(t, err)
 			require.Equal(t, []string{f.request.ID}, pending)
-			handler, recovery := creationCoordinator(db, records, startupAuthority{}, resources, &starts, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
+			handler, recovery := creationCoordinator(db, records, startupAuthority{}, resources, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
 			require.NoError(t, handler.Recover(ctx, pending[0]))
-			require.Len(t, starts, 1)
-			require.Equal(t, retained.WorkID, starts[0].WorkID)
+			require.Equal(t, retained.WorkID, requireStartIntended(t, infrastructure.NewAgentWorkRepository(db, time.Now), retained.WorkID).WorkID)
 			admitted, found, err := infrastructure.NewAgentWorkRepository(db, time.Now).FindAdmittedStart(ctx, f.request.ID)
 			require.NoError(t, err)
 			require.True(t, found, "the original creation request is the admitted start request")
@@ -79,8 +76,7 @@ func TestWorkCreationCoordinatorRecoversOriginalRegisteredSession(t *testing.T) 
 			session, err := sessions.Get(ctx, retained.WorkID)
 			require.NoError(t, err)
 			completeCreationCheckout(t, db, session.ID)
-			require.NoError(t, session.ConfirmPrepared(context.Background(), time.Now(), nil))
-			require.NoError(t, session.ConfirmStarted(context.Background(), time.Now(), nil))
+			reportReady(t, session)
 			require.NoError(t, sessions.Save(ctx, session))
 			require.NoError(t, recovery.Handle(ctx, session.ID))
 			require.NoError(t, recovery.Handle(ctx, session.ID))
@@ -112,8 +108,7 @@ func TestWorkCreationRetryHandoffSurvivesConfirmationCommit(t *testing.T) {
 	ctx := context.Background()
 	capacity := &creationCapacity{err: domain.ErrCapacityUnavailable}
 	resources := &registrationResources{}
-	var starts []domain.StartExecutionRequest
-	handler, _ := creationCoordinator(f.db, f.requests, capacity, resources, &starts, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
+	handler, _ := creationCoordinator(f.db, f.requests, capacity, resources, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
 	_, err := handler.Handle(ctx, f.request.Creation)
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
 	first, err := f.requests.GetWorkCreation(ctx, f.request.ID)
@@ -121,7 +116,7 @@ func TestWorkCreationRetryHandoffSurvivesConfirmationCommit(t *testing.T) {
 	require.False(t, first.BindingConfirmed)
 	require.Empty(t, first.WorkID)
 	require.True(t, first.Canceled, "a definitive refusal fences the identity")
-	actual, err := f.sessions.FindWork(ctx, first.Creation.AgentID, first.Creation.Subject)
+	actual, err := f.sessions.FindBySubject(ctx, first.Creation.AgentID, first.Creation.Subject)
 	require.NoError(t, err)
 	require.Nil(t, actual)
 	pending, err := f.requests.ListPendingWorkCreations(ctx, "", 100)
@@ -131,7 +126,9 @@ func TestWorkCreationRetryHandoffSurvivesConfirmationCommit(t *testing.T) {
 	require.NoError(t, handler.Recover(ctx, first.ID), "recovery has nothing left to advance")
 	_, err = handler.Handle(ctx, first.Creation)
 	require.ErrorIs(t, err, command.ErrWorkCreationCanceled, "repeating a refused identity answers its original outcome")
-	require.Empty(t, starts, "restored capacity cannot silently retry rejected admission")
+	actual, err = f.sessions.FindBySubject(ctx, first.Creation.AgentID, first.Creation.Subject)
+	require.NoError(t, err)
+	require.Nil(t, actual, "restored capacity cannot silently retry rejected admission")
 	retry := first.Creation
 	initial := *retry.InitialExecution
 	initial.RequestID, initial.CreationRequestID, initial.Input.ID = uuid.NewString(), "", uuid.NewString()
@@ -139,7 +136,7 @@ func TestWorkCreationRetryHandoffSurvivesConfirmationCommit(t *testing.T) {
 	retry.InitialExecution = &initial
 	retry.RequestID = initial.RequestID
 	lost := errors.New("Agent confirmation committed before handoff; response lost")
-	handler, _ = creationCoordinator(f.db, confirmationLostAfterCommit{WorkCreationRequests: f.requests, err: lost}, capacity, resources, &starts, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
+	handler, _ = creationCoordinator(f.db, confirmationLostAfterCommit{WorkCreationRequests: f.requests, err: lost}, capacity, resources, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
 	_, err = handler.Handle(ctx, retry)
 	require.ErrorIs(t, err, lost)
 	pending, err = f.requests.ListPendingWorkCreations(ctx, "", 100)
@@ -155,16 +152,15 @@ func TestWorkCreationRetryHandoffSurvivesConfirmationCommit(t *testing.T) {
 	require.Equal(t, initial.Input, current.Input)
 	require.True(t, current.Submitted)
 	require.False(t, current.Rejected)
-	require.Empty(t, starts)
+	requireCreationHeld(t, f.db, registered.WorkID)
 	require.NoError(t, f.db.Close())
 	db, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	records := infrastructure.NewWorkCreationRequests(db, time.Now)
-	handler, recovery := creationCoordinator(db, records, capacity, resources, &starts, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
+	handler, recovery := creationCoordinator(db, records, capacity, resources, nil, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{})
 	require.NoError(t, handler.Recover(ctx, initial.RequestID))
-	require.Len(t, starts, 1)
-	require.Equal(t, registered.WorkID, starts[0].WorkID)
+	require.Equal(t, registered.WorkID, requireStartIntended(t, infrastructure.NewAgentWorkRepository(db, time.Now), registered.WorkID).WorkID)
 	admitted, found, err := infrastructure.NewAgentWorkRepository(db, time.Now).FindAdmittedStart(ctx, initial.RequestID)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -173,8 +169,7 @@ func TestWorkCreationRetryHandoffSurvivesConfirmationCommit(t *testing.T) {
 	session, err := sessions.Get(ctx, registered.WorkID)
 	require.NoError(t, err)
 	completeCreationCheckout(t, db, session.ID)
-	require.NoError(t, session.ConfirmPrepared(context.Background(), time.Now(), nil))
-	require.NoError(t, session.ConfirmStarted(context.Background(), time.Now(), nil))
+	reportReady(t, session)
 	require.NoError(t, sessions.Save(ctx, session))
 	require.NoError(t, recovery.Handle(ctx, session.ID))
 	require.Equal(t, []command.ExecutionInput{initial.Input}, resources.inputs)

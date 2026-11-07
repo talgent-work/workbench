@@ -39,23 +39,21 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	clock := func() time.Time { return observed }
 	sessions := infrastructure.NewAgentWorkRepository(f.db, clock)
 	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, sessions, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}).Handle(ctx, f.request.Creation)
+	id, err := command.NewCreateWorkHandler(time.Now, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{})).Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id))
 	require.NoError(t, f.requests.CompleteWorkCreation(ctx, f.request.ID))
-	factory := executionPort{}
 	observed = observed.Add(15 * time.Minute)
-	feedback := command.NewApplyExecutionFeedbackHandler(clock, sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := newRunsAt(t, f.db, sessions, clock)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id}))
 	}
 	observed = end.Add(-23 * time.Hour)
-	closeWork := command.NewCloseWorkHandler(sessions, authorization, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+	closeWork := command.NewCloseWorkHandler(sessions, authorization, feedback.executions, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
 	require.NoError(t, closeWork.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	observed = end.Add(-22 * time.Hour)
-	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutionExited, command.ComputeReclaimed} {
-		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id}))
-	}
+	feedback.exit(ctx, id)
+	feedback.release(ctx, id)
 	// The close kept while the Work stopped applies once it has stopped.
 	require.NoError(t, closeWork.ApplyKeptClose(ctx, id))
 	closed, err := sessions.Get(ctx, id)
@@ -100,7 +98,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	require.Len(t, histories[0].Facts, 5, "Starting, Working, Stopping, Stopped, Closed only; duplicates and failed saves add no facts")
 	// Reporting is neither the personal Recent list nor its 100-row page.
 	observed = end.Add(-time.Hour)
-	create := command.NewCreateWorkHandler(time.Now, f.agents, sessions, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory)
+	create := command.NewCreateWorkHandler(time.Now, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	insertStartingWorks(t, f.db, f.request.Creation.AgentID, "owner", 104, observed.UnixMilli(), func() string { return project })
 	// Another project's Work and same-project coordinator must not enter totals.
 	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: f.request.Creation.AgentID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), WorkspaceReference: uuid.NewString()})

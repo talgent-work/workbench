@@ -18,13 +18,14 @@ const deskGrace = 10 * time.Minute
 // run holds: a run whose start never committed, or whose release report was
 // lost. It is Agent confirming such a run can no longer start.
 type ReconcileDesksHandler struct {
-	now       func() time.Time
-	computers ComputerPort
-	works     domain.AgentWorkRepository
+	now        func() time.Time
+	computers  ComputerPort
+	works      domain.AgentWorkRepository
+	executions domain.AgentExecutionRepository
 }
 
-func NewReconcileDesksHandler(now func() time.Time, computers ComputerPort, works domain.AgentWorkRepository) *ReconcileDesksHandler {
-	return &ReconcileDesksHandler{now: now, computers: computers, works: works}
+func NewReconcileDesksHandler(now func() time.Time, computers ComputerPort, works domain.AgentWorkRepository, executions domain.AgentExecutionRepository) *ReconcileDesksHandler {
+	return &ReconcileDesksHandler{now: now, computers: computers, works: works, executions: executions}
 }
 
 func (h *ReconcileDesksHandler) Handle(ctx context.Context) error {
@@ -49,12 +50,34 @@ func (h *ReconcileDesksHandler) Handle(ctx context.Context) error {
 }
 
 func (h *ReconcileDesksHandler) reconcile(ctx context.Context, desk OpenDesk) error {
-	work, err := h.works.Get(ctx, desk.WorkID)
-	if err != nil && !errors.Is(err, domain.ErrWorkNotFound) {
+	held, err := h.held(ctx, desk)
+	if err != nil || held {
 		return err
 	}
-	if work != nil && work.HoldsDesk(desk.DeskID) {
-		return nil
-	}
 	return h.computers.LeaveDesk(ctx, desk.DeskID)
+}
+
+// held reports whether a run still holds the Desk: the Work's execution
+// that has not left it, or the Work's committed start whose execution has
+// not begun yet.
+func (h *ReconcileDesksHandler) held(ctx context.Context, desk OpenDesk) (bool, error) {
+	execution, err := h.executions.Latest(ctx, desk.WorkID)
+	switch {
+	case err == nil && execution.HoldsDesk(desk.DeskID):
+		return true, nil
+	case err != nil && !errors.Is(err, domain.ErrExecutionNotFound):
+		return false, err
+	}
+	work, err := h.works.Get(ctx, desk.WorkID)
+	if errors.Is(err, domain.ErrWorkNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	admitted, ok := intentOf[domain.WorkStartAdmitted](work)
+	if !ok || admitted.DeskID != desk.DeskID {
+		return false, nil
+	}
+	return execution == nil || !execution.Serves(admitted.StartAdmittedAt), nil
 }

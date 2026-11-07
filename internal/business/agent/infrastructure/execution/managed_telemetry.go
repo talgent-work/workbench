@@ -33,7 +33,7 @@ type managedTelemetry struct {
 // attachTelemetry gives the run's Harness its telemetry: the same
 // environment as on a Cloud, and the endpoint and token Talgent Computer
 // adds as OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS.
-func (s *managedSpecification) attachTelemetry(ctx context.Context, request domain.StartExecutionRequest, endpoint, token string) error {
+func (s *managedSpecification) attachTelemetry(ctx context.Context, request domain.LaunchSpecification, endpoint, token string) error {
 	if strings.TrimSpace(endpoint) == "" || strings.TrimSpace(token) == "" {
 		return domain.ErrExecutionRequest
 	}

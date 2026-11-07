@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"time"
@@ -144,22 +143,19 @@ func (s *AgentWork) DisconnectionDue(now time.Time) bool {
 // inputPending is the supplied fact that accepted input awaits processing: a
 // Managed Work it stops so records ReachResumeDue, since that input awaits
 // its machine's return (Retry on reconnection). The result reports a change.
-func (s *AgentWork) StopBeyondReach(ctx context.Context, now time.Time, inputPending bool, port ExecutionPort) (bool, error) {
+func (s *AgentWork) StopBeyondReach(now time.Time, inputPending bool) bool {
 	if !s.DisconnectionDue(now) || s.HarnessProcess.Unreached {
-		return false, nil
-	}
-	if port == nil {
-		return false, ErrInvalidWork
+		return false
 	}
 	working := s.State == WorkWorking
 	if working {
 		s.admitStop(uuid.Must(uuid.NewV7()).String(), StopReasonDisconnected)
 	}
-	err := s.endBeyondReach(ctx, port)
+	s.endBeyondReach()
 	if working {
 		s.awaitReconnection(inputPending)
 	}
-	return true, err
+	return true
 }
 
 // beyondReach reports a Work whose running environment the platform does not
@@ -172,27 +168,25 @@ func (s *AgentWork) beyondReach() bool {
 // stopBeyondReach stops a Work during a Disconnection at once: a Working
 // Work under requestID and reason, a Stopping one under the stop it
 // admitted. It reports whether it applied.
-func (s *AgentWork) stopBeyondReach(ctx context.Context, requestID string, reason StopReason, port ExecutionPort) (bool, error) {
+func (s *AgentWork) stopBeyondReach(requestID string, reason StopReason) (bool, error) {
 	if !s.beyondReach() || s.State == WorkClosing {
 		return false, nil
 	}
-	if strings.TrimSpace(requestID) == "" || port == nil {
+	if strings.TrimSpace(requestID) == "" {
 		return false, ErrInvalidWork
 	}
 	if s.State == WorkWorking {
 		s.admitStop(requestID, reason)
 	}
-	return true, s.endBeyondReach(ctx, port)
+	s.endBeyondReach()
+	return true, nil
 }
 
 // closeBeyondReach closes a Work during a Disconnection at once: a Working
 // Work is stopped as completed, as any close of a running Work is, and its
 // run ends without reaching its process. Input still awaiting processing, or
 // a start or continuation still owed, refuses it as on any running Work.
-func (s *AgentWork) closeBeyondReach(ctx context.Context, requestID string, facts ClosureFacts, port ExecutionPort) error {
-	if port == nil {
-		return ErrInvalidWork
-	}
+func (s *AgentWork) closeBeyondReach(requestID string, facts ClosureFacts) error {
 	if s.State == WorkWorking {
 		if facts.InputPending {
 			return ErrInputPending
@@ -205,37 +199,36 @@ func (s *AgentWork) closeBeyondReach(ctx context.Context, requestID string, fact
 	if s.CloseRequestReference == "" {
 		s.CloseRequestReference = requestID
 	}
-	err := s.endBeyondReach(ctx, port)
+	s.endBeyondReach()
 	if s.State == WorkStopped {
 		s.close(requestID)
 	}
-	return err
+	return nil
 }
 
 // endBeyondReach ends a run the platform no longer observes the way its
 // Computer allows: a Managed Computer's fence ended it already, while a
 // Cloud sandbox is reclaimed in its place.
-func (s *AgentWork) endBeyondReach(ctx context.Context, port ExecutionPort) error {
+func (s *AgentWork) endBeyondReach() {
 	if s.OnManagedComputer() {
-		return s.endFenced(ctx, port)
+		s.endFenced()
+		return
 	}
-	return s.reclaimUnreached(ctx, port)
+	s.reclaimUnreached()
 }
 
 // endFenced ends a Managed Work's run as its machine's fence did: the process
-// exited and its compute is released, so its Desk leaves, a Stopping Work is
-// Stopped and a Closing one Closed. The Disconnection ends with the run. The
-// execution port retires what the platform keeps for the run without
-// reclaiming compute; the machine's reconciliation cleans up what remains
-// when it reconnects.
-func (s *AgentWork) endFenced(ctx context.Context, port ExecutionPort) error {
+// exited and its compute is released, so a Stopping Work is Stopped and a
+// Closing one Closed. The Disconnection ends with the run. Its execution
+// retires without reclaiming compute; the machine's reconciliation cleans up
+// what remains when it reconnects.
+func (s *AgentWork) endFenced() {
 	p := s.HarnessProcess
-	p.Exited, p.ComputeReclaimed, p.SubAgents = true, true, nil
+	p.Fenced, p.Exited, p.ComputeReclaimed, p.SubAgents = true, true, true, nil
 	p.rest()
 	s.DisconnectedSince = time.Time{}
-	s.releaseDesk()
+	s.requestComputeRelease()
 	s.confirmTermination()
-	return executionRequestError(port.RetireFencedRun(ctx, s.ID))
 }
 
 // reclaimUnreached reclaims a Cloud Work's sandbox in place of the exit its
@@ -243,9 +236,9 @@ func (s *AgentWork) endFenced(ctx context.Context, port ExecutionPort) error {
 // fence: the release confirmation vouches for the exit, so the Work's stop
 // or close completes on it, as any stop does (Disconnection release). The
 // Disconnection stays shown until then.
-func (s *AgentWork) reclaimUnreached(ctx context.Context, port ExecutionPort) error {
+func (s *AgentWork) reclaimUnreached() {
 	p := s.HarnessProcess
 	p.Unreached = true
 	p.rest()
-	return executionRequestError(port.ReclaimCompute(ctx, s.ID))
+	s.requestComputeRelease()
 }

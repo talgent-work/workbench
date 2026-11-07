@@ -35,29 +35,25 @@ import (
 	"xorm.io/xorm"
 )
 
-// Keep the Agent module, HTTP mapping and persistence real. The execution port
-// records accepted commands. Native facts enter the feedback API; compute
-// reclamation enters the application's execution feedback handler, as
-// execution's removal reconciliation applies it.
+// Keep the Agent module, HTTP mapping and persistence real. Each admitted
+// start begins its AgentExecution, which the test realizes as execution
+// integration would. Native facts enter the feedback API; the release of a
+// retired execution is confirmed as its reconciliation confirms it.
 func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	dsn := mysqltest.Database(t)
-	db, err := xorm.NewEngine("mysql", dsn)
+	observer, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	require.NoError(t, db.Close())
+	t.Cleanup(func() { _ = observer.Close() })
 
 	port := &sessionCommandRecorder{}
-	processes := &lifecycleProcesses{}
-	var reclamations *command.ApplyExecutionFeedbackHandler
+	runs := &moduleRuns{}
 	var recovery *command.RecoverWorkHandler
 	var agentApp *application.Application
 	reclaim := func(session string) {
 		t.Helper()
-		processes.observe(domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true})
-		// Execution's removal reconciliation applies a released environment
-		// as this fact once its authority reports the compute gone.
-		require.NoError(t, reclamations.Handle(ctx, command.ExecutionFeedback{WorkID: session, Kind: command.ComputeReclaimed}))
+		runs.release(t, ctx, session)
 	}
 	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
@@ -73,11 +69,10 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 			fx.Provide(func() kubernetes.Interface { return capacityClient }),
-			fx.Provide(func() domain.ExecutionPort { return port }),
 			fx.Provide(func() command.RunningHarnessPort { return port }),
-			fx.Decorate(func(command.ProcessObservationPort) command.ProcessObservationPort { return processes }),
-			fx.Invoke(func(feedback *command.ApplyExecutionFeedbackHandler, recoverSession *command.RecoverWorkHandler, app *application.Application) {
-				recovery, agentApp, reclamations = recoverSession, app, feedback
+			runs.option(),
+			fx.Invoke(func(recoverSession *command.RecoverWorkHandler, app *application.Application) {
+				recovery, agentApp = recoverSession, app
 			}),
 		)
 		require.NoError(t, app.Err())
@@ -115,7 +110,7 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	selfOwned.SubjectId = definitionID
 	_, err = client.CreateWork(sessionControlRequest(ctx), selfOwned)
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "the AgentDefinition identity is rejected as owner")
-	require.Empty(t, port.startRequests())
+	require.Empty(t, launches(t, observer))
 	// Initial capacity rejection must leave no conversation to resume later.
 	fullQuota := quota.DeepCopy()
 	fullQuota.Status.Used = hard.DeepCopy()
@@ -123,7 +118,7 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	require.NoError(t, err)
 	_, err = client.CreateWork(sessionControlRequest(ctx), creationRequest("work-a", "project-a"))
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
-	require.Empty(t, port.startRequests())
+	require.Empty(t, launches(t, observer))
 	_, err = capacityClient.CoreV1().ResourceQuotas("sandboxes").UpdateStatus(ctx, quota.DeepCopy(), metav1.UpdateOptions{})
 	require.NoError(t, err)
 	stop()
@@ -132,7 +127,7 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, absent.Found)
 	require.Empty(t, absent.WorkId)
-	require.Empty(t, port.startRequests(), "restoring quota cannot revive a rejected creation")
+	require.Empty(t, launches(t, observer), "restoring quota cannot revive a rejected creation")
 	type creationResult struct {
 		id  string
 		err error
@@ -160,7 +155,7 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 		}
 		require.Equal(t, sessionID, result.id, "concurrent private creation must resolve one Work for the Subject")
 	}
-	require.Len(t, port.startRequests(), 1, "one Subject dispatches one execution")
+	awaitLaunches(t, observer, 1, "one Subject begins one execution")
 	get := func(id string) *agentprivatev1.GetWorkResponse {
 		t.Helper()
 		response, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "employee-a", WorkId: id})
@@ -176,12 +171,10 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	newInput := creationRequest("work-c", "project-c")
 	newInput.CapabilityDifferences = nil
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STARTING, get(sessionID).State)
-	require.Len(t, port.startRequests(), 1)
+	require.Len(t, launches(t, observer), 1)
 
-	// Exit and failure feedback only prompt the environment observation, which
-	// the test controls as the environment authority.
-	// report delivers Dispatcher feedback about a process; the environment
-	// authority's current one is "process".
+	// report delivers Dispatcher feedback about a process; the current
+	// execution's is launchedProcess.
 	report := func(kind agentprivatev1.FeedbackKind, processID string, exitCode int32) error {
 		req := &agentprivatev1.ReportRequest{WorkId: sessionID, Kind: kind, ProcessId: processID, ExitCode: exitCode}
 		ctx, info := connect.NewClientContext(ctx)
@@ -193,6 +186,7 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	// Turn, while a resume or restart with nothing coming waits for input.
 	ready := func(want agentprivatev1.WorkState) {
 		t.Helper()
+		runs.realize(t, ctx, sessionID)
 		require.NoError(t, report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_PREPARED, "process", 0))
 		require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STARTING, get(sessionID).State)
 		require.NoError(t, report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_STARTED, "process", 0))
@@ -202,10 +196,10 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 		t.Helper()
 		_, err := client.StopWork(sessionControlRequest(ctx), &agentprivatev1.StopWorkRequest{SubjectId: "employee-a", WorkId: sessionID, RequestId: request})
 		require.NoError(t, err)
-		port.assertStop(t, sessionID, request)
+		runs.awaitExitRequest(t, ctx, sessionID, request)
 		require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPING, get(sessionID).State)
 		require.NoError(t, report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_EXITED, "process", 143))
-		port.assertReclaim(t, sessionID)
+		runs.awaitRetired(t, ctx, sessionID)
 		require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPING, get(sessionID).State)
 		reclaim(sessionID)
 		require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPED, get(sessionID).State)
@@ -256,11 +250,11 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, original.ContextReference, get(sessionID).ContextReference)
 	ready(agentprivatev1.WorkState_WORK_STATE_WORKING)
-	// The late exit fact of the stopped process names that
-	// process and cannot end the resumed one, which the environment observes alive.
-	processes.observe(domain.ProcessObservation{State: domain.ProcessRunning})
+	// The late exit fact of the stopped process names that process and cannot
+	// end the resumed one; applying the running execution's reports again
+	// changes nothing.
 	require.NoError(t, report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_EXITED, "earlier", 0))
-	require.NoError(t, report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_COMPUTE_RECLAIMED, "", 0))
+	runs.applyReports(t, ctx, sessionID)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_WORKING, get(sessionID).State)
 	require.NoError(t, report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_EXITED, "process", 1))
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_FAILED, get(sessionID).State, "an exit without an admitted stop is a failure")
@@ -294,7 +288,7 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sessionID, accepted.WorkId)
 	require.Equal(t, "close", accepted.RequestId)
-	port.assertStop(t, sessionID, "close")
+	runs.awaitExitRequest(t, ctx, sessionID, "close")
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPING, get(sessionID).State, "a running Work is stopped before it closes")
 	require.NoError(t, recovery.Handle(ctx, sessionID))
 	rejectExecution := func() {
@@ -306,20 +300,20 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	}
 	rejectExecution()
 	require.NoError(t, report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_EXITED, "process", 0))
-	port.assertReclaim(t, sessionID)
+	runs.awaitRetired(t, ctx, sessionID)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPING, get(sessionID).State)
 	reclaim(sessionID)
 	// Once stopped, the Work's recovery, which its execution-ended event wakes
 	// and the sweep finds, applies the kept close.
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPED, get(sessionID).State)
-	require.NoError(t, application.NewRecovery(agentApp, nil, nil, nil, nil).RecoverWork(ctx, sessionID))
+	require.NoError(t, application.NewRecovery(agentApp, nil, nil, nil, nil, nil, nil).RecoverWork(ctx, sessionID))
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_CLOSED, get(sessionID).State)
 	stop()
 	client, feedback, _ = startModule()
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_CLOSED, get(sessionID).State)
 	rejectExecution()
-	requests := port.startRequests()
-	require.Len(t, requests, 3, "closure must not dispatch any new execution")
+	requests := launches(t, observer)
+	require.Len(t, requests, 3, "closure must not begin any new execution")
 	for _, request := range requests {
 		require.Equal(t, domain.HomeBinding{OwnerID: "employee-a", Namespace: "personal"}, request.HomeBinding)
 		require.Equal(t, "session prompt", request.Capabilities.Prompt)
@@ -338,8 +332,7 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	require.NoError(t, err, "no definition limits how many of its Works run")
 	require.Equal(t, "changed base", get(newSession.WorkId).Capabilities.Prompt)
 	require.NotEqual(t, original.ContextReference, get(newSession.WorkId).ContextReference)
-	requests = port.startRequests()
-	require.Len(t, requests, 4)
+	requests = awaitLaunches(t, observer, 4, "the new Work begins its execution")
 	require.Equal(t, requests[0].HomeBinding, requests[3].HomeBinding, "the employee HOME is shared across projects")
 	require.NotEqual(t, requests[0].HarnessSessionReference, requests[3].HarnessSessionReference)
 }

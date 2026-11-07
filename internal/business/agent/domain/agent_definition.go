@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -89,13 +88,13 @@ type AgentDefinitionInput struct {
 	Capabilities CapabilityConfiguration
 }
 
-// WorkLookupPort finds the Work of a definition's Subject; a closed Work
-// still holds its Subject.
-type WorkLookupPort interface {
-	FindWork(ctx context.Context, agentID string, subject WorkSubject) (*AgentWork, error)
-	// LocateWork reads one Work by identity, answering ErrWorkNotFound when
-	// there is none.
-	LocateWork(ctx context.Context, workID string) (*AgentWork, error)
+// WorkCreationFacts are the Works a creation supplies, loaded through the
+// AgentWork repository: the definition's Work of the requested Subject, a
+// closed one included, and the source Work of a requested starting context;
+// nil for none.
+type WorkCreationFacts struct {
+	SubjectWork *AgentWork
+	SourceWork  *AgentWork
 }
 
 type WorkCreationRequest struct {
@@ -294,19 +293,19 @@ func (a *AgentDefinition) ProvideCapabilities() CapabilityConfiguration {
 // facts are gathered: Prompt, Plugins and their configuration never decide
 // reuse, and a closed Work keeps its Subject. A Work without a Subject is
 // never reused; only its creation request identity deduplicates it.
-func (a *AgentDefinition) ReuseWork(ctx context.Context, subject WorkSubject, lookup WorkLookupPort) (*AgentWork, error) {
+func (a *AgentDefinition) ReuseWork(subject WorkSubject, subjectWork *AgentWork) (*AgentWork, error) {
 	if err := subject.Validate(); err != nil {
 		return nil, err
 	}
-	if !subject.Present() {
+	if !subject.Present() || subjectWork == nil || subjectWork.AgentID != a.ID || subjectWork.Subject != subject {
 		return nil, nil
 	}
-	return lookup.FindWork(ctx, a.ID, subject)
+	return subjectWork, nil
 }
 
 // CreateWork returns the retained or newly created Work; created is true only for a new Work.
-func (a *AgentDefinition) CreateWork(ctx context.Context, request WorkCreationRequest, lookup WorkLookupPort, execution ExecutionPort) (work *AgentWork, created bool, err error) {
-	existing, err := a.ReuseWork(ctx, request.Subject, lookup)
+func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCreationFacts) (work *AgentWork, created bool, err error) {
+	existing, err := a.ReuseWork(request.Subject, facts.SubjectWork)
 	if err != nil {
 		return nil, false, err
 	}
@@ -333,7 +332,7 @@ func (a *AgentDefinition) CreateWork(ctx context.Context, request WorkCreationRe
 	if err := a.AdmitComputer(request.ComputerManaged); err != nil {
 		return nil, false, err
 	}
-	starting, err := a.startingContext(ctx, request.StartingContext, request.ProjectID, lookup)
+	starting, err := a.startingContext(request.StartingContext, request.ProjectID, facts.SourceWork)
 	if err != nil {
 		return nil, false, err
 	}
@@ -341,7 +340,7 @@ func (a *AgentDefinition) CreateWork(ctx context.Context, request WorkCreationRe
 	if workID == "" {
 		workID = uuid.Must(uuid.NewV7()).String()
 	}
-	session, err := NewAgentWork(ctx, WorkInput{
+	session, err := NewAgentWork(WorkInput{
 		StartedBy:          request.StartedBy,
 		RepositoryInput:    request.RepositoryInput,
 		AuthorizationInput: request.AuthorizationInput,
@@ -349,7 +348,7 @@ func (a *AgentDefinition) CreateWork(ctx context.Context, request WorkCreationRe
 		ID:                 workID, AgentID: a.ID, Subject: request.Subject, ProjectID: request.ProjectID, DisplayTitle: request.DisplayTitle,
 		WorkModel: request.WorkModel, Capabilities: request.Capabilities, HomeBinding: a.HomeBinding, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, TraceAttributes: request.TraceAttributes,
 		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, Harness: request.Harness,
-	}, request.Admission, execution)
+	}, request.Admission)
 	if err != nil {
 		return nil, false, err
 	}

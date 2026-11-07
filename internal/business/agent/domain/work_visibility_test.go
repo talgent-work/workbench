@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -26,10 +25,11 @@ func newDefinition(t *testing.T, scope string, rule domain.VisibilityRule) *doma
 
 func newVisibleWork(t *testing.T, definition *domain.AgentDefinition) visibleWork {
 	t.Helper()
-	work, err := domain.NewAgentWork(context.Background(), domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID, Subject: domain.WorkSubject{Kind: "case", ID: "case-a"}, ProjectID: "project-a", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID, Subject: domain.WorkSubject{Kind: "case", ID: "case-a"}, ProjectID: "project-a", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 		WorkspaceReference: "workspace-a", HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}, Visibility: definition.Visibility,
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, &executionPort{})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
+	work.Events.Drain() // Only the events of sharing and visibility are read here.
 	return visibleWork{AgentWork: work, definition: definition}
 }
 

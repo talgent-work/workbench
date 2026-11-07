@@ -44,8 +44,8 @@ type SandboxCredentials struct {
 	db        *xorm.Engine
 	lifecycle *sdk.LifecycleClient
 	models    *ModelCatalog
-	// works checks every delivery against the Work's state.
-	works        *HeldWorks
+	// records checks every delivery against its execution's facts.
+	records      records
 	repositories RepositoryCredentials
 	services     ServiceCredentials
 	http         *http.Client
@@ -53,8 +53,8 @@ type SandboxCredentials struct {
 	now          func() time.Time
 }
 
-func NewSandboxCredentials(db *xorm.Engine, lifecycle *sdk.LifecycleClient, models *ModelCatalog, sessions domain.AgentWorkRepository, repositories RepositoryCredentials, services ServiceCredentials, client *http.Client, transport string) (*SandboxCredentials, error) {
-	if db == nil || lifecycle == nil || models == nil || sessions == nil || repositories == nil || services == nil || client == nil {
+func NewSandboxCredentials(db *xorm.Engine, lifecycle *sdk.LifecycleClient, models *ModelCatalog, repositories RepositoryCredentials, services ServiceCredentials, client *http.Client, transport string) (*SandboxCredentials, error) {
+	if db == nil || lifecycle == nil || models == nil || repositories == nil || services == nil || client == nil {
 		return nil, errors.New("agent: credential persistence, model catalog, authority and management client required")
 	}
 	// encrypted-network is enabled only by deployment that verifies its actual
@@ -64,7 +64,7 @@ func NewSandboxCredentials(db *xorm.Engine, lifecycle *sdk.LifecycleClient, mode
 	}
 	h := *client
 	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	c := &SandboxCredentials{db: db, lifecycle: lifecycle, models: models, works: NewHeldWorks(db, sessions), repositories: repositories, services: services, http: &h, transport: transport}
+	c := &SandboxCredentials{db: db, lifecycle: lifecycle, models: models, records: records{db: db}, repositories: repositories, services: services, http: &h, transport: transport}
 	return c, nil
 }
 
@@ -115,14 +115,14 @@ var staleDelivery = time.UnixMilli(1)
 // it has and reports itself stale. It reports the service access observed and
 // the earliest declared expiry of what it delivered, zero when nothing
 // delivered expires.
-func (c *SandboxCredentials) prepare(ctx context.Context, record allocationRecord, admitted domain.StartExecutionRequest, spec sdk.CreateSandboxRequest, redelivery bool) (deliveredCredentials, error) {
+func (c *SandboxCredentials) prepare(ctx context.Context, record allocationRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool) (deliveredCredentials, error) {
 	statuses, expiry, digest, err := c.write(ctx, record, admitted, spec, redelivery)
 	return deliveredCredentials{Statuses: statuses, ExpiresAt: expiry, ModelDigest: digest}, err
 }
 
-func (c *SandboxCredentials) write(ctx context.Context, record allocationRecord, admitted domain.StartExecutionRequest, spec sdk.CreateSandboxRequest, redelivery bool) ([]ServiceAccessStatus, time.Time, string, error) {
+func (c *SandboxCredentials) write(ctx context.Context, record allocationRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool) ([]ServiceAccessStatus, time.Time, string, error) {
 	var none time.Time
-	if err := c.works.current(ctx, record); err != nil {
+	if _, err := c.records.holding(ctx, record); err != nil {
 		return nil, none, "", err
 	}
 	if spec.CredentialProxy == nil || !spec.CredentialProxy.Enabled || spec.NetworkPolicy == nil || spec.NetworkPolicy.DefaultAction != "allow" {
@@ -183,7 +183,7 @@ func (c *SandboxCredentials) write(ctx context.Context, record allocationRecord,
 	if policy.EnforcementMode != "dns+nft" || policy.Policy == nil || !reflect.DeepEqual(policy.Policy, spec.NetworkPolicy) {
 		return nil, none, "", errors.New("agent: credential network policy not ready")
 	}
-	if err := c.works.current(ctx, record); err != nil {
+	if _, err := c.records.holding(ctx, record); err != nil {
 		return nil, none, "", err
 	}
 	before, err := client.GetCredentialVault(ctx)
@@ -214,7 +214,7 @@ func (c *SandboxCredentials) write(ctx context.Context, record allocationRecord,
 		}
 		return nil, none, "", errors.New("agent: credential write not confirmed")
 	}
-	if err := c.works.current(ctx, record); err != nil {
+	if _, err := c.records.holding(ctx, record); err != nil {
 		if clearErr := c.clear(ctx, record.SandboxID); clearErr != nil {
 			return nil, none, "", clearErr
 		}
@@ -432,13 +432,4 @@ func (c *SandboxCredentials) clock() time.Time {
 		return c.now()
 	}
 	return time.Now()
-}
-
-// heldWorks is the Work-state check every delivery shares with the Managed
-// realization.
-func (c *SandboxCredentials) heldWorks() *HeldWorks {
-	if c == nil {
-		return nil
-	}
-	return c.works
 }

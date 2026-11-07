@@ -89,9 +89,10 @@ func (c SandboxConfig) Validate() error {
 	return nil
 }
 
-// Sandboxes performs external operations only. Callers must persist a create
-// claim before Submit and resolve uncertain outcomes through Lookup; Submit
-// must never be retried merely because its response was lost.
+// Sandboxes performs external operations only. Callers record a creation's
+// submission before submit and resolve an uncertain outcome by observing the
+// sandboxes carrying the execution's ownership; submit is never retried
+// merely because its response was lost.
 type Sandboxes struct {
 	client *sdk.LifecycleClient
 	config SandboxConfig
@@ -134,55 +135,23 @@ func withoutWorkCredential(spec sdk.CreateSandboxRequest) sdk.CreateSandboxReque
 	return spec
 }
 
-// lookup returns a candidate from the exact immutable specification. The caller
-// must commit its identity with CAS before using it or cleaning up surplus matches.
-func (s *Sandboxes) lookup(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) (string, error) {
-	ids, err := s.matching(ctx, owner, spec)
-	if err != nil || len(ids) == 0 {
-		return "", err
-	}
-	return ids[0], nil
-}
-
-// matching lists the sandboxes of the exact immutable specification. Any
-// listed sandbox that does not carry it exactly makes the list a conflict,
-// since binding must never choose among contradicting candidates.
-func (s *Sandboxes) matching(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) ([]string, error) {
+// owned lists the sandboxes carrying the execution's exact ownership, each
+// once. A listed sandbox that does not is not the execution's, so it is left
+// in place without holding back the others.
+func (s *Sandboxes) owned(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) ([]sdk.SandboxInfo, error) {
 	items, err := s.listCorrelated(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(items))
-	seen := map[string]bool{}
+	owned := make([]sdk.SandboxInfo, 0, len(items))
 	for i := range items {
 		item := &items[i]
-		if !carriesOwnership(item, owner, spec) || !validSandboxID(item.ID) || seen[item.ID] {
-			return nil, errEnvironmentConflict
-		}
-		seen[item.ID] = true
-		ids = append(ids, item.ID)
-	}
-	slices.Sort(ids)
-	return ids, nil
-}
-
-// owned lists the sandboxes carrying the allocation's exact ownership. A
-// listed sandbox that does not is not the allocation's to delete, so it is
-// left in place without holding back the others.
-func (s *Sandboxes) owned(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) ([]string, error) {
-	items, err := s.listCorrelated(ctx, owner)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(items))
-	for i := range items {
-		item := &items[i]
-		if carriesOwnership(item, owner, spec) && validSandboxID(item.ID) && !slices.Contains(ids, item.ID) {
-			ids = append(ids, item.ID)
+		if carriesOwnership(item, owner, spec) && validSandboxID(item.ID) && !slices.ContainsFunc(owned, func(o sdk.SandboxInfo) bool { return o.ID == item.ID }) {
+			owned = append(owned, *item)
 		}
 	}
-	slices.Sort(ids)
-	return ids, nil
+	slices.SortFunc(owned, func(a, b sdk.SandboxInfo) int { return strings.Compare(a.ID, b.ID) })
+	return owned, nil
 }
 
 // listCorrelated pages every sandbox the server lists with the allocation's
@@ -202,36 +171,6 @@ func (s *Sandboxes) listCorrelated(ctx context.Context, owner Allocation) ([]sdk
 			return nil, errors.New("agent: inconsistent sandbox pagination")
 		}
 	}
-}
-
-// prune preserves the durably selected primary and removes every other
-// sandbox carrying the allocation's ownership.
-func (s *Sandboxes) prune(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest, primary string, credentials *SandboxCredentials) error {
-	_, err := s.removeOwned(ctx, owner, spec, primary, credentials)
-	return err
-}
-
-// removeOwned deletes every sandbox the server lists with the allocation's
-// ownership except keep, and reports whether any of them may remain. List
-// results alone never authorize deletion: Delete inspects each sandbox's exact
-// ownership again, and one that fails is reported without holding back the
-// others.
-func (s *Sandboxes) removeOwned(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest, keep string, credentials *SandboxCredentials) (bool, error) {
-	ids, err := s.owned(ctx, owner, spec)
-	if err != nil {
-		return false, err
-	}
-	remaining := false
-	var failures []error
-	for _, id := range ids {
-		if id == keep {
-			continue
-		}
-		absent, err := s.Delete(ctx, owner, spec, id, credentials)
-		failures = append(failures, err)
-		remaining = remaining || err != nil || !absent
-	}
-	return remaining, errors.Join(failures...)
 }
 
 // Only a GET of the bound sandbox can establish authoritative absence. An
@@ -331,7 +270,7 @@ func (s *Sandboxes) deleteLocked(ctx context.Context, owner Allocation, id strin
 	return false, clearErr
 }
 
-func (s *Sandboxes) specification(ctx context.Context, request domain.StartExecutionRequest, mounts domain.SandboxMounts, owner Allocation, token, credential string) (sdk.CreateSandboxRequest, error) {
+func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner Allocation, token, credential string) (sdk.CreateSandboxRequest, error) {
 	if err := validateStartRequest(request); err != nil {
 		return sdk.CreateSandboxRequest{}, err
 	}
@@ -400,7 +339,7 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.StartExecu
 		spec.ResourceRequests[string(name)], spec.ResourceLimits[string(name)] = request.String(), limit.String()
 	}
 	encoded, err := json.Marshal(struct {
-		Request    domain.StartExecutionRequest
+		Request    domain.LaunchSpecification
 		Allocation Allocation
 		Spec       sdk.CreateSandboxRequest
 	}{request, owner, spec})

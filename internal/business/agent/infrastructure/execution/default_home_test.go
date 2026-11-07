@@ -36,16 +36,17 @@ func TestSuppliedHomesReachNativeSandboxWithBusinessOwnership(t *testing.T) {
 		forward := &defaultHomeSubmission{provider: provider, root: t.TempDir()}
 		snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.Capabilities.RequiredPlugins}, []domain.PluginRelease{{Slug: "talgent-runtime", Source: "fixture", Version: "1", RetrievalRef: "fixture:runtime", NativeEntry: []byte(`{"name":"talgent-runtime","version":"1"}`)}})
 		require.NoError(t, err)
-		created, isNew, err := definition.CreateWork(ctx, domain.WorkCreationRequest{StartedBy: "owner",
+		created, isNew, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: "owner",
 			Capabilities: snapshot, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true},
 			WorkModel:          domain.WorkModelSelection{ConfigurationID: "deployment-default"},
 			Subject:            domain.WorkSubject{Kind: "case", ID: subject + "/" + uuid.NewString()},
 			ProjectID:          project,
 			WorkspaceReference: uuid.NewString(),
-		}, defaultHomeSessionLookup{}, forward)
+		}, domain.WorkCreationFacts{})
 		require.NoError(t, err)
 		require.True(t, isNew)
 		session := created
+		require.NoError(t, forward.StartExecution(ctx, session.LaunchSpecification()))
 
 		require.Equal(t, definition.HomeBinding, forward.admitted.HomeBinding, "the Session must deliver its definition's HOME owner to execution, including SCM resolution")
 		spec := fixture.create
@@ -93,26 +94,15 @@ func TestSuppliedHomesReachNativeSandboxWithBusinessOwnership(t *testing.T) {
 	}
 }
 
-type defaultHomeSessionLookup struct{}
-
-func (defaultHomeSessionLookup) LocateWork(context.Context, string) (*domain.AgentWork, error) {
-	return nil, domain.ErrWorkNotFound
-}
-
-func (defaultHomeSessionLookup) FindWork(context.Context, string, domain.WorkSubject) (*domain.AgentWork, error) {
-	return nil, nil
-}
-
-// Forward the real Session's admission request to the real native provider.
+// Forward the real Work's LaunchSpecification to the real native provider.
 // Lifecycle persistence/recovery is exercised by the existing provisioning tests.
 type defaultHomeSubmission struct {
-	domain.ExecutionPort
 	provider *Sandboxes
 	root     string
-	admitted domain.StartExecutionRequest
+	admitted domain.LaunchSpecification
 }
 
-func (s *defaultHomeSubmission) StartExecution(ctx context.Context, input domain.StartExecutionRequest) error {
+func (s *defaultHomeSubmission) StartExecution(ctx context.Context, input domain.LaunchSpecification) error {
 	s.admitted = input
 	mounts, err := directoryMounts{root: s.root}.AcquireMounts(ctx, input.MountRequest())
 	if err != nil {

@@ -15,6 +15,10 @@ import (
 // linkedWorks holds Works by identity.
 type linkedWorks map[string]*domain.AgentWork
 
+func (linkedWorks) FindBySubject(context.Context, string, domain.WorkSubject) (*domain.AgentWork, error) {
+	return nil, nil
+}
+
 func (w linkedWorks) Get(_ context.Context, id string) (*domain.AgentWork, error) {
 	if work, ok := w[id]; ok {
 		return work, nil

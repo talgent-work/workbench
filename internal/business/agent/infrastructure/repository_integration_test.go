@@ -67,7 +67,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "Answer with the conclusion first.", agent.Soul)
 
 	traceAttributes := map[string]string{"talgent.project_id": "project-1", "talgent.owner_id": "case"}
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, WorkspaceReference: "workspace-a", TraceAttributes: traceAttributes})
+	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{})).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, WorkspaceReference: "workspace-a", TraceAttributes: traceAttributes})
 	require.NoError(t, err)
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -94,27 +94,25 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	session = reload()
 	require.Equal(t, "Original instructions", session.CapabilitySnapshot.Prompt)
 	require.Equal(t, "review:architect", session.CapabilitySnapshot.StartupAgent)
-	port := executionPort{}
 	current, err := commandtest.UnchangedPlugins{}.CurrentReleases(ctx, "owner", originalCapabilities.Plugins)
 	require.NoError(t, err)
 	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true, CurrentPlugins: current}
-	require.NoError(t, session.ConfirmPrepared(context.Background(), time.Now(), nil))
 	require.NoError(t, sessions.Save(ctx, session))
 	require.ErrorIs(t, sessions.Save(ctx, session), domain.ErrConcurrentModification)
 	session = reload()
 	require.True(t, session.HoldsProcess(), "an admitted start holds a Harness process before readiness")
-	require.NoError(t, session.ConfirmStarted(context.Background(), time.Now(), nil))
+	reportReady(t, session)
 	require.NoError(t, sessions.Save(ctx, session))
 	session = reload()
-	require.NoError(t, session.Stop(ctx, "stop", port))
+	require.NoError(t, session.Stop("stop", false))
 	require.NoError(t, sessions.Save(ctx, session))
 	session = reload()
-	require.NoError(t, session.RecordExit(ctx, domain.HarnessExit{}, port))
+	reportExit(t, session, domain.HarnessExit{})
 	require.NoError(t, sessions.Save(ctx, session))
 	session = reload()
 	require.Equal(t, domain.WorkStopping, session.State)
 	require.False(t, session.HoldsProcess(), "the exited process is no longer held")
-	require.NoError(t, session.ConfirmComputeReclaimed())
+	reportReleased(t, session)
 	require.NoError(t, sessions.Save(ctx, session))
 
 	require.NoError(t, db.Close())
@@ -132,7 +130,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, session.HomeBinding)
 	require.Equal(t, originalCapabilities, session.CapabilitySnapshot, "reconnection retains exact releases, declarations and effective typed values")
 	require.Equal(t, "strict", session.CapabilitySnapshot.Plugins[0].Configuration["mode"])
-	require.NoError(t, session.Resume(ctx, admission, port))
+	require.NoError(t, session.Resume(admission))
 	require.NoError(t, sessions.Save(ctx, session))
 	session = reload()
 	require.Equal(t, id, session.ID)
@@ -144,20 +142,18 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "workspace-a", session.WorkspaceReference)
 }
 
+// creationRaceLookup holds every creation at its Subject lookup until all
+// arrived.
 type creationRaceLookup struct {
-	delegate domain.WorkLookupPort
-	calls    atomic.Int32
-	arrived  chan struct{}
-	release  chan struct{}
-	workers  int32
+	*infrastructure.AgentWorkRepository
+	calls   atomic.Int32
+	arrived chan struct{}
+	release chan struct{}
+	workers int32
 }
 
-func (p *creationRaceLookup) LocateWork(ctx context.Context, workID string) (*domain.AgentWork, error) {
-	return p.delegate.LocateWork(ctx, workID)
-}
-
-func (p *creationRaceLookup) FindWork(ctx context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
-	session, err := p.delegate.FindWork(ctx, agentID, subject)
+func (p *creationRaceLookup) FindBySubject(ctx context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
+	session, err := p.AgentWorkRepository.FindBySubject(ctx, agentID, subject)
 	if p.calls.Add(1) <= p.workers {
 		select {
 		case p.arrived <- struct{}{}:
@@ -187,8 +183,8 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
 	const workers = 8
-	lookup := &creationRaceLookup{delegate: sessions, workers: workers, arrived: make(chan struct{}, workers), release: make(chan struct{})}
-	handler := command.NewCreateWorkHandler(time.Now, agents, sessions, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
+	lookup := &creationRaceLookup{AgentWorkRepository: sessions, workers: workers, arrived: make(chan struct{}, workers), release: make(chan struct{})}
+	handler := command.NewCreateWorkHandler(time.Now, agents, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	request := command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "Work-A"}, ProjectID: "project-a", WorkspaceReference: "work-one", TraceAttributes: map[string]string{"talgent.project_id": "project-a"}}
 	type result struct {
 		id  string
@@ -243,7 +239,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
-	handler = command.NewCreateWorkHandler(time.Now, infrastructure.NewAgentDefinitionRepository(db, time.Now), sessions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
+	handler = command.NewCreateWorkHandler(time.Now, infrastructure.NewAgentDefinitionRepository(db, time.Now), sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	request.WorkspaceReference = "another-authorized-workspace"
 	request.CapabilityDifferences = domain.CapabilityDifferences{Plugins: []domain.PluginChoice{{Slug: "duplicate", Include: true}, {Slug: "duplicate", Include: true}}}
 	id, err := handler.Handle(ctx, request)
@@ -262,11 +258,10 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 		t.Helper()
 		work, err := sessions.Get(ctx, originalID)
 		require.NoError(t, err)
-		require.NoError(t, work.ConfirmPrepared(context.Background(), time.Now(), nil))
-		require.NoError(t, work.ConfirmStarted(context.Background(), time.Now(), nil))
-		require.NoError(t, work.Stop(ctx, uuid.NewString(), executionPort{}))
-		require.NoError(t, work.RecordExit(ctx, domain.HarnessExit{}, executionPort{}))
-		require.NoError(t, work.ConfirmComputeReclaimed())
+		reportReady(t, work)
+		require.NoError(t, work.Stop(uuid.NewString(), false))
+		reportExit(t, work, domain.HarnessExit{})
+		reportReleased(t, work)
 		require.NoError(t, sessions.Save(ctx, work))
 	}
 	stopRetainedWork()
@@ -291,8 +286,8 @@ func verifyConcurrentAdmission(t *testing.T, db *xorm.Engine, sessionID string) 
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	var starts atomic.Int32
-	port := startupExecutionPort{onStart: func(domain.StartExecutionRequest) error { starts.Add(1); return nil }}
-	handler := command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), port, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	started := startedWorks{AgentWorkRepository: sessions, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
+	handler := command.NewResumeWorkHandler(time.Now, started, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{WorkID: sessionID, SubjectID: "owner", RequestID: uuid.Must(uuid.NewV7()).String()}
 	start := make(chan struct{})
 	failures := make(chan error, 8)
@@ -320,7 +315,7 @@ func verifyConcurrentAdmission(t *testing.T, db *xorm.Engine, sessionID string) 
 	rows, err := db.QueryString("SELECT id, kind FROM agent_start_request WHERE session_id = ? AND kind = ?", sessionID, "resume")
 	require.NoError(t, err)
 	require.Equal(t, []map[string]string{{"id": request.RequestID, "kind": "resume"}}, rows)
-	_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), port, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
+	_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
 	require.ErrorIs(t, err, command.ErrStartRequestConflict, "reusing an acceptance identity for another operation is rejected")
 }
 

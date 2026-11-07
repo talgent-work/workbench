@@ -2,53 +2,63 @@ package taskprocessor_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
 )
 
-type reconciled struct {
+// observed records each observation the reconciliation makes of a queued
+// execution, which decides no step, so every task ends at its decision.
+type observed struct {
 	command.ExecutionEnvironmentPort
 	ids []string
 }
 
-func (r *reconciled) ReconcileAllocation(_ context.Context, id string) (command.AllocationStep, error) {
-	r.ids = append(r.ids, id)
-	return command.AllocationSettled, nil
+func (o *observed) Observe(_ context.Context, execution *domain.AgentExecution, full bool) (domain.EnvironmentObservation, error) {
+	o.ids = append(o.ids, fmt.Sprintf("%s:%t", execution.ID, full))
+	return domain.EnvironmentObservation{}, nil
 }
-func (r *reconciled) PrepareAllocation(_ context.Context, id string) error {
-	r.ids = append(r.ids, "prepare:"+id)
-	return nil
+
+type executions struct {
+	domain.AgentExecutionRepository
+	execution *domain.AgentExecution
 }
-func (r *reconciled) ReconnectAllocation(_ context.Context, id string) error {
-	r.ids = append(r.ids, "reconnect:"+id)
-	return nil
+
+func (e executions) Get(_ context.Context, id string) (*domain.AgentExecution, error) {
+	if id != e.execution.ID {
+		return nil, domain.ErrExecutionNotFound
+	}
+	copied := *e.execution
+	return &copied, nil
 }
-func (r *reconciled) ObserveSandbox(_ context.Context, id string) (command.AllocationStep, error) {
-	r.ids = append(r.ids, "observe:"+id)
-	return command.AllocationSettled, nil
+
+type unseated struct{ command.ComputerPort }
+
+func (unseated) DeskSeated(context.Context, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
 }
-func (r *reconciled) DeliverCredentials(_ context.Context, id string) error {
-	r.ids = append(r.ids, "deliver:"+id)
-	return nil
-}
-func (r *reconciled) SyncInputs(_ context.Context, id string) error {
-	r.ids = append(r.ids, "inputs:"+id)
-	return nil
-}
-func (*reconciled) MarkCredentialsChanged(context.Context, string) ([]string, error) { return nil, nil }
-func (*reconciled) MarkInputsChanged(context.Context, string) ([]string, error)      { return nil, nil }
-func (*reconciled) LiveAllocation(context.Context, string) (string, bool, error) {
-	return "", false, nil
-}
-func (*reconciled) ListOutstandingAllocations(context.Context, string, int) ([]command.AllocationStatus, error) {
-	return nil, nil
+
+// recovery reconciles one queued execution through environments.
+func recovery(t *testing.T, environments *observed) (*application.Recovery, string) {
+	t.Helper()
+	queued, err := domain.BeginExecution(domain.ExecutionBeginning{
+		Admitted:    domain.WorkStartAdmitted{WorkID: "work-1", StartAdmittedAt: time.Now(), DeskID: "desk-1", Waiting: true},
+		Launch:      domain.LaunchSpecification{WorkID: "work-1", HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "home"}},
+		Realization: domain.RealizationCloud,
+	})
+	require.NoError(t, err)
+	repository := executions{execution: queued}
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, repository, environments, nil, unseated{}, nil, nil)
+	return application.NewRecovery(&application.Application{}, nil, repository, nil, reconciliation, nil, nil), queued.ID
 }
 
 func processorFor(t *testing.T, processors []taskqueue.Processor, kind taskqueue.TaskType) taskqueue.Processor {
@@ -62,18 +72,21 @@ func processorFor(t *testing.T, processors []taskqueue.Processor, kind taskqueue
 	return nil
 }
 
-func TestAllocationTaskDelegatesItsAllocationOnce(t *testing.T) {
-	environments := &reconciled{}
-	processors := taskprocessor.RecoveryProcessors(application.NewRecovery(&application.Application{}, nil, environments, nil, nil), slog.Default())
-	task, err := agenttask.NewReconcileAllocation("allocation-1")
+func TestReconcileTaskDelegatesItsExecutionOnce(t *testing.T) {
+	environments := &observed{}
+	recovery, id := recovery(t, environments)
+	processors := taskprocessor.RecoveryProcessors(recovery, slog.Default())
+	task, err := agenttask.NewReconcileAllocation(id)
 	require.NoError(t, err)
 	require.NoError(t, processorFor(t, processors, agenttask.ReconcileAllocationType).Process(context.Background(), task))
-	require.Equal(t, []string{"allocation-1"}, environments.ids)
+	require.Equal(t, []string{id + ":false"}, environments.ids)
 }
 
-func TestOnboardingTasksDelegateTheirStep(t *testing.T) {
-	environments := &reconciled{}
-	recovery := application.NewRecovery(&application.Application{}, nil, environments, nil, nil)
+// Each step task decides its execution again before taking its step; a
+// sandbox observation reconciles it against every environment it owns.
+func TestStepTasksDelegateTheirExecution(t *testing.T) {
+	environments := &observed{}
+	recovery, id := recovery(t, environments)
 	for _, step := range []struct {
 		processors []taskqueue.Processor
 		kind       taskqueue.TaskType
@@ -85,18 +98,19 @@ func TestOnboardingTasksDelegateTheirStep(t *testing.T) {
 		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), agenttask.DeliverCredentialsType, agenttask.NewDeliverCredentials},
 		{taskprocessor.RecoveryProcessors(recovery, slog.Default()), agenttask.SyncInputsType, agenttask.NewSyncInputs},
 	} {
-		task, err := step.task("allocation-1")
+		task, err := step.task(id)
 		require.NoError(t, err)
 		require.NoError(t, processorFor(t, step.processors, step.kind).Process(context.Background(), task))
 	}
-	require.Equal(t, []string{"prepare:allocation-1", "reconnect:allocation-1", "observe:allocation-1", "deliver:allocation-1", "inputs:allocation-1"}, environments.ids)
+	require.Equal(t, []string{id + ":false", id + ":false", id + ":true", id + ":false", id + ":false"}, environments.ids)
 }
 
 // A malformed task is dropped rather than archived, so it cannot hold its key
 // against later wakes for the same object.
 func TestMalformedRecoveryTaskIsDroppedWithoutDelegating(t *testing.T) {
-	environments := &reconciled{}
-	processors := append(taskprocessor.RecoveryProcessors(application.NewRecovery(&application.Application{}, nil, environments, nil, nil), slog.Default()), taskprocessor.PreparationProcessors(nil, slog.Default())...)
+	environments := &observed{}
+	recovery, _ := recovery(t, environments)
+	processors := append(taskprocessor.RecoveryProcessors(recovery, slog.Default()), taskprocessor.PreparationProcessors(nil, slog.Default())...)
 	for _, processor := range processors {
 		malformed, err := taskqueue.New(taskqueue.Definition{Type: processor.TaskType()}, []byte{0xff, 0xff}, taskqueue.WithID("agent:allocation:id"))
 		require.NoError(t, err)

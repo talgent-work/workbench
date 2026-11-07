@@ -35,6 +35,12 @@ type RunningHarnessPort interface {
 	ListPendingInteractions(ctx context.Context, workID string) ([]PendingInteraction, error)
 	// GetWorkCapabilities reads the capabilities the Harness loaded.
 	GetWorkCapabilities(ctx context.Context, workID string) (WorkCapabilities, error)
+	// StopExecution signals the named process's exit under the Work's stop
+	// identity; a repeated signal of the same stop changes nothing.
+	StopExecution(ctx context.Context, workID, stopRequestID string) error
+	// ObserveProcess reads Dispatcher's current observation of the named
+	// process: its readiness, Turn, required responses and attachment.
+	ObserveProcess(ctx context.Context, workID, processID string) (WorkProcessObservation, error)
 }
 
 // CurrentTurn is the Turn the Harness is running, if Active.

@@ -6,11 +6,17 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// WorkProcessObservation combines current environment facts with the
-// Harness's current Turn and the requests still needing a reply; the Work
-// owns lifecycle and root-turn decisions.
+// WorkProcessObservation is Dispatcher's current observation of a Work's
+// launched Harness process: whether it runs and is ready, its current Turn
+// and the requests still needing a reply. The Work owns lifecycle and
+// root-turn decisions, and its AgentExecution readiness.
 type WorkProcessObservation struct {
-	domain.ProcessObservation
+	// Running is a process Dispatcher observes running; one not yet live is
+	// pending.
+	Running bool
+	// Ready means initialization was durably confirmed by the native
+	// authority.
+	Ready                  bool
 	Turn                   domain.TurnObservation
 	PhaseSequence          int64
 	RequiredInteractionIDs []string

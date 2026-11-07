@@ -57,6 +57,9 @@ type workViewRow struct {
 	ContinuationPending   bool    `xorm:"continuation_pending"`
 	VisibilityPublic      bool    `xorm:"visibility_public"`
 	ReachResumeDue        bool    `xorm:"reach_resume_due"`
+	// ExecutionState is the lifecycle state of the Work's latest
+	// AgentExecution; empty before its start's execution begins.
+	ExecutionState string `xorm:"execution_state"`
 }
 
 // Read the lifecycle and continuation together. The work must not combine an
@@ -81,7 +84,8 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
  COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at DESC, r.id DESC LIMIT 1),'') AS start_request_id,
  COALESCE(i.request_id,'') AS initial_id, COALESCE(i.request_data,'') AS initial_data, COALESCE(i.version,0) AS initial_version,
  COALESCE(c.version,0) AS continuation_version, COALESCE(c.rejection,'') AS continuation_rejection,
- COALESCE(c.request_id,'') AS continuation_id,COALESCE(c.pending,0) AS continuation_pending
+ COALESCE(c.request_id,'') AS continuation_id,COALESCE(c.pending,0) AS continuation_pending,
+ COALESCE((SELECT e.state FROM execution_allocation e WHERE e.session_id=s.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1),'') AS execution_state
  FROM agent_session s LEFT JOIN agent_session_continuation_request c ON c.id=? AND c.deleted_at=0
  LEFT JOIN agent_initial_execution_request i ON i.id=? AND i.deleted_at=0
  WHERE s.id=? AND s.deleted_at=0`, id, id, id).Get(&row)
@@ -107,15 +111,15 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
 	}
 	var allocation struct {
 		Ready, Recovering bool
-		Version           int
+		UpdatedAt         int64
 	}
 	if row.HarnessProcess != "" && row.HarnessProcess != "null" {
-		_, err = tx.SQL("SELECT sandbox_ready AS ready,preparation_recovering AS recovering,version FROM execution_allocation WHERE session_id=? AND deleted_at=0 ORDER BY created_at DESC, id DESC LIMIT 1", id).Get(&allocation)
+		_, err = tx.SQL("SELECT sandbox_ready AS ready,preparation_recovering AS recovering,updated_at FROM execution_allocation WHERE session_id=? AND deleted_at=0 ORDER BY created_at DESC, id DESC LIMIT 1", id).Get(&allocation)
 		if err != nil {
 			return result, oops.Wrap(err)
 		}
 	}
-	result.StartupProgress, err = startupFromRows(row, allocation.Ready, allocation.Recovering, allocation.Version)
+	result.StartupProgress, err = startupFromRows(row, allocation.Ready, allocation.Recovering, allocation.UpdatedAt)
 	if err != nil {
 		return result, err
 	}
@@ -189,7 +193,9 @@ func workViewFromRow(row workViewRow) (query.WorkView, error) {
 			result.SubAgents = append(result.SubAgents, query.SubAgent{ID: agent.ID, Type: agent.Type, Task: agent.Task, Status: agent.Status})
 		}
 		// A Resume waiting for room is admitted; it is withdrawn, not pending.
-		result.DeskWaiting = state == domain.WorkStarting && process.DeskWaiting
+		// The start's execution holds its Desk's seating once it began.
+		queued := row.ExecutionState == "" || row.ExecutionState == string(domain.ExecutionQueued)
+		result.DeskWaiting = state == domain.WorkStarting && process.DeskWaiting && queued
 		result.ResumePending = result.ResumePending || (state == domain.WorkStarting && !result.DeskWaiting && row.ContinuationID != "" && row.ContinuationID == row.StartRequestID)
 	}
 	switch state {
@@ -204,7 +210,7 @@ func workViewFromRow(row workViewRow) (query.WorkView, error) {
 	return result, nil
 }
 
-func startupFromRows(row workViewRow, sandboxReady, recovering bool, allocationVersion int) (*query.StartupProgress, error) {
+func startupFromRows(row workViewRow, sandboxReady, recovering bool, executionUpdatedAt int64) (*query.StartupProgress, error) {
 	var initial command.InitialExecutionRequest
 	if row.InitialID != "" {
 		var err error
@@ -222,7 +228,7 @@ func startupFromRows(row workViewRow, sandboxReady, recovering bool, allocationV
 	if process != nil {
 		f.RequestID = row.StartRequestID
 		f.Admitted = true
-		f.AgentReady = process.Prepared && process.Started
+		f.AgentReady = process.Ready
 		// Native readiness necessarily followed environment and credential readiness.
 		f.SandboxReady = sandboxReady || f.AgentReady
 		f.Initial = row.StartRequestID == initial.RequestID
@@ -260,8 +266,9 @@ func startupFromRows(row workViewRow, sandboxReady, recovering bool, allocationV
 		f.Recovering = recovering
 	}
 	// Source versions are monotone within a Work. A new start first bumps the
-	// Work version, so resetting its allocation version cannot regress order.
-	f.Revision = fmt.Sprintf("%010d:%010d:%010d:%010d", row.Version, row.InitialVersion, row.ContinuationVersion, allocationVersion)
+	// Work version, so an execution's progress, ordered by when its record last
+	// changed (facts and technical progress alike), cannot regress order.
+	f.Revision = fmt.Sprintf("%010d:%010d:%010d:%013d", row.Version, row.InitialVersion, row.ContinuationVersion, executionUpdatedAt)
 	return query.ProjectStartup(f), nil
 }
 

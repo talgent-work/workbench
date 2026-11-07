@@ -92,7 +92,6 @@ var feedbackKinds = map[agentprivatev1.FeedbackKind]command.ExecutionFeedbackKin
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_USER_INTERACTION_REQUIRED: command.UserInteractionRequired,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_USER_INTERACTION_RESOLVED: command.UserInteractionResolved,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_EXITED:                    command.ExecutionExited,
-	agentprivatev1.FeedbackKind_FEEDBACK_KIND_COMPUTE_RECLAIMED:         command.ComputeReclaimed,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_TURN_STARTED:              command.TurnStarted,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_TURN_FINISHED:             command.TurnFinished,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_INPUT_SETTLED:             command.InputSettled,

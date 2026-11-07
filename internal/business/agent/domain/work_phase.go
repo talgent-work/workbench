@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -208,18 +207,13 @@ func (s *AgentWork) TimeoutDue(now time.Time) bool {
 // Required Response never ends by itself, so the timeout cancels it and the
 // stop follows once the Turn has ended (Stop between Turns). A progressing
 // Turn is neither idle nor Waiting and never times out.
-func (s *AgentWork) StopAfterTimeout(ctx context.Context, now time.Time, buffered BufferedWork, port ExecutionPort) (bool, error) {
+func (s *AgentWork) StopAfterTimeout(now time.Time, buffered BufferedWork) (bool, error) {
 	if !s.TimeoutDue(now) || buffered.Reply || (buffered.Input && !s.heldByQuestion()) {
 		return false, nil
 	}
-	requestID := uuid.Must(uuid.NewV7()).String()
-	if s.HarnessProcess.Turn.Active {
-		// Admit the stop now and signal the exit once the cancelled Turn has
-		// ended; recovery delivers it (Recover execution obligations).
-		s.admitStop(requestID, StopReasonWaitingTimeout)
-		return true, executionRequestError(port.CancelRunningTurn(ctx, s.ID))
-	}
-	return true, s.stop(ctx, requestID, StopReasonWaitingTimeout, port)
+	// A Turn held open by a Required Response is cancelled first, then the
+	// process asked to exit (Timeout cancels first).
+	return true, s.stop(uuid.Must(uuid.NewV7()).String(), StopReasonWaitingTimeout)
 }
 
 // RequireReadyProcess admits a control that acts on the Work's running

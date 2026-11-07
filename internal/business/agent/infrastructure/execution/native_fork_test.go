@@ -18,7 +18,7 @@ import (
 // arguments, in a HOME whose transcript of the Work's conversation exists
 // when mode is "--resume". It returns the native arguments, or nil when the
 // launch starts nothing.
-func launchArgs(t *testing.T, input domain.StartExecutionRequest, mode string, env ...string) ([]string, nativeLaunch) {
+func launchArgs(t *testing.T, input domain.LaunchSpecification, mode string, env ...string) ([]string, nativeLaunch) {
 	t.Helper()
 	root := t.TempDir()
 	output := filepath.Join(root, "arguments.json")

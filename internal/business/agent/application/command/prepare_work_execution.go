@@ -18,11 +18,10 @@ type PrepareWorkExecutionHandler struct {
 	requests      InitialExecutionRequests
 	sessions      domain.AgentWorkRepository
 	authorization access.WorkAuthorizer
-	execution     domain.ExecutionPort
 }
 
-func NewPrepareWorkExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort, creations WorkCreationReader, models query.ModelConfigurations) *PrepareWorkExecutionHandler {
-	return &PrepareWorkExecutionHandler{models: models, creations: creations, requests: requests, sessions: sessions, authorization: authorization, execution: execution}
+func NewPrepareWorkExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, creations WorkCreationReader, models query.ModelConfigurations) *PrepareWorkExecutionHandler {
+	return &PrepareWorkExecutionHandler{models: models, creations: creations, requests: requests, sessions: sessions, authorization: authorization}
 }
 
 func (h *PrepareWorkExecutionHandler) Handle(ctx context.Context, input PrepareWorkExecution) (string, error) {
@@ -93,20 +92,9 @@ func (h *PrepareWorkExecutionHandler) advance(ctx context.Context, request Initi
 			return "", err
 		}
 	}
-	// Admission was committed when this Work was established. Resource
-	// preparation must never recheck capacity or reinterpret a retry as Start.
-	session, err = h.sessions.Get(ctx, request.WorkID)
-	if err != nil {
-		return "", err
-	}
-	requests := deferExecution(h.execution)
-	if _, err := session.RecoverExecution(ctx, requests); err != nil {
-		return "", err
-	}
-	if err := requests.send(ctx); err != nil {
-		return "", err
-	}
-
+	// Admission was committed when this Work was established: its execution
+	// submits its creation once this preparation is recorded, never
+	// rechecking capacity or reinterpreting a retry as Start.
 	return request.WorkID, nil
 }
 

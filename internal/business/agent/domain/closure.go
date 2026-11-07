@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"strings"
 	"time"
 )
@@ -16,17 +15,19 @@ type ClosureFacts struct {
 	StartupPending bool
 	// ContinuationPending: a Resume or Restart request is not yet settled.
 	ContinuationPending bool
+	// StartQueued: the start's AgentExecution still waits for its Desk.
+	StartQueued bool
 }
 
 // Close permanently closes the Work. Closing applies to a stopped or failed
 // Work; a running Work is first stopped normally, between Turns, and keeps the
 // close request, which applies once the Work has stopped (WorkExecutionEnded).
 // Repeating an accepted close confirms it without reopening admission.
-func (s *AgentWork) Close(ctx context.Context, requestID string, facts ClosureFacts, port ExecutionPort) error {
+func (s *AgentWork) Close(requestID string, facts ClosureFacts) error {
 	if strings.TrimSpace(requestID) == "" || len(requestID) > 128 {
 		return ErrInvalidWork
 	}
-	if s.WaitsForDesk() {
+	if s.WaitsForDesk(facts.StartQueued) {
 		// The close withdraws the waiting start first, then applies to the
 		// resulting Stopped or Failed Work; a first start is closed at once.
 		if s.HarnessProcess.ContextMode != ContextFresh && facts.ContinuationPending {
@@ -35,7 +36,7 @@ func (s *AgentWork) Close(ctx context.Context, requestID string, facts ClosureFa
 		s.withdrawWaitingStart(requestID)
 	}
 	if s.beyondReach() {
-		return s.closeBeyondReach(ctx, requestID, facts, port)
+		return s.closeBeyondReach(requestID, facts)
 	}
 	switch s.State {
 	case WorkClosing, WorkClosed:
@@ -66,7 +67,7 @@ func (s *AgentWork) Close(ctx context.Context, requestID string, facts ClosureFa
 			return ErrWorkTransition
 		}
 		s.CloseRequestReference = requestID
-		return s.stop(ctx, requestID, StopReasonCompleted, port)
+		return s.stop(requestID, StopReasonCompleted)
 	default:
 		return ErrWorkTransition
 	}
@@ -89,6 +90,7 @@ func (s *AgentWork) close(requestID string) {
 	}
 	if s.StopRequestReference == "" {
 		s.StopRequestReference = s.CloseRequestReference
+		s.requestStop()
 	}
 }
 

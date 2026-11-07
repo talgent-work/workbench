@@ -23,7 +23,7 @@ const (
 // without a Session Workspace writes to the sandbox's own /workspace, which
 // ends with it. A grant is used exactly as issued; a missing or mis-scoped
 // grant fails the start.
-func sandboxVolumes(request domain.StartExecutionRequest, mounts domain.SandboxMounts) ([]sdk.Volume, error) {
+func sandboxVolumes(request domain.LaunchSpecification, mounts domain.SandboxMounts) ([]sdk.Volume, error) {
 	if !validGrant(mounts.Home, false) {
 		return nil, domain.ErrExecutionRequest
 	}

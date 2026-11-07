@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -21,16 +21,16 @@ import (
 )
 
 // unboundStart is one Cloud Work whose start submitted its sandbox's create
-// and never learned the sandbox's identity. Agent's Work recovery and the
-// allocation's reconciliation run as their tasks would, on a shared clock;
-// Dispatcher is unreachable, since no Harness process ever connected.
+// and never learned the sandbox's identity. Agent's Work recovery, the
+// Policies between the Work and its AgentExecution and the execution's
+// reconciliation run as their tasks would, on a shared clock; Dispatcher is
+// unreachable, since no Harness process ever connected.
 type unboundStart struct {
 	db           *xorm.Engine
 	works        *infrastructure.AgentWorkRepository
-	provisioning *Provisioning
-	environments *Environments
-	recovery     *application.Recovery
-	allocations  *EnvironmentRecovery
+	steps        *executionSteps
+	coordination *command.ExecutionCoordination
+	recovery     *command.RecoverWorkHandler
 	lifecycle    *lifecycleFixture
 	workID       string
 	admission    domain.StartAdmission
@@ -50,8 +50,8 @@ func (f *unboundStart) advance(by time.Duration) {
 	f.at = f.at.Add(by)
 }
 
-// newUnboundStart creates the Work and its allocation and submits the create,
-// whose answer is lost however the authority settles it.
+// newUnboundStart creates the Work, begins its start's execution and submits
+// the create, whose answer is lost however the authority settles it.
 func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart {
 	t.Helper()
 	ctx := context.Background()
@@ -64,35 +64,15 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	initial := infrastructure.NewInitialExecutionRequests(db, f.now)
 	works := infrastructure.NewAgentWorkRepository(db, f.now)
 	credentials := fixtureSandboxCredentials(db, provider)
-	credentials.works = NewHeldWorks(db, works)
 	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, f.now, initial, nil)
 	policy, err := provider.networkPolicy(ctx)
 	require.NoError(t, err)
 	lifecycle.vault.policy = policy
-	dispatcher := NewDispatcherControl(http.DefaultClient, "http://dispatcher.invalid", "unused")
-	observations, err := NewProcessObservations(p, dispatcher)
+	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(initial))
 	require.NoError(t, err)
-	resources, err := NewEnvironments(p, observations)
-	require.NoError(t, err)
-	environment, err := NewEnvironment(resources, dispatcher, directoryMounts{root: t.TempDir()}, cloudComputers{})
-	require.NoError(t, err)
-	buffer, settlements := &commandtest.InputBuffer{}, &commandtest.InputSettlements{}
-	feedback := command.NewApplyExecutionFeedbackHandler(f.now, works, observations, environment, buffer, settlements)
-	reclaimer, err := NewReclaimer(feedback)
-	require.NoError(t, err)
-	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", feedback, command.NewRecordRepositoryCheckoutsHandler(initial))
-	require.NoError(t, err)
-	allocations, err := NewEnvironmentRecovery(p, connections, reclaimer, unread{})
-	require.NoError(t, err)
-	app := &application.Application{Commands: application.Commands{
-		RecoverWork:            command.NewRecoverWorkHandler(f.now, works, environment, buffer, settlements, nil, nil),
-		ApplyExecutionFeedback: feedback,
-		CloseWork:              command.NewCloseWorkHandler(works, nil, environment, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, buffer),
-	}}
-	f.works, f.provisioning, f.environments, f.allocations = works, p, resources, allocations
-	executionEnvironment, err := NewExecutionEnvironment(allocations, nil)
-	require.NoError(t, err)
-	f.recovery = application.NewRecovery(app, nil, executionEnvironment, nil, nil)
+	f.works, f.steps = works, newExecutionSteps(t, p, connections, unread{}, nil, f.now)
+	f.coordination = command.NewExecutionCoordination(f.now, works, f.steps.executions, f.steps.desks, f.steps.harness)
+	f.recovery = command.NewRecoverWorkHandler(f.now, works, f.steps.harness, &commandtest.InputSettlements{}, nil)
 
 	definitions := infrastructure.NewAgentDefinitionRepository(db, f.now)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Fixture Agent", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
@@ -100,20 +80,19 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	require.NoError(t, definitions.Save(ctx, definition))
 	definition, err = definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
-	f.admission = domain.StartAdmission{AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	f.admission = domain.StartAdmission{AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 	admission := f.admission
 	admission.AdmittedAt = f.now()
-	outbound := commandtest.Hold(environment)
-	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"}}, admission, outbound)
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"}}, admission)
 	require.NoError(t, err)
 	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, RequestID: uuid.NewString()}))
-	require.NoError(t, outbound.Send(ctx))
 	f.workID = work.ID
+	require.NoError(t, f.coordination.BeginExecution(ctx, work.ID))
 
 	lifecycle.mu.Lock()
 	settle(lifecycle)
 	lifecycle.mu.Unlock()
-	_, err = allocations.ReconcileAllocation(ctx, f.allocation(t).ID)
+	_, err = f.steps.handler.Reconcile(ctx, f.allocation(t).ID, false)
 	require.Error(t, err, "the create's answer is lost")
 	record := f.allocation(t)
 	require.True(t, record.Submitted)
@@ -149,36 +128,57 @@ func (f *unboundStart) creates() int {
 	return f.lifecycle.creates
 }
 
+func (f *unboundStart) setPages(pages [][]sdk.SandboxInfo) {
+	f.lifecycle.mu.Lock()
+	defer f.lifecycle.mu.Unlock()
+	f.lifecycle.pages = pages
+}
+
 func (f *unboundStart) sandboxPresent() bool {
 	f.lifecycle.mu.Lock()
 	defer f.lifecycle.mu.Unlock()
 	return f.lifecycle.info != nil
 }
 
-// recover runs the Work's recovery as its task would.
+// recover runs the Work's recovery and the Policies between the Work and its
+// execution, as their tasks would.
 func (f *unboundStart) recover(t *testing.T) {
 	t.Helper()
-	require.NoError(t, f.recovery.RecoverWork(context.Background(), f.workID))
+	ctx := context.Background()
+	require.NoError(t, f.recovery.Handle(ctx, f.workID))
+	require.NoError(t, f.coordination.Coordinate(ctx, f.workID))
 }
 
-// reconcile runs the allocation's recovery as its task would.
-func (f *unboundStart) reconcile(t *testing.T) command.AllocationStep {
+// reconcile runs the execution's reconciliation as its task would, and
+// answers the steps it leaves to their own tasks.
+func (f *unboundStart) reconcile(t *testing.T) []domain.ExecutionStepKind {
 	t.Helper()
-	step, err := f.allocations.ReconcileAllocation(context.Background(), f.allocation(t).ID)
+	steps, err := f.steps.handler.Reconcile(context.Background(), f.allocation(t).ID, false)
 	require.NoError(t, err)
-	return step
+	return steps
+}
+
+// retire asks the execution to retire for cause, as a Work whose execution
+// ended so would.
+func (f *unboundStart) retire(t *testing.T, cause domain.RetirementCause) {
+	t.Helper()
+	require.NoError(t, f.steps.retire(context.Background(), f.workID, cause, f.now()))
 }
 
 // failAtStartupDeadline lets the Startup Deadline and the abandonment margin
-// pass; the Work's recovery fails the start, and the next one, finding the
-// Work already Failed, applies the abandonment.
+// pass; the execution's reconciliation fails the start and abandons it, and
+// the Policies report both to the Work, which retires the execution.
 func (f *unboundStart) failAtStartupDeadline(t *testing.T) {
 	t.Helper()
-	f.advance(domain.StartupDeadline + abandonmentMargin + time.Second)
-	f.recover(t)
-	require.Equal(t, domain.WorkFailed, f.work(t).State)
+	f.advance(domain.StartupDeadline + 2*time.Minute)
+	f.reconcile(t)
+	run, err := f.steps.executions.Latest(context.Background(), f.workID)
+	require.NoError(t, err)
+	require.NotEmpty(t, run.Outcome.StartFailure, "the start failed at its Startup Deadline")
+	require.True(t, run.Outcome.Abandoned, "the start can no longer launch a Harness process")
 	f.recover(t)
 	work := f.work(t)
+	require.Equal(t, domain.WorkFailed, work.State)
 	require.True(t, work.HarnessProcess.StartAbandoned, "the start is reported abandoned")
 	require.False(t, work.HoldsProcess())
 	require.NotZero(t, f.allocation(t).DeletedAt, "the abandoned start's execution is retired")
@@ -188,29 +188,20 @@ func (f *unboundStart) failAtStartupDeadline(t *testing.T) {
 func (f *unboundStart) requireRestartable(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
+	f.recover(t)
 	work := f.work(t)
 	require.True(t, work.HarnessProcess.ComputeReclaimed, "the release is confirmed to the Work")
 	require.Equal(t, domain.WorkFailed, work.State)
-	f.recover(t)
-	statuses, err := f.allocations.ListOutstandingAllocations(ctx, "", 100)
+	outstanding, err := NewExecutionLookups(f.db).ListOutstandingExecutions(ctx, "", 100)
 	require.NoError(t, err)
-	require.Empty(t, statuses, "nothing is left to retry")
+	require.Empty(t, outstanding, "nothing is left to retry")
 	session := work.HarnessSessionReference
 	admission := f.admission
 	admission.AdmittedAt = f.now()
-	require.NoError(t, work.Restart(ctx, admission, &feedbackless{}))
+	require.NoError(t, work.Restart(admission))
 	require.Equal(t, domain.ContextRecover, work.HarnessProcess.ContextMode)
 	require.Equal(t, session, work.HarnessSessionReference, "Restart continues the Harness Session")
 }
-
-// feedbackless accepts the Restart's requests without delivering them.
-type feedbackless struct{}
-
-func (feedbackless) StartExecution(context.Context, domain.StartExecutionRequest) error { return nil }
-func (feedbackless) StopExecution(context.Context, string, string) error                { return nil }
-func (feedbackless) CancelRunningTurn(context.Context, string) error                    { return nil }
-func (feedbackless) ReclaimCompute(context.Context, string) error                       { return nil }
-func (feedbackless) RetireFencedRun(context.Context, string) error                      { return nil }
 
 // The server deleted the sandbox and its answer was lost: before the Startup
 // Deadline the start waits without a second create, and a stale request to
@@ -224,11 +215,12 @@ func TestAStartWhoseSandboxNeverAppearedIsAbandonedAndReleased(t *testing.T) {
 	f.reconcile(t)
 	f.reconcile(t)
 	require.Equal(t, 1, f.creates(), "a submitted create is never sent again")
-	require.NoError(t, f.environments.Delete(context.Background(), f.workID))
+	f.retire(t, domain.RetiredByAbandonment)
 	require.Zero(t, f.allocation(t).DeletedAt, "a start within its deadline is not retired")
 
 	f.failAtStartupDeadline(t)
 	f.reconcile(t)
+	require.NotZero(t, f.allocation(t).ReleasedAt, "with nothing to delete, the release is confirmed at once")
 	f.requireRestartable(t)
 	require.Equal(t, 1, f.creates())
 }
@@ -239,10 +231,10 @@ func TestAStartWhoseSandboxNeverAppearedIsAbandonedAndReleased(t *testing.T) {
 func TestALostCreateAnswerBindsTheSandboxAndAFailedStartReleasesIt(t *testing.T) {
 	f := newUnboundStart(t, createdUnanswered)
 
-	require.Equal(t, command.AllocationPrepare, f.reconcile(t), "onboarding continues")
+	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, f.reconcile(t), "onboarding continues")
 	require.Equal(t, sandboxID, f.allocation(t).SandboxID, "the found sandbox is bound")
 	require.Equal(t, 1, f.creates())
-	require.NoError(t, f.environments.Delete(context.Background(), f.workID))
+	f.retire(t, domain.RetiredByExit)
 	require.Zero(t, f.allocation(t).DeletedAt, "a request without an acknowledged exit retires nothing")
 	require.True(t, f.sandboxPresent(), "and deletes no sandbox")
 
@@ -258,8 +250,12 @@ func TestALostCreateAnswerBindsTheSandboxAndAFailedStartReleasesIt(t *testing.T)
 func TestAnAbandonedStartReleasesTheSandboxItNeverBound(t *testing.T) {
 	f := newUnboundStart(t, createdUnanswered)
 
+	// The authority's list does not show the sandbox until the start is
+	// abandoned, so the start never binds it.
+	f.setPages([][]sdk.SandboxInfo{{}})
 	f.failAtStartupDeadline(t)
 	require.Empty(t, f.allocation(t).SandboxID)
+	f.setPages(nil)
 	f.reconcile(t)
 	require.False(t, f.sandboxPresent(), "the owned sandbox is deleted without its identity")
 	f.reconcile(t)

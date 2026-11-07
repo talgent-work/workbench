@@ -22,7 +22,7 @@ func TestSessionUsesAuthorizedReferencesAndCapturedCapabilities(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"caller"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Original"}})
 	require.NoError(t, err)
 	store := &sessionStore{}
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, &startupPort{})
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{})
 	id, err := handler.Handle(context.Background(), command.CreateWork{RequestID: uuid.NewString(), SubjectID: "caller", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "case-a"}, ProjectID: "project", WorkspaceReference: "authorized-workspace"})
 	require.NoError(t, err)
 	require.Equal(t, id, store.session.ID)
@@ -46,7 +46,7 @@ func TestWorkModelDefaultAndSelectionApplyToEveryPurpose(t *testing.T) {
 				require.NoError(t, err)
 				store := &sessionStore{}
 				input := command.CreateWork{RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkspaceReference: "workspace", WorkModel: selected, Subject: domain.WorkSubject{Kind: "project", ID: "project"}, ProjectID: "project"}
-				handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, DefaultThinkingLevel: "high"}, agentquery.WorkModelOption{Selection: explicit, DefaultThinkingLevel: "low"}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, &startupPort{})
+				handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, DefaultThinkingLevel: "high"}, agentquery.WorkModelOption{Selection: explicit, DefaultThinkingLevel: "low"}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{})
 				id, err := handler.Handle(t.Context(), input)
 				require.NoError(t, err)
 				want := selected
@@ -106,7 +106,7 @@ func (s *sessionStore) LocateWork(_ context.Context, workID string) (*domain.Age
 	return nil, domain.ErrWorkNotFound
 }
 
-func (s *sessionStore) FindWork(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
+func (s *sessionStore) FindBySubject(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
 	if s.session != nil && s.session.AgentID == agentID && s.session.Subject == subject {
 		return s.session, nil
 	}
@@ -125,13 +125,13 @@ func TestWorkCreationRejectsUnavailableModelBeforeRegistration(t *testing.T) {
 			agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"caller"}, Purpose: purpose, UsageScope: domain.UsageScope{Kind: "project", Reference: "project"}, HomeBinding: domain.HomeBinding{OwnerID: "home", Namespace: "shared"}})
 			require.NoError(t, err)
 			store := &sessionStore{}
-			handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, &startupPort{})
+			handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{})
 			_, err = handler.Handle(t.Context(), command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkspaceReference: "workspace", WorkModel: domain.WorkModelSelection{ConfigurationID: "unavailable"}})
 			require.ErrorIs(t, err, domain.ErrModelConfigurationWithdrawn)
 			_, err = handler.Handle(t.Context(), command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", AgentID: agent.ID, SubjectID: "caller", WorkspaceReference: "workspace", WorkModel: domain.WorkModelSelection{ConfigurationID: "unavailable"}, InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/TAL-1", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Do the work"}, ThinkingLevel: "high"}})
 			require.ErrorIs(t, err, domain.ErrModelConfigurationWithdrawn, "the withdrawal is the reason even when a thinking level is requested")
 			require.Nil(t, store.session, "a Model Configuration that is not provided establishes no Work")
-			down := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computersDown{}, &startupPort{})
+			down := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computersDown{})
 			_, err = down.Handle(t.Context(), command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkspaceReference: "workspace", WorkModel: domain.WorkModelSelection{ConfigurationID: "unavailable"}})
 			require.ErrorIs(t, err, domain.ErrModelConfigurationWithdrawn, "the withdrawal is the reason even while Computer is unavailable")
 		})
@@ -151,7 +151,7 @@ func TestInitialThinkingLevelUsesRetainedWorkModel(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"caller"}, Purpose: "caller-defined", UsageScope: domain.UsageScope{Kind: "project", Reference: "project"}, HomeBinding: domain.HomeBinding{OwnerID: "home", Namespace: "shared"}})
 	require.NoError(t, err)
 	store := &sessionStore{}
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, ThinkingLevels: []string{"low"}}, agentquery.WorkModelOption{Selection: other, ThinkingLevels: []string{"high"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, &startupPort{})
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, ThinkingLevels: []string{"low"}}, agentquery.WorkModelOption{Selection: other, ThinkingLevels: []string{"high"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{})
 	input := command.CreateWork{AgentID: agent.ID, SubjectID: "caller", WorkspaceReference: "workspace", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", InitialExecution: &command.PrepareWorkExecution{RequestID: "01940000-0000-7000-8000-000000000370", WorkBranch: "talgent/" + "TAL-370", Input: command.ExecutionInput{ID: "01940000-0000-7000-8000-000000000371", Text: "Do the work"}, ThinkingLevel: "high"}}
 	_, err = handler.Handle(t.Context(), input)
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
@@ -189,7 +189,7 @@ func TestReusedWorkKeepsItsInputSource(t *testing.T) {
 	require.NoError(t, err)
 	store := &sessionStore{}
 	configured := domain.WorkModelSelection{ConfigurationID: "deployment-default"}
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, DefaultThinkingLevel: "high"}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, &startupPort{})
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, DefaultThinkingLevel: "high"}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{})
 	input := command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkspaceReference: "workspace", InputSource: domain.WorkInputSource{Reference: "file-space/first", SpaceToken: "first-token"}}
 	id, err := handler.Handle(t.Context(), input)
 	require.NoError(t, err)
@@ -228,16 +228,13 @@ func TestWorkDerivesCommonTraceAttributionForEverySubject(t *testing.T) {
 					}
 				}
 				original := maps.Clone(request.TraceAttributes)
-				var starts []domain.StartExecutionRequest
-				port := &startupPort{start: func(input domain.StartExecutionRequest) error { starts = append(starts, input); return nil }}
 				store := &sessionStore{}
-				handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store,
+				handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store,
 					agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
-					commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, port)
+					commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{})
 				id, err := handler.Handle(t.Context(), request)
 				require.NoError(t, err)
-				require.Len(t, starts, 1)
-				attributes := starts[0].TraceAttributes
+				attributes := store.session.LaunchSpecification().TraceAttributes
 				require.Equal(t, id, attributes["talgent.agent_work_id"])
 				require.Equal(t, agent.ID, attributes["talgent.agent_id"])
 				require.Equal(t, "project-a", attributes["talgent.project_id"])
@@ -264,19 +261,19 @@ func TestWorkDerivesCommonTraceAttributionForEverySubject(t *testing.T) {
 				}
 				attributes["domain.case_id"] = "execution-change"
 				work := store.session
-				admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
-				require.NoError(t, work.ConfirmPrepared(t.Context(), time.Now(), nil))
-				require.NoError(t, work.ConfirmStarted(t.Context(), time.Now(), nil))
-				require.NoError(t, work.Stop(t.Context(), "stop-1", port))
-				require.NoError(t, work.RecordExit(t.Context(), domain.HarnessExit{}, port))
-				require.NoError(t, work.ConfirmComputeReclaimed())
-				require.NoError(t, work.Resume(t.Context(), admission, port))
-				require.Equal(t, want, starts[1].TraceAttributes)
-				require.NoError(t, work.RecordFailure("startup failed"))
-				require.NoError(t, work.RecordExit(t.Context(), domain.HarnessExit{ExitCode: 1}, port))
-				require.NoError(t, work.ConfirmComputeReclaimed())
-				require.NoError(t, work.Restart(t.Context(), admission, port))
-				require.Equal(t, want, starts[2].TraceAttributes)
+				report(t, work, readyReport)
+				require.NoError(t, work.Stop("stop-1", false))
+				report(t, work, exitedReport)
+				report(t, work, releasedReport)
+				require.NoError(t, work.Resume(fixtureAdmission(agent.ID)))
+				require.Equal(t, want, work.LaunchSpecification().TraceAttributes)
+				report(t, work, func(workID string, start time.Time) domain.Event {
+					return domain.ExecutionExited{WorkID: workID, StartAdmittedAt: start, Exit: domain.HarnessExit{ExitCode: 1, Reason: "startup failed"}}
+				})
+				report(t, work, releasedReport)
+				require.Equal(t, domain.WorkFailed, work.State)
+				require.NoError(t, work.Restart(fixtureAdmission(agent.ID)))
+				require.Equal(t, want, work.LaunchSpecification().TraceAttributes)
 			})
 		}
 	}
@@ -288,17 +285,14 @@ func TestPersonsAgentAttributesItsWorksToThePerson(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"employee"}, Purpose: "work",
 		UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "employee", Namespace: "personal"}})
 	require.NoError(t, err)
-	var starts []domain.StartExecutionRequest
-	port := &startupPort{start: func(input domain.StartExecutionRequest) error { starts = append(starts, input); return nil }}
 	store := &sessionStore{}
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store,
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store,
 		agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
-		commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, port)
+		commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{})
 	_, err = handler.Handle(t.Context(), command.CreateWork{RequestID: uuid.NewString(), StartingUserID: "employee", SubjectID: "employee", AgentID: agent.ID,
 		TraceAttributes: map[string]string{"talgent.user_id": "someone-else"}})
 	require.NoError(t, err)
-	require.Len(t, starts, 1)
-	require.Equal(t, "employee", starts[0].TraceAttributes["talgent.user_id"])
+	require.Equal(t, "employee", store.session.LaunchSpecification().TraceAttributes["talgent.user_id"])
 }
 
 // The Computer its starter chose is where the Work runs for good.
@@ -307,7 +301,7 @@ func TestAChosenComputerSeatsTheWork(t *testing.T) {
 	require.NoError(t, err)
 	store := &sessionStore{}
 	chosen := "01950000-0000-7000-8000-00000000c0de"
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{others: []command.UsableComputer{{ID: chosen, Cloud: true}}}, &startupPort{})
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{others: []command.UsableComputer{{ID: chosen, Cloud: true}}})
 	_, err = handler.Handle(t.Context(), command.CreateWork{RequestID: uuid.NewString(), SubjectID: "caller", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "case-a"}, ProjectID: "project", WorkspaceReference: "workspace", ComputerID: chosen})
 	require.NoError(t, err)
 	require.Equal(t, chosen, store.session.ComputerID)

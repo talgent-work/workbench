@@ -28,8 +28,8 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	db, definitions, works, agent := startingCreationDatabase(t)
 	catalog := &creationCatalog{}
 	capacity := &initialCreationCapacity{err: domain.ErrCapacityUnavailable}
-	execution := &creationExecution{db: db}
-	handler := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity), execution)
+	execution := &creationExecution{AgentWorkRepository: works, db: db}
+	handler := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(capacity))
 	request := creationInput(agent.ID, "first")
 	workID, err := handler.Handle(t.Context(), request)
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
@@ -67,8 +67,8 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 
 func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 	db, definitions, works, agent := startingCreationDatabase(t)
-	port := &creationExecution{db: db}
-	winner := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), port)
+	port := &creationExecution{AgentWorkRepository: works, db: db}
+	winner := command.NewCreateWorkHandler(time.Now, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}))
 	winning := creationInput(agent.ID, "same-subject")
 	var winnerID string
 	// The winner commits the same Subject after the loser's lookup, and the
@@ -78,7 +78,7 @@ func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 		winnerID, err = winner.Handle(t.Context(), winning)
 		return err
 	}, err: domain.ErrCapacityUnavailable}
-	loser := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(capacity), port)
+	loser := command.NewCreateWorkHandler(time.Now, definitions, port, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(capacity))
 	reused, err := loser.Handle(t.Context(), creationInput(agent.ID, "same-subject"))
 	require.NoError(t, err)
 	require.Equal(t, winnerID, reused)
@@ -152,37 +152,54 @@ func (c *creationCatalog) ResolvePlugin(_ context.Context, _ string, slug string
 	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"runtime","version":"1"}`)}, nil
 }
 
+// creationExecution observes, in place of beginning the execution, each
+// start a committed Work admitted, and checks that both durable records are
+// readable by a separate database session by then. No fake repository
+// substitutes for the commit.
 type creationExecution struct {
+	command.AgentWorkRepository
 	db     *xorm.Engine
 	starts atomic.Int32
 }
 
-func (e *creationExecution) StartExecution(ctx context.Context, request domain.StartExecutionRequest) error {
-	// This provider is called only after both durable records can be read by a
-	// separate database session. No fake repository substitutes for the commit.
-	rows, err := e.db.Context(ctx).QueryString("SELECT s.state,s.holds_process,r.kind FROM agent_session s JOIN agent_start_request r ON r.session_id=s.id WHERE s.id=?", request.WorkID)
-	if err != nil {
+func (e *creationExecution) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
+	if err := e.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
 		return err
 	}
-	if len(rows) != 1 || rows[0]["state"] != "1" || rows[0]["holds_process"] != "1" || rows[0]["kind"] != "start" {
-		return errors.New("execution preceded atomic creation admission")
-	}
-	e.starts.Add(1)
-	return nil
-}
-func (*creationExecution) StopExecution(context.Context, string, string) error {
-	return errors.New("unexpected stop")
-}
-func (*creationExecution) ReclaimCompute(context.Context, string) error {
-	return errors.New("unexpected reclaim")
+	return e.started(ctx, work)
 }
 
-func (*creationExecution) RetireFencedRun(context.Context, string) error {
-	return errors.New("unexpected retirement")
+func (e *creationExecution) CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error {
+	if err := e.AgentWorkRepository.CommitStart(ctx, work, start, requestID); err != nil {
+		return err
+	}
+	return e.started(ctx, work)
+}
+
+func (e *creationExecution) Save(ctx context.Context, work *domain.AgentWork) error {
+	if err := e.AgentWorkRepository.Save(ctx, work); err != nil {
+		return err
+	}
+	return e.started(ctx, work)
+}
+
+func (e *creationExecution) started(ctx context.Context, work *domain.AgentWork) error {
+	for _, event := range work.Events.Drain() {
+		if _, admitted := event.(domain.WorkStartAdmitted); !admitted {
+			continue
+		}
+		rows, err := e.db.Context(ctx).QueryString("SELECT s.state,s.holds_process,r.kind FROM agent_session s JOIN agent_start_request r ON r.session_id=s.id WHERE s.id=?", work.ID)
+		if err != nil {
+			return err
+		}
+		if len(rows) != 1 || rows[0]["state"] != "1" || rows[0]["holds_process"] != "1" || rows[0]["kind"] != "start" {
+			return errors.New("execution preceded atomic creation admission")
+		}
+		e.starts.Add(1)
+	}
+	return nil
 }
 
 func (*creationCatalog) ReadConnectorSelection(context.Context, string) (command.ConnectorSelection, error) {
 	return connectorcatalogtest.Selection(), nil
 }
-
-func (*creationExecution) CancelRunningTurn(context.Context, string) error { return nil }

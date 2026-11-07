@@ -33,8 +33,8 @@ func TestRecoveredCreationRetainsPersonalOwner(t *testing.T) {
 	require.Equal(t, "owner", retained.Creation.StartingUserID)
 	require.Equal(t, "owner", retained.Creation.SubjectID)
 	works := infrastructure.NewAgentWorkRepository(otherDB, time.Now)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(otherDB)),
-		creationModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(otherDB)),
+		creationModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	id, err := handler.Handle(t.Context(), retained.Creation)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)
@@ -68,7 +68,7 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 			{OwnerUserID: "owner", AuthorizationID: otherID, Provider: "other", Service: "other"},
 		}},
 	}
-	work, created, err := agent.CreateWork(t.Context(), input, f.sessions, executionPort{})
+	work, created, err := agent.CreateWork(input, subjectWork(t, f.sessions, agent.ID, input.Subject))
 	require.NoError(t, err)
 	require.True(t, created)
 	require.NoError(t, f.sessions.RegisterWork(t.Context(), work, command.WorkRegistration{
@@ -81,7 +81,7 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 	// A reused binding keeps the original selection even when available facts change.
 	input.AuthorizationInput.Available = input.AuthorizationInput.Available[:1]
 	input.AuthorizationInput.Available[0].AuthorizationID = uuid.NewString()
-	reused, created, err := agent.CreateWork(t.Context(), input, f.sessions, executionPort{})
+	reused, created, err := agent.CreateWork(input, subjectWork(t, f.sessions, agent.ID, input.Subject))
 	require.NoError(t, err)
 	require.False(t, created)
 	require.Equal(t, work.ID, reused.ID)

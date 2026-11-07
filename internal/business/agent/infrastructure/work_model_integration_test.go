@@ -29,8 +29,8 @@ func (managedAdmission) ListUsableComputers(context.Context, string) ([]command.
 
 func TestTheMachineLoginSurvivesReloadAndIsShownOnTheWork(t *testing.T) {
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
-		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), managedAdmission{computertest.Checked(startupAuthority{})}, executionPort{})
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), managedAdmission{computertest.Checked(startupAuthority{})})
 	creation := f.request.Creation
 	creation.ComputerID, creation.WorkModel = fixtureManagedComputer, domain.MachineLoginModel()
 	id, err := handler.Handle(t.Context(), creation)

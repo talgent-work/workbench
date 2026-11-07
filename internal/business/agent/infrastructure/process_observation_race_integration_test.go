@@ -18,19 +18,19 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
 )
 
-type processObservationBarrier struct{ beforeReturn func() }
-
-func (processObservationBarrier) ObserveProcess(context.Context, string) (command.WorkProcessObservation, error) {
-	return command.WorkProcessObservation{ProcessObservation: domain.ProcessObservation{State: domain.ProcessPending}}, nil
+// executionSaveBarrier runs beforeSave once, before the first execution it
+// saves is written.
+type executionSaveBarrier struct {
+	domain.AgentExecutionRepository
+	beforeSave func()
 }
 
-func (processObservationBarrier) IsCurrentProcess(context.Context, string, string) (bool, error) {
-	return true, nil
-}
-
-func (p processObservationBarrier) AcknowledgeExit(context.Context, string, string) (bool, error) {
-	p.beforeReturn()
-	return true, nil
+func (b *executionSaveBarrier) Save(ctx context.Context, execution *domain.AgentExecution) error {
+	if before := b.beforeSave; before != nil {
+		b.beforeSave = nil
+		before()
+	}
+	return b.AgentExecutionRepository.Save(ctx, execution)
 }
 
 // An exit fact acknowledged for the previous process cannot
@@ -38,21 +38,25 @@ func (p processObservationBarrier) AcknowledgeExit(context.Context, string, stri
 func TestProcessObservationCannotReclaimConcurrentResume(t *testing.T) {
 	f, id := runningInputSession(t)
 	ctx := t.Context()
-	factory := executionPort{}
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	barrier := processObservationBarrier{beforeReturn: func() {
-		require.NoError(t, command.NewStopWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), factory).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	feedback := newRuns(t, f.db, f.sessions)
+	previous := feedback.latest(ctx, id)
+	barrier := &executionSaveBarrier{AgentExecutionRepository: feedback.executions, beforeSave: func() {
+		require.NoError(t, command.NewStopWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionsOf(f.db)).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: id, Kind: command.ExecutionExited}))
-		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: id, Kind: command.ComputeReclaimed}))
-		resume := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), factory, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+		feedback.release(ctx, id)
+		resume := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 		require.NoError(t, resume.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: id, Kind: command.ExecutorPrepared}))
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: id, Kind: command.AgentStarted}))
 	}}
-	port := &recoveryExecutionPort{}
-	stale := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, barrier, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	stale := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, barrier, feedback.coordination, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	require.ErrorIs(t, stale.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: id, Kind: command.ExecutionExited}), domain.ErrConcurrentModification)
-	require.Empty(t, port.reclaims, "stale observation must not delete the resumed process")
+	resumed, err := feedback.executions.Latest(ctx, id)
+	require.NoError(t, err)
+	require.NotEqual(t, previous.ID, resumed.ID)
+	require.Equal(t, domain.ExecutionRunning, resumed.State, "stale observation must not end the resumed process")
+	require.False(t, resumed.Process.Exited)
+	require.False(t, resumed.Retired())
 	current, err := infrastructure.NewAgentWorkRepository(f.db, time.Now).Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkWorking, current.State)

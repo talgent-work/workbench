@@ -28,7 +28,7 @@ import (
 // Both requests reach the real admission transaction before either commits.
 // The barrier exercises request-identity ownership across independent Works.
 type admissionSaveBarrier struct {
-	*infrastructure.AgentWorkRepository
+	command.AgentWorkRepository
 	arrived chan struct{}
 	proceed chan struct{}
 }
@@ -65,9 +65,9 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	requestID := uuid.Must(uuid.NewV7()).String()
 	creations := []command.CreateWork{newCreation(requestID), newCreation(requestID)}
 	var starts atomic.Int32
-	factory := startupExecutionPort{onStart: func(domain.StartExecutionRequest) error { starts.Add(1); return nil }}
-	barrier := admissionSaveBarrier{AgentWorkRepository: sessions, arrived: make(chan struct{}, 2), proceed: make(chan struct{})}
-	create := command.NewCreateWorkHandler(time.Now, agents, barrier, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory)
+	started := startedWorks{AgentWorkRepository: sessions, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
+	barrier := admissionSaveBarrier{AgentWorkRepository: started, arrived: make(chan struct{}, 2), proceed: make(chan struct{})}
+	create := command.NewCreateWorkHandler(time.Now, agents, barrier, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	type result struct {
 		id  string
 		err error
@@ -107,7 +107,7 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	if winner.AgentID == loserCreation.AgentID {
 		loserCreation = creations[1]
 	}
-	loser, err := sessions.FindWork(ctx, loserCreation.AgentID, loserCreation.Subject)
+	loser, err := sessions.FindBySubject(ctx, loserCreation.AgentID, loserCreation.Subject)
 	require.NoError(t, err)
 	require.Nil(t, loser, "losing initial admission must roll back the entire Work")
 }
@@ -125,8 +125,8 @@ func TestConcurrentIndependentDefinitionsAdmitTheirFirstWorks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	barrier := admissionSaveBarrier{AgentWorkRepository: works, arrived: make(chan struct{}, 2), proceed: make(chan struct{})}
-	execution := &creationExecution{db: db}
-	create := command.NewCreateWorkHandler(time.Now, definitions, barrier, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), execution)
+	execution := &creationExecution{AgentWorkRepository: barrier, db: db}
+	create := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	type result struct {
 		id  string
 		err error

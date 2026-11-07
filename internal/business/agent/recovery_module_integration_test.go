@@ -46,6 +46,7 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = observer.Close() })
 	port := &sessionCommandRecorder{}
+	runs := &moduleRuns{}
 	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
 	var kube *fake.Clientset
@@ -60,15 +61,12 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(func() kubernetes.Interface { return kube }),
 			fx.Provide(func() command.RunningHarnessPort { return port }),
+			runs.option(),
 		}
 		if recover {
 			// Use the production recovery registration, query and handlers. Only
-			// execution delivery is controlled; native transport has its own tests.
-			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return noEnvironments{} }),
-				fx.Provide(func() domain.ExecutionPort { return port }),
-			)
-		} else {
-			options = append(options, fx.Provide(func() domain.ExecutionPort { return port }))
+			// execution environments are controlled; native transport has its own tests.
+			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }))
 		}
 		app := fx.New(options...)
 		require.NoError(t, app.Err())
@@ -95,18 +93,25 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 	// Complete the initial process before reproducing a Resume that was
 	// rejected for capacity before its caller observed the outcome.
 	workID, abandoned := conversation.WorkId, uuid.NewString()
+	runs.ready(t, ctx, workID)
+	stopID := uuid.NewString()
+	_, err = client.StopWork(sessionControlRequest(ctx), &agentprivatev1.StopWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: stopID})
+	require.NoError(t, err)
+	runs.awaitExitRequest(t, ctx, workID, stopID)
+	runs.update(t, ctx, workID, func(e *domain.AgentExecution) bool {
+		_, changed := e.RecordExit(launchedProcess, domain.HarnessExit{})
+		return changed
+	})
+	runs.applyReports(t, ctx, workID)
+	runs.release(t, ctx, workID)
+	require.Eventually(t, func() bool {
+		state, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "employee", WorkId: workID})
+		return err == nil && state.State == agentprivatev1.WorkState_WORK_STATE_STOPPED
+	}, 10*time.Second, 20*time.Millisecond, "the exited run's release stops the Work")
 	sessions := infrastructure.NewAgentWorkRepository(observer, time.Now)
 	retainedSession, err := sessions.Get(ctx, workID)
 	require.NoError(t, err)
-	require.NoError(t, retainedSession.ConfirmPrepared(context.Background(), time.Now(), nil))
-	require.NoError(t, retainedSession.ConfirmStarted(context.Background(), time.Now(), nil))
-	require.NoError(t, retainedSession.Stop(ctx, uuid.NewString(), port))
-	require.NoError(t, retainedSession.RecordExit(ctx, domain.HarnessExit{}, port))
-	require.NoError(t, retainedSession.ConfirmComputeReclaimed())
-	require.NoError(t, sessions.Save(ctx, retainedSession))
-	retainedSession, err = sessions.Get(ctx, workID)
-	require.NoError(t, err)
-	require.Len(t, port.startRequests(), 1)
+	require.Len(t, launches(t, observer), 1)
 	continuations := infrastructure.NewContinuationRequests(observer, time.Now)
 	_, err = continuations.RetainContinuation(ctx, command.ContinuationRequest{StartWork: command.StartWork{SubjectID: "employee", WorkID: workID, RequestID: abandoned}, Operation: "resume"}, retainedSession.Version)
 	require.NoError(t, err)
@@ -123,17 +128,18 @@ func TestModuleRestartSettlesInterruptedAdmissionWithoutCaller(t *testing.T) {
 	state, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "employee", WorkId: workID})
 	require.NoError(t, err)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPED, state.State)
-	require.Len(t, port.startRequests(), 1, "recovery must not admit the abandoned request")
+	require.Len(t, launches(t, observer), 1, "recovery must not admit the abandoned request")
 	_, err = client.ResumeWork(sessionControlRequest(ctx), &agentprivatev1.ResumeWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: abandoned})
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err), "the same request retains its original capacity rejection")
-	require.Len(t, port.startRequests(), 1)
+	require.Len(t, launches(t, observer), 1)
 	next := uuid.NewString()
 	_, err = client.ResumeWork(sessionControlRequest(ctx), &agentprivatev1.ResumeWorkRequest{SubjectId: "employee", WorkId: workID, RequestId: next})
 	require.NoError(t, err)
-	stop()
 	// The running recovery module may redeliver the resumed start while the
 	// Work is Starting; that repeats one admission rather than adding another.
-	requests := port.distinctStartRequests()
+	requests := awaitLaunches(t, observer, 2, "the explicit new request resumes the stopped Work")
+	stop()
+	requests = launches(t, observer)
 	require.Len(t, requests, 2, "only the explicit new request may resume the stopped Work")
 	require.Equal(t, domain.ContextContinue, requests[1].ContextMode)
 	for _, request := range requests {
@@ -162,7 +168,7 @@ func TestModuleRestartCompletesConfirmedCreationHandoff(t *testing.T) {
 	request, err = records.RetainWorkCreation(ctx, request)
 	require.NoError(t, err)
 	port := &sessionCommandRecorder{}
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{}), port).Handle(ctx, request.Creation)
+	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{})).Handle(ctx, request.Creation)
 	require.NoError(t, err)
 	require.NoError(t, records.ConfirmWorkCreation(ctx, request.ID, id))
 	require.NoError(t, db.Close())
@@ -170,12 +176,11 @@ func TestModuleRestartCompletesConfirmedCreationHandoff(t *testing.T) {
 	require.NoError(t, err)
 	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
-	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return noEnvironments{} }), fx.NopLogger,
+	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.NopLogger,
 		storageStub(),
 		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota) }),
-		fx.Provide(func() domain.ExecutionPort { return port }),
 		fx.Provide(func() command.RunningHarnessPort { return port }),
 	)
 	require.NoError(t, app.Err())
@@ -188,9 +193,9 @@ func TestModuleRestartCompletesConfirmedCreationHandoff(t *testing.T) {
 	records = infrastructure.NewWorkCreationRequests(db, time.Now)
 	require.Eventually(t, func() bool {
 		pending, err := records.ListPendingWorkCreations(ctx, "", 100)
-		return err == nil && len(pending) == 0 && len(port.startRequests()) > 0
-	}, 10*time.Second, 20*time.Millisecond)
-	for _, start := range port.startRequests() {
+		return err == nil && len(pending) == 0 && len(launches(t, db)) > 0
+	}, 10*time.Second, 20*time.Millisecond, "recovery begins the admitted start's execution whose Domain Event the handoff lost")
+	for _, start := range launches(t, db) {
 		require.Equal(t, id, start.WorkID)
 	}
 	retained, err := infrastructure.NewInitialExecutionRequests(db, time.Now).Get(ctx, id)

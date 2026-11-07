@@ -43,8 +43,8 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	creation := command.CreateWork{AgentID: definition.ID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project"}
 	lost := errors.New("registration committed; acknowledgement lost")
 	registrar := registrationLostAcknowledgement{AgentWorkRepository: sessions, err: lost}
-	create := command.NewCreateWorkHandler(time.Now, agents, registrar, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
-	prepare := command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, nil, nil, agentquery.ModelConfigurations{})
+	create := command.NewCreateWorkHandler(time.Now, agents, registrar, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
+	prepare := command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, nil, agentquery.ModelConfigurations{})
 	prepareNew := func(ctx context.Context, creation command.CreateWork, input command.PrepareWorkExecution) (string, error) {
 		creation.SubjectID, creation.InitialExecution = input.SubjectID, &input
 		id, err := create.Handle(ctx, creation)
@@ -78,13 +78,11 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.False(t, retained.Prepared)
 	require.True(t, retained.Submitted, "first admission is committed with the original input")
 	resources := &registrationResources{}
-	var starts []domain.StartExecutionRequest
-	requests := startupExecutionPort{onStart: func(r domain.StartExecutionRequest) error { starts = append(starts, r); return nil }}
-	create = command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
-	prepare = command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, requests, nil, agentquery.ModelConfigurations{})
-	recover := command.NewRecoverInitialExecutionHandler(receipts, sessions, prepare, resources, requests)
+	create = command.NewCreateWorkHandler(time.Now, agents, sessions, auth, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
+	prepare = command.NewPrepareWorkExecutionHandler(receipts, sessions, auth, nil, agentquery.ModelConfigurations{})
+	recover := command.NewRecoverInitialExecutionHandler(receipts, sessions, prepare, resources)
 	require.ErrorIs(t, recover.Handle(ctx, session.ID), command.ErrInitialExecutionPending)
-	require.Len(t, starts, 1)
+	requireStartIntended(t, sessions, session.ID)
 	// The start's preparation process reports its planned checkout before the
 	// Harness starts; an unreachable repository degrades.
 	planned, err := receipts.Get(ctx, session.ID)
@@ -95,8 +93,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	session, err = sessions.Get(ctx, session.ID)
 	require.NoError(t, err)
 	ref := session.ID
-	require.NoError(t, session.ConfirmPrepared(context.Background(), time.Now(), nil))
-	require.NoError(t, session.ConfirmStarted(context.Background(), time.Now(), nil))
+	reportReady(t, session)
 	require.NoError(t, sessions.Save(ctx, session))
 	require.NoError(t, recover.Handle(ctx, session.ID))
 	require.Equal(t, []command.ExecutionInput{input.Input}, resources.inputs)
@@ -135,7 +132,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	repeat.Input.Text = "different task"
 	_, err = prepareNew(ctx, creation, repeat)
 	require.ErrorIs(t, err, command.ErrInitialExecutionConflict)
-	require.Len(t, starts, 1)
+	requireStartIntended(t, sessions, ref)
 	require.Len(t, resources.inputs, 1)
 }
 

@@ -33,11 +33,10 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
 	models := query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deepseek"}, Name: "DeepSeek", Vendor: "deepseek", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "max"}, query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "glm"}, Name: "GLM 5.3", Vendor: "zhipu"})
-	var starts []domain.StartExecutionRequest
-	create, _ := creationCoordinator(f.db, f.requests, &creationCapacity{}, &registrationResources{}, &starts, nil, models, &personalStartupCatalog{})
+	create, _ := creationCoordinator(f.db, f.requests, &creationCapacity{}, &registrationResources{}, nil, models, &personalStartupCatalog{})
 	id, err := create.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
-	require.Len(t, starts, 1)
+	requireStartIntended(t, f.sessions, id)
 	thinking := &workThinking{}
 	owners := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	views := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(f.db), models)
@@ -76,8 +75,7 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a setting cannot start an execution")
 	admitted, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	require.NoError(t, admitted.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, admitted.ConfirmStarted(ctx, time.Now(), nil))
+	reportReady(t, admitted)
 	require.NoError(t, f.sessions.Save(ctx, admitted))
 	setting.Level = "medium"
 	_, err = client.SetThinkingLevel(workMessageRequest(ctx, owner), setting)
@@ -100,10 +98,9 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 
 	stopped, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	port := startupExecutionPort{}
-	require.NoError(t, stopped.Stop(ctx, "thinking-stop", port))
-	require.NoError(t, stopped.RecordExit(ctx, domain.HarnessExit{}, port))
-	require.NoError(t, stopped.ConfirmComputeReclaimed())
+	require.NoError(t, stopped.Stop("thinking-stop", false))
+	reportExit(t, stopped, domain.HarnessExit{})
+	reportReleased(t, stopped)
 	require.NoError(t, f.sessions.Save(ctx, stopped))
 	level, err = client.GetThinkingLevel(workMessageRequest(ctx, owner), &agentpublicv1.GetThinkingLevelRequest{WorkId: id})
 	require.NoError(t, err)

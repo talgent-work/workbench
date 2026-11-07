@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
@@ -65,7 +64,7 @@ func TestInputCommandPreservesPayloadAndRejectsInvalidDelivery(t *testing.T) {
 	default:
 		t.Fatal("successful hand-off did not reach Dispatcher")
 	}
-	require.NoError(t, command.NewStopWorkHandler(sessions, sessionAccess{}, controlPort{}).Handle(ctx,
+	require.NoError(t, command.NewStopWorkHandler(sessions, sessionAccess{}, &commandtest.Executions{}).Handle(ctx,
 		command.WorkControl{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: "stop"}))
 	request.Input.ID = uuid.NewString()
 	require.NoError(t, deliveryErr(handler.Deliver(ctx, request)), "a stopping Work keeps input for its next start")
@@ -110,22 +109,32 @@ func runningMessagingSession(t *testing.T) (*startupAgentStore, *feedbackSession
 
 func runningMessagingSessionForPurpose(t *testing.T, purpose string) (*startupAgentStore, *feedbackSessionStore) {
 	t.Helper()
+	agents, w := runningMessagingWorld(t, purpose)
+	return agents, w.works
+}
+
+// runningMessagingWorld is a Work of a definition for the purpose whose
+// first start's launched "process" reported itself ready through Dispatcher's
+// feedback.
+func runningMessagingWorld(t *testing.T, purpose string) (*startupAgentStore, *world) {
+	t.Helper()
 	ctx := context.Background()
 	agents, sessions := startupStoresForPurpose(t, purpose)
 	sessions.starts = map[string]query.AdmittedStart{uuid.NewString(): {WorkID: sessions.session.ID, Kind: query.StartKindStart}}
-	factory := &startupPort{}
-	require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessions.session.ID))
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutorPrepared, WorkID: sessions.session.ID}))
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.AgentStarted, WorkID: sessions.session.ID}))
-	return agents, sessions
+	w := worldOver(t, sessions)
+	w.launch(t, "process")
+	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
+		require.NoError(t, w.feedback().Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: sessions.session.ID}))
+	}
+	require.Equal(t, domain.WorkWorking, sessions.session.State)
+	return agents, w
 }
 
 func TestOrdinaryInputEntryDelegatesWaitingWork(t *testing.T) {
 	ctx := context.Background()
-	_, sessions := runningMessagingSessionForPurpose(t, "intent_coordinator")
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, sessions, exitedProcess(), controlPort{}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", ObservationSequence: 1000, RequiredInteractionIDs: []string{"coordinator-question"}, Kind: command.UserInteractionRequired, WorkID: sessions.session.ID, InteractionID: "coordinator-question"}))
+	_, w := runningMessagingWorld(t, "intent_coordinator")
+	sessions := w.works
+	require.NoError(t, w.feedback().Handle(ctx, command.ExecutionFeedback{ProcessID: "process", ObservationSequence: 1000, RequiredInteractionIDs: []string{"coordinator-question"}, Kind: command.UserInteractionRequired, WorkID: sessions.session.ID, InteractionID: "coordinator-question"}))
 	control, received := dispatcherBuffer(t)
 	handler := command.NewDeliverWorkInputHandler(sessions, sessionAccess{}, command.NewInputAcceptance(sessions, control), &initialRequestStore{})
 	input := command.DeliverWorkInput{SubjectID: "owner", WorkID: sessions.session.ID, Input: command.ExecutionInput{ID: uuid.NewString(), Text: "accepted business handoff"}}

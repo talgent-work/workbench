@@ -50,12 +50,11 @@ func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}).Handle(ctx, f.request.Creation)
+	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{})).Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
-	factory := executionPort{}
 	capacity := &workCapacity{available: true}
 	ref := id
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := newRuns(t, f.db, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
@@ -65,16 +64,15 @@ func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	receipt.Prepared, receipt.Submitted, receipt.Rejected = true, true, true
 	receipt.StartFailed, receipt.FailureReason = true, "Workspace preparation rejected"
 	require.NoError(t, initial.Save(ctx, receipt))
-	failure := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	require.NoError(t, failure.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: ref, ProcessID: "process", ExitCode: 1, ExitReason: "native_initialization_failed"}))
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ComputeReclaimed, WorkID: ref}))
+	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: ref, ProcessID: "process", ExitCode: 1, ExitReason: "native_initialization_failed"}))
+	feedback.release(ctx, ref)
 	reader := infrastructure.NewWorkQueryRepository(f.db)
 	failed, err := reader.GetWorkView(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, "failed", failed.StartupProgress.Status)
 	require.Equal(t, "workspace", failed.StartupProgress.Stages[2].Stage)
 
-	_, err = workRef(id)(command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, auth, computertest.Checked(capacity), factory, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	_, err = workRef(id)(command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, auth, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	starting, err := reader.GetWorkView(ctx, id)
 	require.NoError(t, err)
@@ -107,12 +105,11 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	f := newWorkCreationFixtureForSubject(t, owner)
 	ctx := context.Background()
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{}).Handle(ctx, f.request.Creation)
+	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, auth, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{})).Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id))
 	require.NoError(t, f.requests.CompleteWorkCreation(ctx, f.request.ID))
 	capacity := &workCapacity{available: true}
-	factory := executionPort{}
 	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
 		principal := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
@@ -120,10 +117,10 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 		requests := infrastructure.NewContinuationRequests(db, time.Now)
 		reader := infrastructure.NewWorkQueryRepository(db)
 		app := &application.Application{WorkPrincipals: principal, WorkViews: reader, Commands: application.Commands{
-			StopWork:    command.NewStopWorkHandler(sessions, principal, factory),
-			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), factory, requests, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
-			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), factory, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
-			CloseWork:   command.NewCloseWorkHandler(sessions, principal, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, requests, &commandtest.InputBuffer{}),
+			StopWork:    command.NewStopWorkHandler(sessions, principal, executionsOf(db)),
+			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), requests, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			CloseWork:   command.NewCloseWorkHandler(sessions, principal, executionsOf(db), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, requests, &commandtest.InputBuffer{}),
 		}, Queries: application.Queries{GetWorkView: query.NewGetWorkViewHandler(principal, reader)}}
 		handler := connecttest.Handler(func(s *connect.Server) {
 			agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
@@ -150,7 +147,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	_, err = client.ArchiveWork(workMessageRequest(ctx, owner), &agentpublicv1.ArchiveWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	ref := id
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := newRuns(t, f.db, f.sessions)
 	var feedbackSequence int64 = 1000
 	report := func(kind command.ExecutionFeedbackKind, interaction string) {
 		feedbackSequence++
@@ -186,7 +183,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.Equal(t, "completed", completeView.StartupProgress.Status)
 	require.Greater(t, completeView.StartupProgress.Revision, inputView.StartupProgress.Revision)
 	feedbackHTTP := connecttest.Handler(func(s *connect.Server) {
-		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(&application.Application{Commands: application.Commands{ApplyExecutionFeedback: feedback}}, nil, "progress-test"))
+		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(&application.Application{Commands: application.Commands{ApplyExecutionFeedback: feedback.feedback}}, nil, "progress-test"))
 	})
 	feedbackServer := httptest.NewServer(feedbackHTTP)
 	t.Cleanup(feedbackServer.Close)
@@ -246,7 +243,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, stopping.StopRequestReference, current.StopRequestReference)
 	report(command.ExecutionExited, "")
-	report(command.ComputeReclaimed, "")
+	feedback.release(ctx, ref)
 	require.Equal(t, []string{"resume", "archive"}, read("stopped").AllowedActions)
 	before, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -288,9 +285,8 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.Equal(t, before.Subject, current.Subject)
 	// Failed startup requires explicit Restart with native context recovery. Neither Resume nor
 	// reading recovery facts can select it, and no one but the owner can request it.
-	failure := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	require.NoError(t, failure.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: ref, ProcessID: "process", ExitCode: 1, ExitReason: "native_initialization_failed"}))
-	report(command.ComputeReclaimed, "")
+	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: ref, ProcessID: "process", ExitCode: 1, ExitReason: "native_initialization_failed"}))
+	feedback.release(ctx, ref)
 	failed := read("failed")
 	require.Equal(t, "failed", failed.StartupProgress.Status)
 	_, err = client.ResumeWork(workMessageRequest(ctx, owner), &agentpublicv1.ResumeWorkRequest{WorkId: id})
@@ -324,7 +320,7 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "stopping", stopped.Work.State)
 	report(command.ExecutionExited, "")
-	report(command.ComputeReclaimed, "")
+	feedback.release(ctx, ref)
 	_, err = client.ArchiveWork(workMessageRequest(ctx, messageCollaborator), &agentpublicv1.ArchiveWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	_, err = client.ArchiveWork(workMessageRequest(ctx, owner), &agentpublicv1.ArchiveWorkRequest{WorkId: id, ExpectedVersion: &failedView.Version})

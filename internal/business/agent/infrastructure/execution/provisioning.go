@@ -8,8 +8,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
-	"github.com/google/uuid"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -19,100 +17,18 @@ import (
 // Each external attempt leaves time for durable bookkeeping and other records.
 const reconciliationAttemptTimeout = 5 * time.Second
 
-type allocationRecord struct {
-	StartRejected         bool   `xorm:"start_rejected"`
-	SandboxReady          bool   `xorm:"sandbox_ready"`
-	PreparationRecovering bool   `xorm:"preparation_recovering"`
-	ID                    string `xorm:"pk 'id'"`
-	SessionID             string `xorm:"'session_id'"`
-	RequestHash           string `xorm:"'request_hash'"`
-	RequestJSON           []byte `xorm:"'request_json'"`
-	ServiceAccessJSON     []byte `xorm:"'service_access_json'"`
-	CredentialPlanJSON    []byte `xorm:"'credential_plan_json'"`
-	SpecificationJSON     []byte `xorm:"'specification_json'"`
-	// Realization names the environment authority holding the allocation's
-	// environment, fixed at registration (environment_authority.go).
-	Realization          string `xorm:"'realization'"`
-	PreparationCommand   string `xorm:"'preparation_command'"`
-	PreparationProcessID string `xorm:"'preparation_process_id'"`
-	// CheckoutPlan is the plan this start's preparation checks out, fixed
-	// when the preparation process is created; JSON null for none.
-	CheckoutPlan []byte `xorm:"'checkout_plan'"`
-	// EnvironmentPrepared records that the preparation process finished and its
-	// Plugin and checkout outcomes were recorded.
-	EnvironmentPrepared bool   `xorm:"'plugins_prepared'"`
-	LaunchCommand       string `xorm:"'launch_command'"`
-	NativeSessionID     string `xorm:"'native_session_id'"`
-	ProcessID           string `xorm:"'process_id'"`
-	// ProcessExited records that Agent acknowledged the exit fact of ProcessID.
-	ProcessExited bool `xorm:"'process_exited'"`
-	// CredentialsExpireAt is the earliest declared expiry, in Unix
-	// milliseconds, of the credentials last delivered to the Vault; zero when
-	// none of them expires.
-	CredentialsExpireAt int64 `xorm:"'credentials_expire_at'"`
-	// ModelCredentialDigest identifies the model key last delivered.
-	ModelCredentialDigest string `xorm:"'model_credential_digest'"`
-	// InputsDue counts the input changes a Managed allocation's machine has
-	// not been synced with; zero when it holds the current inputs.
-	InputsDue int64 `xorm:"'inputs_due'"`
-	// InputOwner is the File Space owner of the Work's input source, recorded
-	// by its inputs sync; a change in that space finds the allocation by it.
-	InputOwner string `xorm:"'input_owner'"`
-	// InputsSyncedAt is when, in Unix milliseconds, a Managed allocation's
-	// inputs were last synced; zero before the first.
-	InputsSyncedAt int64 `xorm:"'inputs_synced_at'"`
-	// AuthorizationIDs are the Provider Authorizations the Work selected; its
-	// repository and service access goes through them, so a credential change
-	// finds its Works.
-	AuthorizationIDs []byte `xorm:"'authorization_ids'"`
-	Submitted        bool   `xorm:"'submitted'"`
-	// SandboxID references the allocation's environment once submission
-	// resolved it: a Cloud's sandbox identity, or on a Managed Computer the
-	// allocation's own identity, standing for the Work's opened directory.
-	SandboxID string `xorm:"'sandbox_id'"`
-	// AllocationLabel equals the sandbox's allocation label, so an observed
-	// sandbox finds its allocation without reading every allocation. MySQL
-	// derives it from the identity; it is never written.
-	AllocationLabel string `xorm:"<- 'allocation_label'"`
-	Version         int    `xorm:"'version'"`
-	CreatedAt       int64  `xorm:"'created_at'"`
-	UpdatedAt       int64  `xorm:"'updated_at'"`
-	DeletedAt       int64  `xorm:"'deleted_at'"`
-	// ReleasedAt is when, in Unix milliseconds, a retired allocation's compute
-	// release was confirmed; zero while its release is outstanding.
-	ReleasedAt int64 `xorm:"'released_at'"`
-}
-
-func (*allocationRecord) TableName() string { return "execution_allocation" }
-
-// BeforeInsert records an allocation that uses no authorization as such, one
-// whose realization is not named as a Cloud's, as the column defaults, and a
-// Managed one with its inputs due.
-func (r *allocationRecord) BeforeInsert() {
-	if len(r.AuthorizationIDs) == 0 {
-		r.AuthorizationIDs = []byte("[]")
-	}
-	if r.Realization == "" {
-		r.Realization = realizationCloud
-	}
-	if r.Realization == realizationManaged {
-		// A Managed Work's machine has no inputs before its first sync.
-		r.InputsDue = 1
-	}
-}
-
-// Provisioning retains the admitted request and exact provider specification
-// before any external allocation. Its progress is technical recovery state;
-// neither registration nor a Running sandbox establishes Session readiness.
-// Recovery tasks drive it one allocation at a time.
+// Provisioning holds what realizing an execution's environment needs: its
+// records, both realizations' environment authorities and the launch
+// configuration. It fixes each execution's environment specification once,
+// before its creation is submitted; it decides no step.
 type Provisioning struct {
 	// ProgressCommitted is wired by composition to the existing Work state stream.
 	ProgressCommitted func(context.Context, string)
-	db                *xorm.Engine
-	sandboxes         *Sandboxes
-	credentials       *SandboxCredentials
+	records
+	sandboxes   *Sandboxes
+	credentials *SandboxCredentials
 	// managed is the Managed realization; nil when this deployment has no
-	// relay, and then every step of a Managed allocation fails.
+	// relay, and then every step of a Managed execution fails.
 	managed *ManagedEnvironment
 	now     func() time.Time
 	native  NativeLaunchConfig
@@ -124,46 +40,30 @@ type Provisioning struct {
 }
 
 func NewProvisioning(db *xorm.Engine, sandboxes *Sandboxes, credentials *SandboxCredentials, native NativeLaunchConfig, now func() time.Time, initial command.InitialExecutionReader, managed *ManagedEnvironment) *Provisioning {
-	return &Provisioning{db: db, sandboxes: sandboxes, credentials: credentials, managed: managed, native: native, now: now, initial: initial, attemptTimeout: reconciliationAttemptTimeout}
+	return &Provisioning{records: records{db: db}, sandboxes: sandboxes, credentials: credentials, managed: managed, native: native, now: now, initial: initial, attemptTimeout: reconciliationAttemptTimeout}
 }
 
-// Register durably accepts the admitted start as the Work's one live
-// allocation. Repetition retains the original image, environment and access
-// token even after config changes. It performs no external API call and
-// therefore cannot start native execution.
-func (p *Provisioning) Register(ctx context.Context, request domain.StartExecutionRequest, mounts domain.SandboxMounts) error {
-	return p.register(ctx, realizationCloud, request, mounts)
-}
-
-// RegisterManaged accepts the admitted start of a Work on a Managed Computer
-// as its one live allocation, as Register does for a Cloud. Its environment
-// is the Work's directory on the machine, which holds no mounts.
-func (p *Provisioning) RegisterManaged(ctx context.Context, request domain.StartExecutionRequest) error {
-	return p.register(ctx, realizationManaged, request, domain.SandboxMounts{})
-}
-
-func (p *Provisioning) register(ctx context.Context, realization string, request domain.StartExecutionRequest, mounts domain.SandboxMounts) error {
-	authority, err := p.authorityOf(realization)
+// specify fixes the execution's environment specification, launch commands
+// and the credential plan its submission freezes, from its LaunchSpecification
+// and the Mount Grants of a Cloud start. A specified execution keeps the
+// image, environment and access tokens it was given.
+func (p *Provisioning) specify(ctx context.Context, record allocationRecord, mounts domain.SandboxMounts) error {
+	if record.specified() {
+		return nil
+	}
+	authority, err := p.authority(record)
 	if err != nil {
 		return err
 	}
-	encoded, err := canonicalRequest(request)
+	launch, err := decodeStartRequest(record.RequestJSON)
 	if err != nil {
-		return err
+		return oops.With("operation", "decode_execution_launch").Wrap(err)
 	}
-	fingerprint := storageKey(string(encoded))
-	existing, found, err := p.live(ctx, request.WorkID)
-	if err != nil {
-		return err
-	}
-	if found {
-		return sameAllocation(existing, request.WorkID, fingerprint)
-	}
-	owner := Allocation{WorkID: request.WorkID, ID: uuid.Must(uuid.NewV7()).String()}
+	owner := Allocation{WorkID: record.SessionID, ID: record.ID}
 	// The initial preparation's thinking level belongs to the Work's first start.
-	thinkingLevel := request.ThinkingLevel
-	if thinkingLevel == "" && request.ContextMode == domain.ContextFresh {
-		initial, found, err := p.initialRequest(ctx, request.WorkID)
+	thinkingLevel := launch.ThinkingLevel
+	if thinkingLevel == "" && launch.ContextMode == domain.ContextFresh {
+		initial, found, err := p.initialRequest(ctx, record.SessionID)
 		if err != nil {
 			return err
 		}
@@ -171,133 +71,35 @@ func (p *Provisioning) register(ctx context.Context, realization string, request
 			thinkingLevel = initial.ThinkingLevel
 		}
 	}
-	launch, err := p.native.prepare(authority.launchLayout(), request, owner, thinkingLevel)
+	native, err := p.native.prepare(authority.launchLayout(), launch, owner, thinkingLevel)
 	if err != nil {
 		return err
 	}
-	spec, err := authority.specify(ctx, request, mounts, owner, rand.Text(), rand.Text())
+	spec, err := authority.specify(ctx, launch, mounts, owner, rand.Text(), rand.Text())
 	if err != nil {
 		return err
 	}
-	now := p.now().UnixMilli()
-	record := allocationRecord{ID: owner.ID, SessionID: request.WorkID, RequestHash: fingerprint, RequestJSON: encoded, SpecificationJSON: spec.document, Realization: realization, CredentialPlanJSON: []byte("null"), ServiceAccessJSON: []byte("[]"), AuthorizationIDs: spec.authorizations, LaunchCommand: launch.Command, PreparationCommand: launch.PreparationCommand, NativeSessionID: launch.SessionID, Version: 1, CreatedAt: now, UpdatedAt: now}
-	_, err = p.db.Context(ctx).Insert(&record)
-	if err == nil {
-		return nil
-	}
-	// The unique live allocation per Work rejects a concurrent registration.
-	var duplicate *mysql.MySQLError
-	if !errors.As(err, &duplicate) || duplicate.Number != 1062 {
-		return oops.With("operation", "register_allocation").Wrap(err)
-	}
-	existing, found, err = p.live(ctx, request.WorkID)
+	record.SpecificationJSON = spec.document
+	plan, err := authority.claim(ctx, record)
 	if err != nil {
 		return err
 	}
-	if !found {
-		return errEnvironmentConflict
+	if plan == nil {
+		plan = []byte("null")
 	}
-	return sameAllocation(existing, request.WorkID, fingerprint)
-}
-
-// reconcileSubmission advances one live allocation whose environment is not
-// yet known. Once a worker has durably claimed submission, all recovery uses
-// lookup, including after process restart or an ambiguous response: an
-// empty lookup cannot prove an in-flight create failed, so it leaves the
-// claimed create unresolved instead of creating a duplicate. Only the authority's
-// refusal of the submitted create settles it without an environment: the
-// start is rejected.
-func (p *Provisioning) reconcileSubmission(ctx context.Context, record allocationRecord) error {
-	err := p.reconcile(ctx, record)
-	if errors.Is(err, errEnvironmentConflict) {
-		return err
-	}
-	// A refused create recorded as a rejected start is settled, not recovering;
-	// its error still reports why.
-	recovering := err != nil && !errors.Is(err, errCreationRefused)
-	return errors.Join(err, p.recordRecovery(ctx, record, recovering))
-}
-
-func (p *Provisioning) reconcile(ctx context.Context, record allocationRecord) error {
-	if record.StartRejected {
-		return nil
-	}
-	// Registration precedes preparation. Only an unsubmitted allocation can
-	// prove that a rejected prerequisite prevented any external creation.
-	if !record.Submitted {
-		initial, found, err := p.initialRequest(ctx, record.SessionID)
-		if err != nil {
-			return err
-		}
-		if found && !initial.Prepared {
-			if initial.Rejected {
-				return p.update(ctx, record, "start_rejected = 1")
-			}
-			return nil
-		}
-	}
-	authority, err := p.authority(record)
+	_, err = p.db.Context(ctx).Exec(`UPDATE execution_allocation SET specification_json = ?, authorization_ids = ?, launch_command = ?, preparation_command = ?, native_session_id = ?, credential_plan_json = ?, updated_at = ?
+ WHERE id = ? AND JSON_TYPE(specification_json) = 'NULL'`, spec.document, spec.authorizations, native.Command, native.PreparationCommand, native.SessionID, plan, p.now().UnixMilli(), record.ID)
 	if err != nil {
-		return err
+		return oops.With("operation", "specify_execution").Wrap(err)
 	}
-	attempt, release := context.WithTimeout(ctx, p.attemptTimeout)
-	defer release()
-	var id string
-	if !record.Submitted {
-		var plan []byte
-		if plan, err = authority.claim(attempt, record); err != nil {
-			return err
-		}
-		// Freeze what the claim fixes and the submission together before
-		// creating. A waiting preparation does not suppress durable
-		// registration of the start.
-		if plan == nil {
-			err = p.update(ctx, record, "submitted = 1")
-		} else {
-			err = p.update(ctx, record, "credential_plan_json = ?, submitted = 1", plan)
-		}
-		if err != nil {
-			return err
-		}
-		record.Version++
-		id, err = authority.create(attempt, record)
-		if errors.Is(err, errCreationRefused) {
-			return p.settleRefusal(ctx, attempt, authority, record, err)
-		}
-	} else {
-		id, err = authority.find(attempt, record)
-	}
-	if err != nil {
-		return err
-	}
-	if id == "" {
-		return nil
-	}
-	return p.update(ctx, record, "sandbox_id = ?", id)
-}
-
-// settleRefusal settles the one create of an allocation that its authority
-// refused. A refusal means nothing was created, so the start is rejected like
-// one whose prerequisite was; lookup would never resolve it. An environment
-// the lookup still finds was created regardless and is kept instead, so no
-// compute is ever left without its allocation. Only a recorded rejection
-// returns errCreationRefused; any other outcome stays a recovering failure.
-func (p *Provisioning) settleRefusal(ctx, attempt context.Context, authority environmentAuthority, record allocationRecord, refusal error) error {
-	id, err := authority.find(attempt, record)
-	if err != nil {
-		return oops.With("refusal", refusal.Error()).Wrap(err)
-	}
-	if id != "" {
-		return p.update(ctx, record, "sandbox_id = ?", id)
-	}
-	if err := p.update(ctx, record, "start_rejected = 1"); err != nil {
-		return oops.With("refusal", refusal.Error()).Wrap(err)
-	}
-	return refusal
+	return nil
 }
 
 // initialRequest reads the Work's retained initial request, if it has one.
 func (p *Provisioning) initialRequest(ctx context.Context, workID string) (command.InitialExecutionRequest, bool, error) {
+	if p.initial == nil {
+		return command.InitialExecutionRequest{}, false, nil
+	}
 	request, err := p.initial.Get(ctx, workID)
 	if errors.Is(err, command.ErrInitialExecutionNotFound) {
 		return command.InitialExecutionRequest{}, false, nil
@@ -305,73 +107,10 @@ func (p *Provisioning) initialRequest(ctx context.Context, workID string) (comma
 	return request, err == nil, err
 }
 
-// live returns the Work's one live allocation.
-func (p *Provisioning) live(ctx context.Context, workID string) (allocationRecord, bool, error) {
-	var record allocationRecord
-	found, err := p.db.Context(ctx).Where("session_id = ? AND deleted_at = 0", workID).Get(&record)
-	if err != nil {
-		return record, false, oops.With("operation", "get_live_allocation").Wrap(err)
-	}
-	return record, found, nil
-}
-
-func (p *Provisioning) get(ctx context.Context, id string) (allocationRecord, bool, error) {
-	var record allocationRecord
-	found, err := p.db.Context(ctx).Where("id = ?", id).Get(&record)
-	if err != nil {
-		return record, false, oops.With("operation", "get_allocation").Wrap(err)
-	}
-	return record, found, nil
-}
-
-// recordRelease records that the retired allocation's compute is released. A
-// release recorded already stays as it was.
-func (p *Provisioning) recordRelease(ctx context.Context, record allocationRecord) error {
-	now := p.now().UnixMilli()
-	_, err := p.db.Context(ctx).Exec("UPDATE execution_allocation SET released_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND deleted_at <> 0 AND released_at = 0", now, now, record.ID)
-	if err != nil {
-		return oops.With("operation", "record_execution_release").Wrap(err)
-	}
-	return nil
-}
-
-// Assignment is selected only by private call sites above; values remain bound.
-func (p *Provisioning) update(ctx context.Context, record allocationRecord, assignment string, values ...any) error {
-	args := append(values, p.now().UnixMilli(), record.ID, record.Version)
-	result, err := p.db.Context(ctx).Exec(append([]any{"UPDATE execution_allocation SET " + assignment + ", updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND sandbox_id = '' AND deleted_at = 0"}, args...)...)
-	if err != nil {
-		return oops.With("operation", "update_allocation").Wrap(err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return oops.Wrap(err)
-	}
-	if changed != 1 {
-		return errEnvironmentConflict
-	}
-	return nil
-}
-
-func sameAllocation(record allocationRecord, workID, fingerprint string) error {
-	if record.DeletedAt != 0 || record.SessionID != workID || record.RequestHash != fingerprint {
-		return errEnvironmentConflict
-	}
-	return nil
-}
-
-func canonicalRequest(request domain.StartExecutionRequest) ([]byte, error) {
-	if err := validateStartRequest(request); err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(allocationRequestFromStart(request))
-	if err != nil {
-		return nil, oops.Wrap(err)
-	}
-	return data, nil
-}
-
+// recordRecovery records whether the latest attempt at a step left the start
+// recovering, which its startup progress shows.
 func (p *Provisioning) recordRecovery(ctx context.Context, record allocationRecord, recovering bool) error {
-	result, err := p.db.Context(ctx).Exec("UPDATE execution_allocation SET preparation_recovering=?,version=version+1 WHERE id=? AND preparation_recovering<>? AND deleted_at=0", recovering, record.ID, recovering)
+	result, err := p.db.Context(ctx).Exec("UPDATE execution_allocation SET preparation_recovering = ?, updated_at = ? WHERE id = ? AND preparation_recovering <> ? AND deleted_at = 0", recovering, p.now().UnixMilli(), record.ID, recovering)
 	if err != nil {
 		return oops.Wrap(err)
 	}
@@ -380,6 +119,19 @@ func (p *Provisioning) recordRecovery(ctx context.Context, record allocationReco
 		return oops.Wrap(err)
 	}
 	if changed > 0 && p.ProgressCommitted != nil {
+		p.ProgressCommitted(ctx, record.SessionID)
+	}
+	return nil
+}
+
+// technical writes adapter-owned columns of a live execution with the
+// recorded environment; the execution's facts and version are untouched.
+func (p *Provisioning) technical(ctx context.Context, record allocationRecord, assignment string, values ...any) error {
+	args := append(values, p.now().UnixMilli(), record.ID, record.SandboxID)
+	if _, err := p.db.Context(ctx).Exec(append([]any{"UPDATE execution_allocation SET " + assignment + ", updated_at = ? WHERE id = ? AND sandbox_id = ? AND deleted_at = 0"}, args...)...); err != nil {
+		return oops.With("operation", "record_execution_progress").Wrap(err)
+	}
+	if p.ProgressCommitted != nil {
 		p.ProgressCommitted(ctx, record.SessionID)
 	}
 	return nil

@@ -77,9 +77,8 @@ func TestServiceAccessRefusesAnotherOwnerAndLateMaterialAfterStop(t *testing.T) 
 	_, err := app.Resolve(t.Context(), "starter", f.work.ID, githubRequirements)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 	require.Empty(t, supplier.requests)
-	require.NoError(t, f.work.ConfirmPrepared(context.Background(), time.Now(), nil))
-	require.NoError(t, f.work.ConfirmStarted(context.Background(), time.Now(), nil))
-	supplier.duringSupply = func() { require.NoError(t, f.work.Stop(t.Context(), "stop", repositoryExecution{})) }
+	readyWork(t, f.work)
+	supplier.duringSupply = func() { require.NoError(t, f.work.Stop("stop", false)) }
 	result, err := app.Resolve(t.Context(), "owner", f.work.ID, githubRequirements[:1])
 	require.ErrorIs(t, err, domain.ErrWorkTransition)
 	require.Empty(t, result.Credentials)
@@ -94,7 +93,7 @@ func serviceFixture(t *testing.T, selected bool) (*repositoryAccessFixture, *ser
 	if selected {
 		input.AuthorizationInput.Available = []domain.PersonalAuthorization{{OwnerUserID: "owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}
 	}
-	work, err := domain.NewAgentWork(t.Context(), input, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, repositoryExecution{})
+	work, err := domain.NewAgentWork(input, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	return &repositoryAccessFixture{work: work}, &serviceSupplier{token: "current-token"}
 }

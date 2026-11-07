@@ -18,11 +18,11 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 	return []taskqueue.Processor{
 		processor(logger, agenttask.ReconcileAllocationType, func() *agenttaskv1.ReconcileAllocationTaskV1 { return &agenttaskv1.ReconcileAllocationTaskV1{} },
 			func(ctx context.Context, p *agenttaskv1.ReconcileAllocationTaskV1) error {
-				return recovery.ReconcileAllocation(ctx, p.GetAllocationId())
+				return recovery.ReconcileExecution(ctx, p.GetAllocationId())
 			}),
 		processor(logger, agenttask.ReconnectAllocationType, func() *agenttaskv1.ReconnectAllocationTaskV1 { return &agenttaskv1.ReconnectAllocationTaskV1{} },
 			func(ctx context.Context, p *agenttaskv1.ReconnectAllocationTaskV1) error {
-				return recovery.ReconnectAllocation(ctx, p.GetAllocationId())
+				return recovery.ConnectExecution(ctx, p.GetAllocationId())
 			}),
 		processor(logger, agenttask.DeliverCredentialsType, func() *agenttaskv1.DeliverCredentialsTaskV1 { return &agenttaskv1.DeliverCredentialsTaskV1{} },
 			func(ctx context.Context, p *agenttaskv1.DeliverCredentialsTaskV1) error {
@@ -65,7 +65,7 @@ func PreparationProcessors(recovery *application.Recovery, logger *slog.Logger) 
 	return []taskqueue.Processor{
 		processor(logger, agenttask.PrepareAllocationType, func() *agenttaskv1.PrepareAllocationTaskV1 { return &agenttaskv1.PrepareAllocationTaskV1{} },
 			func(ctx context.Context, p *agenttaskv1.PrepareAllocationTaskV1) error {
-				return recovery.PrepareAllocation(ctx, p.GetAllocationId())
+				return recovery.PrepareExecution(ctx, p.GetAllocationId())
 			}),
 		processor(logger, agenttask.PrepareInitialExecutionType, func() *agenttaskv1.PrepareInitialExecutionTaskV1 { return &agenttaskv1.PrepareInitialExecutionTaskV1{} },
 			func(ctx context.Context, p *agenttaskv1.PrepareInitialExecutionTaskV1) error {

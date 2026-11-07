@@ -1,0 +1,208 @@
+package command
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+)
+
+// coordinationAttempts bounds retries of a Root changed concurrently.
+const coordinationAttempts = 3
+
+// ExecutionCoordination carries the intents of a Work to its AgentExecution
+// and the execution's reports back, each Root changed in its own
+// transaction. Every use case reads both Roots as they are now, so a repeated,
+// lost or reordered Domain Event leads to the same outcome, and the Work's
+// recovery repairs what a lost event left undone.
+type ExecutionCoordination struct {
+	now        func() time.Time
+	works      domain.AgentWorkRepository
+	executions domain.AgentExecutionRepository
+	computers  ComputerPort
+	buffer     RunningHarnessPort
+}
+
+func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkRepository, executions domain.AgentExecutionRepository, computers ComputerPort, buffer RunningHarnessPort) *ExecutionCoordination {
+	return &ExecutionCoordination{now: now, works: works, executions: executions, computers: computers, buffer: buffer}
+}
+
+// Coordinate applies every report the Work's current execution made, then
+// passes every intent the Work holds, so an intent a report caused, such as
+// the retirement an exit asks for, is passed in the same sweep; each step
+// runs regardless of the others' outcome.
+func (c *ExecutionCoordination) Coordinate(ctx context.Context, workID string) error {
+	return errors.Join(
+		c.ApplyExecutionReports(ctx, workID),
+		c.BeginExecution(ctx, workID),
+		c.RequestProcessExit(ctx, workID),
+		c.RetireExecution(ctx, workID),
+	)
+}
+
+// BeginExecution begins the AgentExecution of the Work's admitted start
+// (Begin execution), with the LaunchSpecification taken from the Work and
+// where its Computer realizes it. A start that has its execution already
+// changes nothing.
+func (c *ExecutionCoordination) BeginExecution(ctx context.Context, workID string) error {
+	work, err := c.works.Get(ctx, workID)
+	if err != nil {
+		return err
+	}
+	admitted, ok := intentOf[domain.WorkStartAdmitted](work)
+	if !ok {
+		return nil
+	}
+	current, err := c.latest(ctx, workID)
+	if err != nil || (current != nil && current.Serves(admitted.StartAdmittedAt)) {
+		return err
+	}
+	place, err := c.computers.DescribeComputer(ctx, work.ComputerID)
+	if err != nil {
+		return err
+	}
+	launch := work.LaunchSpecification()
+	launch.ComputerName = place.Name
+	realization := domain.RealizationCloud
+	if place.Managed {
+		realization = domain.RealizationManaged
+	}
+	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: launch, Realization: realization})
+	if err != nil {
+		return err
+	}
+	return c.executions.Save(ctx, execution)
+}
+
+// RequestProcessExit records the Work's request that its process exit on the
+// current execution (Request process exit).
+func (c *ExecutionCoordination) RequestProcessExit(ctx context.Context, workID string) error {
+	return c.passIntent(ctx, workID, func(work *domain.AgentWork, execution *domain.AgentExecution) (bool, error) {
+		requested, ok := intentOf[domain.WorkStopRequested](work)
+		if !ok {
+			return false, nil
+		}
+		return execution.RequestExit(requested)
+	})
+}
+
+// RetireExecution retires the current execution once its Work's execution
+// ended (Retire execution).
+func (c *ExecutionCoordination) RetireExecution(ctx context.Context, workID string) error {
+	return c.passIntent(ctx, workID, func(work *domain.AgentWork, execution *domain.AgentExecution) (bool, error) {
+		requested, ok := intentOf[domain.WorkComputeReleaseRequested](work)
+		if !ok {
+			return false, nil
+		}
+		return execution.Retire(requested, c.now())
+	})
+}
+
+func (c *ExecutionCoordination) passIntent(ctx context.Context, workID string, pass func(*domain.AgentWork, *domain.AgentExecution) (bool, error)) error {
+	var err error
+	for range coordinationAttempts {
+		var work *domain.AgentWork
+		if work, err = c.works.Get(ctx, workID); err != nil {
+			return err
+		}
+		var execution *domain.AgentExecution
+		if execution, err = c.latest(ctx, workID); err != nil || execution == nil {
+			return err
+		}
+		var changed bool
+		if changed, err = pass(work, execution); err != nil || !changed {
+			return err
+		}
+		if err = c.executions.Save(ctx, execution); !errors.Is(err, domain.ErrConcurrentModification) {
+			return err
+		}
+	}
+	return err
+}
+
+// ApplyExecutionReports applies every report the Work's current execution
+// made, in order (Apply execution report, Confirm compute release). A Work
+// that became ready has its idleness recorded from its input buffer.
+func (c *ExecutionCoordination) ApplyExecutionReports(ctx context.Context, workID string) error {
+	var err error
+	for range coordinationAttempts {
+		var execution *domain.AgentExecution
+		if execution, err = c.latest(ctx, workID); err != nil || execution == nil {
+			return err
+		}
+		var work *domain.AgentWork
+		if work, err = c.works.Get(ctx, workID); err != nil {
+			return err
+		}
+		wasStarting := work.State == domain.WorkStarting
+		changed := false
+		for _, report := range execution.Reports() {
+			applied, applyErr := work.ApplyExecutionReport(report)
+			if applyErr != nil {
+				return applyErr
+			}
+			changed = changed || applied
+		}
+		if !changed {
+			return nil
+		}
+		if wasStarting && work.State == domain.WorkWorking {
+			if err = c.recordIdleness(ctx, work); err != nil {
+				return err
+			}
+		}
+		if err = c.works.Save(ctx, work); !errors.Is(err, domain.ErrConcurrentModification) {
+			return err
+		}
+	}
+	return err
+}
+
+// recordIdleness supplies the accepted-input fact to a Work that just became
+// ready; the Work decides whether nothing is left to process.
+func (c *ExecutionCoordination) recordIdleness(ctx context.Context, work *domain.AgentWork) error {
+	buffered, err := c.buffer.ReadBuffer(ctx, work.ID)
+	if err != nil {
+		return err
+	}
+	return work.RecordIdleness(buffered.Pending(), c.now())
+}
+
+// latest is the Work's most recently begun execution, nil when it has none.
+func (c *ExecutionCoordination) latest(ctx context.Context, workID string) (*domain.AgentExecution, error) {
+	execution, err := c.executions.Latest(ctx, workID)
+	if errors.Is(err, domain.ErrExecutionNotFound) {
+		return nil, nil
+	}
+	return execution, err
+}
+
+// intentOf picks the Work's current intent of one kind.
+func intentOf[T domain.Event](work *domain.AgentWork) (T, bool) {
+	for _, intent := range work.Intents() {
+		if typed, ok := intent.(T); ok {
+			return typed, true
+		}
+	}
+	var none T
+	return none, false
+}
+
+// startQueued is the supplied fact that the Work's current start waits for
+// its Desk: its execution is Queued, or, not begun yet, its Computer admitted
+// it waiting.
+func startQueued(ctx context.Context, executions domain.AgentExecutionRepository, work *domain.AgentWork) (bool, error) {
+	admitted, ok := intentOf[domain.WorkStartAdmitted](work)
+	if !ok {
+		return false, nil
+	}
+	execution, err := executions.Latest(ctx, work.ID)
+	if errors.Is(err, domain.ErrExecutionNotFound) || (err == nil && !execution.Serves(admitted.StartAdmittedAt)) {
+		return admitted.Waiting, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return execution.Queued(), nil
+}

@@ -1,0 +1,65 @@
+package execution
+
+import (
+	"context"
+	"strings"
+
+	"github.com/samber/oops"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"xorm.io/xorm"
+)
+
+// ExecutionLookups finds the executions the recovery sweep and published
+// changes concern, by their indexed columns.
+type ExecutionLookups struct{ db *xorm.Engine }
+
+var _ query.ExecutionRecoveryReader = (*ExecutionLookups)(nil)
+
+func NewExecutionLookups(db *xorm.Engine) *ExecutionLookups { return &ExecutionLookups{db: db} }
+
+// ListOutstandingExecutions pages unretired executions and retired ones whose
+// release is not confirmed. A released execution is history and is never
+// listed.
+func (l *ExecutionLookups) ListOutstandingExecutions(ctx context.Context, afterID string, limit int) ([]string, error) {
+	var ids []string
+	err := l.db.Context(ctx).SQL(`SELECT id FROM (
+ SELECT id FROM execution_allocation WHERE deleted_at = 0 AND id > ?
+ UNION
+ SELECT id FROM execution_allocation WHERE retired = 1 AND released_at = 0 AND id > ?
+) AS outstanding ORDER BY id LIMIT ?`, afterID, afterID, limit).Find(&ids)
+	if err != nil {
+		return nil, oops.With("operation", "list_outstanding_executions").Wrap(err)
+	}
+	return ids, nil
+}
+
+// ListExecutionsUsingAuthorization lists the unretired executions whose Work
+// selected the authorization or reaches repositories through it.
+func (l *ExecutionLookups) ListExecutionsUsingAuthorization(ctx context.Context, authorizationID string) ([]string, error) {
+	if strings.TrimSpace(authorizationID) == "" {
+		return nil, nil
+	}
+	var ids []string
+	err := l.db.Context(ctx).SQL(`SELECT id FROM execution_allocation
+ WHERE ? MEMBER OF(authorization_ids) AND deleted_at = 0`, authorizationID).Find(&ids)
+	if err != nil {
+		return nil, oops.With("operation", "list_executions_using_authorization").Wrap(err)
+	}
+	return ids, nil
+}
+
+// ListExecutionsReadingInputs lists the unretired Managed executions whose
+// inputs sync recorded owner's File Space as their Work's input source. One
+// that has not recorded its owner yet is due from its start.
+func (l *ExecutionLookups) ListExecutionsReadingInputs(ctx context.Context, owner string) ([]string, error) {
+	if strings.TrimSpace(owner) == "" {
+		return nil, nil
+	}
+	var ids []string
+	err := l.db.Context(ctx).SQL(`SELECT id FROM execution_allocation
+ WHERE input_owner = ? AND deleted_at = 0 AND realization = ?`, owner, realizationManaged).Find(&ids)
+	if err != nil {
+		return nil, oops.With("operation", "list_executions_reading_inputs").Wrap(err)
+	}
+	return ids, nil
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,16 +65,14 @@ type CreateWorkHandler struct {
 	now           func() time.Time
 	catalog       StartCatalogPort
 	computers     ComputerPort
-	execution     domain.ExecutionPort
 	models        query.ModelConfigurations
 	agents        domain.AgentDefinitionRepository
 	sessions      AgentWorkRepository
-	lookup        domain.WorkLookupPort
 	authorization access.WorkAuthorizer
 }
 
-func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions AgentWorkRepository, lookup domain.WorkLookupPort, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog StartCatalogPort, computers ComputerPort, execution domain.ExecutionPort) *CreateWorkHandler {
-	return &CreateWorkHandler{now: now, catalog: catalog, computers: computers, execution: execution, agents: agents, sessions: sessions, lookup: lookup, authorization: authorization, models: models}
+func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog StartCatalogPort, computers ComputerPort) *CreateWorkHandler {
+	return &CreateWorkHandler{now: now, catalog: catalog, computers: computers, agents: agents, sessions: sessions, authorization: authorization, models: models}
 }
 
 func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (string, error) {
@@ -209,9 +208,12 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 			}
 			admission.DefinitionAdmitted, admission.Seat = true, seat
 		}
-		requests := deferExecution(h.execution)
-
-		work, created, err := agent.CreateWork(ctx, domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, Harness: harness, Subject: request.Subject, ProjectID: request.ProjectID, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, Capabilities: capabilities, TraceAttributes: attributes, ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle}, h.lookup, requests)
+		facts, err := h.creationFacts(ctx, agent, request)
+		if err != nil {
+			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
+			return "", err
+		}
+		work, created, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, Harness: harness, Subject: request.Subject, ProjectID: request.ProjectID, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, Capabilities: capabilities, TraceAttributes: attributes, ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle}, facts)
 		if err != nil {
 			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 			return "", err
@@ -248,11 +250,8 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 		if err != nil {
 			return "", err
 		}
-		// Initial input preparation waits for its cross-context binding confirmation;
-		// the Work already retains the admitted startup obligation for recovery.
-		if initial == nil {
-			return work.ID, requests.send(ctx)
-		}
+		// The start's execution begins once the Work commits; an initial
+		// execution's preparation holds its creation back until it is ready.
 		return work.ID, nil
 	}
 	return "", domain.ErrConcurrentModification
@@ -279,15 +278,49 @@ func (h *CreateWorkHandler) workModel(requested domain.WorkModelSelection, manag
 // request identity already started.
 func (h *CreateWorkHandler) reusableWork(ctx context.Context, agent *domain.AgentDefinition, subject domain.WorkSubject, accepted query.AdmittedStart, admitted bool) (*domain.AgentWork, error) {
 	if subject.Present() || !admitted || accepted.WorkID == "" {
-		return agent.ReuseWork(ctx, subject, h.lookup)
+		return h.subjectWork(ctx, agent, subject)
 	}
-	return h.lookup.LocateWork(ctx, accepted.WorkID)
+	return h.sessions.Get(ctx, accepted.WorkID)
+}
+
+// subjectWork is the definition's Work of the Subject, nil when it has none
+// or the request names no Subject.
+func (h *CreateWorkHandler) subjectWork(ctx context.Context, agent *domain.AgentDefinition, subject domain.WorkSubject) (*domain.AgentWork, error) {
+	if !subject.Present() {
+		return agent.ReuseWork(subject, nil)
+	}
+	found, err := h.sessions.FindBySubject(ctx, agent.ID, subject)
+	if err != nil {
+		return nil, err
+	}
+	return agent.ReuseWork(subject, found)
+}
+
+// creationFacts loads the Works a creation supplies to its definition: the
+// Subject's Work and the source Work of a requested starting context.
+func (h *CreateWorkHandler) creationFacts(ctx context.Context, agent *domain.AgentDefinition, request CreateWork) (domain.WorkCreationFacts, error) {
+	var facts domain.WorkCreationFacts
+	if request.Subject.Present() {
+		found, err := h.sessions.FindBySubject(ctx, agent.ID, request.Subject)
+		if err != nil {
+			return facts, err
+		}
+		facts.SubjectWork = found
+	}
+	if source := request.StartingContext; source != nil && strings.TrimSpace(source.WorkID) != "" {
+		found, err := h.sessions.Get(ctx, strings.TrimSpace(source.WorkID))
+		if err != nil && !errors.Is(err, domain.ErrWorkNotFound) {
+			return facts, err
+		}
+		facts.SourceWork = found
+	}
+	return facts, nil
 }
 
 // A competing creation may establish this binding after our first lookup but
 // before admission is refused. Reusing that Work needs no new capacity.
 func (h *CreateWorkHandler) reuseAfterRejection(ctx context.Context, agent *domain.AgentDefinition, request CreateWork, rejection error) (string, error) {
-	work, err := agent.ReuseWork(ctx, request.Subject, h.lookup)
+	work, err := h.subjectWork(ctx, agent, request.Subject)
 	if err != nil {
 		return "", err
 	}

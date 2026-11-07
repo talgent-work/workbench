@@ -3,7 +3,6 @@
 package execution
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +37,7 @@ func TestPreparationReportRecordsTheFirstStartsCheckouts(t *testing.T) {
 	require.NoError(t, definitions.Save(ctx, definition))
 	definition, err = definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
-	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, executionDiscard{})
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	input := command.PrepareWorkExecution{WorkID: work.ID, SubjectID: "owner", WorkspaceReference: work.WorkspaceReference, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-396", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "work on the repositories"}}
 	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, RequestID: input.RequestID, InitialExecution: &input}))
@@ -51,7 +50,7 @@ func TestPreparationReportRecordsTheFirstStartsCheckouts(t *testing.T) {
 	}
 	require.NoError(t, initial.Save(ctx, retained))
 
-	record := allocationRecord{ID: uuid.NewString(), SessionID: work.ID, SandboxID: "sandbox", Version: 1, PreparationCommand: "prepare", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`)}
+	record := allocationRecord{ID: uuid.NewString(), SessionID: work.ID, SandboxID: "sandbox", Version: 1, PreparationCommand: "prepare", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
 	_, err = db.Insert(&record)
 	require.NoError(t, err)
 	var created string
@@ -75,14 +74,14 @@ func TestPreparationReportRecordsTheFirstStartsCheckouts(t *testing.T) {
 	require.NoError(t, err)
 	// Controlplane takes no part in checkout beyond sending the plan: this
 	// Provisioning has no storage root, so it cannot write the workspace.
-	n := &NativeConnections{provisioning: &Provisioning{db: db, now: time.Now, initial: initial}, checkouts: command.NewRecordRepositoryCheckoutsHandler(initial)}
+	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now, initial: initial}, checkouts: command.NewRecordRepositoryCheckoutsHandler(initial)}
 	require.NoError(t, n.prepareEnvironment(ctx, &record, client, domain.CapabilitySnapshot{}))
 	require.True(t, strings.HasPrefix(created, "talgent_checkout_plan='"), "the process receives the plan: %s", created)
 	for _, secret := range []string{"Authorization", "x-access-token", "credential.helper=!", "GIT_ASKPASS"} {
 		require.NotContains(t, created, secret, "the plan carries no credential; the Credential Proxy adds it")
 	}
 	require.Contains(t, created, `"targetPath":"/workspace/repos/private"`)
-	require.True(t, record.EnvironmentPrepared)
+	require.False(t, record.EnvironmentPrepared, "the execution records its preparation ended, after the outcomes")
 	stored, found, err := latestAllocation(ctx, db, work.ID)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -98,15 +97,3 @@ func TestPreparationReportRecordsTheFirstStartsCheckouts(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, plan, "Resume and Restart check nothing out again")
 }
-
-// executionDiscard accepts the start of a Work registered directly here.
-type executionDiscard struct{}
-
-func (executionDiscard) StartExecution(context.Context, domain.StartExecutionRequest) error {
-	return nil
-}
-func (executionDiscard) StopExecution(context.Context, string, string) error { return nil }
-func (executionDiscard) ReclaimCompute(context.Context, string) error        { return nil }
-func (executionDiscard) RetireFencedRun(context.Context, string) error       { return nil }
-
-func (executionDiscard) CancelRunningTurn(context.Context, string) error { return nil }

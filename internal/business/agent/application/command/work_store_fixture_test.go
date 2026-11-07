@@ -19,6 +19,8 @@ type feedbackSessionStore struct {
 	saveErr  error
 	starts   map[string]query.AdmittedStart
 	canceled map[string]bool
+	// committed are the Domain Events of every successful save, in order.
+	committed []domain.Event
 }
 
 var _ command.AgentWorkRepository = (*feedbackSessionStore)(nil)
@@ -29,6 +31,9 @@ func (s *feedbackSessionStore) Get(context.Context, string) (*domain.AgentWork, 
 		process := *copy.HarnessProcess
 		copy.HarnessProcess = &process
 	}
+	// Each load records its own Domain Events, as a repository's does, so a
+	// failed save leaves none behind for the next load.
+	copy.Events = domain.NewEventCollection()
 	return &copy, nil
 }
 func (s *feedbackSessionStore) Save(_ context.Context, session *domain.AgentWork) error {
@@ -37,7 +42,33 @@ func (s *feedbackSessionStore) Save(_ context.Context, session *domain.AgentWork
 	}
 	s.session = session
 	s.saves++
+	if session.Events != nil {
+		s.committed = append(s.committed, session.Events.Drain()...)
+	}
 	return nil
+}
+
+// admittedStarts are the starts the committed Work admitted, each the intent
+// its execution begins from.
+func (s *feedbackSessionStore) admittedStarts() []domain.WorkStartAdmitted {
+	var starts []domain.WorkStartAdmitted
+	for _, event := range s.committed {
+		if start, ok := event.(domain.WorkStartAdmitted); ok {
+			starts = append(starts, start)
+		}
+	}
+	return starts
+}
+
+// committedOf counts the committed Domain Events of a kind.
+func (s *feedbackSessionStore) committedOf(kind domain.EventKind) int {
+	count := 0
+	for _, event := range s.committed {
+		if event.Kind() == kind {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *feedbackSessionStore) FindAdmittedStart(_ context.Context, requestID string) (query.AdmittedStart, bool, error) {
@@ -79,47 +110,25 @@ func (s *feedbackSessionStore) CancelStart(_ context.Context, _ string, requestI
 	return true, nil
 }
 
-// observedProcess supplies a fixed current observation of the Work's process.
-// observedProcess is the environment authority for the Work's current process,
-// "process" unless a test names another.
-type observedProcess struct {
-	observation  domain.ProcessObservation
-	calls        int
-	current      string
-	acknowledged []string
-	// attachment is Dispatcher's attachment to the process's sandbox;
-	// observeErr fails the observation instead.
-	attachment command.SandboxAttachment
-	observeErr error
-}
-
-func (o *observedProcess) ObserveProcess(context.Context, string) (command.WorkProcessObservation, error) {
-	o.calls++
-	if o.observeErr != nil {
-		return command.WorkProcessObservation{}, o.observeErr
+// committedStops are the committed requests that the Work's process exit.
+func (s *feedbackSessionStore) committedStops() []domain.WorkStopRequested {
+	var stops []domain.WorkStopRequested
+	for _, event := range s.committed {
+		if stop, ok := event.(domain.WorkStopRequested); ok {
+			stops = append(stops, stop)
+		}
 	}
-	return command.WorkProcessObservation{ProcessObservation: o.observation, Attachment: o.attachment}, nil
+	return stops
 }
 
-func (o *observedProcess) currentProcess() string {
-	if o.current == "" {
-		return "process"
+// stopRequests are the stop identities the committed Work asked its process
+// to exit under.
+func (s *feedbackSessionStore) stopRequests() []string {
+	var stops []string
+	for _, event := range s.committed {
+		if stop, ok := event.(domain.WorkStopRequested); ok {
+			stops = append(stops, stop.StopRequestID)
+		}
 	}
-	return o.current
-}
-
-func (o *observedProcess) IsCurrentProcess(_ context.Context, _ string, processID string) (bool, error) {
-	return processID == o.currentProcess(), nil
-}
-
-func (o *observedProcess) AcknowledgeExit(_ context.Context, _ string, processID string) (bool, error) {
-	if processID != o.currentProcess() {
-		return false, nil
-	}
-	o.acknowledged = append(o.acknowledged, processID)
-	return true, nil
-}
-
-func exitedProcess() *observedProcess {
-	return &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessPending}}
+	return stops
 }

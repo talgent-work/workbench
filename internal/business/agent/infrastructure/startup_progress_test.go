@@ -12,7 +12,7 @@ import (
 func TestStartupRecoveryUsesTheUnfinishedBoundary(t *testing.T) {
 	initial := command.InitialExecutionRequest{PrepareWorkExecution: command.PrepareWorkExecution{WorkID: "session", RequestID: "initial"}, Submitted: true}
 	encode := func(v any) string { t.Helper(); b, err := json.Marshal(v); require.NoError(t, err); return string(b) }
-	row := workViewRow{ID: "session", State: 2, Version: 3, InitialID: "initial", InitialData: encode(initial), InitialVersion: 4, StartRequestID: "initial", HarnessProcess: encode(harnessProcessRecord{Prepared: true, Started: true})}
+	row := workViewRow{ID: "session", State: 2, Version: 3, InitialID: "initial", InitialData: encode(initial), InitialVersion: 4, StartRequestID: "initial", HarnessProcess: encode(harnessProcessRecord{Ready: true})}
 	progress, err := startupFromRows(row, true, true, 9)
 	require.NoError(t, err)
 	require.True(t, progress.Admitted)
@@ -41,7 +41,7 @@ func TestStartupRecoveryUsesTheUnfinishedBoundary(t *testing.T) {
 	require.Equal(t, "resume", resumed.RequestID)
 	require.Len(t, resumed.Stages, 3)
 	require.Equal(t, "active", resumed.Stages[1].Status)
-	require.Greater(t, resumed.Revision, recovered.Revision, "a new start may reset its allocation version")
+	require.Greater(t, resumed.Revision, recovered.Revision, "a new start orders after the earlier start whatever its execution's update time")
 }
 
 // A Restart that reaches its Startup Deadline shows the Work's own failure on
@@ -63,7 +63,7 @@ func TestStartupDeadlineFailureOfARestartShowsTheWorkFailure(t *testing.T) {
 // facts shown, while any other refusal of it shows as the startup it ended.
 func TestAResumeRefusedAsUnreachableShowsNoFailedStartup(t *testing.T) {
 	encode := func(v any) string { t.Helper(); b, err := json.Marshal(v); require.NoError(t, err); return string(b) }
-	row := workViewRow{ID: "session", State: 4, Version: 5, StartRequestID: "first", HarnessProcess: encode(harnessProcessRecord{Prepared: true, Started: true}), ContinuationID: "resume", ContinuationVersion: 2, ContinuationRejection: "unreachable"}
+	row := workViewRow{ID: "session", State: 4, Version: 5, StartRequestID: "first", HarnessProcess: encode(harnessProcessRecord{Ready: true}), ContinuationID: "resume", ContinuationVersion: 2, ContinuationRejection: "unreachable"}
 	progress, err := startupFromRows(row, true, false, 1)
 	require.NoError(t, err)
 	require.Equal(t, "first", progress.RequestID)

@@ -26,8 +26,8 @@ type EndWorkExecutionHandler struct {
 	starts  AgentWorkRepository
 }
 
-func NewEndWorkExecutionHandler(sessions AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort) *EndWorkExecutionHandler {
-	return &EndWorkExecutionHandler{control: sessionControl{sessions: sessions, access: authorization, execution: execution}, starts: sessions}
+func NewEndWorkExecutionHandler(sessions AgentWorkRepository, authorization access.WorkAuthorizer) *EndWorkExecutionHandler {
+	return &EndWorkExecutionHandler{control: sessionControl{sessions: sessions, access: authorization}, starts: sessions}
 }
 
 func (h *EndWorkExecutionHandler) Handle(ctx context.Context, request EndWorkExecution) error {
@@ -44,5 +44,7 @@ func (h *EndWorkExecutionHandler) Handle(ctx context.Context, request EndWorkExe
 	if err != nil || canceled {
 		return err
 	}
-	return h.control.apply(ctx, WorkControl{SubjectID: request.SubjectID, WorkID: request.WorkID, RequestID: request.RequestID}, (*domain.AgentWork).RequestExecutionEnd)
+	return h.control.apply(ctx, WorkControl{SubjectID: request.SubjectID, WorkID: request.WorkID, RequestID: request.RequestID}, func(_ context.Context, work *domain.AgentWork, requestID string) error {
+		return work.RequestExecutionEnd(requestID)
+	})
 }

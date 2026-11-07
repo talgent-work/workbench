@@ -27,8 +27,7 @@ func TestInitialExecutionReceiptPreservesInputAndRestartAcrossReconnect(t *testi
 	f := newWorkCreationFixture(t)
 	db := f.db
 	t.Cleanup(func() { _ = db.Close() })
-	factory := executionPort{}
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory)
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	id, err := create.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id))
@@ -68,7 +67,7 @@ func TestInitialExecutionReceiptPreservesInputAndRestartAcrossReconnect(t *testi
 	require.Equal(t, input, retained.PrepareWorkExecution)
 	require.Equal(t, reserved.Checkouts, retained.Checkouts)
 	require.True(t, retained.Prepared)
-	prepare := command.NewPrepareWorkExecutionHandler(store, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), factory, infrastructure.NewWorkCreationRequests(db, time.Now), creationModels())
+	prepare := command.NewPrepareWorkExecutionHandler(store, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), infrastructure.NewWorkCreationRequests(db, time.Now), creationModels())
 	conflict := input
 	conflict.RequestID, conflict.Input.ID, conflict.Input.Text = uuid.NewString(), uuid.NewString(), "another task"
 	_, err = prepare.Handle(ctx, conflict)
@@ -79,10 +78,10 @@ func TestInitialExecutionReceiptPreservesInputAndRestartAcrossReconnect(t *testi
 	require.NoError(t, err)
 	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	require.NoError(t, work.RecordExit(ctx, domain.HarnessExit{ExitCode: 1}, executionPort{}))
-	require.NoError(t, work.ConfirmComputeReclaimed())
+	reportExit(t, work, domain.HarnessExit{ExitCode: 1})
+	reportReleased(t, work)
 	require.NoError(t, f.sessions.Save(ctx, work))
-	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), factory, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	_, err = restart.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()})
 	require.NoError(t, err)
 	next, err := store.Get(ctx, id)
@@ -127,7 +126,7 @@ func TestInitialExecutionReceiptPreservesInputAndRestartAcrossReconnect(t *testi
 func TestInitialExecutionCleanupPreservesOriginalInput(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := t.Context()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	id, err := create.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	store := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
@@ -137,9 +136,9 @@ func TestInitialExecutionCleanupPreservesOriginalInput(t *testing.T) {
 	require.NoError(t, store.Save(ctx, original))
 	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	require.NoError(t, work.RecordExit(ctx, domain.HarnessExit{ExitCode: 1}, executionPort{}))
-	require.NoError(t, work.ConfirmComputeReclaimed())
-	require.NoError(t, work.Close(ctx, uuid.NewString(), domain.ClosureFacts{}, executionPort{}))
+	reportExit(t, work, domain.HarnessExit{ExitCode: 1})
+	reportReleased(t, work)
+	require.NoError(t, work.Close(uuid.NewString(), domain.ClosureFacts{}))
 	require.NoError(t, f.sessions.Save(ctx, work))
 	pending, err := store.ListPendingInitialExecutions(ctx, "", 100)
 	require.NoError(t, err)
@@ -170,7 +169,7 @@ func TestInitialExecutionCleanupPreservesOriginalInput(t *testing.T) {
 func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
 	ctx := t.Context()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	type result struct {
 		workID string
 		err    error

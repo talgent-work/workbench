@@ -22,13 +22,11 @@ import (
 func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	port := &recoveryExecutionPort{}
-	factory := port
 	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, observedProcess{State: domain.ProcessRunning}, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := newRuns(t, f.db, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
@@ -40,9 +38,12 @@ func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, failed.RecordFailure("runtime failed"))
 	require.NoError(t, f.sessions.Save(ctx, failed))
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ComputeReclaimed, WorkID: ref}))
+	failed, err = f.sessions.Get(ctx, id)
+	require.NoError(t, err)
+	reportReleased(t, failed)
+	require.NoError(t, f.sessions.Save(ctx, failed))
 	closeRequestID := uuid.NewString()
-	require.NoError(t, command.NewCloseWorkHandler(f.sessions, authorization, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: closeRequestID}))
+	require.NoError(t, command.NewCloseWorkHandler(f.sessions, authorization, feedback.executions, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: closeRequestID}))
 	pending, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosing, pending.State)
@@ -56,10 +57,11 @@ func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	feedback = command.NewApplyExecutionFeedbackHandler(time.Now, sessions, observedProcess{State: domain.ProcessEnvironmentLost}, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	for range 2 {
-		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.EnvironmentLost, WorkID: ref}))
-	}
+	feedback = newRuns(t, db, sessions)
+	feedback.lose(ctx, ref)
+	// The lost environment's execution retires; with nothing left carrying
+	// its ownership, its release is confirmed.
+	feedback.release(ctx, ref)
 	closed, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosed, closed.State)

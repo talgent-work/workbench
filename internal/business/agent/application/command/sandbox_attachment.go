@@ -25,18 +25,15 @@ import (
 // is; the next failed attempt to attach reports the loss again
 // (ApplyExecutionFeedbackHandler). A run already reclaimed beyond reach
 // completes on its release confirmation and is not observed again.
-func (h *ComputerReachHandler) recoverAttachment(ctx context.Context, work *domain.AgentWork, requests *deferredExecution) (bool, error) {
+func (h *ComputerReachHandler) recoverAttachment(ctx context.Context, work *domain.AgentWork) (bool, error) {
 	if !work.Disconnected() || !work.ObservesEnvironment() || work.HarnessProcess.Unreached {
 		return false, nil
 	}
-	if h.processes == nil {
-		return false, errors.New("agent: a Cloud Work's attachment needs process observation")
-	}
-	observation, err := h.processes.ObserveProcess(ctx, work.ID)
+	observation, err := h.observeProcess(ctx, work.ID)
 	if err != nil {
 		return false, err
 	}
-	if observation.State == domain.ProcessRunning {
+	if observation.Running {
 		switch observation.Attachment {
 		case AttachmentHeld:
 			return work.EndDisconnection(), nil
@@ -46,5 +43,18 @@ func (h *ComputerReachHandler) recoverAttachment(ctx context.Context, work *doma
 	}
 	// A Cloud Work stops beyond reach into Stopping, and no reconnection
 	// owes it a Resume.
-	return work.StopBeyondReach(ctx, h.now(), false, requests)
+	return work.StopBeyondReach(h.now(), false), nil
+}
+
+// observeProcess reads Dispatcher's observation of the Work's launched
+// process; a Work whose execution launched none has no running process.
+func (h *ComputerReachHandler) observeProcess(ctx context.Context, workID string) (WorkProcessObservation, error) {
+	execution, err := h.executions.Latest(ctx, workID)
+	if errors.Is(err, domain.ErrExecutionNotFound) {
+		return WorkProcessObservation{}, nil
+	}
+	if err != nil || execution.Process.ID == "" || execution.Process.Exited || execution.Retired() {
+		return WorkProcessObservation{}, err
+	}
+	return h.buffer.ObserveProcess(ctx, workID, execution.Process.ID)
 }

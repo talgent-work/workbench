@@ -33,7 +33,7 @@ type CloudLaunch = execution.CloudLaunch
 // credential to every request to the Connector, is the caller's.
 func PlatformConnectorLaunch(t testing.TB, dsn, binary, workID, mcpAddress string) CloudLaunch {
 	t.Helper()
-	request := domain.StartExecutionRequest{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: workID, ContextMode: domain.ContextFresh,
+	request := domain.LaunchSpecification{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: workID, ContextMode: domain.ContextFresh,
 		HarnessSessionReference: "context", WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"},
 		Capabilities: domain.CapabilitySnapshot{Prompt: "fixed prompt\n", Connectors: []domain.SelectedConnector{platformConnector(t, dsn, mcpAddress)}}}
 	launch, err := (execution.NativeLaunchConfig{Binary: binary}).CloudLaunch(request, execution.Allocation{WorkID: workID, ID: "01900000-0000-7000-8000-000000000001"})

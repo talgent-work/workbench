@@ -72,32 +72,16 @@ func (*rpcAuthorization) AuthorizeWork(_ context.Context, subject, id string) er
 	return nil
 }
 
+// rpcExecution records the inputs and replies handed to the Work's buffer.
 type rpcExecution struct {
 	inputs    []command.ExecutionInput
 	responses []command.InteractionResponse
-	starts    []domain.StartExecutionRequest
-	stops     []string
-	reclaims  []string
 }
 
-func (p *rpcExecution) StartExecution(_ context.Context, r domain.StartExecutionRequest) error {
-	p.starts = append(p.starts, r)
-	return nil
-}
-func (p *rpcExecution) StopExecution(_ context.Context, _ string, id string) error {
-	p.stops = append(p.stops, id)
-	return nil
-}
 func (p *rpcExecution) AcceptInput(_ context.Context, _ string, input command.ExecutionInput) (command.InputHandOff, error) {
 	p.inputs = append(p.inputs, input)
 	return command.InputBuffered, nil
 }
-func (p *rpcExecution) ReclaimCompute(_ context.Context, r string) error {
-	p.reclaims = append(p.reclaims, r)
-	return nil
-}
-
-func (*rpcExecution) RetireFencedRun(context.Context, string) error { return nil }
 
 func (r *rpcSessions) RegisterWork(ctx context.Context, s *domain.AgentWork, registration command.WorkRegistration) error {
 	return r.CommitStart(ctx, s, query.AdmittedStart{WorkID: s.ID, Kind: query.StartKindStart}, registration.RequestID)
@@ -138,34 +122,10 @@ func (r *rpcSessions) CancelStart(_ context.Context, _ string, requestID string)
 	return true, nil
 }
 
-type rpcProcesses struct{ observation domain.ProcessObservation }
-
-func (p *rpcProcesses) ObserveProcess(context.Context, string) (command.WorkProcessObservation, error) {
-	return command.WorkProcessObservation{ProcessObservation: p.observation}, nil
-}
-
-// The Work's current process is "process" in these fixtures.
-func (*rpcProcesses) IsCurrentProcess(_ context.Context, _ string, processID string) (bool, error) {
-	return processID == "process", nil
-}
-
-func (*rpcProcesses) AcknowledgeExit(_ context.Context, _ string, processID string) (bool, error) {
-	return processID == "process", nil
-}
-
-func (r *rpcSessions) LocateWork(_ context.Context, workID string) (*domain.AgentWork, error) {
-	for _, session := range r.items {
-		if session.ID == workID {
-			return session, nil
-		}
-	}
-	return nil, domain.ErrWorkNotFound
-}
-
-func (r *rpcSessions) FindWork(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
+func (r *rpcSessions) FindBySubject(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
 	for _, session := range r.items {
 		if session.AgentID == agentID && session.Subject == subject {
-			return session, nil
+			return r.Get(context.Background(), session.ID)
 		}
 	}
 	return nil, nil
@@ -176,5 +136,3 @@ type rpcInitialInputs struct{}
 func (rpcInitialInputs) Get(context.Context, string) (command.InitialExecutionRequest, error) {
 	return command.InitialExecutionRequest{}, command.ErrInitialExecutionNotFound
 }
-
-func (*rpcExecution) CancelRunningTurn(context.Context, string) error { return nil }

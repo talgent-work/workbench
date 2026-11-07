@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -145,28 +144,23 @@ type HarnessProcess struct {
 	WaitingSince  time.Time
 	StartingSince time.Time
 	ContextMode   ContextMode
-	// DeskID is the Desk this run holds on the Work's Computer; it leaves once
-	// the process ended and its compute is released, the start was rejected
-	// before any compute existed, or its waiting start was withdrawn.
-	DeskID string
-	// DeskWaiting records that the start waits in its Computer's line: its
-	// startup is deferred until its Desk is seated. SeatedAt is when it was
-	// seated, the origin of its Startup Deadline.
+	// DeskID is the Desk the admitted start took on the Work's Computer, and
+	// DeskWaiting whether its Computer admitted it waiting in its line; the
+	// start's AgentExecution holds that Desk.
+	DeskID      string
 	DeskWaiting bool
-	SeatedAt    time.Time
 	// StartWithdrawn records that a stop or close withdrew the start while
 	// its Desk still waited: it launched nothing and holds no compute.
 	StartWithdrawn bool
-	// Soul is the definition's Soul this execution took up at its start; a
-	// recovered delivery of the same start keeps it.
-	Soul             string
-	Prepared         bool
-	Started          bool
+	// Soul is the definition's Soul this start took up.
+	Soul string
+	// Ready records its AgentExecution's report that the run became ready.
+	Ready            bool
 	StartRejected    bool
 	Exited           bool
 	ComputeReclaimed bool
 	EnvironmentLost  bool
-	// StartAbandoned records the execution authority's report that this start
+	// StartAbandoned records its AgentExecution's report that this start
 	// never launched a Harness process and no longer can: its environment is
 	// released without a stop or an exit.
 	StartAbandoned bool
@@ -174,7 +168,10 @@ type HarnessProcess struct {
 	// Cloud reclaims the run's sandbox in place of its exit; the release
 	// confirmation vouches for the exit (Disconnection release).
 	Unreached bool
-	Turn      TurnObservation
+	// Fenced records that its Managed Computer fenced the run during a
+	// Disconnection, which vouches for its exit and release.
+	Fenced bool
+	Turn   TurnObservation
 }
 
 // Held reports whether the process may still be running: from start admission
@@ -279,7 +276,7 @@ type AgentWork struct {
 	Version    int `validate:"gte=0"`
 }
 
-func NewAgentWork(ctx context.Context, input WorkInput, admission StartAdmission, port ExecutionPort) (*AgentWork, error) {
+func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error) {
 	if strings.TrimSpace(input.StartedBy) == "" {
 		return nil, fmt.Errorf("%w: who starts the Work is required", ErrInvalidWork)
 	}
@@ -310,7 +307,7 @@ func NewAgentWork(ctx context.Context, input WorkInput, admission StartAdmission
 	if err := session.determineRepositorySelection(input.RepositoryInput); err != nil {
 		return nil, err
 	}
-	if err := validateStartAdmission(session.AgentID, session.WorkModel, admission, port); err != nil {
+	if err := validateStartAdmission(session.AgentID, session.WorkModel, admission); err != nil {
 		return nil, err
 	}
 	if err := session.WorkModel.AdmitOn(input.ComputerManaged); err != nil {
@@ -319,13 +316,7 @@ func NewAgentWork(ctx context.Context, input WorkInput, admission StartAdmission
 	if err := session.Validate(); err != nil {
 		return nil, err
 	}
-	// A start waiting for its Desk is started once it is seated.
-	if session.HarnessProcess.DeskWaiting {
-		return session, nil
-	}
-	if err := session.startExecution(ctx, port); err != nil {
-		return nil, executionRequestError(err)
-	}
+	session.admitStart()
 	return session, nil
 }
 
@@ -404,10 +395,8 @@ func (s *AgentWork) Validate() error {
 		if (s.State != WorkWorking && !p.IdleSince.IsZero()) || (s.Closed() && !p.WaitingSince.IsZero()) {
 			return ErrInvalidWork
 		}
-		// Every process belongs to an admitted start, which entered Starting;
-		// only a start still Starting waits for its Desk, and every other was
-		// seated or withdrawn.
-		if p.StartingSince.IsZero() || (p.DeskWaiting && s.State != WorkStarting) || (!p.DeskWaiting && !p.StartWithdrawn && p.SeatedAt.IsZero()) {
+		// Every process belongs to an admitted start, which entered Starting.
+		if p.StartingSince.IsZero() {
 			return ErrInvalidWork
 		}
 		if p.ContextMode != ContextFresh && p.ContextMode != ContextContinue && p.ContextMode != ContextRecover {

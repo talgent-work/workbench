@@ -4,7 +4,6 @@ package infrastructure_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -38,23 +37,16 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
-	port := &timeoutDelivery{beforeStop: func(workID string, requestID string) {
-		durable, err := infrastructure.NewAgentWorkRepository(db, clock).Get(ctx, workID)
-		require.NoError(t, err)
-		require.Equal(t, domain.WorkStopping, durable.State)
-		require.Equal(t, domain.StopReasonWaitingTimeout, durable.StopReason)
-		require.Equal(t, requestID, durable.StopRequestReference, "request must be committed before external stop")
-	}}
-	factory := port
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID, WorkspaceReference: "workspace"})
+	run := newRunsAt(t, db, sessions, clock)
+	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{})).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID, WorkspaceReference: "workspace"})
 	require.NoError(t, err)
 	feedback := func(kind command.ExecutionFeedbackKind, interaction, stop string) error {
-		return command.NewApplyExecutionFeedbackHandler(clock, sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}).Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id, InteractionID: interaction, ObservationSequence: 1000, RequiredInteractionIDs: []string{interaction}})
+		return run.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id, InteractionID: interaction, ObservationSequence: 1000, RequiredInteractionIDs: []string{interaction}})
 	}
 	require.NoError(t, feedback(command.ExecutorPrepared, "", ""))
 	require.NoError(t, feedback(command.AgentStarted, "", ""))
 	// The question pauses a running Turn.
-	require.NoError(t, command.NewApplyExecutionFeedbackHandler(clock, sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}).Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.TurnStarted, WorkID: id, ObservationSequence: 999}))
+	require.NoError(t, run.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.TurnStarted, WorkID: id, ObservationSequence: 999}))
 	require.NoError(t, feedback(command.UserInteractionRequired, "question", ""))
 	now = origin.Add(20 * time.Minute)
 	require.NoError(t, feedback(command.UserInteractionRequired, "question", ""))
@@ -64,6 +56,7 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 		require.NoError(t, err)
 		agents = infrastructure.NewAgentDefinitionRepository(db, clock)
 		sessions = infrastructure.NewAgentWorkRepository(db, clock)
+		run = newRunsAt(t, db, sessions, clock)
 	}
 	reconnect()
 	waiting, err := sessions.Get(ctx, id)
@@ -73,44 +66,47 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	require.NoError(t, err)
 	require.Contains(t, ids, id, "existing production recovery scan includes the waiting execution")
 	recover := func() error {
-		return command.NewRecoverWorkHandler(clock, sessions, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, id)
+		return command.NewRecoverWorkHandler(clock, sessions, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil).Handle(ctx, id)
 	}
 	now = origin.Add(30*time.Minute - time.Millisecond)
 	require.NoError(t, recover())
-	require.Empty(t, port.stops)
+	require.False(t, run.latest(ctx, id).ExitRequest.Requested(), "no stop before the deadline")
 	now = origin.Add(30 * time.Minute)
 	// An optimistic-lock rejection must not deliver a stop.
-	err = command.NewRecoverWorkHandler(clock, rejectedTimeoutSave{sessions}, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, id)
+	err = command.NewRecoverWorkHandler(clock, rejectedTimeoutSave{sessions}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil).Handle(ctx, id)
 	require.ErrorIs(t, err, domain.ErrConcurrentModification)
-	require.Empty(t, port.stops)
-	// The timeout admits the stop and cancels the paused Turn first; the
-	// stop is delivered by the next recovery (Stop between Turns).
+	begun := run.latest(ctx, id)
+	require.False(t, begun.ExitRequest.Requested())
+	// The timeout admits the stop, which asks the process to exit only once
+	// committed, cancelling the paused Turn first (Stop between Turns).
 	require.NoError(t, recover())
-	require.Empty(t, port.stops)
-	lost := errors.New("stop acknowledgement lost")
-	port.err = lost
-	require.ErrorIs(t, recover(), lost)
-	require.Len(t, port.stops, 1)
-	stop := port.stops[0]
+	asked := run.latest(ctx, id)
+	durable, err := infrastructure.NewAgentWorkRepository(db, clock).Get(ctx, id)
+	require.NoError(t, err)
+	require.Equal(t, domain.WorkStopping, durable.State)
+	require.Equal(t, domain.StopReasonWaitingTimeout, durable.StopReason)
+	require.Equal(t, durable.StopRequestReference, asked.ExitRequest.StopRequestID, "request must be committed before external stop")
+	require.True(t, asked.ExitRequest.CancelWaitingTurn, "the paused Turn is cancelled before the process exits")
+	stop := asked.ExitRequest.StopRequestID
 	reconnect()
-	port.err = nil
 	require.NoError(t, recover())
-	require.Equal(t, []string{stop, stop}, port.stops)
-	require.Len(t, port.starts, 1, "timeout recovery cannot start or resume execution")
+	again := run.latest(ctx, id)
+	require.Equal(t, stop, again.ExitRequest.StopRequestID, "a repeated recovery asks the same stop again")
+	require.Equal(t, begun.ID, again.ID, "timeout recovery cannot start or resume execution")
 	require.NoError(t, feedback(command.UserInteractionResolved, "question", ""))
-	durable, err := sessions.Get(ctx, id)
+	durable, err = sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopping, durable.State)
 	require.Equal(t, origin, durable.HarnessProcess.WaitingSince.UTC(), "the stopped Work still owes the answer")
 	require.Equal(t, domain.StopReasonWaitingTimeout, durable.StopReason)
 	require.NoError(t, feedback(command.ExecutionExited, "", stop))
-	require.NoError(t, feedback(command.ComputeReclaimed, "", ""))
+	run.release(ctx, id)
 	reconnect()
 	durable, err = sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, durable.State)
 	originalContext := durable.HarnessSessionReference
-	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), factory, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
+	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
 	require.NoError(t, err)
 	durable, err = sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -123,17 +119,6 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 		states = append(states, event.State)
 	}
 	require.Subset(t, states, []domain.WorkState{domain.WorkStopping, domain.WorkStopped, domain.WorkStarting}, "the timeout stop and the later resume remain visible on the Work timeline")
-}
-
-type timeoutDelivery struct {
-	recoveryExecutionPort
-	beforeStop func(string, string)
-}
-
-func (p *timeoutDelivery) StopExecution(_ context.Context, workID string, id string) error {
-	p.beforeStop(workID, id)
-	p.stops = append(p.stops, id)
-	return p.err
 }
 
 type rejectedTimeoutSave struct{ domain.AgentWorkRepository }

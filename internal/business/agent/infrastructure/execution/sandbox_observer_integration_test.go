@@ -7,13 +7,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,14 +57,7 @@ func TestSandboxObserverWakesTheOwningAllocation(t *testing.T) {
 	credentials := fixtureSandboxCredentials(db, provider)
 	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
 	input := request()
-	require.NoError(t, p.Register(ctx, input, testMounts))
-	allocation, _, err := latestAllocation(ctx, p.db, input.WorkID)
-	require.NoError(t, err)
-	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", &reclamationFeedback{}, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
-	require.NoError(t, err)
-	reclaimer, err := NewReclaimer(&reclamationFeedback{})
-	require.NoError(t, err)
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, unread{})
+	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
 
 	owned := correlation(Allocation{WorkID: input.WorkID, ID: allocation.ID})
@@ -83,7 +74,7 @@ func TestSandboxObserverWakesTheOwningAllocation(t *testing.T) {
 	}
 	wakes := func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), woken...) }
 	logs := &syncBuffer{}
-	observer, err := NewSandboxObserver(client, "talgent", recovery, wake, slog.New(slog.NewTextHandler(logs, nil)))
+	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.New(slog.NewTextHandler(logs, nil)))
 	require.NoError(t, err)
 	go func() { _ = observer.Run(ctx) }()
 
@@ -120,14 +111,7 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 	credentials := fixtureSandboxCredentials(db, provider)
 	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
 	input := request()
-	require.NoError(t, p.Register(ctx, input, testMounts))
-	allocation, _, err := latestAllocation(ctx, p.db, input.WorkID)
-	require.NoError(t, err)
-	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", &reclamationFeedback{}, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
-	require.NoError(t, err)
-	reclaimer, err := NewReclaimer(&reclamationFeedback{})
-	require.NoError(t, err)
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, unread{})
+	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{BatchSandboxes: "BatchSandboxList"})
 	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("late", correlation(Allocation{WorkID: input.WorkID, ID: allocation.ID})), metav1.CreateOptions{})
@@ -143,7 +127,7 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 		}
 		return nil
 	}
-	observer, err := NewSandboxObserver(client, "talgent", recovery, wake, slog.Default())
+	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.Default())
 	require.NoError(t, err)
 	go func() { _ = observer.Run(ctx) }()
 	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return attempts == 2 }, 10*time.Second, 20*time.Millisecond)

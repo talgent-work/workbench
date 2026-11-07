@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -23,13 +22,11 @@ func reviewV2() domain.PluginRelease {
 
 func stoppedWork(t *testing.T) (*domain.AgentWork, *executionPort) {
 	t.Helper()
-	ctx := context.Background()
 	work, port := startingWork(t)
-	require.NoError(t, work.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, work.ConfirmStarted(ctx, time.Now(), nil))
-	require.NoError(t, work.Stop(ctx, "stop-1", port))
-	require.NoError(t, work.RecordExit(ctx, domain.HarnessExit{}, port))
-	require.NoError(t, work.ConfirmComputeReclaimed())
+	ready(t, work)
+	require.NoError(t, work.Stop("stop-1", false))
+	exited(t, work, domain.HarnessExit{})
+	released(t, work)
 	require.Equal(t, domain.WorkStopped, work.State)
 	return work, port
 }
@@ -44,7 +41,7 @@ func TestResumeUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 	before := work.CapabilitySnapshot.Clone()
 	conversation := work.HarnessSessionReference
 	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true, Soul: "Answer with the conclusion first.", CurrentPlugins: []domain.PluginRelease{reviewV2()}}
-	require.NoError(t, work.Resume(t.Context(), admission, port))
+	require.NoError(t, work.Resume(admission))
 
 	snapshot := work.CapabilitySnapshot
 	require.Len(t, snapshot.Plugins, 1, "the selection stays")
@@ -54,7 +51,7 @@ func TestResumeUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 	require.Equal(t, before.StartupAgent, snapshot.StartupAgent)
 	require.Equal(t, before.Connectors, snapshot.Connectors)
 
-	resumed := port.starts[len(port.starts)-1]
+	resumed := port.launch()
 	require.Equal(t, domain.ContextContinue, resumed.ContextMode)
 	require.Equal(t, conversation, resumed.HarnessSessionReference)
 	require.Equal(t, "Answer with the conclusion first.", resumed.Soul)
@@ -62,18 +59,18 @@ func TestResumeUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 	require.Equal(t, before.Prompt, resumed.Capabilities.Prompt, "the Soul is not part of the Capability Snapshot")
 
 	// A recovered delivery of the same start keeps the Soul it took up.
-	_, err := work.RecoverExecution(t.Context(), port)
+	_, err := work.RecoverExecution()
 	require.NoError(t, err)
-	require.Equal(t, "Answer with the conclusion first.", port.starts[len(port.starts)-1].Soul)
+	require.Equal(t, "Answer with the conclusion first.", port.launch().Soul)
 }
 
 // A Plugin with no current release keeps its retained one: Plugin
 // preparation degrades rather than blocks the start.
 func TestResumeKeepsTheRetainedReleaseOfAPluginWithNoCurrentOne(t *testing.T) {
-	work, port := stoppedWork(t)
+	work, _ := stoppedWork(t)
 	before := work.CapabilitySnapshot.Clone()
 	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
-	require.NoError(t, work.Resume(t.Context(), admission, port))
+	require.NoError(t, work.Resume(admission))
 	require.Equal(t, before, work.CapabilitySnapshot)
 	require.Equal(t, domain.WorkStarting, work.State)
 }
@@ -81,12 +78,12 @@ func TestResumeKeepsTheRetainedReleaseOfAPluginWithNoCurrentOne(t *testing.T) {
 // Restart takes up current releases and the current Soul the same way.
 func TestRestartUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 	work, port := startingWork(t)
-	require.NoError(t, work.ReconcileProcess(t.Context(), domain.ProcessObservation{State: domain.ProcessStartRejected}, port))
-	require.NoError(t, work.ConfirmComputeReclaimed())
+	rejected(t, work)
+	released(t, work)
 	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true, Soul: "Be kind.", CurrentPlugins: []domain.PluginRelease{reviewV2()}}
-	require.NoError(t, work.Restart(t.Context(), admission, port))
+	require.NoError(t, work.Restart(admission))
 	require.Equal(t, "2", work.CapabilitySnapshot.Plugins[0].Release.Version)
-	restarted := port.starts[len(port.starts)-1]
+	restarted := port.launch()
 	require.Equal(t, domain.ContextRecover, restarted.ContextMode)
 	require.Equal(t, "Be kind.", restarted.Soul)
 }

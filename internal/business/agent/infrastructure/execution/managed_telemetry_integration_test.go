@@ -25,11 +25,7 @@ func TestAManagedRunsTelemetryTokenAttributesOnlyThatRun(t *testing.T) {
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
 	input.TraceAttributes = map[string]string{"talgent.agent_work_id": input.WorkID, "talgent.user_id": "person-1", "talgent.computer_id": "forged"}
-	require.NoError(t, f.port.StartExecution(ctx, input))
-	require.NoError(t, submitPending(ctx, f.provisioning))
-	require.NoError(t, connectLive(ctx, f.connections))
-	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
-	require.NoError(t, err)
+	record := f.launch(t, f.begin(t, input).ID)
 	spec, err := decodeManagedSpecification(record)
 	require.NoError(t, err)
 	require.NotEmpty(t, spec.Telemetry.Token)
@@ -53,8 +49,8 @@ func TestAManagedRunsTelemetryTokenAttributesOnlyThatRun(t *testing.T) {
 
 	other := managedRequest()
 	other.WorkID, other.ContextMode = "other-session", domain.ContextFresh
-	require.NoError(t, f.port.StartExecution(ctx, other))
-	require.NoError(t, submitPending(ctx, f.provisioning))
+	_, err = f.steps.handler.Reconcile(ctx, f.begin(t, other).ID, false)
+	require.NoError(t, err)
 	otherRecord, _, err := latestAllocation(ctx, f.db, other.WorkID)
 	require.NoError(t, err)
 	otherSpec, err := decodeManagedSpecification(otherRecord)
@@ -67,10 +63,7 @@ func TestAManagedRunsTelemetryTokenAttributesOnlyThatRun(t *testing.T) {
 		require.ErrorIs(t, err, query.ErrTelemetryTokenRejected, "%s with %q", rejected.work, rejected.token)
 	}
 
-	exited, err := f.observations.AcknowledgeExit(ctx, input.WorkID, "harness-handle")
-	require.NoError(t, err)
-	require.True(t, exited)
-	require.NoError(t, f.port.ReclaimCompute(ctx, input.WorkID))
+	f.exit(t, record)
 	_, err = attributions.RunTelemetryAttribution(ctx, input.WorkID, token)
 	require.ErrorIs(t, err, query.ErrTelemetryTokenRejected, "the token is revoked with its run")
 }

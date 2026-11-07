@@ -63,7 +63,7 @@ func (r *WorkReportQueryRepository) ReadWorkHistory(ctx context.Context, scope q
 				}
 			}
 			if process != nil {
-				current.Started = process.Started
+				current.Started = process.Ready
 				current.Waiting = process.waiting()
 			}
 			result = append(result, query.WorkHistory{WorkID: row.SessionID, AgentOwner: row.AgentOwner, CreatedAt: time.UnixMilli(row.SessionCreatedAt).UTC(), Current: current})

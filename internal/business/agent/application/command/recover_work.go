@@ -12,17 +12,15 @@ import (
 // RecoverWorkHandler advances retained execution obligations. It never admits
 // a new start or chooses a fresh execution context.
 type RecoverWorkHandler struct {
-	seating     *SeatWaitingStartHandler
 	reach       *ComputerReachHandler
 	now         func() time.Time
 	sessions    domain.AgentWorkRepository
-	execution   domain.ExecutionPort
 	buffer      RunningHarnessPort
 	settlements integrationmessage.Publisher
 }
 
-func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, execution domain.ExecutionPort, buffer RunningHarnessPort, settlements integrationmessage.Publisher, seating *SeatWaitingStartHandler, reach *ComputerReachHandler) *RecoverWorkHandler {
-	return &RecoverWorkHandler{seating: seating, reach: reach, now: now, sessions: sessions, execution: execution, buffer: buffer, settlements: settlements}
+func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, buffer RunningHarnessPort, settlements integrationmessage.Publisher, reach *ComputerReachHandler) *RecoverWorkHandler {
+	return &RecoverWorkHandler{reach: reach, now: now, sessions: sessions, buffer: buffer, settlements: settlements}
 }
 
 func (h *RecoverWorkHandler) Handle(ctx context.Context, sessionID string) error {
@@ -38,53 +36,32 @@ func (h *RecoverWorkHandler) Handle(ctx context.Context, sessionID string) error
 		}
 	}
 	// A removed Managed Computer took the Work's environment with it; a
-	// Computer Removed this Work missed is applied before anything is retried
-	// on the gone machine. A Computer that cannot be read now holds back
-	// none of the other obligations: it is read again on the next recovery,
-	// and its failure is returned after them.
+	// Computer Removed this Work missed is applied before anything else. A
+	// Computer that cannot be read now holds back none of the other
+	// obligations: it is read again on the next recovery, and its failure is
+	// returned after them.
 	lost, unreadRemoval := h.reach.recoverRemoval(ctx, session)
 	if lost && unreadRemoval == nil {
-		return h.sessions.Save(ctx, session)
-	}
-	// A start waiting in its Computer's line has nothing to advance until its
-	// Desk is seated; the Desk Assigned it may have missed is asked for.
-	if session.WaitsForDesk() {
-		return errors.Join(h.seating.recover(ctx, session), unreadRemoval)
-	}
-	requests := deferExecution(h.execution)
-	// A start past its Startup Deadline fails before anything else is retried
-	// for it; its end obligation is all that remains.
-	failed, err := session.FailAtStartupDeadline(ctx, h.now(), requests)
-	if err != nil {
-		return err
-	}
-	if failed {
-		if err := h.sessions.Save(ctx, session); err != nil {
-			return err
-		}
-		return errors.Join(requests.send(ctx), unreadRemoval)
+		return nil
 	}
 	// A Work's Disconnection follows its Computer's Presence or, on a Cloud,
 	// Dispatcher's attachment; a Managed Work stopped beyond reach has
 	// nothing left to retry on its machine. A Presence that cannot be read
 	// now holds back none of the other obligations: it is read again on the
 	// next recovery, and its failure is returned after them.
-	reached, unread := h.reach.recover(ctx, session, requests)
+	reached, unread := h.reach.recover(ctx, session)
 	if unread != nil {
 		reached = false
 	}
 	if reached && !session.ObservesEnvironment() {
-		if err := h.sessions.Save(ctx, session); err != nil {
-			return err
-		}
-		return errors.Join(requests.send(ctx), unreadRemoval)
+		return errors.Join(h.sessions.Save(ctx, session), unreadRemoval)
 	}
-	// Advance a retained control request before considering a new policy stop.
-	changed, err := session.RecoverExecution(ctx, requests)
+	// Advance a retained end before considering a new policy stop.
+	changed, err := session.RecoverExecution()
 	if err != nil {
 		return err
 	}
-	expired, err := h.stopAfterTimeout(ctx, session, requests)
+	expired, err := h.stopAfterTimeout(ctx, session)
 	if err != nil {
 		return err
 	}
@@ -97,12 +74,12 @@ func (h *RecoverWorkHandler) Handle(ctx context.Context, sessionID string) error
 			return err
 		}
 	}
-	return errors.Join(requests.send(ctx), unread, unreadRemoval)
+	return errors.Join(unread, unreadRemoval)
 }
 
 // stopAfterTimeout supplies the buffered-input fact only to a Work that has
 // been idle or Waiting long enough, so the sweep reads the buffer rarely.
-func (h *RecoverWorkHandler) stopAfterTimeout(ctx context.Context, work *domain.AgentWork, requests *deferredExecution) (bool, error) {
+func (h *RecoverWorkHandler) stopAfterTimeout(ctx context.Context, work *domain.AgentWork) (bool, error) {
 	if !work.TimeoutDue(h.now()) {
 		return false, nil
 	}
@@ -110,7 +87,7 @@ func (h *RecoverWorkHandler) stopAfterTimeout(ctx context.Context, work *domain.
 	if err != nil {
 		return false, err
 	}
-	return work.StopAfterTimeout(ctx, h.now(), buffered.Work(), requests)
+	return work.StopAfterTimeout(h.now(), buffered.Work())
 }
 
 // reconcileIdleness restores idleness that a Turn activity report ended after

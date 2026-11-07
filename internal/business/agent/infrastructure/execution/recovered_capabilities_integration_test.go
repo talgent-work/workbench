@@ -3,7 +3,6 @@
 package execution
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -19,8 +18,10 @@ import (
 	"xorm.io/xorm"
 )
 
-// Recovery must register the same allocation after Work persistence. Empty
-// collections are valid catalog facts; storage must not change their fingerprint.
+// The Work's recovery passes its admitted start on again after Work
+// persistence, which begins no second execution and rewrites nothing. Empty
+// collections are valid catalog facts; storage must not change their
+// fingerprint.
 func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 	ctx := t.Context()
 	dsn := mysqltest.Database(t)
@@ -29,6 +30,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, _ := sandboxClient(t)
 	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	executions := NewAgentExecutionRepository(db, time.Now)
 	empty, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}}, nil)
 	require.NoError(t, err)
 	components, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"review"}}, []domain.PluginRelease{{Slug: "review", Source: "owned", Version: "1", RetrievalRef: "archive:review-1", NativeEntry: []byte(`{"name":"review","version":"1"}`), Skills: []domain.SkillComponent{}, Agents: []domain.AgentComponent{}, MCPServers: []domain.MCPComponent{}}})
@@ -42,54 +44,38 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			require.NoError(t, definitions.Save(ctx, definition))
 			definition, err = definitions.Get(ctx, definition.ID)
 			require.NoError(t, err)
-			delivery := &allocationRegistration{provisioning: provisioning}
-			pending := commandtest.Hold(delivery)
-			work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, HomeBinding: definition.HomeBinding, WorkspaceReference: uuid.NewString()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, pending)
+			work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, HomeBinding: definition.HomeBinding, WorkspaceReference: uuid.NewString()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 			require.NoError(t, err)
 			works := infrastructure.NewAgentWorkRepository(db, time.Now)
 			require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", RequestID: uuid.NewString(), DefinitionVersion: definition.Version}))
-			require.NoError(t, pending.Send(ctx))
-			original, found, err := provisioning.live(ctx, work.ID)
+			require.NoError(t, command.NewExecutionCoordination(time.Now, works, executions, &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID))
+			begun, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 			require.True(t, found)
+			require.NoError(t, provisioning.specify(ctx, begun, testMounts))
+			original, _, err := provisioning.live(ctx, work.ID)
+			require.NoError(t, err)
+
 			reopened, err := xorm.NewEngine("mysql", dsn)
 			require.NoError(t, err)
 			defer reopened.Close()
-			recovered, err := infrastructure.NewAgentWorkRepository(reopened, time.Now).Get(ctx, work.ID)
+			recoveredWorks := infrastructure.NewAgentWorkRepository(reopened, time.Now)
+			recovered, err := recoveredWorks.Get(ctx, work.ID)
 			require.NoError(t, err)
 			require.Equal(t, snapshot.Connectors, recovered.CapabilitySnapshot.Connectors)
-			pending = commandtest.Hold(delivery)
-			_, err = recovered.RecoverExecution(ctx, pending)
+			_, err = recovered.RecoverExecution()
 			require.NoError(t, err)
-			require.NoError(t, pending.Send(ctx), "recovery must reuse the admitted allocation")
+			require.NoError(t, command.NewExecutionCoordination(time.Now, recoveredWorks, NewAgentExecutionRepository(reopened, time.Now), &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID), "recovery must reuse the admitted execution")
 			retained, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 			require.True(t, found)
-			require.Equal(t, original, retained, "recovery must not rewrite the allocation or its commands")
-			changed := delivery.request
+			require.Equal(t, original, retained, "recovery must not rewrite the execution or its commands")
+
+			changed := recovered.LaunchSpecification()
 			changed.Capabilities.Prompt = "a different task configuration"
-			require.ErrorIs(t, provisioning.Register(ctx, changed, testMounts), errEnvironmentConflict, "real configuration changes still conflict")
+			again, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: domain.WorkStartAdmitted{WorkID: work.ID, StartAdmittedAt: time.Now(), DeskID: "desk-test"}, Launch: changed, Realization: domain.RealizationCloud})
+			require.NoError(t, err)
+			require.ErrorIs(t, executions.Save(ctx, again), domain.ErrExecutionAdmission, "a second unretired execution of the Work is refused")
 		})
 	}
-}
-
-// Buffering, Work persistence, recovery and provisioning are production code.
-// This bridge exercises durable registration without starting external compute.
-type allocationRegistration struct {
-	domain.ExecutionPort
-	provisioning *Provisioning
-	request      domain.StartExecutionRequest
-}
-
-func (p *allocationRegistration) StartExecution(ctx context.Context, request domain.StartExecutionRequest) error {
-	p.request = request
-	// Storage grants each read-only mount the Work names.
-	mounts := testMounts
-	for _, mount := range request.ReadOnlyMounts {
-		if mounts.ReadOnly == nil {
-			mounts.ReadOnly = map[string]domain.MountGrant{}
-		}
-		mounts.ReadOnly[mount.Name] = domain.MountGrant{ClaimName: "inputs", SubPath: "references/" + mount.Reference, ReadOnly: true}
-	}
-	return p.provisioning.Register(ctx, request, mounts)
 }

@@ -5,6 +5,7 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -213,22 +214,53 @@ func (m *machineRelay) set(change func(*machineRelay)) {
 	change(m)
 }
 
-// managedWork is the execution port and recovery of Works on one Managed
-// Computer, reached through a relay fixture, beside a Cloud.
+// managedWork reconciles the executions of Works on one Managed Computer,
+// reached through a relay fixture, beside a Cloud.
 type managedWork struct {
 	db           *xorm.Engine
 	relay        *machineRelay
 	relayURL     string
 	place        *managedPlace
 	provisioning *Provisioning
-	observations *ProcessObservations
-	port         *Environment
 	mounts       *countingMounts
-	feedback     *reclamationFeedback
 	receiver     *nativeConnectionReceiver
 	connections  *NativeConnections
-	recovery     *EnvironmentRecovery
+	steps        *executionSteps
+	owners       *readingProcess
 	inputs       *inputFiles
+	// works are the Works as Agent records them for the machine's
+	// reconciliation.
+	works *workSource
+}
+
+// workSource holds the Works a case records, swapped by the case.
+type workSource struct {
+	mu   sync.Mutex
+	repo domain.AgentWorkRepository
+}
+
+func (w *workSource) set(repo domain.AgentWorkRepository) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.repo = repo
+}
+
+func (w *workSource) current() domain.AgentWorkRepository {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.repo
+}
+
+func (w *workSource) Get(ctx context.Context, id string) (*domain.AgentWork, error) {
+	return w.current().Get(ctx, id)
+}
+
+func (w *workSource) FindBySubject(ctx context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
+	return w.current().FindBySubject(ctx, agentID, subject)
+}
+
+func (w *workSource) Save(ctx context.Context, work *domain.AgentWork) error {
+	return w.current().Save(ctx, work)
 }
 
 func newManagedWork(t *testing.T) *managedWork {
@@ -238,7 +270,8 @@ func newManagedWork(t *testing.T) *managedWork {
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
 	initial := infrastructure.NewInitialExecutionRequests(db, time.Now)
-	f := &managedWork{db: db, relay: &machineRelay{computerID: managedComputerID}, place: &managedPlace{}, mounts: &countingMounts{}, feedback: &reclamationFeedback{}, inputs: &inputFiles{}}
+	f := &managedWork{db: db, relay: &machineRelay{computerID: managedComputerID}, place: &managedPlace{}, mounts: &countingMounts{}, inputs: &inputFiles{}, owners: &readingProcess{},
+		works: &workSource{repo: infrastructure.NewAgentWorkRepository(db, time.Now)}}
 	relayServer := httptest.NewServer(f.relay)
 	t.Cleanup(relayServer.Close)
 	f.relayURL = relayServer.URL
@@ -246,8 +279,7 @@ func newManagedWork(t *testing.T) *managedWork {
 	require.NoError(t, err)
 	f.provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, initial, nil)
 	attachNativeCredentials(t, db, f.provisioning, lifecycle)
-	// The Managed realization reads the Work's state as the Cloud's does.
-	f.provisioning.managed, err = NewManagedEnvironment(db, machines, fixtureModels(), f.provisioning.credentials.heldWorks(), f.inputs, managedInputsRefresh, nil)
+	f.provisioning.managed, err = NewManagedEnvironment(db, machines, fixtureModels(), f.works, f.inputs, managedInputsRefresh)
 	require.NoError(t, err)
 
 	f.receiver = &nativeConnectionReceiver{provisioning: f.provisioning}
@@ -255,48 +287,126 @@ func newManagedWork(t *testing.T) *managedWork {
 	mux.Handle("/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) { dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, f.receiver) }))
 	dispatcher := httptest.NewServer(mux)
 	t.Cleanup(dispatcher.Close)
-	control := NewDispatcherControl(dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
-	f.observations, err = NewProcessObservations(f.provisioning, control)
+	f.connections, err = NewNativeConnections(f.provisioning, f.provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", command.NewRecordRepositoryCheckoutsHandler(initial))
 	require.NoError(t, err)
-	resources, err := NewEnvironments(f.provisioning, f.observations)
-	require.NoError(t, err)
-	f.port, err = NewEnvironment(resources, control, f.mounts, f.place)
-	require.NoError(t, err)
-	f.connections, err = NewNativeConnections(f.provisioning, f.provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", f.feedback, command.NewRecordRepositoryCheckoutsHandler(initial))
-	require.NoError(t, err)
-	reclaimer, err := NewReclaimer(f.feedback)
-	require.NoError(t, err)
-	f.recovery, err = NewEnvironmentRecovery(f.provisioning, f.connections, reclaimer, unread{})
-	require.NoError(t, err)
+	f.steps = newExecutionStepsWith(t, f.provisioning, f.connections, f.owners, f.provisioning.managed, time.Now, f.mounts)
 	return f
 }
 
-// A Managed Work starts through the same execution port and recovery as a
-// Cloud Work: its environment is opened on the machine through the relay, it
-// prepares and launches in /workspace there, and Dispatcher is handed the
-// relay as its execd endpoint. Its compute is released through the relay and
-// its directory stays.
+// begin begins the execution of the start input describes, realized where
+// its Computer is, as the Policies do from the Work's admitted start.
+func (f *managedWork) begin(t *testing.T, input domain.LaunchSpecification) allocationRecord {
+	t.Helper()
+	ctx := context.Background()
+	place, err := f.place.DescribeComputer(ctx, input.ComputerID)
+	require.NoError(t, err)
+	input.ComputerName = place.Name
+	realization := domain.RealizationCloud
+	if place.Managed {
+		realization = domain.RealizationManaged
+	}
+	run, err := domain.BeginExecution(domain.ExecutionBeginning{
+		Admitted: domain.WorkStartAdmitted{WorkID: input.WorkID, StartAdmittedAt: time.Now(), DeskID: "desk-" + input.WorkID},
+		Launch:   input, Realization: realization,
+	})
+	require.NoError(t, err)
+	require.NoError(t, f.steps.executions.Save(ctx, run))
+	record, _, err := f.provisioning.get(ctx, run.ID)
+	require.NoError(t, err)
+	return record
+}
+
+// launch reconciles the execution until its Harness process is launched and
+// handed to Dispatcher: its creation, first delivery, input sync,
+// preparation and start.
+func (f *managedWork) launch(t *testing.T, id string) allocationRecord {
+	t.Helper()
+	ctx := context.Background()
+	var failures []error
+	for range 4 {
+		failures = append(failures, f.steps.reconcile(ctx, id))
+		record, _, err := f.provisioning.get(ctx, id)
+		require.NoError(t, err)
+		if record.ProcessID != "" {
+			return record
+		}
+	}
+	require.NoError(t, errors.Join(failures...))
+	require.Fail(t, "the execution launched no Harness process")
+	return allocationRecord{}
+}
+
+// decided is what the execution decides from its observation now, without
+// taking it.
+func (f *managedWork) decided(t *testing.T, id string) []domain.ExecutionStepKind {
+	t.Helper()
+	run := current(t, f.steps, id)
+	observation, err := f.steps.environment.Observe(context.Background(), run, false)
+	require.NoError(t, err)
+	decision, err := run.Reconcile(observation, time.Now())
+	require.NoError(t, err)
+	kinds := []domain.ExecutionStepKind{}
+	for _, step := range decision.Steps {
+		kinds = append(kinds, step.Kind)
+	}
+	return kinds
+}
+
+// markInputsChanged marks the inputs of every execution reading owner's File
+// Space due, as Storage's change report does.
+func (f *managedWork) markInputsChanged(t *testing.T, owner string) []string {
+	t.Helper()
+	ctx := context.Background()
+	ids, err := NewExecutionLookups(f.db).ListExecutionsReadingInputs(ctx, owner)
+	require.NoError(t, err)
+	marked, err := f.steps.handler.MarkInputsChanged(ctx, ids)
+	require.NoError(t, err)
+	return marked
+}
+
+// startManaged begins and launches a Managed Work's run and answers its
+// execution's record.
+func startManaged(t *testing.T, f *managedWork, workID string) allocationRecord {
+	t.Helper()
+	input := managedRequest()
+	input.WorkID = workID
+	input.ContextMode = domain.ContextFresh
+	record := f.launch(t, f.begin(t, input).ID)
+	require.False(t, record.ProcessExited)
+	return record
+}
+
+// exit records the launched process's exit and retires the execution as its
+// Work asks.
+func (f *managedWork) exit(t *testing.T, record allocationRecord) {
+	t.Helper()
+	ctx := context.Background()
+	run, err := f.steps.executions.Get(ctx, record.ID)
+	require.NoError(t, err)
+	run.RecordExit(record.ProcessID, domain.HarnessExit{})
+	require.NoError(t, f.steps.executions.Save(ctx, run))
+	require.NoError(t, f.steps.retire(ctx, record.SessionID, domain.RetiredByExit, time.Now()))
+}
+
+// A Managed Work's execution is reconciled as a Cloud Work's is: its
+// environment is opened on the machine through the relay, it prepares and
+// launches in /workspace there, and Dispatcher is handed the relay as its
+// execd endpoint. Its compute is released through the relay and its
+// directory stays.
 func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
-	db, relay, provisioning, connections, port, recovery, observations, feedback, receiver := f.db, f.relay, f.provisioning, f.connections, f.port, f.recovery, f.observations, f.feedback, f.receiver
-	mounts := f.mounts
+	db, relay, provisioning, receiver := f.db, f.relay, f.provisioning, f.receiver
 
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
-	require.NoError(t, port.StartExecution(ctx, input))
-	require.Zero(t, mounts.calls, "a Work on a Managed Computer acquires no mounts")
-	record, found, err := latestAllocation(ctx, db, input.WorkID)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, realizationManaged, record.Realization, "the realization is recorded, never inferred")
-	require.NotContains(t, string(record.SpecificationJSON), "HOME")
-	require.Equal(t, "[]", string(record.AuthorizationIDs), "no Provider credential is redelivered to a Managed Work")
+	begun := f.begin(t, input)
+	require.Equal(t, realizationManaged, begun.Realization, "the realization is recorded, never inferred")
+	require.Equal(t, "[]", string(begun.AuthorizationIDs), "no Provider credential is redelivered to a Managed Work")
 
-	require.NoError(t, submitPending(ctx, provisioning))
-	require.NoError(t, connectLive(ctx, connections))
-	record, _, err = latestAllocation(ctx, db, input.WorkID)
-	require.NoError(t, err)
+	record := f.launch(t, begun.ID)
+	require.Zero(t, f.mounts.calls, "a Work on a Managed Computer acquires no mounts")
+	require.NotContains(t, string(record.SpecificationJSON), "HOME")
 	require.True(t, record.SandboxReady)
 	require.True(t, record.EnvironmentPrepared)
 	require.Equal(t, "harness-handle", record.ProcessID)
@@ -331,30 +441,14 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	require.NoError(t, credentials.VerifyWorkCredential(ctx, input.WorkID, spec.WorkCredential))
 	require.Error(t, credentials.VerifyWorkCredential(ctx, input.WorkID, "forged"))
 
-	// The process exited: its compute is reclaimed through the relay, and
-	// the Work's directory stays.
-	exited, err := observations.AcknowledgeExit(ctx, input.WorkID, "harness-handle")
-	require.NoError(t, err)
-	require.True(t, exited)
-	// Agent applies the confirmation by observing the process, which a
-	// Managed allocation reports released only once its release is recorded;
-	// Dispatcher no longer holds a connection of the exited process.
-	var confirmed command.WorkProcessObservation
-	feedback.observe = func(ctx context.Context, request command.ExecutionFeedback) error {
-		var err error
-		confirmed, err = observations.ObserveProcess(ctx, request.WorkID)
-		return err
-	}
-	require.NoError(t, port.ReclaimCompute(ctx, input.WorkID))
-	_, err = recovery.ReconcileAllocation(ctx, record.ID)
-	require.NoError(t, err)
-	require.True(t, confirmed.ComputeReclaimed, "the confirmation observes the release it confirms")
+	// The process exited and its Work retired the execution: its compute is
+	// released through the relay, and the Work's directory stays.
+	f.exit(t, record)
+	require.NoError(t, f.steps.reconcile(ctx, record.ID))
 	require.ElementsMatch(t, []string{"preparation-handle", "harness-handle"}, relay.deleted)
-	require.Len(t, feedback.requests, 1)
-	require.Equal(t, command.ComputeReclaimed, feedback.requests[0].Kind)
-	observation, err := observations.ObserveProcess(ctx, input.WorkID)
-	require.NoError(t, err)
-	require.True(t, observation.ComputeReclaimed)
+	released := current(t, f.steps, record.ID)
+	require.Equal(t, domain.ExecutionReleased, released.State, "the release is recorded once its processes are deleted")
+	require.True(t, reported(released, domain.ExecutionReleasedEvent{WorkID: input.WorkID, StartAdmittedAt: released.StartAdmittedAt}))
 	pending, err := unreleased(ctx, db)
 	require.NoError(t, err)
 	require.Empty(t, pending)
@@ -365,10 +459,13 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	// Resume runs on the same Computer and continues the native session.
 	input.ContextMode = domain.ContextContinue
 	input.HarnessSessionReference = "context"
-	require.NoError(t, port.StartExecution(ctx, input))
+	next := f.begin(t, input)
+	require.NotEqual(t, record.ID, next.ID)
+	_, err = f.steps.handler.Reconcile(ctx, next.ID, false)
+	require.NoError(t, err)
 	resumed, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
-	require.NotEqual(t, record.ID, resumed.ID)
+	require.Equal(t, next.ID, resumed.ID)
 	require.Contains(t, resumed.LaunchCommand, "'--resume' '"+record.NativeSessionID+"'")
 	require.Equal(t, realizationManaged, resumed.Realization)
 	resumedSpec, err := decodeManagedSpecification(resumed)
@@ -381,19 +478,14 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 // TALGENT_KNOWLEDGE_ROOT, and it reaches its Project's tools through the
 // Talgent Connector, declared at the machine's local proxy.
 func TestAManagedWorkOfAProjectReadsReferencesThroughTheConnector(t *testing.T) {
-	ctx := context.Background()
 	f := newManagedWork(t)
 	input := managedRequest()
 	input.ContextMode, input.ProjectID = domain.ContextFresh, "project"
 	input.ReadOnlyMounts = []domain.ReadOnlyMount{{Name: "reference", Reference: "project"}}
-	require.NoError(t, f.port.StartExecution(ctx, input))
+	record := f.launch(t, f.begin(t, input).ID)
 	require.Zero(t, f.mounts.calls, "no read-only mount is acquired")
-	require.NoError(t, submitPending(ctx, f.provisioning))
-	require.NoError(t, connectLive(ctx, f.connections))
 	require.Equal(t, "project", f.relay.environment["TALGENT_PROJECT_ID"])
 	require.NotContains(t, f.relay.environment, "TALGENT_KNOWLEDGE_ROOT")
-	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
-	require.NoError(t, err)
 	require.Contains(t, record.LaunchCommand, `"talgent":{"headers":{"Authorization":"Bearer ${TALGENT_PROXY_TOKEN}"},"type":"http","url":"${TALGENT_PROXY_URL}/mcp"}`)
 }
 

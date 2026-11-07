@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -23,27 +22,33 @@ func TestControlDeniesUnauthorizedCallerBeforeAccessingSession(t *testing.T) {
 	require.ErrorIs(t, command.NewRespondWorkInteractionHandler(nil, access, nil).Handle(context.Background(), command.RespondWorkInteraction{SubjectID: "other-user", WorkID: "private-session"}), denied)
 }
 
-func TestStopDeliveryFailurePreservesStopRequestForRecovery(t *testing.T) {
-	session := stoppingSession(t)
-	store := &feedbackSessionStore{session: session}
-	failure := errors.New("dispatcher unavailable")
-	port := controlPort{stopErr: failure}
-	err := command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop"})
-	require.ErrorIs(t, err, failure)
-	require.Equal(t, 1, store.saves)
-	require.Equal(t, domain.WorkStopping, store.session.State)
-	require.Equal(t, "stop", store.session.StopRequestReference)
+// A stop is committed with the Work; one whose exit request cannot reach its
+// execution now is kept by the Work and passed by its recovery.
+func TestStopKeepsItsExitRequestForRecovery(t *testing.T) {
+	ctx := context.Background()
+	w := runningWorld(t)
+	require.NoError(t, command.NewStopWorkHandler(w.works, sessionAccess{}, w.executions).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: w.work().ID, RequestID: "stop"}))
+	require.Equal(t, domain.WorkStopping, w.work().State)
+	require.Equal(t, "stop", w.work().StopRequestReference)
+	require.Equal(t, []string{"stop"}, w.works.stopRequests(), "the stop asks the process to exit once committed")
+	failure := errors.New("database unavailable")
+	w.executions.SaveErr = failure
+	require.ErrorIs(t, w.coordination.RequestProcessExit(ctx, w.work().ID), failure)
+	require.False(t, w.execution(t).ExitRequest.Requested())
+	w.executions.SaveErr = nil
+	require.NoError(t, w.coordination.Coordinate(ctx, w.work().ID))
+	require.Equal(t, "stop", w.execution(t).ExitRequest.StopRequestID, "the recovery passes the kept request")
 }
 
 func TestCloseAcceptanceDoesNotWaitForExecutionControl(t *testing.T) {
 	session := stoppingSession(t)
 	store := &feedbackSessionStore{session: session}
-	port := observingControlPort{onStop: func() { t.Fatal("closure acceptance must not call the executor") }}
-	err := command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
+	err := command.NewCloseWorkHandler(store, sessionAccess{}, &commandtest.Executions{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopping, store.session.State, "a stopping Work closes once it has stopped")
 	require.Equal(t, "close", store.session.CloseRequestReference)
 	require.Equal(t, "stop", store.session.StopRequestReference, "closure keeps the already admitted stop correlation")
+	require.Empty(t, store.stopRequests(), "closure asks for no new exit")
 	require.Equal(t, 1, store.saves)
 }
 
@@ -51,73 +56,49 @@ type sessionAccess struct{ err error }
 
 func (a sessionAccess) AuthorizeWork(context.Context, string, string) error { return a.err }
 
-type controlPort struct{ stopErr error }
-
-func (controlPort) StartExecution(context.Context, domain.StartExecutionRequest) error { return nil }
-func (p controlPort) StopExecution(context.Context, string, string) error {
-	return p.stopErr
-}
-func (controlPort) ReclaimCompute(context.Context, string) error { return nil }
-
-func (controlPort) RetireFencedRun(context.Context, string) error { return nil }
-
-func TestControlPersistsBeforeSendingToExecutor(t *testing.T) {
+// A stop's exit request is a fact of the committed Work: nothing asks the
+// process to exit before the commit, and a close of a stopping Work asks for
+// nothing new.
+func TestControlPersistsBeforeRequestingAnExit(t *testing.T) {
 	for _, closeSession := range []bool{false, true} {
 		t.Run(map[bool]string{false: "stop", true: "close"}[closeSession], func(t *testing.T) {
-			session := stoppingSession(t)
-			store := &feedbackSessionStore{session: session}
-			calls := 0
-			port := observingControlPort{onStop: func() {
-				calls++
-				require.Equal(t, 1, store.saves, "immediate executor feedback must observe the committed control request")
-			}}
-			request := command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop"}
+			request := command.WorkControl{SubjectID: "owner", RequestID: "stop"}
 			if closeSession {
-				require.NoError(t, command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request))
-				require.Zero(t, calls, "permanent close is delivered by recovery")
-			} else {
-				require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), request))
-				require.Equal(t, 1, calls)
+				store := &feedbackSessionStore{session: stoppingSession(t)}
+				request.WorkID = store.session.ID
+				require.NoError(t, command.NewCloseWorkHandler(store, sessionAccess{}, &commandtest.Executions{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), request))
+				require.Empty(t, store.stopRequests(), "the kept close is applied by recovery")
+				return
 			}
+			store := &feedbackSessionStore{session: runningSession(t)}
+			request.WorkID = store.session.ID
+			require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, &commandtest.Executions{}).Handle(context.Background(), request))
+			require.Equal(t, 1, store.saves)
+			require.Equal(t, []string{"stop"}, store.stopRequests())
 		})
 	}
 }
 
 func TestControlSaveFailureDoesNotStopExecutor(t *testing.T) {
-	session := stoppingSession(t)
 	failure := errors.New("database unavailable")
-	store := &feedbackSessionStore{session: session, saveErr: failure}
-	sent := false
-	port := observingControlPort{onStop: func() { sent = true }}
-	err := command.NewCloseWorkHandler(store, sessionAccess{}, port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "close"})
+	store := &feedbackSessionStore{session: runningSession(t), saveErr: failure}
+	err := command.NewStopWorkHandler(store, sessionAccess{}, &commandtest.Executions{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: store.session.ID, RequestID: "stop"})
 	require.ErrorIs(t, err, failure)
-	require.False(t, sent, "rejected persistence must not change the external execution")
-	require.Equal(t, domain.WorkStopping, store.session.State)
+	require.Empty(t, store.stopRequests(), "rejected persistence must not change the external execution")
+	require.Equal(t, domain.WorkWorking, store.session.State)
 }
 
-type observingControlPort struct {
-	controlPort
-	onStop func()
-}
-
-func (p observingControlPort) StopExecution(context.Context, string, string) error {
-	p.onStop()
-	return nil
-}
-
-func TestImmediateExitFeedbackCannotBeOverwrittenByStopCommand(t *testing.T) {
-	session := runningSession(t)
-	store := &feedbackSessionStore{session: session}
-	processes := exitedProcess()
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, store, processes, &feedbackPort{}, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	port := observingControlPort{onStop: func() {
-		require.NoError(t, feedback.Handle(context.Background(), command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutionExited, WorkID: session.ID}))
-		processes.observation = domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true}
-		require.NoError(t, feedback.Handle(context.Background(), command.ExecutionFeedback{Kind: command.ComputeReclaimed, WorkID: session.ID}))
-	}}
-	require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop"}))
-	require.Equal(t, domain.WorkStopped, store.session.State, "command must not save an older snapshot over acknowledged completion")
-	require.True(t, store.session.HarnessProcess.ComputeReclaimed)
+// The exit reported after a committed stop completes it once the execution's
+// release is confirmed; the stop command wrote nothing after its commit.
+func TestExitAfterAStopCompletesTheStop(t *testing.T) {
+	ctx := context.Background()
+	w := runningWorld(t)
+	require.NoError(t, command.NewStopWorkHandler(w.works, sessionAccess{}, w.executions).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: w.work().ID, RequestID: "stop"}))
+	require.NoError(t, w.coordination.RequestProcessExit(ctx, w.work().ID))
+	w.exit(t, 0)
+	w.release(t)
+	require.Equal(t, domain.WorkStopped, w.work().State)
+	require.True(t, w.work().HarnessProcess.ComputeReclaimed)
 }
 
 // Stop applies to the Work's current process under the
@@ -127,15 +108,12 @@ func TestStopUnderStaleWorkVersionIsRejected(t *testing.T) {
 	session := runningSession(t)
 	session.Version = 7
 	store := &feedbackSessionStore{session: session}
-	port := observingControlPort{onStop: func() {}}
 	stale := 6
-	err := command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop", ExpectedVersion: &stale})
+	err := command.NewStopWorkHandler(store, sessionAccess{}, &commandtest.Executions{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop", ExpectedVersion: &stale})
 	require.ErrorIs(t, err, domain.ErrConcurrentModification)
 	require.Zero(t, store.saves)
 	require.Equal(t, domain.WorkWorking, store.session.State)
 	current := 7
-	require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, port).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop", ExpectedVersion: &current}))
+	require.NoError(t, command.NewStopWorkHandler(store, sessionAccess{}, &commandtest.Executions{}).Handle(context.Background(), command.WorkControl{SubjectID: "owner", WorkID: session.ID, RequestID: "stop", ExpectedVersion: &current}))
 	require.Equal(t, domain.WorkStopping, store.session.State)
 }
-
-func (controlPort) CancelRunningTurn(context.Context, string) error { return nil }

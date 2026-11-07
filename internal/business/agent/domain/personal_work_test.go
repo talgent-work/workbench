@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -18,10 +17,10 @@ import (
 func personalWork(t *testing.T) visibleWork {
 	t.Helper()
 	definition := newDefinition(t, "employee", domain.VisibilityRule{})
-	work, err := domain.NewAgentWork(context.Background(), domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID,
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, DisplayTitle: "Draft the plan",
 		WorkspaceReference: "workspace-a", InputSource: domain.WorkInputSource{Reference: "file-space/a", SpaceToken: "token"}, HomeBinding: definition.HomeBinding, Visibility: definition.Visibility,
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, &executionPort{})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	require.True(t, work.Personal())
 	return visibleWork{AgentWork: work, definition: definition}
@@ -106,22 +105,21 @@ func TestAnEmployeeDefinitionRepresentsItsPersonPrivately(t *testing.T) {
 // A Personal Work starts from another Personal Work of its definition, never
 // from one of its definition's Works with a Project.
 func TestAPersonalWorkStartsOnlyFromAnotherPersonalWork(t *testing.T) {
-	ctx := context.Background()
 	definition := newDefinition(t, "employee", domain.VisibilityRule{})
 	request := func(subject domain.WorkSubject, project string, source *domain.StartingContextSource) domain.WorkCreationRequest {
 		return domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true},
 			WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, Subject: subject, ProjectID: project, StartingContext: source,
 			Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}}
 	}
-	intentWork, _, err := definition.CreateWork(ctx, request(domain.WorkSubject{Kind: "case", ID: "case-1"}, "project-a", nil), &definitionSessionLookup{}, &executionPort{})
+	intentWork, _, err := definition.CreateWork(request(domain.WorkSubject{Kind: "case", ID: "case-1"}, "project-a", nil), domain.WorkCreationFacts{})
 	require.NoError(t, err)
-	earlier, _, err := definition.CreateWork(ctx, request(domain.WorkSubject{}, "", nil), &definitionSessionLookup{}, &executionPort{})
+	earlier, _, err := definition.CreateWork(request(domain.WorkSubject{}, "", nil), domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	lookup := &definitionSessionLookup{works: []*domain.AgentWork{intentWork, earlier}}
 
-	_, _, err = definition.CreateWork(ctx, request(domain.WorkSubject{}, "", &domain.StartingContextSource{WorkID: intentWork.ID, Position: "message"}), lookup, &executionPort{})
+	_, _, err = createWork(definition, request(domain.WorkSubject{}, "", &domain.StartingContextSource{WorkID: intentWork.ID, Position: "message"}), lookup)
 	require.ErrorIs(t, err, domain.ErrStartingContextNotAdmitted)
-	continued, _, err := definition.CreateWork(ctx, request(domain.WorkSubject{}, "", &domain.StartingContextSource{WorkID: earlier.ID, Position: "message"}), lookup, &executionPort{})
+	continued, _, err := createWork(definition, request(domain.WorkSubject{}, "", &domain.StartingContextSource{WorkID: earlier.ID, Position: "message"}), lookup)
 	require.NoError(t, err)
 	require.Equal(t, earlier.ID, continued.StartingContext.SourceWorkID)
 }

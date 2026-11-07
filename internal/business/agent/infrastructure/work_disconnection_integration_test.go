@@ -23,14 +23,13 @@ import (
 func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
-		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	id, err := handler.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	require.NoError(t, work.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, work.ConfirmStarted(ctx, time.Now(), nil))
+	reportReady(t, work)
 	lost := time.Now().Add(time.Second).UTC().Truncate(time.Millisecond)
 	changed, err := work.RecordDisconnection(lost)
 	require.NoError(t, err)
@@ -72,13 +71,21 @@ func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T
 	require.Equal(t, []string{id}, held, "a Failed Work's process may still run")
 	work, err = f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	changed, err = work.ApplyComputerRemoval(ctx)
+	changed, err = work.ApplyExecutionReport(domain.ExecutionEnvironmentLost{WorkID: work.ID, StartAdmittedAt: work.HarnessProcess.StartingSince, Reason: domain.ComputerRemovedReason})
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.NoError(t, f.sessions.Save(ctx, work))
 	held, err = works.ListHeldWorkIDs(ctx, work.ComputerID, "", 10)
 	require.NoError(t, err)
-	require.Empty(t, held, "a lost environment holds nothing")
+	require.Equal(t, []string{id}, held, "the lost environment's execution is not released yet")
+	// The removed Computer's execution retires and its release is confirmed.
+	work, err = f.sessions.Get(ctx, id)
+	require.NoError(t, err)
+	reportReleased(t, work)
+	require.NoError(t, f.sessions.Save(ctx, work))
+	held, err = works.ListHeldWorkIDs(ctx, work.ComputerID, "", 10)
+	require.NoError(t, err)
+	require.Empty(t, held, "a lost environment holds nothing once released")
 }
 
 // A Resume refused while the Work's Managed Computer was away marks the
@@ -87,17 +94,16 @@ func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T
 func TestAReachResumeMarkPersistsAndIsFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
-		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)),
+		creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	id, err := handler.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	require.NoError(t, work.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, work.ConfirmStarted(ctx, time.Now(), nil))
-	require.NoError(t, work.Stop(ctx, "stop-1", executionPort{}))
-	require.NoError(t, work.RecordExit(ctx, domain.HarnessExit{}, executionPort{}))
-	require.NoError(t, work.ConfirmComputeReclaimed())
+	reportReady(t, work)
+	require.NoError(t, work.Stop("stop-1", false))
+	reportExit(t, work, domain.HarnessExit{})
+	reportReleased(t, work)
 	require.Equal(t, domain.WorkStopped, work.State)
 	require.NoError(t, f.sessions.Save(ctx, work))
 

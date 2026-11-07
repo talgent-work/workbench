@@ -98,7 +98,7 @@ var machineLayout = launchLayout{
 const managedRoot = "talgent_root=\"${TALGENT_WORK_ROOT:?}\"; mkdir -p \"$talgent_root/.talgent\" || exit 1; export CLAUDE_CODE_PLUGIN_CACHE_DIR=\"$talgent_root/.talgent/claude-plugins\"; "
 
 // prepare renders the Work's Harness launch and preparation in a layout.
-func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.StartExecutionRequest, owner Allocation, thinkingLevel string) (nativeLaunch, error) {
+func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSpecification, owner Allocation, thinkingLevel string) (nativeLaunch, error) {
 	if err := c.Validate(); err != nil {
 		return nativeLaunch{}, err
 	}

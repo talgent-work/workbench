@@ -7,11 +7,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-var _ domain.WorkLookupPort = (*AgentWorkRepository)(nil)
-
-// FindWork returns the definition's Work for the Subject, a closed Work
+// FindBySubject returns the definition's Work for the Subject, a closed Work
 // included; storage keeps one row per definition and Subject.
-func (r *AgentWorkRepository) FindWork(ctx context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
+func (r *AgentWorkRepository) FindBySubject(ctx context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
 	var row agentWorkDO
 	found, err := r.db.Context(ctx).Cols("id").Where("agent_id = ? AND subject_kind = ? AND subject_id = ? AND deleted_at = 0", agentID, string(subject.Kind), subject.ID).Get(&row)
 	if err != nil {
@@ -21,9 +19,4 @@ func (r *AgentWorkRepository) FindWork(ctx context.Context, agentID string, subj
 		return nil, nil
 	}
 	return r.Get(ctx, row.ID)
-}
-
-// LocateWork reads one Work by identity for a Work starting from its context.
-func (r *AgentWorkRepository) LocateWork(ctx context.Context, workID string) (*domain.AgentWork, error) {
-	return r.Get(ctx, workID)
 }

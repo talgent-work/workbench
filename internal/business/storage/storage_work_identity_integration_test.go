@@ -38,12 +38,12 @@ func TestAManagedWorkIdentityCarriesNoWorkspaceSoItsSentContentIsTaken(t *testin
 	require.NoError(t, err)
 	works := &identityWorks{items: map[string]*agentdomain.AgentWork{}}
 	start := func(managed bool) string {
-		work, err := agentdomain.NewAgentWork(t.Context(), agentdomain.WorkInput{
+		work, err := agentdomain.NewAgentWork(agentdomain.WorkInput{
 			StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: agent.ID, ComputerManaged: managed,
 			Subject: agentdomain.WorkSubject{Kind: "case", ID: "case-1"}, ProjectID: "project-1", WorkModel: agentdomain.WorkModelSelection{ConfigurationID: "default"},
 			Capabilities:       agentdomain.CapabilitySnapshot{Connectors: []agentdomain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 			WorkspaceReference: "named-workspace", HomeBinding: agent.HomeBinding,
-		}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), DeskID: "desk"}}, identityExecution{})
+		}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), DeskID: "desk"}})
 		require.NoError(t, err)
 		works.items[work.ID] = work
 		return work.ID
@@ -117,6 +117,15 @@ func (w *identityWorks) Get(_ context.Context, id string) (*agentdomain.AgentWor
 	return work, nil
 }
 
+func (w *identityWorks) FindBySubject(_ context.Context, agentID string, subject agentdomain.WorkSubject) (*agentdomain.AgentWork, error) {
+	for _, work := range w.items {
+		if work.AgentID == agentID && work.Subject == subject {
+			return work, nil
+		}
+	}
+	return nil, nil
+}
+
 func (w *identityWorks) Save(context.Context, *agentdomain.AgentWork) error {
 	return errors.New("not saved")
 }
@@ -130,13 +139,3 @@ func (identityCredentials) VerifyWorkCredential(_ context.Context, _, credential
 	}
 	return nil
 }
-
-type identityExecution struct{}
-
-func (identityExecution) StartExecution(context.Context, agentdomain.StartExecutionRequest) error {
-	return nil
-}
-func (identityExecution) StopExecution(context.Context, string, string) error { return nil }
-func (identityExecution) CancelRunningTurn(context.Context, string) error     { return nil }
-func (identityExecution) ReclaimCompute(context.Context, string) error        { return nil }
-func (identityExecution) RetireFencedRun(context.Context, string) error       { return nil }

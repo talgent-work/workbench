@@ -3,6 +3,7 @@ package command_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -19,8 +20,7 @@ func retainedPreparation(sessions *feedbackSessionStore) *initialRequestStore {
 func TestPreparationUsesOnlyRetainedCreationRequest(t *testing.T) {
 	_, sessions := startupStores(t)
 	store := retainedPreparation(sessions)
-	port := &startupPort{}
-	handler := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, port, nil, agentquery.ModelConfigurations{})
+	handler := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, nil, agentquery.ModelConfigurations{})
 	input := store.request.PrepareWorkExecution
 	unsupported := input
 	unsupported.ThinkingLevel = "not-a-harness-level"
@@ -30,7 +30,7 @@ func TestPreparationUsesOnlyRetainedCreationRequest(t *testing.T) {
 	changed.Input.Text = "replace the initial task"
 	_, err = handler.Handle(t.Context(), changed)
 	require.ErrorIs(t, err, command.ErrInitialExecutionConflict)
-	require.Zero(t, port.calls)
+	require.False(t, store.request.Prepared)
 	id, err := handler.Handle(t.Context(), input)
 	require.NoError(t, err)
 	require.Equal(t, input.WorkID, id)
@@ -38,36 +38,37 @@ func TestPreparationUsesOnlyRetainedCreationRequest(t *testing.T) {
 	require.True(t, store.request.Submitted)
 	require.Equal(t, domain.WorkStarting, sessions.session.State)
 	require.True(t, sessions.session.HoldsProcess())
-	require.Equal(t, 1, port.calls)
 	input.RequestID, input.Input.ID = uuid.NewString(), uuid.NewString()
 	_, err = handler.Handle(t.Context(), input)
 	require.NoError(t, err)
-	require.Equal(t, 1, port.calls, "a retry reuses preparation without admitting or delivering a new start")
+	require.Zero(t, sessions.saves, "preparation admits no start: the Work's admitted one is its execution's")
+	require.Empty(t, sessions.admittedStarts(), "a retry reuses preparation without admitting a new start")
 	require.NotEqual(t, input.Input.ID, store.request.Input.ID)
 }
 
 func TestPreparationCannotInventInitialRequest(t *testing.T) {
 	_, sessions := startupStores(t)
 	input := retainedPreparation(sessions).request.PrepareWorkExecution
-	port := &startupPort{}
-	handler := command.NewPrepareWorkExecutionHandler(&initialRequestStore{}, sessions, sessionAccess{}, port, nil, agentquery.ModelConfigurations{})
+	handler := command.NewPrepareWorkExecutionHandler(&initialRequestStore{}, sessions, sessionAccess{}, nil, agentquery.ModelConfigurations{})
 	_, err := handler.Handle(t.Context(), input)
 	require.ErrorIs(t, err, command.ErrInitialExecutionNotFound)
-	require.Zero(t, port.calls)
+	require.Zero(t, sessions.saves)
 }
 
 func TestPreparationForClosedSessionDoesNotAcquireResources(t *testing.T) {
 	_, sessions := startupStores(t)
-	require.NoError(t, sessions.session.RecordExit(t.Context(), domain.HarnessExit{ExitCode: 1}, &feedbackPort{}))
-	require.NoError(t, sessions.session.ConfirmComputeReclaimed())
-	require.NoError(t, sessions.session.Close(context.Background(), "already-closed", domain.ClosureFacts{}, &startupPort{}))
+	report(t, sessions.session, func(workID string, start time.Time) domain.Event {
+		return domain.ExecutionExited{WorkID: workID, StartAdmittedAt: start, Exit: domain.HarnessExit{ExitCode: 1}}
+	})
+	report(t, sessions.session, releasedReport)
+	require.NoError(t, sessions.session.Close("already-closed", domain.ClosureFacts{}))
 	store := retainedPreparation(sessions)
-	port := &startupPort{}
-	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, port, nil, agentquery.ModelConfigurations{})
+	prepare := command.NewPrepareWorkExecutionHandler(store, sessions, sessionAccess{}, nil, agentquery.ModelConfigurations{})
 	_, err := prepare.Handle(t.Context(), store.request.PrepareWorkExecution)
 	require.ErrorIs(t, err, domain.ErrWorkTransition)
 	require.Equal(t, domain.WorkClosed, sessions.session.State)
-	require.Zero(t, port.calls)
+	require.False(t, store.request.Prepared)
+	require.Zero(t, sessions.saves)
 }
 
 type initialRequestStore struct {

@@ -5,14 +5,13 @@ package execution
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
-	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -29,17 +28,15 @@ const (
 type releaseFixture struct {
 	db           *xorm.Engine
 	provisioning *Provisioning
-	environments *Environments
-	recovery     *EnvironmentRecovery
-	observations *ProcessObservations
+	steps        *executionSteps
+	lookups      *ExecutionLookups
 	lifecycle    *lifecycleFixture
-	feedback     *reclamationFeedback
 	record       allocationRecord
-	// metadata is what the allocation's sandboxes carry.
+	// metadata is what the execution's sandboxes carry.
 	metadata map[string]string
 }
 
-// newRelease registers one Work's Cloud allocation whose create was submitted
+// newRelease begins one Work's Cloud execution whose creation was submitted
 // and whose Startup Deadline, with its abandonment margin, has passed.
 func newRelease(t *testing.T) *releaseFixture {
 	t.Helper()
@@ -48,27 +45,47 @@ func newRelease(t *testing.T) *releaseFixture {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
-	input := request()
-	require.NoError(t, p.Register(ctx, input, testMounts))
-	started := time.Now().Add(-domain.StartupDeadline - abandonmentMargin - time.Second).UnixMilli()
-	_, err = db.Exec("UPDATE execution_allocation SET submitted = 1, created_at = ? WHERE session_id = ?", started, input.WorkID)
+	credentials := fixtureSandboxCredentials(db, provider)
+	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	record, err := register(ctx, p, request(), testMounts)
 	require.NoError(t, err)
-	record, _, err := latestAllocation(ctx, db, input.WorkID)
+	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	require.NoError(t, err)
+	steps := newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
+	run, err := steps.executions.Get(ctx, record.ID)
+	require.NoError(t, err)
+	require.True(t, run.RecordSubmission())
+	require.NoError(t, steps.executions.Save(ctx, run))
+	seated := time.Now().Add(-domain.StartupDeadline - 2*time.Minute).UnixMilli()
+	_, err = db.Exec("UPDATE execution_allocation SET start_admitted_at = ?, seated_at = ?, created_at = ? WHERE id = ?", seated, seated, seated, record.ID)
 	require.NoError(t, err)
 	var spec sdk.CreateSandboxRequest
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
-	observations := allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING)
-	environments, err := NewEnvironments(p, observations)
+	return &releaseFixture{db: db, provisioning: p, steps: steps, lookups: NewExecutionLookups(db), lifecycle: lifecycle, record: record, metadata: spec.Metadata}
+}
+
+// abandon reconciles the start, which no environment answered, past its
+// Startup Deadline: it is abandoned and its Work retires it.
+func (f *releaseFixture) abandon(t *testing.T) {
+	t.Helper()
+	f.reconcile(t)
+	run := f.execution(t)
+	require.True(t, run.Outcome.Abandoned)
+	require.Empty(t, run.Environment, "no environment carrying its ownership was observed")
+	f.retire(t, domain.RetiredByAbandonment)
+}
+
+// retire retires the execution as its Work asks.
+func (f *releaseFixture) retire(t *testing.T, cause domain.RetirementCause) {
+	t.Helper()
+	require.NoError(t, f.steps.retire(context.Background(), f.record.SessionID, cause, time.Now()))
+}
+
+func (f *releaseFixture) execution(t *testing.T) *domain.AgentExecution {
+	t.Helper()
+	run, err := f.steps.executions.Get(context.Background(), f.record.ID)
 	require.NoError(t, err)
-	feedback := &reclamationFeedback{}
-	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", feedback, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
-	require.NoError(t, err)
-	reclaimer, err := NewReclaimer(feedback)
-	require.NoError(t, err)
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, unread{})
-	require.NoError(t, err)
-	return &releaseFixture{db: db, provisioning: p, environments: environments, recovery: recovery, observations: observations, lifecycle: lifecycle, feedback: feedback, record: record, metadata: spec.Metadata}
+	return run
 }
 
 // sandbox places a sandbox carrying metadata on the environment authority.
@@ -97,125 +114,128 @@ func (f *releaseFixture) present() []string {
 	return ids
 }
 
-// reconcile runs the allocation's recovery as its task would.
+// reconcile runs the execution's recovery as its task would.
 func (f *releaseFixture) reconcile(t *testing.T) {
 	t.Helper()
-	_, err := f.recovery.ReconcileAllocation(context.Background(), f.record.ID)
-	require.NoError(t, err)
+	require.NoError(t, f.steps.reconcile(context.Background(), f.record.ID))
 }
 
-func (f *releaseFixture) confirmations() int {
-	confirmed := 0
-	for _, request := range f.feedback.requests {
-		if request.WorkID == f.record.SessionID && request.Kind == command.ComputeReclaimed {
-			confirmed++
-		}
-	}
-	return confirmed
+func (f *releaseFixture) deletes() int {
+	f.lifecycle.mu.Lock()
+	defer f.lifecycle.mu.Unlock()
+	return f.lifecycle.deletes
 }
 
 func (f *releaseFixture) outstanding(t *testing.T) bool {
 	t.Helper()
-	statuses, err := f.recovery.ListOutstandingAllocations(context.Background(), "", 100)
+	ids, err := f.lookups.ListOutstandingExecutions(context.Background(), "", 100)
 	require.NoError(t, err)
-	for _, status := range statuses {
-		if status.AllocationID == f.record.ID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ids, f.record.ID)
 }
 
-func (f *releaseFixture) reclaimed(t *testing.T) bool {
+// released reports the execution's release confirmed and reported to its
+// Work.
+func (f *releaseFixture) released(t *testing.T) bool {
 	t.Helper()
-	observation, err := f.observations.ObserveProcess(context.Background(), f.record.SessionID)
-	require.NoError(t, err)
-	return observation.ComputeReclaimed
+	run := f.execution(t)
+	if run.State != domain.ExecutionReleased {
+		return false
+	}
+	require.True(t, reported(run, domain.ExecutionReleasedEvent{WorkID: run.WorkID, StartAdmittedAt: run.StartAdmittedAt}))
+	require.False(t, run.Desk.LeftAt.IsZero(), "its Desk left before the release was confirmed")
+	return true
 }
 
 // A submitted start whose sandbox identity was never recorded is retired
 // without an environment conflict, and its release deletes every sandbox
-// carrying its ownership, never one whose allocation Agent cannot name, before
-// confirming the release to the Work.
+// carrying its ownership, never one whose execution Agent cannot name. The
+// release is confirmed to the Work only once the authority, observed again
+// after the deletions, shows none of them, and only then its Desk leaves.
 func TestARetiredAllocationWithoutASandboxIdentityReleasesEverySandboxItOwns(t *testing.T) {
 	f := newRelease(t)
+	f.abandon(t)
 	f.sandbox(sandboxID, f.metadata)
 	f.sandbox(surplusSandboxID, f.metadata)
 	stranger := correlation(Allocation{WorkID: f.record.SessionID, ID: "01900000-0000-7000-8000-0000000000ff"})
 	stranger[sandboxSpecLabel] = f.metadata[sandboxSpecLabel]
 	f.sandbox(foreignSandboxID, stranger)
 
-	require.NoError(t, f.environments.Delete(context.Background(), f.record.SessionID), "submitted with no sandbox identity is no conflict")
-	require.NoError(t, f.environments.Delete(context.Background(), f.record.SessionID), "retirement is idempotent")
-	_, live, err := f.provisioning.live(context.Background(), f.record.SessionID)
-	require.NoError(t, err)
-	require.False(t, live)
-	require.True(t, f.outstanding(t), "a retired allocation stays outstanding until released")
-	require.False(t, f.reclaimed(t))
+	f.retire(t, domain.RetiredByAbandonment)
+	retired := f.execution(t)
+	require.Equal(t, domain.ExecutionRetired, retired.State, "retirement is idempotent")
+	require.True(t, retired.Desk.LeftAt.IsZero(), "its Desk is held while it owns environments")
+	require.True(t, f.outstanding(t), "a retired execution stays outstanding until released")
+	require.False(t, f.released(t))
 
 	f.reconcile(t)
 	require.Equal(t, []string{foreignSandboxID}, f.present(), "every owned sandbox is deleted; one Agent cannot prove it owns stays")
-	require.Zero(t, f.confirmations(), "an accepted deletion is not yet absence")
-
-	f.reconcile(t)
-	require.Equal(t, 1, f.confirmations(), "release is confirmed once no owned sandbox remains")
+	require.Equal(t, 2, f.deletes())
+	require.True(t, f.released(t), "release is confirmed once the authority shows no owned sandbox")
+	require.Equal(t, []string{retired.Desk.ID}, f.steps.desks.departures(), "the Desk leaves after the deletions were observed")
 	require.False(t, f.outstanding(t))
-	require.True(t, f.reclaimed(t), "the Work observes the confirmed release")
+
+	released := f.execution(t)
+	f.reconcile(t)
+	require.Equal(t, released.Version, f.execution(t).Version, "a released execution is not released again")
+	require.Equal(t, 2, f.deletes())
 	require.Equal(t, []string{foreignSandboxID}, f.present())
 }
 
-// A retired allocation that owns no sandbox confirms its release at once. The
-// release is recorded before Agent learns of it, so an Agent that cannot take
-// the confirmation still observes the release in its own recovery.
+// A retired execution that owns no sandbox confirms its release at once. The
+// release is recorded on the execution, which reports it to its Work, so a
+// Work that missed the report still applies it from the execution.
 func TestARetiredAllocationWithoutSandboxesConfirmsItsReleaseAtOnce(t *testing.T) {
 	f := newRelease(t)
-	require.NoError(t, f.environments.Delete(context.Background(), f.record.SessionID))
-	f.feedback.err = errors.New("agent unavailable")
-	_, err := f.recovery.ReconcileAllocation(context.Background(), f.record.ID)
-	require.Error(t, err, "a lost confirmation is reported")
-	require.Equal(t, 1, f.confirmations(), "no hidden confirmation retry")
-	require.False(t, f.outstanding(t), "the recorded release is not released again")
-	require.True(t, f.reclaimed(t), "the Work's observation finds the recorded release")
-	f.feedback.err = nil
+	f.abandon(t)
 	f.reconcile(t)
-	require.Equal(t, 1, f.confirmations(), "a released allocation is not released again")
-	require.Zero(t, f.lifecycle.deletes)
+	require.True(t, f.released(t))
+	require.False(t, f.outstanding(t), "the recorded release is not released again")
+	released := f.execution(t)
+	f.reconcile(t)
+	require.Equal(t, released.Version, f.execution(t).Version, "a released execution is not released again")
+	require.Len(t, f.steps.desks.departures(), 1)
+	require.Zero(t, f.deletes())
 }
 
 // A previously bound sandbox the list no longer shows is confirmed absent by
 // its own identity before the release is confirmed.
 func TestABoundSandboxIsConfirmedAbsentByItsIdentityBeforeRelease(t *testing.T) {
 	f := newRelease(t)
-	_, err := f.db.Exec("UPDATE execution_allocation SET sandbox_id = ?, process_id = 'process', process_exited = 1 WHERE id = ?", sandboxID, f.record.ID)
+	ctx := context.Background()
+	run := f.execution(t)
+	_, err := run.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: sandboxID})
 	require.NoError(t, err)
+	run.Environment = sandboxID
+	_, err = run.RecordLaunch("process")
+	require.NoError(t, err)
+	run.RecordExit("process", domain.HarnessExit{})
+	require.NoError(t, f.steps.executions.Save(ctx, run))
 	f.sandbox(sandboxID, f.metadata)
 	f.lifecycle.pages = [][]sdk.SandboxInfo{{}} // A list that has not caught up yet.
 
-	require.NoError(t, f.environments.Delete(context.Background(), f.record.SessionID))
+	f.retire(t, domain.RetiredByExit)
 	f.reconcile(t)
-	require.Zero(t, f.confirmations(), "the bound sandbox still exists")
-	require.Equal(t, 1, f.lifecycle.deletes, "the bound sandbox is deleted though the list missed it")
-
-	f.reconcile(t)
-	require.Equal(t, 1, f.confirmations())
-	require.True(t, f.reclaimed(t))
+	require.Equal(t, 1, f.deletes(), "the bound sandbox is deleted though the list missed it")
+	require.Empty(t, f.present())
+	require.True(t, f.released(t), "release follows once its identity shows it absent")
 }
 
-// A sandbox the list returns without the allocation's exact ownership is left
+// A sandbox the list returns without the execution's exact ownership is left
 // in place and holds back neither the deletion of the owned ones nor the
 // release once they are gone.
 func TestAListedStrangerHoldsBackNoRelease(t *testing.T) {
 	f := newRelease(t)
+	f.abandon(t)
 	stranger := correlation(Allocation{WorkID: f.record.SessionID, ID: "01900000-0000-7000-8000-0000000000ff"})
 	f.sandbox(foreignSandboxID, stranger)
 	f.sandbox(sandboxID, f.metadata)
 	f.lifecycle.pages = [][]sdk.SandboxInfo{{f.lifecycle.others[foreignSandboxID], *f.lifecycle.info}} // A list that disregards its filter.
 
-	require.NoError(t, f.environments.Delete(context.Background(), f.record.SessionID))
+	f.retire(t, domain.RetiredByAbandonment)
 	f.reconcile(t)
 	require.Equal(t, []string{foreignSandboxID}, f.present(), "only the owned sandbox is deleted")
 	f.lifecycle.pages = [][]sdk.SandboxInfo{{f.lifecycle.others[foreignSandboxID]}}
 	f.reconcile(t)
-	require.Equal(t, 1, f.confirmations(), "the stranger does not hold back the release")
+	require.True(t, f.released(t), "the stranger does not hold back the release")
 	require.Equal(t, []string{foreignSandboxID}, f.present())
 }

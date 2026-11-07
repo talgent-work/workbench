@@ -27,7 +27,7 @@ import (
 func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), executionPort{})
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 	sessionID, err := create.Handle(ctx, f.request.Creation)
 	require.NoError(t, err)
 	store := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
@@ -61,8 +61,8 @@ func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 	require.False(t, read().GetCleanupConfirmed(), "rejection cannot stand in for completed resource release")
 	session, err := f.sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
-	require.NoError(t, session.RecordExit(ctx, domain.HarnessExit{ExitCode: 1, Reason: "startup failed"}, executionPort{}))
-	require.NoError(t, session.ConfirmComputeReclaimed())
+	reportExit(t, session, domain.HarnessExit{ExitCode: 1, Reason: "startup failed"})
+	reportReleased(t, session)
 	require.NoError(t, f.sessions.Save(ctx, session))
 	originalCapabilities := session.CapabilitySnapshot.Clone()
 	originalContext := session.HarnessSessionReference
@@ -98,7 +98,7 @@ func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 
 	// Restart retains the original input identity and resets the failed
 	// preparation; it does not replace the initial receipt with a new task.
-	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), executionPort{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	_, err = restart.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: sessionID, RequestID: uuid.NewString()})
 	require.NoError(t, err)
 	afterRestart := read()
@@ -128,10 +128,10 @@ func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, read().GetCreationPending(), "another Subject cannot block this Session")
 
-	require.NoError(t, session.RecordExit(ctx, domain.HarnessExit{ExitCode: 1, Reason: "startup failed again"}, executionPort{}))
-	require.NoError(t, session.ConfirmComputeReclaimed())
+	reportExit(t, session, domain.HarnessExit{ExitCode: 1, Reason: "startup failed again"})
+	reportReleased(t, session)
 	require.NoError(t, f.sessions.Save(ctx, session))
-	closeWork := command.NewCloseWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionPort{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+	closeWork := command.NewCloseWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionsOf(f.db), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
 	require.NoError(t, closeWork.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: uuid.NewString()}))
 	retained, err = store.Get(ctx, sessionID)
 	require.NoError(t, err)

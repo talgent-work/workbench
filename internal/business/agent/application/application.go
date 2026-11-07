@@ -29,6 +29,7 @@ type Commands struct {
 	DeliverInput            *command.DeliverWorkInputHandler
 	CreateWork              *command.CreateWorkHandler
 	ApplyExecutionFeedback  *command.ApplyExecutionFeedbackHandler
+	ExecutionCoordination   *command.ExecutionCoordination
 }
 
 type Queries struct {
@@ -132,6 +133,7 @@ func NewApplication(
 	startup *query.GetWorkStartupHandler,
 	pendingContinuation *query.ListPendingContinuationsHandler,
 	reconcileDesks *command.ReconcileDesksHandler,
+	coordination *command.ExecutionCoordination,
 ) *Application {
 	return &Application{Repositories: repositories, Services: services, WorkPrincipals: workPrincipals,
 		Harness:              harness,
@@ -166,6 +168,7 @@ func NewApplication(
 			DeliverInput:            input,
 			CreateWork:              createSession,
 			ApplyExecutionFeedback:  feedback,
+			ExecutionCoordination:   coordination,
 		},
 		Queries: Queries{
 			GetAgentSoul:                 query.NewGetAgentSoulHandler(definitions),

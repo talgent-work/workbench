@@ -42,13 +42,13 @@ func TestConcurrentContinuationRecognizesAlreadyResolvedAdmission(t *testing.T) 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	starts := 0
-	factory := startupExecutionPort{onStart: func(domain.StartExecutionRequest) error { starts++; return nil }}
+	started := startedWorks{AgentWorkRepository: f.sessions, onStart: func(domain.LaunchSpecification) { starts++ }}
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
 	access := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
-	winner := command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access, computertest.Checked(startupAuthority{}), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	winner := command.NewResumeWorkHandler(time.Now, started, f.agents, access, computertest.Checked(startupAuthority{}), receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
-	admissions := &admissionReadAfterWinner{AgentWorkRepository: f.sessions, completeWinner: func() { require.NoError(t, winner.Handle(ctx, request)) }}
-	loser := command.NewResumeWorkHandler(time.Now, admissions, f.agents, access, computertest.Checked(startupAuthority{}), factory, receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	admissions := &admissionReadAfterWinner{AgentWorkRepository: started, completeWinner: func() { require.NoError(t, winner.Handle(ctx, request)) }}
+	loser := command.NewResumeWorkHandler(time.Now, admissions, f.agents, access, computertest.Checked(startupAuthority{}), receipts, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	require.NoError(t, loser.Handle(ctx, request), "a stale negative admission read cannot turn a completed identical request into a conflict")
 	require.Equal(t, 1, starts, "only the winning retry requests execution")
 	retained, found, err := receipts.GetContinuation(ctx, id)

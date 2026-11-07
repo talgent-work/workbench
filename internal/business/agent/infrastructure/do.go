@@ -135,29 +135,29 @@ type agentWorkShareDO struct {
 func (agentWorkShareDO) TableName() string { return "agent_work_share" }
 
 type harnessProcessRecord struct {
-	PhaseSequence          int64                 `json:"phase_sequence"`
-	WorkProgressSequence   int64                 `json:"work_progress_sequence"`
-	SubAgentsSequence      int64                 `json:"subagents_sequence,omitempty"`
-	PermissionModeSequence int64                 `json:"permission_mode_sequence,omitempty"`
-	SubAgents              []subAgentRecord      `json:"subagents,omitempty"`
-	IdleSince              time.Time             `json:"idle_since"`
-	WaitingSince           time.Time             `json:"waiting_since"`
-	StartingSince          time.Time             `json:"starting_since"`
-	ContextMode            string                `json:"context_mode"`
-	DeskID                 string                `json:"desk_id,omitempty"`
-	DeskWaiting            bool                  `json:"desk_waiting,omitempty"`
-	SeatedAt               time.Time             `json:"seated_at,omitzero"`
-	StartWithdrawn         bool                  `json:"start_withdrawn,omitempty"`
-	Soul                   string                `json:"soul,omitempty"`
-	Prepared               bool                  `json:"prepared"`
-	Started                bool                  `json:"started"`
-	Exited                 bool                  `json:"exited"`
-	ComputeReclaimed       bool                  `json:"compute_reclaimed"`
-	StartRejected          bool                  `json:"start_rejected"`
-	StartAbandoned         bool                  `json:"start_abandoned,omitempty"`
-	Unreached              bool                  `json:"unreached,omitempty"`
-	EnvironmentLost        bool                  `json:"environment_lost"`
-	Turn                   turnObservationRecord `json:"turn"`
+	PhaseSequence          int64            `json:"phase_sequence"`
+	WorkProgressSequence   int64            `json:"work_progress_sequence"`
+	SubAgentsSequence      int64            `json:"subagents_sequence,omitempty"`
+	PermissionModeSequence int64            `json:"permission_mode_sequence,omitempty"`
+	SubAgents              []subAgentRecord `json:"subagents,omitempty"`
+	IdleSince              time.Time        `json:"idle_since"`
+	WaitingSince           time.Time        `json:"waiting_since"`
+	StartingSince          time.Time        `json:"starting_since"`
+	ContextMode            string           `json:"context_mode"`
+	DeskID                 string           `json:"desk_id,omitempty"`
+	DeskWaiting            bool             `json:"desk_waiting,omitempty"`
+	StartWithdrawn         bool             `json:"start_withdrawn,omitempty"`
+	Soul                   string           `json:"soul,omitempty"`
+	// Ready records the run's readiness its AgentExecution reported.
+	Ready            bool                  `json:"ready"`
+	Exited           bool                  `json:"exited"`
+	ComputeReclaimed bool                  `json:"compute_reclaimed"`
+	StartRejected    bool                  `json:"start_rejected"`
+	StartAbandoned   bool                  `json:"start_abandoned,omitempty"`
+	Unreached        bool                  `json:"unreached,omitempty"`
+	Fenced           bool                  `json:"fenced,omitempty"`
+	EnvironmentLost  bool                  `json:"environment_lost"`
+	Turn             turnObservationRecord `json:"turn"`
 }
 
 // waiting reports a stored Work whose user owes an answer; closure clears it.

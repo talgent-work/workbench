@@ -14,18 +14,15 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-type currentProcessFacts struct{ command.WorkProcessObservation }
+// currentProcessFacts is Dispatcher's current observation of the Work's
+// launched process, beside its input buffer.
+type currentProcessFacts struct {
+	*commandtest.InputBuffer
+	command.WorkProcessObservation
+}
 
-func (p *currentProcessFacts) ObserveProcess(context.Context, string) (command.WorkProcessObservation, error) {
+func (p *currentProcessFacts) ObserveProcess(context.Context, string, string) (command.WorkProcessObservation, error) {
 	return p.WorkProcessObservation, nil
-}
-
-func (*currentProcessFacts) IsCurrentProcess(context.Context, string, string) (bool, error) {
-	return true, nil
-}
-
-func (*currentProcessFacts) AcknowledgeExit(context.Context, string, string) (bool, error) {
-	return true, nil
 }
 
 func TestCurrentProcessRestoresIdlenessAfterLostInputAndReplyFeedback(t *testing.T) {
@@ -33,11 +30,11 @@ func TestCurrentProcessRestoresIdlenessAfterLostInputAndReplyFeedback(t *testing
 	ctx := t.Context()
 	now := time.Now().UTC()
 	buffer := &commandtest.InputBuffer{}
-	process := &currentProcessFacts{command.WorkProcessObservation{
-		ProcessObservation: domain.ProcessObservation{State: domain.ProcessRunning, Ready: true},
-		Turn:               domain.TurnObservation{Sequence: 30, Completed: true}, PhaseSequence: 30,
+	process := &currentProcessFacts{InputBuffer: buffer, WorkProcessObservation: command.WorkProcessObservation{
+		Running: true, Ready: true,
+		Turn: domain.TurnObservation{Sequence: 30, Completed: true}, PhaseSequence: 30,
 	}}
-	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return now }, f.sessions, process, executionPort{}, buffer, &commandtest.InputSettlements{})
+	feedback := newRunsWith(t, f.db, f.sessions, func() time.Time { return now }, process)
 	delivery := command.NewInputAcceptance(f.sessions, buffer)
 	first := command.ExecutionInput{ID: uuid.NewString(), Text: "first task"}
 	require.NoError(t, acceptance(delivery.AcceptInput(ctx, id, first)))

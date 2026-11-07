@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/testsupport/computertest"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 
@@ -29,11 +30,14 @@ func TestFeedbackRPCAuthenticatesBeforeAdvancingWork(t *testing.T) {
 	ctx := context.Background()
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{Prompt: "review"}})
 	require.NoError(t, err)
-	port := executionPort{}
-	session, err := domain.NewAgentWork(context.Background(), domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, AgentID: agent.ID, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: "review"}, WorkspaceReference: "workspace"}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, port)
+	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, AgentID: agent.ID, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: "review"}, WorkspaceReference: "workspace"}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	store := &sessionStore{session: session}
-	app := &application.Application{Commands: application.Commands{ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, store, &rpcProcesses{}, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})}}
+	buffer := &commandtest.InputBuffer{}
+	_, executions, coordination := executionWorld(time.Now, store, &computertest.Admission{}, buffer)
+	require.NoError(t, coordination.BeginExecution(ctx, session.ID), "the admitted start's execution launches its process")
+	store.reads = 0
+	app := &application.Application{Commands: application.Commands{ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, store, executions, coordination, buffer, &commandtest.InputSettlements{})}}
 	handler := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(app, nil, "integration-secret"))
 	})
@@ -57,10 +61,11 @@ func TestFeedbackRPCAuthenticatesBeforeAdvancingWork(t *testing.T) {
 	require.Zero(t, store.reads)
 	require.NoError(t, report("integration-secret", agentprivatev1.FeedbackKind_FEEDBACK_KIND_PREPARED))
 	require.Equal(t, domain.WorkStarting, store.session.State)
+	require.Zero(t, store.saves, "one readiness report is the execution's alone")
 	reporter := agentfeedback.NewClient(server.Client(), server.URL, "integration-secret")
 	require.NoError(t, reporter.ReportExecution(ctx, dispatchercommand.ExecutionObservation{WorkID: session.ID, ProcessID: "process", Kind: dispatchercommand.ExecutionStarted}))
 	require.Equal(t, domain.WorkWorking, store.session.State)
-	require.Equal(t, 2, store.saves)
+	require.Equal(t, 1, store.saves, "the ready execution's report reaches the Work")
 	plan := dispatchercommand.ExecutionObservation{WorkID: session.ID, ProcessID: "process", Kind: dispatchercommand.ExecutionWorkProgressUpdated, ObservationSequence: 10,
 		WorkProgress: []dispatchercommand.WorkProgressItem{{Content: "Verify Work progress", Status: "in_progress", ActiveForm: "Verifying Work progress"}}}
 	require.NoError(t, reporter.ReportExecution(ctx, plan))
@@ -83,7 +88,7 @@ func TestFeedbackRPCAuthenticatesBeforeAdvancingWork(t *testing.T) {
 	require.True(t, store.session.Idle(), "nothing is left to process")
 	require.NoError(t, reporter.ReportExecution(ctx, dispatchercommand.ExecutionObservation{WorkID: session.ID, ProcessID: "process", Kind: dispatchercommand.ExecutionTurnActivity, ObservationSequence: 46}))
 	require.False(t, store.session.Idle(), "Turn activity ends idleness")
-	require.Equal(t, 9, store.saves)
+	require.Equal(t, 8, store.saves)
 	for _, fact := range []dispatchercommand.ExecutionObservation{
 		{Kind: dispatchercommand.ExecutionTurnStarted, ObservationSequence: 100},
 		{Kind: dispatchercommand.ExecutionTurnFinished, ObservationSequence: 200, TurnCompleted: true},
@@ -109,20 +114,11 @@ func (s *sessionStore) Get(context.Context, string) (*domain.AgentWork, error) {
 	clone.HarnessProcess = &observation
 	return &clone, nil
 }
+func (*sessionStore) FindBySubject(context.Context, string, domain.WorkSubject) (*domain.AgentWork, error) {
+	return nil, nil
+}
 func (s *sessionStore) Save(_ context.Context, session *domain.AgentWork) error {
 	s.saves++
 	s.session = session
 	return nil
 }
-
-type executionPort struct{}
-
-func (executionPort) StartExecution(context.Context, domain.StartExecutionRequest) error { return nil }
-func (executionPort) StopExecution(context.Context, string, string) error {
-	return nil
-}
-func (executionPort) ReclaimCompute(context.Context, string) error { return nil }
-
-func (executionPort) RetireFencedRun(context.Context, string) error { return nil }
-
-func (executionPort) CancelRunningTurn(context.Context, string) error { return nil }

@@ -12,7 +12,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// DeskAssignments begins a Work's waiting start once its Desk is seated.
+// DeskAssignments seats a Work's execution once its Desk is seated.
 type DeskAssignments interface {
 	DeskAssigned(ctx context.Context, workID, deskID string, seatedAt time.Time) error
 }
@@ -31,14 +31,14 @@ func (h *DeskAssignedHandler) Listening() []integrationmessage.Kind {
 }
 
 // concurrentAttempts bounds retries of a seating that lost a concurrent
-// change of its Work, such as a stop withdrawing the start.
+// change of its execution, such as its Work's exit request.
 const concurrentAttempts = 3
 
-// Handle begins the start seated when Computer seated it. A fact for a Desk
-// the Work does not hold yet, such as one that overtook the commit of the
-// start that took it, fails with command.ErrDeskNotHeld and is handled again
-// under the consumer's retry policy; once its attempts run out the Work's
-// recovery still finds the seated Desk.
+// Handle seats the execution when Computer seated its Desk. A fact for a Desk
+// no execution holds yet, such as one that overtook the commit of the
+// execution that took it, fails with command.ErrDeskNotHeld and is handled
+// again under the consumer's retry policy; once its attempts run out the
+// execution's reconciliation still finds the seated Desk.
 func (h *DeskAssignedHandler) Handle(ctx context.Context, msg integrationmessage.Message) error {
 	fact, ok := msg.Payload().(*computerintegrationv1.DeskAssignedV1)
 	if !ok || fact == nil {

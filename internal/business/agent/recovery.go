@@ -19,6 +19,7 @@ import (
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
 	"k8s.io/client-go/dynamic"
+	"xorm.io/xorm"
 )
 
 // RecoveryQueue and PreparationQueue name the taskqueue modules Agent's
@@ -76,11 +77,14 @@ func (c RecoveryConfig) sweepInterval() (time.Duration, error) {
 // ExecutionModule, and the two named task queues.
 var RecoveryModule = fx.Module("agent.recovery",
 	pkgtaskqueue.Bind(RecoveryQueue),
+	// Module's clock is private to it; reconciliation reads its own.
+	fx.Provide(func() func() time.Time { return time.Now }, fx.Private),
 	fx.Provide(
 		// A Managed Computer's return of reach, for Computer Became Reachable
 		// and for the recovery of each Work owed a Resume.
 		fx.Annotate(command.NewComputerReconnectionHandler, fx.As(fx.Self()), fx.As(new(application.OwedResumes))),
 		application.NewRecovery,
+		command.NewReconcileExecutionHandler,
 		fx.Annotate(taskprocessor.RecoveryProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(RecoveryQueue))),
 		fx.Annotate(taskprocessor.PreparationProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(PreparationQueue))),
 		fx.Annotate(newRecoverySweep, fx.ResultTags(pkgtaskqueue.PeriodicTaskTag(RecoveryQueue))),
@@ -122,8 +126,9 @@ func sweepOnStart(lc fx.Lifecycle, cfg RecoveryConfig, recovery *application.Rec
 }
 
 // wireRecoveryWakes connects commits to recovery.
-func wireRecoveryWakes(recovery *application.Recovery, updates *workStateUpdates, creations *committedCreations, closures *eventhandler.WorkClosures, logger *slog.Logger) {
+func wireRecoveryWakes(recovery *application.Recovery, updates *workStateUpdates, executions *committedExecutions, creations *committedCreations, closures *eventhandler.WorkClosures, logger *slog.Logger) {
 	updates.wakeWork = deferredWake(logger, "work", recovery.WakeWork)
+	executions.wake = deferredWake(logger, "execution", recovery.WakeExecution)
 	closures.Wake = deferredWake(logger, "work_closure", recovery.WakeWork)
 	updates.wakeInitialExecution = deferredWake(logger, "initial_execution", recovery.WakeInitialExecution)
 	updates.wakeContinuation = deferredWake(logger, "continuation", recovery.WakeContinuation)
@@ -142,24 +147,20 @@ func deferredWake(logger *slog.Logger, name string, fn func(context.Context, str
 	}
 }
 
-// environmentRecoveryOptions observe sandboxes and wake allocations that
-// execution integration registers or retires.
+// environmentRecoveryOptions reach the execution environments and observe
+// sandboxes, waking the execution each one belongs to.
 var environmentRecoveryOptions = fx.Options(
 	fx.Provide(
-		execution.NewEnvironmentRecovery,
 		newExecutionEnvironment,
 		pkgkubernetes.NewDynamicClient,
 		newStreamOwners,
 	),
-	fx.Invoke(func(recovery *application.Recovery, environments *execution.Environments, logger *slog.Logger) {
-		environments.AllocationChanged = deferredWake(logger, "allocation", recovery.WakeAllocation)
-	}),
 	fx.Invoke(runSandboxObserver),
 )
 
 // runSandboxObserver watches Talgent's sandboxes for the life of the process.
-func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg ExecutionConfig, environments *execution.EnvironmentRecovery, recovery *application.Recovery, logger *slog.Logger) error {
-	observer, err := execution.NewSandboxObserver(client, cfg.SandboxNamespace, environments, recovery.WakeSandboxObservation, logger)
+func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg ExecutionConfig, db *xorm.Engine, recovery *application.Recovery, logger *slog.Logger) error {
+	observer, err := execution.NewSandboxObserver(client, cfg.SandboxNamespace, db, recovery.WakeSandboxObservation, logger)
 	if err != nil {
 		return err
 	}
@@ -214,10 +215,12 @@ func (d dispatcherStreams) Reading(ctx context.Context, workID string) (executio
 // Managed Computer.
 type executionEnvironmentSources struct {
 	fx.In
-	Recovery *execution.EnvironmentRecovery
-	Managed  *execution.ManagedEnvironment `optional:"true"`
+	Provisioning *execution.Provisioning
+	Connections  *execution.NativeConnections
+	Owners       execution.StreamOwners
+	Managed      *execution.ManagedEnvironment `optional:"true"`
 }
 
 func newExecutionEnvironment(in executionEnvironmentSources) (command.ExecutionEnvironmentPort, error) {
-	return execution.NewExecutionEnvironment(in.Recovery, in.Managed)
+	return execution.NewExecutionEnvironment(in.Provisioning, in.Connections, in.Owners, in.Managed)
 }

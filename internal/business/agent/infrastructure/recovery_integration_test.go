@@ -4,7 +4,6 @@ package infrastructure_test
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -44,14 +43,16 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 			before, err := sessions.Get(ctx, id)
 			require.NoError(t, err)
 			var starts atomic.Int32
-			factory := startupExecutionPort{onStart: func(domain.StartExecutionRequest) error { starts.Add(1); return nil }}
+			counted := func(works command.AgentWorkRepository) startedWorks {
+				return startedWorks{AgentWorkRepository: works, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
+			}
 			barrier := newCommitBarrier(sessions)
 			requestID := uuid.NewString()
 			var releaseOnce sync.Once
 			release := func() { releaseOnce.Do(func() { close(barrier.proceed) }) }
 			result := make(chan error, 1)
 			go func() {
-				err := command.NewResumeWorkHandler(time.Now, barrier, agents, auth, computertest.Checked(startupAuthority{}), factory, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: requestID})
+				err := command.NewResumeWorkHandler(time.Now, counted(barrier), agents, auth, computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: requestID})
 				result <- err
 			}()
 			t.Cleanup(release)
@@ -61,7 +62,7 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 				t.Fatal(ctx.Err())
 			}
 			if scenario.closed {
-				require.NoError(t, command.NewCloseWorkHandler(sessions, auth, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: "close-before-admission"}))
+				require.NoError(t, command.NewCloseWorkHandler(sessions, auth, executionsOf(db), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: "close-before-admission"}))
 			}
 			var foreignID string
 			var expectedStarts int32
@@ -70,12 +71,12 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, agents.Save(ctx, foreign))
 				foreignRequest := uuid.NewString()
-				var foreignFactory domain.ExecutionPort = executionPort{}
+				var foreignWorks command.AgentWorkRepository = sessions
 				if scenario.foreignAdmission {
-					foreignRequest, foreignFactory = requestID, factory
+					foreignRequest, foreignWorks = requestID, counted(sessions)
 					expectedStarts = 1
 				}
-				foreignID, err = command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), foreignFactory).Handle(ctx, command.CreateWork{RequestID: foreignRequest, SubjectID: "other-owner", AgentID: foreign.ID, Subject: domain.WorkSubject{Kind: "case", ID: "other-work"}, ProjectID: "project", WorkspaceReference: "other-workspace"})
+				foreignID, err = command.NewCreateWorkHandler(time.Now, agents, foreignWorks, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{})).Handle(ctx, command.CreateWork{RequestID: foreignRequest, SubjectID: "other-owner", AgentID: foreign.ID, Subject: domain.WorkSubject{Kind: "case", ID: "other-work"}, ProjectID: "project", WorkspaceReference: "other-workspace"})
 				require.NoError(t, err)
 				if scenario.foreignCancellation {
 					canceled, err := sessions.CancelStart(ctx, foreignID, requestID)
@@ -117,7 +118,7 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 				require.Equal(t, domain.WorkStopped, saved.State)
 				require.Equal(t, before.HarnessProcess, saved.HarnessProcess, "failed admission must preserve the completed process")
 			}
-			create := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), factory)
+			create := command.NewCreateWorkHandler(time.Now, agents, counted(sessions), auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}))
 			_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID, Subject: domain.WorkSubject{Kind: "case", ID: "next-case"}, ProjectID: "project", WorkspaceReference: "next-workspace"})
 			require.NoError(t, err, "an uncommitted admission holds no concurrency")
 			require.Equal(t, expectedStarts+1, starts.Load())
@@ -136,51 +137,53 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Original", RequiredPlugins: []string{"review"}, StartupAgent: "review:architect"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
-	unavailable := errors.New("delivery interrupted")
-	port := &recoveryExecutionPort{err: unavailable}
+	run := newRuns(t, db, sessions)
 	originalRequest := uuid.Must(uuid.NewV7()).String()
-	sessionID, err := command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), port).Handle(ctx, command.CreateWork{RequestID: originalRequest, SubjectID: "owner", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "work"}, ProjectID: "project", WorkspaceReference: "work"})
-	require.ErrorIs(t, err, unavailable)
-	require.Len(t, port.starts, 1)
-	original := port.starts[0]
+	sessionID, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{})).Handle(ctx, command.CreateWork{RequestID: originalRequest, SubjectID: "owner", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "work"}, ProjectID: "project", WorkspaceReference: "work"})
+	require.NoError(t, err)
+	original := requireStartIntended(t, sessions, sessionID)
 	require.Equal(t, domain.ContextFresh, original.ContextMode)
+	// The admission's Domain Event is lost: no execution has begun.
+	_, err = run.executions.Latest(ctx, sessionID)
+	require.ErrorIs(t, err, domain.ErrExecutionNotFound)
 	reconnect := func() {
 		require.NoError(t, db.Close())
 		db, err = xorm.NewEngine("mysql", dsn)
 		require.NoError(t, err)
 		agents = infrastructure.NewAgentDefinitionRepository(db, time.Now)
 		sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
+		run = newRuns(t, db, sessions)
 	}
 	recover := func() {
 		t.Helper()
 		reconnect()
-		port.err = nil
 		ids, err := infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
 		require.NoError(t, err)
 		require.Equal(t, []string{sessionID}, ids)
-		require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, nil).Handle(ctx, sessionID))
+		require.NoError(t, command.NewRecoverWorkHandler(time.Now, sessions, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil).Handle(ctx, sessionID))
 	}
 	recover()
-	require.Equal(t, []domain.StartExecutionRequest{original, original}, port.starts)
-	feedback := func(kind command.ExecutionFeedbackKind, _ string) error {
-		observation := observedProcess{State: domain.ProcessRunning}
-		if kind == command.ComputeReclaimed {
-			observation = observedProcess{State: domain.ProcessPending, ComputeReclaimed: true}
-		}
-		return command.NewApplyExecutionFeedbackHandler(time.Now, sessions, observation, port, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}).Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: sessionID})
-	}
-	require.NoError(t, feedback(command.ExecutorPrepared, ""))
-	require.NoError(t, feedback(command.AgentStarted, ""))
-	port.err = unavailable
-	require.ErrorIs(t, command.NewStopWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), port).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: "stop"}), unavailable)
+	begun := run.latest(ctx, sessionID)
+	require.Equal(t, original, launchOf(begun), "recovery passes the admitted start on")
 	recover()
-	require.Equal(t, []string{"stop", "stop"}, port.stops)
-	require.Len(t, port.starts, 2, "prepared execution must not be started while retrying stop")
-	port.err = unavailable
-	require.ErrorIs(t, feedback(command.ExecutionExited, "stop"), unavailable)
+	require.Equal(t, begun.ID, run.latest(ctx, sessionID).ID, "a repeated recovery begins no second execution")
+	run.ready(ctx, sessionID)
+	require.NoError(t, command.NewStopWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), executionsOf(db)).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: "stop"}))
+	unsent, err := run.executions.Latest(ctx, sessionID)
+	require.NoError(t, err)
+	require.False(t, unsent.ExitRequest.Requested(), "the stop's Domain Event is lost")
 	recover()
-	require.Equal(t, []string{sessionID, sessionID}, port.reclaims)
-	require.NoError(t, feedback(command.ComputeReclaimed, ""))
+	stopped := run.latest(ctx, sessionID)
+	require.Equal(t, "stop", stopped.ExitRequest.StopRequestID, "recovery passes the admitted stop on")
+	require.Equal(t, begun.ID, stopped.ID, "prepared execution must not be started while retrying stop")
+	// The exit reaches the Work, but the release it asks for is lost.
+	require.NoError(t, run.feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutionExited, WorkID: sessionID}))
+	exited, err := run.executions.Latest(ctx, sessionID)
+	require.NoError(t, err)
+	require.False(t, exited.Retired())
+	recover()
+	require.True(t, run.latest(ctx, sessionID).Retired(), "recovery passes the release on")
+	run.release(ctx, sessionID)
 	completed, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, completed.State)
@@ -192,40 +195,37 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 
 	// A close racing an interrupted Resume must retain the selected continuation
 	// context while obtaining the resumed process's exit.
-	port.err = unavailable
 	resumeRequest := command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: sessionID}
-	err = command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), port, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest)
-	require.ErrorIs(t, err, unavailable)
+	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
 	beforeReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
-	startCalls := len(port.starts)
-	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), port, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
+	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest))
 	afterReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
-	require.Equal(t, beforeReplay, afterReplay)
-	require.Len(t, port.starts, startCalls, "a replay cannot submit a second execution")
-	continuation := port.starts[len(port.starts)-1]
+	require.Equal(t, beforeReplay, afterReplay, "a replay cannot admit a second execution")
+	continuation := requireStartIntended(t, sessions, sessionID)
 	require.Equal(t, sessionID, continuation.WorkID)
 	require.Equal(t, domain.ContextContinue, continuation.ContextMode)
 	require.Equal(t, original.HarnessSessionReference, continuation.HarnessSessionReference)
 	closeWork := func() *command.CloseWorkHandler {
-		return command.NewCloseWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), port, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+		return command.NewCloseWorkHandler(sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), executionsOf(db), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
 	}
 	closeRequest := command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: "close"}
 	require.ErrorIs(t, closeWork().Handle(ctx, closeRequest), domain.ErrWorkTransition, "a starting Work cannot be closed")
 	recover()
-	require.Equal(t, continuation, port.starts[len(port.starts)-1])
-	require.NoError(t, feedback(command.ExecutorPrepared, ""))
-	require.NoError(t, feedback(command.AgentStarted, ""))
+	resumed := run.latest(ctx, sessionID)
+	require.NotEqual(t, begun.ID, resumed.ID)
+	require.Equal(t, continuation, launchOf(resumed), "recovery begins the continuation's execution")
+	run.ready(ctx, sessionID)
 	// A running Work is stopped first and keeps the close request.
 	require.NoError(t, closeWork().Handle(ctx, closeRequest))
-	require.Equal(t, []string{"stop", "stop", "close"}, port.stops)
+	require.Equal(t, "close", run.latest(ctx, sessionID).ExitRequest.StopRequestID)
 	stopping, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopping, stopping.State)
 	require.Equal(t, domain.ContextContinue, stopping.HarnessProcess.ContextMode)
-	require.NoError(t, feedback(command.ExecutionExited, "close"))
-	require.NoError(t, feedback(command.ComputeReclaimed, ""))
+	run.exit(ctx, sessionID)
+	run.release(ctx, sessionID)
 	reconnect()
 	require.NoError(t, closeWork().ApplyKeptClose(ctx, sessionID))
 	closed, err := sessions.Get(ctx, sessionID)
@@ -236,9 +236,8 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	ids, err = infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
 	require.NoError(t, err)
 	require.Empty(t, ids, "a closed Work leaves recovery; Storage owns its workspace reclamation")
-	startCalls = len(port.starts)
-	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), port, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest), "historical request replay returns its original acceptance")
-	require.Len(t, port.starts, startCalls)
+	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest), "historical request replay returns its original acceptance")
+	require.Equal(t, resumed.ID, run.latest(ctx, sessionID).ID, "replaying a historical acceptance begins no execution")
 	closedAfterReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
 	require.Equal(t, closed, closedAfterReplay, "replaying a historical acceptance cannot reopen a closed Session")

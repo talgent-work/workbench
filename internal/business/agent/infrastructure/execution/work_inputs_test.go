@@ -11,7 +11,7 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
-func withInputs(input domain.StartExecutionRequest) domain.StartExecutionRequest {
+func withInputs(input domain.LaunchSpecification) domain.LaunchSpecification {
 	input.InputSource = domain.WorkInputSource{Reference: "file-space/case-1", SpaceToken: "space-token"}
 	return input
 }
@@ -179,7 +179,7 @@ func TestSandboxRefusesMissingOrMisScopedGrants(t *testing.T) {
 // The stored start keeps the input source, so a credential delivery after a
 // restart still hands the Space Token to the Vault.
 func TestStoredStartKeepsItsInputSource(t *testing.T) {
-	encoded, err := canonicalRequest(withInputs(request()))
+	encoded, err := encodeLaunch(withInputs(request()))
 	require.NoError(t, err)
 	decoded, err := decodeStartRequest(encoded)
 	require.NoError(t, err)

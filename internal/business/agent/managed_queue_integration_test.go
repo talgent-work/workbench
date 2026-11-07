@@ -4,7 +4,6 @@ package agent_test
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +27,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/computer"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
@@ -38,9 +38,8 @@ const managedLaptop = "0195f3c1-0000-7000-8000-00000000aaaa"
 
 type managedQueue struct {
 	oneRoomCloud
-	port     *sessionCommandRecorder
-	recovery *command.RecoverWorkHandler
-	seating  *command.SeatWaitingStartHandler
+	reconciliation *command.ReconcileExecutionHandler
+	seating        *command.SeatExecutionHandler
 }
 
 func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
@@ -57,30 +56,29 @@ func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
 	kube := fake.NewClientset(quota)
 	port := &sessionCommandRecorder{}
-	processes := &lifecycleProcesses{}
+	runs := &moduleRuns{}
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	var recovery *command.RecoverWorkHandler
-	var seating *command.SeatWaitingStartHandler
+	var reconciliation *command.ReconcileExecutionHandler
+	var seating *command.SeatExecutionHandler
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
+		agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), runs.option(),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("4", "4Gi", "64")),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(func() kubernetes.Interface { return kube }),
-		fx.Provide(func() domain.ExecutionPort { return port }),
 		fx.Provide(func() command.RunningHarnessPort { return port }),
-		fx.Decorate(func(command.ProcessObservationPort) command.ProcessObservationPort { return processes }),
-		fx.Invoke(func(handler *command.RecoverWorkHandler, seats *command.SeatWaitingStartHandler) {
-			recovery, seating = handler, seats
+		fx.Invoke(func(handler *command.ReconcileExecutionHandler, executions domain.AgentExecutionRepository) {
+			reconciliation, seating = handler, command.NewSeatExecutionHandler(time.Now, executions)
 		}),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(ctx))
 	t.Cleanup(func() { require.NoError(t, app.Stop(context.Background())) })
 	return &managedQueue{
-		oneRoomCloud: oneRoomCloud{client: agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), processes: processes, db: db, quota: quota, kube: kube},
-		port:         port, recovery: recovery, seating: seating,
+		oneRoomCloud:   oneRoomCloud{client: agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), runs: runs, db: db, quota: quota, kube: kube},
+		reconciliation: reconciliation, seating: seating,
 	}
 }
 
@@ -99,16 +97,40 @@ func (q *managedQueue) state(t *testing.T, ctx context.Context, workID string) a
 	return response.GetState()
 }
 
-func (q *managedQueue) startedFor(workID string) int {
-	q.port.mu.Lock()
-	defer q.port.mu.Unlock()
+// startedFor counts the Work's executions whose Desk was seated: a queued
+// one asks for no startup.
+func (q *managedQueue) startedFor(t *testing.T, workID string) int {
+	t.Helper()
 	count := 0
-	for _, start := range q.port.starts {
-		if start.WorkID == workID {
+	for _, e := range q.executionsOf(t, workID) {
+		if !e.Desk.SeatedAt.IsZero() {
 			count++
 		}
 	}
 	return count
+}
+
+func (q *managedQueue) executionsOf(t *testing.T, workID string) []*domain.AgentExecution {
+	t.Helper()
+	var ids []string
+	require.NoError(t, q.db.Table("execution_allocation").Cols("id").Where("session_id = ?", workID).OrderBy("created_at, id").Find(&ids))
+	repository := execution.NewAgentExecutionRepository(q.db, time.Now)
+	var result []*domain.AgentExecution
+	for _, id := range ids {
+		e, err := repository.Get(context.Background(), id)
+		require.NoError(t, err)
+		result = append(result, e)
+	}
+	return result
+}
+
+// reconcile runs the reconciliation of the Work's latest execution.
+func (q *managedQueue) reconcile(t *testing.T, ctx context.Context, workID string) {
+	t.Helper()
+	latest := q.runs.latest(t, ctx, workID)
+	require.NotNil(t, latest)
+	_, err := q.reconciliation.Reconcile(ctx, latest.ID, false)
+	require.NoError(t, err)
 }
 
 func (q *managedQueue) deskOf(t *testing.T, workID string) (string, string) {
@@ -123,12 +145,11 @@ func (q *managedQueue) deskOf(t *testing.T, workID string) (string, string) {
 	return desk.ID, desk.State
 }
 
-// The run ends and its compute is released: its Desk leaves.
+// The run ends and its execution retires: its Desk leaves.
 func (q *managedQueue) fail(t *testing.T, ctx context.Context, workID string) {
 	t.Helper()
+	q.runs.awaitLaunched(t, ctx, workID)
 	q.report(t, ctx, workID, agentprivatev1.FeedbackKind_FEEDBACK_KIND_EXITED, 1)
-	q.processes.observe(domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true})
-	q.report(t, ctx, workID, agentprivatev1.FeedbackKind_FEEDBACK_KIND_COMPUTE_RECLAIMED, 0)
 	require.Eventually(t, func() bool { _, state := q.deskOf(t, workID); return state == "vacated" }, 10*time.Second, 50*time.Millisecond)
 }
 
@@ -143,15 +164,16 @@ func TestAFullManagedComputerQueuesOrRejectsByItsPolicy(t *testing.T) {
 
 	running, err := q.createOn(ctx, definition, managedLaptop, "work-a")
 	require.NoError(t, err)
-	require.Equal(t, 1, q.startedFor(running))
+	require.Eventually(t, func() bool { return q.startedFor(t, running) == 1 }, 10*time.Second, 20*time.Millisecond)
 	queued, err := q.createOn(ctx, definition, managedLaptop, "work-b")
 	require.NoError(t, err, "a full queueing Computer admits the run into its line")
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STARTING, q.state(t, ctx, queued))
-	require.Zero(t, q.startedFor(queued), "a queued start asks for no startup")
+	q.runs.await(t, ctx, queued, (*domain.AgentExecution).Queued, "the queued start's execution waits for its Desk")
+	require.Zero(t, q.startedFor(t, queued), "a queued start asks for no startup")
 	_, desk := q.deskOf(t, queued)
 	require.Equal(t, "waiting", desk)
-	require.NoError(t, q.recovery.Handle(ctx, queued))
-	require.Zero(t, q.startedFor(queued), "recovery leaves a start waiting while its Desk waits")
+	q.reconcile(t, ctx, queued)
+	require.Zero(t, q.startedFor(t, queued), "reconciliation leaves a start waiting while its Desk waits")
 
 	// A stop withdraws a queued first start: the Work is closed at once.
 	withdrawn, err := q.createOn(ctx, definition, managedLaptop, "work-c")
@@ -169,31 +191,26 @@ func TestAFullManagedComputerQueuesOrRejectsByItsPolicy(t *testing.T) {
 	require.ErrorIs(t, q.seating.DeskAssigned(ctx, queued, uuid.NewString(), time.Now()), command.ErrDeskNotHeld, "a Desk the Work does not hold is asked for again")
 	require.ErrorIs(t, q.seating.DeskAssigned(ctx, uuid.NewString(), queuedDesk, time.Now()), command.ErrDeskNotHeld, "so is one whose Work is not visible yet")
 	time.Sleep(10 * time.Millisecond) // Agent's clock moves past Computer's seating.
-	require.NoError(t, q.recovery.Handle(ctx, queued), "recovery finds the seated Desk whose Desk Assigned it missed")
-	require.Equal(t, 1, q.startedFor(queued))
-	var process struct {
-		DeskWaiting bool       `json:"desk_waiting"`
-		SeatedAt    *time.Time `json:"seated_at"`
-	}
-	var raw string
-	_, err = q.db.SQL("SELECT harness_process FROM agent_session WHERE id = ?", queued).Get(&raw)
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal([]byte(raw), &process))
-	require.False(t, process.DeskWaiting)
+	q.reconcile(t, ctx, queued)
+	require.Equal(t, 1, q.startedFor(t, queued), "reconciliation finds the seated Desk whose Desk Assigned it missed")
+	seatedRun := q.runs.latest(t, ctx, queued)
+	require.False(t, seatedRun.Queued())
 	var since int64
 	_, err = q.db.SQL("SELECT since FROM computer_desk WHERE id = ?", queuedDesk).Get(&since)
 	require.NoError(t, err)
-	require.NotNil(t, process.SeatedAt)
-	require.Equal(t, since, process.SeatedAt.UnixMilli(), "the Startup Deadline counts from Computer's seating")
+	require.Equal(t, since, seatedRun.Desk.SeatedAt.UnixMilli(), "the Startup Deadline counts from Computer's seating")
+	require.Equal(t, seatedRun.Desk.SeatedAt.Add(domain.StartupDeadline), seatedRun.StartupDeadlineAt())
 	require.NoError(t, q.seating.DeskAssigned(ctx, queued, queuedDesk, time.Now()), "a repeated fact changes nothing")
-	require.Equal(t, 1, q.startedFor(queued))
+	require.Equal(t, seatedRun.Desk.SeatedAt, q.runs.latest(t, ctx, queued).Desk.SeatedAt)
+	require.Equal(t, 1, q.startedFor(t, queued))
 
 	// A Restart queued behind it is withdrawn by a stop back to Failed, and
 	// the Work is then closed.
 	_, err = q.client.RestartWork(sessionControlRequest(ctx), &agentprivatev1.RestartWorkRequest{SubjectId: "employee-a", WorkId: running, RequestId: uuid.NewString()})
 	require.NoError(t, err)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STARTING, q.state(t, ctx, running))
-	require.Equal(t, 1, q.startedFor(running), "the queued Restart asks for no startup")
+	q.runs.await(t, ctx, running, (*domain.AgentExecution).Queued, "the queued Restart's execution waits for its Desk")
+	require.Equal(t, 1, q.startedFor(t, running), "the queued Restart asks for no startup")
 	_, err = q.client.StopWork(sessionControlRequest(ctx), &agentprivatev1.StopWorkRequest{SubjectId: "employee-a", WorkId: running, RequestId: uuid.NewString()})
 	require.NoError(t, err)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_FAILED, q.state(t, ctx, running))
@@ -211,5 +228,5 @@ func TestAFullManagedComputerQueuesOrRejectsByItsPolicy(t *testing.T) {
 	// The Cloud admits as before Clouds were Computers.
 	cloudWork, err := q.createOn(ctx, definition, "", "work-e")
 	require.NoError(t, err)
-	require.Equal(t, 1, q.startedFor(cloudWork))
+	require.Eventually(t, func() bool { return q.startedFor(t, cloudWork) == 1 }, 10*time.Second, 20*time.Millisecond)
 }

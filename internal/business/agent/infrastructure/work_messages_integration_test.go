@@ -90,10 +90,9 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 	require.NoError(t, err)
 	retained.InputBuffered = true
 	require.NoError(t, initial.Save(ctx, retained))
-	factory := executionPort{}
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), factory, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := newRuns(t, f.db, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
@@ -178,9 +177,8 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 	require.Equal(t, reply.UpdatedInputJson, messaging.replies[1].response.UpdatedInputJSON)
 	messaging.mu.Unlock()
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.UserInteractionResolved, WorkID: ref, InteractionID: "question", ObservationSequence: 4}))
-	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutionExited, command.ComputeReclaimed} {
-		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
-	}
+	feedback.exit(ctx, ref)
+	feedback.release(ctx, ref)
 	stopped, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	// Input and a reply to the Work that is no longer running are kept for its

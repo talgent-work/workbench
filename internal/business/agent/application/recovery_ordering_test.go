@@ -16,13 +16,26 @@ import (
 )
 
 // recoveredWorks holds one Work; each read is a copy, so only a save changes it.
-type recoveredWorks struct{ work domain.AgentWork }
+type recoveredWorks struct {
+	work    domain.AgentWork
+	saveErr error
+}
 
 func (s *recoveredWorks) Get(context.Context, string) (*domain.AgentWork, error) {
+	if s.work.ID == "" {
+		return nil, domain.ErrWorkNotFound
+	}
 	return s.copy(s.work), nil
 }
 
+func (s *recoveredWorks) FindBySubject(context.Context, string, domain.WorkSubject) (*domain.AgentWork, error) {
+	return nil, nil
+}
+
 func (s *recoveredWorks) Save(_ context.Context, work *domain.AgentWork) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
 	s.work = *s.copy(*work)
 	return nil
 }
@@ -32,93 +45,99 @@ func (*recoveredWorks) copy(work domain.AgentWork) *domain.AgentWork {
 		process := *work.HarnessProcess
 		work.HarnessProcess = &process
 	}
+	work.Events = domain.NewEventCollection()
 	return &work
 }
 
-// unconnectedExecution is the execution of a start that never connected a
-// Harness process: Dispatcher cannot deliver a stop to it.
-type unconnectedExecution struct {
-	stopErr  error
-	reclaims int
+// recoveryWorld is a Work, its executions and the Recovery over them.
+type recoveryWorld struct {
+	works      *recoveredWorks
+	executions *commandtest.Executions
+	harness    *commandtest.Harness
+	recovery   *application.Recovery
 }
 
-func (*unconnectedExecution) StartExecution(context.Context, domain.StartExecutionRequest) error {
-	return nil
-}
-func (e *unconnectedExecution) StopExecution(context.Context, string, string) error {
-	return e.stopErr
-}
-func (*unconnectedExecution) CancelRunningTurn(context.Context, string) error { return nil }
-func (e *unconnectedExecution) ReclaimCompute(context.Context, string) error {
-	e.reclaims++
-	return nil
-}
-func (*unconnectedExecution) RetireFencedRun(context.Context, string) error { return nil }
-
-// observedProcesses reports one observation of the Work's process.
-type observedProcesses struct {
-	observation domain.ProcessObservation
-	err         error
-}
-
-func (p observedProcesses) ObserveProcess(context.Context, string) (command.WorkProcessObservation, error) {
-	return command.WorkProcessObservation{ProcessObservation: p.observation}, p.err
-}
-func (observedProcesses) IsCurrentProcess(context.Context, string, string) (bool, error) {
-	return false, nil
-}
-func (observedProcesses) AcknowledgeExit(context.Context, string, string) (bool, error) {
-	return false, nil
-}
-
-// failedStart is a Work whose start failed at its Startup Deadline before any
-// Harness process connected; it retains the request to end that start.
-func failedStart(t *testing.T) *recoveredWorks {
+// abandonedStart is a Work whose start was seated past its Startup Deadline
+// and never launched a Harness process: its execution reported the failed and
+// abandoned start, and the Work applied only the failure, which asks the
+// start to end.
+func abandonedStart(t *testing.T) *recoveryWorld {
 	t.Helper()
-	ctx := context.Background()
 	agent := uuid.NewString()
 	seated := time.Now().Add(-domain.StartupDeadline - 2*time.Minute)
-	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "project"}, AgentID: agent, WorkspaceReference: "workspace"},
-		domain.StartAdmission{AdmittedAt: seated, AgentID: agent, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk"}, ModelConfigurationProvided: true}, &unconnectedExecution{})
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "project"}, AgentID: agent, WorkspaceReference: "workspace"},
+		domain.StartAdmission{AdmittedAt: seated, AgentID: agent, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
-	failed, err := work.FailAtStartupDeadline(ctx, time.Now(), &unconnectedExecution{})
+	var admitted domain.WorkStartAdmitted
+	for _, intent := range work.Intents() {
+		if start, ok := intent.(domain.WorkStartAdmitted); ok {
+			admitted = start
+		}
+	}
+	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: work.LaunchSpecification(), Realization: domain.RealizationCloud})
 	require.NoError(t, err)
-	require.True(t, failed)
-	return &recoveredWorks{work: *work}
-}
+	require.True(t, execution.RecordSubmission())
+	_, err = execution.Reconcile(domain.EnvironmentObservation{}, time.Now())
+	require.NoError(t, err)
+	for _, report := range execution.Reports() {
+		if _, failed := report.(domain.ExecutionStartFailed); failed {
+			_, err = work.ApplyExecutionReport(report)
+			require.NoError(t, err)
+		}
+	}
+	require.Equal(t, domain.WorkFailed, work.State)
+	executions := &commandtest.Executions{}
+	executions.Put(execution)
 
-func recoveryOf(works *recoveredWorks, execution domain.ExecutionPort, processes command.ProcessObservationPort) *application.Recovery {
-	buffer, settlements := &commandtest.InputBuffer{}, &commandtest.InputSettlements{}
+	w := &recoveryWorld{works: &recoveredWorks{work: *work}, executions: executions, harness: commandtest.NewHarness()}
+	settlements := &commandtest.InputSettlements{}
+	coordination := command.NewExecutionCoordination(time.Now, w.works, executions, &commandtest.Computers{}, w.harness)
 	app := &application.Application{Commands: application.Commands{
-		RecoverWork:            command.NewRecoverWorkHandler(time.Now, works, execution, buffer, settlements, nil, nil),
-		ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, works, processes, execution, buffer, settlements),
-		CloseWork:              command.NewCloseWorkHandler(works, nil, execution, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, buffer),
+		ExecutionCoordination:  coordination,
+		RecoverWork:            command.NewRecoverWorkHandler(time.Now, w.works, w.harness, settlements, nil),
+		ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, w.works, executions, coordination, w.harness, settlements),
+		CloseWork:              command.NewCloseWorkHandler(w.works, nil, executions, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, w.harness.InputBuffer),
 	}}
-	return application.NewRecovery(app, nil, nil, nil, nil)
+	w.recovery = application.NewRecovery(app, nil, executions, nil, nil, nil, nil)
+	return w
 }
 
-// A retained stop Dispatcher cannot deliver does not hold back the Work's
-// observation: the start reported abandoned reaches its compute release, and
-// nothing is left to retry.
-func TestRecoveryAppliesTheObservationBeforeTheRetainedRequests(t *testing.T) {
-	works := failedStart(t)
-	execution := &unconnectedExecution{stopErr: errors.New("dispatcher: no connection to stop")}
-	recovery := recoveryOf(works, execution, observedProcesses{observation: domain.ProcessObservation{State: domain.ProcessStartAbandoned}})
+func (w *recoveryWorld) execution(t *testing.T) *domain.AgentExecution {
+	t.Helper()
+	execution, err := w.executions.Latest(context.Background(), w.works.work.ID)
+	require.NoError(t, err)
+	return execution
+}
 
-	require.NoError(t, recovery.RecoverWork(context.Background(), works.work.ID))
-	require.True(t, works.work.HarnessProcess.StartAbandoned, "the abandonment is saved")
-	require.Positive(t, execution.reclaims, "the abandoned start's compute release is requested")
-	require.Equal(t, domain.WorkFailed, works.work.State)
+// A retained exit request that cannot reach the execution now does not hold
+// back the execution's report: the abandoned start is applied, its release
+// requested, and the next recovery retires the execution.
+func TestRecoveryAppliesTheReportsDespiteAFailingExitRequest(t *testing.T) {
+	ctx := context.Background()
+	w := abandonedStart(t)
+	w.executions.Conflicts = 3
+
+	err := w.recovery.RecoverWork(ctx, w.works.work.ID)
+	require.ErrorIs(t, err, domain.ErrConcurrentModification, "the exit request's failure is reported")
+	require.True(t, w.works.work.HarnessProcess.StartAbandoned, "the abandonment is saved")
+	require.Equal(t, domain.WorkFailed, w.works.work.State)
+	require.False(t, w.execution(t).Retired())
+
+	require.NoError(t, w.recovery.RecoverWork(ctx, w.works.work.ID))
+	require.Equal(t, domain.RetiredByAbandonment, w.execution(t).Retirement, "a lost retirement request is repaired by the recovery")
+	require.NoError(t, w.recovery.RecoverWork(ctx, w.works.work.ID))
+	require.Equal(t, domain.RetiredByAbandonment, w.execution(t).Retirement, "nothing is left to retry")
 }
 
 // Each recovery step's failure is reported, and none holds back another.
 func TestRecoveryReturnsEveryStepFailureTogether(t *testing.T) {
-	works := failedStart(t)
-	stopErr, observeErr := errors.New("dispatcher: no connection to stop"), errors.New("dispatcher unavailable")
-	recovery := recoveryOf(works, &unconnectedExecution{stopErr: stopErr}, observedProcesses{err: observeErr})
+	w := abandonedStart(t)
+	coordinationErr, saveErr := errors.New("execution store unavailable"), errors.New("work store unavailable")
+	w.executions.SaveErr = coordinationErr
+	w.works.saveErr = saveErr
 
-	err := recovery.RecoverWork(context.Background(), works.work.ID)
-	require.ErrorIs(t, err, observeErr)
-	require.ErrorIs(t, err, stopErr)
-	require.ErrorIs(t, err, domain.ErrExecutionRequest)
+	err := w.recovery.RecoverWork(context.Background(), w.works.work.ID)
+	require.ErrorIs(t, err, coordinationErr)
+	require.ErrorIs(t, err, saveErr)
+	require.False(t, w.works.work.HarnessProcess.StartAbandoned)
 }

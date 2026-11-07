@@ -91,9 +91,8 @@ func (k knownPeople) GetUsers(_ context.Context, ids []string) ([]personalwork.D
 
 func personalWorksFixture(t *testing.T, db *xorm.Engine, spaces *librarySpaces) (*personalwork.PersonalWorks, *application.Application) {
 	t.Helper()
-	var starts []domain.StartExecutionRequest
 	options := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
-	create, _ := creationCoordinator(db, infrastructure.NewWorkCreationRequests(db, time.Now), startupAuthority{}, &registrationResources{}, &starts, nil, options, &personalStartupCatalog{})
+	create, _ := creationCoordinator(db, infrastructure.NewWorkCreationRequests(db, time.Now), startupAuthority{}, &registrationResources{}, nil, options, &personalStartupCatalog{})
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	lookup := infrastructure.NewAgentDefinitionLookup(db)
 	app := &application.Application{Definitions: definitions, DefinitionLookup: lookup, Works: infrastructure.NewAgentWorkRepository(db, time.Now), WorkViews: infrastructure.NewWorkQueryRepository(db), Commands: application.Commands{

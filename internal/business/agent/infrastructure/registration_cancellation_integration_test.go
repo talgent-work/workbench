@@ -31,9 +31,9 @@ import (
 // Only catalog/capacity/native delivery are controlled external boundaries.
 func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 	db, definitions, works, agent := startingCreationDatabase(t)
-	execution := &creationExecution{db: db}
 	paused := &pausedRegistration{AgentWorkRepository: works, reached: make(chan struct{}), release: make(chan struct{})}
-	create := command.NewCreateWorkHandler(time.Now, definitions, paused, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), execution)
+	execution := &creationExecution{AgentWorkRepository: paused, db: db}
+	create := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}))
 	request := creationInput(agent.ID, "canceled")
 	request.InitialExecution = &command.PrepareWorkExecution{RequestID: request.RequestID, WorkBranch: "talgent/" + "TAL-368", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "original input"}}
 	result := make(chan error, 1)
@@ -90,7 +90,7 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 	// A new explicit request identity remains eligible; no auto retry was queued.
 	request.RequestID = uuid.NewString()
 	request.InitialExecution.RequestID = request.RequestID
-	fresh := command.NewCreateWorkHandler(time.Now, definitions, works, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), execution)
+	fresh := command.NewCreateWorkHandler(time.Now, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}))
 	id, err := fresh.Handle(t.Context(), request)
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), id)
@@ -100,10 +100,10 @@ func TestCancelWorkRegistrationFencesLateCreation(t *testing.T) {
 
 func TestCancelWorkRegistrationRecoversCommittedCreation(t *testing.T) {
 	db, definitions, works, agent := startingCreationDatabase(t)
-	execution := &creationExecution{db: db}
 	lost := errors.New("registration response lost after commit")
 	registrar := &lostRegistrationReply{AgentWorkRepository: works, err: lost}
-	create := command.NewCreateWorkHandler(time.Now, definitions, registrar, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), execution)
+	execution := &creationExecution{AgentWorkRepository: registrar, db: db}
+	create := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}))
 	request := creationInput(agent.ID, "committed")
 	id, err := create.Handle(t.Context(), request)
 	require.ErrorIs(t, err, lost)
@@ -113,7 +113,7 @@ func TestCancelWorkRegistrationRecoversCommittedCreation(t *testing.T) {
 	require.True(t, found)
 	original, err := works.Get(t.Context(), admitted.WorkID)
 	require.NoError(t, err)
-	client := registrationCancellationClient(t, db, works)
+	client := registrationCancellationClient(t, db, execution)
 	for range 2 {
 		reply, err := client.CancelWorkRegistration(cancellationRPC(t.Context(), request, "control"))
 		require.NoError(t, err)
@@ -135,7 +135,7 @@ func TestCancelWorkRegistrationRecoversCommittedCreation(t *testing.T) {
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 }
 
-func registrationCancellationClient(t *testing.T, db *xorm.Engine, works *infrastructure.AgentWorkRepository) agentprivatev1connect.AgentServiceClient {
+func registrationCancellationClient(t *testing.T, db *xorm.Engine, works command.AgentWorkRepository) agentprivatev1connect.AgentServiceClient {
 	t.Helper()
 	app := &application.Application{WorkPrincipals: access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), Works: works}
 	handler := connecttest.Handler(func(s *connect.Server) {

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -17,7 +16,8 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
@@ -92,31 +92,37 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	require.NoError(t, err)
 	provider, err := NewSandboxes(client, config())
 	require.NoError(t, err)
-	credentials := fixtureSandboxCredentials(db, provider)
-	newWorker := func() *Provisioning {
-		return NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	newWorker := func() *executionSteps {
+		p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+		connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+		require.NoError(t, err)
+		return newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
 	}
-	p := newWorker()
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
 	input := request()
-	require.NoError(t, p.Register(ctx, input, testMounts))
-	record, _, err := latestAllocation(ctx, p.db, input.WorkID)
+	record, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
-	allocation := Allocation{WorkID: input.WorkID, ID: record.ID}
-	require.NoError(t, p.update(ctx, record, "submitted = 1"))
+	executions := NewAgentExecutionRepository(db, time.Now)
+	run, err := executions.Get(ctx, record.ID)
+	require.NoError(t, err)
+	require.True(t, run.RecordSubmission())
+	require.NoError(t, executions.Save(ctx, run))
 	var spec sdk.CreateSandboxRequest
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
 	first, second := uuid.NewString(), uuid.NewString()
 	mu.Lock()
 	objects[first] = sdk.SandboxInfo{ID: first, Metadata: spec.Metadata}
 	objects[second] = sdk.SandboxInfo{ID: second, Metadata: spec.Metadata}
+	holdDeletion = true
 	mu.Unlock()
+	// Two replicas reconcile the execution at once; the version CAS lets one
+	// binding commit, and only the committed binding's surplus is deleted.
 	var workers sync.WaitGroup
 	for range 2 {
-		workers.Add(1)
-		go func() { defer workers.Done(); _ = submitPending(ctx, newWorker()) }()
+		workers.Go(func() { _, _ = newWorker().handler.Reconcile(ctx, record.ID, false) })
 	}
 	workers.Wait()
-	record, _, err = latestAllocation(ctx, p.db, input.WorkID)
+	record, _, err = latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.Contains(t, []string{first, second}, record.SandboxID)
 	primary := record.SandboxID
@@ -124,35 +130,37 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	if surplus == primary {
 		surplus = second
 	}
+	steps := newWorker()
 	mu.Lock()
-	require.Empty(t, deletes, "no cleanup before a primary is durably bound")
 	require.Zero(t, creates, "duplicate discovery never authorizes a POST")
-	holdDeletion = true
+	require.NotContains(t, deletes, primary, "the durably bound primary is never deleted")
 	mu.Unlock()
-	require.NoError(t, provider.prune(ctx, allocation, spec, primary, credentials))
+	require.NoError(t, steps.reconcile(ctx, record.ID))
 	mu.Lock()
 	require.Contains(t, objects, surplus, "DELETE acceptance can leave the environment present")
-	require.Equal(t, []string{surplus}, deletes)
+	require.NotEmpty(t, deletes)
+	for _, id := range deletes {
+		require.Equal(t, surplus, id, "only the surplus is deleted")
+	}
 	holdDeletion = false
 	mu.Unlock()
-	require.NoError(t, provider.prune(ctx, allocation, spec, primary, credentials))
+	require.NoError(t, steps.reconcile(ctx, record.ID))
 	mu.Lock()
 	require.Contains(t, objects, primary)
 	require.NotContains(t, objects, surplus)
 	mu.Unlock()
-	root, err := os.OpenRoot(t.TempDir())
+	bound, err := executions.Get(ctx, record.ID)
 	require.NoError(t, err)
-	defer root.Close()
-	environments, err := NewEnvironments(p, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
+	require.False(t, bound.Retired(), "surplus cleanup cannot fabricate the primary's business completion")
+
+	// The process exits and the Work retires the execution: its release
+	// deletes the primary.
+	_, err = bound.RecordLaunch("current-process")
 	require.NoError(t, err)
-	_, err = db.Exec("UPDATE execution_allocation SET process_id = 'current-process', process_exited = 1 WHERE session_id = ? AND deleted_at = 0", input.WorkID)
-	require.NoError(t, err)
-	require.NoError(t, environments.Delete(ctx, input.WorkID))
-	beforeWatch, _, err := latestAllocation(ctx, p.db, input.WorkID)
-	require.NoError(t, err)
-	watcher := newWorker()
-	watcher.now = func() time.Time { return time.UnixMilli(beforeWatch.UpdatedAt + 1000) }
-	require.NoError(t, pruneRetiredAll(ctx, watcher))
+	bound.RecordExit("current-process", domain.HarnessExit{})
+	require.NoError(t, executions.Save(ctx, bound))
+	require.NoError(t, steps.retire(ctx, input.WorkID, domain.RetiredByExit, time.Now()))
+	require.NoError(t, steps.reconcile(ctx, record.ID))
 	mu.Lock()
 	require.Empty(t, objects)
 	late := uuid.NewString()
@@ -161,45 +169,22 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	nextID := uuid.NewString()
 	objects[nextID] = sdk.SandboxInfo{ID: nextID, Metadata: correlation(next)}
 	mu.Unlock()
-	require.NoError(t, pruneRetiredAll(ctx, newWorker()))
+	released, _, err := latestAllocation(ctx, db, input.WorkID)
+	require.NoError(t, err)
+	require.NotZero(t, released.ReleasedAt)
+	// A late sandbox wakes a full reconciliation of the released execution.
+	_, err = steps.handler.Reconcile(ctx, record.ID, true)
+	require.NoError(t, err)
 	mu.Lock()
 	require.NotContains(t, objects, late)
-	require.Contains(t, objects, nextID, "the same Work's newer allocation must survive old cleanup")
+	require.Contains(t, objects, nextID, "the same Work's newer execution must survive old cleanup")
 	require.NotContains(t, deletes, nextID)
 	mu.Unlock()
-	retired, _, err := latestAllocation(ctx, p.db, input.WorkID)
+	after, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
-	require.Equal(t, beforeWatch.UpdatedAt, retired.UpdatedAt, "retired observation must not rewrite the allocation row")
-	require.Equal(t, beforeWatch.Version, retired.Version)
-	require.Equal(t, primary, retired.SandboxID)
-	require.NotZero(t, retired.DeletedAt)
+	require.Equal(t, released.UpdatedAt, after.UpdatedAt, "a released execution's late cleanup must not rewrite its record")
+	require.Equal(t, released.Version, after.Version)
 	obligations, err := unreleased(ctx, db)
 	require.NoError(t, err)
-	require.Len(t, obligations, 1, "surplus cleanup cannot fabricate the primary's business completion")
-	// The durable watch intentionally retains retired allocations. Verify that a
-	// representative history uses equality-prefix ordered access, not sorting
-	// all retired rows merely to take the next bounded batch.
-	rows := make([]allocationRecord, 1500)
-	for i := range rows {
-		rows[i] = retired
-		rows[i].ID = uuid.NewString()
-		rows[i].SessionID = uuid.NewString() // at most one live allocation per Work
-		rows[i].UpdatedAt += int64(i)
-		if i%3 == 0 {
-			rows[i].DeletedAt = 0
-		}
-	}
-	_, err = db.Insert(&rows)
-	require.NoError(t, err)
-	_, err = db.Exec("ANALYZE TABLE execution_allocation")
-	require.NoError(t, err)
-	plan, err := db.QueryString("EXPLAIN ANALYZE SELECT * FROM execution_allocation WHERE retired = 1 AND submitted = 1 AND (updated_at > ? OR (updated_at = ? AND id > ?)) ORDER BY updated_at, id LIMIT 100", retired.UpdatedAt, retired.UpdatedAt, retired.ID)
-	require.NoError(t, err)
-	require.Len(t, plan, 1)
-	for _, text := range plan[0] {
-		t.Log(text)
-		require.Contains(t, text, "idx_retired_submitted_updated_at_id")
-		require.NotContains(t, text, "Sort:")
-		require.NotContains(t, text, "Table scan")
-	}
+	require.Empty(t, obligations)
 }

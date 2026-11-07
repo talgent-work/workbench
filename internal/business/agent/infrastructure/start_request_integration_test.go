@@ -55,16 +55,16 @@ func TestEndingStartRequestPreventsAdmissionWithoutClosingConversation(t *testin
 	before, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
 	var starts atomic.Int32
-	factory := startupExecutionPort{onStart: func(domain.StartExecutionRequest) error { starts.Add(1); return nil }}
 	request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
-	end := command.NewEndWorkExecutionHandler(sessions, auth, factory)
+	end := command.NewEndWorkExecutionHandler(sessions, auth)
 	barrier := newCommitBarrier(sessions)
 	var release sync.Once
 	unpause := func() { release.Do(func() { close(barrier.proceed) }) }
 	defer unpause()
 	result := make(chan error, 1)
 	go func() {
-		result <- command.NewResumeWorkHandler(time.Now, barrier, agents, auth, computertest.Checked(startupAuthority{}), factory, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
+		started := startedWorks{AgentWorkRepository: barrier, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
+		result <- command.NewResumeWorkHandler(time.Now, started, agents, auth, computertest.Checked(startupAuthority{}), infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
 	}()
 	select {
 	case <-barrier.arrived:

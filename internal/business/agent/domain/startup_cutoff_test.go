@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -10,66 +9,63 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// The Startup Deadline is a hard cut-off: a completion reported after it never
-// completes the start, whichever path reports it.
-func TestCompletionReportedAfterTheStartupDeadlineFailsTheStart(t *testing.T) {
+// The Startup Deadline is a hard cut-off: a readiness report at or after it
+// never completes the start; the start fails naming the earliest step still
+// incomplete, and its Work applies that failure.
+func TestReadinessReportedAfterTheStartupDeadlineFailsTheStart(t *testing.T) {
 	for name, tc := range map[string]struct {
 		preparedInTime bool
-		late           func(context.Context, *domain.AgentWork, time.Time, domain.ExecutionPort) error
+		late           domain.ReadinessReport
 		reason         string
 	}{
-		"late preparation": {
-			late: func(ctx context.Context, work *domain.AgentWork, at time.Time, port domain.ExecutionPort) error {
-				return work.ConfirmPrepared(ctx, at, port)
-			},
-			reason: "Startup Deadline reached before the execution environment was ready.",
-		},
-		"late Harness start": {
-			preparedInTime: true,
-			late: func(ctx context.Context, work *domain.AgentWork, at time.Time, port domain.ExecutionPort) error {
-				return work.ConfirmStarted(ctx, at, port)
-			},
-			reason: "Startup Deadline reached before the Harness started.",
-		},
-		"late ready observation": {
-			preparedInTime: true,
-			late: func(ctx context.Context, work *domain.AgentWork, at time.Time, port domain.ExecutionPort) error {
-				return work.ReconcileProcess(ctx, domain.ProcessObservation{State: domain.ProcessRunning, Ready: true, ObservedAt: at}, port)
-			},
-			reason: "Startup Deadline reached before the Harness started.",
-		},
+		"late preparation":   {late: domain.ReadinessReport{Prepared: true}, reason: "Startup Deadline reached before the execution environment was ready."},
+		"late Harness start": {preparedInTime: true, late: domain.ReadinessReport{Started: true}, reason: "Startup Deadline reached before the Harness started."},
+		"late readiness":     {preparedInTime: true, late: domain.ReadinessReport{Prepared: true, Started: true}, reason: "Startup Deadline reached before the Harness started."},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
-			work := newSession(t)
-			port := &executionPort{}
-			started := work.HarnessProcess.StartingSince
+			work, execution := launchedExecution(t)
+			seated := execution.Desk.SeatedAt
 			if tc.preparedInTime {
-				require.NoError(t, work.ConfirmPrepared(ctx, started.Add(time.Minute), port))
+				_, err := execution.ConfirmReady(domain.ReadinessReport{Prepared: true}, seated.Add(time.Minute))
+				require.NoError(t, err)
 			}
-			require.NoError(t, tc.late(ctx, work, started.Add(domain.StartupDeadline+time.Second), port))
+			_, err := execution.ConfirmReady(tc.late, seated.Add(domain.StartupDeadline+time.Second))
+			require.NoError(t, err)
+			require.Equal(t, domain.ExecutionStarting, execution.State, "a late report never establishes readiness")
+			require.Equal(t, tc.reason, execution.Outcome.StartFailure)
+			for _, report := range execution.Reports() {
+				_, err := work.ApplyExecutionReport(report)
+				require.NoError(t, err)
+			}
 			require.Equal(t, domain.WorkFailed, work.State)
 			require.Equal(t, tc.reason, work.FailureReason)
-			require.False(t, work.HarnessProcess.Started)
+			require.False(t, work.HarnessProcess.Ready)
 		})
 	}
 }
 
-func TestCompletionBeforeTheStartupDeadlineEstablishesWorking(t *testing.T) {
-	ctx := context.Background()
-	work := newSession(t)
-	port := &executionPort{}
-	almost := work.HarnessProcess.StartingSince.Add(domain.StartupDeadline - time.Second)
-	require.NoError(t, work.ConfirmPrepared(ctx, almost, port))
-	require.NoError(t, work.ConfirmStarted(ctx, almost, port))
+func TestReadinessBeforeTheStartupDeadlineEstablishesRunning(t *testing.T) {
+	work, execution := launchedExecution(t)
+	almost := execution.Desk.SeatedAt.Add(domain.StartupDeadline - time.Second)
+	_, err := execution.ConfirmReady(domain.ReadinessReport{Prepared: true}, almost)
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionStarting, execution.State, "prepared alone is not ready")
+	_, err = execution.ConfirmReady(domain.ReadinessReport{Started: true}, almost)
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunning, execution.State)
+	require.Equal(t, []domain.Event{domain.ExecutionReady{WorkID: work.ID, StartAdmittedAt: execution.StartAdmittedAt}}, executionEvents(execution))
+	for _, report := range execution.Reports() {
+		_, err := work.ApplyExecutionReport(report)
+		require.NoError(t, err)
+	}
 	require.Equal(t, domain.WorkWorking, work.State)
 }
 
-// Readiness from an observation without its time cannot be judged against the
-// deadline, so it is rejected rather than admitted.
-func TestReadyObservationWithoutItsTimeIsRejected(t *testing.T) {
-	work := newSession(t)
-	err := work.ReconcileProcess(context.Background(), domain.ProcessObservation{State: domain.ProcessRunning, Ready: true}, &executionPort{})
-	require.ErrorIs(t, err, domain.ErrInvalidWork)
-	require.Equal(t, domain.WorkStarting, work.State)
+// Readiness without its time cannot be judged against the deadline, so it is
+// rejected rather than admitted.
+func TestReadinessWithoutItsTimeIsRejected(t *testing.T) {
+	_, execution := launchedExecution(t)
+	_, err := execution.ConfirmReady(domain.ReadinessReport{Prepared: true, Started: true}, time.Time{})
+	require.ErrorIs(t, err, domain.ErrInvalidExecution)
+	require.Equal(t, domain.ExecutionStarting, execution.State)
 }

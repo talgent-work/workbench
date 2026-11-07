@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -13,7 +14,7 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/agentfeedback"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
@@ -31,39 +32,29 @@ func (r *wakeRecorder) Enqueue(_ context.Context, task taskqueue.Task, _ ...task
 	return nil
 }
 
-type liveAllocations map[string]string
-
-func (liveAllocations) ReconcileAllocation(context.Context, string) (command.AllocationStep, error) {
-	return command.AllocationSettled, nil
-}
-func (liveAllocations) PrepareAllocation(context.Context, string) error   { return nil }
-func (liveAllocations) ReconcileComputer(context.Context, string) error   { return nil }
-func (liveAllocations) ReconnectAllocation(context.Context, string) error { return nil }
-func (liveAllocations) ObserveSandbox(context.Context, string) (command.AllocationStep, error) {
-	return command.AllocationSettled, nil
-}
-func (liveAllocations) DeliverCredentials(context.Context, string) error { return nil }
-func (liveAllocations) SyncInputs(context.Context, string) error         { return nil }
-func (liveAllocations) MarkCredentialsChanged(context.Context, string) ([]string, error) {
-	return nil, nil
-}
-func (liveAllocations) MarkInputsChanged(context.Context, string) ([]string, error) {
-	return nil, nil
-}
-func (l liveAllocations) LiveAllocation(_ context.Context, workID string) (string, bool, error) {
-	id, ok := l[workID]
-	return id, ok, nil
-}
-func (liveAllocations) ListOutstandingAllocations(context.Context, string, int) ([]command.AllocationStatus, error) {
-	return nil, nil
+// liveExecution is an executions repository holding one unretired execution
+// of the Work.
+func liveExecution(t *testing.T, workID string) (*rpcExecutions, string) {
+	t.Helper()
+	executions := &rpcExecutions{now: time.Now}
+	execution, err := domain.BeginExecution(domain.ExecutionBeginning{
+		Admitted:    domain.WorkStartAdmitted{WorkID: workID, StartAdmittedAt: time.Now(), DeskID: "desk-1"},
+		Launch:      domain.LaunchSpecification{WorkID: workID, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "home"}},
+		Realization: domain.RealizationCloud,
+	})
+	require.NoError(t, err)
+	require.NoError(t, executions.Save(context.Background(), execution))
+	return executions, execution.ID
 }
 
-// Dispatcher's report of an ended connection only reconnects the Work's live
-// allocation; it changes no Work state and needs the integration credential.
-func TestConnectionEndedFromDispatcherReconnectsTheLiveAllocation(t *testing.T) {
+// Dispatcher's report of an ended connection only reconnects the Work's
+// unretired execution; it changes no Work state and needs the integration
+// credential.
+func TestConnectionEndedFromDispatcherReconnectsTheLiveExecution(t *testing.T) {
 	ctx := context.Background()
 	wakes := &wakeRecorder{}
-	recovery := application.NewRecovery(&application.Application{}, wakes, liveAllocations{"work-1": "allocation-1"}, nil, nil)
+	executions, executionID := liveExecution(t, "work-1")
+	recovery := application.NewRecovery(&application.Application{}, wakes, executions, nil, nil, nil, nil)
 	handler := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(&application.Application{}, recovery, "integration-secret"))
 	})
@@ -71,8 +62,8 @@ func TestConnectionEndedFromDispatcherReconnectsTheLiveAllocation(t *testing.T) 
 	defer server.Close()
 
 	require.NoError(t, agentfeedback.NewClient(server.Client(), server.URL, "integration-secret").ReportConnectionEnded(ctx, "work-1", "process-1"))
-	require.Equal(t, []string{"agent:allocation-reconnect:allocation-1"}, wakes.keys)
-	require.NoError(t, agentfeedback.NewClient(server.Client(), server.URL, "integration-secret").ReportConnectionEnded(ctx, "stopped-work", "process-1"), "a Work without a live allocation has nothing to reconnect")
+	require.Equal(t, []string{"agent:allocation-reconnect:" + executionID}, wakes.keys)
+	require.NoError(t, agentfeedback.NewClient(server.Client(), server.URL, "integration-secret").ReportConnectionEnded(ctx, "stopped-work", "process-1"), "a Work without an execution has nothing to reconnect")
 	require.Len(t, wakes.keys, 1)
 
 	unauthenticated := agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))

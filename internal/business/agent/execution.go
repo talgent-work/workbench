@@ -93,8 +93,8 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		newModelConfigurations,
 		newExecutionSandboxes,
 		newExecutionLifecycle,
-		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
-			return execution.NewSandboxCredentials(db, client, models, sessions, workRepositoryCredentials{app: repositories}, services, http.DefaultClient, cfg.CredentialTransport)
+		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
+			return execution.NewSandboxCredentials(db, client, models, workRepositoryCredentials{app: repositories}, services, http.DefaultClient, cfg.CredentialTransport)
 		},
 		pkgkubernetes.NewClientset,
 		newManagedComputers,
@@ -105,17 +105,11 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 			p.ProgressCommitted = updates.publish
 			return p
 		},
-		fx.Annotate(execution.NewProcessObservations, fx.As(fx.Self()), fx.As(new(command.ProcessObservationPort))),
 		fx.Annotate(execution.NewWorkCredentials, fx.As(new(query.WorkCredentialVerifier))),
-		func(feedback *command.ApplyExecutionFeedbackHandler) (*execution.Reclaimer, error) {
-			return execution.NewReclaimer(feedback)
+		func(p *execution.Provisioning, credentials *execution.SandboxCredentials, cfg ExecutionConfig, checkouts *command.RecordRepositoryCheckoutsHandler) (*execution.NativeConnections, error) {
+			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token, checkouts)
 		},
-		func(p *execution.Provisioning, credentials *execution.SandboxCredentials, cfg ExecutionConfig, feedback *command.ApplyExecutionFeedbackHandler, checkouts *command.RecordRepositoryCheckoutsHandler) (*execution.NativeConnections, error) {
-			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token, feedback, checkouts)
-		},
-		execution.NewEnvironments,
 		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.RunningHarnessPort))),
-		newExecutionPort,
 	),
 	fx.Invoke(registerManagedWorkspaceFiles),
 	fx.Invoke(registerManagedTelemetry),
@@ -141,14 +135,10 @@ func newDispatcherControl(client *http.Client, cfg ExecutionConfig) (*execution.
 	return execution.NewDispatcherControl(client, cfg.Dispatcher.Address, cfg.Dispatcher.Token), nil
 }
 
-func newExecutionPort(resources *execution.Environments, dispatcher *execution.DispatcherControl, mounts command.SandboxMountPort, computers command.ComputerPort) (domain.ExecutionPort, error) {
-	return execution.NewEnvironment(resources, dispatcher, mounts, computers)
-}
-
 // newManagedComputers reaches Managed Computers through Computer Gateway's
 // relay and gives them the platform Connector's public address. Without a
 // relay address it is nil, and Provisioning fails every step of a Managed
-// allocation rather than run it anywhere else.
+// execution rather than run it anywhere else.
 func newManagedComputers(cfg ComputerConfig, computers command.ComputerPort) (*execution.ManagedComputers, error) {
 	if strings.TrimSpace(cfg.RelayAddress) == "" {
 		return nil, nil
@@ -171,7 +161,7 @@ func relayClient() *http.Client {
 // newManagedEnvironment is the Managed realization, nil without Managed
 // Computers. Its Works' inputs are read through Storage's File Space
 // Contract and synced again by the recovery sweep at its refresh interval.
-func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, client *http.Client, storage StorageConfig, recovery RecoveryConfig, logger *slog.Logger) (*execution.ManagedEnvironment, error) {
+func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, client *http.Client, storage StorageConfig, recovery RecoveryConfig) (*execution.ManagedEnvironment, error) {
 	if machines == nil {
 		return nil, nil
 	}
@@ -183,7 +173,7 @@ func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers
 	if err != nil {
 		return nil, err
 	}
-	return execution.NewManagedEnvironment(db, machines, models, execution.NewHeldWorks(db, sessions), inputs, refresh, logger)
+	return execution.NewManagedEnvironment(db, machines, models, sessions, inputs, refresh)
 }
 
 // newManagedWorkspaces reads Managed Works' directories through the relay,

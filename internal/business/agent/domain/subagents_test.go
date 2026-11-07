@@ -1,9 +1,7 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -12,9 +10,7 @@ import (
 func workingWork(t *testing.T) *domain.AgentWork {
 	t.Helper()
 	work := newSession(t)
-	require.NoError(t, recoverStartup(context.Background(), work, &executionPort{}))
-	require.NoError(t, work.ConfirmPrepared(context.Background(), time.Now(), nil))
-	require.NoError(t, work.ConfirmStarted(context.Background(), time.Now(), nil))
+	ready(t, work)
 	return work
 }
 
@@ -45,13 +41,13 @@ func TestSubAgentsEndWithTheProcess(t *testing.T) {
 	work := workingWork(t)
 	running := []domain.SubAgent{{ID: "a", Type: "general-purpose", Task: "count files", Status: domain.SubAgentRunning}}
 	require.NoError(t, work.RecordSubAgents(10, running))
-	require.NoError(t, work.RecordExit(context.Background(), domain.HarnessExit{ExitCode: 1}, &executionPort{}))
+	exited(t, work, domain.HarnessExit{ExitCode: 1})
 	require.Empty(t, work.SubAgents(), "an exit clears them")
 	require.NoError(t, work.RecordSubAgents(20, running))
 	require.Empty(t, work.SubAgents(), "an ended process reports none")
 
-	lost := workingWork(t)
-	require.NoError(t, lost.RecordSubAgents(10, running))
-	require.NoError(t, lost.ReconcileProcess(context.Background(), domain.ProcessObservation{State: domain.ProcessEnvironmentLost, ComputeReclaimed: true}, &executionPort{}))
-	require.Empty(t, lost.SubAgents(), "confirmed environment loss clears them")
+	gone := workingWork(t)
+	require.NoError(t, gone.RecordSubAgents(10, running))
+	lost(t, gone, "")
+	require.Empty(t, gone.SubAgents(), "reported environment loss clears them")
 }

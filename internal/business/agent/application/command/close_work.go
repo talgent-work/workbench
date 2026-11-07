@@ -20,17 +20,17 @@ type CloseWorkHandler struct {
 	buffer        RunningHarnessPort
 }
 
-func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution domain.ExecutionPort, initial InitialExecutionReader, startup query.WorkStartupReader, continuations query.ContinuationReader, buffer RunningHarnessPort) *CloseWorkHandler {
-	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, execution: execution}, initial: initial, startup: startup, continuations: continuations, buffer: buffer}
+func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, executions domain.AgentExecutionRepository, initial InitialExecutionReader, startup query.WorkStartupReader, continuations query.ContinuationReader, buffer RunningHarnessPort) *CloseWorkHandler {
+	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, executions: executions}, initial: initial, startup: startup, continuations: continuations, buffer: buffer}
 }
 
 func (h *CloseWorkHandler) Handle(ctx context.Context, request WorkControl) error {
-	return h.control.apply(ctx, request, func(work *domain.AgentWork, ctx context.Context, requestID string, port domain.ExecutionPort) error {
+	return h.control.apply(ctx, request, func(ctx context.Context, work *domain.AgentWork, requestID string) error {
 		facts, err := h.facts(ctx, work)
 		if err != nil {
 			return err
 		}
-		return work.Close(ctx, requestID, facts, port)
+		return work.Close(requestID, facts)
 	})
 }
 
@@ -50,14 +50,10 @@ func (h *CloseWorkHandler) ApplyKeptClose(ctx context.Context, workID string) er
 	if err != nil {
 		return err
 	}
-	requests := deferExecution(h.control.execution)
-	if err := work.Close(ctx, work.CloseRequestReference, facts, requests); err != nil {
+	if err := work.Close(work.CloseRequestReference, facts); err != nil {
 		return err
 	}
-	if err := h.control.sessions.Save(ctx, work); err != nil {
-		return err
-	}
-	return requests.send(ctx)
+	return h.control.sessions.Save(ctx, work)
 }
 
 // facts supplies the obligations a close must not discard.
@@ -66,6 +62,11 @@ func (h *CloseWorkHandler) facts(ctx context.Context, work *domain.AgentWork) (d
 	if work.Closed() {
 		return facts, nil
 	}
+	queued, err := startQueued(ctx, h.control.executions, work)
+	if err != nil {
+		return facts, err
+	}
+	facts.StartQueued = queued
 	continuation, err := h.continuations.GetWorkContinuation(ctx, work.ID)
 	if err != nil {
 		return facts, err
