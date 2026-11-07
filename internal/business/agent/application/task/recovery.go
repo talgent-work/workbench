@@ -14,68 +14,36 @@ import (
 )
 
 const (
-	// RecoveryQueue carries short recovery steps for allocations, Works and requests.
+	// RecoveryQueue carries short recovery steps for executions and Works.
 	RecoveryQueue = "agent-recovery"
 	// PreparationQueue carries work that may hold a worker for minutes: an
-	// allocation's environment preparation and initial execution preparation.
+	// execution's long step.
 	PreparationQueue = "agent-preparation"
 )
 
 const (
-	ReconcileAllocationType     taskqueue.TaskType = "agent.allocation.reconcile.v1"
-	PrepareAllocationType       taskqueue.TaskType = "agent.allocation.prepare.v1"
-	ReconnectAllocationType     taskqueue.TaskType = "agent.allocation.reconnect.v1"
-	ObserveSandboxType          taskqueue.TaskType = "agent.allocation.observe-sandbox.v1"
-	DeliverCredentialsType      taskqueue.TaskType = "agent.allocation.deliver-credentials.v1"
-	SyncInputsType              taskqueue.TaskType = "agent.allocation.sync-inputs.v1"
-	RecoverWorkType             taskqueue.TaskType = "agent.work.recover.v1"
-	RecoverContinuationType     taskqueue.TaskType = "agent.continuation.recover.v1"
-	RecoverWorkCreationType     taskqueue.TaskType = "agent.work-creation.recover.v1"
-	PrepareInitialExecutionType taskqueue.TaskType = "agent.initial-execution.prepare.v1"
-	SweepRecoveryType           taskqueue.TaskType = "agent.recovery.sweep.v1"
+	ReconcileExecutionType   taskqueue.TaskType = "agent.execution.reconcile.v1"
+	RunLongExecutionStepType taskqueue.TaskType = "agent.execution.run-long-step.v1"
+	RecoverWorkType          taskqueue.TaskType = "agent.work.recover.v1"
+	SweepRecoveryType        taskqueue.TaskType = "agent.recovery.sweep.v1"
 	// RequestWorkspaceReclamationType delivers a Closed Work's one request to
 	// Storage; it is a delivery, not a recovery obligation of the Work.
 	RequestWorkspaceReclamationType taskqueue.TaskType = "agent.workspace.request-reclamation.v1"
 )
 
-func NewReconcileAllocation(allocationID string) (taskqueue.Task, error) {
-	return keyed(ReconcileAllocationType, RecoveryQueue, "allocation", allocationID, &agenttaskv1.ReconcileAllocationTaskV1{AllocationId: allocationID})
+// NewReconcileExecution wakes the execution's short steps.
+func NewReconcileExecution(executionID string) (taskqueue.Task, error) {
+	return keyed(ReconcileExecutionType, RecoveryQueue, "execution", executionID, &agenttaskv1.ReconcileExecutionTaskV1{ExecutionId: executionID})
 }
 
-func NewPrepareAllocation(allocationID string) (taskqueue.Task, error) {
-	return keyed(PrepareAllocationType, PreparationQueue, "allocation-preparation", allocationID, &agenttaskv1.PrepareAllocationTaskV1{AllocationId: allocationID})
-}
-
-func NewReconnectAllocation(allocationID string) (taskqueue.Task, error) {
-	return keyed(ReconnectAllocationType, RecoveryQueue, "allocation-reconnect", allocationID, &agenttaskv1.ReconnectAllocationTaskV1{AllocationId: allocationID})
-}
-
-func NewDeliverCredentials(allocationID string) (taskqueue.Task, error) {
-	return keyed(DeliverCredentialsType, RecoveryQueue, "allocation-credentials", allocationID, &agenttaskv1.DeliverCredentialsTaskV1{AllocationId: allocationID})
-}
-
-func NewSyncInputs(allocationID string) (taskqueue.Task, error) {
-	return keyed(SyncInputsType, RecoveryQueue, "allocation-inputs", allocationID, &agenttaskv1.SyncInputsTaskV1{AllocationId: allocationID})
-}
-
-func NewObserveSandbox(allocationID string) (taskqueue.Task, error) {
-	return keyed(ObserveSandboxType, RecoveryQueue, "allocation-sandbox", allocationID, &agenttaskv1.ObserveSandboxTaskV1{AllocationId: allocationID})
+// NewRunLongExecutionStep wakes the execution's long step on the preparation
+// queue, whose workers short steps never wait for.
+func NewRunLongExecutionStep(executionID string) (taskqueue.Task, error) {
+	return keyed(RunLongExecutionStepType, PreparationQueue, "execution-long-step", executionID, &agenttaskv1.RunLongExecutionStepTaskV1{ExecutionId: executionID})
 }
 
 func NewRecoverWork(workID string) (taskqueue.Task, error) {
 	return keyed(RecoverWorkType, RecoveryQueue, "work", workID, &agenttaskv1.RecoverWorkTaskV1{WorkId: workID})
-}
-
-func NewRecoverContinuation(workID string) (taskqueue.Task, error) {
-	return keyed(RecoverContinuationType, RecoveryQueue, "continuation", workID, &agenttaskv1.RecoverContinuationTaskV1{WorkId: workID})
-}
-
-func NewRecoverWorkCreation(requestID string) (taskqueue.Task, error) {
-	return keyed(RecoverWorkCreationType, RecoveryQueue, "creation", requestID, &agenttaskv1.RecoverWorkCreationTaskV1{RequestId: requestID})
-}
-
-func NewPrepareInitialExecution(workID string) (taskqueue.Task, error) {
-	return keyed(PrepareInitialExecutionType, PreparationQueue, "initial-execution", workID, &agenttaskv1.PrepareInitialExecutionTaskV1{WorkId: workID})
 }
 
 func NewRequestWorkspaceReclamation(workID, workspaceReference string) (taskqueue.Task, error) {

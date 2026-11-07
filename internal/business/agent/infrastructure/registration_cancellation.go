@@ -7,18 +7,15 @@ import (
 	"encoding/json"
 
 	"github.com/samber/oops"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-var _ application.WorkRegistrationCancellationPort = (*AgentWorkRepository)(nil)
-
-// A canceled creation has no Work row to lock. Its original request's unique
-// key also serializes initial registration, which rolls back its Work and input
-// if this receipt won. No Work lifecycle or execution obligation is fabricated.
-func (r *AgentWorkRepository) CancelWorkRegistration(ctx context.Context, request application.CancelWorkRegistration) (string, error) {
+// A cancelled creation has no Work row to lock. Its request record's unique
+// key also serializes initial registration, which rolls back its Work if this
+// record won. No Work lifecycle or execution obligation is fabricated.
+func (r *AgentWorkRepository) CancelWorkRegistration(ctx context.Context, request command.CancelWorkRegistration) (string, error) {
 	scope, err := registrationScope(request.SubjectID, request.AgentID, request.WorkspaceReference, request.Subject, request.ProjectID)
 	if err != nil {
 		return "", err
@@ -30,20 +27,9 @@ func (r *AgentWorkRepository) CancelWorkRegistration(ctx context.Context, reques
 		return "", oops.Wrap(err)
 	}
 	defer tx.Rollback()
-	now := r.now().UTC().UnixMilli()
-	_, err = tx.Exec(`INSERT INTO agent_start_request
- (id, session_id, kind, canceled, creation_scope, version, created_at, updated_at, deleted_at)
- VALUES (?, '', '', 1, ?, 1, ?, ?, 0) ON DUPLICATE KEY UPDATE id = id`, request.RequestID, scope, now, now)
+	row, err := r.lockStartRequest(tx, query.StartRequest{ID: request.RequestID, Canceled: true}, scope, r.now().UTC().UnixMilli())
 	if err != nil {
-		return "", oops.With("operation", "agent.cancel_work_registration").Wrap(err)
-	}
-	var row startRequestDO
-	found, err := tx.Where("id = ? AND deleted_at = 0", request.RequestID).ForUpdate().Get(&row)
-	if err != nil {
-		return "", oops.Wrap(err)
-	}
-	if !found {
-		return "", command.ErrStartRequestConflict
+		return "", err
 	}
 	if !row.Canceled {
 		if row.Kind != string(query.StartKindStart) || row.SessionID == "" {
@@ -53,7 +39,9 @@ func (r *AgentWorkRepository) CancelWorkRegistration(ctx context.Context, reques
 		// and verifies its original registration scope before returning its ID.
 		return row.SessionID, nil
 	}
-	if row.SessionID != "" || row.CreationScope != scope {
+	// An identity settled without a scope, by its caller's cancellation or a
+	// definitive refusal, stays cancelled for any scope.
+	if row.SessionID != "" || row.CreationScope != "" && row.CreationScope != scope {
 		return "", command.ErrStartRequestConflict
 	}
 	return "", oops.Wrap(tx.Commit())

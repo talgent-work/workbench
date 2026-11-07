@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -20,9 +19,12 @@ func TestManagedSubmissionWaitsForTheMachine(t *testing.T) {
 	f.relay.set(func(m *machineRelay) { m.unreachable = true })
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
-	require.NoError(t, f.port.StartExecution(ctx, input))
+	begun := f.begin(t, input)
 
-	require.NoError(t, submitPending(ctx, f.provisioning))
+	long, err := f.steps.handler.Reconcile(ctx, begun.ID)
+	require.NoError(t, err)
+	require.True(t, long, "the creation is submitted by the long step")
+	require.ErrorIs(t, f.steps.handler.RunLongStep(ctx, begun.ID), errCreationUnresolved, "the machine away answers nothing yet")
 	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, record.Submitted)
@@ -30,55 +32,41 @@ func TestManagedSubmissionWaitsForTheMachine(t *testing.T) {
 	require.False(t, record.PreparationRecovering, "a machine away is waited for, not a failure")
 
 	f.relay.set(func(m *machineRelay) { m.unreachable = false })
-	require.NoError(t, submitPending(ctx, f.provisioning))
+	require.NoError(t, f.steps.reconcile(ctx, begun.ID))
 	record, _, err = latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
-	require.Equal(t, record.ID, record.SandboxID, "the allocation stands for the environment it opened")
+	require.Equal(t, record.ID, record.SandboxID, "the execution stands for the environment it opened")
 	require.False(t, record.PreparationRecovering)
 }
 
-// The removal obligation of a Managed allocation stays pending while its
+// The release of a retired Managed execution stays outstanding while its
 // machine is away, and settles without a call once Computer says the machine
 // was removed: nothing is left there to release.
-func TestManagedRemovalWaitsForTheMachineAndSettlesOnItsRemoval(t *testing.T) {
+func TestManagedReleaseWaitsForTheMachineAndSettlesOnItsRemoval(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
-	require.NoError(t, f.port.StartExecution(ctx, input))
-	require.NoError(t, submitPending(ctx, f.provisioning))
-	require.NoError(t, connectLive(ctx, f.connections))
-	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
-	require.NoError(t, err)
-	exited, err := f.observations.AcknowledgeExit(ctx, input.WorkID, "harness-handle")
-	require.NoError(t, err)
-	require.True(t, exited)
+	record := f.launch(t, f.begin(t, input).ID)
+	f.exit(t, record)
 
 	f.relay.set(func(m *machineRelay) { m.unreachable = true })
-	require.NoError(t, f.port.ReclaimCompute(ctx, input.WorkID))
-	_, err = f.recovery.ReconcileAllocation(ctx, record.ID)
-	require.NoError(t, err)
-	pending, err := pendingRemovals(ctx, f.removals)
+	require.NoError(t, f.steps.reconcile(ctx, record.ID))
+	pending, err := unreleased(ctx, f.db)
 	require.NoError(t, err)
 	require.Len(t, pending, 1, "the run's processes are released once the machine is back")
-	require.Empty(t, f.feedback.requests, "no release is confirmed before it happened")
-	// The Work's own recovery observes the exited run meanwhile without
-	// asking Dispatcher, which holds no connection of an exited process.
-	waiting, err := f.observations.ObserveProcess(ctx, input.WorkID)
-	require.NoError(t, err)
-	require.Equal(t, domain.ProcessPending, waiting.State)
-	require.False(t, waiting.ComputeReclaimed)
+	waiting := current(t, f.steps, record.ID)
+	require.Equal(t, domain.ExecutionRetired, waiting.State, "no release is confirmed before it happened")
+	require.True(t, waiting.Desk.LeftAt.IsZero(), "its Desk is held until its processes are gone")
 
 	f.place.removed = true
-	_, err = f.recovery.ReconcileAllocation(ctx, record.ID)
-	require.NoError(t, err)
-	pending, err = pendingRemovals(ctx, f.removals)
+	require.NoError(t, f.steps.reconcile(ctx, record.ID))
+	pending, err = unreleased(ctx, f.db)
 	require.NoError(t, err)
 	require.Empty(t, pending)
-	require.Len(t, f.feedback.requests, 1)
-	require.Equal(t, command.ComputeReclaimed, f.feedback.requests[0].Kind)
+	released := current(t, f.steps, record.ID)
+	require.True(t, reported(released, domain.ExecutionReleasedEvent{WorkID: input.WorkID, StartAdmittedAt: released.StartAdmittedAt}))
+	f.relay.mu.Lock()
+	defer f.relay.mu.Unlock()
 	require.Empty(t, f.relay.deleted, "a removed machine is not called")
-	observation, err := f.observations.ObserveProcess(ctx, input.WorkID)
-	require.NoError(t, err)
-	require.True(t, observation.ComputeReclaimed)
 }

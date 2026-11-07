@@ -15,7 +15,10 @@ import (
 )
 
 // fakeWorkspaces stands in for Storage's Workspace View and file links.
-type fakeWorkspaces struct{ missing error }
+type fakeWorkspaces struct {
+	application.WorkspacePort
+	missing error
+}
 
 func (f fakeWorkspaces) WorkspaceView(_ context.Context, _ application.ViewedWorkspace, path string) (application.WorkspaceListing, error) {
 	if f.missing != nil {

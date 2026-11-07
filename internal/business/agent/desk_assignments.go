@@ -22,16 +22,17 @@ type DeskAssignmentConfig struct {
 
 const defaultDeskAssignmentGroup = "agent-desk-assignments"
 
-// DeskAssignmentModule consumes the Desk Assigned Published Fact and begins
-// the waiting start of the Work whose Desk was seated; a fact that overtook
-// the commit of its start is handled again in place. Without it,
-// the Work's recovery still finds the seated Desk by asking Computer. It
-// requires a Kafka consumer factory.
+// DeskAssignmentModule consumes the Desk Assigned Published Fact and seats
+// the execution whose Desk was seated; a fact that overtook the commit of its
+// execution is handled again in place. Without it, the execution's
+// reconciliation still finds the seated Desk by asking Computer. It requires
+// a Kafka consumer factory.
 var DeskAssignmentModule = fx.Module("agent.desk_assignments",
+	fx.Provide(command.NewSeatExecutionHandler, fx.Private),
 	fx.Invoke(consumeDeskAssignments),
 )
 
-func consumeDeskAssignments(lc fx.Lifecycle, shutdowner fx.Shutdowner, cfg DeskAssignmentConfig, factory *pkgkafka.ConsumerFactory, resolver message.PayloadResolver, seating *command.SeatWaitingStartHandler, logger *slog.Logger) error {
+func consumeDeskAssignments(lc fx.Lifecycle, shutdowner fx.Shutdowner, cfg DeskAssignmentConfig, factory *pkgkafka.ConsumerFactory, resolver message.PayloadResolver, seating *command.SeatExecutionHandler, logger *slog.Logger) error {
 	group := strings.TrimSpace(cfg.ConsumerGroup)
 	if group == "" {
 		group = defaultDeskAssignmentGroup

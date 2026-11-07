@@ -15,6 +15,10 @@ import (
 // linkedWorks holds Works by identity.
 type linkedWorks map[string]*domain.AgentWork
 
+func (linkedWorks) FindBySubject(context.Context, string, domain.WorkSubject) (*domain.AgentWork, error) {
+	return nil, nil
+}
+
 func (w linkedWorks) Get(_ context.Context, id string) (*domain.AgentWork, error) {
 	if work, ok := w[id]; ok {
 		return work, nil
@@ -25,7 +29,10 @@ func (w linkedWorks) Get(_ context.Context, id string) (*domain.AgentWork, error
 func (linkedWorks) Save(context.Context, *domain.AgentWork) error { return nil }
 
 // machineLinks grants each token a read of the Work it names.
-type machineLinks struct{ opened []string }
+type machineLinks struct {
+	application.WorkspacePort
+	opened []string
+}
 
 func (m *machineLinks) LinkedWork(token string) (string, error) {
 	if token == "forged" {

@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"xorm.io/xorm"
 )
 
 // BatchSandboxes are the OpenSandbox custom resources that are the authority
@@ -31,16 +32,16 @@ const observationTimeout = 5 * time.Second
 type SandboxObserver struct {
 	client    dynamic.Interface
 	namespace string
-	recovery  *EnvironmentRecovery
+	records   records
 	wake      func(context.Context, string) error
 	logger    *slog.Logger
 }
 
-func NewSandboxObserver(client dynamic.Interface, namespace string, recovery *EnvironmentRecovery, wake func(context.Context, string) error, logger *slog.Logger) (*SandboxObserver, error) {
-	if client == nil || namespace == "" || recovery == nil || wake == nil || logger == nil {
-		return nil, errors.New("agent: sandbox observation needs a client, namespace, recovery and wake")
+func NewSandboxObserver(client dynamic.Interface, namespace string, db *xorm.Engine, wake func(context.Context, string) error, logger *slog.Logger) (*SandboxObserver, error) {
+	if client == nil || namespace == "" || db == nil || wake == nil || logger == nil {
+		return nil, errors.New("agent: sandbox observation needs a client, namespace, records and wake")
 	}
-	return &SandboxObserver{client: client, namespace: namespace, recovery: recovery, wake: wake, logger: logger}, nil
+	return &SandboxObserver{client: client, namespace: namespace, records: records{db: db}, wake: wake, logger: logger}, nil
 }
 
 // Run observes sandboxes until ctx ends. Each observation is queued by the
@@ -92,7 +93,7 @@ func (o *SandboxObserver) next(ctx context.Context, labels workqueue.TypedRateLi
 	defer labels.Done(label)
 	attempt, cancel := context.WithTimeout(ctx, observationTimeout)
 	defer cancel()
-	allocation, found, err := o.recovery.AllocationForSandbox(attempt, label)
+	allocation, found, err := o.records.forSandbox(attempt, label)
 	if err == nil && found {
 		err = o.wake(attempt, allocation)
 	}

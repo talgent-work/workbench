@@ -5,7 +5,6 @@ package execution
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,13 +16,10 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
-
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 	"golang.org/x/net/websocket"
@@ -66,18 +62,14 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	input := request()
 	input.TraceAttributes = map[string]string{"talgent.case_id": "case-native-connection"}
 	input.Capabilities, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"fixed"}, DefaultStartupAgent: "fixed:reviewer"}, []domain.PluginRelease{{Slug: "fixed", Source: "fixture", Version: "1", RetrievalRef: "archive:fixed", NativeEntry: []byte(`{"name":"fixed","version":"1"}`), Agents: []domain.AgentComponent{{Name: "fixed:reviewer"}}, Parameters: pluginconfig.ParameterDeclarations{"paths": {Type: "string", Title: "Paths", Description: "Paths", Multiple: true, Default: []string{"src"}}}}})
 	require.NoError(t, err)
-	require.NoError(t, provisioning.Register(ctx, input, testMounts))
-	require.NoError(t, submitPending(ctx, provisioning))
-	record, found, err := latestAllocation(ctx, provisioning.db, input.WorkID)
+	record, err := register(ctx, provisioning, input, testMounts)
 	require.NoError(t, err)
-	require.True(t, found)
-	require.False(t, record.SandboxReady, "allocation acceptance is not environment readiness")
 	launchCommand, preparationCommand := record.LaunchCommand, withCheckoutPlan(record.PreparationCommand, []byte("null"))
 	var spec struct{ Env map[string]string }
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
@@ -118,21 +110,28 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	mux.Handle(path, handler)
 	dispatcher := httptest.NewServer(mux)
 	defer dispatcher.Close()
-	feedback := &reclamationFeedback{}
-	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", feedback, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
+	steps := newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
+	pass := func() error { return steps.pass(ctx, db) }
 	lifecycle.mu.Lock()
-	lifecycle.info.Status.State = "Pending"
+	lifecycle.createPending = true
 	lifecycle.mu.Unlock()
-	require.NoError(t, connectLive(ctx, connections))
+	require.NoError(t, steps.reconcile(ctx, record.ID))
+	require.Equal(t, sandboxID, current(t, steps, record.ID).Environment, "the creation is submitted and its sandbox bound")
+	long, err := steps.handler.Reconcile(ctx, record.ID)
+	require.NoError(t, err)
+	require.False(t, long, "a pending sandbox is not prepared")
+	require.NoError(t, pass())
 	pending, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
-	require.False(t, pending.SandboxReady)
+	require.Equal(t, sandboxID, pending.SandboxID)
+	require.False(t, pending.SandboxReady, "allocation acceptance is not environment readiness")
 	require.Zero(t, reserved, "pending Sandbox cannot reserve a native process")
 	lifecycle.mu.Lock()
 	lifecycle.info.Status.State = "Running"
 	lifecycle.mu.Unlock()
-	require.Error(t, connectLive(ctx, connections))
+	require.Error(t, pass(), "the first delivery, preparation and the Harness start, then an unavailable Dispatcher")
 	recovering, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, recovering.SandboxReady)
@@ -143,13 +142,14 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "changed-binary"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "changed-binary"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	receiver.provisioning = provisioning
 	receiver.unavailable = false
-	connections, err = NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", feedback, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err = NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
-	require.NoError(t, connectLive(ctx, connections))
+	steps = newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
+	require.NoError(t, pass())
 	require.Equal(t, 1, reserved, "recovery must reuse the persisted reserved handle")
 	require.Equal(t, 1, preparations, "installation must not repeat during Dispatcher reconnection")
 	require.Len(t, receiver.requests, 2)
@@ -161,60 +161,56 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.False(t, after.PreparationRecovering)
 	require.Equal(t, receiver.requests[0].ProcessId, after.ProcessID)
 	require.Equal(t, record.LaunchCommand, after.LaunchCommand)
-	provisioning.now = func() time.Time { return time.UnixMilli(after.UpdatedAt + 1000) }
-	require.NoError(t, connectLive(ctx, connections))
+	require.NoError(t, pass())
 	unchanged, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
-	require.Equal(t, after.UpdatedAt, unchanged.UpdatedAt, "healthy observation must not rewrite the allocation row")
+	require.Equal(t, after.UpdatedAt, unchanged.UpdatedAt, "healthy observation must not rewrite the execution's record")
 	require.Equal(t, after.Version, unchanged.Version)
 	require.Len(t, receiver.requests, 3, "durable binding is offered again so Dispatcher can recover after restart")
 	require.Equal(t, receiver.requests[1], receiver.requests[2])
 	// Only authoritative disappearance of the bound sandbox is a terminal fact.
 	lifecycle.endpointStatus = http.StatusNotFound
-	require.Error(t, connectLive(ctx, connections))
-	require.Empty(t, feedback.requests, "missing endpoint must not imply missing environment")
+	require.Error(t, pass())
+	require.False(t, current(t, steps, record.ID).Outcome.Lost, "missing endpoint must not imply missing environment")
 	lifecycle.endpointStatus = 0
 	lifecycle.inspectStatus = http.StatusServiceUnavailable
-	require.Error(t, connectLive(ctx, connections))
-	require.Empty(t, feedback.requests, "temporary provider errors retain observation")
+	require.Error(t, pass())
+	require.False(t, current(t, steps, record.ID).Outcome.Lost, "temporary provider errors retain observation")
 	lifecycle.inspectStatus = 0
 	lifecycle.info = nil
-	feedback.err = errors.New("Agent persistence unavailable")
-	require.Error(t, connectLive(ctx, connections))
-	after, _, err = latestAllocation(ctx, provisioning.db, input.WorkID)
-	require.NoError(t, err)
-	require.Zero(t, after.DeletedAt, "unacknowledged loss must remain recoverable")
-	feedback.err = nil
-	require.NoError(t, connectLive(ctx, connections))
-	require.Len(t, feedback.requests, 2)
-	require.Equal(t, command.EnvironmentLost, feedback.requests[1].Kind)
-	require.Equal(t, input.WorkID, feedback.requests[1].WorkID)
+	require.NoError(t, pass())
+	lost := current(t, steps, record.ID)
+	require.True(t, lost.Outcome.Lost)
+	require.True(t, reported(lost, domain.ExecutionEnvironmentLost{WorkID: input.WorkID, StartAdmittedAt: lost.StartAdmittedAt}), "the loss is reported to the Work")
+	require.False(t, lost.Retired(), "the loss stays recoverable until its Work retires the execution")
+	require.NoError(t, steps.retire(ctx, input.WorkID, domain.RetiredByLoss, time.Now()))
+	require.NoError(t, pass())
 	after, _, err = latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
 	require.NotZero(t, after.DeletedAt)
-	require.NoError(t, connectLive(ctx, connections))
-	require.Len(t, feedback.requests, 2)
+	require.NotZero(t, after.ReleasedAt, "nothing is left to delete")
 	require.Equal(t, 1, reserved)
 	requests := len(receiver.requests)
-	require.ErrorIs(t, connections.reconnect(ctx, record), errEnvironmentConflict, "a delayed reconnect cannot connect a retired allocation")
-	require.Len(t, receiver.requests, requests)
-
+	require.NoError(t, steps.shortSteps(ctx, record.ID), "a delayed reconnect of a retired execution decides nothing")
+	require.Len(t, receiver.requests, requests, "and connects nothing")
 }
 
-// Existing native handoff tests need the current Session authority and healthy
-// credential management endpoint required by production preparation.
-type nativeCredentialSession struct{}
-
-func (nativeCredentialSession) Get(_ context.Context, id string) (*domain.AgentWork, error) {
-	return &domain.AgentWork{ID: id, State: domain.WorkWorking, HarnessProcess: &domain.HarnessProcess{}}, nil
-}
-func (nativeCredentialSession) Save(context.Context, *domain.AgentWork) error { return nil }
+// attachNativeCredentials gives native handoff tests the healthy credential
+// management endpoint production preparation requires.
 func attachNativeCredentials(t *testing.T, db *xorm.Engine, p *Provisioning, lifecycle *lifecycleFixture) {
 	t.Helper()
-	credentials, err := NewSandboxCredentials(db, p.sandboxes.client, p.sandboxes.config.Models, nativeCredentialSession{}, fixtureRepositoryCredentials{}, authorizationcatalogtest.NoServices{}, p.credentials.http, "encrypted-network")
+	credentials, err := NewSandboxCredentials(db, p.sandboxes.client, p.sandboxes.config.Models, fixtureRepositoryCredentials{}, authorizationcatalogtest.NoServices{}, p.credentials.http, "encrypted-network")
 	require.NoError(t, err)
 	p.credentials = credentials
 	policy, err := p.sandboxes.networkPolicy(context.Background())
 	require.NoError(t, err)
 	lifecycle.vault.policy = policy
+}
+
+// current is the execution as stored now.
+func current(t *testing.T, steps *executionSteps, id string) *domain.AgentExecution {
+	t.Helper()
+	run, err := steps.executions.Get(context.Background(), id)
+	require.NoError(t, err)
+	return run
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
@@ -19,7 +20,7 @@ import (
 type modulePluginCatalog struct{}
 
 func moduleCatalog() fx.Option {
-	return fx.Replace(fx.Annotate(modulePluginCatalog{}, fx.As(new(command.PluginCatalogPort))), fx.Annotate(authorizationcatalogtest.Empty{}, fx.As(new(command.PersonalConnectionsPort))))
+	return fx.Replace(fx.Annotate(commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), fx.As(new(command.StartCatalogPort))))
 }
 
 func (modulePluginCatalog) ListPersonalPlugins(_ context.Context, subject string) ([]domain.PersonalPlugin, error) {

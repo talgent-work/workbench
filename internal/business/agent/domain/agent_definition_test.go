@@ -1,8 +1,6 @@
 package domain_test
 
 import (
-	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -12,33 +10,38 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
+// definitionSessionLookup stands in for what the Application looks up before
+// a creation: the Work found for the request's Subject, and the Works a
+// starting context may name.
 type definitionSessionLookup struct {
 	session *domain.AgentWork
-	err     error
-	agentID string
-	subject domain.WorkSubject
 	works   []*domain.AgentWork
 }
 
-func (p *definitionSessionLookup) LocateWork(_ context.Context, workID string) (*domain.AgentWork, error) {
-	for _, work := range p.works {
-		if work.ID == workID {
-			return work, nil
-		}
-	}
-	return nil, domain.ErrWorkNotFound
+// createWork creates a Work with what the lookup found for its request.
+func createWork(definition *domain.AgentDefinition, request domain.WorkCreationRequest, lookup *definitionSessionLookup) (*domain.AgentWork, bool, error) {
+	return definition.CreateWork(request, lookup.facts(request))
 }
 
-func (p *definitionSessionLookup) FindWork(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
-	p.agentID, p.subject = agentID, subject
-	return p.session, p.err
+func (p *definitionSessionLookup) facts(request domain.WorkCreationRequest) domain.WorkCreationFacts {
+	facts := domain.WorkCreationFacts{}
+	if request.Subject.Present() {
+		facts.SubjectWork = p.session
+	}
+	if source := request.StartingContext; source != nil {
+		for _, work := range p.works {
+			if work.ID == source.WorkID {
+				facts.SourceWork = work
+			}
+		}
+	}
+	return facts
 }
 
 // A Work is located by its definition and Subject alone: an existing Work,
 // closed or not, is returned whatever the request's capabilities, and only a
 // new Subject establishes a new Work.
 func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
-	ctx := context.Background()
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work",
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: "employee-a"},
 		HomeBinding:  domain.HomeBinding{OwnerID: "employee-a", Namespace: "personal"},
@@ -50,7 +53,7 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 	request := domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-a", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: "Specific"}}
 	unresolved := request
 	unresolved.WorkModel = domain.WorkModelSelection{}
-	session, isNew, err := agent.CreateWork(ctx, request, lookup, &executionPort{})
+	session, isNew, err := createWork(agent, request, lookup)
 	require.NoError(t, err)
 	require.True(t, isNew)
 	require.Equal(t, domain.WorkStarting, session.State)
@@ -59,23 +62,21 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 	require.Equal(t, "Specific", session.CapabilitySnapshot.Prompt)
 	require.Equal(t, subject, session.Subject)
 	require.Equal(t, "project-a", session.ProjectID)
-	require.Equal(t, agent.ID, lookup.agentID)
-	require.Equal(t, subject, lookup.subject)
 
 	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "Changed", StartupAgent: "other:role"}))
 	lookup.session = session
 	request.Capabilities = domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, StartupAgent: "missing:role"}
-	reused, isNew, err := agent.CreateWork(ctx, request, lookup, &executionPort{})
+	reused, isNew, err := createWork(agent, request, lookup)
 	require.NoError(t, err)
 	require.False(t, isNew, "the existing Work wins before new capabilities are validated")
 	require.Same(t, session, reused)
-	_, _, err = agent.CreateWork(ctx, unresolved, lookup, &executionPort{})
+	_, _, err = createWork(agent, unresolved, lookup)
 	require.NoError(t, err, "reuse retains the original model without requiring a new selection")
 	require.Equal(t, "Specific", reused.CapabilitySnapshot.Prompt)
 	require.Equal(t, domain.WorkStarting, reused.State, "lookup must not admit execution")
 
 	session.State = domain.WorkClosed
-	closed, isNew, err := agent.CreateWork(ctx, request, lookup, &executionPort{})
+	closed, isNew, err := createWork(agent, request, lookup)
 	require.NoError(t, err)
 	require.False(t, isNew, "a closed Work still holds its Subject")
 	require.Same(t, session, closed)
@@ -83,7 +84,7 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 	lookup.session = nil
 	request.Subject = domain.WorkSubject{Kind: "case", ID: "case-new"}
 	request.Capabilities = domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: "Changed"}
-	fresh, isNew, err := agent.CreateWork(ctx, request, lookup, &executionPort{})
+	fresh, isNew, err := createWork(agent, request, lookup)
 	require.NoError(t, err)
 	require.True(t, isNew)
 	require.NotEqual(t, session.ID, fresh.ID)
@@ -91,18 +92,24 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 	require.Equal(t, "Changed", fresh.CapabilitySnapshot.Prompt)
 
 	request.Subject = domain.WorkSubject{Kind: "milestone", ID: "m"}
-	opaque, isNew, err := agent.CreateWork(ctx, request, lookup, &executionPort{})
+	opaque, isNew, err := createWork(agent, request, lookup)
 	require.NoError(t, err, "the caller defines the kind; Agent does not interpret it")
 	require.True(t, isNew)
 	require.Equal(t, request.Subject, opaque.Subject)
 	request.Subject = domain.WorkSubject{Kind: "review"}
-	_, _, err = agent.CreateWork(ctx, request, lookup, &executionPort{})
+	_, _, err = createWork(agent, request, lookup)
 	require.ErrorIs(t, err, domain.ErrInvalidWorkSubject, "a Subject names its object")
 
 	request.Subject = subject
-	lookup.err = errors.New("lookup unavailable")
-	_, _, err = agent.CreateWork(ctx, request, lookup, &executionPort{})
-	require.ErrorIs(t, err, lookup.err, "lookup failure is not absence")
+	lookup.session = &domain.AgentWork{ID: "other-subject", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "case-other"}}
+	other, isNew, err := createWork(agent, request, lookup)
+	require.NoError(t, err)
+	require.True(t, isNew, "a Work found for another Subject is never reused")
+	require.NotEqual(t, "other-subject", other.ID)
+	lookup.session = &domain.AgentWork{ID: "other-definition", AgentID: "other", Subject: subject}
+	_, isNew, err = createWork(agent, request, lookup)
+	require.NoError(t, err)
+	require.True(t, isNew, "nor one of another definition")
 }
 
 // A Work without a Subject is never located by one: each creation
@@ -110,7 +117,6 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 // supplied. Without a Project it is a Personal Work: private, with no
 // read-only mount; with one it keeps the mounts its caller supplied.
 func TestWorkWithoutSubjectIsNeverReused(t *testing.T) {
-	ctx := context.Background()
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work",
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: "owner"},
 		HomeBinding:  domain.HomeBinding{OwnerID: "owner", Namespace: "personal"},
@@ -120,15 +126,14 @@ func TestWorkWithoutSubjectIsNeverReused(t *testing.T) {
 	require.NoError(t, err)
 	existing := &domain.AgentWork{ID: "existing"}
 	lookup := &definitionSessionLookup{session: existing}
-	execution := &executionPort{}
 	request := domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true},
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, WorkspaceReference: "workspace-a",
 		TraceAttributes: map[string]string{"talgent.case_id": "supplied"},
 		Capabilities:    domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}}
-	first, isNew, err := agent.CreateWork(ctx, request, lookup, execution)
+	first, isNew, err := createWork(agent, request, lookup)
 	require.NoError(t, err)
 	require.True(t, isNew, "no Subject locates the existing Work")
-	second, isNew, err := agent.CreateWork(ctx, request, lookup, execution)
+	second, isNew, err := createWork(agent, request, lookup)
 	require.NoError(t, err)
 	require.True(t, isNew)
 	require.NotEqual(t, first.ID, second.ID)
@@ -136,22 +141,22 @@ func TestWorkWithoutSubjectIsNeverReused(t *testing.T) {
 	require.False(t, first.Visibility.Public, "a Work without a Project is private whatever its definition declares")
 	_, err = first.ChangeVisibility(agent, "owner", true, time.Now())
 	require.ErrorIs(t, err, domain.ErrWorkWithoutProject)
-	attributes := execution.starts[len(execution.starts)-1].TraceAttributes
+	attributes := follow(second).launch().TraceAttributes
 	require.Equal(t, "supplied", attributes["talgent.case_id"], "Agent carries the caller's attributes unchanged")
 	require.NotContains(t, attributes, "talgent.subject_kind")
 	require.NotContains(t, attributes, "talgent.project_id")
 
 	request.ReadOnlyMounts = []domain.ReadOnlyMount{{Name: "reference", Reference: "space-1"}}
-	_, _, err = agent.CreateWork(ctx, request, lookup, execution)
+	_, _, err = createWork(agent, request, lookup)
 	require.ErrorIs(t, err, domain.ErrInvalidWork, "a Personal Work has no read-only mount")
 	request.ProjectID = "project-a"
-	withProject, _, err := agent.CreateWork(ctx, request, lookup, execution)
+	withProject, _, err := createWork(agent, request, lookup)
 	require.NoError(t, err)
 	require.Equal(t, request.ReadOnlyMounts, withProject.ReadOnlyMounts)
 
 	for _, mounts := range [][]domain.ReadOnlyMount{{{Name: "inputs", Reference: "x"}}, {{Name: "a/b", Reference: "x"}}, {{Name: "a", Reference: ""}}, {{Name: "a", Reference: "x"}, {Name: "a", Reference: "y"}}} {
 		request.ReadOnlyMounts = mounts
-		_, _, err = agent.CreateWork(ctx, request, lookup, execution)
+		_, _, err = createWork(agent, request, lookup)
 		require.ErrorIs(t, err, domain.ErrInvalidWork, "mounts %v", mounts)
 	}
 }
@@ -163,10 +168,9 @@ func TestWorkWithoutSessionWorkspace(t *testing.T) {
 		UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"}, HomeBinding: domain.HomeBinding{OwnerID: "project/project-a/project_coordination", Namespace: "project_coordination"},
 		Visibility: domain.VisibilityRule{Public: true}})
 	require.NoError(t, err)
-	port := &executionPort{}
-	work, _, err := agent.CreateWork(context.Background(), domain.WorkCreationRequest{StartedBy: "owner", Subject: domain.WorkSubject{Kind: "project", ID: "project-a"}, ProjectID: "project-a",
+	work, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Subject: domain.WorkSubject{Kind: "project", ID: "project-a"}, ProjectID: "project-a",
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
-		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}}, &definitionSessionLookup{}, port)
+		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	require.Empty(t, work.WorkspaceReference)
 	require.True(t, work.Visibility.Public)
@@ -182,7 +186,7 @@ func TestDefinitionAppliesSuppliedConfigurationWithoutInterpretingPurpose(t *tes
 			})
 			require.NoError(t, err)
 			for _, model := range []domain.WorkModelSelection{{ConfigurationID: "default"}, {ConfigurationID: "selected"}} {
-				created, _, err := agent.CreateWork(context.Background(), domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: model, WorkspaceReference: "workspace", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}, &definitionSessionLookup{}, &executionPort{})
+				created, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: model, WorkspaceReference: "workspace", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}, domain.WorkCreationFacts{})
 				require.NoError(t, err)
 				require.Equal(t, model, created.WorkModel)
 			}
@@ -209,9 +213,9 @@ func TestOnlyAnAgentOwnerStartsItsWorks(t *testing.T) {
 	require.False(t, changed, "the same set is no change")
 
 	start := func(startedBy string) error {
-		_, _, err := agent.CreateWork(context.Background(), domain.WorkCreationRequest{StartedBy: startedBy, Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkspaceReference: "workspace",
+		_, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: startedBy, Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkspaceReference: "workspace",
 			Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
-			Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}}, &definitionSessionLookup{}, &executionPort{})
+			Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
 		return err
 	}
 	require.ErrorIs(t, start("stranger"), domain.ErrControlRequesterNotOwner)
@@ -244,8 +248,8 @@ func TestOnlyAPersonsAgentRunsOnAManagedComputer(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, pm.AdmitComputer(false))
 	require.ErrorIs(t, pm.AdmitComputer(true), domain.ErrCloudOnlyAgent)
-	_, _, err = pm.CreateWork(context.Background(), domain.WorkCreationRequest{StartedBy: "alice", Subject: domain.WorkSubject{Kind: "project", ID: "project-a"}, ProjectID: "project-a", ComputerManaged: true,
+	_, _, err = pm.CreateWork(domain.WorkCreationRequest{StartedBy: "alice", Subject: domain.WorkSubject{Kind: "project", ID: "project-a"}, ProjectID: "project-a", ComputerManaged: true,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
-		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: pm.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}}, &definitionSessionLookup{}, &executionPort{})
+		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: pm.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
 	require.ErrorIs(t, err, domain.ErrComputerNotUsable, "the definition refuses a Managed Work itself")
 }

@@ -6,14 +6,17 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 )
 
-// WorkPreparation is the read side of the retained initial execution request.
-// Business callers consume its facts without owning preparation or buffering.
+// WorkPreparation is a Work's first start as derived from its facts: its
+// creation request, initial task input not handed off yet, repository
+// selection with its checkout plan, and whether every selected repository
+// has a checkout outcome (InputPrepared). Business callers consume it
+// without owning preparation or buffering.
 type WorkPreparation struct {
-	ThinkingLevel                                               string
-	WorkID, RequestID, SubjectID, WorkBranch                    string
-	InputID, Input                                              string
-	Prepared, Submitted, InputPrepared, InputBuffered, Rejected bool
-	Checkouts                                                   []PreparedCheckout
+	ThinkingLevel                            string
+	WorkID, RequestID, SubjectID, WorkBranch string
+	InputID, Input                           string
+	Submitted, InputPrepared, InputBuffered  bool
+	Checkouts                                []PreparedCheckout
 }
 
 type PreparedCheckout struct {

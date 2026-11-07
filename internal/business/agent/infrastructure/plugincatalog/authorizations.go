@@ -5,11 +5,8 @@ import (
 	"time"
 
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
-
-var _ command.PersonalConnectionsPort = (*Client)(nil)
 
 func (c *Client) ListPersonalAuthorizations(ctx context.Context, owner string) ([]domain.PersonalAuthorization, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

@@ -4,11 +4,14 @@ package infrastructure_test
 
 import (
 	"context"
+	"github.com/google/uuid"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
@@ -26,27 +29,39 @@ func (creationConnections) ListAccessibleRepositories(_ context.Context, owner s
 
 func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db),
-		creationModels(), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
-	id, err := handler.Handle(t.Context(), f.request.Creation)
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	id, err := handler.Handle(t.Context(), f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
-	want := domain.WorkRepositorySelection{OwnerUserID: "owner", Repositories: []domain.WorkRepository{{Provider: "github", RepoID: "123",
+	want := domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-342", Repositories: []domain.WorkRepository{{Provider: "github", RepoID: "123",
 		RepoName: "example/project", CloneURL: "https://github.com/example/project.git", WebURL: "https://github.com/example/project", DefaultBranch: "main", BaseBranch: "release"}}}
-	require.Equal(t, want, work.RepositorySelection)
-	require.NoError(t, work.ConfirmPrepared(context.Background(), time.Now(), nil))
+	require.Equal(t, want, work.RepositorySelection, "the selection keeps the branch the creating caller named")
+	require.Empty(t, work.RepositoryCheckouts)
+	reportReady(t, work)
+	require.True(t, work.RecordRepositoryCheckouts(domain.ExecutionCheckoutsEnded{WorkID: id, Checkouts: []domain.RepositoryCheckout{{RepositoryID: "123", Reason: domain.CheckoutTimedOut}}}))
 	require.NoError(t, f.sessions.Save(t.Context(), work))
 	work, err = f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, want, work.RepositorySelection)
+	require.Equal(t, []domain.RepositoryCheckout{{RepositoryID: "123", Reason: domain.CheckoutTimedOut}}, work.RepositoryCheckouts, "checkout outcomes survive reload")
+	require.Empty(t, work.RemainingRepositories())
 	// A repository no longer reachable cannot stop reuse or change the original selection.
-	handler = command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db),
-		creationModels(), &creationCatalog{}, authorizationcatalogtest.Empty{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
-	f.request.Creation.InitialExecution.Selections[0].BaseBranch = "changed"
-	reused, err := handler.Handle(t.Context(), f.request.Creation)
+	handler = command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	reuse := f.request
+	initial := *f.request.InitialExecution
+	initial.RequestID, initial.Input.ID = uuid.NewString(), uuid.NewString()
+	reuse.RequestID, reuse.InitialExecution = initial.RequestID, &initial
+	reused, err := handler.Handle(t.Context(), reuse)
 	require.NoError(t, err)
 	require.Equal(t, id, reused)
+	// The original request identity cannot be repeated with another selection.
+	changed := *f.request.InitialExecution
+	changed.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "changed"}}
+	repeat := f.request
+	repeat.InitialExecution = &changed
+	_, err = handler.Handle(t.Context(), repeat)
+	require.ErrorIs(t, err, command.ErrWorkCreationConflict)
 	work, err = f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, want, work.RepositorySelection)

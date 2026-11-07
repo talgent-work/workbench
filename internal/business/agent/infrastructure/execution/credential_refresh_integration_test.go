@@ -14,8 +14,6 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -41,12 +39,10 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	provisioning := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	input := request()
-	require.NoError(t, provisioning.Register(ctx, input, testMounts))
-	require.NoError(t, submitPending(ctx, provisioning))
-	record, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
+	record, err := register(ctx, provisioning, input, testMounts)
 	require.NoError(t, err)
 	var spec struct{ Env map[string]string }
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
@@ -75,18 +71,20 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	}))
 	defer processAPI.Close()
 	lifecycle.endpoint = processAPI.URL
-	lifecycle.mu.Lock()
-	lifecycle.info.Status.State = "Running"
-	lifecycle.mu.Unlock()
 	receiver := &nativeConnectionReceiver{provisioning: provisioning}
 	mux := http.NewServeMux()
 	path, handler := "/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) { dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, receiver) })
 	mux.Handle(path, handler)
 	dispatcher := httptest.NewServer(mux)
 	defer dispatcher.Close()
-	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", &reclamationFeedback{}, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
-	require.NoError(t, connectLive(ctx, connections))
+	steps := newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
+	// Submission with the first delivery, then preparation with the Harness
+	// start and its connection.
+	for range 2 {
+		require.NoError(t, steps.pass(ctx, db))
+	}
 	healthy, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, healthy.SandboxReady && healthy.EnvironmentPrepared && healthy.ProcessID != "", "Work reached a healthy native connection")
@@ -98,7 +96,7 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	vaultWrites := lifecycle.vault.state.Revision
 	connects := len(receiver.requests)
 	for range 5 {
-		require.NoError(t, connectLive(ctx, connections))
+		require.NoError(t, steps.pass(ctx, db))
 	}
 	require.Zero(t, counter.resolves.Load(), "a connected Work's reconnects never ask for repository credentials; each ask queries GitHub live")
 	require.Equal(t, vaultWrites, lifecycle.vault.state.Revision, "a reconnect delivers nothing to the Vault")

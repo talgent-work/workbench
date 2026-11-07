@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 )
 
 // The controlled Harness keeps both requests pending after accepting a reply.
@@ -41,7 +41,7 @@ func assertWaitingResponseAdmission(t *testing.T, ctx context.Context, client ag
 		return response.GetWaiting()
 	}
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_TURN_STARTED, 2, "")
-	port.pending = []application.PendingInteraction{{ID: "approval-a"}, {ID: "question-b"}}
+	port.pending = []command.PendingInteraction{{ID: "approval-a"}, {ID: "question-b"}}
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_USER_INTERACTION_REQUIRED, 3, "approval-a")
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_USER_INTERACTION_REQUIRED, 4, "question-b")
 	require.True(t, waiting())
@@ -67,7 +67,7 @@ func assertWaitingResponseAdmission(t *testing.T, ctx context.Context, client ag
 	// request must not undo a later accepted input.
 	port.settle("approval-a")
 	port.settle("question-b")
-	port.pending = []application.PendingInteraction{{ID: "question-c"}}
+	port.pending = []command.PendingInteraction{{ID: "question-c"}}
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_USER_INTERACTION_REQUIRED, 7, "question-c")
 	require.True(t, waiting())
 	port.inputError = errors.New("input buffer unavailable")

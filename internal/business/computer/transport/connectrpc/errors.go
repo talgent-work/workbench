@@ -17,8 +17,11 @@ func publicError(err error) error {
 		return connect.NewError(connect.CodeNotFound, "computer: computer not found")
 	case errors.Is(err, domain.ErrCapacityBelowOccupied):
 		return connect.NewError(connect.CodeFailedPrecondition, "computer: capacity cannot be set below the Works it runs now")
-	case errors.Is(err, domain.ErrDeskTaken), errors.Is(err, application.ErrDeskLeft):
+	case errors.Is(err, domain.ErrDeskTaken):
 		return connect.NewError(connect.CodeAlreadyExists, err.Error()).WithCause(err)
+	case errors.Is(err, application.ErrDeskLeft):
+		// A run's Desk leaves once: its admission cannot be repeated.
+		return connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
 	case errors.Is(err, domain.ErrInvalidDesk), errors.Is(err, domain.ErrInvalidComputer):
 		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, domain.ErrCredentialRejected):

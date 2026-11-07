@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -51,17 +50,13 @@ func TestAReconnectionWithoutInputSpendsTheMark(t *testing.T) {
 
 // Every admitted start clears the mark.
 func TestAnAdmittedStartClearsTheReconnectionMark(t *testing.T) {
-	ctx := context.Background()
 	session := newSession(t)
-	port := &executionPort{}
-	require.NoError(t, recoverStartup(ctx, session, port))
-	require.NoError(t, session.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, session.ConfirmStarted(ctx, time.Now(), nil))
-	require.NoError(t, session.Stop(ctx, "stop-1", port))
-	require.NoError(t, session.RecordExit(ctx, domain.HarnessExit{}, port))
-	require.NoError(t, session.ConfirmComputeReclaimed())
+	ready(t, session)
+	require.NoError(t, session.Stop("stop-1", false))
+	exited(t, session, domain.HarnessExit{})
+	released(t, session)
 	require.True(t, session.RefuseResume(domain.ErrComputerUnreachable))
-	require.NoError(t, session.Resume(ctx, admission(session), port))
+	require.NoError(t, session.Resume(admission(session)))
 	require.Equal(t, domain.WorkStarting, session.State)
 	require.False(t, session.ReachResumeDue)
 }
@@ -70,18 +65,16 @@ func TestAnAdmittedStartClearsTheReconnectionMark(t *testing.T) {
 // that input awaits its machine's return; without input, or stopped by a
 // person before, it is not.
 func TestAWorkStoppedBeyondReachWithInputAwaitsTheReconnection(t *testing.T) {
-	ctx := context.Background()
 	for name, want := range map[string]bool{"input awaits": true, "no input": false, "stopping": false} {
 		t.Run(name, func(t *testing.T) {
-			work, port := runningHarnessWork(t, domain.HarnessChoice{})
+			work, _ := runningHarnessWork(t, domain.HarnessChoice{})
 			if name == "stopping" {
-				require.NoError(t, work.Stop(ctx, "user-stop", port))
+				require.NoError(t, work.Stop("user-stop", false))
 			}
 			lost := time.Now()
-			_, err := work.RecordDisconnection(lost)
+			_, err := work.RecordDisconnection(lost, false)
 			require.NoError(t, err)
-			stopped, err := work.StopBeyondReach(ctx, lost.Add(domain.DisconnectionTimeout), name != "no input", port)
-			require.NoError(t, err)
+			stopped := work.StopBeyondReach(lost.Add(domain.DisconnectionTimeout), name != "no input")
 			require.True(t, stopped)
 			require.Equal(t, domain.WorkStopped, work.State)
 			require.Equal(t, want, work.ReachResumeDue)

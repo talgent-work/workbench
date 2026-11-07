@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -57,7 +58,15 @@ func TestExecutionCompositionReachesHTTP1OpenSandbox(t *testing.T) {
 	require.Equal(t, "pro", defaultModel.Selection.ConfigurationID)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	deleted, err := sandboxes.Delete(ctx, execution.Allocation{WorkID: "session", ID: "01900000-0000-7000-8000-000000000001"}, "11111111-1111-4111-8111-111111111111", nil)
+	deleted, err := sandboxes.Delete(ctx, execution.Allocation{WorkID: "session", ID: "01900000-0000-7000-8000-000000000001"}, sdk.CreateSandboxRequest{}, "11111111-1111-4111-8111-111111111111", nil)
 	require.NoError(t, err, "production wiring must use the lifecycle server's HTTP/1.1 protocol")
 	require.True(t, deleted)
+}
+
+// Sandboxes are leased for two hours and renewed below one unless configured
+// otherwise.
+func TestExecutionLeaseDefaultsAndConfiguration(t *testing.T) {
+	require.Equal(t, domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}, ExecutionLeaseConfig{}.terms())
+	configured := ExecutionLeaseConfig{Duration: Duration(4 * time.Hour), RenewalThreshold: Duration(90 * time.Minute)}
+	require.Equal(t, domain.LeaseTerms{Duration: 4 * time.Hour, RenewalThreshold: 90 * time.Minute}, configured.terms())
 }

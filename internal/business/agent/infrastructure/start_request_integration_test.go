@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -33,14 +34,14 @@ func newCommitBarrier(sessions *infrastructure.AgentWorkRepository) commitBarrie
 	return commitBarrier{AgentWorkRepository: sessions, arrived: make(chan struct{}), proceed: make(chan struct{}), once: &sync.Once{}}
 }
 
-func (b commitBarrier) CommitStart(ctx context.Context, work *domain.AgentWork, start agentquery.AdmittedStart, requestID string) error {
+func (b commitBarrier) CommitStart(ctx context.Context, work *domain.AgentWork, request agentquery.StartRequest) error {
 	b.once.Do(func() { close(b.arrived) })
 	select {
 	case <-b.proceed:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	return b.AgentWorkRepository.CommitStart(ctx, work, start, requestID)
+	return b.AgentWorkRepository.CommitStart(ctx, work, request)
 }
 
 // Ending a start request whose admission is in flight
@@ -50,20 +51,20 @@ func TestEndingStartRequestPreventsAdmissionWithoutClosingConversation(t *testin
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	db, agents, sessions := f.db, f.agents, f.sessions
-	auth := infrastructure.NewWorkAuthorizer(db)
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	before, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
 	var starts atomic.Int32
-	factory := infrastructure.NewExecutionRequestsFactory(startupExecutionPort{onStart: func(domain.StartExecutionRequest) error { starts.Add(1); return nil }})
 	request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
-	end := command.NewEndWorkExecutionHandler(sessions, auth, factory, sessions)
+	end := command.NewEndWorkExecutionHandler(sessions, auth)
 	barrier := newCommitBarrier(sessions)
 	var release sync.Once
 	unpause := func() { release.Do(func() { close(barrier.proceed) }) }
 	defer unpause()
 	result := make(chan error, 1)
 	go func() {
-		result <- command.NewResumeWorkHandler(time.Now, sessions, agents, auth, computertest.Checked(startupAuthority{}), factory, barrier, infrastructure.NewContinuationRequests(db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
+		started := startedWorks{AgentWorkRepository: barrier, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
+		result <- command.NewResumeWorkHandler(time.Now, started, agents, auth, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
 	}()
 	select {
 	case <-barrier.arrived:

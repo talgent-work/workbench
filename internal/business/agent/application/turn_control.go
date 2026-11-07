@@ -4,21 +4,11 @@ import (
 	"context"
 	"strings"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 type CancelTurn struct{ ActorUserID, WorkID, TurnID string }
-type CurrentTurn struct {
-	ID              string
-	CancelRequested bool
-	Active          bool
-}
-
-// Harness turn control does not change AgentWork lifecycle or stop its process.
-type TurnControlPort interface {
-	CancelTurn(ctx context.Context, workID, turnID string) error
-	GetCurrentTurn(ctx context.Context, workID string) (CurrentTurn, error)
-}
 
 func (a *Application) CancelTurn(ctx context.Context, input CancelTurn) error {
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
@@ -38,23 +28,23 @@ func (a *Application) CancelTurn(ctx context.Context, input CancelTurn) error {
 	if work.Disconnected() {
 		return domain.ErrExecutionUnobserved
 	}
-	return a.Turns.CancelTurn(ctx, work.ID, input.TurnID)
+	return a.Harness.CancelTurn(ctx, work.ID, input.TurnID)
 }
-func (a *Application) GetCurrentTurn(ctx context.Context, input ControlWork) (CurrentTurn, error) {
+func (a *Application) GetCurrentTurn(ctx context.Context, input ControlWork) (command.CurrentTurn, error) {
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
-		return CurrentTurn{}, err
+		return command.CurrentTurn{}, err
 	}
 	work, err := a.WorkViews.GetWorkView(ctx, input.WorkID)
 	if err != nil {
-		return CurrentTurn{}, err
+		return command.CurrentTurn{}, err
 	}
 	if work.State != "working" {
-		return CurrentTurn{}, nil
+		return command.CurrentTurn{}, nil
 	}
 	// During a Disconnection the live Turn is not observed; the Work shows
 	// the Disconnection instead.
 	if !work.DisconnectedSince.IsZero() {
-		return CurrentTurn{}, domain.ErrExecutionUnobserved
+		return command.CurrentTurn{}, domain.ErrExecutionUnobserved
 	}
-	return a.Turns.GetCurrentTurn(ctx, input.WorkID)
+	return a.Harness.GetCurrentTurn(ctx, input.WorkID)
 }

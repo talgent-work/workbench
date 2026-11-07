@@ -1,8 +1,9 @@
 package domain_test
 
 import (
-	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"testing"
+
+	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"

@@ -15,12 +15,12 @@ type LocateWork struct {
 
 type LocateWorkHandler struct {
 	agents        domain.AgentDefinitionRepository
-	lookup        domain.WorkLookupPort
+	works         domain.AgentWorkRepository
 	authorization access.WorkAuthorizer
 }
 
-func NewLocateWorkHandler(agents domain.AgentDefinitionRepository, lookup domain.WorkLookupPort, authorization access.WorkAuthorizer) *LocateWorkHandler {
-	return &LocateWorkHandler{agents: agents, lookup: lookup, authorization: authorization}
+func NewLocateWorkHandler(agents domain.AgentDefinitionRepository, works domain.AgentWorkRepository, authorization access.WorkAuthorizer) *LocateWorkHandler {
+	return &LocateWorkHandler{agents: agents, works: works, authorization: authorization}
 }
 
 func (h *LocateWorkHandler) Handle(ctx context.Context, request LocateWork) (string, bool, error) {
@@ -33,7 +33,11 @@ func (h *LocateWorkHandler) Handle(ctx context.Context, request LocateWork) (str
 	if !request.Subject.Present() {
 		return "", false, domain.ErrInvalidWorkSubject
 	}
-	session, err := agent.ReuseWork(ctx, request.Subject, h.lookup)
+	subjectWork, err := h.works.FindBySubject(ctx, agent.ID, request.Subject)
+	if err != nil {
+		return "", false, err
+	}
+	session, err := agent.ReuseWork(request.Subject, subjectWork)
 	if err != nil {
 		return "", false, err
 	}

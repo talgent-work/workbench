@@ -91,7 +91,7 @@ func TestWorkCapabilityAPITracksNativeUpdatesAcrossDispatcherRecovery(t *testing
 		privateServer := httptest.NewServer(handler)
 		t.Cleanup(privateServer.Close)
 		control := agentexecution.NewDispatcherControl(privateServer.Client(), privateServer.URL, "control")
-		agent := &agentapp.Application{Capabilities: control, WorkPrincipals: permissions, WorkViews: permissions}
+		agent := &agentapp.Application{Harness: control, WorkPrincipals: permissions, WorkViews: permissions}
 		handler = connecttest.Handler(func(s *connect.Server) {
 			agentpublicv1connect.RegisterAgentWorkServiceHandler(s, agenttransport.NewWorkHandler(agent))
 		}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))

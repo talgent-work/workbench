@@ -1,107 +1,13 @@
 package infrastructure
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 
 	"github.com/samber/oops"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 )
-
-func workCreationToDO(request command.WorkCreationRequest) (workCreationDO, error) {
-	initial := request.Creation.InitialExecution
-	if uuid.Validate(request.ID) != nil || initial == nil || initial.CreationRequestID != request.ID || initial.RequestID != request.ID || initial.WorkID != "" || initial.SubjectID != request.Creation.SubjectID || initial.WorkspaceReference != request.Creation.WorkspaceReference || request.WorkID != "" || request.Canceled || request.BindingConfirmed {
-		return workCreationDO{}, command.ErrWorkCreationConflict
-	}
-	payload, err := encode(request.Creation)
-	if err != nil {
-		return workCreationDO{}, err
-	}
-	digest, err := subjectDigest(request.Creation.AgentID, request.Creation.Subject)
-	if err != nil {
-		return workCreationDO{}, err
-	}
-	return workCreationDO{ID: request.ID, SubjectDigest: digest, RequestData: payload, Pending: true}, nil
-}
-
-// cancelledCreationData marks an identity cancelled before Agent received its
-// request; it carries no creation.
-const cancelledCreationData = "{}"
-
-func workCreationFromDO(row workCreationDO) (command.WorkCreationRequest, error) {
-	if row.RequestData == cancelledCreationData {
-		if !row.Canceled || row.SessionID != "" {
-			return command.WorkCreationRequest{}, command.ErrWorkCreationConflict
-		}
-		return command.WorkCreationRequest{ID: row.ID, Canceled: true}, nil
-	}
-	var creation command.CreateWork
-	if err := json.Unmarshal([]byte(row.RequestData), &creation); err != nil {
-		return command.WorkCreationRequest{}, oops.Wrap(err)
-	}
-	for i := range creation.CapabilityDifferences.Plugins {
-		choice := &creation.CapabilityDifferences.Plugins[i]
-		choice.Configuration = pluginconfig.FromJSON(choice.Configuration)
-	}
-	if _, err := workCreationToDO(command.WorkCreationRequest{ID: row.ID, Creation: creation}); err != nil {
-		return command.WorkCreationRequest{}, err
-	}
-	if (row.Canceled && row.SessionID != "") || (row.BindingConfirmed && row.SessionID == "") {
-		return command.WorkCreationRequest{}, command.ErrWorkCreationConflict
-	}
-	return command.WorkCreationRequest{ID: row.ID, WorkID: row.SessionID, Creation: creation, Canceled: row.Canceled, BindingConfirmed: row.BindingConfirmed}, nil
-}
-
-// subjectDigest correlates a creation request with the Work its definition
-// holds for the same Subject, without interpreting the Subject; a request
-// without a Subject correlates by its own identity and has none.
-func subjectDigest(agentID string, subject domain.WorkSubject) (string, error) {
-	if !subject.Present() {
-		return "", nil
-	}
-	data, err := json.Marshal(struct {
-		Agent   string
-		Subject domain.WorkSubject
-	}{agentID, subject})
-	if err != nil {
-		return "", oops.Wrap(err)
-	}
-	digest := sha256.Sum256(data)
-	return hex.EncodeToString(digest[:]), nil
-}
-
-func initialExecutionRequestFromDO(row initialExecutionRequestDO) (command.InitialExecutionRequest, error) {
-	var request command.InitialExecutionRequest
-	if err := json.Unmarshal([]byte(row.RequestData), &request); err != nil {
-		return request, oops.Wrap(err)
-	}
-	if request.WorkID != row.ID || request.RequestID != row.RequestID {
-		return command.InitialExecutionRequest{}, command.ErrInitialExecutionConflict
-	}
-	for _, selection := range request.Selections {
-		if selection.RepositoryID == "" {
-			return command.InitialExecutionRequest{}, command.ErrInitialExecutionConflict
-		}
-	}
-	request.Version = row.Version
-	return request, nil
-}
-
-func initialExecutionRequestToDO(request command.InitialExecutionRequest) (initialExecutionRequestDO, error) {
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return initialExecutionRequestDO{}, oops.Wrap(err)
-	}
-	return initialExecutionRequestDO{ID: request.WorkID, RequestID: request.RequestID, RequestData: string(payload), Submitted: request.Submitted, Pending: !request.FirstStartRecovered() && !request.CleanupConfirmed && !(request.Rejected && request.RejectionApplied), Version: request.Version}, nil
-}
 
 func encode(value any) (string, error) {
 	body, err := json.Marshal(value)
@@ -157,6 +63,14 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	if err != nil {
 		return nil, err
 	}
+	checkouts, err := encodeRepositoryCheckouts(session.RepositoryCheckouts)
+	if err != nil {
+		return nil, err
+	}
+	initial, err := encodeInitialTaskInput(session.InitialTaskInput)
+	if err != nil {
+		return nil, err
+	}
 	authorizations, err := encodeWorkAuthorization(session.AuthorizationSelection)
 	if err != nil {
 		return nil, err
@@ -167,7 +81,7 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	}
 	var process *harnessProcessRecord
 	if current := session.HarnessProcess; current != nil {
-		process = &harnessProcessRecord{PhaseSequence: current.PhaseSequence, WorkProgressSequence: current.WorkProgressSequence, ContextMode: string(current.ContextMode), DeskID: current.DeskID, DeskWaiting: current.DeskWaiting, SeatedAt: current.SeatedAt, StartWithdrawn: current.StartWithdrawn, Soul: current.Soul, Prepared: current.Prepared, Started: current.Started, IdleSince: current.IdleSince, WaitingSince: current.WaitingSince, StartingSince: current.StartingSince, Exited: current.Exited, ComputeReclaimed: current.ComputeReclaimed, EnvironmentLost: current.EnvironmentLost, StartRejected: current.StartRejected, StartAbandoned: current.StartAbandoned, Unreached: current.Unreached, Turn: turnObservationRecord{Sequence: current.Turn.Sequence, Active: current.Turn.Active, Completed: current.Turn.Completed}, SubAgentsSequence: current.SubAgentsSequence, PermissionModeSequence: current.PermissionModeSequence}
+		process = &harnessProcessRecord{PhaseSequence: current.PhaseSequence, WorkProgressSequence: current.WorkProgressSequence, ContextMode: string(current.ContextMode), DeskID: current.DeskID, DeskWaiting: current.DeskWaiting, StartWithdrawn: current.StartWithdrawn, Soul: current.Soul, Ready: current.Ready, IdleSince: current.IdleSince, WaitingSince: current.WaitingSince, StartingSince: current.StartingSince, Exited: current.Exited, ComputeReclaimed: current.ComputeReclaimed, EnvironmentLost: current.EnvironmentLost, StartRejected: current.StartRejected, StartAbandoned: current.StartAbandoned, Unreached: current.Unreached, Fenced: current.Fenced, Turn: turnObservationRecord{Sequence: current.Turn.Sequence, Active: current.Turn.Active, Completed: current.Turn.Completed}, SubAgentsSequence: current.SubAgentsSequence, PermissionModeSequence: current.PermissionModeSequence}
 		for _, agent := range current.SubAgents {
 			process.SubAgents = append(process.SubAgents, subAgentRecord{ID: agent.ID, Type: agent.Type, Task: agent.Task, Status: string(agent.Status)})
 		}
@@ -195,7 +109,7 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	if err != nil {
 		return nil, err
 	}
-	row := &agentWorkDO{ReadOnlyMounts: readOnlyMounts, DisplayTitle: session.DisplayTitle, ProjectRef: session.ProjectID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, RepositorySelection: repositories, AuthorizationSelection: authorizations, TaskExecutionBegun: session.TaskExecutionBegun, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, WorkspaceRef: session.WorkspaceReference, InputSource: session.InputSource.Reference, InputSpaceToken: session.InputSource.SpaceToken, StartingContext: starting, HomeOwnerID: session.HomeBinding.OwnerID, HomeNamespace: session.HomeBinding.Namespace, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
+	row := &agentWorkDO{ReadOnlyMounts: readOnlyMounts, DisplayTitle: session.DisplayTitle, ProjectRef: session.ProjectID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, WorkspaceRef: session.WorkspaceReference, InputSource: session.InputSource.Reference, InputSpaceToken: session.InputSource.SpaceToken, StartingContext: starting, HomeOwnerID: session.HomeBinding.OwnerID, HomeNamespace: session.HomeBinding.Namespace, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
 	if session.Subject.Present() {
 		kind, id := string(session.Subject.Kind), session.Subject.ID
 		row.SubjectKind, row.SubjectID = &kind, &id
@@ -233,6 +147,14 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	if err != nil {
 		return nil, err
 	}
+	checkouts, err := decodeRepositoryCheckouts(row.RepositoryCheckouts)
+	if err != nil {
+		return nil, err
+	}
+	initial, err := decodeInitialTaskInput(row.InitialTaskInput)
+	if err != nil {
+		return nil, err
+	}
 	authorizations, err := decodeWorkAuthorization(row.AuthorizationSelection)
 	if err != nil {
 		return nil, err
@@ -241,7 +163,7 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	if err := json.Unmarshal([]byte(row.HarnessProcess), &current); err != nil {
 		return nil, oops.Wrap(err)
 	}
-	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, RepositorySelection: repositories, AuthorizationSelection: authorizations, TaskExecutionBegun: row.TaskExecutionBegun, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, WorkspaceReference: row.WorkspaceRef, InputSource: domain.WorkInputSource{Reference: row.InputSource, SpaceToken: row.InputSpaceToken}, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
+	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, WorkspaceReference: row.WorkspaceRef, InputSource: domain.WorkInputSource{Reference: row.InputSource, SpaceToken: row.InputSpaceToken}, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
 	if err := json.Unmarshal([]byte(row.TraceAttributes), &session.TraceAttributes); err != nil {
 		return nil, err
 	}
@@ -264,24 +186,12 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	}
 	session.HomeBinding = domain.HomeBinding{OwnerID: row.HomeOwnerID, Namespace: row.HomeNamespace}
 	if current != nil {
-		session.HarnessProcess = &domain.HarnessProcess{PhaseSequence: current.PhaseSequence, WorkProgressSequence: current.WorkProgressSequence, ContextMode: domain.ContextMode(current.ContextMode), DeskID: current.DeskID, DeskWaiting: current.DeskWaiting, SeatedAt: current.SeatedAt, StartWithdrawn: current.StartWithdrawn, Soul: current.Soul, Prepared: current.Prepared, Started: current.Started, IdleSince: current.IdleSince, WaitingSince: current.WaitingSince, StartingSince: current.StartingSince, Exited: current.Exited, ComputeReclaimed: current.ComputeReclaimed, EnvironmentLost: current.EnvironmentLost, StartRejected: current.StartRejected, StartAbandoned: current.StartAbandoned, Unreached: current.Unreached, Turn: domain.TurnObservation{Sequence: current.Turn.Sequence, Active: current.Turn.Active, Completed: current.Turn.Completed}, SubAgentsSequence: current.SubAgentsSequence, PermissionModeSequence: current.PermissionModeSequence}
+		session.HarnessProcess = &domain.HarnessProcess{PhaseSequence: current.PhaseSequence, WorkProgressSequence: current.WorkProgressSequence, ContextMode: domain.ContextMode(current.ContextMode), DeskID: current.DeskID, DeskWaiting: current.DeskWaiting, StartWithdrawn: current.StartWithdrawn, Soul: current.Soul, Ready: current.Ready, IdleSince: current.IdleSince, WaitingSince: current.WaitingSince, StartingSince: current.StartingSince, Exited: current.Exited, ComputeReclaimed: current.ComputeReclaimed, EnvironmentLost: current.EnvironmentLost, StartRejected: current.StartRejected, StartAbandoned: current.StartAbandoned, Unreached: current.Unreached, Fenced: current.Fenced, Turn: domain.TurnObservation{Sequence: current.Turn.Sequence, Active: current.Turn.Active, Completed: current.Turn.Completed}, SubAgentsSequence: current.SubAgentsSequence, PermissionModeSequence: current.PermissionModeSequence}
 		for _, agent := range current.SubAgents {
 			session.HarnessProcess.SubAgents = append(session.HarnessProcess.SubAgents, domain.SubAgent{ID: agent.ID, Type: agent.Type, Task: agent.Task, Status: domain.SubAgentStatus(agent.Status)})
 		}
 	}
 	return session, session.Validate()
-}
-
-func sessionPreparationFromRequest(request command.InitialExecutionRequest) query.WorkPreparation {
-	result := query.WorkPreparation{ThinkingLevel: request.ThinkingLevel, WorkID: request.WorkID, RequestID: request.RequestID, SubjectID: request.SubjectID, WorkBranch: request.WorkBranch, InputID: request.Input.ID, Input: request.Input.Text, Prepared: request.Prepared, Submitted: request.Submitted, InputPrepared: request.InputPrepared, InputBuffered: request.InputBuffered, Rejected: request.Rejected}
-	for _, c := range request.Checkouts {
-		result.Checkouts = append(result.Checkouts, query.PreparedCheckout{Provider: c.Provider, RepoID: c.RepoID, RepoName: c.RepoName, CloneURL: c.CloneURL, WebURL: c.WebURL, DefaultBranch: c.DefaultBranch, BaseBranch: c.BaseBranch, WorkBranch: c.WorkBranch, TargetPath: c.TargetPath, AccessID: c.AccessID})
-	}
-	return result
-}
-
-func continuationFromDO(row continuationRequestDO) command.ContinuationRequest {
-	return command.ContinuationRequest{StartWork: command.StartWork{WorkID: row.ID, SubjectID: row.SubjectID, RequestID: row.RequestID}, Operation: row.Operation, Rejection: row.Rejection, Resolved: !row.Pending}
 }
 
 func workProgressToRecord(progress *domain.WorkProgress) *workProgressRecord {

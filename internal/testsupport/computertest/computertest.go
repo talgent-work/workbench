@@ -1,5 +1,5 @@
-// Package computertest stands in for Computer's admission contract in Agent
-// module tests that do not exercise admission itself.
+// Package computertest stands in for Computer's contract in Agent module tests
+// that do not exercise admission itself.
 package computertest
 
 import (
@@ -34,6 +34,15 @@ func (cloud) DeskSeated(context.Context, string) (time.Time, bool, error) {
 	return time.Time{}, true, nil
 }
 
+// DescribeComputer describes the one Cloud, always reachable; any other
+// Computer cannot be asked.
+func (cloud) DescribeComputer(_ context.Context, id string) (command.ComputerDescription, error) {
+	if id != CloudID {
+		return command.ComputerDescription{}, command.ErrComputerUnavailable
+	}
+	return command.ComputerDescription{Name: "Cloud", Reachable: true}, nil
+}
+
 // Admission seats every run on its Cloud, or rejects it as full while full,
 // and records the Desks that left.
 type Admission struct {
@@ -43,7 +52,7 @@ type Admission struct {
 	open map[string]string
 }
 
-var _ command.ComputerAdmissionPort = (*Admission)(nil)
+var _ command.ComputerPort = (*Admission)(nil)
 
 // SetFull makes the Cloud reject every run as full, or seat them again.
 func (a *Admission) SetFull(full bool) {
@@ -87,7 +96,7 @@ func (a *Admission) Open() int {
 func Option(admission *Admission) fx.Option {
 	return fx.Options(
 		fx.Supply(agent.ComputerConfig{Address: "http://computer.invalid", Token: "computer"}),
-		fx.Decorate(func(command.ComputerAdmissionPort) command.ComputerAdmissionPort { return admission }),
+		fx.Decorate(func(command.ComputerPort) command.ComputerPort { return admission }),
 	)
 }
 
@@ -99,7 +108,7 @@ type RoomCheck interface {
 
 // Checked admits each run on the Cloud by check: domain.ErrCapacityUnavailable
 // rejects it as full, and any other error fails the admission request.
-func Checked(check RoomCheck) command.ComputerAdmissionPort {
+func Checked(check RoomCheck) command.ComputerPort {
 	return checked{check: check}
 }
 

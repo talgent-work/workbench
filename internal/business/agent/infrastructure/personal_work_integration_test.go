@@ -27,7 +27,7 @@ import (
 // librarySpaces stands in for Storage's File Space Contract: a space opens
 // under its owner's name and the files are the fixture's.
 type librarySpaces struct {
-	personalwork.FileSpaces
+	personalwork.FileSpacePort
 	files  []personalwork.SpaceFile
 	issued []string
 }
@@ -91,14 +91,13 @@ func (k knownPeople) GetUsers(_ context.Context, ids []string) ([]personalwork.D
 
 func personalWorksFixture(t *testing.T, db *xorm.Engine, spaces *librarySpaces) (*personalwork.PersonalWorks, *application.Application) {
 	t.Helper()
-	var starts []domain.StartExecutionRequest
 	options := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
-	create, _ := creationCoordinator(db, infrastructure.NewWorkCreationRequests(db, time.Now), startupAuthority{}, &registrationResources{}, &starts, nil, options, &personalStartupCatalog{})
+	create := creationCoordinator(db, startupAuthority{}, nil, options, &personalStartupCatalog{})
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	lookup := infrastructure.NewAgentDefinitionLookup(db)
 	app := &application.Application{Definitions: definitions, DefinitionLookup: lookup, Works: infrastructure.NewAgentWorkRepository(db, time.Now), WorkViews: infrastructure.NewWorkQueryRepository(db), Commands: application.Commands{
 		EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup),
-		CreateRequestedWork:   create,
+		CreateWork:            create,
 	}}
 	directory := knownPeople{"reader": {UserID: "reader", Username: "reader"}}
 	return personalwork.New(app, infrastructure.NewWorkQueryRepository(db), spaces, directory), app
@@ -163,7 +162,7 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.NoError(t, err)
 	project := uuid.NewString()
 	initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/TAL-1", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Build it"}}
-	subjectWork, err := app.Commands.CreateRequestedWork.Handle(ctx, command.CreateWork{StartingUserID: "owner", SubjectID: "owner", RequestID: initial.RequestID, AgentID: definition.AgentID,
+	subjectWork, err := app.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: "owner", SubjectID: "owner", RequestID: initial.RequestID, AgentID: definition.AgentID,
 		Subject: domain.WorkSubject{Kind: "case", ID: "case-x"}, ProjectID: project, WorkspaceReference: uuid.NewString(),
 		InputSource: domain.WorkInputSource{Reference: "file-space/case-x", SpaceToken: "token-x"}, InitialExecution: &initial})
 	require.NoError(t, err)

@@ -49,7 +49,7 @@ func newAccessFixture(t *testing.T) *accessFixture {
 }
 
 // newAccessFixtureWith also serves workspaces through views, Storage's stand-in.
-func newAccessFixtureWith(t *testing.T, views application.WorkspaceViewPort) *accessFixture {
+func newAccessFixtureWith(t *testing.T, views application.WorkspacePort) *accessFixture {
 	t.Helper()
 	agents := &rpcAgents{items: map[string]*domain.AgentDefinition{}}
 	dispatcher := domainevent.NewDispatcher(domainevent.WithDelayClose(0))
@@ -62,11 +62,10 @@ func newAccessFixtureWith(t *testing.T, views application.WorkspaceViewPort) *ac
 	f.digitalWork = accessWork(t, sessions, coordinator, "owner")
 
 	dispatcher.Subscribe(eventhandler.NewWorkAccessWithdrawals(f.withdrawals, slog.Default()))
-	requests := &memoryCreations{items: map[string]command.WorkCreationRequest{}}
 	app := &application.Application{Definitions: agents, Works: sessions, WorkPrincipals: ownerAuthorization{sessions}, WorkViews: sessionViews{sessions}, Logger: slog.Default(),
-		Commands:       application.Commands{CreateRequestedWork: command.NewCreateRequestedWorkHandler(requests, nil, nil)},
-		Queries:        application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions})},
-		WorkspaceViews: views,
+		Commands:   application.Commands{CreateWork: command.NewCreateWorkHandler(time.Now, agents, sessions, ownerAuthorization{sessions}, query.NewModelConfigurations(), nil, nil, nil)},
+		Queries:    application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions})},
+		Workspaces: views,
 	}
 	mux := http.NewServeMux()
 	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, slog.Default(), nil)
@@ -89,9 +88,9 @@ func accessDefinition(t *testing.T, agents *rpcAgents, scope domain.UsageScope, 
 
 func accessWork(t *testing.T, sessions *rpcSessions, definition *domain.AgentDefinition, owner string) string {
 	t.Helper()
-	work, err := domain.NewAgentWork(context.Background(), domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project-a", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: owner, ID: uuid.NewString(), AgentID: definition.ID, Visibility: definition.Visibility,
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project-a", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: owner, ID: uuid.NewString(), AgentID: definition.ID, Visibility: definition.Visibility,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding,
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, &rpcExecution{})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	sessions.items[work.ID] = work
 	return work.ID
@@ -253,6 +252,7 @@ func TestCancelledCreationRequestIdentityNeverCreatesAWork(t *testing.T) {
 }
 
 type recordedWithdrawals struct {
+	eventhandler.LiveStreamPort
 	mu    sync.Mutex
 	items []eventhandler.WorkAccessWithdrawal
 }
@@ -293,53 +293,3 @@ func (v sessionViews) GetWorkView(_ context.Context, id string) (query.WorkView,
 	}
 	return view, nil
 }
-
-// memoryCreations keeps creation-request records under one lock, as the
-// repository serializes them.
-type memoryCreations struct {
-	mu    sync.Mutex
-	items map[string]command.WorkCreationRequest
-}
-
-func (m *memoryCreations) GetWorkCreation(_ context.Context, id string) (command.WorkCreationRequest, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	request, ok := m.items[id]
-	if !ok {
-		return command.WorkCreationRequest{}, command.ErrWorkCreationNotFound
-	}
-	return request, nil
-}
-
-func (m *memoryCreations) RetainWorkCreation(_ context.Context, request command.WorkCreationRequest) (command.WorkCreationRequest, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if retained, ok := m.items[request.ID]; ok {
-		return retained, nil
-	}
-	m.items[request.ID] = request
-	return request, nil
-}
-
-func (m *memoryCreations) CancelWorkCreation(_ context.Context, id string) (command.WorkCreationRequest, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	request := m.items[id]
-	request.ID = id
-	if request.WorkID == "" {
-		request.Canceled = true
-	}
-	m.items[id] = request
-	return request, nil
-}
-
-func (m *memoryCreations) ConfirmWorkCreation(_ context.Context, id, workID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	request := m.items[id]
-	request.WorkID, request.BindingConfirmed = workID, true
-	m.items[id] = request
-	return nil
-}
-
-func (m *memoryCreations) CompleteWorkCreation(context.Context, string) error { return nil }

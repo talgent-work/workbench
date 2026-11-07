@@ -25,7 +25,7 @@ const (
 // per process run. A caller attribute that could not be carried unchanged in
 // OTEL_RESOURCE_ATTRIBUTES rejects the start; the Computer's name, a person's
 // choice, is percent-encoded instead (resourceAttributes).
-func telemetryAttribution(request domain.StartExecutionRequest) (map[string]string, error) {
+func telemetryAttribution(request domain.LaunchSpecification) (map[string]string, error) {
 	attributes := make(map[string]string, len(request.TraceAttributes)+2)
 	for key, value := range request.TraceAttributes {
 		if value == "" {

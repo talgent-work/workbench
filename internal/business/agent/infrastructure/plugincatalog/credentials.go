@@ -8,7 +8,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 )
 
-var _ application.RepositoryCredentialPort = (*Client)(nil)
+var _ application.CredentialSupplyPort = (*Client)(nil)
 
 func (c *Client) SupplyRepositoryCredential(ctx context.Context, input application.RepositoryCredentialRequest) (application.RepositoryCredentialMaterial, error) {
 	if c.credentialToken == "" {

@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -25,8 +24,8 @@ var (
 	// ErrTurnActive rejects stopping a Work while a Turn runs: a Work stops
 	// only between Turns, after its Turn ends or is cancelled.
 	ErrTurnActive = errors.New("agent: a Turn is running; cancel it before stopping the Work")
-	// ErrInputPending rejects closing a Work that still holds accepted input;
-	// it is a work transition refusal.
+	// ErrInputPending rejects closing a running Work that still holds
+	// accepted input; it is a work transition refusal.
 	ErrInputPending = fmt.Errorf("%w: the Work still has accepted input to finish", ErrWorkTransition)
 )
 
@@ -91,6 +90,9 @@ type WorkInput struct {
 	ComputerManaged bool
 	// Harness is its starter's choice, admitted only on a Managed Computer.
 	Harness HarnessChoice
+	// InitialTaskInput is the creating caller's first task input, when it
+	// supplied one.
+	InitialTaskInput *InitialTaskInput
 }
 
 // StartAdmission carries the AgentDefinition, Computer and Model
@@ -145,28 +147,24 @@ type HarnessProcess struct {
 	WaitingSince  time.Time
 	StartingSince time.Time
 	ContextMode   ContextMode
-	// DeskID is the Desk this run holds on the Work's Computer; it leaves once
-	// the process ended and its compute is released, the start was rejected
-	// before any compute existed, or its waiting start was withdrawn.
-	DeskID string
-	// DeskWaiting records that the start waits in its Computer's line: its
-	// startup is deferred until its Desk is seated. SeatedAt is when it was
-	// seated, the origin of its Startup Deadline.
+	// DeskID is the Desk the admitted start took on the Work's Computer, and
+	// DeskWaiting whether its Computer admitted it waiting in its line: the
+	// admission its start request carries. The start's AgentExecution holds
+	// that Desk and whether it still waits.
+	DeskID      string
 	DeskWaiting bool
-	SeatedAt    time.Time
 	// StartWithdrawn records that a stop or close withdrew the start while
 	// its Desk still waited: it launched nothing and holds no compute.
 	StartWithdrawn bool
-	// Soul is the definition's Soul this execution took up at its start; a
-	// recovered delivery of the same start keeps it.
-	Soul             string
-	Prepared         bool
-	Started          bool
+	// Soul is the definition's Soul this start took up.
+	Soul string
+	// Ready records its AgentExecution's report that the run became ready.
+	Ready            bool
 	StartRejected    bool
 	Exited           bool
 	ComputeReclaimed bool
 	EnvironmentLost  bool
-	// StartAbandoned records the execution authority's report that this start
+	// StartAbandoned records its AgentExecution's report that this start
 	// never launched a Harness process and no longer can: its environment is
 	// released without a stop or an exit.
 	StartAbandoned bool
@@ -174,7 +172,10 @@ type HarnessProcess struct {
 	// Cloud reclaims the run's sandbox in place of its exit; the release
 	// confirmation vouches for the exit (Disconnection release).
 	Unreached bool
-	Turn      TurnObservation
+	// Fenced records that its Managed Computer fenced the run during a
+	// Disconnection, which vouches for its exit and release.
+	Fenced bool
+	Turn   TurnObservation
 }
 
 // Held reports whether the process may still be running: from start admission
@@ -215,10 +216,18 @@ type AgentWork struct {
 	// StartedBy is who started the Work, fixed at creation: an Owner of its
 	// definition when it started, kept as a fact, never as authority. The
 	// Work's Agent Owners are its definition's Owners.
-	StartedBy              string `validate:"max=255"`
-	RepositorySelection    WorkRepositorySelection
+	StartedBy           string `validate:"max=255"`
+	RepositorySelection WorkRepositorySelection
+	// RepositoryCheckouts are the final checkout outcomes of selected
+	// repositories, in selection order; a repository without one is still to
+	// be checked out.
+	RepositoryCheckouts    []RepositoryCheckout
 	AuthorizationSelection WorkAuthorizationSelection
-	ThinkingLevel          string
+	// InitialTaskInput is the creating caller's first task input, held until
+	// it is handed to the Work's input buffer; nil once handed off, or for a
+	// Work created without one.
+	InitialTaskInput *InitialTaskInput
+	ThinkingLevel    string
 	// PermissionMode is a Managed Work's Harness permission mode, the one its
 	// Harness last reported; empty for a Cloud Work, which always bypasses.
 	PermissionMode PermissionMode
@@ -233,9 +242,6 @@ type AgentWork struct {
 	AgentID            string    `validate:"required,uuid"`
 	State              WorkState `validate:"oneof=starting working stopping stopped failed closing closed"`
 	CapabilitySnapshot CapabilitySnapshot
-	// TaskExecutionBegun retains task-input admission or observed Turn activity
-	// across restarts; a Restart before it re-prepares the initial execution.
-	TaskExecutionBegun bool
 	// ComputerID is the Computer chosen at the Work's first start, fixed for
 	// its life; every run of the Work is admitted there.
 	ComputerID              string `validate:"required,uuid"`
@@ -279,7 +285,7 @@ type AgentWork struct {
 	Version    int `validate:"gte=0"`
 }
 
-func NewAgentWork(ctx context.Context, input WorkInput, admission StartAdmission, port ExecutionPort) (*AgentWork, error) {
+func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error) {
 	if strings.TrimSpace(input.StartedBy) == "" {
 		return nil, fmt.Errorf("%w: who starts the Work is required", ErrInvalidWork)
 	}
@@ -304,13 +310,20 @@ func NewAgentWork(ctx context.Context, input WorkInput, admission StartAdmission
 		WorkspaceReference: workspace, InputSource: input.InputSource, ReadOnlyMounts: mounts, DisplayTitle: strings.TrimSpace(input.DisplayTitle), HomeBinding: input.HomeBinding, TraceAttributes: maps.Clone(input.TraceAttributes),
 		Visibility: WorkVisibility{Public: input.Visibility.Public && strings.TrimSpace(input.ProjectID) != ""}, StartingContext: input.StartingContext.clone(), Events: NewEventCollection(),
 	}
+	if initial := input.InitialTaskInput; initial != nil {
+		established, err := NewInitialTaskInput(initial.ID, initial.Text)
+		if err != nil {
+			return nil, err
+		}
+		session.InitialTaskInput = &established
+	}
 	if err := session.determineAuthorizationSelection(input.AuthorizationInput); err != nil {
 		return nil, err
 	}
 	if err := session.determineRepositorySelection(input.RepositoryInput); err != nil {
 		return nil, err
 	}
-	if err := validateStartAdmission(session.AgentID, session.WorkModel, admission, port); err != nil {
+	if err := validateStartAdmission(session.AgentID, session.WorkModel, admission); err != nil {
 		return nil, err
 	}
 	if err := session.WorkModel.AdmitOn(input.ComputerManaged); err != nil {
@@ -319,13 +332,7 @@ func NewAgentWork(ctx context.Context, input WorkInput, admission StartAdmission
 	if err := session.Validate(); err != nil {
 		return nil, err
 	}
-	// A start waiting for its Desk is started once it is seated.
-	if session.HarnessProcess.DeskWaiting {
-		return session, nil
-	}
-	if err := session.startExecution(ctx, port); err != nil {
-		return nil, executionRequestError(err)
-	}
+	session.admitStart()
 	return session, nil
 }
 
@@ -404,10 +411,8 @@ func (s *AgentWork) Validate() error {
 		if (s.State != WorkWorking && !p.IdleSince.IsZero()) || (s.Closed() && !p.WaitingSince.IsZero()) {
 			return ErrInvalidWork
 		}
-		// Every process belongs to an admitted start, which entered Starting;
-		// only a start still Starting waits for its Desk, and every other was
-		// seated or withdrawn.
-		if p.StartingSince.IsZero() || (p.DeskWaiting && s.State != WorkStarting) || (!p.DeskWaiting && !p.StartWithdrawn && p.SeatedAt.IsZero()) {
+		// Every process belongs to an admitted start, which entered Starting.
+		if p.StartingSince.IsZero() {
 			return ErrInvalidWork
 		}
 		if p.ContextMode != ContextFresh && p.ContextMode != ContextContinue && p.ContextMode != ContextRecover {
@@ -420,13 +425,6 @@ func (s *AgentWork) Validate() error {
 // AdmitPreparation admits preparing the Work's execution until it closes.
 func (s *AgentWork) AdmitPreparation() error {
 	if s.State == WorkClosing || s.State == WorkClosed {
-		return ErrWorkTransition
-	}
-	return nil
-}
-
-func (s *AgentWork) AuthorizePreparationRelease() error {
-	if s.State != WorkClosed {
 		return ErrWorkTransition
 	}
 	return nil

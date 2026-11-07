@@ -1,28 +1,19 @@
 package domain
 
-import (
-	"errors"
-	"strings"
-)
+import "errors"
 
 var (
 	ErrRepositoryPreparationCanceled = errors.New("agent: repository preparation cancelled")
-	ErrRepositoryPreparationConflict = errors.New("agent: repository preparation differs from retained choices")
+	ErrRepositoryPreparationConflict = errors.New("agent: repository preparation differs from the retained selection")
 )
 
-// RepositoryPreparation supplies request facts without making recovery records
-// part of the aggregate. Concrete checkout paths remain Application data.
-type RepositoryPreparation struct {
-	OwnerUserID string
-	Choices     []WorkRepositoryChoice
-	Canceled    bool
-}
-
-func (s *AgentWork) AdmitRepositoryPreparation(facts RepositoryPreparation) error {
-	if err := s.AdmitPreparation(); err != nil {
-		return err
-	}
-	if facts.Canceled {
+// AdmitRepositoryAccess decides whether the Work's current start receives
+// temporary access to its selected repositories for ownerUserID: only while
+// it holds an active process, never once it entered Closing (Repository
+// preparation cancellation), and only for the user whose selection it
+// retained (Repository preparation admission).
+func (s *AgentWork) AdmitRepositoryAccess(ownerUserID string) error {
+	if s.Closed() {
 		return ErrRepositoryPreparationCanceled
 	}
 	if err := s.AuthorizeCredentialAccess(); err != nil {
@@ -32,15 +23,8 @@ func (s *AgentWork) AdmitRepositoryPreparation(facts RepositoryPreparation) erro
 	if err := selection.Validate(); err != nil {
 		return err
 	}
-	if len(facts.Choices) != len(selection.Repositories) || (len(selection.Repositories) > 0 && facts.OwnerUserID != selection.OwnerUserID) {
+	if len(selection.Repositories) > 0 && ownerUserID != selection.OwnerUserID {
 		return ErrRepositoryPreparationConflict
-	}
-	for n, repo := range selection.Repositories {
-		choice := facts.Choices[n]
-		branch := strings.TrimSpace(choice.BaseBranch)
-		if choice.RepositoryID != repo.RepoID || (branch != "" && branch != repo.BaseBranch) {
-			return ErrRepositoryPreparationConflict
-		}
 	}
 	return nil
 }

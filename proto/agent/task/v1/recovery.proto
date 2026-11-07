@@ -4,73 +4,26 @@ package agent.task.v1;
 
 option go_package = "github.com/talgent-work/workbench/gen/agent/task/v1;agenttaskv1";
 
-// ReconcileAllocationTaskV1 asks Agent to reconcile one execution environment
-// allocation against its durable record and the environment authority.
-message ReconcileAllocationTaskV1 {
-  // Allocation identity of the durable allocation record.
-  string allocation_id = 1;
+// ReconcileExecutionTaskV1 asks Agent to take whichever short step one
+// AgentExecution's current facts call for, and to wake its long step when one
+// is due.
+message ReconcileExecutionTaskV1 {
+  // AgentExecution identity.
+  string execution_id = 1;
 }
 
-// PrepareAllocationTaskV1 asks Agent to see one allocation's environment
-// preparation through to its exit, then start the Harness and connect it.
-message PrepareAllocationTaskV1 {
-  // Allocation identity of the durable allocation record.
-  string allocation_id = 1;
-}
-
-// ReconnectAllocationTaskV1 asks Agent to hand one allocation's running Harness
-// process to Dispatcher again, without preparing its environment.
-message ReconnectAllocationTaskV1 {
-  // Allocation identity of the durable allocation record.
-  string allocation_id = 1;
-}
-
-// DeliverCredentialsTaskV1 asks Agent to replace one allocation's delivered
-// credentials with those Marketplace supplies now.
-message DeliverCredentialsTaskV1 {
-  // Allocation identity of the durable allocation record.
-  string allocation_id = 1;
-}
-
-// SyncInputsTaskV1 asks Agent to hand one Managed allocation's machine the
-// current inputs of its Work.
-message SyncInputsTaskV1 {
-  // Allocation identity of the durable allocation record.
-  string allocation_id = 1;
-}
-
-// ObserveSandboxTaskV1 asks Agent to check one allocation against its sandboxes
-// after the environment authority reported a change to them.
-message ObserveSandboxTaskV1 {
-  // Allocation identity of the durable allocation record.
-  string allocation_id = 1;
+// RunLongExecutionStepTaskV1 asks Agent to take the step of one AgentExecution
+// that may wait minutes, such as its environment's preparation, apart from the
+// short steps.
+message RunLongExecutionStepTaskV1 {
+  // AgentExecution identity.
+  string execution_id = 1;
 }
 
 // RecoverWorkTaskV1 asks Agent to advance one Work's retained execution,
 // input and workspace obligations.
 message RecoverWorkTaskV1 {
   // AgentWork identity.
-  string work_id = 1;
-}
-
-// RecoverContinuationTaskV1 asks Agent to settle one Work's pending continuation
-// request after admission uncertainty.
-message RecoverContinuationTaskV1 {
-  // AgentWork identity owning the continuation request.
-  string work_id = 1;
-}
-
-// RecoverWorkCreationTaskV1 asks Agent to settle one retained Work creation
-// request after admission uncertainty.
-message RecoverWorkCreationTaskV1 {
-  // Original Work creation request identity.
-  string request_id = 1;
-}
-
-// PrepareInitialExecutionTaskV1 asks Agent to prepare and deliver one Work's
-// initial execution under its Startup Deadline.
-message PrepareInitialExecutionTaskV1 {
-  // AgentWork identity owning the initial execution request.
   string work_id = 1;
 }
 
@@ -85,4 +38,61 @@ message RequestWorkspaceReclamationTaskV1 {
   string work_id = 1;
   // The Work's opaque Session Workspace reference.
   string workspace_reference = 2;
+}
+
+// The task payloads below are retired: their queued tasks are dropped without
+// decoding. They stay because a task contract only grows within its version.
+
+// ReconcileAllocationTaskV1 is a retired payload.
+message ReconcileAllocationTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// PrepareAllocationTaskV1 is a retired payload.
+message PrepareAllocationTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// ReconnectAllocationTaskV1 is a retired payload.
+message ReconnectAllocationTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// DeliverCredentialsTaskV1 is a retired payload.
+message DeliverCredentialsTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// SyncInputsTaskV1 is a retired payload.
+message SyncInputsTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// ObserveSandboxTaskV1 is a retired payload.
+message ObserveSandboxTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// RecoverContinuationTaskV1 is a retired payload.
+message RecoverContinuationTaskV1 {
+  // AgentWork identity owning the continuation request.
+  string work_id = 1;
+}
+
+// RecoverWorkCreationTaskV1 is a retired payload.
+message RecoverWorkCreationTaskV1 {
+  // Original Work creation request identity.
+  string request_id = 1;
+}
+
+// PrepareInitialExecutionTaskV1 is a retired payload.
+message PrepareInitialExecutionTaskV1 {
+  // AgentWork identity owning the initial execution request.
+  string work_id = 1;
 }

@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -32,31 +31,30 @@ func startingRequest(agent *domain.AgentDefinition, subjectID string, source *do
 // the same definition and Project; it keeps the source's Harness Session and
 // the named position, and its start request carries them.
 func TestWorkStartsFromAnotherWorkOfItsDefinitionOnly(t *testing.T) {
-	ctx := context.Background()
 	agent := pmDefinition(t)
-	source, _, err := agent.CreateWork(ctx, startingRequest(agent, "project-work", nil), &definitionSessionLookup{}, &executionPort{})
+	source, _, err := agent.CreateWork(startingRequest(agent, "project-work", nil), domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	require.Nil(t, source.StartingContext)
 
 	other := pmDefinition(t)
-	foreign, _, err := other.CreateWork(ctx, startingRequest(other, "project-work", nil), &definitionSessionLookup{}, &executionPort{})
+	foreign, _, err := other.CreateWork(startingRequest(other, "project-work", nil), domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	lookup := &definitionSessionLookup{works: []*domain.AgentWork{source, foreign}}
-	port := &executionPort{}
-	derived, created, err := agent.CreateWork(ctx, startingRequest(agent, "review-1", &domain.StartingContextSource{WorkID: source.ID, Position: " message-uuid "}), lookup, port)
+	derived, created, err := createWork(agent, startingRequest(agent, "review-1", &domain.StartingContextSource{WorkID: source.ID, Position: " message-uuid "}), lookup)
+	port := follow(derived)
 	require.NoError(t, err)
 	require.True(t, created)
 	want := &domain.StartingContext{SourceWorkID: source.ID, SourceSessionReference: source.HarnessSessionReference, Position: "message-uuid"}
 	require.Equal(t, want, derived.StartingContext)
-	require.Len(t, port.starts, 1)
-	require.Equal(t, want, port.starts[0].StartingContext, "its first start takes up the starting context")
+	require.Equal(t, 1, port.starts())
+	require.Equal(t, want, port.launch().StartingContext, "its first start takes up the starting context")
 
 	for name, source := range map[string]*domain.StartingContextSource{
 		"another definition": {WorkID: foreign.ID, Position: "message-uuid"},
 		"no position":        {WorkID: source.ID, Position: " "},
 		"no Work":            {WorkID: "missing", Position: "message-uuid"},
 	} {
-		work, _, err := agent.CreateWork(ctx, startingRequest(agent, "review-2", source), lookup, &executionPort{})
+		work, _, err := createWork(agent, startingRequest(agent, "review-2", source), lookup)
 		require.ErrorIs(t, err, domain.ErrStartingContextNotAdmitted, name)
 		require.Nil(t, work, "a refused starting context creates no Work")
 	}

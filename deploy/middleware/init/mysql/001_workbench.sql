@@ -45,40 +45,6 @@ CREATE TABLE IF NOT EXISTS `agent_definition` (
   UNIQUE KEY `uk_agent_definition_scope_purpose` (`scope_kind`,`scope_ref`,`purpose`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentDefinition capability, appearance and HOME authority';
 
-CREATE TABLE IF NOT EXISTS `agent_initial_execution_request` (
-  `id` varchar(36) NOT NULL COMMENT 'AgentSession identity; one initial-input obligation per conversation',
-  `request_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Original explicit execution and preparation request identity',
-  `request_data` json NOT NULL COMMENT 'Frozen first input, source references, checkout selections and preparation progress',
-  `submitted` boolean NOT NULL DEFAULT false COMMENT 'Original execution admission has been confirmed',
-  `pending` boolean NOT NULL DEFAULT true COMMENT 'Preparation, delivery or rejected-request cleanup remains outstanding',
-  `version` int unsigned NOT NULL DEFAULT 1 COMMENT 'Optimistic application receipt version',
-  `created_at` bigint NOT NULL DEFAULT 0 COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT 0 COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT 0 COMMENT 'Deletion time in Unix milliseconds; zero is active',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_initial_execution_request_id` (`request_id`),
-  KEY `idx_initial_execution_pending` (`pending`, `deleted_at`, `id`),
-  KEY `idx_initial_execution_submitted` (`submitted`, `deleted_at`, `id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent application initial execution and input recovery';
-
-CREATE TABLE IF NOT EXISTS `agent_plugin_result` (
-  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Projection row identity',
-  `work_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Work whose preparation produced the result',
-  `slug` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Selected plugin slug',
-  `installation_observed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'An installer result has been observed',
-  `load_observed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'A complete native plugin inventory has been observed',
-  `loaded` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Native inventory contains the selected release',
-  `load_reason` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Safe loading failure code',
-  `installed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Native installer succeeded, not proof of Harness loading',
-  `reason` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Safe installation failure code',
-  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Projection update revision',
-  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_work_slug` (`work_id`,`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Latest per-plugin preparation facts, outside the Work aggregate';
-
 CREATE TABLE IF NOT EXISTS `agent_session` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'AgentSession UUIDv7 identity',
   `agent_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Referenced AgentDefinition aggregate identity',
@@ -91,7 +57,8 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `capabilities` json NOT NULL COMMENT 'Resolved Work capabilities; initial Failed corrections retain releases',
   `authorization_selection` json NOT NULL DEFAULT (json_object()) COMMENT 'Creation-time personal authorization references; no credentials',
   `repository_selection` json NOT NULL DEFAULT (json_object()) COMMENT 'Creation-time repository identities and branches; no credentials',
-  `task_execution_begun` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Retained task admission: whether its execution began; every write sets it',
+  `repository_checkouts` json NOT NULL DEFAULT (json_array()) COMMENT 'Final checkout outcome of each selected repository; a repository without one is checked out by the next start',
+  `initial_task_input` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT (_utf8mb4'') COMMENT 'JSON of the creating caller''s first task input until it reaches the Work''s input buffer; empty once handed off or when none was supplied',
   `model_configuration_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Model Configuration retained by the Work, whose current Model Template each start uses; empty with model_machine_login',
   `model_machine_login` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The Work uses its Managed Computer''s own Claude login instead of a Model Configuration',
   `thinking_level` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Retained Work thinking effort; empty uses Harness default',
@@ -135,39 +102,6 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   KEY `idx_computer_id_state_deleted_at_id` (`computer_id`,`state`,`deleted_at`,`id`) COMMENT 'Presence changes find the Works running on a Computer'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentWork conversation and Harness process lifecycle authority';
 
-CREATE TABLE IF NOT EXISTS `agent_session_continuation_request` (
-  `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'AgentSession with the current explicit continuation request',
-  `request_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Retained original execution request identity',
-  `subject_id` varchar(255) NOT NULL COMMENT 'Authorized Session principal',
-  `operation` varchar(16) NOT NULL COMMENT 'Requested Resume or Continue behavior',
-  `rejection` varchar(32) NOT NULL DEFAULT '' COMMENT 'Retained rejection awaiting or having completed admission fencing',
-  `pending` boolean NOT NULL DEFAULT true COMMENT 'Original request outcome remains unconfirmed',
-  `version` int unsigned NOT NULL DEFAULT 1 COMMENT 'Application receipt version',
-  `created_at` bigint NOT NULL DEFAULT 0 COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT 0 COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT 0 COMMENT 'Deletion time in Unix milliseconds; zero is active',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_session_continuation_request` (`request_id`),
-  KEY `idx_session_continuation_pending` (`pending`, `deleted_at`, `id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent application explicit continuation request outcome recovery';
-
-CREATE TABLE IF NOT EXISTS `agent_session_creation_request` (
-  `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Original explicit creation request identity',
-  `subject_digest` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Digest of the requested definition and Work Subject; empty for a request without a Subject or an identity cancelled before receipt',
-  `session_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Actual registered or reused AgentSession identity',
-  `request_data` json NOT NULL COMMENT 'Immutable creation context and original initial input; {} for an identity cancelled before receipt',
-  `binding_confirmed` boolean NOT NULL DEFAULT false COMMENT 'The created or reused Work is confirmed for this request',
-  `canceled` boolean NOT NULL DEFAULT false COMMENT 'Registration is durably forbidden for this request',
-  `pending` boolean NOT NULL DEFAULT true COMMENT 'Creation, binding confirmation or initial-input handoff remains outstanding',
-  `version` int unsigned NOT NULL DEFAULT 1 COMMENT 'Application recovery record version',
-  `created_at` bigint NOT NULL DEFAULT 0 COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT 0 COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT 0 COMMENT 'Deletion time in Unix milliseconds; zero is active',
-  PRIMARY KEY (`id`),
-  KEY `idx_session_creation_pending` (`pending`, `deleted_at`, `id`),
-  KEY `idx_session_creation_subject_pending` (`subject_digest`, `pending`, `deleted_at`, `id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent unique creation per request identity, recovery and cancellation fence';
-
 CREATE TABLE IF NOT EXISTS `agent_session_state_history` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Persisted snapshot identity',
   `session_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Owning AgentSession identity',
@@ -197,8 +131,9 @@ CREATE TABLE IF NOT EXISTS `agent_work_share` (
 
 CREATE TABLE IF NOT EXISTS `agent_start_request` (
   `id` varchar(36) NOT NULL COMMENT 'Caller-selected start request UUID',
-  `session_id` varchar(36) NOT NULL COMMENT 'Target Work; empty when initial creation was canceled before registration',
-  `kind` varchar(16) NOT NULL DEFAULT '' COMMENT 'Admitted start, resume or restart; empty when canceled',
+  `session_id` varchar(36) NOT NULL COMMENT 'Target Work; empty for a creation cancelled or refused before it created one',
+  `kind` varchar(16) NOT NULL DEFAULT '' COMMENT 'Start (creation), resume or restart; empty when a start was canceled before its operation was known',
+  `fingerprint` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'SHA-256 digest of the request content; a repeat with other content is a conflict; empty for an identity cancelled before receipt',
   `creation_scope` varchar(64) NOT NULL DEFAULT '' COMMENT 'Original scope digest for cancellation before Work registration',
   `canceled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'True when the request was canceled before admission',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Immutable receipt version',
@@ -207,7 +142,7 @@ CREATE TABLE IF NOT EXISTS `agent_start_request` (
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; zero is retained',
   PRIMARY KEY (`id`),
   KEY `idx_session_id_canceled_deleted_at_created_at` (`session_id`, `canceled`, `deleted_at`, `created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Start request correlation, not a process run';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='The single record of caller request identities for Work creation, Resume and Restart; not a process run';
 
 CREATE TABLE IF NOT EXISTS `computer` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Computer UUIDv7 identity; a Cloud''s is fixed by its cluster''s configuration',
@@ -286,37 +221,64 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
   `inputs_synced_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds of a Managed allocation''s last successful inputs sync; zero before the first. The recovery sweep syncs again once it is older than the refresh interval, before the copies'' Access Links expire',
   `submitted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'External submission may have happened; never blindly resubmit',
   `sandbox_id` varchar(36) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Observed external sandbox identity',
+  `lease_expires_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the bound sandbox expires unless renewed, as OpenSandbox last returned it; zero while none is known',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic persistence version',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last reconciliation time in Unix milliseconds',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft deletion time; zero means retained',
-  `retired` tinyint unsigned GENERATED ALWAYS AS (`deleted_at` <> 0) VIRTUAL COMMENT 'Indexed retirement predicate for durable late-result observation',
+  `released_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the retired allocation''s compute release was confirmed; zero while its release is outstanding',
+  `checkout_results` json DEFAULT NULL COMMENT 'Checkout outcome of each repository this run checked out; SQL NULL or JSON null until its checkout ended',
+  `state` varchar(16) COLLATE utf8mb4_bin NOT NULL DEFAULT 'starting' COMMENT 'AgentExecution lifecycle state: queued, starting, running, retired or released',
+  `start_admitted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the Work admitted the start this execution serves',
+  `desk_id` varchar(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Desk the start took on its Computer',
+  `seated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when its Desk was seated; the Startup Deadline counts from it; zero while Queued',
+  `desk_left_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when its Desk''s departure was reported to its Computer; zero while held',
+  `process_prepared` boolean NOT NULL DEFAULT false COMMENT 'The launched process reported its environment prepared',
+  `process_started` boolean NOT NULL DEFAULT false COMMENT 'The launched process reported the Harness started',
+  `exit_code` int NOT NULL DEFAULT '0' COMMENT 'Exit code the launched process reported',
+  `exit_reason` varchar(512) NOT NULL DEFAULT '' COMMENT 'Exit reason the launched process reported',
+  `exit_request_id` varchar(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Stop identity of the Work''s request that the process exit; empty while none',
+  `exit_cancels_turn` boolean NOT NULL DEFAULT false COMMENT 'The exit request cancels a Waiting Turn first',
+  `credentials_withdrawn` boolean NOT NULL DEFAULT false COMMENT 'Delivered credentials were cleared after the exit request',
+  `start_failure` varchar(512) NOT NULL DEFAULT '' COMMENT 'Why the start failed at its Startup Deadline; empty while it has not',
+  `abandoned` boolean NOT NULL DEFAULT false COMMENT 'The start can no longer launch a Harness process',
+  `environment_lost` boolean NOT NULL DEFAULT false COMMENT 'The bound environment was lost',
+  `loss_reason` varchar(512) NOT NULL DEFAULT '' COMMENT 'Why the environment was lost, when known',
+  `retirement` varchar(16) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Why the execution retired; empty while unretired',
+  `handles_released` boolean NOT NULL DEFAULT false COMMENT 'A Managed execution''s process handles were deleted on its machine',
+  `retired` tinyint unsigned GENERATED ALWAYS AS (`deleted_at` <> 0) VIRTUAL COMMENT 'Indexed retirement predicate for finding retired executions whose compute release is outstanding',
   `live_session_id` varchar(36) COLLATE utf8mb4_bin GENERATED ALWAYS AS (IF(`deleted_at` = 0, `session_id`, NULL)) STORED COMMENT 'Work of a live allocation; unique per Work',
   `allocation_label` char(48) COLLATE utf8mb4_bin GENERATED ALWAYS AS (LEFT(SHA2(`id`, 256), 48)) STORED COMMENT 'Sandbox allocation label; finds the allocation an observed sandbox belongs to',
     sandbox_ready tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Environment and required credentials were ready before native launch',
     preparation_recovering tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Latest environment preparation attempt had a recoverable error',
   PRIMARY KEY (`id`),
   KEY `idx_deleted_at_updated_at_id` (`deleted_at`, `updated_at`, `id`),
-  KEY `idx_retired_submitted_updated_at_id` (`retired`, `submitted`, `updated_at`, `id`),
+  KEY `idx_retired_released_at_id` (`retired`, `released_at`, `id`),
   KEY `idx_sandbox_id_deleted_at_updated_at_id` (`sandbox_id`, `deleted_at`, `updated_at`, `id`),
   UNIQUE KEY `uniq_live_session_id` (`live_session_id`),
   KEY `idx_allocation_label` (`allocation_label`),
   KEY `idx_input_owner_deleted_at` (`input_owner`, `deleted_at`),
+  KEY `idx_session_id_created_at_id` (`session_id`, `created_at`, `id`),
   KEY `idx_authorization_ids` ((CAST(`authorization_ids` AS CHAR(36) ARRAY)))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent infrastructure durable external allocation records';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentExecution aggregate: one run of a Work and its execution environment';
 
-CREATE TABLE IF NOT EXISTS `execution_removal` (
-  `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Sandbox allocation identity',
-  `session_id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'AgentWork identity',
-  `sandbox_id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Recorded OpenSandbox identity fencing deletion',
-  `completed` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'One only after removal and Agent feedback acknowledgement',
-  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic persistence version',
+CREATE TABLE IF NOT EXISTS `execution_plugin_result` (
+  `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'UUIDv7 row identity',
+  `execution_id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'AgentExecution (execution_allocation) whose run the outcome describes',
+  `slug` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Slug of a Plugin the run selected',
+  `installation_reported` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The run''s preparation reported the Plugin''s installation',
+  `installed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The installation succeeded, not proof of Harness loading',
+  `installation_reason` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Safe installation failure code; empty on success',
+  `loading_reported` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The run''s Harness process reported its complete loaded Plugin inventory',
+  `loaded` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The Harness loaded the release the run selected',
+  `loading_reason` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Safe loading failure code; empty on success',
+  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Stored row version',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last processing time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft deletion time; zero means retained',
+  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
+  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; zero is active',
   PRIMARY KEY (`id`),
-  KEY `idx_completed_deleted_at_updated_at_id` (`completed`, `deleted_at`, `updated_at`, `id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent infrastructure durable execution removal obligations';
+  UNIQUE KEY `uniq_execution_id_slug` (`execution_id`,`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentExecution''s Plugin preparation outcomes: each selected Plugin''s installation and loading in one run';
 
 CREATE TABLE IF NOT EXISTS `login_session` (
   `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Login Session UUIDv7 identity; the sid claim',

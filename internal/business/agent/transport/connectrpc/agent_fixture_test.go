@@ -30,9 +30,9 @@ func (r *rpcAgents) Save(_ context.Context, a *domain.AgentDefinition) error {
 }
 
 type rpcSessions struct {
+	command.AgentWorkRepository
 	items    map[string]*domain.AgentWork
-	starts   map[string]query.AdmittedStart
-	canceled map[string]bool
+	requests map[string]query.StartRequest
 	// events receives the Work's Domain Events once a change is saved, as the
 	// production repository dispatches them.
 	events domainevent.Dispatcher
@@ -71,35 +71,25 @@ func (*rpcAuthorization) AuthorizeWork(_ context.Context, subject, id string) er
 	return nil
 }
 
+// rpcExecution records the inputs and replies handed to the Work's buffer.
 type rpcExecution struct {
 	inputs    []command.ExecutionInput
 	responses []command.InteractionResponse
-	starts    []domain.StartExecutionRequest
-	stops     []string
-	reclaims  []string
 }
 
-func (p *rpcExecution) StartExecution(_ context.Context, r domain.StartExecutionRequest) error {
-	p.starts = append(p.starts, r)
-	return nil
-}
-func (p *rpcExecution) StopExecution(_ context.Context, _ string, id string) error {
-	p.stops = append(p.stops, id)
-	return nil
-}
 func (p *rpcExecution) AcceptInput(_ context.Context, _ string, input command.ExecutionInput) (command.InputHandOff, error) {
 	p.inputs = append(p.inputs, input)
 	return command.InputBuffered, nil
 }
-func (p *rpcExecution) ReclaimCompute(_ context.Context, r string) error {
-	p.reclaims = append(p.reclaims, r)
-	return nil
-}
-
-func (*rpcExecution) RetireFencedRun(context.Context, string) error { return nil }
 
 func (r *rpcSessions) RegisterWork(ctx context.Context, s *domain.AgentWork, registration command.WorkRegistration) error {
-	return r.CommitStart(ctx, s, query.AdmittedStart{WorkID: s.ID, Kind: query.StartKindStart}, registration.RequestID)
+	if retained := r.record(registration.Request); retained != registration.Request {
+		if retained.Canceled {
+			return command.ErrWorkCreationCanceled
+		}
+		return command.ErrStartRequestConflict
+	}
+	return r.Save(ctx, s)
 }
 
 func (p *rpcExecution) AcceptResponse(_ context.Context, _ string, response command.InteractionResponse) error {
@@ -107,73 +97,57 @@ func (p *rpcExecution) AcceptResponse(_ context.Context, _ string, response comm
 	return nil
 }
 
-func (r *rpcSessions) FindAdmittedStart(_ context.Context, requestID string) (query.AdmittedStart, bool, error) {
-	start, found := r.starts[requestID]
-	return start, found, nil
+func (r *rpcSessions) FindStartRequest(_ context.Context, requestID string) (query.StartRequest, bool, error) {
+	record, found := r.requests[requestID]
+	return record, found, nil
 }
 
-func (r *rpcSessions) CommitStart(ctx context.Context, work *domain.AgentWork, start query.AdmittedStart, requestID string) error {
-	if r.canceled[requestID] {
-		return command.ErrStartRequestCanceled
+// record retains a request unless its identity is recorded, as the first
+// writer decides it, and answers the retained record.
+func (r *rpcSessions) record(request query.StartRequest) query.StartRequest {
+	if retained, found := r.requests[request.ID]; found {
+		return retained
 	}
-	if err := r.Save(ctx, work); err != nil {
+	if r.requests == nil {
+		r.requests = map[string]query.StartRequest{}
+	}
+	r.requests[request.ID] = request
+	return request
+}
+
+func (r *rpcSessions) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
+	if err := command.AnswerRetained(r.record(request), request); err != nil {
 		return err
 	}
-	if r.starts == nil {
-		r.starts = map[string]query.AdmittedStart{}
-	}
-	r.starts[requestID] = start
-	return nil
+	return r.Save(ctx, work)
 }
 
-func (r *rpcSessions) CancelStart(_ context.Context, _ string, requestID string) (bool, error) {
-	if _, admitted := r.starts[requestID]; admitted {
-		return false, nil
-	}
-	if r.canceled == nil {
-		r.canceled = map[string]bool{}
-	}
-	r.canceled[requestID] = true
-	return true, nil
+func (r *rpcSessions) CancelStart(_ context.Context, workID string, requestID string) (bool, error) {
+	return r.record(query.StartRequest{ID: requestID, WorkID: workID, Canceled: true}).Canceled, nil
 }
 
-type rpcProcesses struct{ observation domain.ProcessObservation }
-
-func (p *rpcProcesses) ObserveProcess(context.Context, string) (command.WorkProcessObservation, error) {
-	return command.WorkProcessObservation{ProcessObservation: p.observation}, nil
+func (r *rpcSessions) RecordCreation(_ context.Context, request query.StartRequest) (query.StartRequest, error) {
+	return r.record(request), nil
 }
 
-// The Work's current process is "process" in these fixtures.
-func (*rpcProcesses) IsCurrentProcess(_ context.Context, _ string, processID string) (bool, error) {
-	return processID == "process", nil
-}
-
-func (*rpcProcesses) AcknowledgeExit(_ context.Context, _ string, processID string) (bool, error) {
-	return processID == "process", nil
-}
-
-func (r *rpcSessions) LocateWork(_ context.Context, workID string) (*domain.AgentWork, error) {
-	for _, session := range r.items {
-		if session.ID == workID {
-			return session, nil
+// admitted are the start requests committed with a start.
+func (r *rpcSessions) admitted() []query.StartRequest {
+	var admitted []query.StartRequest
+	for _, record := range r.requests {
+		if record.Admitted() {
+			admitted = append(admitted, record)
 		}
 	}
-	return nil, domain.ErrWorkNotFound
+	return admitted
 }
 
-func (r *rpcSessions) FindWork(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
+func (r *rpcSessions) FindBySubject(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
 	for _, session := range r.items {
 		if session.AgentID == agentID && session.Subject == subject {
-			return session, nil
+			return r.Get(context.Background(), session.ID)
 		}
 	}
 	return nil, nil
 }
 
-type rpcInitialInputs struct{}
-
-func (rpcInitialInputs) Get(context.Context, string) (command.InitialExecutionRequest, error) {
-	return command.InitialExecutionRequest{}, command.ErrInitialExecutionNotFound
-}
-
-func (*rpcExecution) CancelRunningTurn(context.Context, string) error { return nil }
+func (*rpcExecution) HandOffInitialTaskInput(context.Context, string) error { return nil }

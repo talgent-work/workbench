@@ -15,6 +15,7 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -28,33 +29,25 @@ import (
 )
 
 func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
-	f := newWorkDefinitionFixtureWithConcurrency(t, "owner", 0)
+	f := newWorkDefinitionFixture(t, "owner")
 	ctx := context.Background()
-	retained, err := f.requests.RetainWorkCreation(ctx, f.request)
-	require.NoError(t, err)
-	f.request = retained
 	end := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
 	observed := end.Add(-25 * time.Hour)
 	clock := func() time.Time { return observed }
 	sessions := infrastructure.NewAgentWorkRepository(f.db, clock)
-	authorization := infrastructure.NewWorkAuthorizer(f.db)
-	id, err := command.NewCreateWorkHandler(time.Now, f.agents, sessions, sessions, authorization, creationModels(), &creationCatalog{}, creationConnections{}, sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{})).Handle(ctx, f.request.Creation)
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	id, err := command.NewCreateWorkHandler(time.Now, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels())).Handle(ctx, f.request)
 	require.NoError(t, err)
-	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, id))
-	require.NoError(t, f.requests.CompleteWorkCreation(ctx, f.request.ID))
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
 	observed = observed.Add(15 * time.Minute)
-	feedback := command.NewApplyExecutionFeedbackHandler(clock, sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
-		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id}))
-	}
+	feedback := newRunsAt(t, f.db, sessions, clock)
+	feedback.ready(ctx, id)
+	require.NoError(t, command.NewInputAcceptance(sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
 	observed = end.Add(-23 * time.Hour)
-	closeWork := command.NewCloseWorkHandler(sessions, authorization, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+	closeWork := command.NewCloseWorkHandler(sessions, authorization, feedback.executions, &commandtest.InputBuffer{})
 	require.NoError(t, closeWork.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	observed = end.Add(-22 * time.Hour)
-	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutionExited, command.ComputeReclaimed} {
-		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id}))
-	}
+	feedback.exit(ctx, id)
+	feedback.release(ctx, id)
 	// The close kept while the Work stopped applies once it has stopped.
 	require.NoError(t, closeWork.ApplyKeptClose(ctx, id))
 	closed, err := sessions.Get(ctx, id)
@@ -67,7 +60,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	project := f.request.Creation.ProjectID
+	project := f.request.ProjectID
 	observed = end
 	report := query.NewGetWorkReportHandler(infrastructure.NewWorkReportQueryRepository(db), clock)
 	app := &application.Application{Queries: application.Queries{GetWorkReport: report}}
@@ -99,10 +92,10 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	require.Len(t, histories[0].Facts, 5, "Starting, Working, Stopping, Stopped, Closed only; duplicates and failed saves add no facts")
 	// Reporting is neither the personal Recent list nor its 100-row page.
 	observed = end.Add(-time.Hour)
-	create := command.NewCreateWorkHandler(time.Now, f.agents, sessions, sessions, authorization, creationModels(), &creationCatalog{}, creationConnections{}, sessions, computertest.Checked(startupAuthority{}), factory)
-	insertStartingWorks(t, f.db, f.request.Creation.AgentID, "owner", 104, observed.UnixMilli(), func() string { return project })
+	create := command.NewCreateWorkHandler(time.Now, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	insertStartingWorks(t, f.db, f.request.AgentID, "owner", 104, observed.UnixMilli(), func() string { return project })
 	// Another project's Work and same-project coordinator must not enter totals.
-	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: f.request.Creation.AgentID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), WorkspaceReference: uuid.NewString()})
+	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: f.request.AgentID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), WorkspaceReference: uuid.NewString()})
 	require.NoError(t, err)
 	coordinator, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Coordinator", Purpose: "case_coordinator", UsageScope: domain.UsageScope{Kind: "project", Reference: project}, HomeBinding: domain.HomeBinding{OwnerID: project, Namespace: "project"}})
 	require.NoError(t, err)

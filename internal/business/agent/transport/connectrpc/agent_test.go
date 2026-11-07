@@ -21,7 +21,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -35,18 +34,19 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	capacity := &computertest.Admission{}
 	permissions := &rpcAuthorization{}
 	port := &rpcExecution{}
-	processes := &rpcProcesses{observation: domain.ProcessObservation{State: domain.ProcessPending}}
-	requests := infrastructure.NewExecutionRequestsFactory(port)
+	buffer := &commandtest.InputBuffer{}
+	events, executions, coordination := executionWorld(time.Now, sessions, capacity, buffer)
+	sessions.events = events
 	app := &application.Application{Definitions: agents, Works: sessions,
 		Commands: application.Commands{
-			CreateWork:             command.NewCreateWorkHandler(time.Now, agents, sessions, sessions, permissions, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), rpcPluginCatalog{}, authorizationcatalogtest.Empty{}, sessions, capacity, requests),
-			ResumeWork:             command.NewResumeWorkHandler(time.Now, sessions, agents, permissions, capacity, requests, sessions, &rpcContinuations{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
-			RestartWork:            command.NewRestartWorkHandler(time.Now, sessions, agents, permissions, capacity, requests, sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
-			StopWork:               command.NewStopWorkHandler(sessions, permissions, requests),
-			CloseWork:              command.NewCloseWorkHandler(sessions, permissions, requests, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{}),
-			DeliverInput:           command.NewDeliverWorkInputHandler(sessions, permissions, port, rpcInitialInputs{}),
+			CreateWork:             command.NewCreateWorkHandler(time.Now, agents, sessions, permissions, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(rpcPluginCatalog{}, authorizationcatalogtest.Empty{}), capacity, nil),
+			ResumeWork:             command.NewResumeWorkHandler(time.Now, sessions, agents, permissions, capacity, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			RestartWork:            command.NewRestartWorkHandler(time.Now, sessions, agents, permissions, capacity, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
+			StopWork:               command.NewStopWorkHandler(sessions, permissions, executions),
+			CloseWork:              command.NewCloseWorkHandler(sessions, permissions, executions, buffer),
+			DeliverInput:           command.NewDeliverWorkInputHandler(sessions, permissions, port),
 			RespondToInteraction:   command.NewRespondWorkInteractionHandler(sessions, permissions, port),
-			ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(func() time.Time { return observationTime }, sessions, processes, requests, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}),
+			ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(func() time.Time { return observationTime }, sessions, executions, coordination, buffer, &commandtest.InputSettlements{}),
 		}, Queries: application.Queries{LocateWork: query.NewLocateWorkHandler(agents, sessions, permissions), GetStartAdmission: query.NewGetStartAdmissionHandler(sessions, permissions), GetAgentDefinition: query.NewGetAgentDefinitionHandler(agents, application.AssembleAgentDefinition), GetWork: query.NewGetWorkHandler(agents, sessions, permissions, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse)},
 	}
 	mux := http.NewServeMux()
@@ -74,20 +74,26 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	createSession.Subject = nil
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "a Work with neither a Subject nor a Project is a Personal Work, which no caller creates")
+	// A refused creation settles its request identity; the corrected request
+	// carries a new one.
+	createSession.RequestId = uuid.NewString()
 	createSession.ProjectId, createSession.ReadOnlyMounts = "project-a", []*agentprivatev1.ReadOnlyMount{{Name: "inputs", Reference: "space"}}
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a read-only mount never takes the input source's place")
 	require.Empty(t, sessions.items)
-	createSession.ReadOnlyMounts = nil
+	createSession.RequestId, createSession.ReadOnlyMounts = uuid.NewString(), nil
 	createSession.Subject, createSession.ProjectId = &agentprivatev1.WorkSubject{Kind: "case", Id: "work-a"}, "project-a"
 	capacity.SetFull(true)
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 	require.Empty(t, sessions.items)
-	require.Empty(t, sessions.starts)
-	require.Empty(t, port.starts)
+	require.Empty(t, sessions.admitted())
+	require.Empty(t, executions.launches())
 	capacity.SetFull(false)
-	require.Empty(t, port.starts, "restored capacity does not execute a rejected creation")
+	require.Empty(t, executions.launches(), "restored capacity does not execute a rejected creation")
+	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "the refusal settled its request identity")
+	createSession.RequestId = uuid.NewString()
 	session, err := client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.NoError(t, err)
 	require.NotEmpty(t, session.GetWorkId())
@@ -150,7 +156,7 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	_, err = client.ResumeWork(authenticated(ctx, "control"), &agentprivatev1.ResumeWorkRequest{RequestId: uuid.Must(uuid.NewV7()).String(), SubjectId: "owner", WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a Starting Work needs no Resume")
-	require.Len(t, port.starts, 3)
+	require.Len(t, executions.launches(), 3)
 	state := func(want agentprivatev1.WorkState) *agentprivatev1.GetWorkResponse {
 		result, err := client.GetWork(authenticated(ctx, "control"), request)
 		require.NoError(t, err)
@@ -164,7 +170,7 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	startRequest := createSession.RequestId
 	_, err = client.ResumeWork(authenticated(ctx, "control"), &agentprivatev1.ResumeWorkRequest{RequestId: startRequest, SubjectId: "owner", WorkId: id})
 	require.Error(t, err, "the creation's request identity cannot be reused by another operation")
-	require.Len(t, port.starts, 3, "the retained creation receipt prevents another admission")
+	require.Len(t, executions.launches(), 3, "the retained creation receipt prevents another admission")
 
 	admissionRequest := &agentprivatev1.GetStartAdmissionRequest{SubjectId: "owner", WorkId: id, RequestId: startRequest}
 	admission, err := client.GetStartAdmission(authenticated(ctx, "control"), admissionRequest)
@@ -180,12 +186,11 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	require.False(t, missing.Accepted)
 	require.Equal(t, agentprivatev1.StartKind_START_KIND_UNSPECIFIED, missing.Kind)
 	report := func(kind agentprivatev1.FeedbackKind) {
-		if kind == agentprivatev1.FeedbackKind_FEEDBACK_KIND_COMPUTE_RECLAIMED {
-			processes.observation = domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true}
-		}
-		_, err := feedback.Report(authenticated(ctx, "feedback"), &agentprivatev1.ReportRequest{WorkId: id, Kind: kind, ProcessId: "process"})
+		_, err := feedback.Report(authenticated(ctx, "feedback"), &agentprivatev1.ReportRequest{WorkId: id, Kind: kind, ProcessId: launchedProcess})
 		require.NoError(t, err)
 	}
+	// released confirms the release of the Work's retired execution.
+	released := func() { executions.release(t, id) }
 	// reportExit delivers an exit fact naming a process; "process" is current.
 	reportExit := func(processID string, code int32) {
 		_, err := feedback.Report(authenticated(ctx, "feedback"), &agentprivatev1.ReportRequest{WorkId: id, Kind: agentprivatev1.FeedbackKind_FEEDBACK_KIND_EXITED, ProcessId: processID, ExitCode: code})
@@ -231,34 +236,33 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "stop", state(agentprivatev1.WorkState_WORK_STATE_STOPPING).GetStopRequestId())
 	require.Equal(t, "user_stopped", state(agentprivatev1.WorkState_WORK_STATE_STOPPING).GetStopReason())
-	require.Equal(t, []string{"stop"}, port.stops)
+	require.Equal(t, []string{"stop"}, executions.exitRequests())
 	reportExit("process", 0)
 	require.True(t, state(agentprivatev1.WorkState_WORK_STATE_STOPPING).GetWaiting(), "the stopped Work still owes the answer")
-	require.Len(t, port.reclaims, 1)
-	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_COMPUTE_RECLAIMED)
+	require.Equal(t, 1, executions.retired())
+	released()
 	state(agentprivatev1.WorkState_WORK_STATE_STOPPED)
 	resumed, err := client.ResumeWork(authenticated(ctx, "control"), &agentprivatev1.ResumeWorkRequest{RequestId: uuid.Must(uuid.NewV7()).String(), SubjectId: "owner", WorkId: id})
 	require.NoError(t, err)
 	require.Equal(t, id, resumed.GetWorkId())
-	require.Equal(t, running.GetContextReference(), port.starts[3].HarnessSessionReference, "the resumed process continues the Work's Harness Session")
-	require.Equal(t, domain.ContextContinue, port.starts[3].ContextMode)
+	require.Equal(t, running.GetContextReference(), executions.launches()[3].HarnessSessionReference, "the resumed process continues the Work's Harness Session")
+	require.Equal(t, domain.ContextContinue, executions.launches()[3].ContextMode)
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_PREPARED)
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_STARTED)
 	// A late exit fact of the earlier run names that process and changes nothing.
-	processes.observation = domain.ProcessObservation{State: domain.ProcessRunning}
 	reportExit("earlier", 0)
 	observed := state(agentprivatev1.WorkState_WORK_STATE_WORKING)
-	require.Len(t, port.reclaims, 1)
+	require.Equal(t, 1, executions.retired())
 	staleVersion := observed.GetVersion() - 1
 	_, err = client.StopWork(authenticated(ctx, "control"), &agentprivatev1.StopWorkRequest{SubjectId: "owner", WorkId: id, RequestId: "stale-stop", ExpectedVersion: &staleVersion})
 	require.Equal(t, connect.CodeAborted, connect.CodeOf(err), "a stop from a stale view is rejected")
-	require.Equal(t, []string{"stop"}, port.stops)
+	require.Equal(t, []string{"stop"}, executions.exitRequests())
 	currentVersion := observed.GetVersion()
 	_, err = client.StopWork(authenticated(ctx, "control"), &agentprivatev1.StopWorkRequest{SubjectId: "owner", WorkId: id, RequestId: "stop-again", ExpectedVersion: &currentVersion})
 	require.NoError(t, err)
 	// With the stop admitted, the process's end completes the stop normally.
 	reportExit("process", 1)
-	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_COMPUTE_RECLAIMED)
+	released()
 	state(agentprivatev1.WorkState_WORK_STATE_STOPPED)
 	_, err = client.ResumeWork(authenticated(ctx, "control"), &agentprivatev1.ResumeWorkRequest{RequestId: uuid.Must(uuid.NewV7()).String(), SubjectId: "owner", WorkId: id})
 	require.NoError(t, err)
@@ -267,14 +271,14 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	// An unrequested end of the running process is a failure.
 	reportExit("process", 1)
 	state(agentprivatev1.WorkState_WORK_STATE_FAILED)
-	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_COMPUTE_RECLAIMED)
+	released()
 	restarted, err := client.RestartWork(authenticated(ctx, "control"), &agentprivatev1.RestartWorkRequest{RequestId: uuid.Must(uuid.NewV7()).String(), SubjectId: "owner", WorkId: id})
 	require.NoError(t, err)
 	require.Equal(t, id, restarted.GetWorkId())
-	require.Equal(t, running.GetContextReference(), port.starts[5].HarnessSessionReference)
-	require.Equal(t, domain.ContextRecover, port.starts[5].ContextMode)
-	require.Equal(t, port.starts[0].Capabilities, port.starts[5].Capabilities)
-	require.Equal(t, port.starts[0].HomeBinding, port.starts[5].HomeBinding)
+	require.Equal(t, running.GetContextReference(), executions.launches()[5].HarnessSessionReference)
+	require.Equal(t, domain.ContextRecover, executions.launches()[5].ContextMode)
+	require.Equal(t, executions.launches()[0].Capabilities, executions.launches()[5].Capabilities)
+	require.Equal(t, executions.launches()[0].HomeBinding, executions.launches()[5].HomeBinding)
 	_, err = client.CloseWork(authenticated(ctx, "control"), &agentprivatev1.CloseWorkRequest{SubjectId: "owner", WorkId: id, RequestId: "close"})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a starting Work is not closed")
 	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_PREPARED)
@@ -287,7 +291,7 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	_, err = client.RestartWork(authenticated(ctx, "control"), &agentprivatev1.RestartWorkRequest{RequestId: uuid.Must(uuid.NewV7()).String(), SubjectId: "owner", WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	reportExit("process", 0)
-	report(agentprivatev1.FeedbackKind_FEEDBACK_KIND_COMPUTE_RECLAIMED)
+	released()
 	state(agentprivatev1.WorkState_WORK_STATE_STOPPED)
 	_, err = client.ResumeWork(authenticated(ctx, "control"), &agentprivatev1.ResumeWorkRequest{RequestId: uuid.Must(uuid.NewV7()).String(), SubjectId: "owner", WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a Work being closed is not resumed")
@@ -299,7 +303,7 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	_, err = client.RestartWork(authenticated(ctx, "control"), &agentprivatev1.RestartWorkRequest{RequestId: uuid.Must(uuid.NewV7()).String(), SubjectId: "owner", WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
-	require.Len(t, port.starts, 6)
+	require.Len(t, executions.launches(), 6)
 }
 
 // authenticated is the context of a call under the control token.

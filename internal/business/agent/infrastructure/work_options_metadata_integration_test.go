@@ -19,7 +19,9 @@ import (
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -32,10 +34,10 @@ import (
 func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T) {
 	db, definitions, works, definition := startingCreationDatabase(t)
 	catalog := &optionsCatalog{version: "1"}
-	access := infrastructure.NewWorkAuthorizer(db)
+	access := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	app := &application.Application{
 		Definitions: definitions, DefinitionLookup: infrastructure.NewAgentDefinitionLookup(db),
-		Plugins: catalog, Models: creationModels(),
+		Catalog: commandtest.StartCatalog(catalog, creationConnections{}), Models: creationModels(),
 		Queries: application.Queries{GetWork: query.NewGetWorkHandler(definitions, works, access, application.AssembleAgentWorkEntity, nil)},
 	}
 	handler := connecttest.Handler(func(s *connect.Server) {
@@ -79,7 +81,7 @@ func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T)
 	require.Len(t, options.Plugins, 1)
 	require.Equal(t, "runtime", options.Plugins[0].Name)
 	require.Equal(t, map[string][2]bool{"talgent": {true, true}, "github": {false, false}}, connectorOptions(options), "another caller may only add GitHub")
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, access, creationModels(), catalog, creationConnections{}, works, computertest.Checked(&initialCreationCapacity{}), infrastructure.NewExecutionRequestsFactory(&creationExecution{db: db}))
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, access, creationModels(), commandtest.StartCatalog(catalog, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
 	id, err := create.Handle(t.Context(), creationInput(definition.ID, "retained"))
 	require.NoError(t, err)
 	catalog.version = "2"
@@ -99,7 +101,7 @@ func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T)
 }
 
 type optionsCatalog struct {
-	command.PluginCatalogPort
+	command.StartCatalogPort
 	version     string
 	unavailable bool
 }

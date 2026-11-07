@@ -13,7 +13,6 @@ import (
 	"github.com/samber/oops"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -36,18 +35,16 @@ import (
 // or repeat each other harmlessly, and a decision for an earlier round is
 // refused by the machine.
 type ManagedReconciliation struct {
-	db       *xorm.Engine
+	records  records
 	machines *ManagedComputers
-	works    *HeldWorks
+	sessions domain.AgentWorkRepository
 }
 
-var _ command.ComputerReconciliationPort = (*ManagedReconciliation)(nil)
-
-func NewManagedReconciliation(db *xorm.Engine, machines *ManagedComputers, works *HeldWorks) (*ManagedReconciliation, error) {
-	if db == nil || machines == nil || works == nil {
-		return nil, errors.New("agent: allocations, Managed Computers and Work state are required for reconciliation")
+func NewManagedReconciliation(db *xorm.Engine, machines *ManagedComputers, sessions domain.AgentWorkRepository) (*ManagedReconciliation, error) {
+	if db == nil || machines == nil || sessions == nil {
+		return nil, errors.New("agent: executions, Managed Computers and Works are required for reconciliation")
 	}
-	return &ManagedReconciliation{db: db, machines: machines, works: works}, nil
+	return &ManagedReconciliation{records: records{db: db}, machines: machines, sessions: sessions}, nil
 }
 
 // reconcileAttempts bounds the rounds one reconciliation follows when the
@@ -87,7 +84,7 @@ func (r *ManagedReconciliation) ReconcileComputer(ctx context.Context, computerI
 func (r *ManagedReconciliation) decide(ctx context.Context, computerID string, inventory machineInventory) (machineDecision, error) {
 	decision := machineDecision{Round: inventory.Round, RemoveWorks: []string{}, EndProcesses: []machineProcess{}}
 	for _, held := range inventory.Works {
-		work, err := r.works.sessions.Get(ctx, held.WorkID)
+		work, err := r.sessions.Get(ctx, held.WorkID)
 		switch {
 		case errors.Is(err, domain.ErrWorkNotFound):
 			decision.RemoveWorks = append(decision.RemoveWorks, held.WorkID)
@@ -99,7 +96,7 @@ func (r *ManagedReconciliation) decide(ctx context.Context, computerID string, i
 			decision.RemoveWorks = append(decision.RemoveWorks, held.WorkID)
 			continue
 		}
-		kept, err := r.runProcesses(ctx, computerID, held.WorkID)
+		kept, err := r.runProcesses(ctx, computerID, work)
 		if err != nil {
 			return machineDecision{}, err
 		}
@@ -116,24 +113,20 @@ func (r *ManagedReconciliation) decide(ctx context.Context, computerID string, i
 }
 
 // runProcesses are the processes of the run the Work still holds on the
-// Computer: its live allocation's, while the Work holds that run.
-func (r *ManagedReconciliation) runProcesses(ctx context.Context, computerID, workID string) (map[string]bool, error) {
-	var record allocationRecord
-	found, err := r.db.Context(ctx).Where("session_id = ? AND deleted_at = 0", workID).Get(&record)
+// Computer: its unretired execution's, while the Work holds that run.
+func (r *ManagedReconciliation) runProcesses(ctx context.Context, computerID string, work *domain.AgentWork) (map[string]bool, error) {
+	if !work.HoldsProcess() {
+		return map[string]bool{}, nil
+	}
+	record, found, err := r.records.live(ctx, work.ID)
 	if err != nil {
-		return nil, oops.With("operation", "reconcile_live_allocation").Wrap(err)
+		return nil, err
 	}
 	if !found || record.Realization != realizationManaged {
 		return map[string]bool{}, nil
 	}
 	if spec, err := decodeManagedSpecification(record); err != nil || spec.ComputerID != computerID {
 		return map[string]bool{}, err
-	}
-	switch _, err := r.works.session(ctx, record); {
-	case errors.Is(err, errAllocationNotHeld), errors.Is(err, errEnvironmentConflict):
-		return map[string]bool{}, nil
-	case err != nil:
-		return nil, err
 	}
 	kept := map[string]bool{}
 	for _, id := range []string{record.PreparationProcessID, record.ProcessID} {

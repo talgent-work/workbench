@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
@@ -23,14 +23,15 @@ func TestWorkUsesOneHumanForPluginsHomeAndAuthorization(t *testing.T) {
 	})
 	require.NoError(t, err)
 	store := &sessionStore{}
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store,
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store,
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
-		personalCatalog{}, ownerAuthorizationCatalog{}, store, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(&startupPort{}))
+		commandtest.StartCatalog(personalCatalog{}, ownerAuthorizationCatalog{}), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
 	input := command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), AgentID: agent.ID,
 		SubjectID: "owner", StartingUserID: "starter", WorkspaceReference: "workspace"}
 	_, err = handler.Handle(t.Context(), input)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 	require.Nil(t, store.session)
+	input.RequestID = uuid.NewString()
 	input.StartingUserID = "owner"
 	id, err := handler.Handle(t.Context(), input)
 	require.NoError(t, err)
@@ -71,9 +72,9 @@ func TestAutomatedWorkUsesRequiredPluginsWithoutPersonalDefaults(t *testing.T) {
 	})
 	require.NoError(t, err)
 	store := &sessionStore{}
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store,
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store,
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
-		personalCatalog{}, ownerAuthorizationCatalog{}, store, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(&startupPort{}))
+		commandtest.StartCatalog(personalCatalog{}, ownerAuthorizationCatalog{}), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
 	id, err := handler.Handle(t.Context(), command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(),
 		AgentID: agent.ID, SubjectID: "triggering-human", WorkspaceReference: "workspace"})
 	require.NoError(t, err)

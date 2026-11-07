@@ -16,19 +16,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
 	"golang.org/x/net/websocket"
 	"xorm.io/xorm"
 )
 
-func TestPluginPreparationRecoveryRetainsHandleAndProjectsDegradation(t *testing.T) {
+func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	record := allocationRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`)}
+	record := allocationRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
 	_, err = db.Insert(&record)
 	require.NoError(t, err)
 	var reservations, attachments atomic.Int32
@@ -68,9 +66,9 @@ func TestPluginPreparationRecoveryRetainsHandleAndProjectsDegradation(t *testing
 	defer server.Close()
 	client, err := execd.NewClient(server.Client(), server.URL, "fixture-token")
 	require.NoError(t, err)
-	n := &NativeConnections{provisioning: &Provisioning{db: db, now: time.Now, initial: infrastructure.NewInitialExecutionRequests(db, time.Now)}}
-	snapshot := domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "runtime"}}}}
-	err = n.prepareEnvironment(observation, &record, client, snapshot)
+	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
+	launch := domain.LaunchSpecification{Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "runtime"}}}}}
+	_, err = n.prepareEnvironment(observation, &record, client, launch)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, "prepare-1", <-attachedHandle, "the handle is durable before observation stops")
 	require.Equal(t, "prepare-1", record.PreparationProcessID)
@@ -80,46 +78,36 @@ func TestPluginPreparationRecoveryRetainsHandleAndProjectsDegradation(t *testing
 	require.NoError(t, err)
 	require.True(t, found)
 	// A new reconciler instance uses the committed handle after restart.
-	n = &NativeConnections{provisioning: &Provisioning{db: db, now: time.Now, initial: infrastructure.NewInitialExecutionRequests(db, time.Now)}}
-	require.NoError(t, n.prepareEnvironment(t.Context(), &retained, client, snapshot))
+	n = &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
+	report, err := n.prepareEnvironment(t.Context(), &retained, client, launch)
+	require.NoError(t, err, "installation failure is a reported degradation, not a preparation retry")
+	require.Equal(t, domain.PreparationReport{Installations: []domain.PluginInstallation{{Slug: "runtime", Reason: "installation_failed"}}, Checkouts: []domain.RepositoryCheckout{}}, report)
 	require.EqualValues(t, 1, reservations.Load())
-	require.True(t, retained.EnvironmentPrepared, "installation failure is a recorded degradation, not a preparation retry")
-	rows, err := db.QueryString("SELECT installed, reason FROM agent_plugin_result WHERE work_id=?", record.SessionID)
+	require.False(t, retained.EnvironmentPrepared, "the execution records its preparation ended with the reported outcomes")
+	// The execution records its preparation ended once the step returned.
+	_, err = db.Exec("UPDATE execution_allocation SET plugins_prepared = 1 WHERE id = ?", record.ID)
 	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, "0", rows[0]["installed"])
-	require.Equal(t, "installation_failed", rows[0]["reason"])
-	require.NoError(t, n.prepareEnvironment(t.Context(), &retained, client, snapshot))
+	retained, _, err = latestAllocation(t.Context(), db, record.SessionID)
+	require.NoError(t, err)
+	report, err = n.prepareEnvironment(t.Context(), &retained, client, launch)
+	require.NoError(t, err)
+	require.Zero(t, report.Installations, "a completed preparation reports nothing again")
+	require.Zero(t, report.Checkouts)
 	require.EqualValues(t, 2, attachments.Load(), "completed preparation is not attached again")
-	// Current results replace an earlier Work/slug projection without a run fence.
-	require.NoError(t, n.savePluginResults(t.Context(), record.SessionID, []pluginInstallationResult{{Slug: "runtime", Installed: true}}))
-	rows, err = db.QueryString("SELECT installed, reason FROM agent_plugin_result WHERE work_id=?", record.SessionID)
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, "1", rows[0]["installed"])
-	require.Empty(t, rows[0]["reason"])
-	loads := infrastructure.NewPluginResults(db, time.Now)
-	require.NoError(t, loads.RecordLoads(t.Context(), record.SessionID, []application.PluginLoadResult{{Slug: "runtime", Loaded: true}}))
-	require.NoError(t, n.savePluginResults(t.Context(), record.SessionID, []pluginInstallationResult{{Slug: "runtime", Reason: "installation_failed"}}))
-	projected, err := loads.Read(t.Context(), record.SessionID)
-	require.NoError(t, err)
-	require.Len(t, projected, 1)
-	require.True(t, projected[0].InstallationObserved)
-	require.False(t, projected[0].Installed)
-	require.True(t, projected[0].LoadObserved)
-	require.True(t, projected[0].Loaded, "late installation feedback must preserve the independent loading observation")
 }
 
 func TestPluginPreparationDeletionRecoversAfterLostRetirement(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	p := &Provisioning{db: db, now: time.Now, initial: infrastructure.NewInitialExecutionRequests(db, time.Now)}
+	p := &Provisioning{records: records{db: db}, now: time.Now}
 	n := &NativeConnections{provisioning: p}
-	record := allocationRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationProcessID: "preparing", PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`)}
+	record := allocationRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationProcessID: "preparing", PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
 	_, err = db.Insert(&record)
 	require.NoError(t, err)
 	var unavailable, deleted atomic.Bool
+	discarding, interrupt := context.WithCancel(t.Context())
+	defer interrupt()
 	var calls atomic.Int32
 	unavailable.Store(true)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,10 +132,9 @@ func TestPluginPreparationDeletionRecoversAfterLostRetirement(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		// Deletion succeeded, but another committed observation invalidates
-		// the caller's row revision before it can retire the preparation handle.
-		_, err := db.Exec("UPDATE execution_allocation SET version=version+1 WHERE id=?", record.ID)
-		require.NoError(t, err)
+		// Deletion succeeded, but the caller stops before it can retire the
+		// preparation handle.
+		interrupt()
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
@@ -157,13 +144,13 @@ func TestPluginPreparationDeletionRecoversAfterLostRetirement(t *testing.T) {
 	require.Equal(t, "preparing", record.PreparationProcessID)
 	require.False(t, deleted.Load(), "provider failure is not deletion confirmation")
 	unavailable.Store(false)
-	require.ErrorIs(t, n.discardPluginPreparation(t.Context(), &record, client), errEnvironmentConflict)
+	require.ErrorIs(t, n.discardPluginPreparation(discarding, &record, client), context.Canceled)
 	require.True(t, deleted.Load())
 	retained, found, err := p.get(t.Context(), record.ID)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, "preparing", retained.PreparationProcessID, "uncommitted retirement leaves the recovery obligation")
-	recovered := &NativeConnections{provisioning: &Provisioning{db: db, now: time.Now, initial: infrastructure.NewInitialExecutionRequests(db, time.Now)}}
+	recovered := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
 	require.NoError(t, recovered.discardPluginPreparation(t.Context(), &retained, client))
 	after, found, err := p.get(t.Context(), record.ID)
 	require.NoError(t, err)

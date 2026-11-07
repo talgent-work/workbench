@@ -12,7 +12,12 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-var ErrRepositoryAuthorizationUnavailable = errors.New("agent: selected repository authorization is unavailable")
+var (
+	ErrRepositoryAuthorizationUnavailable = errors.New("agent: selected repository authorization is unavailable")
+	// ErrRepositoryAccessChanged means the Work's repository access changed
+	// while its credentials were supplied; a retry supplies the current one.
+	ErrRepositoryAccessChanged = errors.New("agent: repository access changed while it was supplied")
+)
 
 type RepositoryCredentialRequest struct {
 	OwnerUserID, AuthorizationID, RepositoryID, CloneURL string
@@ -21,10 +26,6 @@ type RepositoryCredentialRequest struct {
 type RepositoryCredentialMaterial struct {
 	Username, Password string
 	ExpiresAt          time.Time
-}
-
-type RepositoryCredentialPort interface {
-	SupplyRepositoryCredential(context.Context, RepositoryCredentialRequest) (RepositoryCredentialMaterial, error)
 }
 
 type RepositoryAccessReference struct {
@@ -47,18 +48,22 @@ type RepositoryAccessResult struct {
 	Unavailable []RepositoryAccessFailure
 }
 
-// RepositoryAccess coordinates retained Work and preparation authority with
-// Marketplace's current credential supply. It owns no grant lifecycle.
+// RepositoryAccess supplies the temporary access the Work's current start
+// takes to its selected repositories, from the Work's retained selection and
+// Marketplace's current credential supply, at the time it is delivered. It
+// owns no grant lifecycle.
 type RepositoryAccess struct {
-	works    domain.AgentWorkRepository
-	requests command.InitialExecutionReader
-	supply   RepositoryCredentialPort
+	works  domain.AgentWorkRepository
+	supply CredentialSupplyPort
 }
 
-func NewRepositoryAccess(works domain.AgentWorkRepository, requests command.InitialExecutionReader, supply RepositoryCredentialPort) *RepositoryAccess {
-	return &RepositoryAccess{works: works, requests: requests, supply: supply}
+func NewRepositoryAccess(works domain.AgentWorkRepository, supply CredentialSupplyPort) *RepositoryAccess {
+	return &RepositoryAccess{works: works, supply: supply}
 }
 
+// Plan names the access each selected repository of the Work takes, for its
+// owner, while the Work's current start holds an active process: none once
+// the Work entered Closing (Repository preparation cancellation).
 func (a *RepositoryAccess) Plan(ctx context.Context, owner, workID string) ([]RepositoryAccessReference, error) {
 	work, err := a.works.Get(ctx, workID)
 	if err != nil {
@@ -67,33 +72,14 @@ func (a *RepositoryAccess) Plan(ctx context.Context, owner, workID string) ([]Re
 	if owner == "" || owner != work.HomeBinding.OwnerID {
 		return nil, access.ErrAccessDenied
 	}
-	if err := work.AuthorizeCredentialAccess(); err != nil {
-		return nil, err
-	}
-	request, err := a.requests.Get(ctx, workID)
-	if errors.Is(err, command.ErrInitialExecutionNotFound) && len(work.RepositorySelection.Repositories) == 0 {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if request.WorkID != workID || request.SubjectID != work.StartedBy || request.Rejected {
-		return nil, access.ErrAccessDenied
-	}
-	if !request.Prepared {
-		return nil, command.ErrInitialExecutionPending
-	}
-	if len(request.Checkouts) != len(work.RepositorySelection.Repositories) {
-		return nil, command.ErrInitialExecutionConflict
-	}
-	if err := request.PlanCheckouts(work); err != nil {
-		if errors.Is(err, domain.ErrRepositoryPreparationCanceled) {
+	if err := work.AdmitRepositoryAccess(owner); err != nil {
+		if errors.Is(err, domain.ErrRepositoryPreparationCanceled) || errors.Is(err, domain.ErrRepositoryPreparationConflict) {
 			return nil, errors.Join(access.ErrAccessDenied, err)
 		}
 		return nil, err
 	}
 	var refs []RepositoryAccessReference
-	for _, checkout := range request.Checkouts {
+	for _, checkout := range command.PlanCheckouts(work.ID, work.RepositorySelection) {
 		ref, err := work.RepositoryAuthorization(checkout.RepoID)
 		if err != nil && !errors.Is(err, domain.ErrServiceAuthorizationNotSelected) {
 			return nil, errors.Join(ErrRepositoryAuthorizationUnavailable, err)
@@ -135,7 +121,7 @@ func (a *RepositoryAccess) Resolve(ctx context.Context, owner, workID string) (R
 		return RepositoryAccessResult{}, err
 	}
 	if !slices.Equal(refs, current) {
-		return RepositoryAccessResult{}, command.ErrInitialExecutionConflict
+		return RepositoryAccessResult{}, ErrRepositoryAccessChanged
 	}
 	return result, nil
 }

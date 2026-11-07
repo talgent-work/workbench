@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 )
 
@@ -21,9 +21,9 @@ func TestCreationCapturesOwnersRepositoryAndReuseIgnoresLaterBindingChanges(t *t
 	require.NoError(t, err)
 	store := &sessionStore{}
 	catalog := &repositoryCatalog{}
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, store,
+	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store,
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
-		emptyPluginCatalog{}, catalog, store, capacityCheck{}, infrastructure.NewExecutionRequestsFactory(&startupPort{}))
+		commandtest.StartCatalog(emptyPluginCatalog{}, catalog), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
 	input := command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", AgentID: agent.ID, SubjectID: "owner", StartingUserID: "owner", WorkspaceReference: "workspace",
 		InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(),
 			WorkBranch: "talgent/" + "TAL-382", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Prepare repositories"},
@@ -31,10 +31,15 @@ func TestCreationCapturesOwnersRepositoryAndReuseIgnoresLaterBindingChanges(t *t
 	id, err := handler.Handle(t.Context(), input)
 	require.NoError(t, err)
 	require.Equal(t, "owner", catalog.owner)
-	want := domain.WorkRepositorySelection{OwnerUserID: "owner", Repositories: []domain.WorkRepository{{Provider: "github", RepoID: "123", RepoName: "owner/project", CloneURL: "https://github.com/owner/project.git", DefaultBranch: "main", BaseBranch: "release"}}}
+	want := domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-382", Repositories: []domain.WorkRepository{{Provider: "github", RepoID: "123", RepoName: "owner/project", CloneURL: "https://github.com/owner/project.git", DefaultBranch: "main", BaseBranch: "release"}}}
 	require.Equal(t, want, store.session.RepositorySelection)
 	catalog.err = errors.New("personal binding no longer exists")
-	input.InitialExecution.Selections[0].BaseBranch = "changed"
+	retained := *input.InitialExecution
+	retained.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "changed"}}
+	changed := input
+	changed.InitialExecution = &retained
+	_, err = handler.Handle(t.Context(), changed)
+	require.ErrorIs(t, err, command.ErrWorkCreationConflict, "a repeated request identity carries its original selection")
 	reused, err := handler.Handle(t.Context(), input)
 	require.NoError(t, err)
 	require.Equal(t, id, reused)

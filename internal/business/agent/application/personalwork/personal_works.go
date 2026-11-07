@@ -18,11 +18,11 @@ import (
 type PersonalWorks struct {
 	app       *application.Application
 	works     Works
-	files     FileSpaces
-	directory UserDirectory
+	files     FileSpacePort
+	directory UserDirectoryPort
 }
 
-func New(app *application.Application, works Works, files FileSpaces, directory UserDirectory) *PersonalWorks {
+func New(app *application.Application, works Works, files FileSpacePort, directory UserDirectoryPort) *PersonalWorks {
 	return &PersonalWorks{app: app, works: works, files: files, directory: directory}
 }
 
@@ -118,7 +118,7 @@ func (p *PersonalWorks) Start(ctx context.Context, input StartPersonalWork) (str
 		SubjectID: input.Person.UserID, RequestID: input.RequestID, ThinkingLevel: input.ThinkingLevel,
 		WorkBranch: "talgent/" + workID[:8], Input: command.ExecutionInput{ID: input.RequestID, Text: input.InitialMessage}, Selections: input.Selections,
 	}
-	return p.app.Commands.CreateRequestedWork.Handle(ctx, command.CreateWork{
+	return p.app.Commands.CreateWork.Handle(ctx, command.CreateWork{
 		StartingUserID: input.Person.UserID, SubjectID: input.Person.UserID, RequestID: input.RequestID, AgentID: definition.AgentID,
 		WorkID: workID, DisplayTitle: domain.DisplayTitleFrom(input.InitialMessage),
 		WorkspaceReference: uuid.NewSHA1(personalWorkSpace, []byte(workID+"/workspace")).String(), InputSource: source,

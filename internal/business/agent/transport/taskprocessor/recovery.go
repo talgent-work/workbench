@@ -15,38 +15,14 @@ import (
 
 // RecoveryProcessors serve the recovery queue.
 func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []taskqueue.Processor {
-	return []taskqueue.Processor{
-		processor(logger, agenttask.ReconcileAllocationType, func() *agenttaskv1.ReconcileAllocationTaskV1 { return &agenttaskv1.ReconcileAllocationTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.ReconcileAllocationTaskV1) error {
-				return recovery.ReconcileAllocation(ctx, p.GetAllocationId())
-			}),
-		processor(logger, agenttask.ReconnectAllocationType, func() *agenttaskv1.ReconnectAllocationTaskV1 { return &agenttaskv1.ReconnectAllocationTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.ReconnectAllocationTaskV1) error {
-				return recovery.ReconnectAllocation(ctx, p.GetAllocationId())
-			}),
-		processor(logger, agenttask.DeliverCredentialsType, func() *agenttaskv1.DeliverCredentialsTaskV1 { return &agenttaskv1.DeliverCredentialsTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.DeliverCredentialsTaskV1) error {
-				return recovery.DeliverCredentials(ctx, p.GetAllocationId())
-			}),
-		processor(logger, agenttask.SyncInputsType, func() *agenttaskv1.SyncInputsTaskV1 { return &agenttaskv1.SyncInputsTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.SyncInputsTaskV1) error {
-				return recovery.SyncInputs(ctx, p.GetAllocationId())
-			}),
-		processor(logger, agenttask.ObserveSandboxType, func() *agenttaskv1.ObserveSandboxTaskV1 { return &agenttaskv1.ObserveSandboxTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.ObserveSandboxTaskV1) error {
-				return recovery.ObserveSandbox(ctx, p.GetAllocationId())
+	return append([]taskqueue.Processor{
+		processor(logger, agenttask.ReconcileExecutionType, func() *agenttaskv1.ReconcileExecutionTaskV1 { return &agenttaskv1.ReconcileExecutionTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.ReconcileExecutionTaskV1) error {
+				return recovery.ReconcileExecution(ctx, p.GetExecutionId())
 			}),
 		processor(logger, agenttask.RecoverWorkType, func() *agenttaskv1.RecoverWorkTaskV1 { return &agenttaskv1.RecoverWorkTaskV1{} },
 			func(ctx context.Context, p *agenttaskv1.RecoverWorkTaskV1) error {
 				return recovery.RecoverWork(ctx, p.GetWorkId())
-			}),
-		processor(logger, agenttask.RecoverContinuationType, func() *agenttaskv1.RecoverContinuationTaskV1 { return &agenttaskv1.RecoverContinuationTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.RecoverContinuationTaskV1) error {
-				return recovery.RecoverContinuation(ctx, p.GetWorkId())
-			}),
-		processor(logger, agenttask.RecoverWorkCreationType, func() *agenttaskv1.RecoverWorkCreationTaskV1 { return &agenttaskv1.RecoverWorkCreationTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.RecoverWorkCreationTaskV1) error {
-				return recovery.RecoverWorkCreation(ctx, p.GetRequestId())
 			}),
 		processor(logger, agenttask.RequestWorkspaceReclamationType, func() *agenttaskv1.RequestWorkspaceReclamationTaskV1 {
 			return &agenttaskv1.RequestWorkspaceReclamationTaskV1{}
@@ -56,22 +32,18 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 			}),
 		processor(logger, agenttask.SweepRecoveryType, func() *agenttaskv1.SweepRecoveryTaskV1 { return &agenttaskv1.SweepRecoveryTaskV1{} },
 			func(ctx context.Context, _ *agenttaskv1.SweepRecoveryTaskV1) error { return recovery.Sweep(ctx) }),
-	}
+	}, retired(logger, retiredRecoveryTypes)...)
 }
 
 // PreparationProcessors serve the preparation queue, whose attempts may take
-// minutes and so must not hold recovery workers.
+// minutes and so must not hold recovery workers: an execution's long step.
 func PreparationProcessors(recovery *application.Recovery, logger *slog.Logger) []taskqueue.Processor {
-	return []taskqueue.Processor{
-		processor(logger, agenttask.PrepareAllocationType, func() *agenttaskv1.PrepareAllocationTaskV1 { return &agenttaskv1.PrepareAllocationTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.PrepareAllocationTaskV1) error {
-				return recovery.PrepareAllocation(ctx, p.GetAllocationId())
+	return append([]taskqueue.Processor{
+		processor(logger, agenttask.RunLongExecutionStepType, func() *agenttaskv1.RunLongExecutionStepTaskV1 { return &agenttaskv1.RunLongExecutionStepTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.RunLongExecutionStepTaskV1) error {
+				return recovery.RunLongExecutionStep(ctx, p.GetExecutionId())
 			}),
-		processor(logger, agenttask.PrepareInitialExecutionType, func() *agenttaskv1.PrepareInitialExecutionTaskV1 { return &agenttaskv1.PrepareInitialExecutionTaskV1{} },
-			func(ctx context.Context, p *agenttaskv1.PrepareInitialExecutionTaskV1) error {
-				return recovery.PrepareInitialExecution(ctx, p.GetWorkId())
-			}),
-	}
+	}, retired(logger, retiredPreparationTypes)...)
 }
 
 // processor decodes one payload type and delegates once. A malformed payload

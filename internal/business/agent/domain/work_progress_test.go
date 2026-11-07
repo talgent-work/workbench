@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -11,9 +10,7 @@ import (
 
 func TestWorkProgressReplacesThePlanWithoutProcessAttribution(t *testing.T) {
 	work := newSession(t)
-	require.NoError(t, recoverStartup(context.Background(), work, &executionPort{}))
-	require.NoError(t, work.ConfirmPrepared(context.Background(), time.Now(), nil))
-	require.NoError(t, work.ConfirmStarted(context.Background(), time.Now(), nil))
+	ready(t, work)
 	origin := time.Date(2026, 9, 23, 8, 0, 0, 0, time.UTC)
 	first := []domain.WorkProgressItem{{Content: "Review the change", Status: "in_progress", ActiveForm: "Reviewing the change"}}
 	require.NoError(t, work.RecordWorkProgress(10, first, origin))

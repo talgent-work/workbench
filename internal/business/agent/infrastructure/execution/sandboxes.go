@@ -44,54 +44,10 @@ func (a Allocation) validate() error {
 	return nil
 }
 
-// SandboxConfig is trusted deployment configuration. Mounts come from the
-// grants Storage issued for the admitted start; conversation identity comes
-// from the admitted Work request.
-type SandboxConfig struct {
-	Image        string
-	Resources    corev1.ResourceRequirements
-	Environment  map[string]string
-	Models       *ModelCatalog
-	NetworkDeny  []string
-	NetworkAllow []string
-}
-
-func (c SandboxConfig) Validate() error {
-	if c.Models == nil {
-		return errors.New("agent: model catalog is required")
-	}
-	for _, key := range sandboxSecretEnvironment {
-		if _, ok := c.Environment[key]; ok {
-			return errors.New("agent: secrets must not be configured in sandbox environment")
-		}
-	}
-	// Model choice belongs to each Work's Model Configuration, never to the
-	// environment shared by every Work.
-	for _, key := range modelManagedEnvironment {
-		if _, ok := c.Environment[key]; ok {
-			return fmt.Errorf("agent: %s comes from the Work's model configuration", key)
-		}
-	}
-	if strings.TrimSpace(c.Image) == "" {
-		return errors.New("agent: native image is required")
-	}
-	// Every Work reaches the platform, through its native API or the Gateway
-	// where one is deployed, with the credentials the Credential Proxy adds.
-	if _, err := platformAddresses(c.Environment); err != nil {
-		return err
-	}
-	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
-		request, limit := c.Resources.Requests[name], c.Resources.Limits[name]
-		if request.Sign() <= 0 || limit.Sign() <= 0 || limit.Cmp(request) < 0 {
-			return errors.New("agent: CPU and memory need positive requests and limits at least as large")
-		}
-	}
-	return nil
-}
-
-// Sandboxes performs external operations only. Callers must persist a create
-// claim before Submit and resolve uncertain outcomes through Lookup; Submit
-// must never be retried merely because its response was lost.
+// Sandboxes performs external operations only. Callers record a creation's
+// submission before submit and resolve an uncertain outcome by observing the
+// sandboxes carrying the execution's ownership; submit is never retried
+// merely because its response was lost.
 type Sandboxes struct {
 	client *sdk.LifecycleClient
 	config SandboxConfig
@@ -111,7 +67,13 @@ func NewSandboxes(client *sdk.LifecycleClient, config SandboxConfig) (*Sandboxes
 	return &Sandboxes{client: client, config: config}, nil
 }
 
+// submit sends the create once and waits for its answer, which OpenSandbox
+// gives once the sandbox is ready or has definitely failed, a little longer
+// than the server's own creation timeout. A wait that ends first loses the
+// answer.
 func (s *Sandboxes) submit(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.config.creationWait())
+	defer cancel()
 	result, err := s.client.CreateSandbox(ctx, withoutWorkCredential(spec))
 	if err != nil && ctx.Err() == nil && isCreationRefused(err) {
 		return "", errors.Join(errCreationRefused, sandboxError(ctx, "create", err))
@@ -119,7 +81,7 @@ func (s *Sandboxes) submit(ctx context.Context, owner Allocation, spec sdk.Creat
 	if err != nil {
 		return "", sandboxError(ctx, "create", err)
 	}
-	if !matchesSandbox(result, owner) || result.Metadata[sandboxSpecLabel] != spec.Metadata[sandboxSpecLabel] || !validSandboxID(result.ID) {
+	if !carriesOwnership(result, owner, spec) || !validSandboxID(result.ID) {
 		return "", errEnvironmentConflict
 	}
 	return result.ID, nil
@@ -134,35 +96,37 @@ func withoutWorkCredential(spec sdk.CreateSandboxRequest) sdk.CreateSandboxReque
 	return spec
 }
 
-// lookup returns a candidate from the exact immutable specification. The caller
-// must commit its identity with CAS before using it or cleaning up surplus matches.
-func (s *Sandboxes) lookup(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) (string, error) {
-	ids, err := s.matching(ctx, owner, spec)
-	if err != nil || len(ids) == 0 {
-		return "", err
+// owned lists the sandboxes carrying the execution's exact ownership, each
+// once. A listed sandbox that does not is not the execution's, so it is left
+// in place without holding back the others.
+func (s *Sandboxes) owned(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) ([]sdk.SandboxInfo, error) {
+	items, err := s.listCorrelated(ctx, owner)
+	if err != nil {
+		return nil, err
 	}
-	return ids[0], nil
+	owned := make([]sdk.SandboxInfo, 0, len(items))
+	for i := range items {
+		item := &items[i]
+		if carriesOwnership(item, owner, spec) && validSandboxID(item.ID) && !slices.ContainsFunc(owned, func(o sdk.SandboxInfo) bool { return o.ID == item.ID }) {
+			owned = append(owned, *item)
+		}
+	}
+	slices.SortFunc(owned, func(a, b sdk.SandboxInfo) int { return strings.Compare(a.ID, b.ID) })
+	return owned, nil
 }
 
-func (s *Sandboxes) matching(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) ([]string, error) {
-	ids := []string{}
-	seen := map[string]bool{}
+// listCorrelated pages every sandbox the server lists with the allocation's
+// owner metadata.
+func (s *Sandboxes) listCorrelated(ctx context.Context, owner Allocation) ([]sdk.SandboxInfo, error) {
+	var items []sdk.SandboxInfo
 	for page := 1; ; page++ {
 		result, err := s.client.ListSandboxes(ctx, sdk.ListOptions{Metadata: correlation(owner), Page: page, PageSize: 100})
 		if err != nil {
 			return nil, sandboxError(ctx, "lookup", err)
 		}
-		for i := range result.Items {
-			item := &result.Items[i]
-			if !matchesSandbox(item, owner) || item.Metadata[sandboxSpecLabel] != spec.Metadata[sandboxSpecLabel] || !validSandboxID(item.ID) || seen[item.ID] {
-				return nil, errEnvironmentConflict
-			}
-			seen[item.ID] = true
-			ids = append(ids, item.ID)
-		}
+		items = append(items, result.Items...)
 		if !result.Pagination.HasNextPage {
-			slices.Sort(ids)
-			return ids, nil
+			return items, nil
 		}
 		if len(result.Items) == 0 {
 			return nil, errors.New("agent: inconsistent sandbox pagination")
@@ -170,68 +134,47 @@ func (s *Sandboxes) matching(ctx context.Context, owner Allocation, spec sdk.Cre
 	}
 }
 
-// prune preserves the durably selected primary. A retired allocation passes no
-// primary, so late environments are removed without reopening any execution.
-// List results alone never authorize deletion: inspect exact ownership again.
-func (s *Sandboxes) prune(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest, primary string, credentials *SandboxCredentials) error {
-	ids, err := s.matching(ctx, owner, spec)
-	if err != nil {
-		return err
-	}
-	for _, id := range ids {
-		if id == primary {
-			continue
-		}
-		info, err := s.client.GetSandbox(ctx, id)
-		if isSandboxNotFound(err) {
-			continue
-		}
-		if err != nil {
-			return sandboxError(ctx, "inspect_surplus", err)
-		}
-		if info.ID != id || !matchesSandbox(info, owner) || info.Metadata[sandboxSpecLabel] != spec.Metadata[sandboxSpecLabel] {
-			return errEnvironmentConflict
-		}
-		if credentials == nil {
-			return errors.New("agent: credential cleanup is required")
-		}
-		if err := credentials.withLock(ctx, id, func() error { _, err := s.deleteLocked(ctx, owner, id, credentials); return err }); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Only a GET of the bound sandbox can establish authoritative absence. An
 // endpoint lookup's 404 is not equivalent to disappearance of that environment.
 var errSandboxAbsent = errors.New("agent: bound sandbox is absent")
 
-// Endpoint resolves only a running, matching sandbox and returns direct execd
-// access. Gateway credentials are deliberately not interpreted as execd tokens.
-func (s *Sandboxes) Endpoint(ctx context.Context, owner Allocation, id string) (string, bool, error) {
+// boundSandbox is the bound sandbox as a GET shows it: its direct execd
+// endpoint while it runs, and its lease's expiry, zero when it was created
+// without one.
+type boundSandbox struct {
+	endpoint  string
+	running   bool
+	expiresAt time.Time
+}
+
+// inspect shows only a matching sandbox, resolving direct execd access while
+// it runs. Gateway credentials are deliberately not interpreted as execd
+// tokens.
+func (s *Sandboxes) inspect(ctx context.Context, owner Allocation, id string) (boundSandbox, error) {
 	if err := validateSandboxOwner(owner, id); err != nil {
-		return "", false, err
+		return boundSandbox{}, err
 	}
 	info, err := s.client.GetSandbox(ctx, id)
 	if isSandboxNotFound(err) {
-		return "", false, errSandboxAbsent
+		return boundSandbox{}, errSandboxAbsent
 	}
 	if err != nil {
-		return "", false, sandboxError(ctx, "inspect", err)
+		return boundSandbox{}, sandboxError(ctx, "inspect", err)
 	}
 	if !matchesSandbox(info, owner) || info.ID != id {
-		return "", false, errEnvironmentConflict
+		return boundSandbox{}, errEnvironmentConflict
 	}
+	bound := boundSandbox{expiresAt: leaseExpiry(info)}
 	if info.Status.State != sdk.StateRunning {
-		return "", false, nil
+		return bound, nil
 	}
 	proxy := false
 	endpoint, err := s.client.GetEndpoint(ctx, id, 44772, &proxy)
 	if err != nil {
-		return "", false, sandboxError(ctx, "endpoint", err)
+		return boundSandbox{}, sandboxError(ctx, "endpoint", err)
 	}
 	if len(endpoint.Headers) != 0 {
-		return "", false, errors.New("agent: direct execd endpoint must not require gateway headers")
+		return boundSandbox{}, errors.New("agent: direct execd endpoint must not require gateway headers")
 	}
 	address := endpoint.Endpoint
 	if !strings.Contains(address, "://") {
@@ -239,14 +182,54 @@ func (s *Sandboxes) Endpoint(ctx context.Context, owner Allocation, id string) (
 	}
 	u, err := url.Parse(address)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", false, errors.New("agent: invalid execd endpoint")
+		return boundSandbox{}, errors.New("agent: invalid execd endpoint")
 	}
-	return address, true, nil
+	bound.endpoint, bound.running = address, true
+	return bound, nil
 }
 
-// Delete uses OpenSandbox's authoritative environment observation. Underlying
-// Pod termination belongs to Kubernetes. No PVCs or contents are deleted here.
-func (s *Sandboxes) Delete(ctx context.Context, owner Allocation, id string, credentials *SandboxCredentials) (bool, error) {
+// leaseExpiry is when OpenSandbox deletes the sandbox unless renewed; zero
+// for a sandbox created without an expiry.
+func leaseExpiry(info *sdk.SandboxInfo) time.Time {
+	if info.ExpiresAt == nil {
+		return time.Time{}
+	}
+	return recordedExpiry(*info.ExpiresAt)
+}
+
+// recordedExpiry is an expiry OpenSandbox returned, to the millisecond the
+// execution's record keeps, so observing a recorded lease again changes
+// nothing.
+func recordedExpiry(expiresAt time.Time) time.Time {
+	return expiresAt.Truncate(time.Millisecond).UTC()
+}
+
+// lease is how every sandbox is leased.
+func (s *Sandboxes) lease() domain.LeaseTerms { return s.config.Lease }
+
+// renew moves the bound sandbox's expiry to expiresAt and returns the expiry
+// OpenSandbox answered. OpenSandbox accepts any future time, a shorter one
+// included, so the caller asks only for later ones; it refuses a sandbox
+// created without an expiry.
+func (s *Sandboxes) renew(ctx context.Context, owner Allocation, id string, expiresAt time.Time) (time.Time, error) {
+	if err := validateSandboxOwner(owner, id); err != nil {
+		return time.Time{}, err
+	}
+	answer, err := s.client.RenewExpiration(ctx, id, expiresAt)
+	if isSandboxNotFound(err) {
+		return time.Time{}, errSandboxAbsent
+	}
+	if err != nil {
+		return time.Time{}, sandboxError(ctx, "renew", err)
+	}
+	return recordedExpiry(answer.ExpiresAt), nil
+}
+
+// Delete removes one sandbox once its exact ownership is confirmed, and
+// reports whether it is already absent; only OpenSandbox's observation
+// establishes that. Underlying Pod termination belongs to Kubernetes. No PVCs
+// or contents are deleted here.
+func (s *Sandboxes) Delete(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest, id string, credentials *SandboxCredentials) (bool, error) {
 	if err := validateSandboxOwner(owner, id); err != nil {
 		return false, err
 	}
@@ -257,7 +240,7 @@ func (s *Sandboxes) Delete(ctx context.Context, owner Allocation, id string, cre
 	if err != nil {
 		return false, sandboxError(ctx, "inspect_before_delete", err)
 	}
-	if info.ID != id || !matchesSandbox(info, owner) {
+	if info.ID != id || !carriesOwnership(info, owner, spec) {
 		return false, errEnvironmentConflict
 	}
 	if credentials == nil {
@@ -297,7 +280,7 @@ func (s *Sandboxes) deleteLocked(ctx context.Context, owner Allocation, id strin
 	return false, clearErr
 }
 
-func (s *Sandboxes) specification(ctx context.Context, request domain.StartExecutionRequest, mounts domain.SandboxMounts, owner Allocation, token, credential string) (sdk.CreateSandboxRequest, error) {
+func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner Allocation, token, credential string) (sdk.CreateSandboxRequest, error) {
 	if err := validateStartRequest(request); err != nil {
 		return sdk.CreateSandboxRequest{}, err
 	}
@@ -347,9 +330,11 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.StartExecu
 	if err != nil {
 		return sdk.CreateSandboxRequest{}, err
 	}
+	// Every sandbox expires unless its execution renews it, so one Agent
+	// lost track of is reclaimed within a lease.
+	lease := int(s.config.Lease.Duration / time.Second)
 	spec := sdk.CreateSandboxRequest{
-		Image: &sdk.ImageSpec{URI: s.config.Image},
-		// nil timeout deliberately omits automatic expiration. Session owns stop.
+		Image: &sdk.ImageSpec{URI: s.config.Image}, Timeout: &lease,
 		Entrypoint: []string{"sleep", "infinity"}, Env: env, Metadata: correlation(owner),
 		ResourceLimits: sdk.ResourceLimits{}, ResourceRequests: sdk.ResourceLimits{},
 		NetworkPolicy:   &sdk.NetworkPolicy{DefaultAction: "allow"},
@@ -366,7 +351,7 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.StartExecu
 		spec.ResourceRequests[string(name)], spec.ResourceLimits[string(name)] = request.String(), limit.String()
 	}
 	encoded, err := json.Marshal(struct {
-		Request    domain.StartExecutionRequest
+		Request    domain.LaunchSpecification
 		Allocation Allocation
 		Spec       sdk.CreateSandboxRequest
 	}{request, owner, spec})
@@ -393,6 +378,12 @@ func matchesSandbox(info *sdk.SandboxInfo, owner Allocation) bool {
 	return true
 }
 
+// carriesOwnership reports a sandbox carrying the allocation's owner metadata
+// and its immutable specification.
+func carriesOwnership(info *sdk.SandboxInfo, owner Allocation, spec sdk.CreateSandboxRequest) bool {
+	return matchesSandbox(info, owner) && info.Metadata[sandboxSpecLabel] == spec.Metadata[sandboxSpecLabel]
+}
+
 func validSandboxID(id string) bool {
 	parsed, err := uuid.Parse(id)
 	return err == nil && parsed.String() == id
@@ -407,16 +398,26 @@ func validateSandboxOwner(owner Allocation, id string) error {
 	return nil
 }
 
-// errCreationRefused marks a create the provider answered by refusing its
-// specification. The provider created nothing for it, so its allocation can
-// never hold compute.
+// errCreationRefused marks a create the provider definitely refused or
+// failed. Nothing it created for it remains, so its allocation can never
+// hold compute.
 var errCreationRefused = errors.New("agent: sandbox creation refused")
 
-// isCreationRefused recognizes OpenSandbox's answer to an invalid sandbox
-// specification, which it rejects before creating any workload.
+// definiteCreationFailures are OpenSandbox's codes for a create that failed
+// after the server created the sandbox, which it deletes before answering:
+// its readiness timeout, a failed Pod and an exhausted quota.
+var definiteCreationFailures = []string{"KUBERNETES::POD_READY_TIMEOUT", "KUBERNETES::POD_FAILED", "KUBERNETES::QUOTA_EXCEEDED"}
+
+// isCreationRefused recognizes OpenSandbox's definite answers to a create:
+// a refused specification or an unschedulable sandbox, and a failure after
+// which the server deleted the sandbox. Any other failure, such as an
+// unavailable server, leaves the outcome unknown.
 func isCreationRefused(err error) bool {
 	var api *sdk.APIError
-	return errors.As(err, &api) && (api.StatusCode == http.StatusBadRequest || api.StatusCode == http.StatusUnprocessableEntity)
+	if !errors.As(err, &api) {
+		return false
+	}
+	return api.StatusCode == http.StatusBadRequest || api.StatusCode == http.StatusUnprocessableEntity || slices.Contains(definiteCreationFailures, api.Response.Code)
 }
 
 func isSandboxNotFound(err error) bool {

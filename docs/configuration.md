@@ -125,6 +125,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | Key | Default | Meaning |
 |---|---|---|
 | `sandbox-namespace` | `${SANDBOX_NAMESPACE:talgent-sandbox}` | Required. Where sandboxes are created; the namespace holds only them |
+| `sandbox-creation-timeout` | `${SANDBOX_CREATION_TIMEOUT:5m}` | Must equal the OpenSandbox server's `sandbox_create_timeout_seconds` (`deploy/opensandbox/server.yaml`); a create waits 30 seconds longer for its answer. Below 14m30s |
 | `credential-transport` | `encrypted-network` | How credentials reach a sandbox's Vault: `https`, or `encrypted-network` (plain HTTP inside a cluster whose pod network is encrypted) |
 | `models.templates-path` | `${MODEL_TEMPLATES_PATH:/etc/talgent/models/templates.yml}` | Model Templates; base: ConfigMap `agent-models` |
 | `models.configurations-path` | `${MODEL_CONFIGURATIONS_PATH:/etc/talgent/model-configurations/configurations.yml}` | Model Configurations with their keys; base: Secret `agent-model-configurations`. At least one is required. |
@@ -137,6 +138,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `environment.TALGENT_API_ADDRESS` | `${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}` | The platform API a sandbox calls, on the standard port: the only kind its Credential Proxy adds the Work credential to |
 | `environment.OTEL_EXPORTER_OTLP_ENDPOINT` | `${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}` | Where Claude Code sends its telemetry |
 | `dispatcher.address`, `dispatcher.token` | `${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}`, `${DISPATCHER_EXECUTION_CONTROL_TOKEN:}` | Dispatcher, which drives each run |
+| `lease.duration`, `lease.renewal-threshold` | `2h`, `1h` | How long a sandbox lives unless renewed, and how much of its lease remains when a running Work's sandbox is renewed; the threshold must stay below the duration and well above `agent-recovery.sweep-interval`. Before rolling back past the release that leases sandboxes, see [Operations](self-hosting.md#9-operations) |
 
 ### computer
 
@@ -179,7 +181,7 @@ How Agent reaches Computer and Managed Computers.
 | `agent-recovery.inputs-refresh-interval` | `10m` | How often a Managed Work's inputs are synced again; inside `storage.link-ttl` |
 | `agent-credential-changes.consumer-group`, `agent-input-changes`, `agent-desk-assignments`, `agent-computer-presence` | `${AGENT_CREDENTIAL_CHANGES_GROUP:agent-credential-changes}`, `${AGENT_INPUT_CHANGES_GROUP:agent-input-changes}`, `${AGENT_DESK_ASSIGNMENTS_GROUP:agent-desk-assignments}`, `${AGENT_COMPUTER_PRESENCE_GROUP:agent-computer-presence}` | Kafka consumer groups; the same names when unset |
 | `agent-taskqueue` | queue `agent-recovery`, concurrency 16, retry `1s`–`60s` | Recovery tasks |
-| `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 32, retry `1s`–`60s` | Each starting Work holds a worker while it prepares |
+| `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 8, retry `1s`–`60s` | Each execution's long step holds a worker while it runs |
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
 | `native-api.addr` | `${NATIVE_API_ADDR::8081}` | The API Agents call with their Work credential |
 | `native-api.gateway-token` | none | When set, only a platform Connector presenting it reaches the native API; empty, any caller with a current Work credential does. The base gives controlplane `GATEWAY_TOKEN` (Secret `native-execution-control`) for a profile to name |

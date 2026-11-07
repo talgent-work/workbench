@@ -25,6 +25,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -73,11 +74,11 @@ type Config struct {
 	// offers each user's repositories and service authorizations. Without
 	// one, every user reaches the repository "123", example/project.
 	Marketplace string
-	// OnStart observes each execution start the Agent delivers.
+	// OnStart observes each start the Agent admits.
 	OnStart func(Start)
 }
 
-// Start is an execution start the Agent delivered.
+// Start is a start the Agent admitted.
 type Start struct {
 	WorkID, ModelConfigurationID, ThinkingLevel string
 	// InputSource and SpaceToken are the Work's read-only inputs.
@@ -116,34 +117,30 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	t.Cleanup(func() { _ = db.Close() })
 	models := cfg.models()
 	catalog := &catalog{config: cfg}
-	var repositories interface {
-		command.PersonalConnectionsPort
-		query.AccessibleRepositoriesPort
-	} = fixtureRepositories{}
+	var repositories connections = fixtureRepositories{}
 	if cfg.Marketplace != "" {
 		client, err := plugincatalog.NewClient(http.DefaultClient, plugincatalog.Config{Address: cfg.Marketplace})
 		require.NoError(t, err)
 		repositories = client
 	}
-	works := infrastructure.NewAgentWorkRepository(db, time.Now)
+	works := startedWorks{AgentWorkRepository: infrastructure.NewAgentWorkRepository(db, time.Now), onStart: cfg.OnStart}
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	lookup := infrastructure.NewAgentDefinitionLookup(db)
-	authorizer := infrastructure.NewWorkAuthorizer(db)
-	requests := infrastructure.NewWorkCreationRequests(db, time.Now)
+	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 	queries := infrastructure.NewWorkQueryRepository(db)
-	execution := infrastructure.NewExecutionRequestsFactory(executionPort{onStart: cfg.OnStart})
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, authorizer, models, catalog, repositories, works, computertest.Checked(admission{admit: cfg.Admit}), execution)
-	prepare := command.NewPrepareWorkExecutionHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), works, authorizer, execution, requests, models)
+	start := startCatalog{catalog: catalog, connections: repositories}
+	prepare := command.NewPrepareWorkExecutionHandler(works, authorizer, models)
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
 	views := query.NewModelOptionViews(queries, models)
 	app := &application.Application{
-		RepositoryOptions: repositories, RecentRepositories: queries, Plugins: catalog, Definitions: definitions, DefinitionLookup: lookup,
+		RecentRepositories: queries, Catalog: start, Definitions: definitions, DefinitionLookup: lookup,
 		Works: works, WorkPrincipals: authorizer, WorkViews: views, Models: models,
 		Commands: application.Commands{
 			EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup),
-			CreateRequestedWork:   command.NewCreateRequestedWorkHandler(requests, create, prepare),
+			CreateWork:            create,
 		},
 		Queries: application.Queries{
-			GetWorkPreparation: query.NewGetWorkPreparationHandler(infrastructure.NewInitialExecutionRequests(db, time.Now), authorizer),
+			GetWorkPreparation: query.NewGetWorkPreparationHandler(queries, authorizer),
 			GetWork:            query.NewGetWorkHandler(definitions, works, authorizer, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
 			GetWorkView:        query.NewGetWorkViewHandler(authorizer, views),
 			GetWorkOrigin:      query.NewGetWorkOriginHandler(queries),
@@ -191,21 +188,6 @@ func (a *Agent) Work(ctx context.Context, workID string) (Work, error) {
 	return result, nil
 }
 
-// InitialRequest is a Work's initial execution request as the Agent retains it.
-type InitialRequest struct {
-	RequestID, Text, ThinkingLevel string
-	Submitted, Rejected            bool
-}
-
-// InitialRequest reads a Work's initial execution request.
-func (a *Agent) InitialRequest(ctx context.Context, workID string) (InitialRequest, error) {
-	request, err := infrastructure.NewInitialExecutionRequests(a.DB, time.Now).Get(ctx, workID)
-	if err != nil {
-		return InitialRequest{}, err
-	}
-	return InitialRequest{RequestID: request.RequestID, Text: request.Input.Text, ThinkingLevel: request.ThinkingLevel, Submitted: request.Submitted, Rejected: request.Rejected}, nil
-}
-
 // Definition is a person's own Agent Definition, which their Works run.
 type Definition struct {
 	Name, HomeOwnerID, StartupAgent string
@@ -249,21 +231,50 @@ func authorizations(selection domain.WorkAuthorizationSelection) Authorizations 
 	return result
 }
 
-// executionPort delivers nothing: it reports each start and accepts every
-// stop, reclaim and retirement.
-type executionPort struct{ onStart func(Start) }
+// startedWorks reports each start a committed Work admitted, in place of
+// beginning its execution: nothing runs.
+type startedWorks struct {
+	*infrastructure.AgentWorkRepository
+	onStart func(Start)
+}
 
-func (p executionPort) StartExecution(_ context.Context, request domain.StartExecutionRequest) error {
-	if p.onStart != nil {
-		p.onStart(Start{WorkID: request.WorkID, ModelConfigurationID: request.WorkModel.ConfigurationID, ThinkingLevel: request.ThinkingLevel,
-			InputSource: request.InputSource.Reference, SpaceToken: request.InputSource.SpaceToken, Authorizations: authorizations(request.AuthorizationSelection)})
+func (w startedWorks) Save(ctx context.Context, work *domain.AgentWork) error {
+	if err := w.AgentWorkRepository.Save(ctx, work); err != nil {
+		return err
 	}
+	w.started(work)
 	return nil
 }
-func (executionPort) StopExecution(context.Context, string, string) error { return nil }
-func (executionPort) ReclaimCompute(context.Context, string) error        { return nil }
-func (executionPort) RetireFencedRun(context.Context, string) error       { return nil }
-func (executionPort) CancelRunningTurn(context.Context, string) error     { return nil }
+
+func (w startedWorks) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
+	if err := w.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
+		return err
+	}
+	w.started(work)
+	return nil
+}
+
+func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, start query.StartRequest) error {
+	if err := w.AgentWorkRepository.CommitStart(ctx, work, start); err != nil {
+		return err
+	}
+	w.started(work)
+	return nil
+}
+
+func (w startedWorks) started(work *domain.AgentWork) {
+	if work.Events == nil {
+		return
+	}
+	for _, event := range work.Events.Drain() {
+		if _, admitted := event.(domain.WorkStartAdmitted); !admitted || w.onStart == nil {
+			continue
+		}
+		launch := work.LaunchSpecification()
+		w.onStart(Start{WorkID: launch.WorkID, ModelConfigurationID: launch.WorkModel.ConfigurationID, ThinkingLevel: launch.ThinkingLevel,
+			InputSource: launch.InputSource.Reference, SpaceToken: launch.InputSource.SpaceToken, Authorizations: authorizations(launch.AuthorizationSelection)})
+	}
+}
 
 // admission admits by the caller's decision.
 type admission struct{ admit func(context.Context) error }

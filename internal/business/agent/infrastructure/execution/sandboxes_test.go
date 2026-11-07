@@ -3,14 +3,17 @@ package execution
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 
@@ -41,23 +44,23 @@ func init() {
 }
 
 func config() SandboxConfig {
-	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
+	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Lease: fixtureLease, Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")},
 		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("1Gi")},
 	}}
 }
-func request() domain.StartExecutionRequest {
-	return domain.StartExecutionRequest{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "session", Capabilities: domain.CapabilitySnapshot{Prompt: "fixed prompt\n", Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, HarnessSessionReference: "context", ContextMode: domain.ContextContinue, WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}}
+func request() domain.LaunchSpecification {
+	return domain.LaunchSpecification{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "session", Capabilities: domain.CapabilitySnapshot{Prompt: "fixed prompt\n", Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, HarnessSessionReference: "context", ContextMode: domain.ContextContinue, WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}}
 }
 
 const fixtureAllocationID = "01900000-0000-7000-8000-000000000001"
 
-func owner(r domain.StartExecutionRequest) Allocation {
+func owner(r domain.LaunchSpecification) Allocation {
 	return Allocation{WorkID: r.WorkID, ID: fixtureAllocationID}
 }
 
 // submit allocates the fixture sandbox for the request's live allocation.
-func (s *Sandboxes) submitRequest(ctx context.Context, r domain.StartExecutionRequest, token string) (string, error) {
+func (s *Sandboxes) submitRequest(ctx context.Context, r domain.LaunchSpecification, token string) (string, error) {
 	spec, err := s.specification(ctx, r, testMounts, owner(r), token, "work-credential-fixture")
 	if err != nil {
 		return "", err
@@ -65,36 +68,72 @@ func (s *Sandboxes) submitRequest(ctx context.Context, r domain.StartExecutionRe
 	return s.submit(ctx, owner(r), spec)
 }
 
-func (s *Sandboxes) lookupRequest(ctx context.Context, r domain.StartExecutionRequest, token string) (string, error) {
+// ownedRequest lists the sandboxes carrying the request's ownership.
+func (s *Sandboxes) ownedRequest(ctx context.Context, r domain.LaunchSpecification, token string) ([]string, error) {
 	spec, err := s.specification(ctx, r, testMounts, owner(r), token, "work-credential-fixture")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return s.lookup(ctx, owner(r), spec)
+	owned, err := s.owned(ctx, owner(r), spec)
+	ids := make([]string, 0, len(owned))
+	for _, info := range owned {
+		ids = append(ids, info.ID)
+	}
+	return ids, err
 }
 
 type lifecycleFixture struct {
 	mu                 sync.Mutex
 	loseCreateResponse bool
-	create             sdk.CreateSandboxRequest
-	info               *sdk.SandboxInfo
-	pages              [][]sdk.SandboxInfo
-	creates, deletes   int
-	createFailure      bool
-	refuseStatus       int
-	createOnRefusal    bool
-	endpoint           string
-	egress             string
-	egressToken        string
-	vault              *vaultFixture
-	inspectStatus      int
-	endpointStatus     int
+	// createPending creates each sandbox not yet running.
+	createPending bool
+	// distinct creates each sandbox under its own identity among others, so
+	// several executions each own one.
+	distinct         bool
+	create           sdk.CreateSandboxRequest
+	info             *sdk.SandboxInfo
+	pages            [][]sdk.SandboxInfo
+	creates, deletes int
+	createFailure    bool
+	refuseStatus     int
+	// refuseCode is the OpenSandbox error code a refusal carries.
+	refuseCode      string
+	createOnRefusal bool
+	// answer, when set, holds every create's answer, its sandbox already
+	// created, until it is closed or the caller gives up; never closed, the
+	// create is never answered.
+	answer chan struct{}
+	// failAfterCreate answers a create with this HTTP status and refuseCode
+	// once its answer is released, the sandbox it created deleted first, as
+	// the server does after its readiness timeout.
+	failAfterCreate int
+	endpoint        string
+	egress          string
+	egressToken     string
+	vault           *vaultFixture
+	inspectStatus   int
+	endpointStatus  int
+	// others are sandboxes beside info, by identity; the list filters them,
+	// like info, by the owner metadata it is asked for.
+	others map[string]sdk.SandboxInfo
 	// requests counts every call to the environment authority.
 	requests int
+	// unleased creates each sandbox without an expiry, as a sandbox created
+	// before leasing carries none.
+	unleased bool
+	// renewals are the expiries each accepted lease renewal asked for.
+	renewals []time.Time
+	// clock is the controller's time: a sandbox whose expiry passed is
+	// deleted before the next call. Nil is the wall clock.
+	clock func() time.Time
 }
 
 func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
+	if r.Method == "POST" && r.URL.Path == "/v1/sandboxes" && (f.answer != nil || f.failAfterCreate != 0) {
+		f.serveHeldCreate(w, r)
+		return
+	}
 	defer f.mu.Unlock()
 	f.requests++
 	if r.Header.Get("OPEN-SANDBOX-API-KEY") != "lifecycle-secret" {
@@ -102,7 +141,10 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	f.expire()
 	switch {
+	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/renew-expiration"):
+		f.renew(w, r)
 	case r.Method == "POST" && r.URL.Path == "/v1/sandboxes":
 		f.creates++
 		if err := json.NewDecoder(r.Body).Decode(&f.create); err != nil {
@@ -112,8 +154,12 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.refuseStatus != 0 {
 			if f.createOnRefusal {
 				f.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: f.create.Metadata, Status: sdk.SandboxStatus{State: sdk.StateRunning}}
+				f.leased(f.info)
+				if f.createPending {
+					f.info.Status.State = "Pending"
+				}
 			}
-			http.Error(w, "invalid parameters", f.refuseStatus)
+			f.refuse(w, f.refuseStatus)
 			return
 		}
 		if f.createFailure {
@@ -121,6 +167,23 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: f.create.Metadata, Status: sdk.SandboxStatus{State: sdk.StateRunning}}
+		f.leased(f.info)
+		if f.createPending {
+			f.info.Status.State = "Pending"
+		}
+		if f.distinct {
+			created := *f.info
+			// The next create decodes into the same request, metadata map included.
+			created.Metadata = maps.Clone(created.Metadata)
+			created.ID = fmt.Sprintf("9c8b7a6d-5e4f-4a3b-8c2d-%012d", f.creates)
+			if f.others == nil {
+				f.others = map[string]sdk.SandboxInfo{}
+			}
+			f.others[created.ID] = created
+			f.info = nil
+			_ = json.NewEncoder(w).Encode(created)
+			return
+		}
 		if f.loseCreateResponse {
 			http.Error(w, "response lost after allocation", 500)
 			return
@@ -134,12 +197,13 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var items []sdk.SandboxInfo
 		if len(f.pages) > page {
 			items = f.pages[page]
-		} else if f.info != nil {
-			items = []sdk.SandboxInfo{*f.info}
+		} else {
+			items = f.listed(r.URL.Query().Get("metadata"))
 		}
 		_ = json.NewEncoder(w).Encode(sdk.ListSandboxesResponse{Items: items, Pagination: sdk.PaginationInfo{HasNextPage: page+1 < len(f.pages)}})
 	case r.Method == "GET" && strings.HasSuffix(r.URL.Path, fmt.Sprintf("/endpoints/%d", CredentialManagementPort)):
-		if f.info == nil {
+		owner, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/v1/sandboxes/"), "/")
+		if f.info == nil && f.others[owner].ID == "" {
 			// A deleted sandbox exposes no endpoints.
 			w.WriteHeader(404)
 			return
@@ -159,6 +223,15 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(sdk.Endpoint{Endpoint: f.endpoint})
+	case f.others[strings.TrimPrefix(r.URL.Path, "/v1/sandboxes/")].ID != "":
+		id := strings.TrimPrefix(r.URL.Path, "/v1/sandboxes/")
+		if r.Method == "DELETE" {
+			f.deletes++
+			delete(f.others, id)
+			w.WriteHeader(204)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(f.others[id])
 	case r.URL.Path == "/v1/sandboxes/"+sandboxID:
 		if r.Method == "GET" && f.inspectStatus != 0 {
 			w.WriteHeader(f.inspectStatus)
@@ -178,6 +251,29 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(404)
 	}
+}
+
+// listed are the sandboxes carrying every pair of the encoded metadata filter.
+func (f *lifecycleFixture) listed(filter string) []sdk.SandboxInfo {
+	wanted, _ := url.ParseQuery(filter)
+	candidates := []sdk.SandboxInfo{}
+	if f.info != nil {
+		candidates = append(candidates, *f.info)
+	}
+	for _, id := range slices.Sorted(maps.Keys(f.others)) {
+		candidates = append(candidates, f.others[id])
+	}
+	items := []sdk.SandboxInfo{}
+	for _, item := range candidates {
+		matches := true
+		for key, values := range wanted {
+			matches = matches && item.Metadata[key] == values[0]
+		}
+		if matches {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 // testMounts are the Mount Grants Storage issues for request's spaces.
@@ -210,7 +306,7 @@ func TestNativeSandboxSubmissionRetainsHomeAndWorkspaceWithoutExecutor(t *testin
 	spec := fixture.create
 	require.Equal(t, "native-claude:test", spec.Image.URI)
 	require.Equal(t, []string{"sleep", "infinity"}, spec.Entrypoint)
-	require.Nil(t, spec.Timeout)
+	require.Equal(t, 7200, *spec.Timeout, "every sandbox expires unless renewed")
 	require.Equal(t, "execd-secret", spec.Env["EXECD_ACCESS_TOKEN"])
 	require.Equal(t, input.WorkID, spec.Env["TALGENT_WORK_ID"])
 	require.NotContains(t, spec.Env, workCredentialEnv, "the Work credential reaches the Gateway through the Credential Proxy, never the sandbox")
@@ -248,25 +344,29 @@ func TestNativeSandboxSubmissionRetainsHomeAndWorkspaceWithoutExecutor(t *testin
 	require.NotEqual(t, projectDirectory, fixture.create.Env["CLAUDE_CODE_PROJECT_DIR_NAME"])
 }
 
-func TestSandboxLookupRejectsChangedSpecAndDuplicateAcrossPages(t *testing.T) {
+// Observation lists only the sandboxes carrying the execution's exact
+// ownership, each once, however the server pages them.
+func TestSandboxOwnershipListingOmitsOtherSpecificationsAndDuplicates(t *testing.T) {
 	provider, _, fixture := sandboxClient(t)
 	input := request()
 	_, err := provider.submitRequest(context.Background(), input, "execd-secret")
 	require.NoError(t, err)
-	id, err := provider.lookupRequest(context.Background(), input, "execd-secret")
+	ids, err := provider.ownedRequest(context.Background(), input, "execd-secret")
 	require.NoError(t, err)
-	require.Equal(t, sandboxID, id)
+	require.Equal(t, []string{sandboxID}, ids)
 	changed := input
 	changed.Capabilities.Prompt = "changed"
-	_, err = provider.lookupRequest(context.Background(), changed, "execd-secret")
-	require.ErrorIs(t, err, errEnvironmentConflict)
+	ids, err = provider.ownedRequest(context.Background(), changed, "execd-secret")
+	require.NoError(t, err)
+	require.Empty(t, ids, "a sandbox of another specification is not the execution's")
 	fixture.pages = [][]sdk.SandboxInfo{{*fixture.info}, {*fixture.info}}
-	_, err = provider.lookupRequest(context.Background(), input, "execd-secret")
-	require.ErrorIs(t, err, errEnvironmentConflict)
-	require.Equal(t, 1, fixture.creates, "lookup must never allocate")
+	ids, err = provider.ownedRequest(context.Background(), input, "execd-secret")
+	require.NoError(t, err)
+	require.Equal(t, []string{sandboxID}, ids, "a sandbox listed on two pages is one environment")
+	require.Equal(t, 1, fixture.creates, "observation must never allocate")
 }
 
-func TestSandboxSurplusCleanupRechecksImmutableOwnershipBeforeDelete(t *testing.T) {
+func TestSandboxDeletionRechecksImmutableOwnershipBeforeDelete(t *testing.T) {
 	provider, _, fixture := sandboxClient(t)
 	input := request()
 	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "execd-secret", "work-credential-fixture")
@@ -274,11 +374,13 @@ func TestSandboxSurplusCleanupRechecksImmutableOwnershipBeforeDelete(t *testing.
 	fixture.pages = [][]sdk.SandboxInfo{{{ID: sandboxID, Metadata: spec.Metadata}}}
 	other := Allocation{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
 	fixture.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: correlation(other)}
-	require.ErrorIs(t, provider.prune(context.Background(), owner(input), spec, "", fixtureSandboxCredentials(nil, provider)), errEnvironmentConflict)
-	require.Zero(t, fixture.deletes, "a stale list cannot authorize deleting another allocation")
+	_, err = provider.Delete(context.Background(), owner(input), spec, sandboxID, fixtureSandboxCredentials(nil, provider))
+	require.ErrorIs(t, err, errEnvironmentConflict)
+	require.Zero(t, fixture.deletes, "a stale list cannot authorize deleting another execution's sandbox")
 	fixture.info.Metadata = correlation(owner(input))
 	fixture.info.Metadata[sandboxSpecLabel] = "changed-specification"
-	require.ErrorIs(t, provider.prune(context.Background(), owner(input), spec, "", fixtureSandboxCredentials(nil, provider)), errEnvironmentConflict)
+	_, err = provider.Delete(context.Background(), owner(input), spec, sandboxID, fixtureSandboxCredentials(nil, provider))
+	require.ErrorIs(t, err, errEnvironmentConflict)
 	require.Zero(t, fixture.deletes, "correlation without the immutable specification is insufficient")
 }
 
@@ -289,17 +391,6 @@ func TestSandboxCreateFailureDoesNotRetryOrExposeResponseBody(t *testing.T) {
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "must-not-leak-token")
 	require.Equal(t, 1, fixture.creates)
-}
-
-func TestSandboxCreateRefusalIsOnlyAnInvalidSpecificationAnswer(t *testing.T) {
-	for status, refused := range map[int]bool{http.StatusBadRequest: true, http.StatusUnprocessableEntity: true, http.StatusInternalServerError: false, http.StatusServiceUnavailable: false, http.StatusConflict: false} {
-		provider, _, fixture := sandboxClient(t)
-		fixture.refuseStatus = status
-		_, err := provider.submitRequest(context.Background(), request(), "execd-secret")
-		require.Error(t, err)
-		require.Equal(t, refused, errors.Is(err, errCreationRefused), "HTTP %d", status)
-		require.NotContains(t, err.Error(), "invalid parameters", "response bodies never leave the adapter")
-	}
 }
 
 func TestSandboxWithoutInputSourceMountsNoInputsClaim(t *testing.T) {
@@ -317,21 +408,21 @@ func TestSandboxEndpointRequiresCurrentIdentityAndResolvesAgain(t *testing.T) {
 	input := request()
 	_, err := provider.submitRequest(context.Background(), input, "execd-secret")
 	require.NoError(t, err)
-	endpoint, ready, err := provider.Endpoint(context.Background(), owner(input), sandboxID)
+	bound, err := provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
-	require.True(t, ready)
-	require.Equal(t, "http://192.0.2.8:44772", endpoint)
+	require.True(t, bound.running)
+	require.Equal(t, "http://192.0.2.8:44772", bound.endpoint)
 	fixture.endpoint = "192.0.2.9:44772"
-	endpoint, ready, err = provider.Endpoint(context.Background(), owner(input), sandboxID)
+	bound, err = provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
-	require.True(t, ready)
-	require.Equal(t, "http://192.0.2.9:44772", endpoint)
+	require.True(t, bound.running)
+	require.Equal(t, "http://192.0.2.9:44772", bound.endpoint)
 	fixture.info.Status.State = sdk.StatePending
-	_, ready, err = provider.Endpoint(context.Background(), owner(input), sandboxID)
+	bound, err = provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
-	require.False(t, ready)
+	require.False(t, bound.running)
 	other := Allocation{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
-	_, _, err = provider.Endpoint(context.Background(), other, sandboxID)
+	_, err = provider.inspect(context.Background(), other, sandboxID)
 	require.ErrorIs(t, err, errEnvironmentConflict)
 }
 

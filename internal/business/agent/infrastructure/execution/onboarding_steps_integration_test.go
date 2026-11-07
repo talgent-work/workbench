@@ -4,15 +4,14 @@ package execution
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
+	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"xorm.io/xorm"
 )
@@ -25,15 +24,15 @@ func (r *readingProcess) Reading(context.Context, string) (StreamReading, bool, 
 }
 
 type onboardingFixture struct {
-	recovery  *EnvironmentRecovery
+	steps     *executionSteps
 	lifecycle *lifecycleFixture
-	feedback  *reclamationFeedback
 	owners    *readingProcess
 	db        *xorm.Engine
 	record    allocationRecord
 }
 
-// newOnboarding registers and submits one Work's allocation.
+// newOnboarding begins one Work's execution, submits its creation and binds
+// the created sandbox.
 func newOnboarding(t *testing.T) *onboardingFixture {
 	t.Helper()
 	ctx := context.Background()
@@ -41,26 +40,32 @@ func newOnboarding(t *testing.T) *onboardingFixture {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, p, lifecycle)
-	credentials := p.credentials
 	input := request()
-	require.NoError(t, p.Register(ctx, input, testMounts))
-	require.NoError(t, submitPending(ctx, p))
-	feedback := &reclamationFeedback{}
-	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", feedback, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	record, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
-	reclaimer, err := NewReclaimer(feedback)
+	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
 	require.NoError(t, err)
 	owners := &readingProcess{}
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, NewRemovals(db, time.Now), owners)
+	steps := newExecutionSteps(t, p, connections, owners, nil, time.Now)
+	// The sandbox is bound while it starts, so its reconciliation delivers
+	// nothing yet; each case takes the onboarding from there.
+	lifecycle.mu.Lock()
+	lifecycle.createPending = true
+	lifecycle.mu.Unlock()
+	require.NoError(t, steps.reconcile(ctx, record.ID))
+	lifecycle.mu.Lock()
+	lifecycle.info.Status.State = sdk.StateRunning
+	lifecycle.mu.Unlock()
+	record, _, err = latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
-	record, _, err := latestAllocation(ctx, db, input.WorkID)
-	require.NoError(t, err)
-	return &onboardingFixture{recovery: recovery, lifecycle: lifecycle, feedback: feedback, owners: owners, db: db, record: record}
+	require.Equal(t, sandboxID, record.SandboxID)
+	require.False(t, record.SandboxReady)
+	return &onboardingFixture{steps: steps, lifecycle: lifecycle, owners: owners, db: db, record: record}
 }
 
-// at moves the allocation to an onboarding stage directly.
+// at moves the execution to an onboarding stage directly.
 func (f *onboardingFixture) at(t *testing.T, assignment string) {
 	t.Helper()
 	_, err := f.db.Exec("UPDATE execution_allocation SET "+assignment+", version = version + 1 WHERE id = ?", f.record.ID)
@@ -70,9 +75,9 @@ func (f *onboardingFixture) at(t *testing.T, assignment string) {
 // delivered records the model key a delivery would carry now.
 func (f *onboardingFixture) delivered(t *testing.T) {
 	t.Helper()
-	record, _, err := f.recovery.provisioning.get(context.Background(), f.record.ID)
+	record, _, err := f.steps.environment.provisioning.get(context.Background(), f.record.ID)
 	require.NoError(t, err)
-	digest, err := f.recovery.connections.credentials.modelDigest(record)
+	digest, err := f.steps.environment.connections.credentials.modelDigest(record)
 	require.NoError(t, err)
 	require.NotEmpty(t, digest, "the fixture's Work has a model key")
 	_, err = f.db.Exec("UPDATE execution_allocation SET model_credential_digest = ? WHERE id = ?", digest, f.record.ID)
@@ -85,47 +90,69 @@ func (f *onboardingFixture) authorityCalls() int {
 	return f.lifecycle.requests
 }
 
-func (f *onboardingFixture) step(t *testing.T) application.AllocationStep {
+func (f *onboardingFixture) execution(t *testing.T) *domain.AgentExecution {
 	t.Helper()
-	statuses, err := f.recovery.ListOutstandingAllocations(context.Background(), "", 100)
-	require.NoError(t, err)
-	require.Len(t, statuses, 1)
-	require.Equal(t, f.record.ID, statuses[0].AllocationID)
-	return statuses[0].Step
+	return current(t, f.steps, f.record.ID)
 }
 
-// The sweep judges each allocation's missing step from durable facts and
-// Dispatcher's stream ownership alone: a steady connected Work costs no call
-// to the environment authority, the Vault or Dispatcher.
+// step is what the execution decides from its observation now, without
+// taking it.
+func (f *onboardingFixture) step(t *testing.T) []domain.ExecutionStepKind {
+	t.Helper()
+	run := f.execution(t)
+	observation, err := f.steps.environment.Observe(context.Background(), run)
+	require.NoError(t, err)
+	decision, err := run.Reconcile(observation, time.Now())
+	require.NoError(t, err)
+	kinds := []domain.ExecutionStepKind{}
+	for _, step := range decision.Steps {
+		kinds = append(kinds, step.Kind)
+	}
+	return kinds
+}
+
+// observationCalls are the environment authority calls of one observation of
+// a bound sandbox: the ownership listing, then the bound sandbox and its
+// endpoint.
+const observationCalls = 3
+
+func stepKinds(kinds ...domain.ExecutionStepKind) []domain.ExecutionStepKind {
+	return append([]domain.ExecutionStepKind{}, kinds...)
+}
+
+// Each execution's missing step follows from its durable facts and its
+// observation of the sandboxes carrying its ownership; a steady connected
+// Work costs one listing and one confirmation of its bound sandbox per
+// decision, and no call to the Vault.
 func TestSweepNamesOnlyTheMissingOnboardingStep(t *testing.T) {
 	f := newOnboarding(t)
-	before := f.authorityCalls()
-	require.Equal(t, application.AllocationReconcile, f.step(t), "a sandbox not yet delivered")
+	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t), "a sandbox not yet delivered")
 	f.at(t, "sandbox_ready = 1")
-	require.Equal(t, application.AllocationPrepare, f.step(t), "a delivered sandbox not yet prepared")
+	require.Equal(t, stepKinds(domain.StepPrepare), f.step(t), "a delivered sandbox not yet prepared")
 	f.at(t, "plugins_prepared = 1, process_id = 'process-1'")
 	f.delivered(t)
-	require.Equal(t, application.AllocationReconnect, f.step(t), "a running process whose stream nobody reads")
+	require.Equal(t, stepKinds(domain.StepConnect), f.step(t), "a running process whose stream nobody reads")
 	f.owners.reading = StreamReading{ProcessID: "process-0"}
-	require.Equal(t, application.AllocationReconnect, f.step(t), "Dispatcher reads an earlier process")
-	f.owners.reading = StreamReading{ProcessID: "process-1"}
-	require.Equal(t, application.AllocationSettled, f.step(t), "a connected Work needs nothing")
+	require.Equal(t, stepKinds(domain.StepConnect), f.step(t), "Dispatcher reads an earlier process")
+	f.owners.reading = StreamReading{ProcessID: "process-1", Endpoint: "http://192.0.2.8:44772"}
+	before := f.authorityCalls()
+	require.Equal(t, stepKinds(), f.step(t), "a connected Work needs nothing")
 	f.at(t, "credentials_expire_at = 1")
-	require.Equal(t, application.AllocationDeliver, f.step(t), "a delivery past its declared expiry is fetched once more")
+	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t), "a delivery past its declared expiry is fetched once more")
 	f.at(t, "credentials_expire_at = 0")
-	require.Equal(t, application.AllocationSettled, f.step(t), "a delivery that does not expire waits for change facts")
+	require.Equal(t, stepKinds(), f.step(t), "a delivery that does not expire waits for change facts")
 	f.at(t, "model_credential_digest = 'rotated-away'")
-	require.Equal(t, application.AllocationDeliver, f.step(t), "a rotated model key reaches the running Work")
+	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t), "a rotated model key reaches the running Work")
+	require.Equal(t, before+4*observationCalls, f.authorityCalls(), "each decision lists the owned sandboxes and confirms the bound one, nothing more")
 	f.delivered(t)
 	f.at(t, "process_exited = 1")
-	require.Equal(t, application.AllocationSettled, f.step(t), "an exited process is not reconnected")
-	require.Equal(t, before, f.authorityCalls(), "the sweep never asks the environment authority")
+	require.Equal(t, stepKinds(), f.step(t), "an exited process is not reconnected")
 	f.lifecycle.vault.mu.Lock()
-	require.Nil(t, f.lifecycle.vault.state, "the sweep never touches the Vault")
+	require.Nil(t, f.lifecycle.vault.state, "deciding never touches the Vault")
 	f.lifecycle.vault.mu.Unlock()
 }
 
-// The environment authority's report that the primary sandbox is gone is the
+// The environment authority's report that the bound sandbox is gone is the
 // loss of the Work's environment; nothing else needs to notice it.
 func TestObservedSandboxDeletionLosesTheEnvironment(t *testing.T) {
 	ctx := context.Background()
@@ -133,91 +160,103 @@ func TestObservedSandboxDeletionLosesTheEnvironment(t *testing.T) {
 	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
 	f.delivered(t)
 	f.owners.reading = StreamReading{ProcessID: "process-1", Endpoint: "http://192.0.2.8:44772"}
-	step, err := f.recovery.ObserveSandbox(ctx, f.record.ID)
-	require.NoError(t, err)
-	require.Equal(t, application.AllocationSettled, step, "a running sandbox at the read endpoint needs nothing")
+	require.Equal(t, stepKinds(), f.step(t), "a running sandbox at the read endpoint needs nothing")
 	f.owners.reading.Endpoint = "http://192.0.2.9:44772"
-	step, err = f.recovery.ObserveSandbox(ctx, f.record.ID)
-	require.NoError(t, err)
-	require.Equal(t, application.AllocationReconnect, step, "a moved endpoint is connected again")
-	require.Empty(t, f.feedback.requests)
+	require.Equal(t, stepKinds(domain.StepConnect), f.step(t), "a moved endpoint is connected again")
+	require.False(t, f.execution(t).Outcome.Lost)
 
 	f.lifecycle.mu.Lock()
 	f.lifecycle.info = nil
 	f.lifecycle.mu.Unlock()
-	step, err = f.recovery.ObserveSandbox(ctx, f.record.ID)
+	_, err := f.steps.handler.Reconcile(ctx, f.record.ID)
 	require.NoError(t, err)
-	require.Equal(t, application.AllocationSettled, step)
-	require.Len(t, f.feedback.requests, 1)
-	require.Equal(t, command.EnvironmentLost, f.feedback.requests[0].Kind)
-	retired, _, err := f.recovery.provisioning.get(ctx, f.record.ID)
+	lost := f.execution(t)
+	require.True(t, lost.Outcome.Lost)
+	require.True(t, reported(lost, domain.ExecutionEnvironmentLost{WorkID: lost.WorkID, StartAdmittedAt: lost.StartAdmittedAt}))
+	require.NoError(t, f.steps.retire(ctx, lost.WorkID, domain.RetiredByLoss, time.Now()))
+	retired, _, err := f.steps.environment.provisioning.get(ctx, f.record.ID)
 	require.NoError(t, err)
-	require.NotZero(t, retired.DeletedAt, "the lost allocation retires")
+	require.NotZero(t, retired.DeletedAt, "the lost execution retires")
 }
 
-// stoppingSession is a Work whose stop is admitted while its process runs.
-type stoppingSession struct{}
-
-func (stoppingSession) Get(_ context.Context, id string) (*domain.AgentWork, error) {
-	return &domain.AgentWork{ID: id, State: domain.WorkStopping, StopRequestReference: "stop", HarnessProcess: &domain.HarnessProcess{}}, nil
+// requestExit records the Work's stop on its execution.
+func (f *onboardingFixture) requestExit(t *testing.T) {
+	t.Helper()
+	run := f.execution(t)
+	_, err := run.RequestExit(domain.WorkStopRequested{WorkID: run.WorkID, StartAdmittedAt: run.StartAdmittedAt, StopRequestID: "stop"})
+	require.NoError(t, err)
+	require.NoError(t, f.steps.executions.Save(context.Background(), run))
 }
-func (stoppingSession) Save(context.Context, *domain.AgentWork) error { return nil }
 
-// startingSince is a Work that entered Starting at the given time.
-type startingSince time.Time
-
-func (s startingSince) Get(_ context.Context, id string) (*domain.AgentWork, error) {
-	return &domain.AgentWork{ID: id, State: domain.WorkStarting, HarnessProcess: &domain.HarnessProcess{StartingSince: time.Time(s)}}, nil
-}
-func (startingSince) Save(context.Context, *domain.AgentWork) error { return nil }
-
-// A stopped Work's credentials are withdrawn even when the wake its stop
-// sent was lost: the sweep sees the admitted stop and wakes the drain.
+// A stopped Work's credentials are withdrawn and its process asked to exit,
+// and it is never prepared again; until its process exits, nothing retires
+// its execution or deletes its sandbox.
 func TestSweepWakesTheDrainOfAStoppedWork(t *testing.T) {
 	f := newOnboarding(t)
 	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
 	f.owners.reading = StreamReading{ProcessID: "process-1"}
-	f.recovery.connections.credentials.works.sessions = stoppingSession{}
-	require.Equal(t, application.AllocationReconcile, f.step(t))
+	f.requestExit(t)
+	require.Equal(t, stepKinds(domain.StepWithdrawCredentials, domain.StepSignalExit), f.step(t))
 	before := f.authorityCalls()
-	require.NoError(t, f.recovery.PrepareAllocation(context.Background(), f.record.ID))
-	require.Equal(t, before, f.authorityCalls(), "a stopping Work is never prepared")
+	require.NoError(t, f.steps.handler.RunLongStep(context.Background(), f.record.ID))
+	require.Equal(t, before+observationCalls, f.authorityCalls(), "a stopping Work is observed and never prepared")
+
+	// A stop request without an acknowledged exit only asks: the execution
+	// stays unretired and its sandbox is never deleted.
+	_, err := f.steps.handler.Reconcile(context.Background(), f.record.ID)
+	require.NoError(t, err)
+	require.False(t, f.execution(t).Retired(), "a stop request alone retires nothing")
+	f.lifecycle.mu.Lock()
+	defer f.lifecycle.mu.Unlock()
+	require.NotNil(t, f.lifecycle.info, "the stopping Work's sandbox remains")
+	require.Zero(t, f.lifecycle.deletes, "a stop request alone deletes no sandbox")
 }
 
 // A stopping Work whose sandbox is gone drains by learning the loss: the
 // Vault went with the sandbox, so its clearing can never be confirmed.
 func TestDrainOfAGoneSandboxLearnsTheLoss(t *testing.T) {
+	ctx := context.Background()
 	f := newOnboarding(t)
 	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
-	f.recovery.connections.credentials.works.sessions = stoppingSession{}
+	f.requestExit(t)
 	f.lifecycle.mu.Lock()
 	f.lifecycle.info = nil
 	f.lifecycle.mu.Unlock()
-	_, err := f.recovery.ReconcileAllocation(context.Background(), f.record.ID)
+	_, err := f.steps.handler.Reconcile(ctx, f.record.ID)
 	require.NoError(t, err)
-	require.Len(t, f.feedback.requests, 1)
-	require.Equal(t, command.EnvironmentLost, f.feedback.requests[0].Kind)
-	record, _, err := f.recovery.provisioning.get(context.Background(), f.record.ID)
+	lost := f.execution(t)
+	require.True(t, lost.Outcome.Lost)
+	require.False(t, lost.Credentials.Withdrawn, "a gone Vault is never cleared")
+	require.NoError(t, f.steps.retire(ctx, lost.WorkID, domain.RetiredByLoss, time.Now()))
+	record, _, err := f.steps.environment.provisioning.get(ctx, f.record.ID)
 	require.NoError(t, err)
-	require.NotZero(t, record.DeletedAt, "the lost allocation retires")
+	require.NotZero(t, record.DeletedAt, "the lost execution retires")
 }
 
-// A retired allocation's record cannot report a loss: Agent would apply it to
-// whatever process the Work runs now.
+// A retired execution reports no loss: its Work runs another execution or
+// none.
 func TestStaleAllocationReportsNoLoss(t *testing.T) {
 	f := newOnboarding(t)
-	f.at(t, "sandbox_ready = 1, process_id = 'process-1', deleted_at = 1")
-	require.ErrorIs(t, f.recovery.connections.lose(context.Background(), f.record), errEnvironmentConflict)
-	require.Empty(t, f.feedback.requests)
+	f.at(t, "sandbox_ready = 1, process_id = 'process-1', process_exited = 1, state = 'retired', retirement = 'exited', deleted_at = 1")
+	f.lifecycle.mu.Lock()
+	f.lifecycle.info = nil
+	f.lifecycle.mu.Unlock()
+	_, err := f.steps.handler.Reconcile(context.Background(), f.record.ID)
+	require.NoError(t, err)
+	stale := f.execution(t)
+	require.False(t, stale.Outcome.Lost)
+	require.False(t, reported(stale, domain.ExecutionEnvironmentLost{WorkID: stale.WorkID, StartAdmittedAt: stale.StartAdmittedAt}))
 }
 
-// Preparation waits no longer than the Work's Startup Deadline; past it the
-// Work's own recovery fails the start and nothing is attempted.
+// Preparation waits no longer than the start's Startup Deadline; past it the
+// execution records the failed start and nothing is attempted.
 func TestPreparationPastTheStartupDeadlineAttemptsNothing(t *testing.T) {
 	f := newOnboarding(t)
-	f.at(t, "sandbox_ready = 1")
-	f.recovery.connections.credentials.works.sessions = startingSince(time.Now().Add(-domain.StartupDeadline - time.Minute))
-	before := f.authorityCalls()
-	require.NoError(t, f.recovery.PrepareAllocation(context.Background(), f.record.ID))
-	require.Equal(t, before, f.authorityCalls())
+	f.at(t, fmt.Sprintf("sandbox_ready = 1, seated_at = %d", time.Now().Add(-domain.StartupDeadline-time.Minute).UnixMilli()))
+	require.NoError(t, f.steps.handler.RunLongStep(context.Background(), f.record.ID))
+	record, _, err := f.steps.environment.provisioning.get(context.Background(), f.record.ID)
+	require.NoError(t, err)
+	require.Empty(t, record.PreparationProcessID, "no preparation started")
+	require.Empty(t, record.ProcessID, "no Harness started")
+	require.NotEmpty(t, f.execution(t).Outcome.StartFailure, "the start failed at its Startup Deadline")
 }

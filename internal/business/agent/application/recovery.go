@@ -9,86 +9,22 @@ import (
 
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
-
-// AllocationStep is the one step an allocation's onboarding is missing.
-type AllocationStep int
-
-const (
-	// AllocationSettled needs nothing: a connected process, or none to connect.
-	AllocationSettled AllocationStep = iota
-	// AllocationReconcile advances submission, first delivery, credential
-	// draining or removal from the allocation's durable facts.
-	AllocationReconcile
-	// AllocationPrepare sees environment preparation through to its exit and
-	// then starts and connects the Harness.
-	AllocationPrepare
-	// AllocationReconnect hands a running Harness process to Dispatcher again.
-	AllocationReconnect
-	// AllocationDeliver replaces delivered credentials with current ones.
-	AllocationDeliver
-	// AllocationSyncInputs hands a Managed Computer the current inputs of its
-	// Work; it is never part of a start.
-	AllocationSyncInputs
-)
-
-// AllocationStatus names an outstanding allocation and its missing step.
-type AllocationStatus struct {
-	AllocationID string
-	Step         AllocationStep
-}
-
-// ExecutionEnvironmentRecovery reconciles execution environment allocations, an
-// Agent infrastructure obligation with no Domain lifecycle of its own. Each
-// step reports the step the allocation needs next.
-type ExecutionEnvironmentRecovery interface {
-	// ReconcileAllocation advances one allocation from its durable facts. It
-	// calls the environment authority only before the first delivery and for
-	// credential draining or removal.
-	ReconcileAllocation(context.Context, string) (AllocationStep, error)
-	// PrepareAllocation waits for the environment preparation to exit, bounded
-	// by the caller, then starts the Harness and connects it.
-	PrepareAllocation(context.Context, string) error
-	// ReconnectAllocation resolves the sandbox again and connects its running
-	// process; an absent sandbox is the loss of the Work's environment.
-	ReconnectAllocation(context.Context, string) error
-	// DeliverCredentials replaces a delivered allocation's credentials with
-	// those Marketplace supplies now; one it cannot supply loses its binding.
-	DeliverCredentials(context.Context, string) error
-	// MarkCredentialsChanged durably marks the deliveries of the live
-	// allocations whose Work uses the Provider Authorization as due, and lists
-	// the delivered ones to wake.
-	MarkCredentialsChanged(ctx context.Context, authorizationID string) ([]string, error)
-	// SyncInputs hands a delivered Managed allocation's machine the current
-	// inputs of its Work while they are due.
-	SyncInputs(context.Context, string) error
-	// MarkInputsChanged durably marks the inputs of the live Managed
-	// allocations whose Work's input source is owner's File Space as due, and
-	// lists the delivered ones to wake.
-	MarkInputsChanged(ctx context.Context, owner string) ([]string, error)
-	// ObserveSandbox checks an allocation against its sandboxes after the
-	// environment authority reported a change: loss, endpoint change, surplus.
-	ObserveSandbox(context.Context, string) (AllocationStep, error)
-	// LiveAllocation returns the Work's one live allocation, if any.
-	LiveAllocation(context.Context, string) (string, bool, error)
-	// ListOutstandingAllocations pages allocations with unfinished obligations
-	// and the step each is missing, judged from durable facts and Dispatcher's
-	// stream ownership only; retired allocations whose obligations are
-	// complete are not listed. An allocation it could not judge is listed as
-	// settled alongside the error.
-	ListOutstandingAllocations(context.Context, string, int) ([]AllocationStatus, error)
-}
 
 // Recovery wakes and performs Agent's retained recovery obligations. A wake
 // only enqueues the task for one object; its processor performs one step from
 // current state, and the periodic sweep re-wakes every unfinished object.
 type Recovery struct {
-	app          *Application
-	enqueuer     taskqueue.Enqueuer
-	environments ExecutionEnvironmentRecovery
-	storage      WorkspaceReclamationSender
+	app        *Application
+	enqueuer   taskqueue.Enqueuer
+	executions domain.AgentExecutionRepository
+	lookups    query.ExecutionRecoveryReader
+	// reconciliation fulfils the steps each execution decides.
+	reconciliation *command.ReconcileExecutionHandler
+	workspaces     WorkspacePort
 	// reconnection retries the Resume a marked Work is owed while its
 	// Managed Computer is reachable; nil where no Managed Computer is
 	// reached.
@@ -101,15 +37,8 @@ type OwedResumes interface {
 	RetryOwedResume(ctx context.Context, workID string) error
 }
 
-// WorkspaceReclamationSender sends Storage's Workspace Reclamation Request,
-// an asynchronous request Storage accepts idempotently and completes on its
-// own schedule.
-type WorkspaceReclamationSender interface {
-	RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error
-}
-
-func NewRecovery(app *Application, enqueuer taskqueue.Enqueuer, environments ExecutionEnvironmentRecovery, storage WorkspaceReclamationSender, reconnection OwedResumes) *Recovery {
-	return &Recovery{app: app, enqueuer: enqueuer, environments: environments, storage: storage, reconnection: reconnection}
+func NewRecovery(app *Application, enqueuer taskqueue.Enqueuer, executions domain.AgentExecutionRepository, lookups query.ExecutionRecoveryReader, reconciliation *command.ReconcileExecutionHandler, workspaces WorkspacePort, reconnection OwedResumes) *Recovery {
+	return &Recovery{app: app, enqueuer: enqueuer, executions: executions, lookups: lookups, reconciliation: reconciliation, workspaces: workspaces, reconnection: reconnection}
 }
 
 // RequestWorkspaceReclamation queues the Closed Work's one reclamation
@@ -121,7 +50,7 @@ func (r *Recovery) RequestWorkspaceReclamation(ctx context.Context, workID, work
 
 // SendWorkspaceReclamation delivers a queued request to Storage.
 func (r *Recovery) SendWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error {
-	return r.storage.RequestWorkspaceReclamation(ctx, workID, workspaceReference)
+	return r.workspaces.RequestWorkspaceReclamation(ctx, workID, workspaceReference)
 }
 
 // Recovery never gives up: a removal or closure obligation cannot be abandoned.
@@ -133,70 +62,49 @@ const (
 	preparationAttemptTimeout = domain.StartupDeadline + time.Minute
 )
 
-func (r *Recovery) WakeAllocation(ctx context.Context, allocationID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconcileAllocation(allocationID))
+// WakeExecution wakes the execution's reconciliation, as after a commit, the
+// environment authority's report of a change to one of its sandboxes, or a
+// change fact that marked it.
+func (r *Recovery) WakeExecution(ctx context.Context, executionID string) error {
+	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID))
 }
 
-// WakeSandboxObservation follows the environment authority's report of a
-// change to one of the allocation's sandboxes.
-func (r *Recovery) WakeSandboxObservation(ctx context.Context, allocationID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewObserveSandbox(allocationID))
+// wakeLongStep wakes the execution's long step, whose attempt may last until
+// the Startup Deadline.
+func (r *Recovery) wakeLongStep(ctx context.Context, executionID string) error {
+	return r.enqueue(ctx, preparationAttemptTimeout)(agenttask.NewRunLongExecutionStep(executionID))
 }
 
-// wakeStep enqueues the step an allocation needs next.
-func (r *Recovery) wakeStep(ctx context.Context, allocationID string, step AllocationStep) error {
-	switch step {
-	case AllocationReconcile:
-		return r.WakeAllocation(ctx, allocationID)
-	case AllocationPrepare:
-		return r.enqueue(ctx, preparationAttemptTimeout)(agenttask.NewPrepareAllocation(allocationID))
-	case AllocationReconnect:
-		return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconnectAllocation(allocationID))
-	case AllocationDeliver:
-		return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewDeliverCredentials(allocationID))
-	case AllocationSyncInputs:
-		return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewSyncInputs(allocationID))
-	default:
-		return nil
-	}
-}
-
-// WakeWork wakes the Work's own obligations and those of its live allocation,
-// whose credentials and removal follow the Work's lifecycle.
+// WakeWork wakes the Work's own obligations and those of its current
+// execution, whose execution requests follow the Work's lifecycle.
 func (r *Recovery) WakeWork(ctx context.Context, workID string) error {
 	err := r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
-	allocation, found, lookupErr := r.environments.LiveAllocation(ctx, workID)
-	if lookupErr != nil || !found {
+	execution, lookupErr := r.executions.Latest(ctx, workID)
+	if errors.Is(lookupErr, domain.ErrExecutionNotFound) || (lookupErr == nil && execution.State == domain.ExecutionReleased) {
+		return err
+	}
+	if lookupErr != nil {
 		return errors.Join(err, lookupErr)
 	}
-	return errors.Join(err, r.WakeAllocation(ctx, allocation))
+	return errors.Join(err, r.WakeExecution(ctx, execution.ID))
 }
 
-// ReconnectWork reconnects the Work's live allocation after Dispatcher reported
-// that its connection ended without a process exit. The reconnect neither
-// prepares the environment nor delivers credentials; the report changes no
-// Work state.
+// ReconnectWork wakes the reconciliation of the Work's unretired execution
+// after Dispatcher reported that its connection ended without a process
+// exit, which reconnects its launched process; the report changes no Work
+// state.
 func (r *Recovery) ReconnectWork(ctx context.Context, workID string) error {
 	if strings.TrimSpace(workID) == "" {
 		return domain.ErrInvalidWork
 	}
-	allocation, found, err := r.environments.LiveAllocation(ctx, workID)
-	if err != nil || !found {
+	execution, err := r.executions.Latest(ctx, workID)
+	if errors.Is(err, domain.ErrExecutionNotFound) {
+		return nil
+	}
+	if err != nil || execution.Retired() {
 		return err
 	}
-	return r.wakeStep(ctx, allocation, AllocationReconnect)
-}
-
-func (r *Recovery) WakeContinuation(ctx context.Context, workID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverContinuation(workID))
-}
-
-func (r *Recovery) WakeWorkCreation(ctx context.Context, requestID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverWorkCreation(requestID))
-}
-
-func (r *Recovery) WakeInitialExecution(ctx context.Context, workID string) error {
-	return r.enqueue(ctx, preparationAttemptTimeout)(agenttask.NewPrepareInitialExecution(workID))
+	return r.WakeExecution(ctx, execution.ID)
 }
 
 // WakeSweep wakes every unfinished obligation now, as on process start, instead
@@ -229,153 +137,106 @@ func (r *Recovery) enqueue(ctx context.Context, timeout time.Duration) func(task
 	}
 }
 
-func (r *Recovery) ReconcileAllocation(ctx context.Context, allocationID string) error {
-	next, err := r.environments.ReconcileAllocation(ctx, allocationID)
-	if err != nil {
-		return err
+// ReconcileExecution takes the short steps the execution decides and wakes
+// its long step when one is due, even when a short step failed.
+func (r *Recovery) ReconcileExecution(ctx context.Context, executionID string) error {
+	long, err := r.reconciliation.Reconcile(ctx, executionID)
+	if long {
+		err = errors.Join(err, r.wakeLongStep(ctx, executionID))
 	}
-	return r.wakeStep(ctx, allocationID, next)
+	return err
 }
 
-func (r *Recovery) PrepareAllocation(ctx context.Context, allocationID string) error {
-	return r.environments.PrepareAllocation(ctx, allocationID)
-}
-
-func (r *Recovery) ReconnectAllocation(ctx context.Context, allocationID string) error {
-	return r.environments.ReconnectAllocation(ctx, allocationID)
-}
-
-func (r *Recovery) DeliverCredentials(ctx context.Context, allocationID string) error {
-	return r.environments.DeliverCredentials(ctx, allocationID)
-}
-
-func (r *Recovery) SyncInputs(ctx context.Context, allocationID string) error {
-	return r.environments.SyncInputs(ctx, allocationID)
+// RunLongExecutionStep takes the long step the execution decides now.
+func (r *Recovery) RunLongExecutionStep(ctx context.Context, executionID string) error {
+	return r.reconciliation.RunLongStep(ctx, executionID)
 }
 
 // CredentialChanged follows Marketplace's fact that an authorization's
-// credential changed: every delivered allocation using it receives the
-// current credentials, so Works sharing the authorization change together.
+// credential changed: every delivered execution using it receives the
+// current credentials, so Works sharing the authorization change together;
+// each marked execution's reconciliation delivers them.
 // Agent never polls authorizations. Repeated or reordered facts lead to the
 // same delivery of whatever Marketplace supplies now.
 func (r *Recovery) CredentialChanged(ctx context.Context, authorizationID string) error {
 	if strings.TrimSpace(authorizationID) == "" {
 		return domain.ErrInvalidWork
 	}
-	allocations, err := r.environments.MarkCredentialsChanged(ctx, authorizationID)
+	ids, err := r.lookups.ListExecutionsUsingAuthorization(ctx, authorizationID)
 	if err != nil {
 		return err
 	}
-	var failures []error
-	for _, allocation := range allocations {
-		failures = append(failures, r.wakeStep(ctx, allocation, AllocationDeliver))
+	marked, err := r.reconciliation.MarkCredentialsChanged(ctx, ids)
+	failures := []error{err}
+	for _, id := range marked {
+		failures = append(failures, r.WakeExecution(ctx, id))
 	}
 	return errors.Join(failures...)
 }
 
 // InputsChanged follows Storage's fact that a file in owner's File Space
 // changed: every Work on a Managed Computer whose input source is that space
-// receives its current inputs by their own sync, which this wakes. A Cloud
-// Work mounts its inputs and needs nothing. Repeated or reordered facts lead
-// to the same sync of the current files.
+// receives its current inputs from its execution's reconciliation, which this
+// wakes. A Cloud Work mounts its inputs and needs nothing. Repeated or
+// reordered facts lead to the same sync of the current files.
 func (r *Recovery) InputsChanged(ctx context.Context, owner string) error {
 	if strings.TrimSpace(owner) == "" {
 		return domain.ErrInvalidWork
 	}
-	allocations, err := r.environments.MarkInputsChanged(ctx, owner)
+	ids, err := r.lookups.ListExecutionsReadingInputs(ctx, owner)
 	if err != nil {
 		return err
 	}
-	var failures []error
-	for _, allocation := range allocations {
-		failures = append(failures, r.wakeStep(ctx, allocation, AllocationSyncInputs))
+	marked, err := r.reconciliation.MarkInputsChanged(ctx, ids)
+	failures := []error{err}
+	for _, id := range marked {
+		failures = append(failures, r.WakeExecution(ctx, id))
 	}
 	return errors.Join(failures...)
 }
 
-func (r *Recovery) ObserveSandbox(ctx context.Context, allocationID string) error {
-	next, err := r.environments.ObserveSandbox(ctx, allocationID)
-	if err != nil {
-		return err
-	}
-	return r.wakeStep(ctx, allocationID, next)
-}
-
-// RecoverWork advances the Work's Startup Deadline, retained control request and
-// waiting timeout, and settles exit and release from current observation, in
-// that order. Accepted input needs no
-// retry here: Dispatcher's input buffer delivers it.
+// RecoverWork applies what the Work's execution reported and passes the
+// Work's execution requests to it first, so a retained request that keeps failing never
+// holds back the report that would settle it, then advances the Work's
+// retained control requests and waiting timeout. Each step runs regardless of the others'
+// outcome, and every failure is returned together. Accepted input needs no retry here:
+// Dispatcher's input buffer delivers it.
 func (r *Recovery) RecoverWork(ctx context.Context, workID string) error {
 	commands := r.app.Commands
-	if err := commands.RecoverWork.Handle(ctx, workID); err != nil {
-		return err
-	}
-	// Native feedback is best effort. Current observation settles exits and
-	// releases whose notification was lost.
-	if err := commands.ApplyExecutionFeedback.Handle(ctx, command.ExecutionFeedback{WorkID: workID, Kind: command.ProcessObserved}); err != nil {
-		return err
-	}
+	// The Work's execution requests and its execution's reports are passed again, so a
+	// lost Domain Event is repaired, and native feedback lost on the way is
+	// made up by Dispatcher's current observation of the process.
+	coordinated := commands.ExecutionCoordination.Coordinate(ctx, workID)
+	observed := commands.ApplyExecutionFeedback.Handle(ctx, command.ExecutionFeedback{WorkID: workID, Kind: command.ProcessObserved})
+	retained := commands.RecoverWork.Handle(ctx, workID)
 	// A close request the Work kept while it stopped applies once stopped; the
 	// event that applies it may have been lost.
-	if err := commands.CloseWork.ApplyKeptClose(ctx, workID); err != nil {
-		return err
-	}
+	kept := commands.CloseWork.ApplyKeptClose(ctx, workID)
 	// A Resume owed on its Computer's reconnection is retried here too, so a
 	// lost Computer Became Reachable or a failed retry does not wait for the
 	// machine's next return.
-	if r.reconnection == nil {
-		return nil
+	var owed error
+	if r.reconnection != nil {
+		owed = r.reconnection.RetryOwedResume(ctx, workID)
 	}
-	return r.reconnection.RetryOwedResume(ctx, workID)
-}
-
-func (r *Recovery) RecoverContinuation(ctx context.Context, workID string) error {
-	return r.app.Commands.ResumeWork.Recover(ctx, workID)
-}
-
-// RecoverWorkCreation settles a retained creation request; a cancelled or
-// rejected request is a settled outcome, not a failure to retry.
-func (r *Recovery) RecoverWorkCreation(ctx context.Context, requestID string) error {
-	err := r.app.Commands.CreateRequestedWork.Recover(ctx, requestID)
-	if errors.Is(err, command.ErrWorkCreationCanceled) || errors.Is(err, command.ErrInitialExecutionRejected) {
-		return nil
-	}
-	return err
-}
-
-// PrepareInitialExecution advances the first start's preparation and input
-// delivery. A first start waiting for readiness or for its next admitted start
-// is woken again by that Work's commit; a Work without a first-start
-// obligation has nothing to prepare.
-func (r *Recovery) PrepareInitialExecution(ctx context.Context, workID string) error {
-	err := r.app.Commands.RecoverInitialExecution.Handle(ctx, workID)
-	if errors.Is(err, command.ErrInitialExecutionPending) || errors.Is(err, command.ErrInitialExecutionNotFound) {
-		return nil
-	}
-	return err
+	return errors.Join(coordinated, observed, retained, kept, owed)
 }
 
 const sweepPage = 100
 
-// Sweep wakes every unfinished recovery obligation: the one missing step of
-// each unfinished allocation, Works holding execution or closure obligations,
-// and unsettled requests. A connected allocation whose stream Dispatcher still
-// owns is not woken. Completed history is never listed.
+// Sweep wakes every unfinished recovery obligation: the reconciliation of
+// each unreleased execution, Works holding execution or closure obligations,
+// and open Desks no start claims. Completed history is never listed.
 func (r *Recovery) Sweep(ctx context.Context) error {
 	queries := r.app.Queries
 	return errors.Join(
-		sweep(ctx, r.environments.ListOutstandingAllocations, func(ctx context.Context, status AllocationStatus) error {
-			return r.wakeStep(ctx, status.AllocationID, status.Step)
-		}, func(status AllocationStatus) string { return status.AllocationID }),
+		sweep(ctx, r.lookups.ListOutstandingExecutions, r.WakeExecution, identity),
 		sweep(ctx, pageOf(queries.ListRecoveryWorks.Handle), r.wakeWorkOnly, identity),
-		sweep(ctx, pageOf(queries.ListPendingContinuations.Handle), r.WakeContinuation, identity),
-		sweep(ctx, pageOf(queries.ListWorkCreationRecovery.Handle), r.WakeWorkCreation, identity),
-		sweep(ctx, pageOf(queries.ListInitialExecutionRecovery.Handle), r.WakeInitialExecution, identity),
 		r.app.Commands.ReconcileDesks.Handle(ctx),
 	)
 }
 
-// The sweep wakes allocations on their own, so a Work wake needs no lookup.
+// The sweep wakes executions on their own, so a Work wake needs no lookup.
 func (r *Recovery) wakeWorkOnly(ctx context.Context, workID string) error {
 	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
 }

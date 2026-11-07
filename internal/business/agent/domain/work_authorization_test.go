@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -25,33 +24,32 @@ func TestWorkRetainsSelectedAuthorizationAcrossResumeAndRestart(t *testing.T) {
 						{OwnerUserID: "owner", AuthorizationID: otherID, Provider: "other", Service: "other"},
 					}},
 			}
-			port := &executionPort{}
 			admit := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
-			work, err := domain.NewAgentWork(t.Context(), input, admit, port)
+			work, err := domain.NewAgentWork(input, admit)
+			port := follow(work)
 			require.NoError(t, err)
 			// Every authorization usable at creation is selected; there is no per-service exclusion.
 			want := domain.WorkAuthorizationSelection{OwnerUserID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: githubID, Provider: "github", Service: "github"}, {AuthorizationID: otherID, Provider: "other", Service: "other"}}}
 			require.Equal(t, want, work.AuthorizationSelection)
-			require.Equal(t, want, port.starts[0].AuthorizationSelection)
+			require.Equal(t, want, port.launch().AuthorizationSelection)
 			// Neither caller-owned facts nor execution adapter snapshots own Work state.
 			input.AuthorizationInput.Available[0].AuthorizationID = uuid.NewString()
-			port.starts[0].AuthorizationSelection.Authorizations[0].AuthorizationID = uuid.NewString()
-			require.NoError(t, work.ConfirmPrepared(context.Background(), time.Now(), nil))
-			require.NoError(t, work.ConfirmStarted(context.Background(), time.Now(), nil))
+			port.launch().AuthorizationSelection.Authorizations[0].AuthorizationID = uuid.NewString()
+			ready(t, work)
 			if restart {
-				require.NoError(t, work.RecordExit(t.Context(), domain.HarnessExit{ExitCode: 1}, port))
+				exited(t, work, domain.HarnessExit{ExitCode: 1})
 			} else {
-				require.NoError(t, work.Stop(t.Context(), "stop", port))
-				require.NoError(t, work.RecordExit(t.Context(), domain.HarnessExit{}, port))
+				require.NoError(t, work.Stop("stop", false))
+				exited(t, work, domain.HarnessExit{})
 			}
-			require.NoError(t, work.ConfirmComputeReclaimed())
+			released(t, work)
 			if restart {
-				require.NoError(t, work.Restart(t.Context(), admit, port))
+				require.NoError(t, work.Restart(admit))
 			} else {
-				require.NoError(t, work.Resume(t.Context(), admit, port))
+				require.NoError(t, work.Resume(admit))
 			}
 			require.Equal(t, want, work.AuthorizationSelection)
-			require.Equal(t, want, port.starts[1].AuthorizationSelection)
+			require.Equal(t, want, port.launch().AuthorizationSelection)
 		})
 	}
 }
@@ -63,14 +61,14 @@ func TestWorkRejectsAuthorizationFactsForAnotherHuman(t *testing.T) {
 		{Available: []domain.PersonalAuthorization{{OwnerUserID: "owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}},
 	} {
 		id := uuid.NewString()
-		port := &executionPort{}
-		work, err := domain.NewAgentWork(t.Context(), domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
+		work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 			ID: uuid.NewString(), AgentID: id, WorkspaceReference: "workspace",
 			WorkModel:   domain.WorkModelSelection{ConfigurationID: "default"},
 			HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}, AuthorizationInput: input,
-		}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: id, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, port)
+		}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: id, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+		port := follow(work)
 		require.ErrorIs(t, err, domain.ErrInvalidWork)
 		require.Nil(t, work)
-		require.Empty(t, port.starts)
+		require.Zero(t, port.starts())
 	}
 }

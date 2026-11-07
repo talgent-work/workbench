@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	shared "github.com/talgent-work/workbench/internal/pkg/opensandbox"
 	"xorm.io/xorm"
@@ -31,26 +30,31 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, _ := sandboxClient(t)
 	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
+	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
-	require.NoError(t, p.Register(ctx, input, testMounts))
-	live, _, err := latestAllocation(ctx, p.db, input.WorkID)
+	live, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
 	history := make([]allocationRecord, 105)
-	removed := make([]removalRecord, len(history))
 	for i := range history {
 		history[i] = live
-		history[i].ID = fmt.Sprintf("retired-%03d", i)
+		history[i].ID = fmt.Sprintf("01900000-0000-7000-8000-%012d", i)
 		history[i].SessionID = fmt.Sprintf("closed-work-%03d", i)
+		closed := input
+		closed.WorkID = history[i].SessionID
+		history[i].RequestJSON, err = encodeLaunch(closed)
+		require.NoError(t, err)
+		history[i].RequestHash = storageKey(string(history[i].RequestJSON))
 		history[i].AllocationLabel = storageKey(history[i].ID)[:48] // MySQL must derive the same label
 		history[i].Submitted = true
+		history[i].State, history[i].Retirement = "released", "exited"
 		history[i].DeletedAt = 1
-		removed[i] = removalRecord{ID: history[i].ID, SessionID: history[i].SessionID, SandboxID: "6c4a0f5e-0000-4000-8000-000000000000", Completed: true, Version: 2}
+		history[i].ReleasedAt = 2
 	}
 	_, err = db.Insert(&history)
 	require.NoError(t, err)
-	_, err = db.Insert(&removed)
-	require.NoError(t, err)
+	history = nil // as stored, with its JSON columns normalized
+	require.NoError(t, db.Where("retired = 1").Asc("id").Find(&history))
+	require.Len(t, history, 105)
 
 	var mu sync.Mutex
 	lists := map[string]int{}
@@ -65,25 +69,21 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	defer providerAPI.Close()
 	provider.client, err = shared.NewLifecycleClient(providerAPI.Client(), shared.Config{Address: providerAPI.URL + "/v1", APIKey: "fixture"})
 	require.NoError(t, err)
-	feedback := &reclamationFeedback{}
-	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", feedback, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
+	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
 	require.NoError(t, err)
-	reclaimer, err := NewReclaimer(feedback)
-	require.NoError(t, err)
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, NewRemovals(db, time.Now), unread{})
-	require.NoError(t, err)
+	steps := newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
 
-	outstanding, err := recovery.ListOutstandingAllocations(ctx, "", 1000)
+	outstanding, err := infrastructure.NewExecutionQueryRepository(db).ListOutstandingExecutions(ctx, "", 1000)
 	require.NoError(t, err)
-	require.Len(t, outstanding, 1, "only the live allocation has unfinished obligations")
-	require.Equal(t, live.ID, outstanding[0].AllocationID)
+	require.Equal(t, []string{live.ID}, outstanding, "only the live execution has unfinished obligations")
 
 	late := history[42]
-	found, ok, err := recovery.AllocationForSandbox(ctx, late.AllocationLabel)
+	found, ok, err := p.forSandbox(ctx, late.AllocationLabel)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, late.ID, found)
-	_, err = recovery.ReconcileAllocation(ctx, late.ID)
+	// A late sandbox wakes the reconciliation of the released execution.
+	_, err = steps.handler.Reconcile(ctx, late.ID)
 	require.NoError(t, err)
 	mu.Lock()
 	require.Equal(t, map[string]int{late.AllocationLabel: 1}, lists, "only the observed allocation is checked")
@@ -98,16 +98,7 @@ func TestUnknownSandboxLabelProvesNoOwnership(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	provider, _, _ := sandboxClient(t)
-	credentials := fixtureSandboxCredentials(db, provider)
-	p := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
-	connections, err := NewNativeConnections(p, credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", &reclamationFeedback{}, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
-	require.NoError(t, err)
-	reclaimer, err := NewReclaimer(&reclamationFeedback{})
-	require.NoError(t, err)
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, NewRemovals(db, time.Now), unread{})
-	require.NoError(t, err)
-	_, found, err := recovery.AllocationForSandbox(ctx, storageKey("not-an-allocation")[:48])
+	_, found, err := records{db: db}.forSandbox(ctx, storageKey("not-an-allocation")[:48])
 	require.NoError(t, err)
 	require.False(t, found)
 }

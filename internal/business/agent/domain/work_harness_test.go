@@ -1,9 +1,7 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -17,10 +15,10 @@ func harnessWork(t *testing.T, managed bool, choice domain.HarnessChoice) (*doma
 		input.WorkModel = domain.WorkModelSelection{ConfigurationID: "glm-5"}
 	}
 	input.Harness = choice
-	port := &executionPort{}
 	admission := seated(input.AgentID)
 	admission.ModelConfigurationProvided = true
-	work, err := domain.NewAgentWork(context.Background(), input, admission, port)
+	work, err := domain.NewAgentWork(input, admission)
+	port := follow(work)
 	return work, port, err
 }
 
@@ -30,14 +28,14 @@ func TestAManagedWorkStartsInItsChosenPermissionMode(t *testing.T) {
 	work, port, err := harnessWork(t, true, domain.HarnessChoice{})
 	require.NoError(t, err)
 	require.Equal(t, domain.PermissionBypass, work.PermissionMode)
-	require.Equal(t, domain.PermissionBypass, port.starts[0].PermissionMode)
-	require.False(t, port.starts[0].Capabilities.Sandbox)
+	require.Equal(t, domain.PermissionBypass, port.launch().PermissionMode)
+	require.False(t, port.launch().Capabilities.Sandbox)
 
 	work, port, err = harnessWork(t, true, domain.HarnessChoice{PermissionMode: domain.PermissionPlan, Sandbox: true})
 	require.NoError(t, err)
 	require.Equal(t, domain.PermissionPlan, work.PermissionMode)
 	require.True(t, work.CapabilitySnapshot.Sandbox)
-	require.True(t, port.starts[0].Capabilities.Sandbox)
+	require.True(t, port.launch().Capabilities.Sandbox)
 
 	_, _, err = harnessWork(t, true, domain.HarnessChoice{PermissionMode: "auto"})
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
@@ -48,7 +46,7 @@ func TestACloudWorkChoosesNoHarnessSettings(t *testing.T) {
 	work, port, err := harnessWork(t, false, domain.HarnessChoice{})
 	require.NoError(t, err)
 	require.Empty(t, work.PermissionMode)
-	require.Empty(t, port.starts[0].PermissionMode)
+	require.Empty(t, port.launch().PermissionMode)
 	for _, choice := range []domain.HarnessChoice{{PermissionMode: domain.PermissionBypass}, {Sandbox: true}} {
 		_, _, err := harnessWork(t, false, choice)
 		require.ErrorIs(t, err, domain.ErrHarnessChoiceNotManaged)
@@ -58,11 +56,9 @@ func TestACloudWorkChoosesNoHarnessSettings(t *testing.T) {
 // runningHarnessWork is a Managed Work whose Harness is ready.
 func runningHarnessWork(t *testing.T, choice domain.HarnessChoice) (*domain.AgentWork, *executionPort) {
 	t.Helper()
-	ctx := context.Background()
 	work, port, err := harnessWork(t, true, choice)
 	require.NoError(t, err)
-	require.NoError(t, work.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, work.ConfirmStarted(ctx, time.Now(), nil))
+	ready(t, work)
 	return work, port
 }
 
@@ -85,7 +81,6 @@ func TestOnlyTheStarterChangesAPermissionMode(t *testing.T) {
 // one the Harness changed to by itself, and every later start launches in
 // it; the sandbox stays on across Resume.
 func TestTheReportedPermissionModeHoldsAcrossResume(t *testing.T) {
-	ctx := context.Background()
 	work, port := runningHarnessWork(t, domain.HarnessChoice{PermissionMode: domain.PermissionPlan, Sandbox: true})
 	require.NoError(t, work.RecordPermissionMode(10, domain.PermissionAcceptEdits), "leaving plan mode once its plan was approved")
 	require.NoError(t, work.RecordPermissionMode(9, domain.PermissionAsk), "an older report")
@@ -96,13 +91,13 @@ func TestTheReportedPermissionModeHoldsAcrossResume(t *testing.T) {
 	require.ErrorIs(t, work.RecordPermissionMode(12, "someFutureMode"), domain.ErrInvalidWork)
 	require.ErrorIs(t, work.RecordPermissionMode(0, domain.PermissionAsk), domain.ErrInvalidWork)
 
-	require.NoError(t, work.Stop(ctx, "stop-1", port))
-	require.NoError(t, work.RecordExit(ctx, domain.HarnessExit{}, port))
+	require.NoError(t, work.Stop("stop-1", false))
+	exited(t, work, domain.HarnessExit{})
 	require.NoError(t, work.RecordPermissionMode(20, domain.PermissionBypass), "an ended process reports nothing")
 	require.Equal(t, domain.PermissionDontAsk, work.PermissionMode)
-	require.NoError(t, work.ConfirmComputeReclaimed())
-	require.NoError(t, work.Resume(ctx, seated(work.AgentID), port))
-	resumed := port.starts[len(port.starts)-1]
+	released(t, work)
+	require.NoError(t, work.Resume(seated(work.AgentID)))
+	resumed := port.launch()
 	require.Equal(t, domain.PermissionDontAsk, resumed.PermissionMode)
 	require.True(t, resumed.Capabilities.Sandbox)
 	// The new process's stream starts over: its first report counts.
@@ -111,11 +106,9 @@ func TestTheReportedPermissionModeHoldsAcrossResume(t *testing.T) {
 }
 
 func TestACloudWorkAdmitsNoPermissionModeChange(t *testing.T) {
-	ctx := context.Background()
 	work, _, err := harnessWork(t, false, domain.HarnessChoice{})
 	require.NoError(t, err)
-	require.NoError(t, work.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, work.ConfirmStarted(ctx, time.Now(), nil))
+	ready(t, work)
 	require.ErrorIs(t, work.AdmitPermissionModeChange(work.StartedBy, domain.PermissionAsk), domain.ErrHarnessChoiceNotManaged)
 	require.NoError(t, work.RecordPermissionMode(5, domain.PermissionBypass), "a Cloud Harness's own report is not retained")
 	require.Empty(t, work.PermissionMode)

@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -14,14 +13,10 @@ import (
 // input, which then becomes Steer. Waiting is the Turn held by the
 // user's answer; input keeps it Waiting and only an accepted reply ends it.
 func TestInputIsAcceptedDuringATurnAndBehindARequiredResponse(t *testing.T) {
-	ctx := context.Background()
 	session := newSession(t)
-	port := &executionPort{}
-	require.NoError(t, recoverStartup(ctx, session, port))
 	require.NoError(t, session.AcceptInput(false), "a starting Work keeps input for its Harness")
 	require.Equal(t, domain.WorkStarting, session.State)
-	require.NoError(t, session.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, session.ConfirmStarted(ctx, time.Now(), nil))
+	ready(t, session)
 
 	origin := time.Date(2026, 9, 11, 10, 0, 0, 0, time.UTC)
 	require.NoError(t, session.ObserveTurn(domain.TurnObservation{Sequence: 1, Active: true}, false, false, origin))
@@ -51,11 +46,8 @@ func TestInputIsAcceptedDuringATurnAndBehindARequiredResponse(t *testing.T) {
 // unless input awaits processing; accepted input or the executor's Turn
 // activity report ends idleness, and a running Turn is never idle.
 func TestAnEndedTurnLeavesTheWorkIdleUntilInputOrActivity(t *testing.T) {
-	ctx := context.Background()
 	session := newSession(t)
-	require.NoError(t, recoverStartup(ctx, session, &executionPort{}))
-	require.NoError(t, session.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, session.ConfirmStarted(ctx, time.Now(), nil))
+	ready(t, session)
 	origin := time.Date(2026, 9, 11, 10, 0, 0, 0, time.UTC)
 	require.NoError(t, session.RecordIdleness(true, origin), "input awaiting processing")
 	require.False(t, session.Idle())
@@ -84,31 +76,27 @@ func TestAnEndedTurnLeavesTheWorkIdleUntilInputOrActivity(t *testing.T) {
 // A Work is stopped only between Turns: a user stop during a Turn is
 // rejected and a retained end waits for the Turn.
 func TestStopHappensBetweenTurns(t *testing.T) {
-	ctx := context.Background()
 	session := newSession(t)
-	port := &executionPort{}
-	require.NoError(t, recoverStartup(ctx, session, port))
-	require.NoError(t, session.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, session.ConfirmStarted(ctx, time.Now(), nil))
+	ready(t, session)
 	origin := time.Date(2026, 9, 11, 10, 0, 0, 0, time.UTC)
 	require.NoError(t, session.ObserveTurn(domain.TurnObservation{Sequence: 1, Active: true}, false, false, origin))
 
-	require.ErrorIs(t, session.Stop(ctx, "user-stop", port), domain.ErrTurnActive)
-	require.ErrorIs(t, session.Close(ctx, "close", domain.ClosureFacts{}, port), domain.ErrTurnActive, "closing stops the process, so it waits for the Turn")
+	require.ErrorIs(t, session.Stop("user-stop", false), domain.ErrTurnActive)
+	require.ErrorIs(t, session.Close("close", domain.ClosureFacts{}), domain.ErrTurnActive, "closing stops the process, so it waits for the Turn")
 	require.Equal(t, domain.WorkWorking, session.State)
 
 	require.NoError(t, session.ApplyResponseRequirement(2, true, origin))
-	require.NoError(t, session.RequestExecutionEnd(ctx, "end", port))
+	require.NoError(t, session.RequestExecutionEnd("end"))
 	require.Equal(t, domain.WorkWorking, session.State, "the end waits for the Turn")
 	require.Equal(t, "end", session.EndRequestReference)
-	changed, err := session.RecoverExecution(ctx, port)
+	changed, err := session.RecoverExecution()
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.NoError(t, session.AcceptInput(false), "a Work being ended keeps input for its next start")
 	require.True(t, session.Waiting(), "input does not overtake the end admitted first")
 
 	require.NoError(t, session.ObserveTurn(domain.TurnObservation{Sequence: 3}, false, false, origin.Add(time.Hour)))
-	changed, err = session.RecoverExecution(ctx, port)
+	changed, err = session.RecoverExecution()
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, domain.WorkStopping, session.State)
@@ -119,26 +107,23 @@ func TestStopHappensBetweenTurns(t *testing.T) {
 // 30 continuous minutes, a Waiting Turn being cancelled first since it never
 // ends by itself; recovery repeats the cancellation until it has.
 func TestAnIdleOrWaitingWorkStopsAfterTheTimeout(t *testing.T) {
-	ctx := context.Background()
 	origin := time.Date(2026, 9, 11, 10, 0, 0, 0, time.UTC)
 	ready := func(t *testing.T) (*domain.AgentWork, *executionPort) {
 		session := newSession(t)
-		port := &executionPort{}
-		require.NoError(t, recoverStartup(ctx, session, port))
-		require.NoError(t, session.ConfirmPrepared(ctx, time.Now(), nil))
-		require.NoError(t, session.ConfirmStarted(ctx, time.Now(), nil))
+		port := follow(session)
+		ready(t, session)
 		return session, port
 	}
 	t.Run("idle", func(t *testing.T) {
-		session, port := ready(t)
+		session, _ := ready(t)
 		require.NoError(t, session.ObserveTurn(domain.TurnObservation{Sequence: 1}, false, false, origin))
-		expired, err := session.StopAfterTimeout(ctx, origin.Add(domain.WaitingTimeout), domain.BufferedWork{Input: true}, port)
+		expired, err := session.StopAfterTimeout(origin.Add(domain.WaitingTimeout), domain.BufferedWork{Input: true})
 		require.NoError(t, err)
 		require.False(t, expired, "buffered input is still to be processed")
-		expired, err = session.StopAfterTimeout(ctx, origin.Add(domain.WaitingTimeout-time.Second), domain.BufferedWork{}, port)
+		expired, err = session.StopAfterTimeout(origin.Add(domain.WaitingTimeout-time.Second), domain.BufferedWork{})
 		require.NoError(t, err)
 		require.False(t, expired)
-		expired, err = session.StopAfterTimeout(ctx, origin.Add(domain.WaitingTimeout), domain.BufferedWork{}, port)
+		expired, err = session.StopAfterTimeout(origin.Add(domain.WaitingTimeout), domain.BufferedWork{})
 		require.NoError(t, err)
 		require.True(t, expired)
 		require.Equal(t, domain.WorkStopping, session.State)
@@ -150,18 +135,19 @@ func TestAnIdleOrWaitingWorkStopsAfterTheTimeout(t *testing.T) {
 		require.NoError(t, session.ObserveTurn(domain.TurnObservation{Sequence: 1, Active: true}, false, false, origin))
 		require.False(t, session.TimeoutDue(origin.Add(time.Hour)), "a progressing Turn never times out")
 		require.NoError(t, session.ApplyResponseRequirement(2, true, origin))
-		expired, err := session.StopAfterTimeout(ctx, origin.Add(domain.WaitingTimeout), domain.BufferedWork{Reply: true}, port)
+		expired, err := session.StopAfterTimeout(origin.Add(domain.WaitingTimeout), domain.BufferedWork{Reply: true})
 		require.NoError(t, err)
 		require.False(t, expired, "a buffered reply answers the request")
-		expired, err = session.StopAfterTimeout(ctx, origin.Add(domain.WaitingTimeout), domain.BufferedWork{Input: true}, port)
+		expired, err = session.StopAfterTimeout(origin.Add(domain.WaitingTimeout), domain.BufferedWork{Input: true})
 		require.NoError(t, err)
 		require.True(t, expired, "input is held behind the request")
 		require.Equal(t, domain.WorkStopping, session.State)
-		require.Equal(t, 1, port.cancels, "the held Turn is cancelled")
-		require.Empty(t, port.stops, "the stop waits for the Turn to end")
-		_, err = session.RecoverExecution(ctx, port)
+		require.Equal(t, 1, port.cancels(), "the held Turn is cancelled before the process is asked to exit")
+		require.Equal(t, []string{session.StopRequestReference}, port.stops())
+		_, err = session.RecoverExecution()
 		require.NoError(t, err)
-		require.Equal(t, 2, port.cancels)
-		require.Equal(t, []string{session.StopRequestReference}, port.stops)
+		stop, asked := executionRequest[domain.WorkStopRequested](session)
+		require.True(t, asked, "recovery passes the exit request again")
+		require.True(t, stop.CancelWaitingTurn, "with the Turn's cancellation first, until the Turn ended")
 	})
 }

@@ -39,3 +39,7 @@ func TestAChosenComputerIsTakenFromThoseUsableToItsStarter(t *testing.T) {
 	_, err = workComputer(context.Background(), computers, "person", "someone-elses")
 	require.ErrorIs(t, err, domain.ErrComputerNotUsable)
 }
+
+func (usable) DescribeComputer(context.Context, string) (ComputerDescription, error) {
+	return ComputerDescription{}, nil
+}

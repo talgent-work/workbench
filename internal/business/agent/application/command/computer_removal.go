@@ -43,29 +43,45 @@ func (h *ComputerReachHandler) ComputerRemoved(ctx context.Context, computerID s
 	}
 }
 
+// loseEnvironment lets the Work's current execution report its environment
+// lost with its removed Computer, a start that waits in its line included,
+// and applies the report to the Work.
 func (h *ComputerReachHandler) loseEnvironment(ctx context.Context, workID string) error {
+	if err := h.coordination.BeginExecution(ctx, workID); err != nil {
+		return err
+	}
 	var err error
 	for range reachAttempts {
-		var work *domain.AgentWork
-		if work, err = h.sessions.Get(ctx, workID); err != nil {
+		var execution *domain.AgentExecution
+		if execution, err = h.executions.Latest(ctx, workID); errors.Is(err, domain.ErrExecutionNotFound) {
+			return nil
+		} else if err != nil {
 			return err
 		}
-		var changed bool
-		if changed, err = work.ApplyComputerRemoval(ctx); err != nil || !changed {
+		var decision domain.ExecutionDecision
+		if decision, err = execution.Reconcile(domain.EnvironmentObservation{Removed: true, LossReason: domain.ComputerRemovedReason}, h.now()); err != nil {
 			return err
 		}
-		if err = h.sessions.Save(ctx, work); !errors.Is(err, domain.ErrConcurrentModification) {
-			return err
+		if !decision.Changed {
+			break
+		}
+		if err = h.executions.Save(ctx, execution); !errors.Is(err, domain.ErrConcurrentModification) {
+			if err != nil {
+				return err
+			}
+			break
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return h.coordination.ApplyExecutionReports(ctx, workID)
 }
 
 // recoverRemoval applies, during a Work's recovery, the removal of its
-// Managed Computer a lost Computer Removed did not bring; it reports whether
-// the Work changed. Only a Managed Work whose run may still be on its
-// machine asks, sharing a recent read of its Computer with the other Works
-// on it.
+// Managed Computer a lost Computer Removed did not bring. Only a Managed
+// Work whose run may still be on its machine asks, sharing a recent read of
+// its Computer with the other Works on it.
 func (h *ComputerReachHandler) recoverRemoval(ctx context.Context, work *domain.AgentWork) (bool, error) {
 	if h == nil || !work.OnManagedComputer() || !work.MayHoldEnvironment() {
 		return false, nil
@@ -74,5 +90,5 @@ func (h *ComputerReachHandler) recoverRemoval(ctx context.Context, work *domain.
 	if err != nil || !place.Managed || !place.Removed {
 		return false, err
 	}
-	return work.ApplyComputerRemoval(ctx)
+	return true, h.loseEnvironment(ctx, work.ID)
 }

@@ -442,6 +442,30 @@ controlplane's log).
   replace, it is the rollback target.
 - **Rolling back.** `kubectl -n talgent rollout undo deploy/<service>`, or set the previous
   image.
+- **Rolling back past sandbox leases.** controlplane creates every sandbox with an expiry
+  ([`agent-execution.lease`](configuration.md#agent-execution)) and renews it while its Work
+  runs; OpenSandbox deletes a sandbox whose expiry passed. A release from before leases renews
+  nothing, so before rolling controlplane back to one, move every leased sandbox's expiry far
+  into the future, then roll back:
+
+  ```bash
+  kubectl -n talgent port-forward svc/opensandbox 18080:80 &
+  KEY=$(kubectl -n talgent get secret opensandbox-api -o jsonpath='{.data.api-key}' | base64 -d)
+  UNTIL=$(date -u -d '+30 days' +%Y-%m-%dT%H:%M:%SZ)
+  for page in $(seq 1 100); do
+    body=$(curl -fsS -H "OPEN-SANDBOX-API-KEY: $KEY" "http://127.0.0.1:18080/v1/sandboxes?page=$page&pageSize=100")
+    echo "$body" | jq -r '.items[] | select(.metadata["talgent.io/allocation"] and .expiresAt) | .id' |
+      while read -r id; do
+        curl -fsS -X POST -H "OPEN-SANDBOX-API-KEY: $KEY" -H 'Content-Type: application/json' \
+          -d "{\"expiresAt\":\"$UNTIL\"}" "http://127.0.0.1:18080/v1/sandboxes/$id/renew-expiration" >/dev/null
+      done
+    [ "$(echo "$body" | jq -r '.pagination.hasNextPage')" = true ] || break
+  done
+  ```
+
+  Sandboxes the old release still runs keep working, and it deletes them as their Works end.
+  Deploying a leasing release again keeps the later expiry, so a sandbox renewed this way stays
+  until its Work releases it or that expiry passes.
 - **Backups.** One recovery point is, taken while nothing writes: the three MySQL databases,
   ClickHouse's `talgent_trace` and `talgent_messages`, the JuiceFS metadata
   (`scripts/juicefs/metadata.sh backup <file>` with `JUICEFS_META_URL` and `REDIS_PASSWORD`)

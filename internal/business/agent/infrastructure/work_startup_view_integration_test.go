@@ -6,7 +6,6 @@ import (
 	"context"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -15,6 +14,7 @@ import (
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -32,15 +32,14 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
 	models := query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deepseek"}, Name: "DeepSeek", Vendor: "deepseek", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "max"}, query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "glm"}, Name: "GLM 5.3", Vendor: "zhipu"})
-	var starts []domain.StartExecutionRequest
-	create, _ := creationCoordinator(f.db, f.requests, &creationCapacity{}, &registrationResources{}, &starts, nil, models, &personalStartupCatalog{})
-	id, err := create.Handle(ctx, f.request.Creation)
+	create := creationCoordinator(f.db, &creationCapacity{}, nil, models, &personalStartupCatalog{})
+	id, err := create.Handle(ctx, f.request)
 	require.NoError(t, err)
-	require.Len(t, starts, 1)
+	requireStartRequested(t, f.sessions, id)
 	thinking := &workThinking{}
-	owners := infrastructure.NewWorkAuthorizer(f.db)
+	owners := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
 	views := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(f.db), models)
-	app := &application.Application{Works: f.sessions, Thinking: thinking, WorkPrincipals: owners, WorkViews: views, Models: models, Queries: application.Queries{
+	app := &application.Application{Works: f.sessions, Harness: thinking, WorkPrincipals: owners, WorkViews: views, Models: models, Queries: application.Queries{
 		GetWork:     query.NewGetWorkHandler(f.agents, f.sessions, owners, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
 		GetWorkView: query.NewGetWorkViewHandler(owners, views),
 	}}
@@ -55,12 +54,10 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, started.Work.GetStartupRequest().Repositories[0].CheckoutStatus, "no outcome before workspace preparation ends")
 	// A checkout cut off by the Startup Deadline is shown as not checked out.
-	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
-	retained, err := initial.Get(ctx, id)
+	cut, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	retained.CheckoutResults = []command.RepositoryCheckoutResult{{RepositoryID: "123", TargetPath: "/workspace/repos/project", Reason: "timed_out"}}
-	retained.InputPrepared = true
-	require.NoError(t, initial.Save(ctx, retained))
+	require.True(t, cut.RecordRepositoryCheckouts(domain.ExecutionCheckoutsEnded{WorkID: id, Checkouts: []domain.RepositoryCheckout{{RepositoryID: "123", Reason: domain.CheckoutTimedOut}}}))
+	require.NoError(t, f.sessions.Save(ctx, cut))
 	degraded, err := client.GetWork(workMessageRequest(ctx, owner), &agentpublicv1.GetWorkRequest{WorkId: id})
 	require.NoError(t, err)
 	repository := degraded.Work.GetStartupRequest().Repositories[0]
@@ -75,8 +72,7 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a setting cannot start an execution")
 	admitted, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	require.NoError(t, admitted.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, admitted.ConfirmStarted(ctx, time.Now(), nil))
+	reportReady(t, admitted)
 	require.NoError(t, f.sessions.Save(ctx, admitted))
 	setting.Level = "medium"
 	_, err = client.SetThinkingLevel(workMessageRequest(ctx, owner), setting)
@@ -99,10 +95,9 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 
 	stopped, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	port := startupExecutionPort{}
-	require.NoError(t, stopped.Stop(ctx, "thinking-stop", port))
-	require.NoError(t, stopped.RecordExit(ctx, domain.HarnessExit{}, port))
-	require.NoError(t, stopped.ConfirmComputeReclaimed())
+	require.NoError(t, stopped.Stop("thinking-stop", false))
+	reportExit(t, stopped, domain.HarnessExit{})
+	reportReleased(t, stopped)
 	require.NoError(t, f.sessions.Save(ctx, stopped))
 	level, err = client.GetThinkingLevel(workMessageRequest(ctx, owner), &agentpublicv1.GetThinkingLevelRequest{WorkId: id})
 	require.NoError(t, err)
@@ -110,6 +105,7 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 }
 
 type workThinking struct {
+	command.RunningHarnessPort
 	ref    string
 	levels []string
 }

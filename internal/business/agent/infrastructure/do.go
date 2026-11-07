@@ -19,36 +19,6 @@ type workStateHistoryDO struct {
 
 func (workStateHistoryDO) TableName() string { return "agent_session_state_history" }
 
-type workCreationDO struct {
-	SubjectDigest    string `xorm:"subject_digest"`
-	ID               string `xorm:"id pk"`
-	SessionID        string `xorm:"session_id"`
-	RequestData      string `xorm:"request_data"`
-	BindingConfirmed bool   `xorm:"binding_confirmed"`
-	Canceled         bool   `xorm:"canceled"`
-	Pending          bool   `xorm:"pending"`
-	Version          int    `xorm:"version"`
-	CreatedAt        int64  `xorm:"created_at"`
-	UpdatedAt        int64  `xorm:"updated_at"`
-	DeletedAt        int64  `xorm:"deleted_at"`
-}
-
-func (workCreationDO) TableName() string { return "agent_session_creation_request" }
-
-type initialExecutionRequestDO struct {
-	ID          string `xorm:"id pk"`
-	RequestID   string `xorm:"request_id"`
-	RequestData string `xorm:"request_data"`
-	Submitted   bool   `xorm:"submitted"`
-	Pending     bool   `xorm:"pending"`
-	Version     int    `xorm:"version"`
-	CreatedAt   int64  `xorm:"created_at"`
-	UpdatedAt   int64  `xorm:"updated_at"`
-	DeletedAt   int64  `xorm:"deleted_at"`
-}
-
-func (initialExecutionRequestDO) TableName() string { return "agent_initial_execution_request" }
-
 type agentDefinitionDO struct {
 	Owners           string `xorm:"owners JSON"`
 	AgentName        string `xorm:"agent_name varchar(512)"`
@@ -72,14 +42,19 @@ type agentDefinitionDO struct {
 func (agentDefinitionDO) TableName() string { return "agent_definition" }
 
 type agentWorkDO struct {
-	RepositorySelection    string `xorm:"repository_selection json"`
+	RepositorySelection string `xorm:"repository_selection json"`
+	// RepositoryCheckouts is the JSON of the selected repositories' final
+	// checkout outcomes.
+	RepositoryCheckouts    string `xorm:"repository_checkouts json"`
 	AuthorizationSelection string `xorm:"authorization_selection json"`
-	TaskExecutionBegun     bool   `xorm:"task_execution_begun"`
 	ThinkingLevel          string `xorm:"thinking_level varchar(32)"`
 	PermissionMode         string `xorm:"permission_mode varchar(32)"`
 	WorkProgress           string `xorm:"work_progress mediumtext"`
-	ModelConfigurationID   string `xorm:"model_configuration_id varchar(128)"`
-	ModelMachineLogin      bool   `xorm:"model_machine_login"`
+	// InitialTaskInput is the JSON of the initial task input the Work still
+	// holds; empty once handed off or for a Work created without one.
+	InitialTaskInput     string `xorm:"initial_task_input mediumtext"`
+	ModelConfigurationID string `xorm:"model_configuration_id varchar(128)"`
+	ModelMachineLogin    bool   `xorm:"model_machine_login"`
 	// SubjectKind and SubjectID are NULL for a Work without a Subject, so the
 	// unique index binds only Works with one.
 	SubjectKind     *string `xorm:"subject_kind varchar(32)"`
@@ -135,29 +110,29 @@ type agentWorkShareDO struct {
 func (agentWorkShareDO) TableName() string { return "agent_work_share" }
 
 type harnessProcessRecord struct {
-	PhaseSequence          int64                 `json:"phase_sequence"`
-	WorkProgressSequence   int64                 `json:"work_progress_sequence"`
-	SubAgentsSequence      int64                 `json:"subagents_sequence,omitempty"`
-	PermissionModeSequence int64                 `json:"permission_mode_sequence,omitempty"`
-	SubAgents              []subAgentRecord      `json:"subagents,omitempty"`
-	IdleSince              time.Time             `json:"idle_since"`
-	WaitingSince           time.Time             `json:"waiting_since"`
-	StartingSince          time.Time             `json:"starting_since"`
-	ContextMode            string                `json:"context_mode"`
-	DeskID                 string                `json:"desk_id,omitempty"`
-	DeskWaiting            bool                  `json:"desk_waiting,omitempty"`
-	SeatedAt               time.Time             `json:"seated_at,omitzero"`
-	StartWithdrawn         bool                  `json:"start_withdrawn,omitempty"`
-	Soul                   string                `json:"soul,omitempty"`
-	Prepared               bool                  `json:"prepared"`
-	Started                bool                  `json:"started"`
-	Exited                 bool                  `json:"exited"`
-	ComputeReclaimed       bool                  `json:"compute_reclaimed"`
-	StartRejected          bool                  `json:"start_rejected"`
-	StartAbandoned         bool                  `json:"start_abandoned,omitempty"`
-	Unreached              bool                  `json:"unreached,omitempty"`
-	EnvironmentLost        bool                  `json:"environment_lost"`
-	Turn                   turnObservationRecord `json:"turn"`
+	PhaseSequence          int64            `json:"phase_sequence"`
+	WorkProgressSequence   int64            `json:"work_progress_sequence"`
+	SubAgentsSequence      int64            `json:"subagents_sequence,omitempty"`
+	PermissionModeSequence int64            `json:"permission_mode_sequence,omitempty"`
+	SubAgents              []subAgentRecord `json:"subagents,omitempty"`
+	IdleSince              time.Time        `json:"idle_since"`
+	WaitingSince           time.Time        `json:"waiting_since"`
+	StartingSince          time.Time        `json:"starting_since"`
+	ContextMode            string           `json:"context_mode"`
+	DeskID                 string           `json:"desk_id,omitempty"`
+	DeskWaiting            bool             `json:"desk_waiting,omitempty"`
+	StartWithdrawn         bool             `json:"start_withdrawn,omitempty"`
+	Soul                   string           `json:"soul,omitempty"`
+	// Ready records the run's readiness its AgentExecution reported.
+	Ready            bool                  `json:"ready"`
+	Exited           bool                  `json:"exited"`
+	ComputeReclaimed bool                  `json:"compute_reclaimed"`
+	StartRejected    bool                  `json:"start_rejected"`
+	StartAbandoned   bool                  `json:"start_abandoned,omitempty"`
+	Unreached        bool                  `json:"unreached,omitempty"`
+	Fenced           bool                  `json:"fenced,omitempty"`
+	EnvironmentLost  bool                  `json:"environment_lost"`
+	Turn             turnObservationRecord `json:"turn"`
 }
 
 // waiting reports a stored Work whose user owes an answer; closure clears it.
@@ -176,13 +151,15 @@ type turnObservationRecord struct {
 	Completed bool  `json:"completed"`
 }
 
-// startRequestDO retains start-request correlation: an admitted or canceled
-// caller request, never a process run.
+// startRequestDO is the record of one caller request identity for a Work
+// creation, Resume or Restart: admitted, refused or cancelled, never a
+// process run.
 type startRequestDO struct {
 	CreationScope string `xorm:"creation_scope varchar(64)"`
 	ID            string `xorm:"id pk varchar(36)"`
 	SessionID     string `xorm:"session_id varchar(36)"`
 	Kind          string `xorm:"kind varchar(16)"`
+	Fingerprint   string `xorm:"fingerprint varchar(64)"`
 	Canceled      bool   `xorm:"canceled"`
 	Version       int    `xorm:"'version'"`
 	CreatedAt     int64  `xorm:"created_at"`
@@ -191,21 +168,6 @@ type startRequestDO struct {
 }
 
 func (startRequestDO) TableName() string { return "agent_start_request" }
-
-type continuationRequestDO struct {
-	ID        string `xorm:"id pk"`
-	RequestID string `xorm:"request_id"`
-	SubjectID string `xorm:"subject_id"`
-	Operation string `xorm:"operation"`
-	Rejection string `xorm:"rejection"`
-	Pending   bool   `xorm:"pending"`
-	Version   int    `xorm:"version"`
-	CreatedAt int64  `xorm:"created_at"`
-	UpdatedAt int64  `xorm:"updated_at"`
-	DeletedAt int64  `xorm:"deleted_at"`
-}
-
-func (continuationRequestDO) TableName() string { return "agent_session_continuation_request" }
 
 type workProgressRecord struct {
 	Items     []workProgressItemRecord `json:"items"`

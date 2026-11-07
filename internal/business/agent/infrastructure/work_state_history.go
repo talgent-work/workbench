@@ -17,7 +17,7 @@ func retainWorkState(tx *xorm.Session, session *domain.AgentWork, row *agentWork
 	next := workStateHistoryDO{SessionID: row.ID, SourceVersion: row.Version, State: row.State,
 		Failed: session.FailureReason != "" || session.State == domain.WorkFailed, Waiting: session.Waiting(), ObservedAt: row.UpdatedAt}
 	if process := session.HarnessProcess; process != nil {
-		next.Started = process.Started
+		next.Started = process.Ready
 	}
 	var previous workStateHistoryDO
 	found, err := tx.Where("session_id=? AND deleted_at=0", row.ID).Desc("source_version").Get(&previous)

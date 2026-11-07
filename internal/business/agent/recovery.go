@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
-	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
@@ -20,11 +19,12 @@ import (
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
 	"k8s.io/client-go/dynamic"
+	"xorm.io/xorm"
 )
 
 // RecoveryQueue and PreparationQueue name the taskqueue modules Agent's
-// recovery tasks run on. Preparation has its own workers so minutes-long
-// checkouts cannot hold the workers short recovery steps need.
+// recovery tasks run on. An execution's long step has its own workers, so a
+// preparation that waits minutes cannot hold the workers its short steps need.
 const (
 	RecoveryQueue    = "agent"
 	PreparationQueue = "agent-preparation"
@@ -73,13 +73,18 @@ func (c RecoveryConfig) sweepInterval() (time.Duration, error) {
 // RecoveryModule wakes and performs Agent's recovery obligations as keyed tasks:
 // sandbox observations, Work commits, connection reports and a periodic sweep
 // of unfinished obligations wake one object each; completed history is never
-// scanned. It requires an ExecutionEnvironmentRecovery, supplied by
+// scanned. It requires a command.ExecutionEnvironmentPort, supplied by
 // ExecutionModule, and the two named task queues.
 var RecoveryModule = fx.Module("agent.recovery",
 	pkgtaskqueue.Bind(RecoveryQueue),
+	// Module's clock is private to it; reconciliation reads its own.
+	fx.Provide(func() func() time.Time { return time.Now }, fx.Private),
 	fx.Provide(
-		fx.Annotate(newComputerReconnection, fx.As(fx.Self()), fx.As(new(application.OwedResumes))),
+		// A Managed Computer's return of reach, for Computer Became Reachable
+		// and for the recovery of each Work owed a Resume.
+		fx.Annotate(command.NewComputerReconnectionHandler, fx.As(fx.Self()), fx.As(new(application.OwedResumes))),
 		application.NewRecovery,
+		command.NewReconcileExecutionHandler,
 		fx.Annotate(taskprocessor.RecoveryProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(RecoveryQueue))),
 		fx.Annotate(taskprocessor.PreparationProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(PreparationQueue))),
 		fx.Annotate(newRecoverySweep, fx.ResultTags(pkgtaskqueue.PeriodicTaskTag(RecoveryQueue))),
@@ -121,12 +126,10 @@ func sweepOnStart(lc fx.Lifecycle, cfg RecoveryConfig, recovery *application.Rec
 }
 
 // wireRecoveryWakes connects commits to recovery.
-func wireRecoveryWakes(recovery *application.Recovery, updates *workStateUpdates, creations *committedCreations, closures *eventhandler.WorkClosures, logger *slog.Logger) {
+func wireRecoveryWakes(recovery *application.Recovery, updates *workStateUpdates, executions *committedExecutions, closures *eventhandler.WorkClosures, logger *slog.Logger) {
 	updates.wakeWork = deferredWake(logger, "work", recovery.WakeWork)
+	executions.wake = deferredWake(logger, "execution", recovery.WakeExecution)
 	closures.Wake = deferredWake(logger, "work_closure", recovery.WakeWork)
-	updates.wakeInitialExecution = deferredWake(logger, "initial_execution", recovery.WakeInitialExecution)
-	updates.wakeContinuation = deferredWake(logger, "continuation", recovery.WakeContinuation)
-	creations.wake = deferredWake(logger, "work_creation", recovery.WakeWorkCreation)
 }
 
 // deferredWake never fails the committed change that triggers it: a failed wake
@@ -141,23 +144,20 @@ func deferredWake(logger *slog.Logger, name string, fn func(context.Context, str
 	}
 }
 
-// environmentRecoveryOptions observe sandboxes and wake allocations that
-// execution integration registers or retires.
+// environmentRecoveryOptions reach the execution environments and observe
+// sandboxes, waking the execution each one belongs to.
 var environmentRecoveryOptions = fx.Options(
 	fx.Provide(
-		fx.Annotate(execution.NewEnvironmentRecovery, fx.As(fx.Self()), fx.As(new(application.ExecutionEnvironmentRecovery))),
+		newExecutionEnvironment,
 		pkgkubernetes.NewDynamicClient,
 		newStreamOwners,
 	),
-	fx.Invoke(func(recovery *application.Recovery, environments *execution.Environments, logger *slog.Logger) {
-		environments.AllocationChanged = deferredWake(logger, "allocation", recovery.WakeAllocation)
-	}),
 	fx.Invoke(runSandboxObserver),
 )
 
 // runSandboxObserver watches Talgent's sandboxes for the life of the process.
-func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg ExecutionConfig, environments *execution.EnvironmentRecovery, recovery *application.Recovery, logger *slog.Logger) error {
-	observer, err := execution.NewSandboxObserver(client, cfg.SandboxNamespace, environments, recovery.WakeSandboxObservation, logger)
+func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg ExecutionConfig, db *xorm.Engine, recovery *application.Recovery, logger *slog.Logger) error {
+	observer, err := execution.NewSandboxObserver(client, cfg.SandboxNamespace, db, recovery.WakeExecution, logger)
 	if err != nil {
 		return err
 	}
@@ -192,8 +192,8 @@ func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg Execution
 }
 
 // dispatcherStreams reads the stream ownership Dispatcher publishes in the
-// shared Redis, so Agent's sweep sees a running process nobody
-// reads without asking Dispatcher or the environment authority.
+// shared Redis, so Agent's sweep sees a running process nobody reads without
+// asking Dispatcher.
 type dispatcherStreams struct {
 	reader *streamownership.Reader
 }
@@ -207,27 +207,17 @@ func (d dispatcherStreams) Reading(ctx context.Context, workID string) (executio
 	return execution.StreamReading{ProcessID: reading.ProcessID, Endpoint: reading.Endpoint}, found, err
 }
 
-// reconnectionDependencies are what a Managed Computer's return of reach
-// acts on; Managed is absent or nil for a deployment that reaches no Managed
-// Computer.
-type reconnectionDependencies struct {
+// executionEnvironmentSources are what the execution environments are
+// reached through; Managed is absent or nil for a deployment that reaches no
+// Managed Computer.
+type executionEnvironmentSources struct {
 	fx.In
-	Computers command.ComputerDescriptionPort
-	Sessions  domain.AgentWorkRepository
-	Agents    domain.AgentDefinitionRepository
-	Works     command.ReachResumeWorks
-	Buffer    command.InputBufferPort
-	Resume    *command.ResumeWorkHandler
-	Managed   *execution.ManagedEnvironment `optional:"true"`
-	Logger    *slog.Logger
+	Provisioning *execution.Provisioning
+	Connections  *execution.NativeConnections
+	Owners       execution.StreamOwners
+	Managed      *execution.ManagedEnvironment `optional:"true"`
 }
 
-// newComputerReconnection applies a Managed Computer's return of reach, for
-// Computer Became Reachable and for the recovery of each Work owed a Resume.
-func newComputerReconnection(deps reconnectionDependencies) (*command.ComputerReconnectionHandler, error) {
-	var reconciliation command.ComputerReconciliationPort
-	if deps.Managed != nil {
-		reconciliation = deps.Managed.Reconciliation()
-	}
-	return command.NewComputerReconnectionHandler(deps.Computers, deps.Sessions, deps.Agents, deps.Works, deps.Buffer, deps.Resume, reconciliation, deps.Logger)
+func newExecutionEnvironment(in executionEnvironmentSources) (command.ExecutionEnvironmentPort, error) {
+	return execution.NewExecutionEnvironment(in.Provisioning, in.Connections, in.Owners, in.Managed)
 }

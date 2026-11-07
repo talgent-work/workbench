@@ -23,7 +23,7 @@ type FileSpaces struct {
 	token  string
 }
 
-var _ personalwork.FileSpaces = (*FileSpaces)(nil)
+var _ personalwork.FileSpacePort = (*FileSpaces)(nil)
 
 func NewFileSpaces(httpClient connecthttp.HTTPClient, config Config) (*FileSpaces, error) {
 	if strings.TrimSpace(config.Address) == "" || strings.TrimSpace(config.Token) == "" {

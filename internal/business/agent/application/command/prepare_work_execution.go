@@ -2,27 +2,50 @@ package command
 
 import (
 	"context"
-	"errors"
-	"reflect"
-
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 
 	"github.com/google/uuid"
+
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-type PrepareWorkExecutionHandler struct {
-	models        query.ModelConfigurations
-	creations     WorkCreationReader
-	requests      InitialExecutionRequests
-	sessions      domain.AgentWorkRepository
-	authorization access.WorkAuthorizer
-	execution     ExecutionRequestsFactory
+type RepositorySelection struct {
+	RepositoryID string
+	BaseBranch   string
 }
 
-func NewPrepareWorkExecutionHandler(requests InitialExecutionRequests, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution ExecutionRequestsFactory, creations WorkCreationReader, models query.ModelConfigurations) *PrepareWorkExecutionHandler {
-	return &PrepareWorkExecutionHandler{models: models, creations: creations, requests: requests, sessions: sessions, authorization: authorization, execution: execution}
+// PrepareWorkExecution is a new Work's first start as its caller asks for
+// it: the initial task input, the initial thinking level, and the
+// repositories to check out on the branch the caller names. Creation commits
+// all of it with the Work; nothing tracks how far the start got.
+type PrepareWorkExecution struct {
+	// Initial Harness setting, independent of the Session's fixed capabilities.
+	ThinkingLevel string
+	SubjectID     string
+	// WorkID names an existing Work for a repeat outside creation.
+	WorkID    string
+	RequestID string
+	// Branch the caller names for repository checkouts.
+	WorkBranch string
+	Input      ExecutionInput
+	Selections []RepositorySelection
+}
+
+// PrepareWorkExecutionHandler answers a first-start request for a Work that
+// already exists: the repeat of its creation, or a reuse of its Subject's
+// Work. Initial execution is part of accepted creation, never a later
+// transition, so it starts nothing and returns the original Work: the
+// request's input and repository choices are creation-specific and apply
+// only to a new Work, so they never change or refuse the one it locates.
+type PrepareWorkExecutionHandler struct {
+	models        query.ModelConfigurations
+	sessions      domain.AgentWorkRepository
+	authorization access.WorkAuthorizer
+}
+
+func NewPrepareWorkExecutionHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations) *PrepareWorkExecutionHandler {
+	return &PrepareWorkExecutionHandler{models: models, sessions: sessions, authorization: authorization}
 }
 
 func (h *PrepareWorkExecutionHandler) Handle(ctx context.Context, input PrepareWorkExecution) (string, error) {
@@ -32,114 +55,17 @@ func (h *PrepareWorkExecutionHandler) Handle(ctx context.Context, input PrepareW
 	if err := validateInitialPreparation(input); err != nil {
 		return "", err
 	}
-	session, err := h.sessions.Get(ctx, input.WorkID)
+	work, err := h.sessions.Get(ctx, input.WorkID)
 	if err != nil {
 		return "", err
 	}
-	if err := session.AdmitPreparation(); err != nil {
+	if err := work.AdmitPreparation(); err != nil {
 		return "", err
 	}
-	if err := validateInitialThinkingLevel(h.models, session.WorkModel, input.ThinkingLevel); err != nil {
+	if err := validateInitialThinkingLevel(h.models, work.WorkModel, input.ThinkingLevel); err != nil {
 		return "", err
 	}
-	request, err := h.requests.Get(ctx, input.WorkID)
-	if err != nil {
-		return "", err
-	}
-	// A repeated work start after response loss reuses retained identities
-	// only when its immutable preparation and input content still match.
-	matched := input
-	matched.RequestID, matched.Input.ID = request.RequestID, request.Input.ID
-	// The creation prerequisite and correlation belong to the retained
-	// original request; a caller retrying the public preparation operation
-	// never selects them.
-	matched.CreationRequestID, matched.WorkspaceReference = request.CreationRequestID, request.WorkspaceReference
-	if !reflect.DeepEqual(request.PrepareWorkExecution, matched) {
-		return "", ErrInitialExecutionConflict
-	}
-	return h.advance(ctx, request)
-}
-
-func (h *PrepareWorkExecutionHandler) advance(ctx context.Context, request InitialExecutionRequest) (string, error) {
-	if err := h.requireCreationConfirmation(ctx, request); err != nil {
-		return "", err
-	}
-	if request.Rejected {
-		return "", ErrInitialExecutionRejected
-	}
-	session, err := h.sessions.Get(ctx, request.WorkID)
-	if err != nil {
-		return "", err
-	}
-	if err := request.AdmitRepositoryPreparation(session); err != nil {
-		return "", err
-	}
-	if request.Submitted && request.Prepared {
-		return request.WorkID, nil
-	}
-	if !request.Prepared {
-		// The plan precedes the start's environment: its preparation process
-		// checks the planned repositories out before the Harness starts.
-		if err := request.PlanCheckouts(session); err != nil {
-			return h.reject(ctx, request, errors.Join(ErrPreparationRejected, err))
-		}
-		request.Prepared = true
-		request.RecoveryPending = false
-		if err := h.requests.Save(ctx, request); err != nil {
-			return "", err
-		}
-		request, err = h.requests.Get(ctx, request.WorkID)
-		if err != nil {
-			return "", err
-		}
-	}
-	// Admission was committed when this Work was established. Resource
-	// preparation must never recheck capacity or reinterpret a retry as Start.
-	session, err = h.sessions.Get(ctx, request.WorkID)
-	if err != nil {
-		return "", err
-	}
-	requests := h.execution()
-	if _, err := session.RecoverExecution(ctx, requests); err != nil {
-		return "", err
-	}
-	if err := requests.Send(ctx); err != nil {
-		return "", err
-	}
-
-	return request.WorkID, nil
-}
-
-func (h *PrepareWorkExecutionHandler) requireCreationConfirmation(ctx context.Context, request InitialExecutionRequest) error {
-	if request.CreationRequestID == "" {
-		return nil
-	}
-	creation, err := h.creations.GetWorkCreation(ctx, request.CreationRequestID)
-	if err != nil {
-		return err
-	}
-	if creation.Canceled {
-		return ErrWorkCreationCanceled
-	}
-	if creation.WorkID != request.WorkID {
-		return ErrWorkCreationConflict
-	}
-	if !creation.BindingConfirmed {
-		return ErrInitialExecutionPending
-	}
-	return nil
-}
-
-func (h *PrepareWorkExecutionHandler) reject(ctx context.Context, request InitialExecutionRequest, cause error) (string, error) {
-	// A created Work already owns execution admission. Preserve its first
-	// input and mark the preparation outcome for normal execution-end recovery.
-	request.Rejected = true
-	request.StartFailed = true
-	request.FailureReason = preparationFailureReason(cause)
-	if err := h.requests.Save(ctx, request); err != nil {
-		return "", errors.Join(cause, err)
-	}
-	return "", cause
+	return work.ID, nil
 }
 
 func validateInitialPreparation(input PrepareWorkExecution) error {
@@ -150,27 +76,4 @@ func validateInitialPreparation(input PrepareWorkExecution) error {
 		return domain.ErrInvalidWork
 	}
 	return nil
-}
-
-func preparationFailureReason(cause error) string {
-	switch {
-	case errors.Is(cause, domain.ErrComputerFull):
-		return "The Work's Computer already runs as many Works as its Capacity allows. Try again once one ends, or raise its Capacity."
-	case errors.Is(cause, domain.ErrCapacityUnavailable):
-		return "Execution capacity is unavailable. Try again later."
-	case errors.Is(cause, domain.ErrComputerUnreachable):
-		return "The Work's Computer is unreachable. Try again once it is online."
-	case errors.Is(cause, domain.ErrComputerOutdated):
-		return "The Work's Computer runs an outdated Talgent Computer. Upgrade it before retrying."
-	case errors.Is(cause, domain.ErrComputerRemoved):
-		return "The Work's Computer was removed."
-	case errors.Is(cause, domain.ErrComputerNoSandbox):
-		return "The Work's Computer cannot provide Claude Code's sandbox, which this Work runs in."
-	case errors.Is(cause, domain.ErrComputerNotUsable):
-		return "The Work's Computer cannot run this Work."
-	case errors.Is(cause, ErrStartRequestCanceled):
-		return "The startup request was cancelled."
-	default:
-		return "Repository preparation was rejected. Check the configuration before retrying."
-	}
 }

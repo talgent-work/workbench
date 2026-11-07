@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,14 +34,20 @@ import (
 )
 
 // A Cloud with room for one run, admitting through the real Agent and
-// Computer modules and MySQL; execution is recorded.
+// Computer modules and MySQL; each execution's reconciliation runs on the
+// recovery queues, its environment realized at once.
 type oneRoomCloud struct {
-	client    agentprivatev1connect.AgentServiceClient
-	feedback  agentprivatev1connect.ExecutionFeedbackServiceClient
-	processes *lifecycleProcesses
-	db        *xorm.Engine
-	quota     *corev1.ResourceQuota
-	kube      *fake.Clientset
+	client   agentprivatev1connect.AgentServiceClient
+	feedback agentprivatev1connect.ExecutionFeedbackServiceClient
+	runs     *moduleRuns
+	// deleting keeps a retired execution's environment until it is cleared.
+	deleting *atomic.Bool
+	// recovery wakes an execution as the sandbox observer does when its
+	// environment's deletion completes.
+	recovery *application.Recovery
+	db       *xorm.Engine
+	quota    *corev1.ResourceQuota
+	kube     *fake.Clientset
 }
 
 func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
@@ -53,27 +60,28 @@ func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
 	kube := fake.NewClientset(quota.DeepCopy())
 	port := &sessionCommandRecorder{}
-	processes := &lifecycleProcesses{}
+	runs := &moduleRuns{}
+	deleting := &atomic.Bool{}
+	var recovery *application.Recovery
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
-		fx.Decorate(func(application.PendingInteractionsPort) application.PendingInteractionsPort { return port }),
+		agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{pendingDeletion: deleting} }), runs.option(),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("1", "4Gi", "64")),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(func() kubernetes.Interface { return kube }),
-		fx.Provide(func() domain.ExecutionPort { return port }),
-		fx.Provide(func() command.InputBufferPort { return port }),
-		fx.Decorate(func(command.ProcessObservationPort) command.ProcessObservationPort { return processes }),
+		fx.Provide(func() command.RunningHarnessPort { return port }),
+		fx.Populate(&recovery),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(ctx))
 	t.Cleanup(func() { require.NoError(t, app.Stop(context.Background())) })
-	return &oneRoomCloud{
-		client:    agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
-		feedback:  agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
-		processes: processes, db: db, quota: quota, kube: kube,
+	return &oneRoomCloud{recovery: recovery,
+		client:   agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
+		feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
+		runs:     runs, deleting: deleting, db: db, quota: quota, kube: kube,
 	}
 }
 
@@ -98,7 +106,7 @@ func (c *oneRoomCloud) create(ctx context.Context, definition, subject string) (
 
 func (c *oneRoomCloud) report(t *testing.T, ctx context.Context, workID string, kind agentprivatev1.FeedbackKind, exitCode int32) {
 	t.Helper()
-	req := &agentprivatev1.ReportRequest{WorkId: workID, Kind: kind, ProcessId: "process", ExitCode: exitCode}
+	req := &agentprivatev1.ReportRequest{WorkId: workID, Kind: kind, ProcessId: launchedProcess, ExitCode: exitCode}
 	ctx, info := connect.NewClientContext(ctx)
 	info.RequestHeader().Set("Authorization", "Bearer feedback")
 	_, err := c.feedback.Report(ctx, req)
@@ -113,8 +121,8 @@ func (c *oneRoomCloud) desks(t *testing.T, state string) int64 {
 }
 
 // Every run takes a Desk before it starts, so two concurrent starts never both
-// claim the last room; the Desk leaves once its process ended and its compute
-// is released, and the room seats the next start.
+// claim the last room; the Desk leaves once its process ended and its
+// compute is released, and the room seats the next start.
 func TestCloudSeatsOneRunPerRoomAndFreesItAfterRelease(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -152,12 +160,17 @@ func TestCloudSeatsOneRunPerRoomAndFreesItAfterRelease(t *testing.T) {
 	require.EqualValues(t, 1, cloud.desks(t, "occupied"))
 
 	// The run fails and its compute is released: its Desk leaves.
+	cloud.runs.awaitLaunched(t, ctx, seated)
+	require.EqualValues(t, 1, cloud.desks(t, "occupied"), "a running run holds its room")
+	cloud.deleting.Store(true)
 	cloud.report(t, ctx, seated, agentprivatev1.FeedbackKind_FEEDBACK_KIND_EXITED, 1)
-	require.EqualValues(t, 1, cloud.desks(t, "occupied"), "an exited run holds its room until compute is released")
-	cloud.processes.observe(domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true})
-	cloud.report(t, ctx, seated, agentprivatev1.FeedbackKind_FEEDBACK_KIND_COMPUTE_RECLAIMED, 0)
+	retired := cloud.runs.await(t, ctx, seated, (*domain.AgentExecution).Retired, "the Work retires its execution")
+	require.Never(t, func() bool { return cloud.desks(t, "occupied") == 0 }, 250*time.Millisecond, 25*time.Millisecond, "an exited run holds its room until compute is released")
+	cloud.deleting.Store(false)
+	require.NoError(t, cloud.recovery.WakeExecution(ctx, retired.ID), "the deletion's completion wakes the execution")
 	require.Eventually(t, func() bool { return cloud.desks(t, "occupied") == 0 }, 10*time.Second, 50*time.Millisecond)
 	require.EqualValues(t, 1, cloud.desks(t, "vacated"))
+	cloud.runs.await(t, ctx, seated, func(e *domain.AgentExecution) bool { return e.State == domain.ExecutionReleased }, "the failed run's compute is released")
 
 	second, err := cloud.create(ctx, definition, "work-c")
 	require.NoError(t, err, "the freed room seats the next start")

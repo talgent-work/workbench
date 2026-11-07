@@ -2,7 +2,6 @@ package application_test
 
 import (
 	"context"
-	"slices"
 	"testing"
 	"time"
 
@@ -34,33 +33,24 @@ func TestRepositoryAccessUsesRetainedReferenceAndCurrentSupply(t *testing.T) {
 }
 
 func TestRepositoryAccessRefusesUnselectedOrInactiveUseBeforeSupply(t *testing.T) {
-	for _, scenario := range []string{"foreign owner", "foreign requester", "other work", "unprepared", "canceled", "cleanup", "rejected", "stopped", "missing checkout", "changed repository"} {
+	for _, scenario := range []string{"foreign owner", "foreign selection", "other work", "closing", "closed", "stopped"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newRepositoryAccessFixture(t)
 			owner, workID := "owner", f.work.ID
 			switch scenario {
 			case "foreign owner":
 				owner = "starter"
-			case "foreign requester":
-				f.request.SubjectID = "starter"
+			case "foreign selection":
+				f.work.RepositorySelection.OwnerUserID = "starter"
 			case "other work":
 				workID = uuid.NewString()
-			case "unprepared":
-				f.request.Prepared = false
-			case "canceled":
-				f.request.PreparationCanceled = true
-			case "cleanup":
-				f.request.CleanupConfirmed = true
-			case "rejected":
-				f.request.Rejected = true
+			case "closing":
+				f.work.State = domain.WorkClosing
+			case "closed":
+				f.work.State = domain.WorkClosed
 			case "stopped":
-				require.NoError(t, f.work.ConfirmPrepared(context.Background(), time.Now(), nil))
-				require.NoError(t, f.work.ConfirmStarted(context.Background(), time.Now(), nil))
-				require.NoError(t, f.work.Stop(t.Context(), "stop", repositoryExecution{}))
-			case "missing checkout":
-				f.request.Checkouts = nil
-			case "changed repository":
-				f.request.Checkouts[0].RepoID = "changed"
+				readyWork(t, f.work)
+				require.NoError(t, f.work.Stop("stop", false))
 			}
 			material, err := f.app.Resolve(t.Context(), owner, workID)
 			require.Error(t, err)
@@ -70,13 +60,33 @@ func TestRepositoryAccessRefusesUnselectedOrInactiveUseBeforeSupply(t *testing.T
 	}
 }
 
-func TestRepositoryAccessDiscardsMaterialWhenCanceledDuringSupply(t *testing.T) {
+// A Work entering Closing while its credentials are supplied receives none
+// of them (Repository preparation cancellation).
+func TestRepositoryAccessDiscardsMaterialWhenTheWorkClosesDuringSupply(t *testing.T) {
 	f := newRepositoryAccessFixture(t)
-	f.duringSupply = func() { f.request.PreparationCanceled = true }
+	f.duringSupply = func() { f.work.State = domain.WorkClosing }
 	material, err := f.app.Resolve(t.Context(), "owner", f.work.ID)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
+	require.ErrorIs(t, err, domain.ErrRepositoryPreparationCanceled)
 	require.Empty(t, material)
 	require.Len(t, f.supplied, 1)
+}
+
+// Access follows the Work's retained selection, with the same access
+// identity on every start; a selection changed during supply is refused.
+func TestRepositoryAccessFollowsTheRetainedSelection(t *testing.T) {
+	f := newRepositoryAccessFixture(t)
+	first, err := f.app.Plan(t.Context(), "owner", f.work.ID)
+	require.NoError(t, err)
+	again, err := f.app.Plan(t.Context(), "owner", f.work.ID)
+	require.NoError(t, err)
+	require.Equal(t, first, again)
+	require.Equal(t, command.PlanCheckouts(f.work.ID, f.work.RepositorySelection)[0].AccessID, first[0].AccessID)
+
+	f.duringSupply = func() { f.work.RepositorySelection.Repositories[0].CloneURL = "https://github.com/acme/moved.git" }
+	material, err := f.app.Resolve(t.Context(), "owner", f.work.ID)
+	require.ErrorIs(t, err, application.ErrRepositoryAccessChanged)
+	require.Empty(t, material.Credentials)
 }
 
 // A project-scoped Agent's Work lives in its Project's coordination home while the
@@ -85,12 +95,11 @@ func TestRepositoryAccessPlansAWorkStartedForAnotherHome(t *testing.T) {
 	f := newRepositoryAccessFixture(t)
 	agentID := uuid.NewString()
 	home := "project/project/project_coordination"
-	work, err := domain.NewAgentWork(t.Context(), domain.WorkInput{Subject: domain.WorkSubject{Kind: "review", ID: "review"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "review", ID: "review"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, HomeBinding: domain.HomeBinding{OwnerID: home, Namespace: "project_coordination"}, WorkspaceReference: "workspace",
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, repositoryExecution{})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	f.work = work
-	f.request = command.InitialExecutionRequest{PrepareWorkExecution: command.PrepareWorkExecution{SubjectID: "owner", WorkID: work.ID, RequestID: "request"}, Prepared: true}
 	refs, err := f.app.Plan(t.Context(), home, work.ID)
 	require.NoError(t, err)
 	require.Empty(t, refs)
@@ -99,9 +108,9 @@ func TestRepositoryAccessPlansAWorkStartedForAnotherHome(t *testing.T) {
 }
 
 type repositoryAccessFixture struct {
+	application.CredentialSupplyPort
 	app          *application.RepositoryAccess
 	work         *domain.AgentWork
-	request      command.InitialExecutionRequest
 	supplied     []application.RepositoryCredentialRequest
 	token        string
 	username     string
@@ -115,21 +124,22 @@ func newRepositoryAccessFixture(t *testing.T, withoutAuthorization ...bool) *rep
 	agentID := uuid.NewString()
 	f := &repositoryAccessFixture{token: "current-token", username: "x-access-token", expiresAt: time.Now().Add(time.Hour)}
 	var err error
-	f.work, err = domain.NewAgentWork(t.Context(), domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
+	f.work, err = domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
 		WorkModel:   domain.WorkModelSelection{ConfigurationID: "default"},
 		HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}, WorkspaceReference: "workspace",
-		RepositoryInput: domain.WorkRepositoryInput{OwnerUserID: "owner", Choices: []domain.WorkRepositoryChoice{{RepositoryID: "123"}},
+		RepositoryInput: domain.WorkRepositoryInput{OwnerUserID: "owner", WorkBranch: "talgent/TAL-382", Choices: []domain.WorkRepositoryChoice{{RepositoryID: "123"}},
 			Available: []domain.AccessibleRepository{{OwnerUserID: "owner", Provider: "github", RepoID: "123", RepoName: "acme/project", CloneURL: "https://github.com/acme/project.git", DefaultBranch: "main"}}},
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner", Available: availableAuthorizations(withoutAuthorization...)},
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, repositoryExecution{})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
-	f.request = command.InitialExecutionRequest{PrepareWorkExecution: command.PrepareWorkExecution{SubjectID: "owner", WorkID: f.work.ID, RequestID: "request", WorkBranch: "talgent/" + "TAL-382", Selections: []command.RepositorySelection{{RepositoryID: "123"}}}, Prepared: true}
-	require.NoError(t, f.request.PlanCheckouts(f.work))
-	f.app = application.NewRepositoryAccess(repositoryWorkStore{f}, repositoryRequestStore{f}, f)
+	f.app = application.NewRepositoryAccess(repositoryWorkStore{f: f}, f)
 	return f
 }
 
-type repositoryWorkStore struct{ f *repositoryAccessFixture }
+type repositoryWorkStore struct {
+	command.AgentWorkRepository
+	f *repositoryAccessFixture
+}
 
 func (s repositoryWorkStore) Get(_ context.Context, id string) (*domain.AgentWork, error) {
 	if id != s.f.work.ID {
@@ -139,17 +149,6 @@ func (s repositoryWorkStore) Get(_ context.Context, id string) (*domain.AgentWor
 }
 func (repositoryWorkStore) Save(context.Context, *domain.AgentWork) error { panic("unexpected save") }
 
-type repositoryRequestStore struct{ f *repositoryAccessFixture }
-
-func (s repositoryRequestStore) Get(_ context.Context, id string) (command.InitialExecutionRequest, error) {
-	if id != s.f.request.WorkID {
-		return command.InitialExecutionRequest{}, command.ErrInitialExecutionNotFound
-	}
-	r := s.f.request
-	r.Checkouts = slices.Clone(r.Checkouts)
-	return r, nil
-}
-
 func (f *repositoryAccessFixture) SupplyRepositoryCredential(_ context.Context, r application.RepositoryCredentialRequest) (application.RepositoryCredentialMaterial, error) {
 	f.supplied = append(f.supplied, r)
 	if f.duringSupply != nil {
@@ -158,14 +157,13 @@ func (f *repositoryAccessFixture) SupplyRepositoryCredential(_ context.Context, 
 	return application.RepositoryCredentialMaterial{Username: f.username, Password: f.token, ExpiresAt: f.expiresAt}, f.supplyError
 }
 
-type repositoryExecution struct{}
-
-func (repositoryExecution) StartExecution(context.Context, domain.StartExecutionRequest) error {
-	return nil
+// readyWork applies its execution's readiness report to the Work's start.
+func readyWork(t *testing.T, work *domain.AgentWork) {
+	t.Helper()
+	_, err := work.ApplyExecutionReport(domain.ExecutionReady{WorkID: work.ID, StartAdmittedAt: work.HarnessProcess.StartingSince})
+	require.NoError(t, err)
+	require.Equal(t, domain.WorkWorking, work.State)
 }
-func (repositoryExecution) StopExecution(context.Context, string, string) error { return nil }
-func (repositoryExecution) ReclaimCompute(context.Context, string) error        { return nil }
-func (repositoryExecution) RetireFencedRun(context.Context, string) error       { return nil }
 
 func availableAuthorizations(withoutAuthorization ...bool) []domain.PersonalAuthorization {
 	if len(withoutAuthorization) > 0 && withoutAuthorization[0] {
@@ -173,5 +171,3 @@ func availableAuthorizations(withoutAuthorization ...bool) []domain.PersonalAuth
 	}
 	return []domain.PersonalAuthorization{{OwnerUserID: "owner", AuthorizationID: "b5f00000-0000-4000-8000-000000000382", Provider: "github", Service: "github"}}
 }
-
-func (repositoryExecution) CancelRunningTurn(context.Context, string) error { return nil }

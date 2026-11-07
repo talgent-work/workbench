@@ -32,22 +32,22 @@ const computerWorksPage = 100
 // re-reads Dispatcher's attachment to its sandbox instead
 // (recoverAttachment).
 type ComputerReachHandler struct {
-	now       func() time.Time
-	sessions  domain.AgentWorkRepository
-	computers ComputerDescriptionPort
-	works     ComputerWorks
-	execution ExecutionRequestsFactory
-	processes ProcessObservationPort
-	buffer    InputBufferPort
-	places    presenceReads
-	logger    *slog.Logger
+	now          func() time.Time
+	sessions     domain.AgentWorkRepository
+	computers    ComputerPort
+	works        ComputerWorks
+	executions   domain.AgentExecutionRepository
+	coordination *ExecutionCoordination
+	buffer       RunningHarnessPort
+	places       presenceReads
+	logger       *slog.Logger
 }
 
-func NewComputerReachHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerDescriptionPort, works ComputerWorks, execution ExecutionRequestsFactory, processes ProcessObservationPort, buffer InputBufferPort, logger *slog.Logger) *ComputerReachHandler {
+func NewComputerReachHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerPort, works ComputerWorks, executions domain.AgentExecutionRepository, coordination *ExecutionCoordination, buffer RunningHarnessPort, logger *slog.Logger) *ComputerReachHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ComputerReachHandler{now: now, sessions: sessions, computers: computers, works: works, execution: execution, processes: processes, buffer: buffer, places: presenceReads{read: map[string]presenceRead{}}, logger: logger}
+	return &ComputerReachHandler{now: now, sessions: sessions, computers: computers, works: works, executions: executions, coordination: coordination, buffer: buffer, places: presenceReads{read: map[string]presenceRead{}}, logger: logger}
 }
 
 // presenceShared is how long one read of a Computer's Presence serves the
@@ -153,16 +153,12 @@ func (h *ComputerReachHandler) applyTo(ctx context.Context, workID string, place
 		if err != nil {
 			return err
 		}
-		requests := h.execution()
 		var changed bool
-		if changed, err = h.apply(ctx, work, place, requests); err != nil || !changed {
+		if changed, err = h.apply(ctx, work, place); err != nil || !changed {
 			return err
 		}
 		if err = h.sessions.Save(ctx, work); !errors.Is(err, domain.ErrConcurrentModification) {
-			if err != nil {
-				return err
-			}
-			return requests.Send(ctx)
+			return err
 		}
 	}
 	return err
@@ -173,14 +169,18 @@ func (h *ComputerReachHandler) applyTo(ctx context.Context, workID string, place
 // Managed Work whose run may still be on its machine asks its Computer's
 // Presence, sharing a recent read of its Computer with the other Works on
 // it; a Cloud Work follows Dispatcher's attachment.
-func (h *ComputerReachHandler) recover(ctx context.Context, work *domain.AgentWork, requests ExecutionRequests) (bool, error) {
+func (h *ComputerReachHandler) recover(ctx context.Context, work *domain.AgentWork) (bool, error) {
 	if h == nil {
 		return false, nil
 	}
 	if !work.OnManagedComputer() {
-		return h.recoverAttachment(ctx, work, requests)
+		return h.recoverAttachment(ctx, work)
 	}
-	if !work.ObservesEnvironment() {
+	queued, err := h.startQueued(ctx, work)
+	if err != nil {
+		return false, err
+	}
+	if !work.ObservesEnvironment(queued) {
 		return false, nil
 	}
 	place, err := h.describe(ctx, work.ComputerID, false)
@@ -190,13 +190,34 @@ func (h *ComputerReachHandler) recover(ctx context.Context, work *domain.AgentWo
 	if !place.Managed || place.Removed {
 		return false, nil
 	}
-	return h.apply(ctx, work, place, requests)
+	return h.applyQueued(ctx, work, place, queued)
+}
+
+// startQueued is the supplied fact that the Work's start still waits for its
+// Desk, which only a Starting Work's execution can say. A recovery wired
+// without Computer reach observes no Presence, so the fact decides nothing
+// there.
+func (h *ComputerReachHandler) startQueued(ctx context.Context, work *domain.AgentWork) (bool, error) {
+	if h == nil || work.State != domain.WorkStarting {
+		return false, nil
+	}
+	return startQueued(ctx, h.executions, work)
 }
 
 // apply records or ends the Work's Disconnection from its Computer's
 // Presence, then stops it beyond reach when its Disconnection has lasted the
 // Disconnection timeout.
-func (h *ComputerReachHandler) apply(ctx context.Context, work *domain.AgentWork, place ComputerDescription, requests ExecutionRequests) (bool, error) {
+func (h *ComputerReachHandler) apply(ctx context.Context, work *domain.AgentWork, place ComputerDescription) (bool, error) {
+	queued, err := h.startQueued(ctx, work)
+	if err != nil {
+		return false, err
+	}
+	return h.applyQueued(ctx, work, place, queued)
+}
+
+// applyQueued is apply with the supplied fact that the Work's start still
+// waits for its Desk already read.
+func (h *ComputerReachHandler) applyQueued(ctx context.Context, work *domain.AgentWork, place ComputerDescription, queued bool) (bool, error) {
 	if !work.OnManagedComputer() {
 		return false, nil
 	}
@@ -212,7 +233,7 @@ func (h *ComputerReachHandler) apply(ctx context.Context, work *domain.AgentWork
 			since = h.now()
 		}
 	}
-	recorded, err := work.RecordDisconnection(since)
+	recorded, err := work.RecordDisconnection(since, queued)
 	if err != nil {
 		return false, err
 	}
@@ -220,8 +241,8 @@ func (h *ComputerReachHandler) apply(ctx context.Context, work *domain.AgentWork
 	if err != nil {
 		return recorded, err
 	}
-	stopped, err := work.StopBeyondReach(ctx, h.now(), pending, requests)
-	return recorded || stopped, err
+	stopped := work.StopBeyondReach(h.now(), pending)
+	return recorded || stopped, nil
 }
 
 // inputAwaits supplies the buffered-input fact only to a Work whose

@@ -20,7 +20,6 @@ import (
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
 	"go.uber.org/fx"
 	"google.golang.org/protobuf/proto"
@@ -39,9 +38,9 @@ import (
 func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	ctx := context.Background()
 	dsn := mysqltest.Database(t)
-	db, err := xorm.NewEngine("mysql", dsn)
+	observer, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	require.NoError(t, db.Close())
+	t.Cleanup(func() { _ = observer.Close() })
 
 	port := &sessionCommandRecorder{}
 	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
@@ -55,8 +54,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
-			fx.Provide(func() domain.ExecutionPort { return port }),
-			fx.Provide(func() command.InputBufferPort { return port }),
+			fx.Provide(func() command.RunningHarnessPort { return port }),
 		)
 		require.NoError(t, app.Err())
 		require.NoError(t, app.Start(ctx))
@@ -238,7 +236,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 	located, err := locateProjectWork(projectOwner)
 	require.NoError(t, err)
 	projectWorkID := located.WorkId
-	require.Len(t, port.startRequests(), 2, "employee and project Work creation each admit initial execution")
+	awaitLaunches(t, observer, 2, "employee and project Work creation each admit initial execution")
 	stop()
 	client, _ = startModule()
 	located, err = locateProjectWork(projectOwner)
@@ -280,15 +278,12 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 		require.True(t, proto.Equal(homes[i], definition.HomeBinding))
 		require.Equal(t, "Follow the authorized task.", definition.Capabilities.Prompt)
 	}
-	observer, err := xorm.NewEngine("mysql", dsn)
-	require.NoError(t, err)
 	rows, err := observer.QueryString("SELECT COUNT(*) AS total FROM agent_definition WHERE scope_kind='project' AND scope_ref='fresh-project'")
 	require.NoError(t, err)
 	require.Equal(t, "1", rows[0]["total"], "concurrent initialization creates one definition per purpose")
 	rows, err = observer.QueryString("SELECT COUNT(*) AS total FROM agent_session WHERE agent_id = ?", fresh["project_coordination"].AgentId)
 	require.NoError(t, err)
 	require.Equal(t, "1", rows[0]["total"], "reuse after restart creates no duplicate Work")
-	require.NoError(t, observer.Close())
 	missingEmployee := &agentprivatev1.GetAgentDefinitionForPurposeRequest{UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "never-started"}, Purpose: "work"}
 	missingEmployeeCtx, missingEmployeeInfo := connect.NewClientContext(ctx)
 	missingEmployeeInfo.RequestHeader().Set("Authorization", "Bearer control")

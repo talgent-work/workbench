@@ -9,13 +9,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 func attachment(kind command.ExecutionFeedbackKind, workID, processID string, since time.Time) command.ExecutionFeedback {
 	return command.ExecutionFeedback{Kind: kind, WorkID: workID, ProcessID: processID, DetachedSince: since}
+}
+
+// releaseRequests counts the committed requests that the Work's execution
+// retire and release its compute.
+func releaseRequests(w *world) int {
+	return w.works.committedOf(domain.EventKindWorkComputeReleaseRequested)
+}
+
+// retireUnreached retires the run its Work stopped beyond reach and confirms
+// its release.
+func retireUnreached(t *testing.T, w *world) {
+	t.Helper()
+	require.NoError(t, w.coordination.RetireExecution(context.Background(), w.work().ID))
+	require.Equal(t, domain.RetiredUnreached, w.execution(t).Retirement, "the run is retired without reaching its process")
+	w.release(t)
 }
 
 // Dispatcher's loss and return of its attachment record and end a Cloud
@@ -24,12 +37,11 @@ func attachment(kind command.ExecutionFeedbackKind, workID, processID string, si
 // Work's Disconnection follows its Computer's Presence instead.
 func TestDispatcherAttachmentRecordsAndEndsACloudWorksDisconnection(t *testing.T) {
 	ctx := context.Background()
-	store := &feedbackSessionStore{session: runningSession(t)}
-	port := &feedbackPort{}
-	handler := feedbackHandler(store, &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessRunning}}, port)
+	w := runningWorld(t)
+	store, handler := w.works, w.feedback()
 	id := store.session.ID
-	lost := time.Now().Add(-time.Minute)
-	store.session.HarnessProcess.StartingSince = lost.Add(-time.Minute)
+	w.advance(2 * time.Minute)
+	lost := w.now().Add(-time.Minute)
 
 	require.NoError(t, handler.Handle(ctx, attachment(command.AttachmentLost, id, "process", lost)))
 	require.Equal(t, lost.UTC(), store.session.DisconnectedSince)
@@ -44,10 +56,10 @@ func TestDispatcherAttachmentRecordsAndEndsACloudWorksDisconnection(t *testing.T
 	require.True(t, store.session.Disconnected(), "a late return of an earlier loss keeps this one")
 	require.NoError(t, handler.Handle(ctx, attachment(command.AttachmentReturned, id, "process", lost)))
 	require.False(t, store.session.Disconnected())
-	require.NoError(t, handler.Handle(ctx, attachment(command.AttachmentLost, id, "earlier", time.Now())))
+	require.NoError(t, handler.Handle(ctx, attachment(command.AttachmentLost, id, "earlier", w.now())))
 	require.False(t, store.session.Disconnected(), "another process's loss changes nothing")
 	require.Equal(t, domain.WorkWorking, store.session.State)
-	require.Zero(t, port.reclaims)
+	require.Zero(t, releaseRequests(w))
 
 	require.ErrorIs(t, handler.Handle(ctx, attachment(command.AttachmentLost, id, "process", time.Time{})), domain.ErrInvalidWork)
 
@@ -57,23 +69,21 @@ func TestDispatcherAttachmentRecordsAndEndsACloudWorksDisconnection(t *testing.T
 }
 
 // A loss reported past the Disconnection timeout stops the Cloud Work by
-// reclaiming its sandbox; the release confirmation makes it Stopped.
+// retiring its execution; the release confirmation makes it Stopped.
 func TestALossPastTheTimeoutReclaimsTheSandbox(t *testing.T) {
 	ctx := context.Background()
-	store := &feedbackSessionStore{session: runningSession(t)}
-	port := &feedbackPort{}
-	processes := &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessRunning}}
-	handler := feedbackHandler(store, processes, port)
-	lost := time.Now().Add(-domain.DisconnectionTimeout - time.Second)
-	store.session.HarnessProcess.StartingSince = lost.Add(-time.Minute)
+	w := runningWorld(t)
+	store := w.works
+	w.advance(domain.DisconnectionTimeout + 2*time.Minute)
+	lost := w.now().Add(-domain.DisconnectionTimeout - time.Second)
 
-	require.NoError(t, handler.Handle(ctx, attachment(command.AttachmentLost, store.session.ID, "process", lost)))
+	require.NoError(t, w.feedback().Handle(ctx, attachment(command.AttachmentLost, store.session.ID, "process", lost)))
 	require.Equal(t, domain.WorkStopping, store.session.State)
 	require.Equal(t, domain.StopReasonDisconnected, store.session.StopReason)
-	require.Equal(t, 1, port.reclaims)
+	require.Equal(t, 1, releaseRequests(w))
+	require.Empty(t, store.stopRequests(), "a process beyond reach is not asked to exit")
 
-	processes.observation = domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true}
-	require.NoError(t, handler.Handle(ctx, command.ExecutionFeedback{Kind: command.ComputeReclaimed, WorkID: store.session.ID}))
+	retireUnreached(t, w)
 	require.Equal(t, domain.WorkStopped, store.session.State)
 	require.False(t, store.session.Disconnected())
 }
@@ -81,43 +91,40 @@ func TestALossPastTheTimeoutReclaimsTheSandbox(t *testing.T) {
 // Recovery re-reads Dispatcher's attachment of a disconnected Cloud Work: an
 // attached one ends a Disconnection whose return report was lost, while one
 // Dispatcher observes detached stays disconnected and is stopped beyond reach
-// past the timeout, its sandbox reclaimed.
+// past the timeout, its execution retired.
 func TestRecoveryFollowsDispatchersAttachment(t *testing.T) {
 	ctx := context.Background()
-	store := &feedbackSessionStore{session: runningSession(t)}
-	port := &feedbackPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
-	processes := &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessRunning}, attachment: command.AttachmentHeld}
-	clock := &testClock{at: time.Now()}
-	reach := command.NewComputerReachHandler(clock.now, store, &presencePlace{}, computerWorks{id: store.session.ID}, factory, processes, &commandtest.InputBuffer{}, nil)
-	recover := command.NewRecoverWorkHandler(clock.now, store, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
+	w := runningWorld(t)
+	store := w.works
+	w.harness.Observation = command.WorkProcessObservation{Running: true, Attachment: command.AttachmentHeld}
+	recover := recoverOver(w, w.now, reachOver(w, w.now, &presencePlace{}))
 
-	calls := processes.calls
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
-	require.Equal(t, calls, processes.calls, "a connected Work's attachment is not asked for")
+	require.Empty(t, w.harness.Observed, "a connected Work's attachment is not asked for")
 
-	_, err := store.session.RecordDisconnection(clock.at)
+	_, err := store.session.RecordDisconnection(w.now(), false)
 	require.NoError(t, err)
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
+	require.Equal(t, []string{"process"}, w.harness.Observed, "the launched process's attachment is read")
 	require.False(t, store.session.Disconnected(), "an attached sandbox ends the Disconnection")
 
-	_, err = store.session.RecordDisconnection(clock.at)
+	_, err = store.session.RecordDisconnection(w.now(), false)
 	require.NoError(t, err)
-	processes.attachment = command.AttachmentDetached
+	w.harness.Observation.Attachment = command.AttachmentDetached
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
 	require.True(t, store.session.Disconnected())
 	require.Equal(t, domain.WorkWorking, store.session.State, "a short loss changes nothing")
 
-	clock.at = clock.at.Add(domain.DisconnectionTimeout)
+	w.advance(domain.DisconnectionTimeout)
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
 	require.Equal(t, domain.WorkStopping, store.session.State)
 	require.Equal(t, domain.StopReasonDisconnected, store.session.StopReason)
-	require.Positive(t, port.reclaims)
-	require.Zero(t, port.retires)
+	require.Equal(t, 1, releaseRequests(w))
+	require.Empty(t, store.stopRequests(), "a process beyond reach is not asked to exit")
 
-	calls = processes.calls
+	observed := len(w.harness.Observed)
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
-	require.Equal(t, calls, processes.calls, "a run reclaimed beyond reach completes on its release")
+	require.Len(t, w.harness.Observed, observed, "a run stopped beyond reach completes on its release")
 }
 
 // Past the timeout, only an observation that succeeds and says detached
@@ -127,54 +134,50 @@ func TestRecoveryFollowsDispatchersAttachment(t *testing.T) {
 // running counts as detached.
 func TestRecoveryStopsBeyondReachOnlyOnAnObservedLoss(t *testing.T) {
 	ctx := context.Background()
-	store := &feedbackSessionStore{session: runningSession(t)}
-	port := &feedbackPort{}
-	factory := infrastructure.NewExecutionRequestsFactory(port)
+	w := runningWorld(t)
+	store := w.works
 	outage := errors.New("dispatcher unavailable")
-	processes := &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessRunning}, observeErr: outage}
-	clock := &testClock{at: time.Now()}
-	reach := command.NewComputerReachHandler(clock.now, store, &presencePlace{}, computerWorks{id: store.session.ID}, factory, processes, &commandtest.InputBuffer{}, nil)
-	recover := command.NewRecoverWorkHandler(clock.now, store, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{}, nil, reach)
-	store.session.HarnessProcess.StartingSince = clock.at.Add(-time.Hour)
-	_, err := store.session.RecordDisconnection(clock.at.Add(-domain.DisconnectionTimeout))
+	w.harness.Observation = command.WorkProcessObservation{Running: true}
+	w.harness.ObserveErr = outage
+	recover := recoverOver(w, w.now, reachOver(w, w.now, &presencePlace{}))
+	// Past the Disconnection timeout, well within the idle timeout.
+	w.advance(domain.DisconnectionTimeout + 2*time.Minute)
+	_, err := store.session.RecordDisconnection(w.now().Add(-domain.DisconnectionTimeout), false)
 	require.NoError(t, err)
 
 	require.ErrorIs(t, recover.Handle(ctx, store.session.ID), outage)
 	require.Equal(t, domain.WorkWorking, store.session.State, "an unread attachment stops nothing")
 	require.True(t, store.session.Disconnected())
-	require.Zero(t, port.reclaims)
+	require.Zero(t, releaseRequests(w))
 
-	processes.observeErr = nil
-	processes.attachment = command.AttachmentUnreported
+	w.harness.ObserveErr = nil
+	w.harness.Observation.Attachment = command.AttachmentUnreported
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
 	require.Equal(t, domain.WorkWorking, store.session.State, "an unreported attachment is not a loss")
 	require.True(t, store.session.Disconnected(), "nor a return")
-	require.Zero(t, port.reclaims)
+	require.Zero(t, releaseRequests(w))
 
-	processes.observation = domain.ProcessObservation{State: domain.ProcessPending}
+	w.harness.Observation = command.WorkProcessObservation{}
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
 	require.Equal(t, domain.WorkStopping, store.session.State, "a process Dispatcher does not run is detached")
-	require.Positive(t, port.reclaims)
+	require.Equal(t, 1, releaseRequests(w))
 }
 
-// A return reported after the run was reclaimed beyond reach leaves its
+// A return reported after the run was stopped beyond reach leaves its
 // Disconnection shown until the release confirmation ends the run.
 func TestAReturnAfterReclamationKeepsTheDisconnection(t *testing.T) {
 	ctx := context.Background()
-	store := &feedbackSessionStore{session: runningSession(t)}
-	port := &feedbackPort{}
-	processes := &observedProcess{observation: domain.ProcessObservation{State: domain.ProcessRunning}}
-	handler := feedbackHandler(store, processes, port)
-	lost := time.Now().Add(-domain.DisconnectionTimeout - time.Second)
-	store.session.HarnessProcess.StartingSince = lost.Add(-time.Minute)
+	w := runningWorld(t)
+	store, handler := w.works, w.feedback()
+	w.advance(domain.DisconnectionTimeout + 2*time.Minute)
+	lost := w.now().Add(-domain.DisconnectionTimeout - time.Second)
 	require.NoError(t, handler.Handle(ctx, attachment(command.AttachmentLost, store.session.ID, "process", lost)))
 	require.Equal(t, domain.WorkStopping, store.session.State)
 
 	require.NoError(t, handler.Handle(ctx, attachment(command.AttachmentReturned, store.session.ID, "process", lost)))
 	require.Equal(t, lost.UTC(), store.session.DisconnectedSince, "the reclaimed run stays disconnected")
 
-	processes.observation = domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true}
-	require.NoError(t, handler.Handle(ctx, command.ExecutionFeedback{Kind: command.ComputeReclaimed, WorkID: store.session.ID}))
+	retireUnreached(t, w)
 	require.Equal(t, domain.WorkStopped, store.session.State)
 	require.False(t, store.session.Disconnected())
 }

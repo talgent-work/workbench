@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -18,24 +19,27 @@ import (
 	"xorm.io/xorm"
 )
 
-func completionHandler(db *xorm.Engine, initial command.InitialExecutionReader) *command.CloseWorkHandler {
-	return command.NewCloseWorkHandler(infrastructure.NewAgentWorkRepository(db, time.Now), infrastructure.NewWorkAuthorizer(db), infrastructure.NewExecutionRequestsFactory(executionPort{}), initial, infrastructure.NewExecutionQueryRepository(db), infrastructure.NewContinuationRequests(db, time.Now), &commandtest.InputBuffer{})
+func completionHandler(db *xorm.Engine) *command.CloseWorkHandler {
+	return completionHandlerOver(db, infrastructure.NewAgentWorkRepository(db, time.Now))
+}
+
+func completionHandlerOver(db *xorm.Engine, works domain.AgentWorkRepository) *command.CloseWorkHandler {
+	return command.NewCloseWorkHandler(works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), executionsOf(db), &commandtest.InputBuffer{})
 }
 
 // Closing a running Work for a completed Subject waits for its first input and
 // its Turn, stops it, and closes it once stopped, across reconnects.
 func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testing.T) {
 	ctx := context.Background()
-	f, ref := runningInputSession(t)
-	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
-	handler := completionHandler(f.db, initial)
-	request := command.WorkControl{SubjectID: "owner", WorkID: ref, RequestID: uuid.NewString()}
-	require.ErrorIs(t, handler.Handle(ctx, request), domain.ErrWorkTransition, "unfinished first input prevents closure")
-	started, err := initial.Get(ctx, ref)
+	f := newWorkCreationFixture(t)
+	ref, err := f.creation(nil, computertest.Checked(startupAuthority{})).Handle(ctx, f.request)
 	require.NoError(t, err)
-	started.InputBuffered = true
-	require.NoError(t, initial.Save(ctx, started))
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, infrastructure.NewExecutionRequestsFactory(executionPort{}), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := newRuns(t, f.db, f.sessions)
+	feedback.ready(ctx, ref)
+	handler := completionHandler(f.db)
+	request := command.WorkControl{SubjectID: "owner", WorkID: ref, RequestID: uuid.NewString()}
+	require.ErrorIs(t, handler.Handle(ctx, request), domain.ErrWorkTransition, "an initial task input not handed off prevents closure")
+	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, ref))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.TurnStarted, ObservationSequence: 10}))
 	require.ErrorIs(t, handler.Handle(ctx, request), domain.ErrTurnActive, "a running Turn prevents the stop closure needs")
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.TurnFinished, ObservationSequence: 20, TurnCompleted: true}))
@@ -47,10 +51,10 @@ func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testin
 	other, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = other.Close() })
-	reconnected := completionHandler(other, infrastructure.NewInitialExecutionRequests(other, time.Now))
+	reconnected := completionHandler(other)
 	require.NoError(t, reconnected.Handle(ctx, request), "a lost response retries the same accepted closure")
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: ref, Kind: command.ExecutionExited}))
-	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{WorkID: ref, Kind: command.ComputeReclaimed}))
+	feedback.release(ctx, ref)
 	stopped, err := f.sessions.Get(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, stopped.State)
@@ -59,19 +63,6 @@ func TestSubjectCompletionClosureStopsTheWorkFirstAndSurvivesReconnect(t *testin
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosed, closed.State)
 	require.Equal(t, request.RequestID, closed.CloseRequestReference)
-}
-
-type initialCompletionBarrier struct {
-	command.InitialExecutionReader
-	afterRead func()
-}
-
-func (r initialCompletionBarrier) Get(ctx context.Context, id string) (command.InitialExecutionRequest, error) {
-	value, err := r.InitialExecutionReader.Get(ctx, id)
-	if err == nil {
-		r.afterRead()
-	}
-	return value, err
 }
 
 func TestCompletionAndRestartShareOneOrder(t *testing.T) {
@@ -83,26 +74,20 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			f, id := runningInputSession(t)
-			initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
-			old, err := initial.Get(ctx, id)
-			require.NoError(t, err)
-			old.InputBuffered = true
-			require.NoError(t, initial.Save(ctx, old))
 			failed, err := f.sessions.Get(ctx, id)
 			require.NoError(t, err)
 			require.NoError(t, failed.ObserveTurn(domain.TurnObservation{Sequence: 1, Completed: true}, false, false, time.Now()))
-			require.NoError(t, failed.RecordExit(ctx, domain.HarnessExit{ExitCode: 1, Reason: "native crash"}, executionPort{}))
-			require.NoError(t, failed.ConfirmComputeReclaimed())
+			reportExit(t, failed, domain.HarnessExit{ExitCode: 1, Reason: "native crash"})
+			reportReleased(t, failed)
 			require.NoError(t, f.sessions.Save(ctx, failed))
 			observed, err := f.sessions.Get(ctx, id)
 			require.NoError(t, err)
 			require.Equal(t, domain.WorkFailed, observed.State)
-			factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
-			restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(startupAuthority{}), factory, f.sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+			restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 			retry := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			request := command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			if startupFirst {
-				handler := completionHandler(f.db, initialCompletionBarrier{InitialExecutionReader: initial, afterRead: func() {
+				handler := completionHandlerOver(f.db, workReadBarrier{AgentWorkRepository: f.sessions, done: new(bool), after: func() {
 					_, err := restart.Handle(ctx, retry)
 					require.NoError(t, err)
 				}})
@@ -110,24 +95,19 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 				actual, err := f.sessions.Get(ctx, id)
 				require.NoError(t, err)
 				require.Equal(t, domain.WorkStarting, actual.State)
-				require.ErrorIs(t, completionHandler(f.db, initial).Handle(ctx, request), domain.ErrWorkTransition)
+				require.ErrorIs(t, completionHandler(f.db).Handle(ctx, request), domain.ErrWorkTransition)
 			} else {
-				require.NoError(t, completionHandler(f.db, initial).Handle(ctx, request))
+				require.NoError(t, completionHandler(f.db).Handle(ctx, request))
 				_, err := restart.Handle(ctx, retry)
 				require.ErrorIs(t, err, domain.ErrWorkTransition)
 				actual, err := f.sessions.Get(ctx, id)
 				require.NoError(t, err)
 				require.Equal(t, domain.WorkClosed, actual.State)
-				retained, err := initial.Get(ctx, id)
-				require.NoError(t, err)
-				require.Equal(t, old.RequestID, retained.RequestID)
 			}
-			retained, err := initial.Get(ctx, id)
-			require.NoError(t, err)
-			require.Equal(t, old.PrepareWorkExecution, retained.PrepareWorkExecution)
-			require.True(t, retained.InputBuffered, "restart and closure cannot replay processed initial input")
 			current, err := f.sessions.Get(ctx, id)
 			require.NoError(t, err)
+			_, pending := current.PendingInitialTaskInput()
+			require.False(t, pending, "restart and closure cannot replay a handed-off initial task input")
 			require.Equal(t, observed.HarnessSessionReference, current.HarnessSessionReference)
 			require.Equal(t, observed.CapabilitySnapshot, current.CapabilitySnapshot)
 		})

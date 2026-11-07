@@ -17,6 +17,7 @@ import (
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
@@ -39,6 +40,7 @@ type workReplyDelivery struct {
 	response  command.InteractionResponse
 }
 type workMessaging struct {
+	command.RunningHarnessPort
 	mu      sync.Mutex
 	inputs  []workInputDelivery
 	replies []workReplyDelivery
@@ -83,24 +85,18 @@ func (m *workMessaging) DropBuffer(context.Context, string) error { return nil }
 func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	initial := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
-	retained, err := initial.Get(ctx, id)
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
-	retained.InputBuffered = true
-	require.NoError(t, initial.Save(ctx, retained))
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(startupAuthority{}), factory, f.sessions, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
-	require.NoError(t, err)
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := newRuns(t, f.db, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
 	messaging := &workMessaging{}
 	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
-		principals := infrastructure.NewWorkAuthorizer(db)
+		principals := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-		admitted := command.NewInputAcceptance(sessions, sessions, messaging)
-		input := command.NewDeliverWorkInputHandler(sessions, principals, admitted, infrastructure.NewInitialExecutionRequests(db, time.Now))
+		admitted := command.NewInputAcceptance(sessions, messaging)
+		input := command.NewDeliverWorkInputHandler(sessions, principals, admitted)
 		reply := command.NewRespondWorkInteractionHandler(sessions, principals, admitted)
 		app := &application.Application{Commands: application.Commands{SendMessage: command.NewSendWorkMessageHandler(principals, input), ReplyToInteraction: command.NewReplyToWorkInteractionHandler(principals, reply)}}
 		handler := connecttest.Handler(func(s *connect.Server) {
@@ -176,9 +172,8 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 	require.Equal(t, reply.UpdatedInputJson, messaging.replies[1].response.UpdatedInputJSON)
 	messaging.mu.Unlock()
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.UserInteractionResolved, WorkID: ref, InteractionID: "question", ObservationSequence: 4}))
-	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutionExited, command.ComputeReclaimed} {
-		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
-	}
+	feedback.exit(ctx, ref)
+	feedback.release(ctx, ref)
 	stopped, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	// Input and a reply to the Work that is no longer running are kept for its

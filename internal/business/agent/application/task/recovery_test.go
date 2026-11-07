@@ -19,11 +19,9 @@ func TestRecoveryTasksAreKeyedByTheObjectTheyRecover(t *testing.T) {
 		payload proto.Message
 		id      func(proto.Message) string
 	}{
-		"allocation":   {agenttask.NewReconcileAllocation, agenttask.ReconcileAllocationType, agenttask.RecoveryQueue, "agent:allocation:id-1", &agenttaskv1.ReconcileAllocationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.ReconcileAllocationTaskV1).GetAllocationId() }},
-		"work":         {agenttask.NewRecoverWork, agenttask.RecoverWorkType, agenttask.RecoveryQueue, "agent:work:id-1", &agenttaskv1.RecoverWorkTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkTaskV1).GetWorkId() }},
-		"continuation": {agenttask.NewRecoverContinuation, agenttask.RecoverContinuationType, agenttask.RecoveryQueue, "agent:continuation:id-1", &agenttaskv1.RecoverContinuationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverContinuationTaskV1).GetWorkId() }},
-		"creation":     {agenttask.NewRecoverWorkCreation, agenttask.RecoverWorkCreationType, agenttask.RecoveryQueue, "agent:creation:id-1", &agenttaskv1.RecoverWorkCreationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkCreationTaskV1).GetRequestId() }},
-		"preparation":  {agenttask.NewPrepareInitialExecution, agenttask.PrepareInitialExecutionType, agenttask.PreparationQueue, "agent:initial-execution:id-1", &agenttaskv1.PrepareInitialExecutionTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.PrepareInitialExecutionTaskV1).GetWorkId() }},
+		"execution": {agenttask.NewReconcileExecution, agenttask.ReconcileExecutionType, agenttask.RecoveryQueue, "agent:execution:id-1", &agenttaskv1.ReconcileExecutionTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.ReconcileExecutionTaskV1).GetExecutionId() }},
+		"long step": {agenttask.NewRunLongExecutionStep, agenttask.RunLongExecutionStepType, agenttask.PreparationQueue, "agent:execution-long-step:id-1", &agenttaskv1.RunLongExecutionStepTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RunLongExecutionStepTaskV1).GetExecutionId() }},
+		"work":      {agenttask.NewRecoverWork, agenttask.RecoverWorkType, agenttask.RecoveryQueue, "agent:work:id-1", &agenttaskv1.RecoverWorkTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkTaskV1).GetWorkId() }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			task, err := tc.build("id-1")

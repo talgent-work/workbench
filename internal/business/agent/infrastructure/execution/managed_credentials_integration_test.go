@@ -6,30 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
-
-// stoppableSessions is the Work's state as credential delivery reads it:
-// working until its stop is admitted.
-type stoppableSessions struct {
-	mu       sync.Mutex
-	stopping bool
-}
-
-func (s *stoppableSessions) Get(_ context.Context, id string) (*domain.AgentWork, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.stopping {
-		return &domain.AgentWork{ID: id, State: domain.WorkStopping, StopRequestReference: "stop-1", HarnessProcess: &domain.HarnessProcess{}}, nil
-	}
-	return &domain.AgentWork{ID: id, State: domain.WorkWorking, HarnessProcess: &domain.HarnessProcess{}}, nil
-}
-
-func (*stoppableSessions) Save(context.Context, *domain.AgentWork) error { return nil }
 
 // A Managed Work on a Model Configuration gets its key and its Gateway
 // credentials only through its machine's local proxy: they are delivered when
@@ -39,17 +20,12 @@ func (*stoppableSessions) Save(context.Context, *domain.AgentWork) error { retur
 func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
-	sessions := &stoppableSessions{}
-	f.provisioning.credentials.works.sessions = sessions
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
 	input.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
 	input.InputSource = domain.WorkInputSource{Reference: "file-space/case-1", SpaceToken: "space-token"}
-	require.NoError(t, f.port.StartExecution(ctx, input))
-	require.NoError(t, submitPending(ctx, f.provisioning))
-	require.NoError(t, connectLive(ctx, f.connections))
-	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
-	require.NoError(t, err)
+	f.inputs.owners = map[string]string{"file-space/case-1": "case-credentials"}
+	record := f.launch(t, f.begin(t, input).ID)
 	require.True(t, record.SandboxReady)
 	require.Equal(t, "harness-handle", record.ProcessID)
 	spec, err := decodeManagedSpecification(record)
@@ -91,8 +67,11 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	require.NoError(t, err)
 	digest, err := authority.(credentialDelivery).modelDigest(record)
 	require.NoError(t, err)
-	require.NotEqual(t, record.ModelCredentialDigest, digest, "the sweep sees the rotation")
-	require.NoError(t, f.recovery.DeliverCredentials(ctx, record.ID))
+	require.NotEqual(t, record.ModelCredentialDigest, digest, "the observation sees the rotation")
+	f.owners.reading = f.reading(t, record)
+	long, err := f.steps.handler.Reconcile(ctx, record.ID)
+	require.NoError(t, err)
+	require.False(t, long)
 	f.relay.mu.Lock()
 	require.Contains(t, string(f.relay.credentials), `"key":"rotated-key"`)
 	require.Equal(t, 2, f.relay.deliveries)
@@ -103,11 +82,14 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 
 	// An admitted stop withdraws the credentials while the process reports
 	// its exit.
-	sessions.mu.Lock()
-	sessions.stopping = true
-	sessions.mu.Unlock()
-	_, err = f.recovery.ReconcileAllocation(ctx, record.ID)
+	run := current(t, f.steps, record.ID)
+	_, err = run.RequestExit(domain.WorkStopRequested{WorkID: run.WorkID, StartAdmittedAt: run.StartAdmittedAt, StopRequestID: "stop-1"})
 	require.NoError(t, err)
+	require.NoError(t, f.steps.executions.Save(ctx, run))
+	_, err = f.steps.handler.Reconcile(ctx, record.ID)
+	require.NoError(t, err)
+	require.True(t, current(t, f.steps, record.ID).Credentials.Withdrawn)
+	require.Equal(t, []string{"stop-1"}, f.steps.harness.Stops, "the process is asked to exit under the Work's stop")
 	f.relay.mu.Lock()
 	defer f.relay.mu.Unlock()
 	require.Nil(t, f.relay.credentials)
@@ -123,12 +105,25 @@ func TestManagedFirstDeliveryNeedsTheModelConfigurationsKey(t *testing.T) {
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
 	input.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
-	require.NoError(t, f.port.StartExecution(ctx, input))
-	require.NoError(t, submitPending(ctx, f.provisioning))
+	begun := f.begin(t, input)
+	// The environment is created, as the reconciliation's submission does,
+	// while the Model Configuration is still provided.
+	run := current(t, f.steps, begun.ID)
+	require.NoError(t, f.steps.environment.PrepareCreation(ctx, run, domain.SandboxMounts{}))
+	require.True(t, run.RecordSubmission())
+	require.NoError(t, f.steps.executions.Save(ctx, run))
+	run = current(t, f.steps, begun.ID)
+	answer, err := f.steps.environment.SubmitCreation(ctx, run)
+	require.NoError(t, err)
+	_, err = run.RecordCreationAnswer(answer)
+	require.NoError(t, err)
+	require.NoError(t, f.steps.executions.Save(ctx, run))
 	withdrawn, err := NewModelCatalog([]ModelTemplate{fixtureModels().Provided()[0].Template}, []ModelConfiguration{{ID: "other", Name: "other", Template: "fixture-template", APIKey: "other-key"}})
 	require.NoError(t, err)
 	f.provisioning.managed.models = withdrawn
-	require.ErrorIs(t, connectLive(ctx, f.connections), errModelConfigurationNotProvided)
+	long, err := f.steps.handler.Reconcile(ctx, begun.ID)
+	require.ErrorIs(t, err, errModelConfigurationNotProvided)
+	require.False(t, long, "nothing is prepared before the first delivery")
 	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.False(t, record.SandboxReady)

@@ -11,14 +11,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// ComputerReconciliationPort reconciles a Managed Computer that is reachable
-// again: the execution port's Managed realization ends the processes of Works
-// no longer running there and removes the files of Works gone from it before
-// anything new starts on it (Computer model: Reconciliation).
-type ComputerReconciliationPort interface {
-	ReconcileComputer(ctx context.Context, computerID string) error
-}
-
 // ReachResumeWorks lists, in identity order after afterID, a Computer's
 // Stopped Works marked ReachResumeDue.
 type ReachResumeWorks interface {
@@ -33,26 +25,24 @@ type ReachResumeWorks interface {
 // mark. AgentWork decides what the mark becomes; this handler only supplies
 // the facts: the Work's buffered input and its Computer's answer.
 type ComputerReconnectionHandler struct {
-	computers      ComputerDescriptionPort
-	sessions       domain.AgentWorkRepository
-	agents         domain.AgentDefinitionRepository
-	works          ReachResumeWorks
-	buffer         InputBufferPort
-	resume         *ResumeWorkHandler
-	reconciliation ComputerReconciliationPort
-	logger         *slog.Logger
+	computers    ComputerPort
+	sessions     domain.AgentWorkRepository
+	agents       domain.AgentDefinitionRepository
+	works        ReachResumeWorks
+	buffer       RunningHarnessPort
+	resume       *ResumeWorkHandler
+	environments ExecutionEnvironmentPort
+	logger       *slog.Logger
 }
 
-// NewComputerReconnectionHandler reconciles through reconciliation, which is
-// nil for a deployment that reaches no Managed Computer.
-func NewComputerReconnectionHandler(computers ComputerDescriptionPort, sessions domain.AgentWorkRepository, agents domain.AgentDefinitionRepository, works ReachResumeWorks, buffer InputBufferPort, resume *ResumeWorkHandler, reconciliation ComputerReconciliationPort, logger *slog.Logger) (*ComputerReconnectionHandler, error) {
-	if computers == nil || sessions == nil || agents == nil || works == nil || buffer == nil || resume == nil {
-		return nil, errors.New("agent: Computer, Works, definitions, input buffer and Resume are required to apply a reconnection")
+func NewComputerReconnectionHandler(computers ComputerPort, sessions domain.AgentWorkRepository, agents domain.AgentDefinitionRepository, works ReachResumeWorks, buffer RunningHarnessPort, resume *ResumeWorkHandler, environments ExecutionEnvironmentPort, logger *slog.Logger) (*ComputerReconnectionHandler, error) {
+	if computers == nil || sessions == nil || agents == nil || works == nil || buffer == nil || resume == nil || environments == nil {
+		return nil, errors.New("agent: Computer, Works, definitions, input buffer, Resume and execution environments are required to apply a reconnection")
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ComputerReconnectionHandler{computers: computers, sessions: sessions, agents: agents, works: works, buffer: buffer, resume: resume, reconciliation: reconciliation, logger: logger}, nil
+	return &ComputerReconnectionHandler{computers: computers, sessions: sessions, agents: agents, works: works, buffer: buffer, resume: resume, environments: environments, logger: logger}, nil
 }
 
 // Reconnected reconciles a Managed Computer that is reachable now and retries
@@ -68,10 +58,8 @@ func (h *ComputerReconnectionHandler) Reconnected(ctx context.Context, computerI
 	var failures []error
 	// A Resume retried below starts only after the reconciliation, which its
 	// start performs itself when this one failed.
-	if h.reconciliation != nil {
-		if err := h.reconciliation.ReconcileComputer(ctx, computerID); err != nil {
-			failures = append(failures, fmt.Errorf("reconcile computer %s: %w", computerID, err))
-		}
+	if err := h.environments.ReconcileComputer(ctx, computerID); err != nil {
+		failures = append(failures, fmt.Errorf("reconcile computer %s: %w", computerID, err))
 	}
 	after := ""
 	for {
@@ -143,7 +131,7 @@ func (h *ComputerReconnectionHandler) retryResume(ctx context.Context, workID st
 	// that owner, who therefore asks for the retry.
 	request := StartWork{SubjectID: agent.WorkPrincipal(), WorkID: work.ID, RequestID: reachResumeRequestID(work)}
 	err = h.resume.Handle(ctx, request)
-	if err == nil || continuationRejection(err) == "" {
+	if err == nil || !refusedStart(err) {
 		return err
 	}
 	return h.refused(ctx, workID, err)

@@ -1,32 +1,26 @@
 package execution
 
 import (
-	"context"
 	"encoding/json"
+	"slices"
 
 	"github.com/samber/oops"
+
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// checkoutPlan maps the current start's checkout plan for its preparation
-// process. Nil means nothing to check out.
-func (p *Provisioning) checkoutPlan(ctx context.Context, workID string) ([]repositoryCheckout, error) {
-	request, found, err := p.initialRequest(ctx, workID)
-	if err != nil || !found {
-		return nil, err
+// checkoutPlan is what the start's preparation process checks out: each
+// repository its LaunchSpecification leaves to it, at the target the Work's
+// selection plans for it. Nil means nothing to check out.
+func checkoutPlan(launch domain.LaunchSpecification) []repositoryCheckout {
+	var plan []repositoryCheckout
+	for _, checkout := range command.PlanCheckouts(launch.WorkID, launch.RepositorySelection) {
+		if slices.Contains(launch.RemainingRepositories, checkout.RepoID) {
+			plan = append(plan, repositoryCheckout{RepositoryID: checkout.RepoID, CloneURL: checkout.CloneURL, BaseBranch: checkout.BaseBranch, WorkBranch: checkout.WorkBranch, TargetPath: checkout.TargetPath})
+		}
 	}
-	checkouts, pending := request.CurrentCheckoutPlan()
-	if pending {
-		return nil, command.ErrInitialExecutionPending
-	}
-	if checkouts == nil {
-		return nil, nil
-	}
-	plan := make([]repositoryCheckout, 0, len(checkouts))
-	for _, checkout := range checkouts {
-		plan = append(plan, repositoryCheckout{RepositoryID: checkout.RepoID, CloneURL: checkout.CloneURL, BaseBranch: checkout.BaseBranch, WorkBranch: checkout.WorkBranch, TargetPath: checkout.TargetPath})
-	}
-	return plan, nil
+	return plan
 }
 
 func (r allocationRecord) checkoutPlan() ([]repositoryCheckout, error) {

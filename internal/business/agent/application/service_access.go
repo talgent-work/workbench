@@ -14,9 +14,6 @@ type ServiceCredentialMaterial struct {
 	Token     string
 	ExpiresAt time.Time
 }
-type ServiceCredentialPort interface {
-	SupplyServiceCredential(context.Context, ServiceCredentialRequest) (ServiceCredentialMaterial, error)
-}
 
 // ServiceCredentialUnavailable is Marketplace's refusal to supply a credential.
 // Temporary means Marketplace confirmed nothing about the authorization, as
@@ -51,10 +48,10 @@ type ServiceAccessResult struct {
 
 type ServiceAccess struct {
 	works  domain.AgentWorkRepository
-	supply ServiceCredentialPort
+	supply CredentialSupplyPort
 }
 
-func NewServiceAccess(works domain.AgentWorkRepository, supply ServiceCredentialPort) *ServiceAccess {
+func NewServiceAccess(works domain.AgentWorkRepository, supply CredentialSupplyPort) *ServiceAccess {
 	return &ServiceAccess{works: works, supply: supply}
 }
 

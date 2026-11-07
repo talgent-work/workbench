@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -21,15 +22,15 @@ import (
 	"xorm.io/xorm"
 )
 
-// The HTTP/application/MySQL query distinguishes admitted startup failure,
-// unrelated pending creation, explicit Restart and acknowledged cleanup.
-func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
+// The HTTP/application/MySQL query derives a Work's start requests from its
+// facts: its creation request, a held initial task input, its latest Restart
+// and its closure.
+func TestSessionStartupRPCDerivesCreationRestartAndClosure(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db), query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), &creationCatalog{}, creationConnections{}, f.sessions, computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}))
-	sessionID, err := create.Handle(ctx, f.request.Creation)
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, deploymentModels()))
+	sessionID, err := create.Handle(ctx, f.request)
 	require.NoError(t, err)
-	store := infrastructure.NewInitialExecutionRequests(f.db, time.Now)
 	client := startupRPCClient(t, f.db)
 	read := func() *agentprivatev1.GetWorkStartupResponse {
 		t.Helper()
@@ -42,113 +43,79 @@ func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 		return result
 	}
 	initial := read()
-	require.Equal(t, f.request.ID, initial.GetInitialRequestId())
+	require.Equal(t, f.request.RequestID, initial.GetInitialRequestId())
 	require.True(t, initial.GetCreationPending())
-	require.False(t, initial.GetRejected())
+	require.Empty(t, initial.GetContinuationRequestId())
+	require.False(t, initial.GetRejected(), "nothing records a rejected first start")
 	require.False(t, initial.GetCleanupConfirmed())
+	require.False(t, initial.GetContinuationPending())
 
-	require.NoError(t, f.requests.ConfirmWorkCreation(ctx, f.request.ID, sessionID))
-	require.True(t, read().GetCreationPending(), "association confirmation alone does not finish initial-input handoff")
-	require.NoError(t, f.requests.CompleteWorkCreation(ctx, f.request.ID))
-	require.False(t, read().GetCreationPending())
-	require.False(t, read().GetRejected(), "an unresolved initial startup must not appear rejected")
-	retained, err := store.Get(ctx, sessionID)
-	require.NoError(t, err)
-	retained.Rejected, retained.StartFailed = true, true
-	require.NoError(t, store.Save(ctx, retained))
-	require.True(t, read().GetRejected())
-	require.False(t, read().GetCleanupConfirmed(), "rejection cannot stand in for completed resource release")
+	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, sessionID))
+	require.False(t, read().GetCreationPending(), "the handed-off initial task input leaves the Work")
 	session, err := f.sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
-	require.NoError(t, session.RecordExit(ctx, domain.HarnessExit{ExitCode: 1, Reason: "startup failed"}, executionPort{}))
-	require.NoError(t, session.ConfirmComputeReclaimed())
+	reportExit(t, session, domain.HarnessExit{ExitCode: 1, Reason: "startup failed"})
+	reportReleased(t, session)
 	require.NoError(t, f.sessions.Save(ctx, session))
 	originalCapabilities := session.CapabilitySnapshot.Clone()
 	originalContext := session.HarnessSessionReference
 
-	// A separate creation request may be retained before association is known.
-	// Its empty Work ID does not remove the pending obligation for this Subject.
-	retryCreation := f.request.Creation
-	retryInput := *retryCreation.InitialExecution
-	retryInput.RequestID, retryInput.Input.ID = uuid.NewString(), uuid.NewString()
-	retryCreation.InitialExecution = &retryInput
-	retryCreation.RequestID = retryInput.RequestID
-	retry, err := command.NewWorkCreationRequest(retryCreation)
-	require.NoError(t, err)
-	retry, err = f.requests.RetainWorkCreation(ctx, retry)
-	require.NoError(t, err)
-	require.Empty(t, retry.WorkID)
-	withRetry := read()
-	require.True(t, withRetry.GetCreationPending(), "an unbound new request for the same binding is still pending")
-	require.Equal(t, f.request.ID, withRetry.GetInitialRequestId(), "the query must not invent a handoff")
-	require.True(t, withRetry.GetRejected())
-	require.False(t, withRetry.GetCleanupConfirmed())
-
-	// Rebuild the read application on another physical connection. Pending
-	// startup must remain visible without an in-memory cache or Work row.
+	// Rebuild the read application on another physical connection: the facts
+	// come from the Work's own rows, not an in-memory cache.
 	other, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = other.Close() })
 	client = startupRPCClient(t, other)
-	require.True(t, read().GetCreationPending())
-	_, err = f.requests.CancelWorkCreation(ctx, retry.ID)
-	require.NoError(t, err)
-	require.False(t, read().GetCreationPending(), "a cancelled request owes nothing more")
+	withOther := read()
+	require.False(t, withOther.GetCreationPending())
+	require.Equal(t, f.request.RequestID, withOther.GetInitialRequestId())
+	require.False(t, withOther.GetCleanupConfirmed())
 
-	// Restart retains the original input identity and resets the failed
-	// preparation; it does not replace the initial receipt with a new task.
-	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(startupAuthority{}), infrastructure.NewExecutionRequestsFactory(executionPort{}), f.sessions, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
-	_, err = restart.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: sessionID, RequestID: uuid.NewString()})
+	// Restart keeps the creation request and names its own request.
+	restartID := uuid.NewString()
+	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	_, err = restart.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: sessionID, RequestID: restartID})
 	require.NoError(t, err)
 	afterRestart := read()
-	require.Equal(t, f.request.ID, afterRestart.GetInitialRequestId())
-	require.False(t, afterRestart.GetRejected())
+	require.Equal(t, f.request.RequestID, afterRestart.GetInitialRequestId())
+	require.Equal(t, restartID, afterRestart.GetContinuationRequestId())
+	require.False(t, afterRestart.GetContinuationPending(), "an admitted Restart is committed with its start")
 	require.False(t, afterRestart.GetCleanupConfirmed())
 	require.False(t, afterRestart.GetCreationPending())
-	retained, err = store.Get(ctx, sessionID)
-	require.NoError(t, err)
-	require.Equal(t, f.request.Creation.InitialExecution.Input, retained.Input)
-	require.False(t, retained.InputBuffered)
 	session, err = f.sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, session.State)
 	require.Equal(t, originalCapabilities, session.CapabilitySnapshot)
 	require.Equal(t, originalContext, session.HarnessSessionReference)
 
-	foreign := retryCreation
+	foreign := f.request
 	foreignInput := *foreign.InitialExecution
-	foreignInput.RequestID = uuid.NewString()
-	foreign.InitialExecution = &foreignInput
-	foreign.RequestID = foreignInput.RequestID
-	foreign.Subject, foreign.ProjectID = domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, f.request.Creation.ProjectID
-	unrelated, err := command.NewWorkCreationRequest(foreign)
-	require.NoError(t, err)
-	_, err = f.requests.RetainWorkCreation(ctx, unrelated)
+	foreignInput.RequestID, foreignInput.Input.ID = uuid.NewString(), uuid.NewString()
+	foreign.InitialExecution, foreign.RequestID = &foreignInput, foreignInput.RequestID
+	foreign.Subject = domain.WorkSubject{Kind: "case", ID: uuid.NewString()}
+	_, err = create.Handle(ctx, foreign)
 	require.NoError(t, err)
 	require.False(t, read().GetCreationPending(), "another Subject cannot block this Session")
 
-	require.NoError(t, session.RecordExit(ctx, domain.HarnessExit{ExitCode: 1, Reason: "startup failed again"}, executionPort{}))
-	require.NoError(t, session.ConfirmComputeReclaimed())
+	reportExit(t, session, domain.HarnessExit{ExitCode: 1, Reason: "startup failed again"})
+	reportReleased(t, session)
 	require.NoError(t, f.sessions.Save(ctx, session))
-	closeWork := command.NewCloseWorkHandler(f.sessions, infrastructure.NewWorkAuthorizer(f.db), infrastructure.NewExecutionRequestsFactory(executionPort{}), commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, &commandtest.InputBuffer{})
+	require.False(t, read().GetCleanupConfirmed(), "a failed Work's preparation is not ended before it closes")
+	closeWork := command.NewCloseWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionsOf(f.db), &commandtest.InputBuffer{})
 	require.NoError(t, closeWork.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: sessionID, RequestID: uuid.NewString()}))
-	retained, err = store.Get(ctx, sessionID)
-	require.NoError(t, err)
-	retained.Rejected, retained.StartFailed, retained.CleanupConfirmed = true, true, true
-	require.NoError(t, store.Save(ctx, retained))
-	require.True(t, read().GetRejected())
-	require.True(t, read().GetCleanupConfirmed(), "cleanup is reported only after its explicit acknowledgement")
+	require.True(t, read().GetCleanupConfirmed(), "a closed Work receives no further repository access")
 
-	withoutInput, err := create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: f.request.Creation.AgentID, SubjectID: "owner", WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: f.request.Creation.ProjectID})
+	withoutInputRequest := uuid.NewString()
+	withoutInput, err := create.Handle(ctx, command.CreateWork{RequestID: withoutInputRequest, AgentID: f.request.AgentID, SubjectID: "owner", WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: f.request.ProjectID})
 	require.NoError(t, err)
 	reader := infrastructure.NewExecutionQueryRepository(other)
 	absent, err := reader.GetWorkStartup(ctx, withoutInput)
 	require.NoError(t, err)
 	require.Equal(t, withoutInput, absent.WorkID)
-	require.Empty(t, absent.InitialRequestID)
-	require.False(t, absent.Rejected)
-	require.False(t, absent.CleanupConfirmed, "missing preparation cannot be reported as completed cleanup")
-	require.False(t, absent.CreationPending)
+	require.Equal(t, withoutInputRequest, absent.InitialRequestID, "every created Work has its creation request")
+	require.Empty(t, absent.ContinuationRequestID)
+	require.False(t, absent.CleanupConfirmed)
+	require.False(t, absent.CreationPending, "a Work created without an initial task input holds none")
 	_, err = reader.GetWorkStartup(ctx, uuid.NewString())
 	require.ErrorIs(t, err, domain.ErrWorkNotFound)
 
@@ -170,11 +137,4 @@ func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 	require.Equal(t, domain.WorkClosed, session.State)
 	require.Equal(t, originalContext, session.HarnessSessionReference)
 
-	// The relation to the Work's Subject is a query key, with a covering pending index.
-	plan, err := other.QueryString("EXPLAIN SELECT c.id FROM agent_session_creation_request c WHERE c.subject_digest=? AND c.pending=1 AND c.deleted_at=0", "digest")
-	require.NoError(t, err)
-	require.Len(t, plan, 1)
-	require.Contains(t, plan[0]["possible_keys"], "idx_session_creation_subject_pending")
-	require.NotEmpty(t, plan[0]["key"], "the pending lookup should use an available index")
-	t.Logf("pending lookup plan: key=%s, rows=%s, extra=%s", plan[0]["key"], plan[0]["rows"], plan[0]["Extra"])
 }

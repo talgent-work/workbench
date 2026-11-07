@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -22,10 +23,9 @@ import (
 func TestSubAgentsSurviveDatabaseReconnectUntilTheProcessExits(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	factory := infrastructure.NewExecutionRequestsFactory(executionPort{})
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, infrastructure.NewWorkAuthorizer(f.db), computertest.Checked(startupAuthority{}), factory, f.sessions, infrastructure.NewContinuationRequests(f.db, time.Now), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := newRuns(t, f.db, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: ref}))
 	}
@@ -53,7 +53,7 @@ func TestSubAgentsSurviveDatabaseReconnectUntilTheProcessExits(t *testing.T) {
 		{ID: "b", Task: "review", Status: "running"},
 	}, read().SubAgents)
 
-	feedback = command.NewApplyExecutionFeedbackHandler(time.Now, infrastructure.NewAgentWorkRepository(db, time.Now), exitedProcess, factory, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback = newRuns(t, db, infrastructure.NewAgentWorkRepository(db, time.Now))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: command.ExecutionExited, WorkID: ref}))
 	require.Empty(t, read().SubAgents, "they end with the process")
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -19,17 +20,20 @@ func (v disconnectedView) GetWorkView(context.Context, string) (query.WorkView, 
 }
 
 // unreachedTurns fails the test if a control or read reaches Dispatcher.
-type unreachedTurns struct{ t *testing.T }
+type unreachedTurns struct {
+	command.RunningHarnessPort
+	t *testing.T
+}
 
 func (u unreachedTurns) CancelTurn(context.Context, string, string) error {
 	u.t.Fatal("a disconnected Work's Turn is not cancelled through Dispatcher")
 	return nil
 }
-func (u unreachedTurns) GetCurrentTurn(context.Context, string) (application.CurrentTurn, error) {
+func (u unreachedTurns) GetCurrentTurn(context.Context, string) (command.CurrentTurn, error) {
 	u.t.Fatal("a disconnected Work's Turn is not read through Dispatcher")
-	return application.CurrentTurn{}, nil
+	return command.CurrentTurn{}, nil
 }
-func (u unreachedTurns) ListPendingInteractions(context.Context, string) ([]application.PendingInteraction, error) {
+func (u unreachedTurns) ListPendingInteractions(context.Context, string) ([]command.PendingInteraction, error) {
 	u.t.Fatal("a disconnected Work's requests are not read through Dispatcher")
 	return nil, nil
 }
@@ -43,7 +47,7 @@ func TestLiveTurnControlsAreUnobservedDuringADisconnection(t *testing.T) {
 	app, store, _, _ := thinkingApplication()
 	store.work.DisconnectedSince = since
 	app.WorkViews = disconnectedView{view: query.WorkView{WorkID: "work", State: "working", DisconnectedSince: since}}
-	app.Turns, app.Interactions = unreachedTurns{t}, unreachedTurns{t}
+	app.Harness = unreachedTurns{t: t}
 	work := application.ControlWork{ActorUserID: "owner", WorkID: "work"}
 
 	_, err := app.GetCurrentTurn(ctx, work)

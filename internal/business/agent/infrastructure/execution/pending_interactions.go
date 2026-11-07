@@ -6,11 +6,11 @@ import (
 
 	"connectrpc.com/connect/v2"
 	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-func (c *DispatcherControl) ListPendingInteractions(ctx context.Context, workID string) ([]application.PendingInteraction, error) {
+func (c *DispatcherControl) ListPendingInteractions(ctx context.Context, workID string) ([]command.PendingInteraction, error) {
 	if strings.TrimSpace(workID) == "" {
 		return nil, domain.ErrExecutionRequest
 	}
@@ -27,9 +27,9 @@ func (c *DispatcherControl) ListPendingInteractions(ctx context.Context, workID 
 	if err != nil {
 		return nil, controlError(ctx, workID, "pending interactions", err)
 	}
-	result := make([]application.PendingInteraction, 0, len(response.Interactions))
+	result := make([]command.PendingInteraction, 0, len(response.Interactions))
 	for _, item := range response.Interactions {
-		result = append(result, application.PendingInteraction{ID: item.GetId(), ToolCallID: item.GetToolCallId(), ToolName: item.GetToolName(), Prompt: item.GetPrompt(), CanAlwaysAllow: item.GetCanAlwaysAllow(), QuestionInputJSON: item.GetQuestionInputJson(), ReplySubmitted: item.GetReplySubmitted(), TurnID: item.GetTurnId(), Agent: item.Agent})
+		result = append(result, command.PendingInteraction{ID: item.GetId(), ToolCallID: item.GetToolCallId(), ToolName: item.GetToolName(), Prompt: item.GetPrompt(), CanAlwaysAllow: item.GetCanAlwaysAllow(), QuestionInputJSON: item.GetQuestionInputJson(), ReplySubmitted: item.GetReplySubmitted(), TurnID: item.GetTurnId(), Agent: item.Agent})
 	}
 	return result, nil
 }

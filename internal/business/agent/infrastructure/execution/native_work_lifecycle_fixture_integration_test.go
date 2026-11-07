@@ -6,35 +6,62 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
-	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"xorm.io/xorm"
+
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
+	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
-	"xorm.io/xorm"
+	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 // Only the external compute/credential-management provider is controlled;
-// Agent persistence, provisioning and credential delivery are real. No case
-// using it reaches Dispatcher, so Dispatcher is a server that fails the case on
-// any call instead of a running replica holding the shared Redis.
+// Agent persistence, provisioning, credential delivery and the reconciliation
+// of each AgentExecution are real. No case using it reaches Dispatcher, so
+// Dispatcher is a server that fails the case on any call instead of a running
+// replica holding the shared Redis.
 type nativeWorkLifecycleFixture struct {
 	db           *xorm.Engine
 	works        *infrastructure.AgentWorkRepository
 	definitions  *infrastructure.AgentDefinitionRepository
 	provisioning *Provisioning
 	connections  *NativeConnections
-	removals     *Removals
-	reclaimer    *Reclaimer
+	executions   *AgentExecutionRepository
+	reconcile    *command.ReconcileExecutionHandler
+	coordination *command.ExecutionCoordination
 	external     *lifecycleFixture
-	requests     command.ExecutionRequestsFactory
+	// readings are the processes Dispatcher reads, by Work.
+	readings *streamReadings
+}
+
+// streamReadings is Dispatcher's stream ownership, set by the case.
+type streamReadings struct {
+	mu   sync.Mutex
+	read map[string]StreamReading
+}
+
+func (s *streamReadings) set(workID string, reading StreamReading) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.read == nil {
+		s.read = map[string]StreamReading{}
+	}
+	s.read[workID] = reading
+}
+
+func (s *streamReadings) Reading(_ context.Context, workID string) (StreamReading, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reading, found := s.read[workID]
+	return reading, found, nil
 }
 
 func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecycleFixture {
@@ -49,30 +76,59 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(dispatchServer.Close)
-	control := NewDispatcherControl(dispatchServer.Client(), dispatchServer.URL, "lifecycle-control")
 	provider, _, external := sandboxClient(t)
-	credentials, err := NewSandboxCredentials(db, provider.client, provider.config.Models, works, fixtureRepositoryCredentials{}, authorizationcatalogtest.NoServices{}, http.DefaultClient, "encrypted-network")
+	credentials, err := NewSandboxCredentials(db, provider.client, provider.config.Models, fixtureRepositoryCredentials{}, authorizationcatalogtest.NoServices{}, http.DefaultClient, "encrypted-network")
 	require.NoError(t, err)
 	policy, err := provider.networkPolicy(ctx)
 	require.NoError(t, err)
 	external.vault.policy = policy
-	provisioning := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
-	observations, err := NewProcessObservations(provisioning, control)
+	provisioning := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	connections, err := NewNativeConnections(provisioning, credentials, dispatchServer.Client(), dispatchServer.URL, "lifecycle-control")
 	require.NoError(t, err)
-	removals := NewRemovals(db, time.Now)
-	resources, err := NewEnvironments(provisioning, removals, observations)
+	readings := &streamReadings{}
+	environment, err := NewExecutionEnvironment(provisioning, connections, readings, nil)
 	require.NoError(t, err)
-	environment, err := NewEnvironment(resources, control, directoryMounts{root: t.TempDir()}, cloudComputers{})
-	require.NoError(t, err)
-	requests := infrastructure.NewExecutionRequestsFactory(environment)
-	feedback := command.NewApplyExecutionFeedbackHandler(time.Now, works, observations, requests, control, &commandtest.InputSettlements{})
-	reclaimer, err := NewReclaimer(feedback)
-	require.NoError(t, err)
-	connections, err := NewNativeConnections(provisioning, credentials, dispatchServer.Client(), dispatchServer.URL, "lifecycle-control", feedback, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
-	require.NoError(t, err)
-	return &nativeWorkLifecycleFixture{db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, removals: removals, reclaimer: reclaimer, external: external, requests: requests}
+	executions := NewAgentExecutionRepository(db, time.Now)
+	harness := commandtest.NewHarness()
+	computers := &cloudDesks{}
+	return &nativeWorkLifecycleFixture{
+		db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, external: external, executions: executions, readings: readings,
+		reconcile:    command.NewReconcileExecutionHandler(time.Now, executions, environment, harness, computers, directoryMounts{root: t.TempDir()}),
+		coordination: command.NewExecutionCoordination(time.Now, works, executions, computers, harness),
+	}
 }
 
+// fixtureCloudID is the Cloud every fixture Work is admitted on.
+const fixtureCloudID = "01a19bc3-075a-7c57-b42b-7fdf73b611ed"
+
+// cloudDesks describes every Computer as a Cloud whose Desks are seated at
+// once, and records the Desks that left.
+type cloudDesks struct {
+	cloudComputers
+	mu   sync.Mutex
+	left []string
+}
+
+func (*cloudDesks) DeskSeated(context.Context, string) (time.Time, bool, error) {
+	return time.Time{}, true, nil
+}
+
+func (c *cloudDesks) LeaveDesk(_ context.Context, deskID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.left = append(c.left, deskID)
+	return nil
+}
+
+func (c *cloudDesks) departures() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.left...)
+}
+
+// createWithAuthorization registers a Work admitted on the Cloud with the
+// authorization it uses, begins its start's execution as the Policies would,
+// and submits its environment's creation as the execution's long step does.
 func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx context.Context, snapshot domain.CapabilitySnapshot, authorization domain.WorkAuthorizationInput) (*domain.AgentWork, string) {
 	t.Helper()
 	snapshot.Connectors = request().Capabilities.Connectors
@@ -81,12 +137,36 @@ func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx c
 	require.NoError(t, f.definitions.Save(ctx, definition))
 	definition, err = f.definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
-	requests := f.requests()
-	work, err := domain.NewAgentWork(ctx, domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: uuid.NewString(), HomeBinding: definition.HomeBinding, Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, requests)
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: uuid.NewString(), HomeBinding: definition.HomeBinding, Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, DeskID: "desk-" + uuid.NewString()}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	startID := uuid.NewString()
-	require.NoError(t, f.works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "lifecycle-owner", DefinitionVersion: definition.Version, RequestID: startID}))
-	require.NoError(t, requests.Send(ctx))
-	require.NoError(t, submitPending(ctx, f.provisioning))
+	require.NoError(t, f.works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "lifecycle-owner", DefinitionVersion: definition.Version, Request: agentquery.StartRequest{ID: startID, Kind: agentquery.StartKindStart, WorkID: work.ID}}))
+	require.NoError(t, f.coordination.BeginExecution(ctx, work.ID))
+	run, err := f.executions.Latest(ctx, work.ID)
+	require.NoError(t, err)
+	long, err := f.reconcile.Reconcile(ctx, run.ID)
+	require.NoError(t, err)
+	require.True(t, long, "the creation's submission is due")
+	require.NoError(t, f.reconcile.RunLongStep(ctx, run.ID))
 	return work, startID
+}
+
+// run launches the Work's bound execution as the process processID that
+// Dispatcher reads, its credentials delivered.
+func (f *nativeWorkLifecycleFixture) run(t *testing.T, ctx context.Context, workID, processID string) *domain.AgentExecution {
+	t.Helper()
+	run, err := f.executions.Latest(ctx, workID)
+	require.NoError(t, err)
+	require.NotEmpty(t, run.Environment, "the execution bound its created environment")
+	run.RecordCredentialDelivery(domain.CredentialDelivery{ExpiresAt: time.Now().Add(time.Hour)})
+	_, err = run.RecordPreparation(domain.PreparationReport{})
+	require.NoError(t, err)
+	_, err = run.RecordLaunch(processID)
+	require.NoError(t, err)
+	require.NoError(t, f.executions.Save(ctx, run))
+	// Dispatcher reads it at the endpoint the sandbox exposes.
+	f.readings.set(workID, StreamReading{ProcessID: processID, Endpoint: "http://" + f.external.endpoint})
+	run, err = f.executions.Get(ctx, run.ID)
+	require.NoError(t, err)
+	return run
 }

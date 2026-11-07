@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -16,7 +17,7 @@ var errEnvironmentConflict = errors.New("agent: execution environment conflicts 
 // holds its sandbox; its credential and native connection grant nothing.
 var errAllocationNotHeld = errors.New("agent: allocation no longer backs the Work's Harness process")
 
-func validateStartRequest(request domain.StartExecutionRequest) error {
+func validateStartRequest(request domain.LaunchSpecification) error {
 	if err := request.WorkModel.Validate(); err != nil {
 		return err
 	}
@@ -36,52 +37,25 @@ func validateStartRequest(request domain.StartExecutionRequest) error {
 	return nil
 }
 
-// allocationRequest is the stored admitted start of an allocation and the
-// source of its fingerprint. It holds what identifies the start; bounds used
-// only while registering, such as Plugin preparation's, stay out so that a
-// repeated registration of the same start matches. A Managed Work's
-// permission mode stays out too: the launch command already carries it, and
-// a change while the Work runs must not make a repeated registration differ.
-type allocationRequest struct {
-	RepositorySelection     domain.WorkRepositorySelection
-	AuthorizationSelection  domain.WorkAuthorizationSelection
-	ThinkingLevel           string
-	WorkModel               domain.WorkModelSelection
-	AgentID                 string
-	WorkID                  string
-	Capabilities            domain.CapabilitySnapshot
-	HarnessSessionReference string
-	ContextMode             domain.ContextMode
-	WorkspaceReference      string
-	// InputSource is kept so every credential delivery, also after a
-	// restart, can hand the Space Token to the sandbox's Vault. The token is
-	// stored as the Work itself stores it (agent_session), in the same
-	// trusted database; it admits writes into this one File Space only, and
-	// only alongside a current Work credential.
-	InputSource     domain.WorkInputSource
-	ReadOnlyMounts  []domain.ReadOnlyMount
-	HomeBinding     domain.HomeBinding
-	TraceAttributes map[string]string
-}
-
-func allocationRequestFromStart(request domain.StartExecutionRequest) allocationRequest {
-	return allocationRequest{RepositorySelection: request.RepositorySelection, AuthorizationSelection: request.AuthorizationSelection, ThinkingLevel: request.ThinkingLevel, WorkModel: request.WorkModel, AgentID: request.AgentID, WorkID: request.WorkID,
-		Capabilities: request.Capabilities.Clone(), HarnessSessionReference: request.HarnessSessionReference, ContextMode: request.ContextMode, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, HomeBinding: request.HomeBinding, TraceAttributes: request.TraceAttributes}
-}
-
-func (r allocationRequest) start() domain.StartExecutionRequest {
-	return domain.StartExecutionRequest{RepositorySelection: r.RepositorySelection, AuthorizationSelection: r.AuthorizationSelection, ThinkingLevel: r.ThinkingLevel, WorkModel: r.WorkModel, AgentID: r.AgentID, WorkID: r.WorkID,
-		Capabilities: r.Capabilities, HarnessSessionReference: r.HarnessSessionReference, ContextMode: r.ContextMode, WorkspaceReference: r.WorkspaceReference, InputSource: r.InputSource, ReadOnlyMounts: r.ReadOnlyMounts, HomeBinding: r.HomeBinding, TraceAttributes: r.TraceAttributes}
+// encodeLaunch stores an execution's LaunchSpecification.
+func encodeLaunch(launch domain.LaunchSpecification) ([]byte, error) {
+	if err := validateStartRequest(launch); err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(launch)
+	if err != nil {
+		return nil, oops.Wrap(err)
+	}
+	return data, nil
 }
 
 // JSON arrays lose their native typed representation at the storage boundary.
 // Restore only the supported string-array shape, then revalidate retained facts.
-func decodeStartRequest(data []byte) (domain.StartExecutionRequest, error) {
-	var stored allocationRequest
-	if err := json.Unmarshal(data, &stored); err != nil {
-		return domain.StartExecutionRequest{}, err
+func decodeStartRequest(data []byte) (domain.LaunchSpecification, error) {
+	var request domain.LaunchSpecification
+	if err := json.Unmarshal(data, &request); err != nil {
+		return domain.LaunchSpecification{}, err
 	}
-	request := stored.start()
 	for i := range request.Capabilities.Plugins {
 		plugin := &request.Capabilities.Plugins[i]
 		plugin.Configuration = pluginconfig.FromJSON(plugin.Configuration)

@@ -1,9 +1,6 @@
 package command
 
-import (
-	"context"
-	"time"
-)
+import "time"
 
 // ComputerDescription is what Computer says a Work's Computer is.
 type ComputerDescription struct {
@@ -20,11 +17,4 @@ type ComputerDescription struct {
 	// not.
 	Reachable        bool
 	UnreachableSince time.Time
-}
-
-// ComputerDescriptionPort is Computer's description contract as Agent uses
-// it, served by the same Computer client as ComputerAdmissionPort. An
-// unknown Computer is one the Work cannot use.
-type ComputerDescriptionPort interface {
-	DescribeComputer(ctx context.Context, computerID string) (ComputerDescription, error)
 }

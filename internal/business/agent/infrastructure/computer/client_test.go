@@ -61,3 +61,25 @@ func TestDeskSeatedCarriesTheSeatingTimeOfItsComputer(t *testing.T) {
 		})
 	}
 }
+
+type refusedAdmission struct {
+	computerprivatev1connect.AdmissionServiceClient
+	err error
+}
+
+func (r refusedAdmission) AdmitRun(context.Context, *computerprivatev1.AdmitRunRequest) (*computerprivatev1.AdmitRunResponse, error) {
+	return nil, r.err
+}
+
+// A Desk that already left can never seat its run again, while a Desk
+// identity serving another run means the request names another start.
+func TestAdmitRunTellsALeftDeskFromAnotherRunsDesk(t *testing.T) {
+	left := &Client{admission: refusedAdmission{err: connect.NewError(connect.CodeFailedPrecondition, "computer: the run's desk already left")}}
+	_, err := left.AdmitRun(t.Context(), command.RunAdmission{DeskID: "desk"})
+	require.ErrorIs(t, err, command.ErrDeskUnavailable)
+	require.NotErrorIs(t, err, command.ErrStartRequestConflict)
+	taken := &Client{admission: refusedAdmission{err: connect.NewError(connect.CodeAlreadyExists, "computer: desk identity belongs to another run")}}
+	_, err = taken.AdmitRun(t.Context(), command.RunAdmission{DeskID: "desk"})
+	require.ErrorIs(t, err, command.ErrStartRequestConflict)
+	require.NotErrorIs(t, err, command.ErrDeskUnavailable)
+}

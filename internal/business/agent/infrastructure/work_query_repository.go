@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/samber/oops"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"xorm.io/xorm"
@@ -25,44 +25,46 @@ func NewWorkQueryRepository(db *xorm.Engine) *WorkQueryRepository {
 }
 
 type workViewRow struct {
-	WorkProgress          string  `xorm:"work_progress"`
-	ModelConfigurationID  string  `xorm:"model_configuration_id"`
-	ModelMachineLogin     bool    `xorm:"model_machine_login"`
-	PermissionMode        string  `xorm:"permission_mode"`
-	ComputerID            string  `xorm:"computer_id"`
-	Capabilities          string  `xorm:"capabilities"`
-	Version               int     `xorm:"version"`
-	EndRequest            string  `xorm:"end_request"`
-	InitialID             string  `xorm:"initial_id"`
-	InitialData           string  `xorm:"initial_data"`
-	InitialVersion        int     `xorm:"initial_version"`
-	ContinuationVersion   int     `xorm:"continuation_version"`
-	ContinuationRejection string  `xorm:"continuation_rejection"`
-	ID                    string  `xorm:"id"`
-	SubjectKind           *string `xorm:"subject_kind"`
-	SubjectID             *string `xorm:"subject_id"`
-	ProjectRef            string  `xorm:"project_ref"`
-	AgentOwner            string  `xorm:"agent_owner"`
-	StartedBy             string  `xorm:"started_by"`
-	State                 uint8   `xorm:"state"`
-	HarnessProcess        string  `xorm:"harness_process"`
-	StartRequestID        string  `xorm:"start_request_id"`
-	StopReason            string  `xorm:"stop_reason"`
-	DisconnectedSince     int64   `xorm:"disconnected_since"`
-	StopRequest           string  `xorm:"stop_request"`
-	Failure               string  `xorm:"failure_reason"`
-	CreatedAt             int64   `xorm:"created_at"`
-	UpdatedAt             int64   `xorm:"updated_at"`
-	ContinuationID        string  `xorm:"continuation_id"`
-	ContinuationPending   bool    `xorm:"continuation_pending"`
-	VisibilityPublic      bool    `xorm:"visibility_public"`
-	ReachResumeDue        bool    `xorm:"reach_resume_due"`
+	WorkProgress         string `xorm:"work_progress"`
+	ModelConfigurationID string `xorm:"model_configuration_id"`
+	ModelMachineLogin    bool   `xorm:"model_machine_login"`
+	PermissionMode       string `xorm:"permission_mode"`
+	ComputerID           string `xorm:"computer_id"`
+	Capabilities         string `xorm:"capabilities"`
+	Version              int    `xorm:"version"`
+	EndRequest           string `xorm:"end_request"`
+	// CreationRequestID is the request identity that created the Work.
+	CreationRequestID string `xorm:"creation_request_id"`
+	// InitialTaskInput is the Work's initial task input not handed off yet.
+	InitialTaskInput    string  `xorm:"initial_task_input"`
+	ThinkingLevel       string  `xorm:"thinking_level"`
+	RepositorySelection string  `xorm:"repository_selection"`
+	RepositoryCheckouts string  `xorm:"repository_checkouts"`
+	ID                  string  `xorm:"id"`
+	SubjectKind         *string `xorm:"subject_kind"`
+	SubjectID           *string `xorm:"subject_id"`
+	ProjectRef          string  `xorm:"project_ref"`
+	AgentOwner          string  `xorm:"agent_owner"`
+	StartedBy           string  `xorm:"started_by"`
+	State               uint8   `xorm:"state"`
+	HarnessProcess      string  `xorm:"harness_process"`
+	StartRequestID      string  `xorm:"start_request_id"`
+	StopReason          string  `xorm:"stop_reason"`
+	DisconnectedSince   int64   `xorm:"disconnected_since"`
+	StopRequest         string  `xorm:"stop_request"`
+	Failure             string  `xorm:"failure_reason"`
+	CreatedAt           int64   `xorm:"created_at"`
+	UpdatedAt           int64   `xorm:"updated_at"`
+	VisibilityPublic    bool    `xorm:"visibility_public"`
+	ReachResumeDue      bool    `xorm:"reach_resume_due"`
+	// ExecutionState is the lifecycle state of the Work's latest
+	// AgentExecution; empty before its start's execution begins.
+	ExecutionState string `xorm:"execution_state"`
 }
 
-// Read the lifecycle and continuation together. The work must not combine an
-// old stopped snapshot with a separately observed completed Resume request.
-// Bind the same identity on both tables: their different ID character sets must
-// not turn the continuation primary-key lookup into a converted-column scan.
+// GetWorkView reads the Work's lifecycle, its start requests and its current
+// execution in one transaction, so the view never combines facts of different
+// starts.
 func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query.WorkView, error) {
 	var row workViewRow
 	tx := r.db.NewSession()
@@ -77,14 +79,11 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
 	found, err := tx.SQL(`SELECT s.id,s.model_configuration_id,s.model_machine_login,s.permission_mode,s.computer_id,s.capabilities,s.subject_kind,s.subject_id,s.project_ref,
  `+agentOwnerColumn+` AS agent_owner,s.started_by,s.state,s.harness_process,s.work_progress,
  s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at,s.version,s.end_request,
- s.visibility_public,s.reach_resume_due,
+ s.visibility_public,s.reach_resume_due,s.initial_task_input,s.thinking_level,s.repository_selection,s.repository_checkouts,
  COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at DESC, r.id DESC LIMIT 1),'') AS start_request_id,
- COALESCE(i.request_id,'') AS initial_id, COALESCE(i.request_data,'') AS initial_data, COALESCE(i.version,0) AS initial_version,
- COALESCE(c.version,0) AS continuation_version, COALESCE(c.rejection,'') AS continuation_rejection,
- COALESCE(c.request_id,'') AS continuation_id,COALESCE(c.pending,0) AS continuation_pending
- FROM agent_session s LEFT JOIN agent_session_continuation_request c ON c.id=? AND c.deleted_at=0
- LEFT JOIN agent_initial_execution_request i ON i.id=? AND i.deleted_at=0
- WHERE s.id=? AND s.deleted_at=0`, id, id, id).Get(&row)
+ COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.kind=? AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at, r.id LIMIT 1),'') AS creation_request_id,
+ COALESCE((SELECT e.state FROM execution_allocation e WHERE e.session_id=s.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1),'') AS execution_state
+ FROM agent_session s WHERE s.id=? AND s.deleted_at=0`, string(query.StartKindStart), id).Get(&row)
 	if err != nil {
 		return query.WorkView{}, oops.With("operation", "agent.work_session").Wrap(err)
 	}
@@ -107,51 +106,20 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
 	}
 	var allocation struct {
 		Ready, Recovering bool
-		Version           int
+		UpdatedAt         int64
 	}
 	if row.HarnessProcess != "" && row.HarnessProcess != "null" {
-		_, err = tx.SQL("SELECT sandbox_ready AS ready,preparation_recovering AS recovering,version FROM execution_allocation WHERE session_id=? AND deleted_at=0 ORDER BY created_at DESC, id DESC LIMIT 1", id).Get(&allocation)
+		_, err = tx.SQL("SELECT sandbox_ready AS ready,preparation_recovering AS recovering,updated_at FROM execution_allocation WHERE session_id=? AND deleted_at=0 ORDER BY created_at DESC, id DESC LIMIT 1", id).Get(&allocation)
 		if err != nil {
 			return result, oops.Wrap(err)
 		}
 	}
-	result.StartupProgress, err = startupFromRows(row, allocation.Ready, allocation.Recovering, allocation.Version)
+	result.StartupProgress, err = startupFromRows(row, allocation.Ready, allocation.Recovering, allocation.UpdatedAt)
 	if err != nil {
 		return result, err
 	}
-	if row.InitialID != "" {
-		initial, err := initialExecutionRequestFromDO(initialExecutionRequestDO{ID: row.ID, RequestID: row.InitialID, RequestData: row.InitialData, Version: row.InitialVersion})
-		if err != nil {
-			return result, err
-		}
-		var capabilities snapshotRecord
-		if err := json.Unmarshal([]byte(row.Capabilities), &capabilities); err != nil {
-			return result, oops.Wrap(err)
-		}
-		request := &query.WorkStartupRequest{RequestID: initial.RequestID, InitialMessage: initial.Input.Text, InitialThinkingLevel: initial.ThinkingLevel, StartupAgent: capabilities.StartupAgent}
-		for _, plugin := range capabilities.Plugins {
-			request.Plugins = append(request.Plugins, plugin.Release.Slug)
-		}
-		for _, selection := range initial.Selections {
-			repository := query.WorkStartupRepository{RepositoryID: selection.RepositoryID, BaseBranch: selection.BaseBranch}
-			for _, checkout := range initial.Checkouts {
-				if checkout.RepoID == selection.RepositoryID {
-					repository.Name, repository.BaseBranch = checkout.RepoName, checkout.BaseBranch
-					break
-				}
-			}
-			for _, outcome := range initial.CheckoutResults {
-				if outcome.RepositoryID != selection.RepositoryID {
-					continue
-				}
-				repository.CheckoutStatus, repository.CheckoutReason = "checked_out", ""
-				if !outcome.Prepared {
-					repository.CheckoutStatus, repository.CheckoutReason = "not_checked_out", outcome.Reason
-				}
-			}
-			request.Repositories = append(request.Repositories, repository)
-		}
-		result.StartupRequest = request
+	if result.StartupRequest, err = startupRequestFromRow(row); err != nil {
+		return result, err
 	}
 	return result, oops.Wrap(tx.Commit())
 }
@@ -167,7 +135,7 @@ func workViewFromRow(row workViewRow) (query.WorkView, error) {
 	result := query.WorkView{Version: row.Version, WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, WorkID: row.ID, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, AgentOwner: row.AgentOwner, StartedBy: row.StartedBy, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic},
 		PermissionMode: domain.PermissionMode(row.PermissionMode), ComputerID: row.ComputerID,
 		StateReason: row.StopReason, StopRequestID: row.StopRequest, DiagnosticReason: row.Failure, DisconnectedSince: fromUnixMillis(row.DisconnectedSince),
-		CreatedAt: time.UnixMilli(row.CreatedAt).UTC(), UpdatedAt: time.UnixMilli(row.UpdatedAt).UTC(), ResumePending: row.ContinuationPending, ResumeOnReconnection: row.ReachResumeDue}
+		CreatedAt: time.UnixMilli(row.CreatedAt).UTC(), UpdatedAt: time.UnixMilli(row.UpdatedAt).UTC(), ResumeOnReconnection: row.ReachResumeDue}
 	progress, err := decodeWorkProgress(row.WorkProgress)
 	if err != nil {
 		return query.WorkView{}, err
@@ -189,8 +157,11 @@ func workViewFromRow(row workViewRow) (query.WorkView, error) {
 			result.SubAgents = append(result.SubAgents, query.SubAgent{ID: agent.ID, Type: agent.Type, Task: agent.Task, Status: agent.Status})
 		}
 		// A Resume waiting for room is admitted; it is withdrawn, not pending.
-		result.DeskWaiting = state == domain.WorkStarting && process.DeskWaiting
-		result.ResumePending = result.ResumePending || (state == domain.WorkStarting && !result.DeskWaiting && row.ContinuationID != "" && row.ContinuationID == row.StartRequestID)
+		// The start's execution holds its Desk's seating once it began.
+		queued := row.ExecutionState == "" || row.ExecutionState == string(domain.ExecutionQueued)
+		result.DeskWaiting = state == domain.WorkStarting && process.DeskWaiting && queued
+		// A Resume or Restart admitted as the current start awaits readiness.
+		result.ResumePending = state == domain.WorkStarting && !result.DeskWaiting && row.StartRequestID != "" && row.StartRequestID != row.CreationRequestID
 	}
 	switch state {
 	case domain.WorkFailed:
@@ -204,64 +175,88 @@ func workViewFromRow(row workViewRow) (query.WorkView, error) {
 	return result, nil
 }
 
-func startupFromRows(row workViewRow, sandboxReady, recovering bool, allocationVersion int) (*query.StartupProgress, error) {
-	var initial command.InitialExecutionRequest
-	if row.InitialID != "" {
-		var err error
-		initial, err = initialExecutionRequestFromDO(initialExecutionRequestDO{ID: row.ID, RequestID: row.InitialID, RequestData: row.InitialData, Version: row.InitialVersion})
-		if err != nil {
-			return nil, err
-		}
+// startupRequestFromRow projects the start the Work was created with: its
+// initial task input while the Work still holds it, its thinking level,
+// capability identities and each selected repository with its checkout
+// outcome once recorded. A Work without a creation request has none.
+func startupRequestFromRow(row workViewRow) (*query.WorkStartupRequest, error) {
+	if row.CreationRequestID == "" {
+		return nil, nil
 	}
+	initial, err := decodeInitialTaskInput(row.InitialTaskInput)
+	if err != nil {
+		return nil, err
+	}
+	var capabilities snapshotRecord
+	if err := json.Unmarshal([]byte(row.Capabilities), &capabilities); err != nil {
+		return nil, oops.Wrap(err)
+	}
+	selection, err := decodeWorkRepositories(row.RepositorySelection)
+	if err != nil {
+		return nil, err
+	}
+	checkouts, err := decodeRepositoryCheckouts(row.RepositoryCheckouts)
+	if err != nil {
+		return nil, err
+	}
+	request := &query.WorkStartupRequest{RequestID: row.CreationRequestID, InitialThinkingLevel: row.ThinkingLevel, StartupAgent: capabilities.StartupAgent}
+	if initial != nil {
+		request.InitialMessage = initial.Text
+	}
+	for _, plugin := range capabilities.Plugins {
+		request.Plugins = append(request.Plugins, plugin.Release.Slug)
+	}
+	for _, selected := range selection.Repositories {
+		repository := query.WorkStartupRepository{RepositoryID: selected.RepoID, Name: selected.RepoName, BaseBranch: selected.BaseBranch}
+		if i := slices.IndexFunc(checkouts, func(c domain.RepositoryCheckout) bool { return c.RepositoryID == selected.RepoID }); i >= 0 {
+			repository.CheckoutStatus, repository.CheckoutReason = "checked_out", ""
+			if !checkouts[i].CheckedOut {
+				repository.CheckoutStatus, repository.CheckoutReason = "not_checked_out", checkouts[i].Reason
+			}
+		}
+		request.Repositories = append(request.Repositories, repository)
+	}
+	return request, nil
+}
+
+// startupFromRows projects the startup progress of the Work's current start
+// from its facts: the first start prepares the workspace, every selected
+// repository ending with an outcome, and hands off the initial task input.
+func startupFromRows(row workViewRow, sandboxReady, recovering bool, executionUpdatedAt int64) (*query.StartupProgress, error) {
 	var process *harnessProcessRecord
 	if err := json.Unmarshal([]byte(row.HarnessProcess), &process); err != nil {
 		return nil, oops.Wrap(err)
 	}
-	f := query.StartupFacts{RequestID: initial.RequestID, Initial: initial.RequestID != "", State: string(sessionStates[row.State]), InputPrepared: initial.InputPrepared, InputBuffered: initial.InputBuffered, Rejected: initial.Rejected, Recovering: initial.RecoveryPending, Reason: initial.FailureReason, EndRequested: row.EndRequest != ""}
-	f.InputPending = initial.RequestID != "" && !initial.InputBuffered
+	selection, err := decodeWorkRepositories(row.RepositorySelection)
+	if err != nil {
+		return nil, err
+	}
+	checkouts, err := decodeRepositoryCheckouts(row.RepositoryCheckouts)
+	if err != nil {
+		return nil, err
+	}
+	created := row.CreationRequestID != ""
+	// The initial task input is buffered once the Work no longer holds it.
+	inputBuffered := created && row.InitialTaskInput == ""
+	f := query.StartupFacts{RequestID: row.CreationRequestID, Initial: created, State: string(sessionStates[row.State]),
+		InputPrepared: len(checkouts) >= len(selection.Repositories), InputBuffered: inputBuffered, EndRequested: row.EndRequest != ""}
+	f.InputPending = created && !inputBuffered
 	if process != nil {
 		f.RequestID = row.StartRequestID
 		f.Admitted = true
-		f.AgentReady = process.Prepared && process.Started
+		f.AgentReady = process.Ready
 		// Native readiness necessarily followed environment and credential readiness.
 		f.SandboxReady = sandboxReady || f.AgentReady
-		f.Initial = row.StartRequestID == initial.RequestID
-		// Rejected input stays in history. Its failure and unfinished preparation
-		// do not belong to a later explicitly admitted start.
-		if initial.Rejected && !f.Initial {
-			f.InputPending, f.Rejected, f.Recovering = false, false, false
-			f.Reason = ""
-		}
-		if row.Failure != "" {
-			f.Reason = row.Failure
-		}
+		f.Initial = created && row.StartRequestID == row.CreationRequestID
+		f.Reason = row.Failure
 	}
-	// A Resume refused because its Managed Computer was unreachable starts
-	// nothing and fails nothing: the Work stays Stopped and its Resume is owed
-	// on reconnection (Agent model: Capacity rejection state, Retry on
-	// reconnection), so the refusal leaves the earlier start's facts shown.
-	unreachable := command.RejectedAsUnreachable(row.ContinuationRejection)
-	if row.ContinuationID != "" && (row.ContinuationPending || row.ContinuationRejection != "") && !unreachable && (process == nil || row.ContinuationID != row.StartRequestID) {
-		f.RequestID = row.ContinuationID
-		f.Admitted = false
-		f.AgentReady = false
-		f.SandboxReady = false
-		f.State = ""
-		f.EndRequested = false
-		f.Initial = false
-		f.InputPending = initial.RequestID != "" && !initial.InputBuffered && !initial.Rejected
-		f.Recovering = false
-		f.Rejected = row.ContinuationRejection != ""
-		f.Reason = row.ContinuationRejection
-	}
-	// Reconnection errors no longer describe startup once native readiness is
-	// confirmed. Workspace and initial-input recovery belong to the initial receipt.
 	if f.Admitted && !f.AgentReady {
 		f.Recovering = recovering
 	}
 	// Source versions are monotone within a Work. A new start first bumps the
-	// Work version, so resetting its allocation version cannot regress order.
-	f.Revision = fmt.Sprintf("%010d:%010d:%010d:%010d", row.Version, row.InitialVersion, row.ContinuationVersion, allocationVersion)
+	// Work version, so an execution's progress, ordered by when its record last
+	// changed (facts and technical progress alike), cannot regress order.
+	f.Revision = fmt.Sprintf("%010d:%013d", row.Version, executionUpdatedAt)
 	return query.ProjectStartup(f), nil
 }
 

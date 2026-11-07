@@ -15,5 +15,5 @@ func (h *AgentHandler) GetWorkStartup(ctx context.Context, request *agentprivate
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return &agentprivatev1.GetWorkStartupResponse{WorkId: value.WorkID, InitialRequestId: value.InitialRequestID, Rejected: value.Rejected, CleanupConfirmed: value.CleanupConfirmed, CreationPending: value.CreationPending, ContinuationRequestId: value.ContinuationRequestID, ContinuationPending: value.ContinuationPending}, nil
+	return &agentprivatev1.GetWorkStartupResponse{WorkId: value.WorkID, InitialRequestId: value.InitialRequestID, CleanupConfirmed: value.CleanupConfirmed, CreationPending: value.CreationPending, ContinuationRequestId: value.ContinuationRequestID}, nil
 }

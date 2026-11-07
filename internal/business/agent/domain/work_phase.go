@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,7 +21,6 @@ func (s *AgentWork) ObserveTurn(fact TurnObservation, inputPending, requiredResp
 	if !s.processing() {
 		return nil
 	}
-	s.TaskExecutionBegun = true
 	// A position not after the last applied one repeats a replayed stream.
 	if fact.Sequence <= s.HarnessProcess.Turn.Sequence {
 		return nil
@@ -146,13 +144,15 @@ func (s *AgentWork) accept(replay, answers bool) error {
 	if err := s.AdmitInput(); err != nil {
 		return err
 	}
+	if s.InitialTaskInput != nil {
+		return ErrInitialTaskInputPending
+	}
 	// Input for a Work that is not running, or whose process end is already
 	// requested, waits in the buffer for the next start; its task begins when
 	// a Harness reads it.
 	if replay || !s.processing() || s.EndRequestReference != "" {
 		return nil
 	}
-	s.TaskExecutionBegun = true
 	s.HarnessProcess.IdleSince = time.Time{}
 	if answers {
 		s.HarnessProcess.WaitingSince = time.Time{}
@@ -208,18 +208,13 @@ func (s *AgentWork) TimeoutDue(now time.Time) bool {
 // Required Response never ends by itself, so the timeout cancels it and the
 // stop follows once the Turn has ended (Stop between Turns). A progressing
 // Turn is neither idle nor Waiting and never times out.
-func (s *AgentWork) StopAfterTimeout(ctx context.Context, now time.Time, buffered BufferedWork, port ExecutionPort) (bool, error) {
+func (s *AgentWork) StopAfterTimeout(now time.Time, buffered BufferedWork) (bool, error) {
 	if !s.TimeoutDue(now) || buffered.Reply || (buffered.Input && !s.heldByQuestion()) {
 		return false, nil
 	}
-	requestID := uuid.Must(uuid.NewV7()).String()
-	if s.HarnessProcess.Turn.Active {
-		// Admit the stop now and signal the exit once the cancelled Turn has
-		// ended; recovery delivers it (Recover execution obligations).
-		s.admitStop(requestID, StopReasonWaitingTimeout)
-		return true, executionRequestError(port.CancelRunningTurn(ctx, s.ID))
-	}
-	return true, s.stop(ctx, requestID, StopReasonWaitingTimeout, port)
+	// A Turn held open by a Required Response is cancelled first, then the
+	// process asked to exit (Timeout cancels first).
+	return true, s.stop(uuid.Must(uuid.NewV7()).String(), StopReasonWaitingTimeout)
 }
 
 // RequireReadyProcess admits a control that acts on the Work's running

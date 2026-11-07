@@ -2,10 +2,8 @@ package command
 
 import (
 	"context"
-	"errors"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -13,24 +11,21 @@ import (
 // and for business callers alike. A running Work is stopped first; its close
 // request applies once it has stopped, through ApplyKeptClose.
 type CloseWorkHandler struct {
-	control       sessionControl
-	initial       InitialExecutionReader
-	startup       query.WorkStartupReader
-	continuations query.ContinuationReader
-	buffer        InputBufferPort
+	control sessionControl
+	buffer  RunningHarnessPort
 }
 
-func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, execution ExecutionRequestsFactory, initial InitialExecutionReader, startup query.WorkStartupReader, continuations query.ContinuationReader, buffer InputBufferPort) *CloseWorkHandler {
-	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, execution: execution}, initial: initial, startup: startup, continuations: continuations, buffer: buffer}
+func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, executions domain.AgentExecutionRepository, buffer RunningHarnessPort) *CloseWorkHandler {
+	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, executions: executions}, buffer: buffer}
 }
 
 func (h *CloseWorkHandler) Handle(ctx context.Context, request WorkControl) error {
-	return h.control.apply(ctx, request, func(work *domain.AgentWork, ctx context.Context, requestID string, port domain.ExecutionPort) error {
+	return h.control.apply(ctx, request, func(ctx context.Context, work *domain.AgentWork, requestID string) error {
 		facts, err := h.facts(ctx, work)
 		if err != nil {
 			return err
 		}
-		return work.Close(ctx, requestID, facts, port)
+		return work.Close(requestID, facts)
 	})
 }
 
@@ -50,14 +45,10 @@ func (h *CloseWorkHandler) ApplyKeptClose(ctx context.Context, workID string) er
 	if err != nil {
 		return err
 	}
-	requests := h.control.execution()
-	if err := work.Close(ctx, work.CloseRequestReference, facts, requests); err != nil {
+	if err := work.Close(work.CloseRequestReference, facts); err != nil {
 		return err
 	}
-	if err := h.control.sessions.Save(ctx, work); err != nil {
-		return err
-	}
-	return requests.Send(ctx)
+	return h.control.sessions.Save(ctx, work)
 }
 
 // facts supplies the obligations a close must not discard.
@@ -66,23 +57,11 @@ func (h *CloseWorkHandler) facts(ctx context.Context, work *domain.AgentWork) (d
 	if work.Closed() {
 		return facts, nil
 	}
-	continuation, err := h.continuations.GetWorkContinuation(ctx, work.ID)
+	queued, err := startQueued(ctx, h.control.executions, work)
 	if err != nil {
 		return facts, err
 	}
-	facts.ContinuationPending = continuation.Pending
-	startup, err := h.startup.GetWorkStartup(ctx, work.ID)
-	if err != nil {
-		return facts, err
-	}
-	facts.StartupPending = startup.CreationPending
-	initial, err := h.initial.Get(ctx, work.ID)
-	if err != nil && !errors.Is(err, ErrInitialExecutionNotFound) {
-		return facts, err
-	}
-	if err == nil && !initial.InputBuffered && !(initial.Rejected && initial.CleanupConfirmed) {
-		facts.StartupPending = true
-	}
+	facts.StartQueued = queued
 	buffered, err := h.buffer.ReadBuffer(ctx, work.ID)
 	facts.InputPending = buffered.Pending()
 	return facts, err

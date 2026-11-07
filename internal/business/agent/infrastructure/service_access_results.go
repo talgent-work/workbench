@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/samber/oops"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"xorm.io/xorm"
 )
@@ -17,20 +18,35 @@ func NewServiceAccessResults(db *xorm.Engine) *ServiceAccessResults {
 	return &ServiceAccessResults{db: db}
 }
 
+// ReadRepositoryPreparation reads the Work's recorded checkout outcomes in
+// selection order, each at the target its selection plans for it.
 func (r *ServiceAccessResults) ReadRepositoryPreparation(ctx context.Context, workID string) ([]query.RepositoryPreparation, error) {
 	var row struct {
-		Results []byte `xorm:"results"`
+		RepositorySelection string `xorm:"repository_selection"`
+		RepositoryCheckouts string `xorm:"repository_checkouts"`
 	}
-	found, err := r.db.Context(ctx).SQL("SELECT JSON_EXTRACT(request_data, '$.CheckoutResults') AS results FROM agent_initial_execution_request WHERE id = ? AND deleted_at = 0", workID).Get(&row)
+	found, err := r.db.Context(ctx).Table("agent_session").Cols("repository_selection", "repository_checkouts").Where("id = ? AND deleted_at = 0", workID).Get(&row)
 	if err != nil {
 		return nil, oops.With("operation", "read_repository_preparation").Wrap(err)
 	}
-	if !found || len(row.Results) == 0 {
+	if !found {
 		return nil, nil
 	}
+	selection, err := decodeWorkRepositories(row.RepositorySelection)
+	if err != nil {
+		return nil, err
+	}
+	checkouts, err := decodeRepositoryCheckouts(row.RepositoryCheckouts)
+	if err != nil {
+		return nil, err
+	}
 	var results []query.RepositoryPreparation
-	if err := json.Unmarshal(row.Results, &results); err != nil {
-		return nil, oops.With("operation", "decode_repository_preparation").Wrap(err)
+	for _, planned := range command.PlanCheckouts(workID, selection) {
+		for _, checkout := range checkouts {
+			if checkout.RepositoryID == planned.RepoID {
+				results = append(results, query.RepositoryPreparation{RepositoryID: checkout.RepositoryID, TargetPath: planned.TargetPath, Prepared: checkout.CheckedOut, Reason: checkout.Reason})
+			}
+		}
 	}
 	return results, nil
 }

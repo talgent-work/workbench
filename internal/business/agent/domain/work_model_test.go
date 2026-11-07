@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -38,37 +37,33 @@ func seated(agentID string) domain.StartAdmission {
 // A Work on the machine's Claude login has no Model Configuration to be
 // withdrawn: its establishment and every later start skip that admission.
 func TestAMachineLoginWorkIsAdmittedWithoutAModelConfiguration(t *testing.T) {
-	ctx := context.Background()
 	input := machineLoginInput(true)
-	port := &executionPort{}
-	work, err := domain.NewAgentWork(ctx, input, seated(input.AgentID), port)
+	work, err := domain.NewAgentWork(input, seated(input.AgentID))
+	port := follow(work)
 	require.NoError(t, err)
-	require.Equal(t, domain.MachineLoginModel(), port.starts[0].WorkModel)
-	require.NoError(t, work.ConfirmPrepared(ctx, time.Now(), nil))
-	require.NoError(t, work.ConfirmStarted(ctx, time.Now(), nil))
-	require.NoError(t, work.Stop(ctx, "stop-1", port))
-	require.NoError(t, work.RecordExit(ctx, domain.HarnessExit{}, port))
-	require.NoError(t, work.ConfirmComputeReclaimed())
-	require.NoError(t, work.Resume(ctx, seated(input.AgentID), port))
+	require.Equal(t, domain.MachineLoginModel(), port.launch().WorkModel)
+	ready(t, work)
+	require.NoError(t, work.Stop("stop-1", false))
+	exited(t, work, domain.HarnessExit{})
+	released(t, work)
+	require.NoError(t, work.Resume(seated(input.AgentID)))
 	require.Equal(t, domain.WorkStarting, work.State)
 }
 
 func TestAWorkKeepsOnlyAModelItsComputerCanUse(t *testing.T) {
 	input := machineLoginInput(false)
-	port := &executionPort{}
-	work, err := domain.NewAgentWork(context.Background(), input, seated(input.AgentID), port)
+	work, err := domain.NewAgentWork(input, seated(input.AgentID))
 	require.ErrorIs(t, err, domain.ErrMachineLoginNotManaged)
-	require.Nil(t, work)
-	require.Empty(t, port.starts, "a rejected Work requests no execution")
+	require.Nil(t, work, "a rejected Work requests no execution")
 
 	// A Managed Computer may also run a Work on a provided Model Configuration.
 	input = machineLoginInput(true)
 	input.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
 	admission := seated(input.AgentID)
 	admission.ModelConfigurationProvided = true
-	work, err = domain.NewAgentWork(context.Background(), input, admission, port)
+	work, err = domain.NewAgentWork(input, admission)
 	require.NoError(t, err)
-	require.Equal(t, input.WorkModel, port.starts[0].WorkModel)
+	require.Equal(t, input.WorkModel, follow(work).launch().WorkModel)
 }
 
 // On a Managed Computer a Provider-authorized Connector is unavailable: the
@@ -82,8 +77,7 @@ func TestAManagedWorkLeavesOutProviderAuthorizedConnectors(t *testing.T) {
 		input.Capabilities.Connectors = append(input.Capabilities.Connectors, connectorcatalogtest.GitHub().SelectedConnector)
 		admission := seated(input.AgentID)
 		admission.ModelConfigurationProvided = true
-		port := &executionPort{}
-		work, err := domain.NewAgentWork(context.Background(), input, admission, port)
+		work, err := domain.NewAgentWork(input, admission)
 		require.NoError(t, err, "an unavailable Connector does not reject creation")
 		names := []string{}
 		for _, connector := range work.CapabilitySnapshot.Connectors {

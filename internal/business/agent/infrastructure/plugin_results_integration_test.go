@@ -6,7 +6,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
@@ -42,17 +42,22 @@ func (a pluginResultAccess) AuthorizeWork(_ context.Context, actor, workID strin
 
 func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	db, definitions, works, definition := startingCreationDatabase(t)
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, works, infrastructure.NewWorkAuthorizer(db), creationModels(), &creationCatalog{}, creationConnections{}, works, computertest.Checked(&initialCreationCapacity{}), infrastructure.NewExecutionRequestsFactory(&creationExecution{db: db}))
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
 	id, err := create.Handle(t.Context(), creationInput(definition.ID, "plugin-results"))
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), id)
 	require.NoError(t, err)
-	require.NoError(t, work.ConfirmPrepared(context.Background(), time.Now(), nil))
-	require.NoError(t, work.ConfirmStarted(context.Background(), time.Now(), nil))
+	// The Work's current run launched the process "process" and became ready.
+	run := newRuns(t, db, works)
+	run.launch(t.Context(), id)
+	work, err = works.Get(t.Context(), id)
+	require.NoError(t, err)
+	reportReady(t, work)
 	require.NoError(t, works.Save(t.Context(), work))
 	before, err := works.Get(t.Context(), id)
 	require.NoError(t, err)
-	app := &application.Application{Works: works, WorkPrincipals: pluginResultAccess{workID: id}, PluginResults: infrastructure.NewPluginResults(db, time.Now)}
+	app := &application.Application{Works: works, WorkPrincipals: pluginResultAccess{workID: id}, PluginResults: infrastructure.NewExecutionQueryRepository(db),
+		Commands: application.Commands{ApplyExecutionFeedback: run.feedback}}
 	mux := http.NewServeMux()
 	path, handler := "/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
@@ -98,7 +103,7 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_SUCCEEDED, response.Plugins[0].Loading)
 	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_UNSPECIFIED, response.Plugins[0].Installation, "loading feedback does not invent installation observations")
-	// A lower sequence is allowed to replace the projection, without a run fence.
+	// A later report replaces the outcome, whatever its stream position.
 	observation.ObservationSequence, observation.LoadedPlugins = 1, nil
 	require.NoError(t, feedback.ReportExecution(t.Context(), observation))
 	response, err = read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
@@ -116,38 +121,31 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	require.NoError(t, feedback.ReportExecution(t.Context(), observation))
 	// Reject malformed feedback atomically instead of replacing existing facts.
 	rpc := agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	bad := &agentprivatev1.ReportRequest{WorkId: id, Kind: agentprivatev1.FeedbackKind_FEEDBACK_KIND_PLUGIN_LOADS_OBSERVED, LoadedPlugins: []*agentprivatev1.LoadedPlugin{{Slug: "runtime"}, {Slug: "runtime"}}}
+	bad := &agentprivatev1.ReportRequest{WorkId: id, ProcessId: "process", Kind: agentprivatev1.FeedbackKind_FEEDBACK_KIND_PLUGIN_LOADS_OBSERVED, LoadedPlugins: []*agentprivatev1.LoadedPlugin{{Slug: "runtime"}, {Slug: "runtime"}}}
 	badCtx, badInfo := connect.NewClientContext(t.Context())
 	badInfo.RequestHeader().Set("Authorization", "Bearer feedback-test")
 	_, err = rpc.Report(badCtx, bad)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
-	app.PluginResults = infrastructure.NewPluginResults(db, time.Now)
 	response, err = read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
 	require.NoError(t, err)
 	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_SUCCEEDED, response.Plugins[0].Loading)
 	retained, err := works.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkWorking, retained.State, "a missing required plugin does not itself fail a usable Work")
-	require.Equal(t, before, retained, "projection feedback cannot mutate the Work or fixed release")
-	_, err = db.Exec("RENAME TABLE agent_plugin_result TO unavailable_plugin_result")
+	require.Equal(t, before, retained, "loading feedback cannot mutate the Work or fixed release")
+	// Feedback from an earlier start's process changes no outcome of the
+	// current run.
+	earlier := dispatchercommand.ExecutionObservation{WorkID: id, ProcessID: "earlier", Kind: dispatchercommand.ExecutionPluginLoadsObserved, ObservationSequence: 200}
+	require.NoError(t, feedback.ReportExecution(t.Context(), earlier))
+	response, err = read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
+	require.NoError(t, err)
+	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_SUCCEEDED, response.Plugins[0].Loading)
+	_, err = db.Exec("RENAME TABLE execution_plugin_result TO unavailable_plugin_result")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, err := db.Exec("RENAME TABLE unavailable_plugin_result TO agent_plugin_result")
+		_, err := db.Exec("RENAME TABLE unavailable_plugin_result TO execution_plugin_result")
 		require.NoError(t, err)
 	})
 	_, err = read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err), "unavailable results are not an empty successful query")
-}
-
-// A rejected inventory update must leave the previous complete observation visible.
-func TestPluginLoadInventoryRejectsPartialReplacement(t *testing.T) {
-	f := newWorkCreationFixture(t)
-	store := infrastructure.NewPluginResults(f.db, time.Now)
-	require.NoError(t, store.RecordLoads(t.Context(), "work", []application.PluginLoadResult{{Slug: "retained", Loaded: true}}))
-	before, err := store.Read(t.Context(), "work")
-	require.NoError(t, err)
-	require.Error(t, store.RecordLoads(t.Context(), "work", []application.PluginLoadResult{{Slug: "retained", Loaded: false}, {Slug: strings.Repeat("x", 129), Loaded: true}}))
-	after, err := store.Read(t.Context(), "work")
-	require.NoError(t, err)
-	require.Equal(t, before, after)
 }

@@ -51,7 +51,7 @@ func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *agentp
 		if err := h.application.AdmitCallerCreation(subjectFromProto(creation.GetSubject()), creation.GetProjectId()); err != nil {
 			return nil, mapAgentError(err)
 		}
-		workID, err = h.application.Commands.CreateRequestedWork.Handle(ctx, command.CreateWork{
+		workID, err = h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{
 			StartingUserID: creation.GetStartingUserId(),
 			SubjectID:      input.SubjectID, InitialExecution: &input, WorkModel: workModelFromProto(creation.GetModel()),
 			AgentID: creation.GetAgentId(), WorkspaceReference: creation.GetWorkspaceReference(), InputSource: domain.WorkInputSource{Reference: creation.GetInputSource(), SpaceToken: creation.GetInputSpaceToken()},
@@ -259,9 +259,9 @@ func mapAgentError(err error) error {
 		code = connect.CodeInvalidArgument
 	case errors.Is(err, domain.ErrCapacityUnavailable), errors.Is(err, command.ErrInputBacklog):
 		code = connect.CodeResourceExhausted
-	case errors.Is(err, command.ErrContinuationConflict), errors.Is(err, command.ErrWorkCreationConflict), errors.Is(err, command.ErrInitialExecutionConflict), errors.Is(err, domain.ErrConcurrentModification):
+	case errors.Is(err, command.ErrWorkCreationConflict), errors.Is(err, domain.ErrConcurrentModification):
 		code = connect.CodeAborted
-	case errors.Is(err, application.ErrWorkCapabilitiesUnavailable), errors.Is(err, domain.ErrTurnActive), errors.Is(err, command.ErrWorkCreationCanceled), errors.Is(err, domain.ErrWorkVisibilityFixed), errors.Is(err, domain.ErrWorkWithoutProject), errors.Is(err, command.ErrPreparationRejected), errors.Is(err, command.ErrInitialExecutionPending), errors.Is(err, command.ErrInitialExecutionRejected), errors.Is(err, command.ErrStartRequestCanceled), errors.Is(err, command.ErrStartRequestConflict), errors.Is(err, domain.ErrWorkTransition), errors.Is(err, domain.ErrExecutionNotPermitted), errors.Is(err, domain.ErrComputeReclamationPending), errors.Is(err, domain.ErrModelConfigurationWithdrawn), domain.RefusedByComputer(err), errors.Is(err, domain.ErrNotPersonalWork), errors.Is(err, domain.ErrWorkNotActing), errors.Is(err, domain.ErrWorkFilesUnavailable), errors.Is(err, domain.ErrWorkFilesClosed):
+	case errors.Is(err, application.ErrWorkCapabilitiesUnavailable), errors.Is(err, domain.ErrTurnActive), errors.Is(err, command.ErrWorkCreationCanceled), errors.Is(err, domain.ErrWorkVisibilityFixed), errors.Is(err, domain.ErrWorkWithoutProject), errors.Is(err, command.ErrStartRequestCanceled), errors.Is(err, command.ErrStartRequestConflict), errors.Is(err, domain.ErrWorkTransition), errors.Is(err, domain.ErrExecutionNotPermitted), errors.Is(err, domain.ErrComputeReclamationPending), errors.Is(err, domain.ErrModelConfigurationWithdrawn), domain.RefusedByComputer(err), errors.Is(err, domain.ErrNotPersonalWork), errors.Is(err, domain.ErrWorkNotActing), errors.Is(err, domain.ErrWorkFilesUnavailable), errors.Is(err, domain.ErrWorkFilesClosed):
 		code = connect.CodeFailedPrecondition
 	case errors.Is(err, domain.ErrExecutionUnobserved):
 		code = connect.CodeUnavailable

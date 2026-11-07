@@ -125,7 +125,8 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 	// State and diagnostic adapters preserve optional fields and full attribution
 	// across both real publisher formats and the public RPC. These frames must not
 	// advance the UnifiedMessage replay cursor or be suppressed by local ID reuse.
-	statePublisher := agentinfra.NewWorkStateNATSPublisher(lazyConn)
+	statePublisher, err := agentinfra.NewLiveStreamPublisher(lazyConn, agentrpc.WorkStateFrame)
+	require.NoError(t, err)
 	diagnosticPublisher := messagedelivery.NewDiagnosticNATSPublisher(lazyConn)
 	for i, sessionID := range sessions {
 		snapshot := agentquery.WorkView{WorkID: sessionID, State: "working", Waiting: true, StateReason: "needs_owner"}
@@ -140,7 +141,7 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 			snapshot.SubAgents = []agentquery.SubAgent{{ID: "a", Type: "Explore", Task: "map the code", Status: "running"}}
 			expected.Subagents = []*agentpublicv1.SubAgent{{Id: "a", Type: "Explore", Task: "map the code", Status: "running"}}
 		}
-		require.NoError(t, statePublisher.PublishWorkState(ctx, agentrpc.WorkStateFrame(snapshot)))
+		require.NoError(t, statePublisher.PublishWorkState(ctx, snapshot))
 		require.True(t, streams[sessionID].Receive(), "state: %v", streams[sessionID].Err())
 		require.True(t, proto.Equal(expected, streams[sessionID].Msg().GetWorkState()), "state payload and optional progress: got %v, want %v", streams[sessionID].Msg(), expected)
 		diagnostic := messagedelivery.Diagnostic{AgentWorkID: sessionID, Severity: "warning", Reason: "shared-message", Message: "Reconnect to recover output", OccurredAt: base.Add(456 * time.Nanosecond)}

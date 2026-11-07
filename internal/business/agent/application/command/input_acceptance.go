@@ -8,13 +8,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// InputAcceptances commits accepted input.
-type InputAcceptances interface {
-	// CommitAcceptance saves the Work changed by accepting input against the
-	// Work version.
-	CommitAcceptance(ctx context.Context, work *domain.AgentWork) error
-}
-
 // acceptanceAttempts bounds retries of a commit that lost to a concurrent
 // change of the Work after the input was buffered.
 const acceptanceAttempts = 3
@@ -24,15 +17,14 @@ const acceptanceAttempts = 3
 // commits the resulting Work state. Agent keeps no input or delivery record;
 // the buffer's deduplication gives idempotency.
 type InputAcceptance struct {
-	sessions    domain.AgentWorkRepository
-	acceptances InputAcceptances
-	buffer      InputBufferPort
+	sessions domain.AgentWorkRepository
+	buffer   RunningHarnessPort
 }
 
 var _ WorkInputs = (*InputAcceptance)(nil)
 
-func NewInputAcceptance(sessions domain.AgentWorkRepository, acceptances InputAcceptances, buffer InputBufferPort) *InputAcceptance {
-	return &InputAcceptance{sessions: sessions, acceptances: acceptances, buffer: buffer}
+func NewInputAcceptance(sessions domain.AgentWorkRepository, buffer RunningHarnessPort) *InputAcceptance {
+	return &InputAcceptance{sessions: sessions, buffer: buffer}
 }
 
 func (h *InputAcceptance) AcceptInput(ctx context.Context, workID string, input ExecutionInput) (InputHandOff, error) {
@@ -67,6 +59,12 @@ func (h *InputAcceptance) accept(ctx context.Context, work *domain.AgentWork, ad
 	if err := work.AdmitInput(); err != nil {
 		return "", err
 	}
+	// The initial task input keeps its place ahead of this input (Initial
+	// task input order).
+	handedOff, err := h.handOffInitial(ctx, work)
+	if err != nil {
+		return "", err
+	}
 	handOff, err := buffer(ctx)
 	if err != nil {
 		return "", err
@@ -87,15 +85,60 @@ func (h *InputAcceptance) accept(ctx context.Context, work *domain.AgentWork, ad
 			// its caller rather than reported as settled.
 			return "", errors.Join(err, h.buffer.DropBuffer(ctx, workID))
 		}
-		if replay {
+		if replay && !handedOff {
 			return handOff, nil
 		}
-		err := h.acceptances.CommitAcceptance(ctx, work)
+		// The Work changed by accepting input is saved against the Work
+		// version the acceptance read.
+		err := h.sessions.Save(ctx, work)
 		if !errors.Is(err, domain.ErrConcurrentModification) || attempt == acceptanceAttempts {
 			return handOff, err
 		}
 		if work, err = h.sessions.Get(ctx, workID); err != nil {
 			return "", err
 		}
+		// Buffered ahead of this input already, a pending initial task input
+		// is buffered again only as a replay of its identity.
+		if handedOff, err = h.handOffInitial(ctx, work); err != nil {
+			return "", err
+		}
 	}
+}
+
+// HandOffInitialTaskInput hands a Work's pending initial task input to its
+// input buffer and records the hand-off. Buffering is idempotent by the
+// input's identity, so a hand-off whose record was lost is repeated safely.
+// A closed Work, or one without a pending initial task input, has nothing to
+// hand off.
+func (h *InputAcceptance) HandOffInitialTaskInput(ctx context.Context, workID string) error {
+	for attempt := 1; ; attempt++ {
+		work, err := h.sessions.Get(ctx, workID)
+		if err != nil {
+			return err
+		}
+		if work.AdmitInput() != nil {
+			return nil
+		}
+		handedOff, err := h.handOffInitial(ctx, work)
+		if err != nil || !handedOff {
+			return err
+		}
+		err = h.sessions.Save(ctx, work)
+		if !errors.Is(err, domain.ErrConcurrentModification) || attempt == acceptanceAttempts {
+			return err
+		}
+	}
+}
+
+// handOffInitial buffers the Work's pending initial task input under its own
+// identity and records its hand-off on the Work, unsaved.
+func (h *InputAcceptance) handOffInitial(ctx context.Context, work *domain.AgentWork) (bool, error) {
+	initial, pending := work.PendingInitialTaskInput()
+	if !pending {
+		return false, nil
+	}
+	if _, err := h.buffer.BufferInput(ctx, work.ID, ExecutionInput{ID: initial.ID, Text: initial.Text}); err != nil {
+		return false, err
+	}
+	return work.HandOffInitialTaskInput(initial.ID), nil
 }

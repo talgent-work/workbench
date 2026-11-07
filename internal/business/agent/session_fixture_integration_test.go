@@ -4,16 +4,12 @@ package agent_test
 
 import (
 	"context"
-	"reflect"
-	"slices"
 	"sync"
 	"testing"
 
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // sessionControlRequest is the context of a call under the control token.
@@ -24,46 +20,35 @@ func sessionControlRequest(ctx context.Context) context.Context {
 }
 
 type sessionCommandRecorder struct {
+	// The Harness settings and live reads it does not record are unused.
+	unusedExecutionPort
 	inputError, replyError error
-	pending                []application.PendingInteraction
+	pending                []command.PendingInteraction
 	mu                     sync.Mutex
-	starts                 []domain.StartExecutionRequest
-	stops                  []struct {
+	// stops are the exit signals the executions' reconciliation sent.
+	stops []struct {
 		workID    string
 		requestID string
 	}
-	reclaims []string
+	// process is Dispatcher's current observation of a launched process.
+	process command.WorkProcessObservation
 	// buffered and replies are the input buffer's content by identity, as
 	// Dispatcher keeps it.
 	buffered map[string]string
 	replies  map[string]bool
 }
 
-// lifecycleProcesses is the environment authority's controlled observation.
-type lifecycleProcesses struct {
-	mu          sync.Mutex
-	observation domain.ProcessObservation
-}
-
-func (p *lifecycleProcesses) observe(observation domain.ProcessObservation) {
+// observe sets Dispatcher's current observation of a launched process.
+func (p *sessionCommandRecorder) observe(observation command.WorkProcessObservation) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.observation = observation
+	p.process = observation
 }
 
-func (p *lifecycleProcesses) ObserveProcess(context.Context, string) (command.WorkProcessObservation, error) {
+func (p *sessionCommandRecorder) ObserveProcess(context.Context, string, string) (command.WorkProcessObservation, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return command.WorkProcessObservation{ProcessObservation: p.observation}, nil
-}
-
-// The Work's current process is "process" in these fixtures.
-func (*lifecycleProcesses) IsCurrentProcess(_ context.Context, _ string, processID string) (bool, error) {
-	return processID == "process", nil
-}
-
-func (*lifecycleProcesses) AcknowledgeExit(_ context.Context, _ string, processID string) (bool, error) {
-	return processID == "process", nil
+	return p.process, nil
 }
 
 // The recorder stands in for Dispatcher's input buffer: it holds each input
@@ -132,33 +117,6 @@ func (p *sessionCommandRecorder) settle(id string) {
 	delete(p.replies, id)
 }
 
-func (p *sessionCommandRecorder) StartExecution(_ context.Context, request domain.StartExecutionRequest) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.starts = append(p.starts, request)
-	return nil
-}
-
-func (p *sessionCommandRecorder) startRequests() []domain.StartExecutionRequest {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return append([]domain.StartExecutionRequest(nil), p.starts...)
-}
-
-// distinctStartRequests collapses redelivery of the same start. Recovery
-// re-sends the start of a Work still Starting (at-least-once delivery), and the
-// production port registers one allocation per Work and request fingerprint,
-// so only distinct starts are execution admissions.
-func (p *sessionCommandRecorder) distinctStartRequests() []domain.StartExecutionRequest {
-	var distinct []domain.StartExecutionRequest
-	for _, request := range p.startRequests() {
-		if !slices.ContainsFunc(distinct, func(seen domain.StartExecutionRequest) bool { return reflect.DeepEqual(seen, request) }) {
-			distinct = append(distinct, request)
-		}
-	}
-	return distinct
-}
-
 func (p *sessionCommandRecorder) StopExecution(_ context.Context, workID string, requestID string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -168,16 +126,10 @@ func (p *sessionCommandRecorder) StopExecution(_ context.Context, workID string,
 	}{workID, requestID})
 	return nil
 }
-func (*sessionCommandRecorder) RetireFencedRun(context.Context, string) error { return nil }
 
-func (p *sessionCommandRecorder) ReclaimCompute(_ context.Context, workID string) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.reclaims = append(p.reclaims, workID)
-	return nil
-}
-
-func (p *sessionCommandRecorder) assertStop(t *testing.T, workID string, requestID string) {
+// assertSignaled requires that the last exit signal the reconciliation sent
+// was the Work's under requestID.
+func (p *sessionCommandRecorder) assertSignaled(t *testing.T, workID string, requestID string) {
 	t.Helper()
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -187,16 +139,6 @@ func (p *sessionCommandRecorder) assertStop(t *testing.T, workID string, request
 	require.Equal(t, requestID, last.requestID)
 }
 
-func (p *sessionCommandRecorder) assertReclaim(t *testing.T, workID string) {
-	t.Helper()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	require.NotEmpty(t, p.reclaims)
-	require.Equal(t, workID, p.reclaims[len(p.reclaims)-1])
+func (p *sessionCommandRecorder) ListPendingInteractions(context.Context, string) ([]command.PendingInteraction, error) {
+	return append([]command.PendingInteraction(nil), p.pending...), nil
 }
-
-func (p *sessionCommandRecorder) ListPendingInteractions(context.Context, string) ([]application.PendingInteraction, error) {
-	return append([]application.PendingInteraction(nil), p.pending...), nil
-}
-
-func (*sessionCommandRecorder) CancelRunningTurn(context.Context, string) error { return nil }

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -113,6 +114,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 }
 
 type currentServiceSupply struct {
+	application.CredentialSupplyPort
 	token, reason string
 	received      []application.ServiceCredentialRequest
 }
@@ -183,6 +185,8 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	require.NoError(t, err)
 	authorizationID := uuid.NewString()
 	shared := domain.WorkAuthorizationInput{OwnerUserID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerUserID: "lifecycle-owner", AuthorizationID: authorizationID, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
+	// Each Work's execution owns its own sandbox.
+	f.external.distinct = true
 	first, _ := f.createWithAuthorization(t, ctx, snapshot, shared)
 	second, _ := f.createWithAuthorization(t, ctx, snapshot, shared)
 	supply := &currentServiceSupply{token: "first-provider-token"}
@@ -193,26 +197,30 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	f.external.egress = endpoint.URL
 	var allocations []string
 	for _, work := range []*domain.AgentWork{first, second} {
-		record, found, err := latestAllocation(ctx, f.db, work.ID)
-		require.NoError(t, err)
-		require.True(t, found)
-		_, err = f.db.Exec("UPDATE execution_allocation SET sandbox_ready = 1, version = version + 1 WHERE id = ?", record.ID)
-		require.NoError(t, err)
-		allocations = append(allocations, record.ID)
+		allocations = append(allocations, f.run(t, ctx, work.ID, "process-"+work.ID).ID)
 	}
-	recovery, err := NewEnvironmentRecovery(f.provisioning, f.connections, f.reclaimer, f.removals, unread{})
-	require.NoError(t, err)
-	using, err := recovery.MarkCredentialsChanged(ctx, authorizationID)
-	require.NoError(t, err)
+	lookups := infrastructure.NewExecutionQueryRepository(f.db)
+	markChanged := func(authorization string) []string {
+		t.Helper()
+		ids, err := lookups.ListExecutionsUsingAuthorization(ctx, authorization)
+		require.NoError(t, err)
+		marked, err := f.reconcile.MarkCredentialsChanged(ctx, ids)
+		require.NoError(t, err)
+		return marked
+	}
+	using := markChanged(authorizationID)
 	require.ElementsMatch(t, allocations, using, "the index finds every Work using the authorization")
-	unrelated, err := recovery.MarkCredentialsChanged(ctx, uuid.NewString())
-	require.NoError(t, err)
-	require.Empty(t, unrelated)
+	require.Empty(t, markChanged(uuid.NewString()))
 
 	for _, stage := range []struct{ token, reason string }{{"renewed-provider-token", ""}, {"", "reconnect_required"}, {"", "revoked"}, {"reauthorized-provider-token", ""}} {
 		supply.token, supply.reason = stage.token, stage.reason
+		if stage.token != "renewed-provider-token" {
+			// Each later change is a fact of its own that marks both again.
+			require.ElementsMatch(t, allocations, markChanged(authorizationID))
+		}
 		for _, allocation := range using {
-			require.NoError(t, recovery.DeliverCredentials(ctx, allocation))
+			_, err := f.reconcile.Reconcile(ctx, allocation)
+			require.NoError(t, err)
 		}
 		if stage.token != "" {
 			require.Equal(t, 2, writes.writesWith(stage.token), "both Vaults receive the changed credential")
@@ -230,15 +238,18 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 		require.NoError(t, err)
 		require.Greater(t, record.CredentialsExpireAt, time.Now().UnixMilli(), "the delivered expiry is recorded for the sweep")
 	}
+	for _, stage := range []string{"renewed-provider-token", "reauthorized-provider-token"} {
+		require.Equal(t, 2, writes.writesWith(stage), "each change is delivered once to each Vault, not again while current")
+	}
 
 	// A temporary supply failure keeps what was delivered and is retried.
 	supply.token, supply.reason = "", "unavailable"
-	marked, err := recovery.MarkCredentialsChanged(ctx, authorizationID)
-	require.NoError(t, err)
+	marked := markChanged(authorizationID)
 	require.ElementsMatch(t, allocations, marked)
 	before := writes.writesWith("reauthorized-provider-token")
 	for _, allocation := range marked {
-		require.ErrorIs(t, recovery.DeliverCredentials(ctx, allocation), errSupplyTemporarilyUnavailable)
+		_, err := f.reconcile.Reconcile(ctx, allocation)
+		require.ErrorIs(t, err, errSupplyTemporarilyUnavailable)
 		record, _, err := f.provisioning.get(ctx, allocation)
 		require.NoError(t, err)
 		require.Equal(t, staleDelivery.UnixMilli(), record.CredentialsExpireAt, "the change stays due until it is delivered")

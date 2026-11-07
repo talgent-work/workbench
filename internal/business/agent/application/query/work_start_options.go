@@ -60,12 +60,6 @@ type WorkRepositoryOption struct {
 	ID, Provider, RepoName, DefaultBranch string
 }
 
-// AccessibleRepositoriesPort queries repositories reachable under the owner's
-// current Marketplace authorization.
-type AccessibleRepositoriesPort interface {
-	ListAccessibleRepositories(context.Context, string) ([]domain.AccessibleRepository, error)
-}
-
 // RecentRepositoryReader reads repository identities from the owner's own
 // Works, most recently created first and without duplicates.
 type RecentRepositoryReader interface {

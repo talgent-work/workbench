@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"context"
 	"errors"
 	"strings"
 )
@@ -29,19 +28,12 @@ type StartingContext struct {
 }
 
 // startingContext admits a source Work of this definition and Project only.
-func (a *AgentDefinition) startingContext(ctx context.Context, source *StartingContextSource, projectID string, lookup WorkLookupPort) (*StartingContext, error) {
+func (a *AgentDefinition) startingContext(source *StartingContextSource, projectID string, work *AgentWork) (*StartingContext, error) {
 	if source == nil {
 		return nil, nil
 	}
 	position := strings.TrimSpace(source.Position)
-	work, err := lookup.LocateWork(ctx, strings.TrimSpace(source.WorkID))
-	if errors.Is(err, ErrWorkNotFound) {
-		return nil, ErrStartingContextNotAdmitted
-	}
-	if err != nil {
-		return nil, err
-	}
-	if work == nil || work.AgentID != a.ID || work.ProjectID != strings.TrimSpace(projectID) || position == "" || work.HarnessSessionReference == "" {
+	if work == nil || work.ID != strings.TrimSpace(source.WorkID) || work.AgentID != a.ID || work.ProjectID != strings.TrimSpace(projectID) || position == "" || work.HarnessSessionReference == "" {
 		return nil, ErrStartingContextNotAdmitted
 	}
 	return &StartingContext{SourceWorkID: work.ID, SourceSessionReference: work.HarnessSessionReference, Position: position}, nil

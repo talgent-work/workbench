@@ -8,5 +8,5 @@ import (
 )
 
 func (a *Application) ResolveStartupCapabilities(ctx context.Context, user string, input domain.StartupCapabilityInput) (domain.CapabilitySnapshot, error) {
-	return command.ResolveStartupCapabilities(ctx, a.Plugins, user, input)
+	return command.ResolveStartupCapabilities(ctx, a.Catalog, user, input)
 }

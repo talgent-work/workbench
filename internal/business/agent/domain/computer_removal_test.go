@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -10,34 +9,59 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
+// removed is the authority's confirmation that the Work's Managed Computer was
+// removed.
+var removed = domain.EnvironmentObservation{Removed: true, LossReason: domain.ComputerRemovedReason}
+
+// applyReports applies every report of the execution to its Work.
+func applyReports(t *testing.T, work *domain.AgentWork, execution *domain.AgentExecution) {
+	t.Helper()
+	for _, r := range execution.Reports() {
+		report(t, work, r)
+	}
+}
+
 // The removal of a Work's Managed Computer is the loss of its execution
-// environment: Working becomes Failed and Closing becomes Closed, each
-// returning its Desk, with nothing asked of the gone machine.
+// environment: the execution reports it, Working becomes Failed and Closing
+// becomes Closed once the execution is released, with nothing asked of the
+// gone machine.
 func TestAComputerRemovalLosesTheEnvironmentOfItsWorks(t *testing.T) {
-	ctx := context.Background()
 	working, port := turningWork(t)
-	changed, err := working.ApplyComputerRemoval(ctx)
-	require.NoError(t, err)
-	require.True(t, changed)
+	execution := beginOf(t, working, domain.RealizationManaged)
+	decision := decide(t, execution, removed, time.Now())
+	require.True(t, decision.Changed)
+	require.Empty(t, decision.Steps)
+	require.True(t, execution.Outcome.Lost)
+	applyReports(t, working, execution)
 	require.Equal(t, domain.WorkFailed, working.State)
 	require.Equal(t, domain.ComputerRemovedReason, working.FailureReason)
 	require.True(t, working.HarnessProcess.EnvironmentLost)
 	require.False(t, working.HoldsProcess())
-	require.Contains(t, eventKinds(working), domain.EventKindDeskReleased)
-	require.Empty(t, port.stops)
-	require.Zero(t, port.reclaims)
+	require.Equal(t, domain.RetiredByLoss, releaseCause(working), "its execution retires and leaves its Desk")
+	require.Empty(t, port.stops())
 
-	changed, err = working.ApplyComputerRemoval(ctx)
-	require.NoError(t, err)
-	require.False(t, changed, "applying the removal again changes nothing")
+	require.False(t, decide(t, execution, removed, time.Now()).Changed, "observing the removal again changes nothing")
+	stops := len(port.stops())
+	applyReports(t, working, execution)
+	require.Len(t, port.stops(), stops, "applying the loss again changes nothing")
 
-	closing, port := runningHarnessWork(t, domain.HarnessChoice{})
+	closing, _ := runningHarnessWork(t, domain.HarnessChoice{})
+	execution = beginOf(t, closing, domain.RealizationManaged)
 	require.NoError(t, closing.RecordFailure("model unavailable"))
-	require.NoError(t, closing.Close(ctx, "close", domain.ClosureFacts{}, port))
+	require.NoError(t, closing.Close("close", domain.ClosureFacts{}))
 	require.Equal(t, domain.WorkClosing, closing.State)
-	changed, err = closing.ApplyComputerRemoval(ctx)
+	decide(t, execution, removed, time.Now())
+	applyReports(t, closing, execution)
+	requested, _ := executionRequest[domain.WorkComputeReleaseRequested](closing)
+	retired, err := execution.Retire(requested, time.Now())
 	require.NoError(t, err)
-	require.True(t, changed)
+	require.True(t, retired)
+	require.Equal(t, []domain.ExecutionStepKind{domain.StepLeaveDesk}, kinds(decide(t, execution, domain.EnvironmentObservation{}, time.Now())))
+	require.True(t, execution.RecordDeskLeft(time.Now()))
+	confirmed, err := execution.ConfirmRelease(domain.EnvironmentObservation{}, time.Now())
+	require.NoError(t, err)
+	require.True(t, confirmed)
+	applyReports(t, closing, execution)
 	require.Equal(t, domain.WorkClosed, closing.State)
 	require.Equal(t, "model unavailable", closing.FailureReason, "an earlier failure keeps explaining it")
 }
@@ -45,26 +69,17 @@ func TestAComputerRemovalLosesTheEnvironmentOfItsWorks(t *testing.T) {
 // A start still waiting in a removed Computer's line ends, and a Work that
 // stopped before the removal keeps its State: it can only be closed.
 func TestAComputerRemovalEndsAWaitingStartAndLeavesAStoppedWork(t *testing.T) {
-	ctx := context.Background()
-	queued, port := queuedWork(t, time.Now())
-	changed, err := queued.ApplyComputerRemoval(ctx)
-	require.NoError(t, err)
-	require.True(t, changed)
+	queued, _ := queuedWork(t, time.Now())
+	execution := beginOf(t, queued, domain.RealizationManaged)
+	decide(t, execution, removed, time.Now())
+	require.True(t, execution.Outcome.Lost, "a Queued execution on a removed Computer is lost")
+	require.False(t, execution.RecordSubmission(), "nothing is created on a removed Computer")
+	applyReports(t, queued, execution)
 	require.Equal(t, domain.WorkFailed, queued.State)
-	require.False(t, queued.WaitsForDesk())
-	require.Empty(t, port.starts, "nothing starts on a removed Computer")
 
 	stopped, _ := stoppedWork(t)
-	changed, err = stopped.ApplyComputerRemoval(ctx)
+	changed, err := stopped.ApplyExecutionReport(domain.ExecutionEnvironmentLost{WorkID: stopped.ID, StartAdmittedAt: stopped.HarnessProcess.StartingSince, Reason: domain.ComputerRemovedReason})
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, domain.WorkStopped, stopped.State)
-}
-
-func eventKinds(work *domain.AgentWork) []domain.EventKind {
-	var kinds []domain.EventKind
-	for _, event := range work.Events.Drain() {
-		kinds = append(kinds, event.Kind())
-	}
-	return kinds
 }

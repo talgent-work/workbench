@@ -42,7 +42,7 @@ type ManagedComputers struct {
 	// telemetry is where a run's Harness sends its OTLP telemetry.
 	telemetry string
 	token     string
-	computers command.ComputerDescriptionPort
+	computers command.ComputerPort
 	// fileIdle bounds the wait for each piece of a Work file read.
 	fileIdle time.Duration
 }
@@ -59,7 +59,7 @@ type ManagedAddresses struct {
 
 // NewManagedComputers reaches the machines through the relay and gives them
 // the platform's public addresses.
-func NewManagedComputers(client *http.Client, relayAddress string, addresses ManagedAddresses, controlToken string, computers command.ComputerDescriptionPort) (*ManagedComputers, error) {
+func NewManagedComputers(client *http.Client, relayAddress string, addresses ManagedAddresses, controlToken string, computers command.ComputerPort) (*ManagedComputers, error) {
 	relay, err := url.Parse(relayAddress)
 	if client == nil || computers == nil || err != nil || relay.Host == "" || (relay.Scheme != "http" && relay.Scheme != "https") || relay.User != nil || relay.RawQuery != "" || relay.Fragment != "" || strings.TrimSpace(controlToken) == "" {
 		return nil, errors.New("agent: HTTP client, Computer lookup, HTTP(S) relay address and control token are required for Managed Computers")
@@ -156,7 +156,7 @@ func decodeManagedSpecification(record allocationRecord) (managedSpecification, 
 // endpoint: Talgent Computer's local proxy sets ANTHROPIC_BASE_URL to itself,
 // and the run's proxy token in place of the key, for each process, and sends
 // the requests on to the endpoint recorded here.
-func managedSpecificationFor(request domain.StartExecutionRequest, models *ModelCatalog, token, credential string) (managedSpecification, error) {
+func managedSpecificationFor(request domain.LaunchSpecification, models *ModelCatalog, token, credential string) (managedSpecification, error) {
 	if strings.TrimSpace(request.ComputerID) == "" || strings.TrimSpace(token) == "" || strings.TrimSpace(credential) == "" {
 		return managedSpecification{}, domain.ErrExecutionRequest
 	}

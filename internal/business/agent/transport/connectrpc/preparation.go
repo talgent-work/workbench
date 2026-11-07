@@ -41,7 +41,7 @@ func preparationToProto(value query.WorkPreparation) *agentprivatev1.WorkPrepara
 	result := &agentprivatev1.WorkPreparation{
 		WorkId: value.WorkID, RequestId: value.RequestID, SubjectId: value.SubjectID,
 		WorkBranch: value.WorkBranch, InputId: value.InputID, Input: value.Input,
-		Submitted: value.Submitted, InputPrepared: value.InputPrepared, InputBuffered: value.InputBuffered, Rejected: value.Rejected,
+		Submitted: value.Submitted, InputPrepared: value.InputPrepared, InputBuffered: value.InputBuffered,
 	}
 	for _, checkout := range value.Checkouts {
 		result.Checkouts = append(result.Checkouts, &agentprivatev1.PreparedCheckout{

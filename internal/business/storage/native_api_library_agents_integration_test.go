@@ -76,15 +76,15 @@ func (a *libraryAgents) start(person, workspace, projectID string) libraryWork {
 	require.NoError(a.t, err)
 	work := libraryWork{id: uuid.Must(uuid.NewV7()).String(), workspace: workspace}
 	work.space = a.f.open(work.id)
-	started, err := agentdomain.NewAgentWork(ctx, agentdomain.WorkInput{
+	started, err := agentdomain.NewAgentWork(agentdomain.WorkInput{
 		StartedBy: person, ID: work.id, AgentID: definition.ID, ProjectID: projectID, WorkModel: agentdomain.WorkModelSelection{ConfigurationID: "default"},
 		WorkspaceReference: workspace, HomeBinding: definition.HomeBinding,
 		InputSource: agentdomain.WorkInputSource{Reference: "file-space/" + work.id, SpaceToken: work.space.SpaceToken},
-	}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), DeskID: "desk"}}, identityExecution{})
+	}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), DeskID: "desk"}})
 	require.NoError(a.t, err)
 	require.Empty(a.t, started.CapabilitySnapshot.Connectors, "the Work starts without a platform Connector")
 	require.NoError(a.t, a.works.RegisterWork(ctx, started, agentcommand.WorkRegistration{
-		SubjectID: person, RequestID: uuid.NewString(), WorkspaceReference: workspace, DefinitionVersion: definition.Version,
+		SubjectID: person, Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: started.ID}, WorkspaceReference: workspace, DefinitionVersion: definition.Version,
 	}))
 	return work
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/samber/oops"
@@ -13,28 +14,25 @@ import (
 )
 
 // cloudEnvironment is the Cloud realization's environment authority: an
-// OpenSandbox sandbox per allocation, created from its fixed specification,
-// with the Work's credentials delivered to the sandbox's Vault. Creation
-// that cannot be confirmed may leave surplus sandboxes, which it prunes, and
-// it observes a retired sandbox's absence itself. Its Works say whether a
-// Work reclaims its run beyond reach.
+// OpenSandbox sandbox per execution, created from its fixed specification,
+// with the Work's credentials delivered to the sandbox's Vault. A creation
+// that cannot be confirmed may leave more than one sandbox carrying the
+// execution's ownership; observation lists them all, and the execution
+// decides which to delete.
 type cloudEnvironment struct {
 	sandboxes   *Sandboxes
 	credentials *SandboxCredentials
-	works       *HeldWorks
 }
 
 var (
 	_ environmentAuthority = cloudEnvironment{}
 	_ credentialDelivery   = cloudEnvironment{}
-	_ surplusEnvironments  = cloudEnvironment{}
-	_ observedCompute      = cloudEnvironment{}
-	_ unreachedReclamation = cloudEnvironment{}
+	_ leasing              = cloudEnvironment{}
 )
 
 func (cloudEnvironment) launchLayout() launchLayout { return sandboxLayout }
 
-func (c cloudEnvironment) specify(ctx context.Context, request domain.StartExecutionRequest, mounts domain.SandboxMounts, owner Allocation, token, credential string) (environmentSpecification, error) {
+func (c cloudEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner Allocation, token, credential string) (environmentSpecification, error) {
 	spec, err := c.sandboxes.specification(ctx, request, mounts, owner, token, credential)
 	if err != nil {
 		return environmentSpecification{}, err
@@ -47,24 +45,38 @@ func (c cloudEnvironment) specify(ctx context.Context, request domain.StartExecu
 	return environmentSpecification{document: document, authorizations: authorizations}, err
 }
 
-// sandboxSpec is the allocation's validated sandbox specification.
-func (cloudEnvironment) sandboxSpec(record allocationRecord) (Allocation, sdk.CreateSandboxRequest, error) {
-	owner := Allocation{WorkID: record.SessionID, ID: record.ID}
-	var spec sdk.CreateSandboxRequest
-	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
-		return owner, spec, oops.With("operation", "decode_allocation_spec").Wrap(err)
+// sandboxSpec is the execution's validated sandbox specification.
+func (c cloudEnvironment) sandboxSpec(record allocationRecord) (Allocation, sdk.CreateSandboxRequest, error) {
+	owner, spec, err := c.ownership(record)
+	if err != nil {
+		return owner, spec, err
 	}
 	if err := owner.validate(); err != nil {
 		return owner, spec, err
 	}
-	if spec.Metadata[sandboxSpecLabel] == "" || spec.Env["EXECD_ACCESS_TOKEN"] == "" {
+	if spec.Env["EXECD_ACCESS_TOKEN"] == "" {
 		return owner, spec, domain.ErrExecutionRequest
 	}
 	return owner, spec, nil
 }
 
-// claim freezes the Work's repository authorization with the submission, so
-// a waiting preparation does not suppress durable registration of the start.
+// ownership is what the execution's sandboxes carry: its owner and the
+// specification fixed before its submission, whose metadata the server lists
+// by.
+func (cloudEnvironment) ownership(record allocationRecord) (Allocation, sdk.CreateSandboxRequest, error) {
+	owner := Allocation{WorkID: record.SessionID, ID: record.ID}
+	var spec sdk.CreateSandboxRequest
+	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
+		return owner, spec, oops.With("operation", "decode_allocation_spec").Wrap(err)
+	}
+	if spec.Metadata[sandboxSpecLabel] == "" {
+		return owner, spec, domain.ErrExecutionRequest
+	}
+	return owner, spec, nil
+}
+
+// claim freezes the Work's repository authorization with the specification,
+// before the creation is submitted.
 func (c cloudEnvironment) claim(ctx context.Context, record allocationRecord) ([]byte, error) {
 	if _, _, err := c.sandboxSpec(record); err != nil {
 		return nil, err
@@ -84,25 +96,66 @@ func (c cloudEnvironment) create(ctx context.Context, record allocationRecord) (
 	return c.sandboxes.submit(ctx, owner, spec)
 }
 
-// find looks the sandbox up; an empty lookup cannot prove an in-flight
-// create failed.
-func (c cloudEnvironment) find(ctx context.Context, record allocationRecord) (string, error) {
-	owner, spec, err := c.sandboxSpec(record)
+// observe lists the sandboxes the server shows with the execution's
+// ownership. The list may not show a sandbox yet, so the bound one is
+// confirmed by its own identity: present exactly while a GET finds it.
+func (c cloudEnvironment) observe(ctx context.Context, record allocationRecord, _ bool) (environmentView, error) {
+	owner, spec, err := c.ownership(record)
 	if err != nil {
-		return "", err
+		return environmentView{}, err
 	}
-	return c.sandboxes.lookup(ctx, owner, spec)
+	owned, err := c.sandboxes.owned(ctx, owner, spec)
+	if err != nil {
+		return environmentView{}, err
+	}
+	var view environmentView
+	for _, info := range owned {
+		if info.ID != record.SandboxID {
+			view.environments = append(view.environments, domain.ObservedEnvironment{ID: info.ID, Running: info.Status.State == sdk.StateRunning, LeaseExpiresAt: leaseExpiry(&info)})
+		}
+	}
+	if record.SandboxID == "" {
+		return view, nil
+	}
+	bound, err := c.sandboxes.inspect(ctx, owner, record.SandboxID)
+	if errors.Is(err, errSandboxAbsent) {
+		return view, nil
+	}
+	if err != nil {
+		return environmentView{}, err
+	}
+	view.environments = append([]domain.ObservedEnvironment{{ID: record.SandboxID, Running: bound.running, LeaseExpiresAt: bound.expiresAt}}, view.environments...)
+	view.endpoint = bound.endpoint
+	return view, nil
+}
+
+func (c cloudEnvironment) leaseTerms() domain.LeaseTerms { return c.sandboxes.lease() }
+
+// renew extends the bound sandbox's lease to expiresAt.
+func (c cloudEnvironment) renew(ctx context.Context, record allocationRecord, expiresAt time.Time) (time.Time, error) {
+	return c.sandboxes.renew(ctx, Allocation{WorkID: record.SessionID, ID: record.ID}, record.SandboxID, expiresAt)
+}
+
+// remove deletes one sandbox once its exact ownership is confirmed again.
+func (c cloudEnvironment) remove(ctx context.Context, record allocationRecord, id string) error {
+	owner, spec, err := c.ownership(record)
+	if err != nil {
+		return err
+	}
+	_, err = c.sandboxes.Delete(ctx, owner, spec, id, c.credentials)
+	return err
 }
 
 func (c cloudEnvironment) resolve(ctx context.Context, record allocationRecord, client *http.Client) (environment, environmentState, error) {
 	owner := Allocation{WorkID: record.SessionID, ID: record.ID}
-	endpoint, ready, err := c.sandboxes.Endpoint(ctx, owner, record.SandboxID)
+	bound, err := c.sandboxes.inspect(ctx, owner, record.SandboxID)
 	if errors.Is(err, errSandboxAbsent) {
 		return environment{}, environmentLost, nil
 	}
-	if err != nil || !ready {
+	if err != nil || !bound.running {
 		return environment{}, environmentPending, err
 	}
+	endpoint := bound.endpoint
 	var spec sdk.CreateSandboxRequest
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
 		return environment{}, environmentPending, oops.With("operation", "decode_native_spec").Wrap(err)
@@ -111,23 +164,7 @@ func (c cloudEnvironment) resolve(ctx context.Context, record allocationRecord, 
 	if err != nil {
 		return environment{}, environmentPending, err
 	}
-	return environment{endpoint: endpoint, token: spec.Env["EXECD_ACCESS_TOKEN"], spec: spec, client: execdClient}, environmentRunning, nil
-}
-
-func (c cloudEnvironment) lost(ctx context.Context, record allocationRecord) (bool, error) {
-	_, err := c.sandboxes.client.GetSandbox(ctx, record.SandboxID)
-	if isSandboxNotFound(err) {
-		return true, nil
-	}
-	if err != nil {
-		return false, sandboxError(ctx, "observe", err)
-	}
-	return false, nil
-}
-
-// release deletes the sandbox the obligation fenced.
-func (c cloudEnvironment) release(ctx context.Context, _ allocationRecord, removal removalRecord) (bool, error) {
-	return c.sandboxes.Delete(ctx, Allocation{WorkID: removal.SessionID, ID: removal.ID}, removal.SandboxID, c.credentials)
+	return environment{endpoint: endpoint, token: spec.Env["EXECD_ACCESS_TOKEN"], client: execdClient}, environmentRunning, nil
 }
 
 func (cloudEnvironment) workCredential(record allocationRecord) (string, error) {
@@ -156,45 +193,4 @@ func (c cloudEnvironment) withdraw(ctx context.Context, record allocationRecord)
 
 func (c cloudEnvironment) modelDigest(record allocationRecord) (string, error) {
 	return c.credentials.modelDigest(record)
-}
-
-// prune preserves the durably selected primary sandbox.
-func (c cloudEnvironment) prune(ctx context.Context, record allocationRecord, env environment) error {
-	return c.sandboxes.prune(ctx, Allocation{WorkID: record.SessionID, ID: record.ID}, env.spec, record.SandboxID, c.credentials)
-}
-
-// pruneRetired removes late or duplicate sandboxes of a retired allocation. The
-// allocation itself is never revived and its primary removal obligation is
-// settled separately; it is consulted only when such a sandbox is observed.
-func (c cloudEnvironment) pruneRetired(ctx context.Context, record allocationRecord) error {
-	var spec sdk.CreateSandboxRequest
-	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
-		return oops.With("operation", "decode_retired_spec").Wrap(err)
-	}
-	return c.sandboxes.prune(ctx, Allocation{WorkID: record.SessionID, ID: record.ID}, spec, "", c.credentials)
-}
-
-// unreached reports that the allocation's Work reclaims its run beyond reach.
-func (c cloudEnvironment) unreached(ctx context.Context, record allocationRecord) (bool, error) {
-	if c.works == nil {
-		return false, errors.New("agent: the Cloud realization has no Work holdings to authorize a release beyond reach")
-	}
-	return c.works.unreached(ctx, record)
-}
-
-// released observes a retired allocation's sandbox. Its absence can settle a
-// previously observed exit, but cannot establish the exit of a new start that
-// has not allocated its environment yet.
-func (c cloudEnvironment) released(ctx context.Context, record allocationRecord) (bool, error) {
-	info, err := c.sandboxes.client.GetSandbox(ctx, record.SandboxID)
-	if isSandboxNotFound(err) {
-		return true, nil
-	}
-	if err != nil {
-		return false, sandboxError(ctx, "observe", err)
-	}
-	if info.ID != record.SandboxID || !matchesSandbox(info, Allocation{WorkID: record.SessionID, ID: record.ID}) {
-		return false, errEnvironmentConflict
-	}
-	return false, nil
 }

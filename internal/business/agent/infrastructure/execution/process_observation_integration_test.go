@@ -4,137 +4,97 @@ package execution
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
-	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
-
-	"connectrpc.com/connect/v2"
-	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
-	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
-	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
-	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"xorm.io/xorm"
+
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
-type nativeProcessObservation struct {
-	dispatcherprivatev1connect.UnimplementedExecutionServiceHandler
-	state dispatcherprivatev1.ProcessState
-}
-
-func (h nativeProcessObservation) ObserveProcess(ctx context.Context, request *dispatcherprivatev1.ObserveProcessRequest) (*dispatcherprivatev1.ObserveProcessResponse, error) {
-	info, _ := connect.CallInfoForServerContext(ctx)
-	if info.RequestHeader().Get("Authorization") != "Bearer dispatcher-secret" || request.ProcessId != "current-process" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, domain.ErrInvalidWork.Error()).WithCause(domain.ErrInvalidWork)
-	}
-	return &dispatcherprivatev1.ObserveProcessResponse{State: h.state}, nil
-}
-
-// An old deleted allocation is not evidence that the process of a newly
-// admitted start exited, and only an exit fact naming the current binding's
-// process is acknowledged on it.
-func TestProcessObservationDistinguishesRetiredEnvironmentFromCurrentStart(t *testing.T) {
-	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-	sandboxes, _, lifecycle := sandboxClient(t)
-	mux := http.NewServeMux()
-	path, handler := "/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) {
-		dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, nativeProcessObservation{state: dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING})
-	})
-	mux.Handle(path, handler)
-	server := httptest.NewServer(mux)
-	defer server.Close()
-	observer, err := NewProcessObservations(NewProvisioning(db, sandboxes, nil, NativeLaunchConfig{}, time.Now, nil, nil), NewDispatcherControl(server.Client(), server.URL, "dispatcher-secret"))
-	require.NoError(t, err)
-	old := allocationRecord{ID: "old-allocation", SessionID: "work", SandboxID: sandboxID, ProcessID: "old-process", CreatedAt: 1, DeletedAt: 2, RequestJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), SpecificationJSON: []byte(`{}`)}
-	_, err = db.Insert(&old)
-	require.NoError(t, err)
-	observed, err := observer.ObserveProcess(t.Context(), "work")
-	require.NoError(t, err)
-	require.Equal(t, domain.ProcessPending, observed.State, "absence of P1's environment cannot establish exit of an unlaunched P2")
-	require.True(t, observed.ComputeReclaimed)
-	current := allocationRecord{ID: "2b5cff9e-e3a6-4e56-9a2c-5aa9a8a7e006", SessionID: "work", SandboxID: sandboxID, ProcessID: "current-process", CreatedAt: 3, RequestJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), SpecificationJSON: []byte(`{}`)}
-	_, err = db.Insert(&current)
-	require.NoError(t, err)
-	lifecycle.mu.Lock()
-	lifecycle.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: correlation(Allocation{ID: current.ID, WorkID: "work"})}
-	lifecycle.mu.Unlock()
-	observed, err = observer.ObserveProcess(t.Context(), "work")
-	require.NoError(t, err)
-	require.Equal(t, domain.ProcessRunning, observed.State)
-	require.False(t, observed.ComputeReclaimed)
-	acknowledged, err := observer.AcknowledgeExit(t.Context(), "work", "old-process")
-	require.NoError(t, err)
-	require.False(t, acknowledged, "P1's late exit fact is not P2's")
-	acknowledged, err = observer.AcknowledgeExit(t.Context(), "work", "current-process")
-	require.NoError(t, err)
-	require.True(t, acknowledged)
-	record, _, err := observer.provisioning.live(t.Context(), "work")
-	require.NoError(t, err)
-	require.True(t, record.ProcessExited)
-	acknowledged, err = observer.AcknowledgeExit(t.Context(), "work", "current-process")
-	require.NoError(t, err)
-	require.True(t, acknowledged, "a redelivered exit fact is acknowledged again")
-	lifecycle.mu.Lock()
-	lifecycle.info = nil
-	lifecycle.mu.Unlock()
-	// Observing a live allocation's process asks only Dispatcher: the loss of
-	// its sandbox is the environment authority's report to make.
-	lifecycle.mu.Lock()
-	before := lifecycle.requests
-	lifecycle.mu.Unlock()
-	observed, err = observer.ObserveProcess(t.Context(), "work")
-	require.NoError(t, err)
-	require.NotEqual(t, domain.ProcessEnvironmentLost, observed.State)
-	lifecycle.mu.Lock()
-	require.Equal(t, before, lifecycle.requests, "the environment authority is not asked")
-	lifecycle.mu.Unlock()
-}
-
-// A delayed ReclaimCompute(workID) may execute after another caller finished
-// P1 cleanup and resumed P2. The resource boundary must preserve live P2.
-func TestLateComputeRequestCannotDeleteRunningCurrentProcess(t *testing.T) {
-	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-	sandboxes, _, lifecycle := sandboxClient(t)
-	// Its Work still reaches the run, so only an exit authorizes the release.
-	p := NewProvisioning(db, sandboxes, &SandboxCredentials{works: NewHeldWorks(db, &unreachedWorks{})}, NativeLaunchConfig{}, time.Now, nil, nil)
-	current := allocationRecord{ID: "2b5cff9e-e3a6-4e56-9a2c-5aa9a8a7e006", SessionID: "work", SandboxID: sandboxID, ProcessID: "current-process", CreatedAt: 3, RequestJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), SpecificationJSON: []byte(`{}`)}
-	_, err = db.Insert(&current)
-	require.NoError(t, err)
-	lifecycle.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: correlation(Allocation{ID: current.ID, WorkID: "work"})}
-	root, err := os.OpenRoot(t.TempDir())
-	require.NoError(t, err)
-	defer root.Close()
-	removals := NewRemovals(db, time.Now)
-	environments, err := NewEnvironments(p, removals, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
-	require.NoError(t, err)
-	require.NoError(t, environments.Delete(t.Context(), "work"))
-	_, found, err := p.live(t.Context(), "work")
-	require.NoError(t, err)
-	require.True(t, found, "an old Work-level request cannot retire the current live allocation")
-	pending, err := pendingRemovals(t.Context(), removals)
-	require.NoError(t, err)
-	require.Empty(t, pending, "an old request must not create a future deletion obligation for P2")
-}
-
-func allocationObserverFixture(t *testing.T, p *Provisioning, state dispatcherprivatev1.ProcessState) *ProcessObservations {
+// startTwice releases a Work's first execution and begins its second,
+// launched as current-process; it answers the first and the second.
+func startTwice(t *testing.T, db *xorm.Engine) (*AgentExecutionRepository, *domain.AgentExecution, *domain.AgentExecution) {
 	t.Helper()
-	mux := http.NewServeMux()
-	path, handler := "/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) {
-		dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, nativeProcessObservation{state: state})
-	})
-	mux.Handle(path, handler)
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-	observer, err := NewProcessObservations(p, NewDispatcherControl(server.Client(), server.URL, "dispatcher-secret"))
+	ctx := context.Background()
+	provider, _, _ := sandboxClient(t)
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	executions := NewAgentExecutionRepository(db, time.Now)
+	launched := func(processID string) *domain.AgentExecution {
+		record, err := register(ctx, p, request(), testMounts)
+		require.NoError(t, err)
+		run, err := executions.Get(ctx, record.ID)
+		require.NoError(t, err)
+		require.True(t, run.RecordSubmission())
+		run.Environment = sandboxID
+		_, err = run.RecordLaunch(processID)
+		require.NoError(t, err)
+		require.NoError(t, executions.Save(ctx, run))
+		run, err = executions.Get(ctx, record.ID)
+		require.NoError(t, err)
+		return run
+	}
+	first := launched("old-process")
+	first.RecordExit("old-process", domain.HarnessExit{})
+	_, err := first.Retire(domain.WorkComputeReleaseRequested{WorkID: first.WorkID, StartAdmittedAt: first.StartAdmittedAt, Cause: domain.RetiredByExit}, time.Now())
 	require.NoError(t, err)
-	return observer
+	first.RecordDeskLeft(time.Now())
+	_, err = first.ConfirmRelease(domain.EnvironmentObservation{}, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, executions.Save(ctx, first))
+	time.Sleep(2 * time.Millisecond) // the next start is admitted later
+	second := launched("current-process")
+	return executions, first, second
+}
+
+// A released earlier execution is not evidence that the process of a newly
+// admitted start exited, and only an exit fact naming the current
+// execution's process is recorded on it.
+func TestProcessObservationDistinguishesRetiredEnvironmentFromCurrentStart(t *testing.T) {
+	ctx := context.Background()
+	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	executions, first, second := startTwice(t, db)
+
+	latest, err := executions.Latest(ctx, second.WorkID)
+	require.NoError(t, err)
+	require.Equal(t, second.ID, latest.ID, "the Work's current execution is its latest one")
+	require.False(t, latest.Process.Exited, "the released earlier run says nothing of the current process")
+	require.NotEqual(t, first.ID, latest.ID)
+
+	current, changed := latest.RecordExit("old-process", domain.HarnessExit{})
+	require.False(t, current, "the earlier process's late exit fact is not the current one's")
+	require.False(t, changed)
+	current, changed = latest.RecordExit("current-process", domain.HarnessExit{})
+	require.True(t, current)
+	require.True(t, changed)
+	require.NoError(t, executions.Save(ctx, latest))
+	exited, err := executions.Get(ctx, second.ID)
+	require.NoError(t, err)
+	require.True(t, exited.Process.Exited)
+	current, changed = exited.RecordExit("current-process", domain.HarnessExit{})
+	require.True(t, current, "a redelivered exit fact is acknowledged again")
+	require.False(t, changed)
+}
+
+// A delayed request to release the Work's earlier run, carried out after the
+// Work resumed, cannot retire the current execution.
+func TestLateComputeRequestCannotDeleteRunningCurrentProcess(t *testing.T) {
+	ctx := context.Background()
+	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	executions, first, second := startTwice(t, db)
+	retired, err := second.Retire(domain.WorkComputeReleaseRequested{WorkID: second.WorkID, StartAdmittedAt: first.StartAdmittedAt, Cause: domain.RetiredUnreached}, time.Now())
+	require.NoError(t, err)
+	require.False(t, retired, "an old request cannot retire the current execution")
+	live, err := executions.Get(ctx, second.ID)
+	require.NoError(t, err)
+	require.False(t, live.Retired())
+	pending, err := unreleased(ctx, db)
+	require.NoError(t, err)
+	require.Empty(t, pending, "an old request must not leave a release outstanding for the current run")
 }

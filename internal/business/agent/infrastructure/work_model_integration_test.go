@@ -9,7 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -19,7 +21,7 @@ const fixtureManagedComputer = "01950000-0000-7000-8000-00000000ac01"
 
 // managedAdmission lists only the person's Managed Computer and seats every
 // run there.
-type managedAdmission struct{ command.ComputerAdmissionPort }
+type managedAdmission struct{ command.ComputerPort }
 
 func (managedAdmission) ListUsableComputers(context.Context, string) ([]command.UsableComputer, error) {
 	return []command.UsableComputer{{ID: fixtureManagedComputer}}, nil
@@ -27,9 +29,8 @@ func (managedAdmission) ListUsableComputers(context.Context, string) ([]command.
 
 func TestTheMachineLoginSurvivesReloadAndIsShownOnTheWork(t *testing.T) {
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, f.sessions, infrastructure.NewWorkAuthorizer(f.db),
-		creationModels(), &creationCatalog{}, creationConnections{}, f.sessions, managedAdmission{computertest.Checked(startupAuthority{})}, infrastructure.NewExecutionRequestsFactory(executionPort{}))
-	creation := f.request.Creation
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), managedAdmission{computertest.Checked(startupAuthority{})}, creationPreparation(f.db, creationModels()))
+	creation := f.request
 	creation.ComputerID, creation.WorkModel = fixtureManagedComputer, domain.MachineLoginModel()
 	id, err := handler.Handle(t.Context(), creation)
 	require.NoError(t, err)

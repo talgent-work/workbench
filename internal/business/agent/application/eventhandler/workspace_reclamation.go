@@ -10,9 +10,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// WorkspaceReclamationPort accepts a Closed Work's Workspace Reclamation
+// WorkspaceReclamationQueue accepts a Closed Work's Workspace Reclamation
 // Request for durable delivery to Storage.
-type WorkspaceReclamationPort interface {
+type WorkspaceReclamationQueue interface {
 	RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error
 }
 
@@ -24,14 +24,14 @@ const reclamationAttempts = 3
 // once the Work reaches Closed. Agent keeps no reclamation obligation: the
 // request is handed to a delivery queue here and Storage owns its completion.
 type WorkspaceReclamations struct {
-	requests WorkspaceReclamationPort
+	requests WorkspaceReclamationQueue
 	logger   *slog.Logger
 	backoff  time.Duration
 }
 
 var _ domainevent.Handler = (*WorkspaceReclamations)(nil)
 
-func NewWorkspaceReclamations(requests WorkspaceReclamationPort, logger *slog.Logger) *WorkspaceReclamations {
+func NewWorkspaceReclamations(requests WorkspaceReclamationQueue, logger *slog.Logger) *WorkspaceReclamations {
 	return &WorkspaceReclamations{requests: requests, logger: logger, backoff: time.Second}
 }
 

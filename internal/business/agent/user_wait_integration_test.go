@@ -25,6 +25,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
 	"go.uber.org/fx"
 	corev1 "k8s.io/api/core/v1"
@@ -49,9 +50,10 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	dsn := mysqltest.Database(t)
 	seed, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	require.NoError(t, seed.Close())
+	t.Cleanup(func() { _ = seed.Close() })
 	port := &sessionCommandRecorder{}
-	processes := &lifecycleProcesses{observation: domain.ProcessObservation{State: domain.ProcessRunning}}
+	port.observe(command.WorkProcessObservation{Running: true})
+	runs := &moduleRuns{}
 	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
 	start := func(recover bool) (*application.Application, agentprivatev1connect.AgentServiceClient, func()) {
@@ -64,13 +66,11 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
-			fx.Provide(func() domain.ExecutionPort { return port }),
-			fx.Decorate(func(command.ProcessObservationPort) command.ProcessObservationPort { return processes }),
-			fx.Provide(func() command.InputBufferPort { return port }),
-			fx.Decorate(func(application.PendingInteractionsPort) application.PendingInteractionsPort { return port }),
+			fx.Provide(func() command.RunningHarnessPort { return port }),
+			runs.option(),
 		}
 		if recover {
-			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() application.ExecutionEnvironmentRecovery { return noEnvironments{} }))
+			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }))
 		}
 		runtime := fx.New(options...)
 		require.NoError(t, runtime.Err())
@@ -95,9 +95,10 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	id, err := registry.Commands.CreateWork.Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definitionID, WorkspaceReference: "workspace"})
 	require.NoError(t, err)
 	ref := id
+	runs.realize(t, ctx, id)
 	if loseReadiness {
 		stop()
-		processes.observe(domain.ProcessObservation{State: domain.ProcessRunning, Ready: true})
+		port.observe(command.WorkProcessObservation{Running: true, Ready: true})
 		_, client, shutdown := start(true)
 		defer shutdown()
 		require.Eventually(t, func() bool {
@@ -107,14 +108,16 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 		return
 	}
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
-		require.NoError(t, registry.Commands.ApplyExecutionFeedback.Handle(ctx, command.ExecutionFeedback{Kind: kind, WorkID: ref, ProcessID: "process"}))
+		require.NoError(t, registry.Commands.ApplyExecutionFeedback.Handle(ctx, command.ExecutionFeedback{Kind: kind, WorkID: ref, ProcessID: launchedProcess}))
 	}
 	// Supply a deterministic accepted idle origin, then destroy every module
 	// and connection before the production loop is allowed to advance it.
 	observer, err := xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	origin := time.Now().Add(-31 * time.Minute).UTC().Truncate(time.Millisecond)
-	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return origin }, infrastructure.NewAgentWorkRepository(observer, time.Now), unusedExecutionPort{}, infrastructure.NewExecutionRequestsFactory(port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	works := infrastructure.NewAgentWorkRepository(observer, time.Now)
+	executions := execution.NewAgentExecutionRepository(observer, time.Now)
+	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return origin }, works, executions, command.NewExecutionCoordination(time.Now, works, executions, &computertest.Admission{}, port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	// A Turn ending at origin leaves the Work idle since then.
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ObservationSequence: 1, Kind: command.TurnStarted, WorkID: ref, ProcessID: "process"}))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ObservationSequence: 2, Kind: command.TurnFinished, WorkID: ref, ProcessID: "process", TurnCompleted: false}))
@@ -133,21 +136,17 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	require.False(t, observed.Waiting, "stopping ends the Waiting interval")
 	require.Equal(t, "waiting_timeout", observed.StopReason)
 	require.NotEmpty(t, observed.StopRequestId)
-	require.Eventually(t, func() bool { port.mu.Lock(); defer port.mu.Unlock(); return len(port.stops) > 0 }, time.Second, 10*time.Millisecond)
-	port.assertStop(t, ref, observed.StopRequestId)
-	require.Len(t, port.startRequests(), 1, "recovery must not acquire or start new execution")
+	runs.awaitExitRequest(t, ctx, ref, observed.StopRequestId)
+	require.Eventually(t, func() bool { port.mu.Lock(); defer port.mu.Unlock(); return len(port.stops) > 0 }, 5*time.Second, 10*time.Millisecond, "the execution's reconciliation signals the exit")
+	port.assertSignaled(t, ref, observed.StopRequestId)
+	require.Len(t, launches(t, seed), 1, "recovery must not begin a new execution")
 	// The exit fact is redelivered until applied; the restarted
 	// module settles the retained Work from it.
-	require.NoError(t, recovered.Commands.ApplyExecutionFeedback.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: ref, ProcessID: "process", ExitCode: 143}))
-	require.Eventually(t, func() bool {
-		port.mu.Lock()
-		defer port.mu.Unlock()
-		return len(port.reclaims) > 0
-	}, 5*time.Second, 20*time.Millisecond, "lost exit feedback must not strand the stopping Work")
-	processes.observe(domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true})
+	require.NoError(t, recovered.Commands.ApplyExecutionFeedback.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: ref, ProcessID: launchedProcess, ExitCode: 143}))
+	runs.awaitRetired(t, ctx, ref)
 	require.Eventually(t, func() bool {
 		response, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "owner", WorkId: id})
 		return err == nil && response.State == agentprivatev1.WorkState_WORK_STATE_STOPPED
-	}, 5*time.Second, 20*time.Millisecond, "resource absence must settle the Work without a release callback")
+	}, 5*time.Second, 20*time.Millisecond, "the retired execution's reconciliation confirms its release and settles the Work")
 	stop()
 }

@@ -47,6 +47,40 @@ type ExecutionConfig struct {
 	Dispatcher          ExecutionClientConfig        `json:"dispatcher" yaml:"dispatcher" toml:"dispatcher"`
 	// SandboxNamespace is where OpenSandbox creates Talgent's sandboxes.
 	SandboxNamespace string `json:"sandbox-namespace" yaml:"sandbox-namespace" toml:"sandbox-namespace"`
+	// SandboxCreationTimeout must equal the OpenSandbox server's sandbox
+	// creation timeout (its sandbox_create_timeout_seconds); a create waits a
+	// little longer for its answer. Empty is five minutes, the deployed
+	// server's setting.
+	SandboxCreationTimeout Duration `json:"sandbox-creation-timeout" yaml:"sandbox-creation-timeout" toml:"sandbox-creation-timeout"`
+	// Lease is how long each sandbox lives unless renewed, and how much of
+	// its lease remains when it is renewed.
+	Lease ExecutionLeaseConfig `json:"lease" yaml:"lease" toml:"lease"`
+}
+
+// ExecutionLeaseConfig leases every sandbox: it expires after Duration unless
+// renewed, and a wanted one is renewed once less than RenewalThreshold
+// remains. They default to two hours and one hour.
+type ExecutionLeaseConfig struct {
+	Duration         Duration `json:"duration" yaml:"duration" toml:"duration"`
+	RenewalThreshold Duration `json:"renewal-threshold" yaml:"renewal-threshold" toml:"renewal-threshold"`
+}
+
+const (
+	defaultLeaseDuration         = 2 * time.Hour
+	defaultLeaseRenewalThreshold = time.Hour
+)
+
+// terms are the configured lease terms, defaults filling what is unset;
+// Sandboxes validates them.
+func (c ExecutionLeaseConfig) terms() domain.LeaseTerms {
+	terms := domain.LeaseTerms{Duration: c.Duration.Duration(), RenewalThreshold: c.RenewalThreshold.Duration()}
+	if terms.Duration == 0 {
+		terms.Duration = defaultLeaseDuration
+	}
+	if terms.RenewalThreshold == 0 {
+		terms.RenewalThreshold = defaultLeaseRenewalThreshold
+	}
+	return terms
 }
 
 func (cfg ExecutionConfig) Validate() error {
@@ -81,7 +115,7 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, mod
 		}
 		resources.Limits[corev1.ResourceName(name)] = quantity
 	}
-	return execution.NewSandboxes(client, execution.SandboxConfig{Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow})
+	return execution.NewSandboxes(client, execution.SandboxConfig{CreationTimeout: cfg.SandboxCreationTimeout.Duration(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
 }
 
 var ExecutionModule = fx.Module("agent.execution-integration",
@@ -93,30 +127,23 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		newModelConfigurations,
 		newExecutionSandboxes,
 		newExecutionLifecycle,
-		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
-			return execution.NewSandboxCredentials(db, client, models, sessions, workRepositoryCredentials{app: repositories}, services, http.DefaultClient, cfg.CredentialTransport)
+		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
+			return execution.NewSandboxCredentials(db, client, models, workRepositoryCredentials{app: repositories}, services, http.DefaultClient, cfg.CredentialTransport)
 		},
 		pkgkubernetes.NewClientset,
 		newManagedComputers,
 		newManagedEnvironment,
 		newManagedWorkspaces,
-		func(db *xorm.Engine, s *execution.Sandboxes, credentials *execution.SandboxCredentials, cfg ExecutionConfig, updates *workStateUpdates, requests command.InitialExecutionReader, managed *execution.ManagedEnvironment) *execution.Provisioning {
-			p := execution.NewProvisioning(db, s, credentials, cfg.Native, time.Now, requests, managed)
+		func(db *xorm.Engine, s *execution.Sandboxes, credentials *execution.SandboxCredentials, cfg ExecutionConfig, updates *workStateUpdates, managed *execution.ManagedEnvironment) *execution.Provisioning {
+			p := execution.NewProvisioning(db, s, credentials, cfg.Native, time.Now, managed)
 			p.ProgressCommitted = updates.publish
 			return p
 		},
-		func(db *xorm.Engine) *execution.Removals { return execution.NewRemovals(db, time.Now) },
-		fx.Annotate(execution.NewProcessObservations, fx.As(fx.Self()), fx.As(new(command.ProcessObservationPort))),
 		fx.Annotate(execution.NewWorkCredentials, fx.As(new(query.WorkCredentialVerifier))),
-		func(feedback *command.ApplyExecutionFeedbackHandler) (*execution.Reclaimer, error) {
-			return execution.NewReclaimer(feedback)
+		func(p *execution.Provisioning, credentials *execution.SandboxCredentials, cfg ExecutionConfig) (*execution.NativeConnections, error) {
+			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token)
 		},
-		func(p *execution.Provisioning, credentials *execution.SandboxCredentials, cfg ExecutionConfig, feedback *command.ApplyExecutionFeedbackHandler, checkouts *command.RecordRepositoryCheckoutsHandler) (*execution.NativeConnections, error) {
-			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token, feedback, checkouts)
-		},
-		execution.NewEnvironments,
-		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.InputBufferPort)), fx.As(new(application.ExecutionThinkingPort)), fx.As(new(application.ExecutionPermissionPort)), fx.As(new(application.PendingInteractionsPort)), fx.As(new(application.TurnControlPort)), fx.As(new(application.WorkCapabilitiesPort))),
-		newExecutionPort,
+		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.RunningHarnessPort))),
 	),
 	fx.Invoke(registerManagedWorkspaceFiles),
 	fx.Invoke(registerManagedTelemetry),
@@ -142,15 +169,11 @@ func newDispatcherControl(client *http.Client, cfg ExecutionConfig) (*execution.
 	return execution.NewDispatcherControl(client, cfg.Dispatcher.Address, cfg.Dispatcher.Token), nil
 }
 
-func newExecutionPort(resources *execution.Environments, dispatcher *execution.DispatcherControl, mounts domain.SandboxMountPort, computers command.ComputerDescriptionPort) (domain.ExecutionPort, error) {
-	return execution.NewEnvironment(resources, dispatcher, mounts, computers)
-}
-
 // newManagedComputers reaches Managed Computers through Computer Gateway's
 // relay and gives them the platform Connector's public address. Without a
 // relay address it is nil, and Provisioning fails every step of a Managed
-// allocation rather than run it anywhere else.
-func newManagedComputers(cfg ComputerConfig, computers command.ComputerDescriptionPort) (*execution.ManagedComputers, error) {
+// execution rather than run it anywhere else.
+func newManagedComputers(cfg ComputerConfig, computers command.ComputerPort) (*execution.ManagedComputers, error) {
 	if strings.TrimSpace(cfg.RelayAddress) == "" {
 		return nil, nil
 	}
@@ -172,7 +195,7 @@ func relayClient() *http.Client {
 // newManagedEnvironment is the Managed realization, nil without Managed
 // Computers. Its Works' inputs are read through Storage's File Space
 // Contract and synced again by the recovery sweep at its refresh interval.
-func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, client *http.Client, storage StorageConfig, recovery RecoveryConfig, logger *slog.Logger) (*execution.ManagedEnvironment, error) {
+func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, client *http.Client, storage StorageConfig, recovery RecoveryConfig) (*execution.ManagedEnvironment, error) {
 	if machines == nil {
 		return nil, nil
 	}
@@ -184,7 +207,7 @@ func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers
 	if err != nil {
 		return nil, err
 	}
-	return execution.NewManagedEnvironment(db, machines, models, execution.NewHeldWorks(db, sessions), inputs, refresh, logger)
+	return execution.NewManagedEnvironment(db, machines, models, sessions, inputs, refresh)
 }
 
 // newManagedWorkspaces reads Managed Works' directories through the relay,
@@ -202,9 +225,10 @@ func newManagedWorkspaces(db *xorm.Engine, machines *execution.ManagedComputers,
 	return execution.NewManagedWorkspaces(db, machines, links, storage)
 }
 
-// registerManagedWorkspaceFiles serves the links to Managed Works' files.
-func registerManagedWorkspaceFiles(mux *http.ServeMux, workspaces *execution.ManagedWorkspaces, works domain.AgentWorkRepository, logger *slog.Logger) error {
-	if workspaces == nil {
+// registerManagedWorkspaceFiles serves the links to Managed Works' files,
+// which only a deployment that reaches Managed Computers issues.
+func registerManagedWorkspaceFiles(mux *http.ServeMux, managed *execution.ManagedWorkspaces, workspaces application.WorkspacePort, works domain.AgentWorkRepository, logger *slog.Logger) error {
+	if managed == nil {
 		return nil
 	}
 	links, err := application.NewWorkspaceFileLinks(works, workspaces)
