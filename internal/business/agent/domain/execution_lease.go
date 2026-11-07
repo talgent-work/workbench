@@ -1,6 +1,13 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrInvalidLeaseTerms means lease terms whose renewal threshold is not below
+// their duration, which would renew a lease on every reconciliation.
+var ErrInvalidLeaseTerms = errors.New("agent: invalid lease terms")
 
 // LeaseTerms are how a Cloud environment is leased: each lease runs for
 // Duration, and a wanted one is renewed once less than RenewalThreshold
@@ -11,19 +18,27 @@ type LeaseTerms struct {
 	RenewalThreshold time.Duration
 }
 
+// Validate admits terms that lease environments: a positive renewal threshold
+// below a lease's duration.
+func (t LeaseTerms) Validate() error {
+	if t.RenewalThreshold <= 0 || t.RenewalThreshold >= t.Duration {
+		return ErrInvalidLeaseTerms
+	}
+	return nil
+}
+
 // leases reports whether the terms lease environments at all.
-func (t LeaseTerms) leases() bool { return t.Duration > 0 && t.RenewalThreshold > 0 }
+func (t LeaseTerms) leases() bool { return t.Validate() == nil }
 
 // RecordLease keeps the later of the returned and the recorded expiry of its
 // bound environment, so a stale observation or a shorter answer never
 // shortens its lease (Environment lease). Without a bound environment there
-// is no lease to record. Expiries are kept to the millisecond.
+// is no lease to record.
 func (e *AgentExecution) RecordLease(expiresAt time.Time) bool {
-	expiresAt = expiresAt.Truncate(time.Millisecond).UTC()
 	if e.Environment == "" || expiresAt.IsZero() || !expiresAt.After(e.Lease) {
 		return false
 	}
-	e.Lease = expiresAt
+	e.Lease = expiresAt.UTC()
 	return true
 }
 

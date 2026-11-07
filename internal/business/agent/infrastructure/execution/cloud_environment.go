@@ -129,7 +129,7 @@ func (c cloudEnvironment) observe(ctx context.Context, record allocationRecord, 
 	return view, nil
 }
 
-func (c cloudEnvironment) leaseTerms() domain.LeaseTerms { return c.sandboxes.config.Lease }
+func (c cloudEnvironment) leaseTerms() domain.LeaseTerms { return c.sandboxes.lease() }
 
 // renew extends the bound sandbox's lease to expiresAt.
 func (c cloudEnvironment) renew(ctx context.Context, record allocationRecord, expiresAt time.Time) (time.Time, error) {

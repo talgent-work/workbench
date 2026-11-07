@@ -314,7 +314,7 @@ func TestALeaseNearExpiryIsRenewedAndItsExpiryRecorded(t *testing.T) {
 	renewed := w.at.Add(2 * time.Hour).UTC()
 	require.Len(t, w.environment.Renewals, 1)
 	require.True(t, renewed.Equal(w.environment.Renewals[0]))
-	require.True(t, renewed.Truncate(time.Millisecond).Equal(w.execution(t).Lease), "the returned expiry is the lease")
+	require.True(t, renewed.Equal(w.execution(t).Lease), "the returned expiry is the lease")
 
 	_, err = w.reconciliation().Reconcile(context.Background(), w.execution(t).ID)
 	require.NoError(t, err)

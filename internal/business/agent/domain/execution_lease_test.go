@@ -46,7 +46,7 @@ func renewals(decision domain.ExecutionDecision) []domain.ExecutionStep {
 // left is renewed to the lease duration from now.
 func TestALeaseNearExpiryIsRenewedAndOneFarFromItIsNot(t *testing.T) {
 	_, execution := runningExecution(t)
-	now := execution.Desk.SeatedAt.Truncate(time.Millisecond)
+	now := execution.Desk.SeatedAt
 	expiry := now.Add(2 * time.Hour)
 
 	far := decide(t, execution, leasedEnvironment("env-1", expiry), now)
@@ -65,7 +65,7 @@ func TestALeaseNearExpiryIsRenewedAndOneFarFromItIsNot(t *testing.T) {
 // so neither a stale observation nor a shorter answer ever shortens it.
 func TestRecordingALeaseOnlyEverExtendsIt(t *testing.T) {
 	_, execution := runningExecution(t)
-	now := execution.Desk.SeatedAt.Truncate(time.Millisecond)
+	now := execution.Desk.SeatedAt
 	require.True(t, execution.RecordLease(now.Add(2*time.Hour)))
 	require.False(t, execution.RecordLease(now.Add(time.Hour)), "a shorter expiry is ignored")
 	require.False(t, execution.RecordLease(time.Time{}))
@@ -97,7 +97,7 @@ func TestALeaseIsRenewedOnlyForABoundUnretiredExecution(t *testing.T) {
 	require.Empty(t, renewals(decide(t, unbound, domain.EnvironmentObservation{Lease: leaseTerms}, unbound.Desk.SeatedAt)))
 
 	work, retired := runningExecution(t)
-	now := retired.Desk.SeatedAt.Truncate(time.Millisecond)
+	now := retired.Desk.SeatedAt
 	decide(t, retired, leasedEnvironment("env-1", now.Add(2*time.Hour)), now)
 	current, _ := retired.RecordExit("process-1", domain.HarnessExit{})
 	require.True(t, current)
@@ -109,7 +109,7 @@ func TestALeaseIsRenewedOnlyForABoundUnretiredExecution(t *testing.T) {
 	require.Equal(t, []domain.ExecutionStep{{Kind: domain.StepDeleteEnvironment, EnvironmentID: "env-1"}}, decision.Steps)
 
 	_, unleased := runningExecution(t)
-	at := unleased.Desk.SeatedAt.Truncate(time.Millisecond)
+	at := unleased.Desk.SeatedAt
 	observation := leasedEnvironment("env-1", at.Add(time.Minute))
 	observation.Lease = domain.LeaseTerms{}
 	require.Empty(t, renewals(decide(t, unleased, observation, at)))
@@ -119,9 +119,18 @@ func TestALeaseIsRenewedOnlyForABoundUnretiredExecution(t *testing.T) {
 // retires, so its lease is still renewed.
 func TestAnExecutionAskedToExitKeepsRenewingItsLease(t *testing.T) {
 	work, execution := runningExecution(t)
-	now := execution.Desk.SeatedAt.Truncate(time.Millisecond)
+	now := execution.Desk.SeatedAt
 	_, err := execution.RequestExit(domain.WorkStopRequested{WorkID: work.ID, StartAdmittedAt: execution.StartAdmittedAt, StopRequestID: "stop-1"})
 	require.NoError(t, err)
 	decision := decide(t, execution, leasedEnvironment("env-1", now.Add(30*time.Minute)), now)
 	require.Equal(t, []domain.ExecutionStep{{Kind: domain.StepRenewLease, LeaseExpiresAt: now.Add(2 * time.Hour)}}, renewals(decision))
+}
+
+// Lease terms renew a lease only before it runs out: their renewal threshold
+// is positive and below their duration.
+func TestLeaseTermsNeedAThresholdBelowTheirDuration(t *testing.T) {
+	require.NoError(t, leaseTerms.Validate())
+	for _, terms := range []domain.LeaseTerms{{}, {Duration: time.Hour}, {Duration: time.Hour, RenewalThreshold: time.Hour}, {Duration: time.Hour, RenewalThreshold: 2 * time.Hour}} {
+		require.ErrorIs(t, terms.Validate(), domain.ErrInvalidLeaseTerms, "%+v", terms)
+	}
 }

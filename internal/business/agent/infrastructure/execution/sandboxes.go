@@ -78,9 +78,8 @@ func (c SandboxConfig) Validate() error {
 	if strings.TrimSpace(c.Image) == "" {
 		return errors.New("agent: native image is required")
 	}
-	// A lease shorter than its renewal threshold would be renewed on every
-	// reconciliation; OpenSandbox takes the duration in whole seconds.
-	if c.Lease.Duration < time.Second || c.Lease.RenewalThreshold <= 0 || c.Lease.RenewalThreshold >= c.Lease.Duration {
+	// OpenSandbox takes the duration in whole seconds.
+	if err := c.Lease.Validate(); err != nil || c.Lease.Duration < time.Second {
 		return errors.New("agent: the sandbox lease needs a duration of at least a second and a positive renewal threshold below it")
 	}
 	// Every Work reaches the platform, through its native API or the Gateway
@@ -241,8 +240,18 @@ func leaseExpiry(info *sdk.SandboxInfo) time.Time {
 	if info.ExpiresAt == nil {
 		return time.Time{}
 	}
-	return info.ExpiresAt.UTC()
+	return recordedExpiry(*info.ExpiresAt)
 }
+
+// recordedExpiry is an expiry OpenSandbox returned, to the millisecond the
+// execution's record keeps, so observing a recorded lease again changes
+// nothing.
+func recordedExpiry(expiresAt time.Time) time.Time {
+	return expiresAt.Truncate(time.Millisecond).UTC()
+}
+
+// lease is how every sandbox is leased.
+func (s *Sandboxes) lease() domain.LeaseTerms { return s.config.Lease }
 
 // renew moves the bound sandbox's expiry to expiresAt and returns the expiry
 // OpenSandbox answered. OpenSandbox accepts any future time, a shorter one
@@ -259,7 +268,7 @@ func (s *Sandboxes) renew(ctx context.Context, owner Allocation, id string, expi
 	if err != nil {
 		return time.Time{}, sandboxError(ctx, "renew", err)
 	}
-	return answer.ExpiresAt.UTC(), nil
+	return recordedExpiry(answer.ExpiresAt), nil
 }
 
 // Delete removes one sandbox once its exact ownership is confirmed, and

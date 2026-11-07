@@ -44,10 +44,6 @@ func init() {
 	}
 }
 
-// fixtureLease is the deployment's default: two-hour leases renewed once less
-// than an hour remains.
-var fixtureLease = domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}
-
 func config() SandboxConfig {
 	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Lease: fixtureLease, Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")},
@@ -121,62 +117,6 @@ type lifecycleFixture struct {
 	// clock is the controller's time: a sandbox whose expiry passed is
 	// deleted before the next call. Nil is the wall clock.
 	clock func() time.Time
-}
-
-func (f *lifecycleFixture) now() time.Time {
-	if f.clock == nil {
-		return time.Now()
-	}
-	return f.clock()
-}
-
-// leased gives info the expiry the create's timeout asks for, as the server
-// does, unless the fixture creates sandboxes without one.
-func (f *lifecycleFixture) leased(info *sdk.SandboxInfo) {
-	if f.create.Timeout == nil || f.unleased {
-		return
-	}
-	expiresAt := f.now().Add(time.Duration(*f.create.Timeout) * time.Second).UTC()
-	info.ExpiresAt = &expiresAt
-}
-
-// expire deletes every sandbox whose expiry passed, as the BatchSandbox
-// controller enforces it.
-func (f *lifecycleFixture) expire() {
-	expired := func(info sdk.SandboxInfo) bool {
-		return info.ExpiresAt != nil && !f.now().Before(*info.ExpiresAt)
-	}
-	if f.info != nil && expired(*f.info) {
-		f.info = nil
-	}
-	maps.DeleteFunc(f.others, func(_ string, info sdk.SandboxInfo) bool { return expired(info) })
-}
-
-// renew moves a sandbox's expiry to the requested time, which may be any
-// future time, a shorter one included; a sandbox created without an expiry
-// is refused, as OpenSandbox refuses it.
-func (f *lifecycleFixture) renew(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/sandboxes/"), "/renew-expiration")
-	var info *sdk.SandboxInfo
-	if f.info != nil && f.info.ID == id {
-		info = f.info
-	} else if other, found := f.others[id]; found {
-		info = &other
-		defer func() { f.others[id] = *info }()
-	}
-	if info == nil {
-		http.Error(w, `{"code":"SANDBOX_NOT_FOUND"}`, 404)
-		return
-	}
-	var request sdk.RenewExpirationRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || info.ExpiresAt == nil || !request.ExpiresAt.After(f.now()) {
-		http.Error(w, `{"code":"INVALID_EXPIRATION"}`, 400)
-		return
-	}
-	f.renewals = append(f.renewals, request.ExpiresAt)
-	expiresAt := request.ExpiresAt.UTC()
-	info.ExpiresAt = &expiresAt
-	_ = json.NewEncoder(w).Encode(sdk.RenewExpirationResponse{ExpiresAt: expiresAt})
 }
 
 func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -552,18 +492,5 @@ func TestNativeTelemetryAttributionAcrossContinueAndFresh(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "talgent.agent_work_id=session,talgent.case_id=case,talgent.project_id=project", fixture.create.Env["OTEL_RESOURCE_ATTRIBUTES"], "telemetry is attributed per Work")
 		})
-	}
-}
-
-// A lease needs a renewal threshold below its duration, or it would be
-// renewed on every reconciliation.
-func TestSandboxLeaseNeedsAThresholdBelowItsDuration(t *testing.T) {
-	client, err := shared.NewLifecycleClient(http.DefaultClient, shared.Config{Address: "http://opensandbox.invalid/v1", APIKey: "lifecycle-secret"})
-	require.NoError(t, err)
-	for _, lease := range []domain.LeaseTerms{{}, {Duration: time.Hour, RenewalThreshold: time.Hour}, {Duration: time.Hour}, {Duration: time.Millisecond, RenewalThreshold: time.Microsecond}} {
-		cfg := config()
-		cfg.Lease = lease
-		_, err := NewSandboxes(client, cfg)
-		require.Error(t, err, "lease %+v", lease)
 	}
 }
