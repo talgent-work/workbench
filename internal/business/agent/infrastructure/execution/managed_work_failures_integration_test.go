@@ -21,8 +21,10 @@ func TestManagedSubmissionWaitsForTheMachine(t *testing.T) {
 	input.ContextMode = domain.ContextFresh
 	begun := f.begin(t, input)
 
-	_, err := f.steps.handler.Reconcile(ctx, begun.ID)
-	require.ErrorIs(t, err, errCreationUnresolved, "the machine away answers nothing yet")
+	long, err := f.steps.handler.Reconcile(ctx, begun.ID)
+	require.NoError(t, err)
+	require.True(t, long, "the creation is submitted by the long step")
+	require.ErrorIs(t, f.steps.handler.RunLongStep(ctx, begun.ID), errCreationUnresolved, "the machine away answers nothing yet")
 	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, record.Submitted)
@@ -30,8 +32,7 @@ func TestManagedSubmissionWaitsForTheMachine(t *testing.T) {
 	require.False(t, record.PreparationRecovering, "a machine away is waited for, not a failure")
 
 	f.relay.set(func(m *machineRelay) { m.unreachable = false })
-	_, err = f.steps.handler.Reconcile(ctx, begun.ID)
-	require.NoError(t, err)
+	require.NoError(t, f.steps.reconcile(ctx, begun.ID))
 	record, _, err = latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, record.ID, record.SandboxID, "the execution stands for the environment it opened")

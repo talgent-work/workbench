@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -18,9 +19,11 @@ type Environment struct {
 	Observation domain.EnvironmentObservation
 	Observed    func(execution *domain.AgentExecution) domain.EnvironmentObservation
 	ObserveErr  error
-	// Answer is SubmitCreation's answer; SubmitErr loses it.
-	Answer    domain.CreationAnswer
-	SubmitErr error
+	// Answer is SubmitCreation's answer; SubmitErr loses it. SubmitFunc runs
+	// while the creation waits for its answer.
+	Answer     domain.CreationAnswer
+	SubmitErr  error
+	SubmitFunc func(ctx context.Context)
 	// PrepareFunc runs as Prepare; nil prepares at once.
 	PrepareFunc func(ctx context.Context) error
 	// Installations is what a preparation reports of its Plugins.
@@ -39,6 +42,9 @@ type Environment struct {
 	Deleted                                 []string
 	Delivered, Withdrawn, Prepared          int
 	Launched, Connected, Synced, Reconciled int
+	// Renewals are the expiries each lease renewal asked for; each is
+	// granted.
+	Renewals []time.Time
 }
 
 var _ command.ExecutionEnvironmentPort = (*Environment)(nil)
@@ -63,11 +69,17 @@ func (e *Environment) PrepareCreation(context.Context, *domain.AgentExecution, d
 	return nil
 }
 
-func (e *Environment) SubmitCreation(_ context.Context, execution *domain.AgentExecution) (domain.CreationAnswer, error) {
+func (e *Environment) SubmitCreation(ctx context.Context, execution *domain.AgentExecution) (domain.CreationAnswer, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.Submitted++
 	e.SubmittedState = append(e.SubmittedState, *execution)
+	wait := e.SubmitFunc
+	e.mu.Unlock()
+	if wait != nil {
+		wait(ctx)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.Answer, e.SubmitErr
 }
 
@@ -135,4 +147,11 @@ func (e *Environment) ReconcileComputer(context.Context, string) error {
 	defer e.mu.Unlock()
 	e.Reconciled++
 	return nil
+}
+
+func (e *Environment) RenewLease(_ context.Context, _ *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.Renewals = append(e.Renewals, expiresAt)
+	return expiresAt, e.StepErr
 }

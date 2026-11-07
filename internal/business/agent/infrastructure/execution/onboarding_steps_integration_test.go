@@ -54,8 +54,7 @@ func newOnboarding(t *testing.T) *onboardingFixture {
 	lifecycle.mu.Lock()
 	lifecycle.createPending = true
 	lifecycle.mu.Unlock()
-	_, err = steps.handler.Reconcile(ctx, record.ID)
-	require.NoError(t, err)
+	require.NoError(t, steps.reconcile(ctx, record.ID))
 	lifecycle.mu.Lock()
 	lifecycle.info.Status.State = sdk.StateRunning
 	lifecycle.mu.Unlock()

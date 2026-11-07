@@ -14,8 +14,6 @@ import (
 // again unchanged.
 func (h *ReconcileExecutionHandler) takeShortStep(ctx context.Context, execution *domain.AgentExecution, step domain.ExecutionStep) (bool, error) {
 	switch step.Kind {
-	case domain.StepSubmitCreation:
-		return h.submit(ctx, execution)
 	case domain.StepDeleteEnvironment:
 		return false, h.environments.DeleteEnvironment(ctx, execution, step.EnvironmentID)
 	case domain.StepDeliverCredentials:
@@ -26,6 +24,8 @@ func (h *ReconcileExecutionHandler) takeShortStep(ctx context.Context, execution
 		return h.syncInputs(ctx, execution)
 	case domain.StepLeaveDesk:
 		return h.leaveDesk(ctx, execution)
+	case domain.StepRenewLease:
+		return h.renewLease(ctx, execution, step)
 	case domain.StepConnect:
 		return false, h.environments.Connect(ctx, execution)
 	case domain.StepSignalExit:
@@ -47,6 +47,18 @@ func (h *ReconcileExecutionHandler) deliverCredentials(ctx context.Context, exec
 	})
 }
 
+// renewLease renews the bound environment's lease to the decided expiry and
+// records the expiry the authority returned, which only ever extends it.
+func (h *ReconcileExecutionHandler) renewLease(ctx context.Context, execution *domain.AgentExecution, step domain.ExecutionStep) (bool, error) {
+	expiresAt, err := h.environments.RenewLease(ctx, execution, step.LeaseExpiresAt)
+	if err != nil {
+		return false, err
+	}
+	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
+		return execution.RecordLease(expiresAt), nil
+	})
+}
+
 // syncInputs syncs a Managed Computer's input copies and records the changes
 // it covered.
 func (h *ReconcileExecutionHandler) syncInputs(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
@@ -57,41 +69,6 @@ func (h *ReconcileExecutionHandler) syncInputs(ctx context.Context, execution *d
 	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
 		return execution.RecordInputSync(synced, h.now()), nil
 	})
-}
-
-// submit fixes the environment's specification with the Mount Grants
-// Storage issues on a Cloud, records the submission, and only then submits it
-// once; a lost answer leaves observation and the Startup Deadline to decide.
-func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
-	var mounts domain.SandboxMounts
-	if execution.Realization == domain.RealizationCloud {
-		var err error
-		if mounts, err = h.mounts.AcquireMounts(ctx, execution.Launch.MountRequest()); err != nil {
-			return false, err
-		}
-	}
-	if err := h.environments.PrepareCreation(ctx, execution, mounts); err != nil {
-		return false, err
-	}
-	if !execution.RecordSubmission() {
-		return false, nil
-	}
-	if err := h.executions.Save(ctx, execution); err != nil {
-		return false, err
-	}
-	submitted, err := h.executions.Get(ctx, execution.ID)
-	if err != nil {
-		return false, err
-	}
-	answer, err := h.environments.SubmitCreation(ctx, submitted)
-	if err != nil {
-		return false, err
-	}
-	// The recorded submission changed the execution whatever its answer.
-	_, err = h.recorded(ctx, submitted.ID, func(execution *domain.AgentExecution) (bool, error) {
-		return execution.RecordCreationAnswer(answer)
-	})
-	return true, err
 }
 
 func (h *ReconcileExecutionHandler) withdraw(ctx context.Context, execution *domain.AgentExecution) (bool, error) {

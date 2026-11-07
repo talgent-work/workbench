@@ -148,7 +148,11 @@ type AgentExecution struct {
 	// Environment is the one environment it serves, bound from
 	// observation; empty while none is bound.
 	Environment string
-	Process     LaunchedProcess
+	// Lease is the bound Cloud environment's expiry as the environment
+	// authority last returned it; zero while none is known, as for an
+	// environment created without one.
+	Lease   time.Time
+	Process LaunchedProcess
 	// PluginResults are its selected Plugins' preparation outcomes in this
 	// run, at most one per Plugin, in no particular order.
 	PluginResults []PluginResult

@@ -102,6 +102,16 @@ type credentialDelivery interface {
 	modelDigest(record allocationRecord) (string, error)
 }
 
+// leasing is an authority whose environments expire unless renewed. One
+// without it leases nothing.
+type leasing interface {
+	// leaseTerms is how its environments are leased.
+	leaseTerms() domain.LeaseTerms
+	// renew moves the bound environment's expiry to expiresAt and returns
+	// the expiry the authority answered.
+	renew(ctx context.Context, record allocationRecord, expiresAt time.Time) (time.Time, error)
+}
+
 // deliveredCredentials is what a delivery handed the environment: the service
 // access observed, the earliest declared expiry of its material, zero when
 // none expires, and the model key it carried.

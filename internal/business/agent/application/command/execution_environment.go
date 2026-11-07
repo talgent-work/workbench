@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -20,8 +21,10 @@ type ExecutionEnvironmentPort interface {
 	// execution and its Mount Grants and what its submission freezes. It is
 	// repeatable and creates nothing.
 	PrepareCreation(ctx context.Context, execution *domain.AgentExecution, mounts domain.SandboxMounts) error
-	// SubmitCreation submits the environment's creation once. An error means
-	// the answer is lost; a definite answer binds or refuses.
+	// SubmitCreation submits the environment's creation once and waits for
+	// its answer, longer than the authority takes to create it. An error
+	// means the answer is lost; a definite answer binds, or refuses after a
+	// refusal or failure that left nothing created.
 	SubmitCreation(ctx context.Context, execution *domain.AgentExecution) (domain.CreationAnswer, error)
 	// DeleteEnvironment deletes one environment carrying the execution's
 	// ownership, clearing its Vault first; a gone one is deleted already.
@@ -42,6 +45,9 @@ type ExecutionEnvironmentPort interface {
 	Launch(ctx context.Context, execution *domain.AgentExecution) (string, error)
 	// Connect hands the launched process to Dispatcher.
 	Connect(ctx context.Context, execution *domain.AgentExecution) error
+	// RenewLease renews the bound environment's lease to expiresAt and
+	// reports the expiry the authority returned.
+	RenewLease(ctx context.Context, execution *domain.AgentExecution, expiresAt time.Time) (time.Time, error)
 	// SyncInputs hands a Managed Computer the current inputs of its Work and
 	// reports how many due changes it covered.
 	SyncInputs(ctx context.Context, execution *domain.AgentExecution) (int64, error)

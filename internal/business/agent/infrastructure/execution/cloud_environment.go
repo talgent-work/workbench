@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/samber/oops"
@@ -26,6 +27,7 @@ type cloudEnvironment struct {
 var (
 	_ environmentAuthority = cloudEnvironment{}
 	_ credentialDelivery   = cloudEnvironment{}
+	_ leasing              = cloudEnvironment{}
 )
 
 func (cloudEnvironment) launchLayout() launchLayout { return sandboxLayout }
@@ -109,22 +111,29 @@ func (c cloudEnvironment) observe(ctx context.Context, record allocationRecord, 
 	var view environmentView
 	for _, info := range owned {
 		if info.ID != record.SandboxID {
-			view.environments = append(view.environments, domain.ObservedEnvironment{ID: info.ID, Running: info.Status.State == sdk.StateRunning})
+			view.environments = append(view.environments, domain.ObservedEnvironment{ID: info.ID, Running: info.Status.State == sdk.StateRunning, LeaseExpiresAt: leaseExpiry(&info)})
 		}
 	}
 	if record.SandboxID == "" {
 		return view, nil
 	}
-	endpoint, running, err := c.sandboxes.Endpoint(ctx, owner, record.SandboxID)
+	bound, err := c.sandboxes.inspect(ctx, owner, record.SandboxID)
 	if errors.Is(err, errSandboxAbsent) {
 		return view, nil
 	}
 	if err != nil {
 		return environmentView{}, err
 	}
-	view.environments = append([]domain.ObservedEnvironment{{ID: record.SandboxID, Running: running}}, view.environments...)
-	view.endpoint = endpoint
+	view.environments = append([]domain.ObservedEnvironment{{ID: record.SandboxID, Running: bound.running, LeaseExpiresAt: bound.expiresAt}}, view.environments...)
+	view.endpoint = bound.endpoint
 	return view, nil
+}
+
+func (c cloudEnvironment) leaseTerms() domain.LeaseTerms { return c.sandboxes.lease() }
+
+// renew extends the bound sandbox's lease to expiresAt.
+func (c cloudEnvironment) renew(ctx context.Context, record allocationRecord, expiresAt time.Time) (time.Time, error) {
+	return c.sandboxes.renew(ctx, Allocation{WorkID: record.SessionID, ID: record.ID}, record.SandboxID, expiresAt)
 }
 
 // remove deletes one sandbox once its exact ownership is confirmed again.
@@ -139,13 +148,14 @@ func (c cloudEnvironment) remove(ctx context.Context, record allocationRecord, i
 
 func (c cloudEnvironment) resolve(ctx context.Context, record allocationRecord, client *http.Client) (environment, environmentState, error) {
 	owner := Allocation{WorkID: record.SessionID, ID: record.ID}
-	endpoint, ready, err := c.sandboxes.Endpoint(ctx, owner, record.SandboxID)
+	bound, err := c.sandboxes.inspect(ctx, owner, record.SandboxID)
 	if errors.Is(err, errSandboxAbsent) {
 		return environment{}, environmentLost, nil
 	}
-	if err != nil || !ready {
+	if err != nil || !bound.running {
 		return environment{}, environmentPending, err
 	}
+	endpoint := bound.endpoint
 	var spec sdk.CreateSandboxRequest
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
 		return environment{}, environmentPending, oops.With("operation", "decode_native_spec").Wrap(err)

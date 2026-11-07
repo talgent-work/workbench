@@ -3,7 +3,6 @@ package execution
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 
@@ -44,7 +44,7 @@ func init() {
 }
 
 func config() SandboxConfig {
-	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
+	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Lease: fixtureLease, Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")},
 		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("1Gi")},
 	}}
@@ -96,22 +96,44 @@ type lifecycleFixture struct {
 	creates, deletes int
 	createFailure    bool
 	refuseStatus     int
-	createOnRefusal  bool
-	endpoint         string
-	egress           string
-	egressToken      string
-	vault            *vaultFixture
-	inspectStatus    int
-	endpointStatus   int
+	// refuseCode is the OpenSandbox error code a refusal carries.
+	refuseCode      string
+	createOnRefusal bool
+	// answer, when set, holds every create's answer, its sandbox already
+	// created, until it is closed or the caller gives up; never closed, the
+	// create is never answered.
+	answer chan struct{}
+	// failAfterCreate answers a create with this HTTP status and refuseCode
+	// once its answer is released, the sandbox it created deleted first, as
+	// the server does after its readiness timeout.
+	failAfterCreate int
+	endpoint        string
+	egress          string
+	egressToken     string
+	vault           *vaultFixture
+	inspectStatus   int
+	endpointStatus  int
 	// others are sandboxes beside info, by identity; the list filters them,
 	// like info, by the owner metadata it is asked for.
 	others map[string]sdk.SandboxInfo
 	// requests counts every call to the environment authority.
 	requests int
+	// unleased creates each sandbox without an expiry, as a sandbox created
+	// before leasing carries none.
+	unleased bool
+	// renewals are the expiries each accepted lease renewal asked for.
+	renewals []time.Time
+	// clock is the controller's time: a sandbox whose expiry passed is
+	// deleted before the next call. Nil is the wall clock.
+	clock func() time.Time
 }
 
 func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
+	if r.Method == "POST" && r.URL.Path == "/v1/sandboxes" && (f.answer != nil || f.failAfterCreate != 0) {
+		f.serveHeldCreate(w, r)
+		return
+	}
 	defer f.mu.Unlock()
 	f.requests++
 	if r.Header.Get("OPEN-SANDBOX-API-KEY") != "lifecycle-secret" {
@@ -119,7 +141,10 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	f.expire()
 	switch {
+	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/renew-expiration"):
+		f.renew(w, r)
 	case r.Method == "POST" && r.URL.Path == "/v1/sandboxes":
 		f.creates++
 		if err := json.NewDecoder(r.Body).Decode(&f.create); err != nil {
@@ -129,11 +154,12 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.refuseStatus != 0 {
 			if f.createOnRefusal {
 				f.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: f.create.Metadata, Status: sdk.SandboxStatus{State: sdk.StateRunning}}
+				f.leased(f.info)
 				if f.createPending {
 					f.info.Status.State = "Pending"
 				}
 			}
-			http.Error(w, "invalid parameters", f.refuseStatus)
+			f.refuse(w, f.refuseStatus)
 			return
 		}
 		if f.createFailure {
@@ -141,6 +167,7 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: f.create.Metadata, Status: sdk.SandboxStatus{State: sdk.StateRunning}}
+		f.leased(f.info)
 		if f.createPending {
 			f.info.Status.State = "Pending"
 		}
@@ -279,7 +306,7 @@ func TestNativeSandboxSubmissionRetainsHomeAndWorkspaceWithoutExecutor(t *testin
 	spec := fixture.create
 	require.Equal(t, "native-claude:test", spec.Image.URI)
 	require.Equal(t, []string{"sleep", "infinity"}, spec.Entrypoint)
-	require.Nil(t, spec.Timeout)
+	require.Equal(t, 7200, *spec.Timeout, "every sandbox expires unless renewed")
 	require.Equal(t, "execd-secret", spec.Env["EXECD_ACCESS_TOKEN"])
 	require.Equal(t, input.WorkID, spec.Env["TALGENT_WORK_ID"])
 	require.NotContains(t, spec.Env, workCredentialEnv, "the Work credential reaches the Gateway through the Credential Proxy, never the sandbox")
@@ -366,17 +393,6 @@ func TestSandboxCreateFailureDoesNotRetryOrExposeResponseBody(t *testing.T) {
 	require.Equal(t, 1, fixture.creates)
 }
 
-func TestSandboxCreateRefusalIsOnlyAnInvalidSpecificationAnswer(t *testing.T) {
-	for status, refused := range map[int]bool{http.StatusBadRequest: true, http.StatusUnprocessableEntity: true, http.StatusInternalServerError: false, http.StatusServiceUnavailable: false, http.StatusConflict: false} {
-		provider, _, fixture := sandboxClient(t)
-		fixture.refuseStatus = status
-		_, err := provider.submitRequest(context.Background(), request(), "execd-secret")
-		require.Error(t, err)
-		require.Equal(t, refused, errors.Is(err, errCreationRefused), "HTTP %d", status)
-		require.NotContains(t, err.Error(), "invalid parameters", "response bodies never leave the adapter")
-	}
-}
-
 func TestSandboxWithoutInputSourceMountsNoInputsClaim(t *testing.T) {
 	provider, _, _ := sandboxClient(t)
 	input := request()
@@ -392,21 +408,21 @@ func TestSandboxEndpointRequiresCurrentIdentityAndResolvesAgain(t *testing.T) {
 	input := request()
 	_, err := provider.submitRequest(context.Background(), input, "execd-secret")
 	require.NoError(t, err)
-	endpoint, ready, err := provider.Endpoint(context.Background(), owner(input), sandboxID)
+	bound, err := provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
-	require.True(t, ready)
-	require.Equal(t, "http://192.0.2.8:44772", endpoint)
+	require.True(t, bound.running)
+	require.Equal(t, "http://192.0.2.8:44772", bound.endpoint)
 	fixture.endpoint = "192.0.2.9:44772"
-	endpoint, ready, err = provider.Endpoint(context.Background(), owner(input), sandboxID)
+	bound, err = provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
-	require.True(t, ready)
-	require.Equal(t, "http://192.0.2.9:44772", endpoint)
+	require.True(t, bound.running)
+	require.Equal(t, "http://192.0.2.9:44772", bound.endpoint)
 	fixture.info.Status.State = sdk.StatePending
-	_, ready, err = provider.Endpoint(context.Background(), owner(input), sandboxID)
+	bound, err = provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
-	require.False(t, ready)
+	require.False(t, bound.running)
 	other := Allocation{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
-	_, _, err = provider.Endpoint(context.Background(), other, sandboxID)
+	_, err = provider.inspect(context.Background(), other, sandboxID)
 	require.ErrorIs(t, err, errEnvironmentConflict)
 }
 

@@ -117,10 +117,11 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	lifecycle.mu.Lock()
 	lifecycle.createPending = true
 	lifecycle.mu.Unlock()
+	require.NoError(t, steps.reconcile(ctx, record.ID))
+	require.Equal(t, sandboxID, current(t, steps, record.ID).Environment, "the creation is submitted and its sandbox bound")
 	long, err := steps.handler.Reconcile(ctx, record.ID)
 	require.NoError(t, err)
-	require.False(t, long)
-	require.Equal(t, sandboxID, current(t, steps, record.ID).Environment, "the creation is submitted and its sandbox bound")
+	require.False(t, long, "a pending sandbox is not prepared")
 	require.NoError(t, pass())
 	pending, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)

@@ -49,8 +49,7 @@ func TestAManagedRunsTelemetryTokenAttributesOnlyThatRun(t *testing.T) {
 
 	other := managedRequest()
 	other.WorkID, other.ContextMode = "other-session", domain.ContextFresh
-	_, err = f.steps.handler.Reconcile(ctx, f.begin(t, other).ID)
-	require.NoError(t, err)
+	require.NoError(t, f.steps.reconcile(ctx, f.begin(t, other).ID))
 	otherRecord, _, err := latestAllocation(ctx, f.db, other.WorkID)
 	require.NoError(t, err)
 	otherSpec, err := decodeManagedSpecification(otherRecord)

@@ -509,8 +509,7 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	input.HarnessSessionReference = "context"
 	next := f.begin(t, input)
 	require.NotEqual(t, record.ID, next.ID)
-	_, err = f.steps.handler.Reconcile(ctx, next.ID)
-	require.NoError(t, err)
+	require.NoError(t, f.steps.reconcile(ctx, next.ID))
 	resumed, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, next.ID, resumed.ID)

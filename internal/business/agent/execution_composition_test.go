@@ -62,3 +62,11 @@ func TestExecutionCompositionReachesHTTP1OpenSandbox(t *testing.T) {
 	require.NoError(t, err, "production wiring must use the lifecycle server's HTTP/1.1 protocol")
 	require.True(t, deleted)
 }
+
+// Sandboxes are leased for two hours and renewed below one unless configured
+// otherwise.
+func TestExecutionLeaseDefaultsAndConfiguration(t *testing.T) {
+	require.Equal(t, domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}, ExecutionLeaseConfig{}.terms())
+	configured := ExecutionLeaseConfig{Duration: Duration(4 * time.Hour), RenewalThreshold: Duration(90 * time.Minute)}
+	require.Equal(t, domain.LeaseTerms{Duration: 4 * time.Hour, RenewalThreshold: 90 * time.Minute}, configured.terms())
+}

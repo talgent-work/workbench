@@ -10,6 +10,9 @@ import (
 type ObservedEnvironment struct {
 	ID      string
 	Running bool
+	// LeaseExpiresAt is when the authority deletes it unless renewed; zero
+	// when it was created without an expiry.
+	LeaseExpiresAt time.Time
 }
 
 // EnvironmentObservation is what the environment authority and Dispatcher
@@ -34,6 +37,9 @@ type EnvironmentObservation struct {
 	// InputsRefresh is how long a Managed Computer's synced input copies stay
 	// current (Input copy sync).
 	InputsRefresh time.Duration
+	// Lease is how the authority leases its environments; zero when it
+	// leases none.
+	Lease LeaseTerms
 }
 
 func (o EnvironmentObservation) find(id string) (ObservedEnvironment, bool) {
@@ -49,7 +55,8 @@ func (o EnvironmentObservation) find(id string) (ObservedEnvironment, bool) {
 type ExecutionStepKind string
 
 const (
-	// StepSubmitCreation submits its environment's creation, once.
+	// StepSubmitCreation submits its environment's creation, once, and
+	// waits for its answer, which may take minutes.
 	StepSubmitCreation ExecutionStepKind = "submit_creation"
 	// StepDeleteEnvironment deletes one environment it owns but does not keep.
 	StepDeleteEnvironment ExecutionStepKind = "delete_environment"
@@ -71,13 +78,17 @@ const (
 	StepSyncInputs ExecutionStepKind = "sync_inputs"
 	// StepLeaveDesk reports its Desk's departure to its Computer.
 	StepLeaveDesk ExecutionStepKind = "leave_desk"
+	// StepRenewLease renews its bound environment's lease to the step's
+	// expiry.
+	StepRenewLease ExecutionStepKind = "renew_lease"
 )
 
 // ExecutionStep is one decided step; EnvironmentID names the environment of
-// a deletion.
+// a deletion, and LeaseExpiresAt the expiry a lease renewal asks for.
 type ExecutionStep struct {
-	Kind          ExecutionStepKind
-	EnvironmentID string
+	Kind           ExecutionStepKind
+	EnvironmentID  string
+	LeaseExpiresAt time.Time
 }
 
 // ExecutionDecision is what Reconcile decided: the steps to take now, and
@@ -94,6 +105,8 @@ type ExecutionDecision struct {
 // environments), submits its creation once (Single creation), and records,
 // for its Work, a missed Startup Deadline (Required Startup Steps), an
 // abandoned start (Abandoned start) or a lost environment (Environment loss).
+// It renews its bound environment's lease before it runs out (Environment
+// lease).
 func (e *AgentExecution) Reconcile(observation EnvironmentObservation, now time.Time) (ExecutionDecision, error) {
 	if now.IsZero() {
 		return ExecutionDecision{}, ErrInvalidExecution
@@ -126,11 +139,12 @@ func (e *AgentExecution) decide(observation EnvironmentObservation, now time.Tim
 		return nil
 	}
 	e.judgeStartup(now)
-	if e.Environment == "" || e.Outcome.Abandoned {
+	if e.Environment == "" {
 		return steps
 	}
 	bound, _ := observation.find(e.Environment)
-	if !bound.Running {
+	steps = append(steps, e.leaseSteps(bound, observation.Lease, now)...)
+	if e.Outcome.Abandoned || !bound.Running {
 		return steps
 	}
 	if e.ExitRequest.Requested() {
@@ -295,11 +309,12 @@ type executionFacts struct {
 	desk        ExecutionDesk
 	creation    CreationSubmission
 	environment string
+	lease       time.Time
 	process     LaunchedProcess
 	outcome     ExecutionOutcome
 	state       ExecutionState
 }
 
 func (e *AgentExecution) facts() executionFacts {
-	return executionFacts{desk: e.Desk, creation: e.Creation, environment: e.Environment, process: e.Process, outcome: e.Outcome, state: e.State}
+	return executionFacts{desk: e.Desk, creation: e.Creation, environment: e.Environment, lease: e.Lease, process: e.Process, outcome: e.Outcome, state: e.State}
 }

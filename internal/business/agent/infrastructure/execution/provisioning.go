@@ -30,9 +30,10 @@ type Provisioning struct {
 	managed *ManagedEnvironment
 	now     func() time.Time
 	native  NativeLaunchConfig
-	// attemptTimeout bounds one submission attempt against the environment
-	// authority; it is reconciliationAttemptTimeout except in tests that
-	// exercise its expiry.
+	// attemptTimeout bounds one short attempt against the environment
+	// authority, such as an observation; it is reconciliationAttemptTimeout
+	// except in tests that exercise its expiry. A creation waits for its
+	// authority's answer instead.
 	attemptTimeout time.Duration
 }
 

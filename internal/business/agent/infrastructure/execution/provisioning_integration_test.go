@@ -45,8 +45,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		return NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, now, nil)
 	}
 	reconcile := func(steps *executionSteps, id string) error {
-		_, err := steps.handler.Reconcile(ctx, id)
-		return err
+		return steps.reconcile(ctx, id)
 	}
 	beginAgain := func(launch domain.LaunchSpecification) error {
 		run, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: domain.WorkStartAdmitted{WorkID: launch.WorkID, StartAdmittedAt: time.Now(), DeskID: "desk-again"}, Launch: launch, Realization: domain.RealizationCloud})
@@ -74,7 +73,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.ErrorIs(t, beginAgain(input), domain.ErrExecutionAdmission, "a repeated attempt cannot replace its launch setting")
 	})
 
-	t.Run("provider timeout preserves scheduling progress and uncertain submission", func(t *testing.T) {
+	t.Run("an unanswered create preserves the uncertain submission", func(t *testing.T) {
 		// The provider shows no sandbox and never answers the create.
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.Copy(io.Discard, r.Body)
@@ -92,10 +91,6 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		now := time.Now()
 		clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
 		p := newProvisioning(provider, clock)
-		// A short attempt bound expires quickly. The batch outlives it by far
-		// but expires before a full attempt's bound, so only the provisioning's
-		// own attempt expiry leaves the batch alive.
-		p.attemptTimeout = 100 * time.Millisecond
 		steps := reconcilerOf(t, db, p)
 		input := request()
 		input.WorkID = "provider-timeout"
@@ -104,15 +99,16 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		mu.Lock()
 		now = now.Add(time.Second)
 		mu.Unlock()
-		batch, cancel := context.WithTimeout(ctx, reconciliationAttemptTimeout/2)
+		long, err := steps.handler.Reconcile(ctx, before.ID)
+		require.NoError(t, err, "a reconciliation never waits for the create")
+		require.True(t, long)
+		waiting, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
-		_, err = steps.handler.Reconcile(batch, before.ID)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-		require.NoError(t, batch.Err(), "per-attempt expiry must leave the batch alive for persistence and later obligations")
+		require.ErrorIs(t, steps.handler.RunLongStep(waiting, before.ID), context.DeadlineExceeded)
 		after, found, err := latestAllocation(ctx, db, input.WorkID)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.True(t, after.Submitted, "timeout does not authorize another create")
+		require.True(t, after.Submitted, "an unanswered create does not authorize another")
 		require.Empty(t, after.SandboxID)
 		require.Greater(t, after.UpdatedAt, before.UpdatedAt)
 	})
@@ -231,7 +227,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		input.WorkID = "ambiguous"
 		begun, err := register(ctx, provisioning, input, testMounts)
 		require.NoError(t, err)
-		require.Error(t, reconcile(reconcilerOf(t, db, provisioning), begun.ID))
+		require.Error(t, reconcilerOf(t, db, provisioning).once(ctx, begun.ID), "the create's answer is lost")
 		record, found, err := latestAllocation(ctx, db, input.WorkID)
 		require.NoError(t, err)
 		require.True(t, found)

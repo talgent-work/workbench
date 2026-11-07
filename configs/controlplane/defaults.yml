@@ -106,7 +106,8 @@ agent-preparation-taskqueue:
   redis-addr: "${REDIS_ADDR:127.0.0.1:6379}"
   redis-password: "${REDIS_PASSWORD:}"
   redis-db: 0
-  # Each execution's long step holds a worker while it runs.
+  # Each execution's long step (its creation's submission, up to the sandbox
+  # creation timeout, or its preparation) holds a worker while it runs.
   worker-concurrency: 8
   queue-name: "agent-preparation"
   retry-delay-min: "1s"
@@ -206,6 +207,10 @@ native-authentication:
   agent-control-token: "${AGENT_CONTROL_TOKEN:}"
 agent-execution:
   sandbox-namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
+  # Must equal the OpenSandbox server's sandbox_create_timeout_seconds
+  # (deploy/opensandbox/server.yaml); a create waits 30 seconds longer for
+  # its answer.
+  sandbox-creation-timeout: ${SANDBOX_CREATION_TIMEOUT:5m}
   credential-transport: encrypted-network
   # Model Templates (ConfigMap agent-models) and Model Configurations with
   # their api keys (Secret agent-model-configurations), read once at startup.
@@ -235,6 +240,13 @@ agent-execution:
   dispatcher:
     address: ${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}
     token: ${DISPATCHER_EXECUTION_CONTROL_TOKEN:}
+  # Every sandbox expires after its lease unless Agent renews it, so one Agent
+  # lost track of is reclaimed within a lease. A running Work's lease is
+  # renewed once less than the threshold remains; keep the threshold well
+  # above the recovery sweep interval.
+  lease:
+    duration: "2h"
+    renewal-threshold: "1h"
 agent-rpc:
   control-token: ${AGENT_CONTROL_TOKEN:}
   feedback-token: ${AGENT_FEEDBACK_TOKEN:}

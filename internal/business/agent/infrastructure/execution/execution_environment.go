@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -103,6 +104,9 @@ func (e *ExecutionEnvironment) Observe(ctx context.Context, execution *domain.Ag
 	if inputs, syncs := authority.(inputDelivery); syncs {
 		observation.InputsRefresh = inputs.refresh()
 	}
+	if leases, leased := authority.(leasing); leased {
+		observation.Lease = leases.leaseTerms()
+	}
 	return observation, nil
 }
 
@@ -129,9 +133,10 @@ func (e *ExecutionEnvironment) PrepareCreation(ctx context.Context, execution *d
 	return withExecution(e.provisioning.specify(ctx, record, mounts), execution)
 }
 
-// SubmitCreation submits the specified environment's creation once and
-// answers what the authority answered: the created environment, or its
-// refusal. An answer not known now is errCreationUnresolved.
+// SubmitCreation submits the specified environment's creation once, waiting
+// as long as its authority takes to answer, and answers what the authority
+// answered: the created environment, or its definite refusal or failure. An
+// answer not known is errCreationUnresolved.
 func (e *ExecutionEnvironment) SubmitCreation(ctx context.Context, execution *domain.AgentExecution) (domain.CreationAnswer, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
@@ -144,12 +149,10 @@ func (e *ExecutionEnvironment) SubmitCreation(ctx context.Context, execution *do
 	if err != nil {
 		return domain.CreationAnswer{}, withExecution(err, execution)
 	}
-	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
-	defer cancel()
-	id, err := authority.create(attempt, record)
+	id, err := authority.create(ctx, record)
 	switch {
 	case errors.Is(err, errCreationRefused):
-		return e.settleRefusal(attempt, execution, authority, record, err)
+		return e.settleRefusal(ctx, execution, authority, record, err)
 	case err != nil:
 		return domain.CreationAnswer{}, withExecution(err, execution)
 	case id == "":
@@ -163,7 +166,9 @@ func (e *ExecutionEnvironment) SubmitCreation(ctx context.Context, execution *do
 // was created regardless and is answered instead, so no compute is ever
 // judged absent while it exists.
 func (e *ExecutionEnvironment) settleRefusal(ctx context.Context, execution *domain.AgentExecution, authority environmentAuthority, record allocationRecord, refusal error) (domain.CreationAnswer, error) {
-	view, err := authority.observe(ctx, record, false)
+	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
+	defer cancel()
+	view, err := authority.observe(attempt, record, false)
 	if err != nil {
 		return domain.CreationAnswer{}, withExecution(errors.Join(refusal, err), execution)
 	}
@@ -187,6 +192,27 @@ func (e *ExecutionEnvironment) DeleteEnvironment(ctx context.Context, execution 
 	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
 	defer cancel()
 	return withExecution(authority.remove(attempt, record, environmentID), execution)
+}
+
+// RenewLease extends the bound environment's lease to expiresAt and answers
+// the expiry its authority returned.
+func (e *ExecutionEnvironment) RenewLease(ctx context.Context, execution *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
+	record, err := e.record(ctx, execution)
+	if err != nil {
+		return time.Time{}, err
+	}
+	authority, err := e.provisioning.authority(record)
+	if err != nil {
+		return time.Time{}, withExecution(err, execution)
+	}
+	leases, leased := authority.(leasing)
+	if !leased || record.SandboxID == "" {
+		return time.Time{}, withExecution(domain.ErrExecutionRequest, execution)
+	}
+	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
+	defer cancel()
+	renewed, err := leases.renew(attempt, record, expiresAt)
+	return renewed, withExecution(err, execution)
 }
 
 // DeliverCredentials delivers the Work's current credentials into the bound
