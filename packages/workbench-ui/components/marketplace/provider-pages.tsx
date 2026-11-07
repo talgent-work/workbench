@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Alert, Button, Card, Link as HeroLink, Spinner } from "@heroui/react";
-import type { ProviderAccount } from "@talgent/workbench-contracts/marketplace/public/v1/connections_pb";
+import type { ProviderAccount } from "@talgent/contracts/marketplace/public/v1/connections_pb";
 import { Check, ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { connectorStatus, installStatusLabel, useConnectors } from "../../lib/marketplace-catalog";

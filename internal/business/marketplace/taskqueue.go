@@ -9,7 +9,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/scopemaintenance"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/tokenmaintenance"
 	scmtaskprocessor "github.com/talgent-work/workbench/internal/business/marketplace/transport/taskprocessor"
-	pkgtaskqueue "github.com/talgent-work/workbench/pkg/taskqueue"
+	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 )
 
 var TaskqueueModule = fx.Module(

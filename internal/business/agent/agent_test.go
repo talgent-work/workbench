@@ -10,15 +10,16 @@ import (
 	"github.com/go-jimu/components/ddd/message"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 
+	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
-	"github.com/talgent-work/workbench/pkg/nativeauth"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -49,33 +50,33 @@ func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
 	defer app.Stop(context.Background())
 	server := httptest.NewServer(mux)
 	defer server.Close()
-	client := agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL)
-	_, err := client.CreateWork(context.Background(), connect.NewRequest(&agentprivatev1.CreateWorkRequest{SubjectId: "untrusted", AgentId: "agent", WorkspaceReference: "other-workspace"}))
+	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	_, err := client.CreateWork(context.Background(), &agentprivatev1.CreateWorkRequest{SubjectId: "untrusted", AgentId: "agent", WorkspaceReference: "other-workspace"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = client.GetAgentDefinitionForPurpose(context.Background(), connect.NewRequest(&agentprivatev1.GetAgentDefinitionForPurposeRequest{UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "other"}, Purpose: "work"}))
+	_, err = client.GetAgentDefinitionForPurpose(context.Background(), &agentprivatev1.GetAgentDefinitionForPurposeRequest{UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "other"}, Purpose: "work"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = client.ResolveEmployeeAgents(context.Background(), connect.NewRequest(&agentprivatev1.ResolveEmployeeAgentsRequest{EmployeeIds: []string{"other"}, Purpose: "work"}))
+	_, err = client.ResolveEmployeeAgents(context.Background(), &agentprivatev1.ResolveEmployeeAgentsRequest{EmployeeIds: []string{"other"}, Purpose: "work"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = client.ResolveWorkAgents(context.Background(), connect.NewRequest(&agentprivatev1.ResolveWorkAgentsRequest{WorkIds: []string{"other"}}))
+	_, err = client.ResolveWorkAgents(context.Background(), &agentprivatev1.ResolveWorkAgentsRequest{WorkIds: []string{"other"}})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	public := agentpublicv1connect.NewAgentWorkServiceClient(server.Client(), server.URL)
-	_, err = public.ChangeWorkAgentAppearance(context.Background(), connect.NewRequest(&agentpublicv1.ChangeWorkAgentAppearanceRequest{AgentId: "agent", Name: "Imposter", Icon: &agentpublicv1.AgentIcon{Glyph: "bot", Color: "green"}}))
+	public := agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	_, err = public.ChangeWorkAgentAppearance(context.Background(), &agentpublicv1.ChangeWorkAgentAppearanceRequest{AgentId: "agent", Name: "Imposter", Icon: &agentpublicv1.AgentIcon{Glyph: "bot", Color: "green"}})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.GetMyWorkAgent(context.Background(), connect.NewRequest(&agentpublicv1.GetMyWorkAgentRequest{}))
+	_, err = public.GetMyWorkAgent(context.Background(), &agentpublicv1.GetMyWorkAgentRequest{})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.EnsureMyWorkAgent(context.Background(), connect.NewRequest(&agentpublicv1.EnsureMyWorkAgentRequest{}))
+	_, err = public.EnsureMyWorkAgent(context.Background(), &agentpublicv1.EnsureMyWorkAgentRequest{})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.SendMessage(context.Background(), connect.NewRequest(&agentpublicv1.SendMessageRequest{WorkId: "untrusted-session", InputId: "input", Text: "hello"}))
+	_, err = public.SendMessage(context.Background(), &agentpublicv1.SendMessageRequest{WorkId: "untrusted-session", InputId: "input", Text: "hello"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.RespondToInteraction(context.Background(), connect.NewRequest(&agentpublicv1.RespondToInteractionRequest{WorkId: "untrusted-session", InteractionId: "question", Allow: true}))
+	_, err = public.RespondToInteraction(context.Background(), &agentpublicv1.RespondToInteractionRequest{WorkId: "untrusted-session", InteractionId: "question", Allow: true})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.ListPendingInteractions(context.Background(), connect.NewRequest(&agentpublicv1.ListPendingInteractionsRequest{WorkId: "untrusted-session"}))
+	_, err = public.ListPendingInteractions(context.Background(), &agentpublicv1.ListPendingInteractionsRequest{WorkId: "untrusted-session"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.CancelTurn(context.Background(), connect.NewRequest(&agentpublicv1.CancelTurnRequest{WorkId: "untrusted-session", TurnId: "turn"}))
+	_, err = public.CancelTurn(context.Background(), &agentpublicv1.CancelTurnRequest{WorkId: "untrusted-session", TurnId: "turn"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.GetWorkCapabilities(context.Background(), connect.NewRequest(&agentpublicv1.GetWorkCapabilitiesRequest{WorkId: "untrusted-session"}))
+	_, err = public.GetWorkCapabilities(context.Background(), &agentpublicv1.GetWorkCapabilitiesRequest{WorkId: "untrusted-session"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.GetCurrentTurn(context.Background(), connect.NewRequest(&agentpublicv1.GetCurrentTurnRequest{WorkId: "untrusted-session"}))
+	_, err = public.GetCurrentTurn(context.Background(), &agentpublicv1.GetCurrentTurnRequest{WorkId: "untrusted-session"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 }
 

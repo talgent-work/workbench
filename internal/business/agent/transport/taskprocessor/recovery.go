@@ -7,7 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/go-jimu/components/taskqueue"
-	agenttaskv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/task/v1"
+	agenttaskv1 "github.com/talgent-work/workbench/gen/agent/task/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"google.golang.org/protobuf/proto"
@@ -16,46 +16,46 @@ import (
 // RecoveryProcessors serve the recovery queue.
 func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []taskqueue.Processor {
 	return []taskqueue.Processor{
-		processor(logger, agenttask.ReconcileAllocationType, func() *agenttaskv1.ReconcileAllocationTask { return &agenttaskv1.ReconcileAllocationTask{} },
-			func(ctx context.Context, p *agenttaskv1.ReconcileAllocationTask) error {
+		processor(logger, agenttask.ReconcileAllocationType, func() *agenttaskv1.ReconcileAllocationTaskV1 { return &agenttaskv1.ReconcileAllocationTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.ReconcileAllocationTaskV1) error {
 				return recovery.ReconcileAllocation(ctx, p.GetAllocationId())
 			}),
-		processor(logger, agenttask.ReconnectAllocationType, func() *agenttaskv1.ReconnectAllocationTask { return &agenttaskv1.ReconnectAllocationTask{} },
-			func(ctx context.Context, p *agenttaskv1.ReconnectAllocationTask) error {
+		processor(logger, agenttask.ReconnectAllocationType, func() *agenttaskv1.ReconnectAllocationTaskV1 { return &agenttaskv1.ReconnectAllocationTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.ReconnectAllocationTaskV1) error {
 				return recovery.ReconnectAllocation(ctx, p.GetAllocationId())
 			}),
-		processor(logger, agenttask.DeliverCredentialsType, func() *agenttaskv1.DeliverCredentialsTask { return &agenttaskv1.DeliverCredentialsTask{} },
-			func(ctx context.Context, p *agenttaskv1.DeliverCredentialsTask) error {
+		processor(logger, agenttask.DeliverCredentialsType, func() *agenttaskv1.DeliverCredentialsTaskV1 { return &agenttaskv1.DeliverCredentialsTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.DeliverCredentialsTaskV1) error {
 				return recovery.DeliverCredentials(ctx, p.GetAllocationId())
 			}),
-		processor(logger, agenttask.SyncInputsType, func() *agenttaskv1.SyncInputsTask { return &agenttaskv1.SyncInputsTask{} },
-			func(ctx context.Context, p *agenttaskv1.SyncInputsTask) error {
+		processor(logger, agenttask.SyncInputsType, func() *agenttaskv1.SyncInputsTaskV1 { return &agenttaskv1.SyncInputsTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.SyncInputsTaskV1) error {
 				return recovery.SyncInputs(ctx, p.GetAllocationId())
 			}),
-		processor(logger, agenttask.ObserveSandboxType, func() *agenttaskv1.ObserveSandboxTask { return &agenttaskv1.ObserveSandboxTask{} },
-			func(ctx context.Context, p *agenttaskv1.ObserveSandboxTask) error {
+		processor(logger, agenttask.ObserveSandboxType, func() *agenttaskv1.ObserveSandboxTaskV1 { return &agenttaskv1.ObserveSandboxTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.ObserveSandboxTaskV1) error {
 				return recovery.ObserveSandbox(ctx, p.GetAllocationId())
 			}),
-		processor(logger, agenttask.RecoverWorkType, func() *agenttaskv1.RecoverWorkTask { return &agenttaskv1.RecoverWorkTask{} },
-			func(ctx context.Context, p *agenttaskv1.RecoverWorkTask) error {
+		processor(logger, agenttask.RecoverWorkType, func() *agenttaskv1.RecoverWorkTaskV1 { return &agenttaskv1.RecoverWorkTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.RecoverWorkTaskV1) error {
 				return recovery.RecoverWork(ctx, p.GetWorkId())
 			}),
-		processor(logger, agenttask.RecoverContinuationType, func() *agenttaskv1.RecoverContinuationTask { return &agenttaskv1.RecoverContinuationTask{} },
-			func(ctx context.Context, p *agenttaskv1.RecoverContinuationTask) error {
+		processor(logger, agenttask.RecoverContinuationType, func() *agenttaskv1.RecoverContinuationTaskV1 { return &agenttaskv1.RecoverContinuationTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.RecoverContinuationTaskV1) error {
 				return recovery.RecoverContinuation(ctx, p.GetWorkId())
 			}),
-		processor(logger, agenttask.RecoverWorkCreationType, func() *agenttaskv1.RecoverWorkCreationTask { return &agenttaskv1.RecoverWorkCreationTask{} },
-			func(ctx context.Context, p *agenttaskv1.RecoverWorkCreationTask) error {
+		processor(logger, agenttask.RecoverWorkCreationType, func() *agenttaskv1.RecoverWorkCreationTaskV1 { return &agenttaskv1.RecoverWorkCreationTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.RecoverWorkCreationTaskV1) error {
 				return recovery.RecoverWorkCreation(ctx, p.GetRequestId())
 			}),
-		processor(logger, agenttask.RequestWorkspaceReclamationType, func() *agenttaskv1.RequestWorkspaceReclamationTask {
-			return &agenttaskv1.RequestWorkspaceReclamationTask{}
+		processor(logger, agenttask.RequestWorkspaceReclamationType, func() *agenttaskv1.RequestWorkspaceReclamationTaskV1 {
+			return &agenttaskv1.RequestWorkspaceReclamationTaskV1{}
 		},
-			func(ctx context.Context, p *agenttaskv1.RequestWorkspaceReclamationTask) error {
+			func(ctx context.Context, p *agenttaskv1.RequestWorkspaceReclamationTaskV1) error {
 				return recovery.SendWorkspaceReclamation(ctx, p.GetWorkId(), p.GetWorkspaceReference())
 			}),
-		processor(logger, agenttask.SweepRecoveryType, func() *agenttaskv1.SweepRecoveryTask { return &agenttaskv1.SweepRecoveryTask{} },
-			func(ctx context.Context, _ *agenttaskv1.SweepRecoveryTask) error { return recovery.Sweep(ctx) }),
+		processor(logger, agenttask.SweepRecoveryType, func() *agenttaskv1.SweepRecoveryTaskV1 { return &agenttaskv1.SweepRecoveryTaskV1{} },
+			func(ctx context.Context, _ *agenttaskv1.SweepRecoveryTaskV1) error { return recovery.Sweep(ctx) }),
 	}
 }
 
@@ -63,12 +63,12 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 // minutes and so must not hold recovery workers.
 func PreparationProcessors(recovery *application.Recovery, logger *slog.Logger) []taskqueue.Processor {
 	return []taskqueue.Processor{
-		processor(logger, agenttask.PrepareAllocationType, func() *agenttaskv1.PrepareAllocationTask { return &agenttaskv1.PrepareAllocationTask{} },
-			func(ctx context.Context, p *agenttaskv1.PrepareAllocationTask) error {
+		processor(logger, agenttask.PrepareAllocationType, func() *agenttaskv1.PrepareAllocationTaskV1 { return &agenttaskv1.PrepareAllocationTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.PrepareAllocationTaskV1) error {
 				return recovery.PrepareAllocation(ctx, p.GetAllocationId())
 			}),
-		processor(logger, agenttask.PrepareInitialExecutionType, func() *agenttaskv1.PrepareInitialExecutionTask { return &agenttaskv1.PrepareInitialExecutionTask{} },
-			func(ctx context.Context, p *agenttaskv1.PrepareInitialExecutionTask) error {
+		processor(logger, agenttask.PrepareInitialExecutionType, func() *agenttaskv1.PrepareInitialExecutionTaskV1 { return &agenttaskv1.PrepareInitialExecutionTaskV1{} },
+			func(ctx context.Context, p *agenttaskv1.PrepareInitialExecutionTaskV1) error {
 				return recovery.PrepareInitialExecution(ctx, p.GetWorkId())
 			}),
 	}

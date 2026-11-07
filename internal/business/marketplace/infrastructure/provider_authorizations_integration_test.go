@@ -5,10 +5,10 @@ package infrastructure_test
 import (
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -23,14 +23,14 @@ func TestAuthorizationReferencesArePersonalAndPreserveInactiveIdentity(t *testin
 		 VALUES (?,?,?,?,?,?)`, record.id, record.owner, "github", record.state, "access-secret-canary", "refresh-secret-canary")
 		require.NoError(t, err)
 	}
-	_, err := client.ListPersonalAuthorizations(t.Context(), connect.NewRequest(&marketplacepublicv1.ListPersonalAuthorizationsRequest{}))
+	_, err := client.ListPersonalAuthorizations(t.Context(), &marketplacepublicv1.ListPersonalAuthorizationsRequest{})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	response, err := client.ListPersonalAuthorizations(t.Context(), request(&marketplacepublicv1.ListPersonalAuthorizationsRequest{}, owner))
+	response, err := client.ListPersonalAuthorizations(as(t.Context(), owner), &marketplacepublicv1.ListPersonalAuthorizationsRequest{})
 	require.NoError(t, err)
-	require.Len(t, response.Msg.Authorizations, 1)
-	require.Equal(t, id, response.Msg.Authorizations[0].Id)
-	require.Equal(t, "reconnect_required", response.Msg.Authorizations[0].Status)
-	require.NotContains(t, protojson.Format(response.Msg), "secret-canary")
+	require.Len(t, response.Authorizations, 1)
+	require.Equal(t, id, response.Authorizations[0].Id)
+	require.Equal(t, "reconnect_required", response.Authorizations[0].Status)
+	require.NotContains(t, protojson.Format(response), "secret-canary")
 	port, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL})
 	require.NoError(t, err)
 	facts, err := port.ListPersonalAuthorizations(t.Context(), owner)

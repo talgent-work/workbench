@@ -27,7 +27,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 	"github.com/talgent-work/workbench/internal/business/account/infrastructure"
 	accounthttp "github.com/talgent-work/workbench/internal/business/account/transport/http"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 const (

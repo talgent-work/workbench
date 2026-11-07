@@ -12,7 +12,7 @@ Talgent's API for this Work answers at `$TALGENT_API_ADDRESS`. When the Work has
 Every call is a JSON `POST` to `$TALGENT_API_ADDRESS/<procedure>`:
 
 ```sh
-curl -sS -X POST "$TALGENT_API_ADDRESS/talgent.storage.private.v1.ArtifactService/CreateArtifact" \
+curl -sS -X POST "$TALGENT_API_ADDRESS/storage.private.v1.ArtifactService/CreateArtifact" \
   -H 'Content-Type: application/json' \
   -d '{"name": "report.pdf", "path": "dist/report.pdf"}'
 ```
@@ -25,9 +25,9 @@ An Artifact is a file of this Work published for its owner; it reaches nobody un
 
 | Procedure | Body | Does |
 |---|---|---|
-| `talgent.storage.private.v1.ArtifactService/CreateArtifact` | `{"name": "<file name>", "path": "<path>"}` | Publishes the file as a new Artifact named `name` |
-| `talgent.storage.private.v1.ArtifactService/ReplaceArtifact` | `{"name": "<file name>", "path": "<path>"}` | Replaces an existing Artifact's content; its name and share links stay |
-| `talgent.storage.private.v1.ArtifactService/DeleteArtifact` | `{"name": "<file name>"}` | Deletes the Artifact; its share links end and the source stays in the workspace |
+| `storage.private.v1.ArtifactService/CreateArtifact` | `{"name": "<file name>", "path": "<path>"}` | Publishes the file as a new Artifact named `name` |
+| `storage.private.v1.ArtifactService/ReplaceArtifact` | `{"name": "<file name>", "path": "<path>"}` | Replaces an existing Artifact's content; its name and share links stay |
+| `storage.private.v1.ArtifactService/DeleteArtifact` | `{"name": "<file name>"}` | Deletes the Artifact; its share links end and the source stays in the workspace |
 
 Each answers `{"outcome": {"artifact": {"name": ..., "sizeBytes": ...}}}`, and DeleteArtifact `{}`.
 
@@ -35,8 +35,8 @@ Each answers `{"outcome": {"artifact": {"name": ..., "sizeBytes": ...}}}`, and D
 
 The Personal Library is the Artifacts of your owner's Works and of the Works shared with them. Only the Agent of a Work done for a person, without a Project, reads it.
 
-1. **Search**: `talgent.agent.public.v1.PersonalWorkService/ListLibraryFiles` with `{"nameQuery": "<part of a name>"}`, and `"workId"` to narrow to one Work; both are optional. It answers `files`, newest first, each with `workId`, `name`, `sizeBytes`, `contentType` and `addedAt`, and `works` with each Work's `title`.
-2. **Get a link**: `talgent.agent.public.v1.WorkFileService/CreateWorkFileAccessLink` with `{"workId": "<workId>", "kind": "WORK_FILE_KIND_ARTIFACT", "name": "<name>", "disposition": "WORK_FILE_ACCESS_DISPOSITION_DOWNLOAD"}`. It answers `accessPath` and `expiresAt`.
+1. **Search**: `agent.public.v1.PersonalWorkService/ListLibraryFiles` with `{"nameQuery": "<part of a name>"}`, and `"workId"` to narrow to one Work; both are optional. It answers `files`, newest first, each with `workId`, `name`, `sizeBytes`, `contentType` and `addedAt`, and `works` with each Work's `title`.
+2. **Get a link**: `agent.public.v1.WorkFileService/CreateWorkFileAccessLink` with `{"workId": "<workId>", "kind": "WORK_FILE_KIND_ARTIFACT", "name": "<name>", "disposition": "WORK_FILE_ACCESS_DISPOSITION_DOWNLOAD"}`. It answers `accessPath` and `expiresAt`.
 3. **Download** within the link's lifetime, outside `inputs/`:
 
    ```sh

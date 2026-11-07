@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	computereventsv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 )
 
@@ -46,8 +46,8 @@ func (p *Seatings) Publish(parent context.Context, seated []application.SeatedDe
 func (p *Seatings) Stop(ctx context.Context) error { return p.publications.stop(ctx) }
 
 // deskAssigned maps a committed seating to its published fact.
-func deskAssigned(desk application.SeatedDesk) *computereventsv1.DeskAssigned {
-	return &computereventsv1.DeskAssigned{
+func deskAssigned(desk application.SeatedDesk) *computerintegrationv1.DeskAssignedV1 {
+	return &computerintegrationv1.DeskAssignedV1{
 		EventId: uuid.Must(uuid.NewV7()).String(), OccurredAt: timestamppb.New(desk.SeatedAt),
 		ComputerId: desk.ComputerID, DeskId: desk.DeskID, WorkId: desk.WorkID,
 	}

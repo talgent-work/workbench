@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	tracepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/trace/public/v1"
+	tracepublicv1 "github.com/talgent-work/contracts/gen/go/trace/public/v1"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // A Work without a Project is read under Agent's Work access, never the
@@ -39,19 +39,19 @@ func TestWorkWithoutProjectIsReadUnderWorkAccess(t *testing.T) {
 	}}, authority)
 	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "owner"})
 
-	_, err := app.ListSpansBySession(ctx, connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{AgentWorkId: "work-1"}))
+	_, err := app.ListSpansBySession(ctx, &tracepublicv1.ListSpansBySessionRequest{AgentWorkId: "work-1"})
 	if err != nil {
 		t.Fatalf("ListSpansBySession: %v", err)
 	}
-	_, err = app.GetSessionTraceMetrics(ctx, connect.NewRequest(&tracepublicv1.GetSessionTraceMetricsRequest{AgentWorkId: "work-1"}))
+	_, err = app.GetSessionTraceMetrics(ctx, &tracepublicv1.GetSessionTraceMetricsRequest{AgentWorkId: "work-1"})
 	if err != nil {
 		t.Fatalf("GetSessionTraceMetrics: %v", err)
 	}
-	_, err = app.ListEvents(ctx, connect.NewRequest(&tracepublicv1.ListEventsRequest{AgentWorkId: "work-1"}))
+	_, err = app.ListEvents(ctx, &tracepublicv1.ListEventsRequest{AgentWorkId: "work-1"})
 	if err != nil {
 		t.Fatalf("ListEvents: %v", err)
 	}
-	_, err = app.GetSpan(ctx, connect.NewRequest(&tracepublicv1.GetSpanRequest{AgentWorkId: "work-1", TraceId: "trace-1", SpanId: "span-1"}))
+	_, err = app.GetSpan(ctx, &tracepublicv1.GetSpanRequest{AgentWorkId: "work-1", TraceId: "trace-1", SpanId: "span-1"})
 	if err != nil {
 		t.Fatalf("GetSpan: %v", err)
 	}
@@ -86,19 +86,19 @@ func TestWorkAccessRefusalDisclosesNothing(t *testing.T) {
 	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "stranger"})
 	for name, call := range map[string]func() error{
 		"spans": func() error {
-			_, err := app.ListSpansBySession(ctx, connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{AgentWorkId: "work-1"}))
+			_, err := app.ListSpansBySession(ctx, &tracepublicv1.ListSpansBySessionRequest{AgentWorkId: "work-1"})
 			return err
 		},
 		"metrics": func() error {
-			_, err := app.GetSessionTraceMetrics(ctx, connect.NewRequest(&tracepublicv1.GetSessionTraceMetricsRequest{AgentWorkId: "work-1"}))
+			_, err := app.GetSessionTraceMetrics(ctx, &tracepublicv1.GetSessionTraceMetricsRequest{AgentWorkId: "work-1"})
 			return err
 		},
 		"events": func() error {
-			_, err := app.ListEvents(ctx, connect.NewRequest(&tracepublicv1.ListEventsRequest{AgentWorkId: "work-1"}))
+			_, err := app.ListEvents(ctx, &tracepublicv1.ListEventsRequest{AgentWorkId: "work-1"})
 			return err
 		},
 		"span": func() error {
-			_, err := app.GetSpan(ctx, connect.NewRequest(&tracepublicv1.GetSpanRequest{AgentWorkId: "work-1", TraceId: "trace-1", SpanId: "span-1"}))
+			_, err := app.GetSpan(ctx, &tracepublicv1.GetSpanRequest{AgentWorkId: "work-1", TraceId: "trace-1", SpanId: "span-1"})
 			return err
 		},
 	} {
@@ -117,18 +117,18 @@ func TestQueriesWithoutProjectNameTheWork(t *testing.T) {
 		return &query.Span{TraceID: "trace-1", SpanID: "span-1", AgentWorkID: "another-work"}, nil
 	}}, fakeTraceMetricRepository{}, fakeEventRepository{}, authority)
 	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "owner"})
-	_, err := app.ListEvents(ctx, connect.NewRequest(&tracepublicv1.ListEventsRequest{}))
+	_, err := app.ListEvents(ctx, &tracepublicv1.ListEventsRequest{})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("events naming neither: %v", err)
 	}
-	_, err = app.GetSpan(ctx, connect.NewRequest(&tracepublicv1.GetSpanRequest{TraceId: "trace-1", SpanId: "span-1"}))
+	_, err = app.GetSpan(ctx, &tracepublicv1.GetSpanRequest{TraceId: "trace-1", SpanId: "span-1"})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("span naming neither: %v", err)
 	}
 	if authority.workID != "" || authority.projectID != "" {
 		t.Fatalf("authority consulted for an unscoped query: %+v", authority)
 	}
-	_, err = app.GetSpan(ctx, connect.NewRequest(&tracepublicv1.GetSpanRequest{AgentWorkId: "work-1", TraceId: "trace-1", SpanId: "span-1"}))
+	_, err = app.GetSpan(ctx, &tracepublicv1.GetSpanRequest{AgentWorkId: "work-1", TraceId: "trace-1", SpanId: "span-1"})
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("another Work's span: %v", err)
 	}
@@ -149,9 +149,9 @@ func TestPersonalMetricsReadTheReadersOwnUsage(t *testing.T) {
 		},
 	}, authority)
 	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "person-1"})
-	response, err := app.GetPersonalTraceMetrics(ctx, connect.NewRequest(&tracepublicv1.GetPersonalTraceMetricsRequest{
+	response, err := app.GetPersonalTraceMetrics(ctx, &tracepublicv1.GetPersonalTraceMetricsRequest{
 		StartTime: timestampOrNil(start), EndTime: timestampOrNil(start.Add(time.Hour)), StepSeconds: 300, AgentWorkId: " work-1 ",
-	}))
+	})
 	if err != nil {
 		t.Fatalf("GetPersonalTraceMetrics: %v", err)
 	}
@@ -161,10 +161,10 @@ func TestPersonalMetricsReadTheReadersOwnUsage(t *testing.T) {
 	if authority.projectID != "" || authority.workID != "" {
 		t.Fatalf("an access decision was asked: %+v", authority)
 	}
-	if got := response.Msg.GetBuckets()[0]; got.GetAgentWorkId() != "work-1" || got.GetValue() != 7 || response.Msg.GetTotals()[0].GetValue() != 7 {
-		t.Fatalf("response = %+v", response.Msg)
+	if got := response.GetBuckets()[0]; got.GetAgentWorkId() != "work-1" || got.GetValue() != 7 || response.GetTotals()[0].GetValue() != 7 {
+		t.Fatalf("response = %+v", response)
 	}
-	_, err = app.GetPersonalTraceMetrics(context.Background(), connect.NewRequest(&tracepublicv1.GetPersonalTraceMetricsRequest{}))
+	_, err = app.GetPersonalTraceMetrics(context.Background(), &tracepublicv1.GetPersonalTraceMetricsRequest{})
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("anonymous personal usage: %v", err)
 	}

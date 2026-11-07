@@ -1,5 +1,5 @@
 import { Label, ListBox } from "@heroui/react";
-import type { PermissionMode } from "@talgent/workbench-contracts/agent/public/v1/harness_pb";
+import type { PermissionMode } from "@talgent/contracts/agent/public/v1/harness_pb";
 import { permissionModes } from "../../lib/permission-modes";
 
 /** The permission modes as one single choice, each with what it does. Both

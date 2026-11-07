@@ -10,18 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/messagedelivery"
 	"google.golang.org/protobuf/proto"
 )
 
-func nativeRequest[T any](message *T) *connect.Request[T] {
-	r := connect.NewRequest(message)
-	r.Header().Set("Authorization", "Bearer control-test")
-	return r
+// nativeCall is the context of a call under the native execution control token.
+func nativeCall(ctx context.Context) context.Context {
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer control-test")
+	return ctx
 }
 
 type nativeRecords struct {

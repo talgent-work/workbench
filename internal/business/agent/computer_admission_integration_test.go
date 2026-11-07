@@ -10,7 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
@@ -21,14 +22,14 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"xorm.io/xorm"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/computer"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 // A Cloud with room for one run, admitting through the real Agent and
@@ -70,35 +71,36 @@ func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
 	require.NoError(t, app.Start(ctx))
 	t.Cleanup(func() { require.NoError(t, app.Stop(context.Background())) })
 	return &oneRoomCloud{
-		client:    agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL),
-		feedback:  agentprivatev1connect.NewExecutionFeedbackServiceClient(server.Client(), server.URL),
+		client:    agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
+		feedback:  agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
 		processes: processes, db: db, quota: quota, kube: kube,
 	}
 }
 
 func (c *oneRoomCloud) definition(t *testing.T, ctx context.Context) string {
 	t.Helper()
-	created, err := c.client.CreateAgentDefinition(ctx, sessionControlRequest(&agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee-a"}, AgentName: "Fixture Agent",
+	created, err := c.client.CreateAgentDefinition(sessionControlRequest(ctx), &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee-a"}, AgentName: "Fixture Agent",
 		UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "employee-a"}, Purpose: "work",
 		HomeBinding:  &agentprivatev1.HomeBinding{OwnerId: "employee-a", Namespace: "personal"},
 		Capabilities: &agentprivatev1.Capabilities{Prompt: "base prompt", StartupAgent: "custom:base", RequiredPlugins: []string{"custom"}},
-	}))
+	})
 	require.NoError(t, err)
-	return created.Msg.AgentId
+	return created.AgentId
 }
 
 func (c *oneRoomCloud) create(ctx context.Context, definition, subject string) (string, error) {
-	response, err := c.client.CreateWork(ctx, sessionControlRequest(&agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, WorkspaceReference: subject, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a"}))
+	response, err := c.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, WorkspaceReference: subject, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a"})
 	if err != nil {
 		return "", err
 	}
-	return response.Msg.WorkId, nil
+	return response.WorkId, nil
 }
 
 func (c *oneRoomCloud) report(t *testing.T, ctx context.Context, workID string, kind agentprivatev1.FeedbackKind, exitCode int32) {
 	t.Helper()
-	req := connect.NewRequest(&agentprivatev1.ReportRequest{WorkId: workID, Kind: kind, ProcessId: "process", ExitCode: exitCode})
-	req.Header().Set("Authorization", "Bearer feedback")
+	req := &agentprivatev1.ReportRequest{WorkId: workID, Kind: kind, ProcessId: "process", ExitCode: exitCode}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer feedback")
 	_, err := c.feedback.Report(ctx, req)
 	require.NoError(t, err)
 }

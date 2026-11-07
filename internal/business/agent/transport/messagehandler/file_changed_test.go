@@ -7,8 +7,8 @@ import (
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/stretchr/testify/require"
 
-	marketplaceeventsv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/events/v1"
-	storageeventsv1 "github.com/talgent-work/workbench/gen/go/talgent/storage/events/v1"
+	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/go/marketplace/integration/v1"
+	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
 )
 
@@ -24,12 +24,12 @@ func (c *changedSpaces) InputsChanged(_ context.Context, owner string) error {
 func TestAttachmentChangesWakeTheirSpacesInputs(t *testing.T) {
 	changed := &changedSpaces{}
 	handler := messagehandler.NewFileChangedHandler(changed)
-	require.Equal(t, []integrationmessage.Kind{"talgent.storage.events.v1.FileChanged"}, handler.Listening())
-	for _, fact := range []*storageeventsv1.FileChanged{
-		{Owner: "owner-1", Kind: storageeventsv1.FileKind_FILE_KIND_ATTACHMENT, Name: "a.pdf", Operation: storageeventsv1.FileOperation_FILE_OPERATION_CREATED},
-		{Owner: "owner-1", Kind: storageeventsv1.FileKind_FILE_KIND_ATTACHMENT, Name: "b.pdf", PreviousName: "a.pdf", Operation: storageeventsv1.FileOperation_FILE_OPERATION_RENAMED},
-		{Owner: "owner-2", Kind: storageeventsv1.FileKind_FILE_KIND_ATTACHMENT, Name: "b.pdf", Operation: storageeventsv1.FileOperation_FILE_OPERATION_DELETED},
-		{Owner: "owner-3", Kind: storageeventsv1.FileKind_FILE_KIND_ARTIFACT, Name: "report.md", Operation: storageeventsv1.FileOperation_FILE_OPERATION_CREATED},
+	require.Equal(t, []integrationmessage.Kind{"storage.integration.v1.FileChangedV1"}, handler.Listening())
+	for _, fact := range []*storageintegrationv1.FileChangedV1{
+		{Owner: "owner-1", Kind: storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT, Name: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
+		{Owner: "owner-1", Kind: storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT, Name: "b.pdf", PreviousName: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED},
+		{Owner: "owner-2", Kind: storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT, Name: "b.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_DELETED},
+		{Owner: "owner-3", Kind: storageintegrationv1.FileKind_FILE_KIND_ARTIFACT, Name: "report.md", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
 	} {
 		msg, err := integrationmessage.New(integrationmessage.KindOf(fact), fact)
 		require.NoError(t, err)
@@ -37,7 +37,7 @@ func TestAttachmentChangesWakeTheirSpacesInputs(t *testing.T) {
 	}
 	require.Equal(t, changedSpaces{"owner-1", "owner-1", "owner-2"}, *changed)
 
-	other := &marketplaceeventsv1.CredentialChanged{AuthorizationId: "authorization-1"}
+	other := &marketplaceintegrationv1.CredentialChangedV1{AuthorizationId: "authorization-1"}
 	msg, err := integrationmessage.New(integrationmessage.KindOf(other), other)
 	require.NoError(t, err)
 	require.Error(t, handler.Handle(context.Background(), msg))

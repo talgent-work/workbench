@@ -1,8 +1,8 @@
 name: Publish npm packages
 
 # Publishes the Workbench's npm packages at a release, each at the release's
-# version: @talgent/computer, @talgent/workbench-contracts and
-# @talgent/workbench-ui. Auto Tag runs it on the vX.Y.Z tag it just
+# version: @talgent/computer and @talgent/workbench-ui, which leaves
+# @talgent/contracts to the web app that hosts it. Auto Tag runs it on the vX.Y.Z tag it just
 # pushed (a tag pushed with the workflow token starts no workflow by itself);
 # running it again by hand on a released tag publishes what npm lacks.
 on:
@@ -54,17 +54,15 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
-    # Every package takes the release's version; pnpm publish replaces the
-    # workspace: dependency of workbench-ui on the contracts with it.
+    # Every package takes the release's version.
     - name: Build at the release version
       env:
         VERSION: ${{ steps.release.outputs.version }}
       run: |
-        for dir in apps/computer gen/ts packages/workbench-ui; do
+        for dir in apps/computer packages/workbench-ui; do
           (cd "$dir" && npm version "$VERSION" --no-git-tag-version --allow-same-version)
         done
         pnpm --filter @talgent/computer run build
-        pnpm --filter @talgent/workbench-contracts run build
         pnpm --filter @talgent/workbench-ui run typecheck
 
     # pnpm packs each package, replacing workspace: dependencies with the
@@ -77,7 +75,7 @@ jobs:
         VERSION: ${{ steps.release.outputs.version }}
       run: |
         packed="$(mktemp -d)"
-        for package in @talgent/computer @talgent/workbench-contracts @talgent/workbench-ui; do
+        for package in @talgent/computer @talgent/workbench-ui; do
           if [ "$(npm view "${package}@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
             echo "${package}@${VERSION} is already published."
             continue

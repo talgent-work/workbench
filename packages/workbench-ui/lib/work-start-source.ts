@@ -1,5 +1,5 @@
-import type { WorkModelOption } from "@talgent/workbench-contracts/agent/public/v1/model_pb";
-import type { WorkStartConnector, WorkStartPlugin, WorkStartRepositories } from "@talgent/workbench-contracts/agent/public/v1/work_start_options_pb";
+import type { WorkModelOption } from "@talgent/contracts/agent/public/v1/model_pb";
+import type { WorkStartConnector, WorkStartPlugin, WorkStartRepositories } from "@talgent/contracts/agent/public/v1/work_start_options_pb";
 import type { WorkStartDraftScope } from "./work-start-draft";
 
 /** Where a new Work's choices come from: the options and repositories offered

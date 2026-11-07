@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Alert, Button, Tooltip } from "@heroui/react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronLeft, ChevronRight, CornerDownLeft, MessageCircleQuestion, Pencil, Terminal, X } from "lucide-react";
-import { MessageDetailFormat, UnifiedMessageKind, type PendingInteraction } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { MessageDetailFormat, UnifiedMessageKind, type PendingInteraction } from "@talgent/contracts/dispatcher/public/v1/unified_message_pb";
 import { agentWorkClient } from "../../lib/client";
 import { useWorkStreamSource } from "../../lib/work-stream-source";
 import { parseWorkQuestions } from "../../lib/work-questions";

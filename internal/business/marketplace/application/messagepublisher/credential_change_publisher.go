@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	marketplaceeventsv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/events/v1"
+	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/go/marketplace/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
@@ -43,7 +43,7 @@ func (p *CredentialChangePublisher) Handle(parent context.Context, event domaine
 		p.logger.WarnContext(parent, "unknown credential change not published", slog.String("change", string(changed.Change)))
 		return
 	}
-	payload := &marketplaceeventsv1.CredentialChanged{
+	payload := &marketplaceintegrationv1.CredentialChangedV1{
 		EventId: uuid.Must(uuid.NewV7()).String(), OccurredAt: timestamppb.New(changed.OccurredAt),
 		AuthorizationId: changed.AuthorizationID, Change: change,
 	}
@@ -61,9 +61,9 @@ func (p *CredentialChangePublisher) Handle(parent context.Context, event domaine
 	p.logger.InfoContext(ctx, "credential change published", attrs...)
 }
 
-var changes = map[domain.CredentialChange]marketplaceeventsv1.CredentialChange{
-	domain.CredentialRenewed:           marketplaceeventsv1.CredentialChange_CREDENTIAL_CHANGE_RENEWED,
-	domain.CredentialReauthorized:      marketplaceeventsv1.CredentialChange_CREDENTIAL_CHANGE_REAUTHORIZED,
-	domain.CredentialRevoked:           marketplaceeventsv1.CredentialChange_CREDENTIAL_CHANGE_REVOKED,
-	domain.CredentialReconnectRequired: marketplaceeventsv1.CredentialChange_CREDENTIAL_CHANGE_RECONNECT_REQUIRED,
+var changes = map[domain.CredentialChange]marketplaceintegrationv1.CredentialChange{
+	domain.CredentialRenewed:           marketplaceintegrationv1.CredentialChange_CREDENTIAL_CHANGE_RENEWED,
+	domain.CredentialReauthorized:      marketplaceintegrationv1.CredentialChange_CREDENTIAL_CHANGE_REAUTHORIZED,
+	domain.CredentialRevoked:           marketplaceintegrationv1.CredentialChange_CREDENTIAL_CHANGE_REVOKED,
+	domain.CredentialReconnectRequired: marketplaceintegrationv1.CredentialChange_CREDENTIAL_CHANGE_RECONNECT_REQUIRED,
 }

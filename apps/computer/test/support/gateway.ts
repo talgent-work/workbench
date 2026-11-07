@@ -37,7 +37,7 @@ export interface Decision {
   end_processes?: { work_id: string; process_id: string }[]
 }
 
-const REGISTRATION = 'talgent.computer.public.v1.RegistrationService'
+const REGISTRATION = 'computer.public.v1.RegistrationService'
 // The Computer Credential a registration through this Gateway receives.
 export const MACHINE_CREDENTIAL = 'machine-credential'
 

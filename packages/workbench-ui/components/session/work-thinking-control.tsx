@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Popover, Tooltip } from "@heroui/react";
 import { Lock } from "lucide-react";
-import type { WorkModelOption } from "@talgent/workbench-contracts/agent/public/v1/model_pb";
+import type { WorkModelOption } from "@talgent/contracts/agent/public/v1/model_pb";
 import { ModelTrigger, ModelVendorIcon, ThinkingEffort } from "../composer/prompt-bar-controls";
 import { agentWorkClient } from "../../lib/client";
 import { modelVendors } from "../../lib/model-vendors";

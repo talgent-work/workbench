@@ -7,7 +7,7 @@ import (
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 
-	computereventsv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 )
 
 // ComputerReach applies what a Managed Computer is now to the Works on it:
@@ -39,9 +39,9 @@ func NewComputerPresenceHandler(reach ComputerReach, reconnection ComputerReconn
 
 func (h *ComputerPresenceHandler) Listening() []integrationmessage.Kind {
 	return []integrationmessage.Kind{
-		integrationmessage.KindOf(&computereventsv1.ComputerBecameUnreachable{}),
-		integrationmessage.KindOf(&computereventsv1.ComputerBecameReachable{}),
-		integrationmessage.KindOf(&computereventsv1.ComputerRemoved{}),
+		integrationmessage.KindOf(&computerintegrationv1.ComputerBecameUnreachableV1{}),
+		integrationmessage.KindOf(&computerintegrationv1.ComputerBecameReachableV1{}),
+		integrationmessage.KindOf(&computerintegrationv1.ComputerRemovedV1{}),
 	}
 }
 
@@ -50,13 +50,13 @@ func (h *ComputerPresenceHandler) Listening() []integrationmessage.Kind {
 // any case.
 func (h *ComputerPresenceHandler) Handle(ctx context.Context, msg integrationmessage.Message) error {
 	switch fact := msg.Payload().(type) {
-	case *computereventsv1.ComputerBecameUnreachable:
+	case *computerintegrationv1.ComputerBecameUnreachableV1:
 		return h.reach.PresenceChanged(ctx, fact.GetComputerId())
-	case *computereventsv1.ComputerBecameReachable:
+	case *computerintegrationv1.ComputerBecameReachableV1:
 		// Both apply what Computer says now; each is idempotent, so a retry
 		// repeats both.
 		return errors.Join(h.reach.PresenceChanged(ctx, fact.GetComputerId()), h.reconnection.Reconnected(ctx, fact.GetComputerId()))
-	case *computereventsv1.ComputerRemoved:
+	case *computerintegrationv1.ComputerRemovedV1:
 		return h.reach.ComputerRemoved(ctx, fact.GetComputerId())
 	default:
 		return fmt.Errorf("agent computer presence: unexpected payload %T", msg.Payload())

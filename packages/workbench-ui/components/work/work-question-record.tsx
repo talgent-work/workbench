@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button } from "@heroui/react";
 import { ChevronDown } from "lucide-react";
-import { InteractionPhase, UnifiedMessageKind, type UnifiedMessage } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { InteractionPhase, UnifiedMessageKind, type UnifiedMessage } from "@talgent/contracts/dispatcher/public/v1/unified_message_pb";
 import { useWorkStreamSource } from "../../lib/work-stream-source";
 import { parseWorkQuestions } from "../../lib/work-questions";
 import { ToolMessageDetail } from "./tool-message-detail";

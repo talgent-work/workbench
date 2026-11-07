@@ -11,12 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -85,7 +87,7 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 			})
 		}
 		t.Cleanup(stop)
-		return registry, agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL), stop
+		return registry, agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), stop
 	}
 	registry, _, stop := start(false)
 	definitionID, err := registry.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
@@ -99,8 +101,8 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 		_, client, shutdown := start(true)
 		defer shutdown()
 		require.Eventually(t, func() bool {
-			response, err := client.GetWork(ctx, sessionControlRequest(&agentprivatev1.GetWorkRequest{SubjectId: "owner", WorkId: id}))
-			return err == nil && response.Msg.State == agentprivatev1.WorkState_WORK_STATE_WORKING
+			response, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "owner", WorkId: id})
+			return err == nil && response.State == agentprivatev1.WorkState_WORK_STATE_WORKING
 		}, 5*time.Second, 20*time.Millisecond, "current native readiness must recover both lost startup notifications")
 		return
 	}
@@ -121,11 +123,11 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	recovered, client, stop := start(true)
 	var observed *agentprivatev1.GetWorkResponse
 	require.Eventually(t, func() bool {
-		response, err := client.GetWork(ctx, sessionControlRequest(&agentprivatev1.GetWorkRequest{SubjectId: "owner", WorkId: id}))
+		response, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "owner", WorkId: id})
 		if err != nil {
 			return false
 		}
-		observed = response.Msg
+		observed = response
 		return observed.State == agentprivatev1.WorkState_WORK_STATE_STOPPING
 	}, 5*time.Second, 20*time.Millisecond, "Agent recovery must admit the stored timeout without Work or a new caller")
 	require.False(t, observed.Waiting, "stopping ends the Waiting interval")
@@ -144,8 +146,8 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	}, 5*time.Second, 20*time.Millisecond, "lost exit feedback must not strand the stopping Work")
 	processes.observe(domain.ProcessObservation{State: domain.ProcessPending, ComputeReclaimed: true})
 	require.Eventually(t, func() bool {
-		response, err := client.GetWork(ctx, sessionControlRequest(&agentprivatev1.GetWorkRequest{SubjectId: "owner", WorkId: id}))
-		return err == nil && response.Msg.State == agentprivatev1.WorkState_WORK_STATE_STOPPED
+		response, err := client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "owner", WorkId: id})
+		return err == nil && response.State == agentprivatev1.WorkState_WORK_STATE_STOPPED
 	}, 5*time.Second, 20*time.Millisecond, "resource absence must settle the Work without a release callback")
 	stop()
 }

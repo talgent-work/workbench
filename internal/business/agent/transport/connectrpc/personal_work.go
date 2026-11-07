@@ -6,16 +6,16 @@ import (
 	"log/slog"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
-	"github.com/talgent-work/workbench/pkg/authn"
 )
 
 // PersonalWorkHandler serves a person's own Works for the gateway-asserted
@@ -40,24 +40,24 @@ func currentPerson(ctx context.Context) personalwork.Person {
 	return person
 }
 
-func (h *PersonalWorkHandler) GetPersonalWorkStartOptions(ctx context.Context, _ *connect.Request[agentpublicv1.GetPersonalWorkStartOptionsRequest]) (*connect.Response[agentpublicv1.GetPersonalWorkStartOptionsResponse], error) {
+func (h *PersonalWorkHandler) GetPersonalWorkStartOptions(ctx context.Context, _ *agentpublicv1.GetPersonalWorkStartOptionsRequest) (*agentpublicv1.GetPersonalWorkStartOptionsResponse, error) {
 	value, err := h.works.StartOptions(ctx, currentPerson(ctx))
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.GetPersonalWorkStartOptionsResponse{Options: workStartOptionsToProto(value)}), nil
+	return &agentpublicv1.GetPersonalWorkStartOptionsResponse{Options: workStartOptionsToProto(value)}, nil
 }
 
-func (h *PersonalWorkHandler) ListPersonalWorkStartRepositories(ctx context.Context, _ *connect.Request[agentpublicv1.ListPersonalWorkStartRepositoriesRequest]) (*connect.Response[agentpublicv1.ListPersonalWorkStartRepositoriesResponse], error) {
+func (h *PersonalWorkHandler) ListPersonalWorkStartRepositories(ctx context.Context, _ *agentpublicv1.ListPersonalWorkStartRepositoriesRequest) (*agentpublicv1.ListPersonalWorkStartRepositoriesResponse, error) {
 	value, err := h.works.StartRepositories(ctx, currentPerson(ctx))
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.ListPersonalWorkStartRepositoriesResponse{Repositories: workStartRepositoriesToProto(value)}), nil
+	return &agentpublicv1.ListPersonalWorkStartRepositoriesResponse{Repositories: workStartRepositoriesToProto(value)}, nil
 }
 
-func (h *PersonalWorkHandler) StartPersonalWork(ctx context.Context, request *connect.Request[agentpublicv1.StartPersonalWorkRequest]) (*connect.Response[agentpublicv1.StartPersonalWorkResponse], error) {
-	msg := request.Msg
+func (h *PersonalWorkHandler) StartPersonalWork(ctx context.Context, request *agentpublicv1.StartPersonalWorkRequest) (*agentpublicv1.StartPersonalWorkResponse, error) {
+	msg := request
 	start := personalwork.StartPersonalWork{
 		Person: currentPerson(ctx), RequestID: strings.TrimSpace(msg.GetRequestId()), InitialMessage: msg.GetInitialMessage(),
 		Capabilities: creationCapabilitiesFromProto(msg.GetCreationCapabilities()), WorkModel: workModelFromProto(msg.GetModel()),
@@ -71,7 +71,7 @@ func (h *PersonalWorkHandler) StartPersonalWork(ctx context.Context, request *co
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.StartPersonalWorkResponse{WorkId: workID}), nil
+	return &agentpublicv1.StartPersonalWorkResponse{WorkId: workID}, nil
 }
 
 func creationCapabilitiesFromProto(value *agentpublicv1.CreationCapabilities) domain.CapabilityDifferences {
@@ -96,8 +96,8 @@ func creationCapabilitiesFromProto(value *agentpublicv1.CreationCapabilities) do
 	return result
 }
 
-func (h *PersonalWorkHandler) ListPersonalWorks(ctx context.Context, request *connect.Request[agentpublicv1.ListPersonalWorksRequest]) (*connect.Response[agentpublicv1.ListPersonalWorksResponse], error) {
-	works, err := h.works.List(ctx, currentPerson(ctx), int(request.Msg.GetLimit()))
+func (h *PersonalWorkHandler) ListPersonalWorks(ctx context.Context, request *agentpublicv1.ListPersonalWorksRequest) (*agentpublicv1.ListPersonalWorksResponse, error) {
+	works, err := h.works.List(ctx, currentPerson(ctx), int(request.GetLimit()))
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
@@ -108,31 +108,31 @@ func (h *PersonalWorkHandler) ListPersonalWorks(ctx context.Context, request *co
 			CreatedAt: timestamppb.New(work.CreatedAt), UpdatedAt: timestamppb.New(work.UpdatedAt), DisconnectedSince: optionalTimestamp(work.DisconnectedSince),
 		})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *PersonalWorkHandler) ChangePersonalWorkTitle(ctx context.Context, request *connect.Request[agentpublicv1.ChangePersonalWorkTitleRequest]) (*connect.Response[agentpublicv1.ChangePersonalWorkTitleResponse], error) {
-	title := strings.TrimSpace(request.Msg.GetTitle())
-	if err := h.works.ChangeTitle(ctx, currentPerson(ctx), request.Msg.GetWorkId(), title); err != nil {
+func (h *PersonalWorkHandler) ChangePersonalWorkTitle(ctx context.Context, request *agentpublicv1.ChangePersonalWorkTitleRequest) (*agentpublicv1.ChangePersonalWorkTitleResponse, error) {
+	title := strings.TrimSpace(request.GetTitle())
+	if err := h.works.ChangeTitle(ctx, currentPerson(ctx), request.GetWorkId(), title); err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.ChangePersonalWorkTitleResponse{Title: title}), nil
+	return &agentpublicv1.ChangePersonalWorkTitleResponse{Title: title}, nil
 }
 
-func (h *PersonalWorkHandler) SearchShareReaders(ctx context.Context, request *connect.Request[agentpublicv1.SearchShareReadersRequest]) (*connect.Response[agentpublicv1.SearchShareReadersResponse], error) {
-	users, err := h.works.SearchShareReaders(ctx, currentPerson(ctx), request.Msg.GetQuery(), int(request.Msg.GetLimit()))
+func (h *PersonalWorkHandler) SearchShareReaders(ctx context.Context, request *agentpublicv1.SearchShareReadersRequest) (*agentpublicv1.SearchShareReadersResponse, error) {
+	users, err := h.works.SearchShareReaders(ctx, currentPerson(ctx), request.GetQuery(), int(request.GetLimit()))
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.SearchShareReadersResponse{Users: directoryUsersToProto(users)}), nil
+	return &agentpublicv1.SearchShareReadersResponse{Users: directoryUsersToProto(users)}, nil
 }
 
-func (h *PersonalWorkHandler) GetShareReaders(ctx context.Context, request *connect.Request[agentpublicv1.GetShareReadersRequest]) (*connect.Response[agentpublicv1.GetShareReadersResponse], error) {
-	users, err := h.works.GetShareReaders(ctx, currentPerson(ctx), request.Msg.GetUserIds())
+func (h *PersonalWorkHandler) GetShareReaders(ctx context.Context, request *agentpublicv1.GetShareReadersRequest) (*agentpublicv1.GetShareReadersResponse, error) {
+	users, err := h.works.GetShareReaders(ctx, currentPerson(ctx), request.GetUserIds())
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.GetShareReadersResponse{Users: directoryUsersToProto(users)}), nil
+	return &agentpublicv1.GetShareReadersResponse{Users: directoryUsersToProto(users)}, nil
 }
 
 func directoryUsersToProto(users []personalwork.DirectoryUser) []*agentpublicv1.DirectoryUser {
@@ -143,15 +143,15 @@ func directoryUsersToProto(users []personalwork.DirectoryUser) []*agentpublicv1.
 	return out
 }
 
-func (h *PersonalWorkHandler) GrantPersonalWorkShare(ctx context.Context, request *connect.Request[agentpublicv1.GrantPersonalWorkShareRequest]) (*connect.Response[agentpublicv1.GrantPersonalWorkShareResponse], error) {
-	if err := h.works.GrantShare(ctx, currentPerson(ctx), request.Msg.GetWorkId(), request.Msg.GetReaderUserId()); err != nil {
+func (h *PersonalWorkHandler) GrantPersonalWorkShare(ctx context.Context, request *agentpublicv1.GrantPersonalWorkShareRequest) (*agentpublicv1.GrantPersonalWorkShareResponse, error) {
+	if err := h.works.GrantShare(ctx, currentPerson(ctx), request.GetWorkId(), request.GetReaderUserId()); err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.GrantPersonalWorkShareResponse{}), nil
+	return &agentpublicv1.GrantPersonalWorkShareResponse{}, nil
 }
 
-func (h *PersonalWorkHandler) ListLibraryFiles(ctx context.Context, request *connect.Request[agentpublicv1.ListLibraryFilesRequest]) (*connect.Response[agentpublicv1.ListLibraryFilesResponse], error) {
-	msg := request.Msg
+func (h *PersonalWorkHandler) ListLibraryFiles(ctx context.Context, request *agentpublicv1.ListLibraryFilesRequest) (*agentpublicv1.ListLibraryFilesResponse, error) {
+	msg := request
 	filter := personalwork.LibraryFilter{NameQuery: msg.GetNameQuery(), WorkID: strings.TrimSpace(msg.GetWorkId())}
 	if msg.AddedAfter != nil {
 		filter.AddedAfter = msg.GetAddedAfter().AsTime()
@@ -175,7 +175,7 @@ func (h *PersonalWorkHandler) ListLibraryFiles(ctx context.Context, request *con
 	for _, work := range library.Works {
 		response.Works = append(response.Works, &agentpublicv1.LibraryWork{WorkId: work.WorkID, Title: work.Title, SharedByUserId: work.SharedBy, Personal: work.Personal})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
 // errUnavailable is what a person sees of a failure that is not theirs to
@@ -186,16 +186,16 @@ var errUnavailable = errors.New("agent: the request could not be completed")
 func mapPersonalWorkError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, personalwork.ErrInvalidRequest), errors.Is(err, personalwork.ErrReaderUnknown), errors.Is(err, personalwork.ErrInvalidFileName):
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, personalwork.ErrFileNotFound):
-		return connect.NewError(connect.CodeNotFound, err)
+		return connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
 	case errors.Is(err, personalwork.ErrFileNameTaken):
-		return connect.NewError(connect.CodeAlreadyExists, err)
+		return connect.NewError(connect.CodeAlreadyExists, err.Error()).WithCause(err)
 	}
 	mapped := mapAgentError(err)
 	if code := connect.CodeOf(mapped); code == connect.CodeInternal || code == connect.CodeUnknown {
 		slog.ErrorContext(ctx, "personal work request failed", slog.Any("error", err))
-		return connect.NewError(code, errUnavailable)
+		return connect.NewError(code, errUnavailable.Error()).WithCause(errUnavailable)
 	}
 	return mapped
 }

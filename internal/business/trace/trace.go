@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/trace/public/v1/tracepublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/trace/public/v1/tracepublicv1connect"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"go.uber.org/fx"
 
@@ -17,9 +17,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/trace/infrastructure/access"
 	"github.com/talgent-work/workbench/internal/business/trace/infrastructure/clickhouse"
 	tracerpc "github.com/talgent-work/workbench/internal/business/trace/transport/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 )
 
 // ClickHouseConfig addresses the native telemetry database, apart from any
@@ -66,7 +66,7 @@ var Module = fx.Module(
 		fx.As(new(query.EventRepository)),
 	)),
 	fx.Provide(fx.Annotate(
-		func(cfg AuthnConfig) connect.Interceptor {
+		func(cfg AuthnConfig) connect.ServerInterceptor {
 			return authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{
 				Enabled: cfg.EnabledFlag(),
 			})
@@ -81,16 +81,14 @@ var Module = fx.Module(
 	fx.Provide(application.NewApplication),
 
 	fx.Invoke(func(app *application.Application, mux *http.ServeMux, logger *slog.Logger, in connectHandlerInterceptors) {
-		opts := make([]connect.HandlerOption, 0, 1)
-		interceptors := append([]connect.Interceptor{connectlog.NewInterceptor(logger)}, in.Interceptors...)
-		opts = append(opts, connect.WithInterceptors(interceptors...))
-		path, handler := tracepublicv1connect.NewTraceQueryServiceHandler(tracerpc.NewHandler(app), opts...)
-		mux.Handle(path, handler)
+		server := connectserver.New(logger, in.Interceptors...)
+		tracepublicv1connect.RegisterTraceQueryServiceHandler(server, tracerpc.NewHandler(app))
+		connectserver.Mount(mux, server)
 	}),
 )
 
 type connectHandlerInterceptors struct {
 	fx.In
 
-	Interceptors []connect.Interceptor `group:"trace_connect_interceptors"`
+	Interceptors []connect.ServerInterceptor `group:"trace_connect_interceptors"`
 }

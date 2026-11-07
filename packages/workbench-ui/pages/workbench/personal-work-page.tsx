@@ -2,7 +2,7 @@ import { useWorkComputer } from "../../lib/computer-service";
 import { useCallback, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import type { StartupProgress } from "@talgent/workbench-contracts/agent/public/v1/startup_pb";
+import type { StartupProgress } from "@talgent/contracts/agent/public/v1/startup_pb";
 import { useParams } from "react-router-dom";
 import { PageLayout } from "../../components/shell/page-layout";
 import { ConversationUnavailable } from "../../components/work/conversation-unavailable";

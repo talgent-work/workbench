@@ -1,5 +1,5 @@
 import { equals } from "@bufbuild/protobuf";
-import { UnifiedMessageKind, UnifiedMessageSchema, type UnifiedMessage } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { UnifiedMessageKind, UnifiedMessageSchema, type UnifiedMessage } from "@talgent/contracts/dispatcher/public/v1/unified_message_pb";
 
 export interface WorkTurn {
   key: string;

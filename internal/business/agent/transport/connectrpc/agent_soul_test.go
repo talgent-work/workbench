@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	agentmodule "github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -35,24 +36,24 @@ func TestSoulIsReadAndWrittenOnlyByAnOwner(t *testing.T) {
 	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, slog.Default(), nil)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	public := agentpublicv1connect.NewAgentWorkServiceClient(server.Client(), server.URL)
+	public := agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	ctx := context.Background()
 
-	_, err = public.GetAgentSoul(ctx, connect.NewRequest(&agentpublicv1.GetAgentSoulRequest{AgentId: definition.ID}))
+	_, err = public.GetAgentSoul(ctx, &agentpublicv1.GetAgentSoulRequest{AgentId: definition.ID})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.ChangeAgentSoul(ctx, connect.NewRequest(&agentpublicv1.ChangeAgentSoulRequest{AgentId: definition.ID, Soul: "x"}))
+	_, err = public.ChangeAgentSoul(ctx, &agentpublicv1.ChangeAgentSoulRequest{AgentId: definition.ID, Soul: "x"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = public.GetAgentSoul(ctx, asUser("mallory", &agentpublicv1.GetAgentSoulRequest{AgentId: definition.ID}))
+	_, err = public.GetAgentSoul(asUser(ctx, "mallory"), &agentpublicv1.GetAgentSoulRequest{AgentId: definition.ID})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	_, err = public.ChangeAgentSoul(ctx, asUser("mallory", &agentpublicv1.ChangeAgentSoulRequest{AgentId: definition.ID, Soul: "Leak."}))
+	_, err = public.ChangeAgentSoul(asUser(ctx, "mallory"), &agentpublicv1.ChangeAgentSoulRequest{AgentId: definition.ID, Soul: "Leak."})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	_, err = public.ChangeAgentSoul(ctx, asUser("alice", &agentpublicv1.ChangeAgentSoulRequest{AgentId: definition.ID, Soul: strings.Repeat("a", domain.MaxSoulRunes+1)}))
+	_, err = public.ChangeAgentSoul(asUser(ctx, "alice"), &agentpublicv1.ChangeAgentSoulRequest{AgentId: definition.ID, Soul: strings.Repeat("a", domain.MaxSoulRunes+1)})
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 
-	changed, err := public.ChangeAgentSoul(ctx, asUser("alice", &agentpublicv1.ChangeAgentSoulRequest{AgentId: definition.ID, Soul: "  Be terse.  "}))
+	changed, err := public.ChangeAgentSoul(asUser(ctx, "alice"), &agentpublicv1.ChangeAgentSoulRequest{AgentId: definition.ID, Soul: "  Be terse.  "})
 	require.NoError(t, err)
-	require.Equal(t, "Be terse.", changed.Msg.GetSoul())
-	read, err := public.GetAgentSoul(ctx, asUser("alice", &agentpublicv1.GetAgentSoulRequest{AgentId: definition.ID}))
+	require.Equal(t, "Be terse.", changed.GetSoul())
+	read, err := public.GetAgentSoul(asUser(ctx, "alice"), &agentpublicv1.GetAgentSoulRequest{AgentId: definition.ID})
 	require.NoError(t, err)
-	require.Equal(t, "Be terse.", read.Msg.GetSoul())
+	require.Equal(t, "Be terse.", read.GetSoul())
 }

@@ -3,13 +3,20 @@ package application_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectinprocess"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
+	"github.com/talgent-work/contracts/gen/go/streamgateway/public/v1/streamgatewaypublicv1connect"
+	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
+	streamrpc "github.com/talgent-work/workbench/internal/business/streamgateway/transport/connectrpc"
 )
 
 func unifiedMessage(id, sessionID string, ts time.Time) *query.Message {
@@ -245,4 +252,46 @@ func (f *fakeStore) GetToolDetail(ctx context.Context, request query.ToolDetailR
 		return f.toolDetailFn(ctx, request)
 	}
 	return query.ToolDetail{}, nil
+}
+
+// watched reads a WatchStream frame by frame: Receive reports whether a frame
+// arrived, Msg is that frame, and Err is what ended the stream, nil for its
+// clean end.
+type watched struct {
+	stream streamgatewaypublicv1connect.StreamGatewayServiceWatchStreamClientStream
+	msg    *streamgatewaypublicv1.WatchStreamResponse
+	err    error
+}
+
+func watch(stream streamgatewaypublicv1connect.StreamGatewayServiceWatchStreamClientStream, err error) (*watched, error) {
+	if err != nil {
+		return nil, err
+	}
+	return &watched{stream: stream}, nil
+}
+
+func (w *watched) Receive() bool {
+	msg, err := w.stream.Receive()
+	if err != nil {
+		if !errors.Is(err, io.EOF) {
+			w.err = err
+		}
+		return false
+	}
+	w.msg = msg
+	return true
+}
+
+func (w *watched) Msg() *streamgatewaypublicv1.WatchStreamResponse { return w.msg }
+
+func (w *watched) Err() error { return w.err }
+
+func (w *watched) Close() error { return w.stream.Close() }
+
+// served is a client of the stream gateway's Connect handler for app, in
+// process, as a served call reaches it.
+func served(app *application.Application) streamgatewaypublicv1connect.StreamGatewayServiceClient {
+	server := connect.NewServer()
+	streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(server, streamrpc.NewHandler(app))
+	return streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connectinprocess.New(server)))
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	computereventsv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 )
 
@@ -31,7 +31,7 @@ func (p *Removals) Publish(parent context.Context, removed application.RemovedCo
 	if p == nil {
 		return
 	}
-	payload := &computereventsv1.ComputerRemoved{EventId: uuid.Must(uuid.NewV7()).String(), OccurredAt: timestamppb.New(removed.At), ComputerId: removed.ComputerID}
+	payload := &computerintegrationv1.ComputerRemovedV1{EventId: uuid.Must(uuid.NewV7()).String(), OccurredAt: timestamppb.New(removed.At), ComputerId: removed.ComputerID}
 	p.publications.publish(parent, "computer removed", []fact{{payload: payload, key: removed.ComputerID, attrs: []any{
 		slog.String("computer_id", removed.ComputerID), slog.String("event_id", payload.GetEventId()),
 	}}})

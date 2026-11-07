@@ -2,16 +2,16 @@ package execution_test
 
 import (
 	"context"
-	"errors"
 	"net/http/httptest"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 type turnServer struct {
@@ -21,18 +21,18 @@ type turnServer struct {
 	cancelled []string
 }
 
-func (s *turnServer) GetCurrentTurn(context.Context, *connect.Request[dispatcherprivatev1.GetCurrentTurnRequest]) (*connect.Response[dispatcherprivatev1.GetCurrentTurnResponse], error) {
-	return connect.NewResponse(s.turn), nil
+func (s *turnServer) GetCurrentTurn(context.Context, *dispatcherprivatev1.GetCurrentTurnRequest) (*dispatcherprivatev1.GetCurrentTurnResponse, error) {
+	return s.turn, nil
 }
 
-func (s *turnServer) CancelTurn(_ context.Context, r *connect.Request[dispatcherprivatev1.CancelTurnRequest]) (*connect.Response[dispatcherprivatev1.CancelTurnResponse], error) {
-	s.cancelled = append(s.cancelled, r.Msg.TurnId)
-	return connect.NewResponse(&dispatcherprivatev1.CancelTurnResponse{}), s.cancelErr
+func (s *turnServer) CancelTurn(_ context.Context, r *dispatcherprivatev1.CancelTurnRequest) (*dispatcherprivatev1.CancelTurnResponse, error) {
+	s.cancelled = append(s.cancelled, r.TurnId)
+	return &dispatcherprivatev1.CancelTurnResponse{}, s.cancelErr
 }
 
 func turnEnvironment(t *testing.T, remote *turnServer) *execution.Environment {
 	t.Helper()
-	_, handler := dispatcherprivatev1connect.NewExecutionServiceHandler(remote)
+	handler := connecttest.Handler(func(s *connect.Server) { dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, remote) })
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	environment, err := execution.NewEnvironment(&environmentServer{}, execution.NewDispatcherControl(server.Client(), server.URL, "control-test"), &storageMounts{}, computerPlaces{})
@@ -54,7 +54,7 @@ func TestCancelRunningTurnIsIdempotent(t *testing.T) {
 		{name: "running", turn: &dispatcherprivatev1.GetCurrentTurnResponse{TurnId: "turn", Active: true}, cancelled: []string{"turn"}},
 		{name: "no turn", turn: &dispatcherprivatev1.GetCurrentTurnResponse{}},
 		{name: "already cancelling", turn: &dispatcherprivatev1.GetCurrentTurnResponse{TurnId: "turn", Active: true, CancelRequested: true}},
-		{name: "ended meanwhile", turn: &dispatcherprivatev1.GetCurrentTurnResponse{TurnId: "turn", Active: true}, cancelErr: connect.NewError(connect.CodeFailedPrecondition, errors.New("turn ended")), cancelled: []string{"turn"}},
+		{name: "ended meanwhile", turn: &dispatcherprivatev1.GetCurrentTurnResponse{TurnId: "turn", Active: true}, cancelErr: connect.NewError(connect.CodeFailedPrecondition, "turn ended"), cancelled: []string{"turn"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -63,6 +63,6 @@ func TestCancelRunningTurnIsIdempotent(t *testing.T) {
 			require.Equal(t, c.cancelled, remote.cancelled)
 		})
 	}
-	remote := &turnServer{dispatcherServer: &dispatcherServer{}, turn: &dispatcherprivatev1.GetCurrentTurnResponse{TurnId: "turn", Active: true}, cancelErr: connect.NewError(connect.CodeUnavailable, errors.New("dispatcher down"))}
+	remote := &turnServer{dispatcherServer: &dispatcherServer{}, turn: &dispatcherprivatev1.GetCurrentTurnResponse{TurnId: "turn", Active: true}, cancelErr: connect.NewError(connect.CodeUnavailable, "dispatcher down")}
 	require.Error(t, turnEnvironment(t, remote).CancelRunningTurn(ctx, "work"), "a failed cancellation is retried by recovery")
 }

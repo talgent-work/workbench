@@ -3,12 +3,12 @@ module github.com/talgent-work/workbench
 go 1.26.10
 
 require (
-	connectrpc.com/connect v1.19.1
 	github.com/alibaba/OpenSandbox/sdks/sandbox/go v1.0.6-0.20260909123024-05a8d26a18bb
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
+	connectrpc.com/connect/v2 v2.0.2
 	github.com/ClickHouse/clickhouse-go/v2 v2.45.0
 	github.com/Masterminds/semver/v3 v3.3.0
 	github.com/alicebob/miniredis/v2 v2.37.0
@@ -31,6 +31,7 @@ require (
 	github.com/richardlehane/mscfb v1.0.8
 	github.com/samber/oops v1.23.0
 	github.com/stretchr/testify v1.11.1
+	github.com/talgent-work/contracts v0.2.1
 	github.com/twmb/franz-go v1.22.2
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.45.0
@@ -156,3 +157,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+tool google.golang.org/protobuf/cmd/protoc-gen-go

@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	computereventsv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 )
 
@@ -51,9 +51,9 @@ func (p *Presences) Stop(ctx context.Context) error { return p.publications.stop
 func presenceChanged(change application.PresenceChange) (proto.Message, string) {
 	id := uuid.Must(uuid.NewV7()).String()
 	if change.Reachable {
-		return &computereventsv1.ComputerBecameReachable{EventId: id, OccurredAt: timestamppb.New(change.At), ComputerId: change.ComputerID}, id
+		return &computerintegrationv1.ComputerBecameReachableV1{EventId: id, OccurredAt: timestamppb.New(change.At), ComputerId: change.ComputerID}, id
 	}
-	return &computereventsv1.ComputerBecameUnreachable{
+	return &computerintegrationv1.ComputerBecameUnreachableV1{
 		EventId: id, OccurredAt: timestamppb.New(change.At), ComputerId: change.ComputerID, Since: timestamppb.New(change.Since),
 	}, id
 }

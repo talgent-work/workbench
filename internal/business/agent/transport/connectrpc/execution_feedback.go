@@ -5,9 +5,9 @@ import (
 	"crypto/subtle"
 	"errors"
 
-	"connectrpc.com/connect"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	"connectrpc.com/connect/v2"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -28,62 +28,62 @@ func NewFeedbackHandler(app *application.Application, recovery *application.Reco
 	return &FeedbackHandler{application: app, recovery: recovery, token: token}
 }
 
-func (h *FeedbackHandler) ConnectionEnded(ctx context.Context, request *connect.Request[agentprivatev1.ConnectionEndedRequest]) (*connect.Response[agentprivatev1.ConnectionEndedResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *FeedbackHandler) ConnectionEnded(ctx context.Context, request *agentprivatev1.ConnectionEndedRequest) (*agentprivatev1.ConnectionEndedResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
 	if h.recovery == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent: execution recovery is not served here"))
+		return nil, connect.NewError(connect.CodeUnimplemented, "agent: execution recovery is not served here")
 	}
-	if err := h.recovery.ReconnectWork(ctx, request.Msg.GetWorkId()); err != nil {
+	if err := h.recovery.ReconnectWork(ctx, request.GetWorkId()); err != nil {
 		return nil, mapFeedbackError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.ConnectionEndedResponse{}), nil
+	return &agentprivatev1.ConnectionEndedResponse{}, nil
 }
 
-func (h *FeedbackHandler) Report(ctx context.Context, request *connect.Request[agentprivatev1.ReportRequest]) (*connect.Response[agentprivatev1.ReportResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *FeedbackHandler) Report(ctx context.Context, request *agentprivatev1.ReportRequest) (*agentprivatev1.ReportResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	if request.Msg.Kind == agentprivatev1.FeedbackKind_FEEDBACK_KIND_PLUGIN_LOADS_OBSERVED {
-		plugins := make([]application.PluginLoad, 0, len(request.Msg.LoadedPlugins))
-		for _, item := range request.Msg.LoadedPlugins {
+	if request.Kind == agentprivatev1.FeedbackKind_FEEDBACK_KIND_PLUGIN_LOADS_OBSERVED {
+		plugins := make([]application.PluginLoad, 0, len(request.LoadedPlugins))
+		for _, item := range request.LoadedPlugins {
 			plugins = append(plugins, application.PluginLoad{Slug: item.GetSlug(), Version: item.GetVersion()})
 		}
-		if err := h.application.RecordPluginLoads(ctx, request.Msg.WorkId, plugins); err != nil {
+		if err := h.application.RecordPluginLoads(ctx, request.WorkId, plugins); err != nil {
 			return nil, mapFeedbackError(err)
 		}
-		return connect.NewResponse(&agentprivatev1.ReportResponse{}), nil
+		return &agentprivatev1.ReportResponse{}, nil
 	}
-	kind, ok := feedbackKinds[request.Msg.GetKind()]
+	kind, ok := feedbackKinds[request.GetKind()]
 	if !ok {
-		return nil, connect.NewError(connect.CodeInvalidArgument, command.ErrUnknownExecutionFeedback)
+		return nil, connect.NewError(connect.CodeInvalidArgument, command.ErrUnknownExecutionFeedback.Error()).WithCause(command.ErrUnknownExecutionFeedback)
 	}
 	feedback := command.ExecutionFeedback{
 		Kind:                   kind,
-		RequiredInteractionIDs: request.Msg.GetRequiredInteractionIds(),
-		WorkID:                 request.Msg.GetWorkId(), InteractionID: request.Msg.GetInteractionId(),
-		ObservationSequence: request.Msg.GetObservationSequence(), TurnCompleted: request.Msg.GetTurnCompleted(),
-		InputID: request.Msg.GetInputId(), InputOutcome: inputOutcomes[request.Msg.GetInputOutcome()],
-		ProcessID: request.Msg.GetProcessId(), ExitCode: int(request.Msg.GetExitCode()), ExitReason: request.Msg.GetExitReason(),
+		RequiredInteractionIDs: request.GetRequiredInteractionIds(),
+		WorkID:                 request.GetWorkId(), InteractionID: request.GetInteractionId(),
+		ObservationSequence: request.GetObservationSequence(), TurnCompleted: request.GetTurnCompleted(),
+		InputID: request.GetInputId(), InputOutcome: inputOutcomes[request.GetInputOutcome()],
+		ProcessID: request.GetProcessId(), ExitCode: int(request.GetExitCode()), ExitReason: request.GetExitReason(),
 		// The Work's permission mode is in the Harness's vocabulary; the Work
 		// refuses a name it does not know.
-		PermissionMode: domain.PermissionMode(request.Msg.GetPermissionMode()),
+		PermissionMode: domain.PermissionMode(request.GetPermissionMode()),
 	}
-	if request.Msg.DetachedSince != nil {
-		feedback.DetachedSince = request.Msg.GetDetachedSince().AsTime()
+	if request.DetachedSince != nil {
+		feedback.DetachedSince = request.GetDetachedSince().AsTime()
 	}
-	for _, item := range request.Msg.GetWorkProgress() {
+	for _, item := range request.GetWorkProgress() {
 		feedback.WorkProgress = append(feedback.WorkProgress, domain.WorkProgressItem{Content: item.GetContent(), Status: item.GetStatus(), ActiveForm: item.GetActiveForm()})
 	}
-	for _, item := range request.Msg.GetSubagents() {
+	for _, item := range request.GetSubagents() {
 		feedback.SubAgents = append(feedback.SubAgents, domain.SubAgent{ID: item.GetId(), Type: item.GetType(), Task: item.GetTask(), Status: domain.SubAgentStatus(item.GetStatus())})
 	}
 	err := h.application.Commands.ApplyExecutionFeedback.Handle(ctx, feedback)
 	if err != nil {
 		return nil, mapFeedbackError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.ReportResponse{}), nil
+	return &agentprivatev1.ReportResponse{}, nil
 }
 
 var feedbackKinds = map[agentprivatev1.FeedbackKind]command.ExecutionFeedbackKind{
@@ -123,12 +123,12 @@ func mapFeedbackError(err error) error {
 	case errors.Is(err, domain.ErrConcurrentModification):
 		code = connect.CodeAborted
 	}
-	return connect.NewError(code, err)
+	return connect.NewError(code, err.Error()).WithCause(err)
 }
 
 func authenticateIntegration(token, authorization string) error {
 	if token == "" || subtle.ConstantTimeCompare([]byte(authorization), []byte("Bearer "+token)) != 1 {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("execution integration authentication required"))
+		return connect.NewError(connect.CodeUnauthenticated, "execution integration authentication required")
 	}
 	return nil
 }

@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	tracepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/trace/public/v1"
+	tracepublicv1 "github.com/talgent-work/contracts/gen/go/trace/public/v1"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -30,9 +30,9 @@ func TestQueryRejectsInvalidIntervals(t *testing.T) {
 			// No authority or storage is needed: input rejection precedes either.
 			h := newTestApplication(fakeSpanQueryRepository{})
 			ctx := context.Background()
-			_, sessionErr := h.GetSessionTraceMetrics(ctx, connect.NewRequest(&tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "p", AgentWorkId: "s", StartTime: test.start, EndTime: test.end}))
-			_, projectErr := h.GetProjectTraceMetrics(ctx, connect.NewRequest(&tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "p", StartTime: test.start, EndTime: test.end}))
-			_, eventErr := h.ListEvents(ctx, connect.NewRequest(&tracepublicv1.ListEventsRequest{ProjectId: "p", StartTime: test.start, EndTime: test.end}))
+			_, sessionErr := h.GetSessionTraceMetrics(ctx, &tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "p", AgentWorkId: "s", StartTime: test.start, EndTime: test.end})
+			_, projectErr := h.GetProjectTraceMetrics(ctx, &tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "p", StartTime: test.start, EndTime: test.end})
+			_, eventErr := h.ListEvents(ctx, &tracepublicv1.ListEventsRequest{ProjectId: "p", StartTime: test.start, EndTime: test.end})
 			for name, err := range map[string]error{"session": sessionErr, "project": projectErr, "events": eventErr} {
 				if connect.CodeOf(err) != connect.CodeInvalidArgument {
 					t.Errorf("%s code = %s, error = %v", name, connect.CodeOf(err), err)
@@ -41,7 +41,7 @@ func TestQueryRejectsInvalidIntervals(t *testing.T) {
 		})
 	}
 	h := newTestApplication(fakeSpanQueryRepository{})
-	_, err := h.GetProjectTraceMetrics(context.Background(), connect.NewRequest(&tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "p", StepSeconds: -1}))
+	_, err := h.GetProjectTraceMetrics(context.Background(), &tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "p", StepSeconds: -1})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("negative step code = %s", connect.CodeOf(err))
 	}
@@ -57,12 +57,12 @@ func TestSpanLookupRequiresCompleteIdentityAndProjectAdmission(t *testing.T) {
 	for _, req := range []*tracepublicv1.GetSpanRequest{
 		{SpanId: "span"}, {ProjectId: "project", SpanId: "span"}, {TraceId: "trace", SpanId: "span"},
 	} {
-		if _, err := h.GetSpan(ctx, connect.NewRequest(req)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		if _, err := h.GetSpan(ctx, req); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatalf("incomplete identity admitted: %v", err)
 		}
 	}
 	h = newTestApplication(repo, &fakeTraceAuthorizer{projectErr: query.ErrAuthorizationPermissionDenied})
-	_, err := h.GetSpan(ctx, connect.NewRequest(&tracepublicv1.GetSpanRequest{ProjectId: "project", TraceId: "trace", SpanId: "span"}))
+	_, err := h.GetSpan(ctx, &tracepublicv1.GetSpanRequest{ProjectId: "project", TraceId: "trace", SpanId: "span"})
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("denied Project admitted: %v", err)
 	}

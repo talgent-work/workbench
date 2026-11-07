@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 )
 
 func mustTranslate(t *testing.T, raw string) *dispatcherpublicv1.UnifiedMessage {

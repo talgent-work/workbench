@@ -24,8 +24,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 	"github.com/talgent-work/workbench/internal/business/storage/infrastructure"
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
-	"github.com/talgent-work/workbench/pkg/storagepath"
+	"github.com/talgent-work/workbench/internal/pkg/storagepath"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 // fixture is Storage over two real directories standing for JuiceFS and the

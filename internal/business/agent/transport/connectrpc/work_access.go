@@ -4,9 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"connectrpc.com/connect"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -29,11 +28,11 @@ var readBases = map[domain.ReadBasis]agentprivatev1.WorkReadBasis{
 	domain.ReadAsPublic: agentprivatev1.WorkReadBasis_WORK_READ_BASIS_PUBLIC,
 }
 
-func (h *WorkAccessHandler) AdmitWorkReader(ctx context.Context, request *connect.Request[agentprivatev1.AdmitWorkReaderRequest]) (*connect.Response[agentprivatev1.AdmitWorkReaderResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *WorkAccessHandler) AdmitWorkReader(ctx context.Context, request *agentprivatev1.AdmitWorkReaderRequest) (*agentprivatev1.AdmitWorkReaderResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	admitted, err := h.application.AdmitWorkReader(ctx, application.AdmitWorkReader{ReaderID: strings.TrimSpace(request.Msg.GetReaderId()), WorkID: strings.TrimSpace(request.Msg.GetWorkId()), Admission: readerAdmissionFromProto(request.Msg.GetAdmission()), IncludeWorkState: request.Msg.GetIncludeWorkState()})
+	admitted, err := h.application.AdmitWorkReader(ctx, application.AdmitWorkReader{ReaderID: strings.TrimSpace(request.GetReaderId()), WorkID: strings.TrimSpace(request.GetWorkId()), Admission: readerAdmissionFromProto(request.GetAdmission()), IncludeWorkState: request.GetIncludeWorkState()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -41,29 +40,29 @@ func (h *WorkAccessHandler) AdmitWorkReader(ctx context.Context, request *connec
 	if admitted.Work != nil {
 		response.WorkState = WorkStateFrame(*admitted.Work)
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *WorkAccessHandler) GrantWorkShare(ctx context.Context, request *connect.Request[agentprivatev1.GrantWorkShareRequest]) (*connect.Response[agentprivatev1.GrantWorkShareResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *WorkAccessHandler) GrantWorkShare(ctx context.Context, request *agentprivatev1.GrantWorkShareRequest) (*agentprivatev1.GrantWorkShareResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	err := h.application.GrantWorkShare(ctx, application.GrantWorkShare{RequesterID: strings.TrimSpace(request.Msg.GetRequesterId()), WorkID: strings.TrimSpace(request.Msg.GetWorkId()), ReaderID: strings.TrimSpace(request.Msg.GetReaderId()), Admission: readerAdmissionFromProto(request.Msg.GetAdmission())})
+	err := h.application.GrantWorkShare(ctx, application.GrantWorkShare{RequesterID: strings.TrimSpace(request.GetRequesterId()), WorkID: strings.TrimSpace(request.GetWorkId()), ReaderID: strings.TrimSpace(request.GetReaderId()), Admission: readerAdmissionFromProto(request.GetAdmission())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.GrantWorkShareResponse{}), nil
+	return &agentprivatev1.GrantWorkShareResponse{}, nil
 }
 
-func (h *WorkAccessHandler) RevokeDepartedReader(ctx context.Context, request *connect.Request[agentprivatev1.RevokeDepartedReaderRequest]) (*connect.Response[agentprivatev1.RevokeDepartedReaderResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *WorkAccessHandler) RevokeDepartedReader(ctx context.Context, request *agentprivatev1.RevokeDepartedReaderRequest) (*agentprivatev1.RevokeDepartedReaderResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	err := h.application.RevokeDepartedReader(ctx, application.RevokeDepartedReader{ReaderID: strings.TrimSpace(request.Msg.GetReaderId()), Scope: readerAdmissionFromProto(request.Msg.GetScope())})
+	err := h.application.RevokeDepartedReader(ctx, application.RevokeDepartedReader{ReaderID: strings.TrimSpace(request.GetReaderId()), Scope: readerAdmissionFromProto(request.GetScope())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.RevokeDepartedReaderResponse{}), nil
+	return &agentprivatev1.RevokeDepartedReaderResponse{}, nil
 }
 
 func readerAdmissionFromProto(value *agentprivatev1.ReaderAdmission) domain.ReaderAdmission {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 )
 
 // toolPreviewLimit bounds one preview body or patch in Unicode code points,

@@ -8,7 +8,7 @@ import (
 	"github.com/go-jimu/components/taskqueue"
 	"google.golang.org/protobuf/proto"
 
-	storagetaskv1 "github.com/talgent-work/workbench/gen/go/talgent/storage/task/v1"
+	storagetaskv1 "github.com/talgent-work/workbench/gen/storage/task/v1"
 )
 
 // Queue is the one lane Storage renders Preview Copies on.
@@ -37,7 +37,7 @@ const busyRetries = 100
 // NewRenderPreview builds the task, keyed by the content digest so a request
 // for content already queued or rendering is absorbed by that task.
 func NewRenderPreview(render RenderPreview) (taskqueue.Task, error) {
-	payload, err := proto.Marshal(&storagetaskv1.RenderPreviewTask{
+	payload, err := proto.Marshal(&storagetaskv1.RenderPreviewTaskV1{
 		Owner: render.Owner, Kind: render.Kind, Name: render.Name, Digest: render.Digest,
 	})
 	if err != nil {

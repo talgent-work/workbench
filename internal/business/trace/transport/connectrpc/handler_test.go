@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	tracepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/trace/public/v1"
+	tracepublicv1 "github.com/talgent-work/contracts/gen/go/trace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/trace/application"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type fakeSpanQueryRepository struct {
@@ -126,14 +126,14 @@ func TestListSpansBySession_ReturnsSpans(t *testing.T) {
 	app := newTestApplication(repo)
 
 	resp, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "work-1", Limit: 25}))
+		&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "work-1", Limit: 25})
 	if err != nil {
 		t.Fatalf("ListSpansBySession: %v", err)
 	}
-	if len(resp.Msg.GetSpans()) != 1 {
-		t.Fatalf("spans len = %d, want 1", len(resp.Msg.GetSpans()))
+	if len(resp.GetSpans()) != 1 {
+		t.Fatalf("spans len = %d, want 1", len(resp.GetSpans()))
 	}
-	got := resp.Msg.GetSpans()[0]
+	got := resp.GetSpans()[0]
 	if got.GetSpanId() != "span-1" || got.GetTraceId() != "trace-1" || got.GetAgentWorkId() != "work-1" || got.GetName() != "turn" {
 		t.Fatalf("unexpected span: %+v", got)
 	}
@@ -151,7 +151,7 @@ func TestListSpansBySession_EmptySessionID_ReturnsInvalidArgument(t *testing.T) 
 	app := newTestApplication(fakeSpanQueryRepository{})
 
 	_, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "  "}))
+		&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "  "})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code = %s, want InvalidArgument (err=%v)", connect.CodeOf(err), err)
 	}
@@ -167,7 +167,7 @@ func TestListSpansBySession_RepositoryError_ReturnsInternal(t *testing.T) {
 	})
 
 	_, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "work-1"}))
+		&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "work-1"})
 	if connect.CodeOf(err) != connect.CodeInternal {
 		t.Fatalf("code = %s, want Internal (err=%v)", connect.CodeOf(err), err)
 	}
@@ -187,12 +187,12 @@ func TestGetSpan_ReturnsSpan(t *testing.T) {
 	})
 
 	resp, err := app.GetSpan(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "span-1"}))
+		&tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "span-1"})
 	if err != nil {
 		t.Fatalf("GetSpan: %v", err)
 	}
-	if resp.Msg.GetSpan().GetSpanId() != "span-1" {
-		t.Fatalf("span_id = %q, want span-1", resp.Msg.GetSpan().GetSpanId())
+	if resp.GetSpan().GetSpanId() != "span-1" {
+		t.Fatalf("span_id = %q, want span-1", resp.GetSpan().GetSpanId())
 	}
 }
 
@@ -205,7 +205,7 @@ func TestGetSpan_Missing_ReturnsNotFound(t *testing.T) {
 	})
 
 	_, err := app.GetSpan(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "missing"}))
+		&tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "missing"})
 	if connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("code = %s, want NotFound (err=%v)", connect.CodeOf(err), err)
 	}
@@ -216,7 +216,7 @@ func TestGetSpan_EmptySpanID_ReturnsInvalidArgument(t *testing.T) {
 	app := newTestApplication(fakeSpanQueryRepository{})
 
 	_, err := app.GetSpan(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "  "}))
+		&tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "  "})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code = %s, want InvalidArgument (err=%v)", connect.CodeOf(err), err)
 	}
@@ -246,21 +246,21 @@ func TestListSpansBySession_ReturnsNativeAssociationAndCursor(t *testing.T) {
 	app := newTestApplication(repo)
 
 	resp, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1",
+		&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1",
 			AgentWorkId: "work-1",
 			Limit:       25,
 			AfterCursor: "cursor-1",
-		}))
+		})
 	if err != nil {
 		t.Fatalf("ListSpansBySession: %v", err)
 	}
-	if resp.Msg.GetNextCursor() != "cursor-2" {
-		t.Fatalf("next_cursor = %q, want cursor-2", resp.Msg.GetNextCursor())
+	if resp.GetNextCursor() != "cursor-2" {
+		t.Fatalf("next_cursor = %q, want cursor-2", resp.GetNextCursor())
 	}
-	if len(resp.Msg.GetSpans()) != 1 {
-		t.Fatalf("spans len = %d, want 1", len(resp.Msg.GetSpans()))
+	if len(resp.GetSpans()) != 1 {
+		t.Fatalf("spans len = %d, want 1", len(resp.GetSpans()))
 	}
-	got := resp.Msg.GetSpans()[0]
+	got := resp.GetSpans()[0]
 	if got.GetAgentWorkId() != "work-1" {
 		t.Fatalf("agent_work_id = %q, want work-1", got.GetAgentWorkId())
 	}
@@ -280,7 +280,7 @@ func TestListSpansBySession_EmptyAgentWorkID_ReturnsInvalidArgument(t *testing.T
 	})
 
 	_, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "  "}))
+		&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "  "})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code = %s, want InvalidArgument (err=%v)", connect.CodeOf(err), err)
 	}
@@ -295,10 +295,10 @@ func TestListSpansBySession_InvalidCursor_ReturnsInvalidArgument(t *testing.T) {
 	})
 
 	_, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1",
+		&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1",
 			AgentWorkId: "work-1",
 			AfterCursor: "bad-cursor",
-		}))
+		})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code = %s, want InvalidArgument (err=%v)", connect.CodeOf(err), err)
 	}
@@ -318,12 +318,12 @@ func TestListSpansByOwner_RequiresProjectReadPermission(t *testing.T) {
 
 	ctx := authn.WithAuthenticatedUser(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), authn.AuthenticatedUser{ID: "user-1"})
 	_, err := app.ListSpansByOwner(ctx,
-		connect.NewRequest(&tracepublicv1.ListSpansByOwnerRequest{
+		&tracepublicv1.ListSpansByOwnerRequest{
 			ProjectId:      "project-1",
 			OwnerContext:   "caller",
 			OwnerId:        "project-1",
 			RuntimePurpose: "maintainer",
-		}))
+		})
 	if err != nil {
 		t.Fatalf("ListSpansByOwner: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestListSpansByOwner_EmptyRequiredFields_ReturnsInvalidArgument(t *testing.
 		{name: "owner id", req: &tracepublicv1.ListSpansByOwnerRequest{ProjectId: "project-1", OwnerContext: "caller"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := app.ListSpansByOwner(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), connect.NewRequest(tc.req))
+			_, err := app.ListSpansByOwner(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), tc.req)
 			if connect.CodeOf(err) != connect.CodeInvalidArgument {
 				t.Fatalf("code = %s, want InvalidArgument (err=%v)", connect.CodeOf(err), err)
 			}
@@ -398,26 +398,26 @@ func TestGetSessionTraceMetrics_UsesMetricRepository(t *testing.T) {
 	)
 
 	resp, err := app.GetSessionTraceMetrics(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "project-1",
+		&tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "project-1",
 			AgentWorkId: " work-1 ",
 			StartTime:   timestampOrNil(start),
 			EndTime:     timestampOrNil(end),
 			StepSeconds: 300,
 			MetricKinds: []string{"tool_call"},
-		}))
+		})
 	if err != nil {
 		t.Fatalf("GetSessionTraceMetrics: %v", err)
 	}
 	if captured.AgentWorkID != "work-1" || !captured.StartTime.Equal(start) || !captured.EndTime.Equal(end) || captured.StepSeconds != 300 {
 		t.Fatalf("captured options = %+v", captured)
 	}
-	if got := resp.Msg.GetBuckets()[0]; got.GetMetricKind() != "tool_call" || got.GetDimension() != "Read" || got.GetValue() != 2 {
+	if got := resp.GetBuckets()[0]; got.GetMetricKind() != "tool_call" || got.GetDimension() != "Read" || got.GetValue() != 2 {
 		t.Fatalf("bucket = %+v", got)
 	}
-	if got := resp.Msg.GetBuckets()[0]; got.GetOwnerContext() != "case" || got.GetOwnerId() != "case-alpha" || got.GetUserId() != "user-1" {
+	if got := resp.GetBuckets()[0]; got.GetOwnerContext() != "case" || got.GetOwnerId() != "case-alpha" || got.GetUserId() != "user-1" {
 		t.Fatalf("bucket attribution = %s:%q user:%q, want case:case-alpha/user-1", got.GetOwnerContext(), got.GetOwnerId(), got.GetUserId())
 	}
-	if got := resp.Msg.GetTotals()[0]; got.GetMetricKind() != "tool_call" || got.GetDimension() != "Read" || got.GetValue() != 2 {
+	if got := resp.GetTotals()[0]; got.GetMetricKind() != "tool_call" || got.GetDimension() != "Read" || got.GetValue() != 2 {
 		t.Fatalf("total = %+v", got)
 	}
 }
@@ -434,14 +434,14 @@ func TestGetProjectTraceMetrics_UsesProjectScope(t *testing.T) {
 	})
 
 	resp, err := app.GetProjectTraceMetrics(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: " project-1 ", StepSeconds: 60}))
+		&tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: " project-1 ", StepSeconds: 60})
 	if err != nil {
 		t.Fatalf("GetProjectTraceMetrics: %v", err)
 	}
 	if captured.ProjectID != "project-1" || captured.StepSeconds != 60 {
 		t.Fatalf("captured options = %+v", captured)
 	}
-	if got := resp.Msg.GetTotals()[0]; got.GetMetricKind() != "skill_call" || got.GetDimension() != "designing-tests" || got.GetValue() != 1 {
+	if got := resp.GetTotals()[0]; got.GetMetricKind() != "skill_call" || got.GetDimension() != "designing-tests" || got.GetValue() != 1 {
 		t.Fatalf("total = %+v", got)
 	}
 }
@@ -457,7 +457,7 @@ func TestGetSessionTraceMetrics_EmptyAgentWorkID_ReturnsInvalidArgument(t *testi
 	})
 
 	_, err := app.GetSessionTraceMetrics(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "project-1", AgentWorkId: "  "}))
+		&tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "project-1", AgentWorkId: "  "})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code = %s, want InvalidArgument (err=%v)", connect.CodeOf(err), err)
 	}
@@ -474,7 +474,7 @@ func TestGetProjectTraceMetrics_EmptyProjectID_ReturnsInvalidArgument(t *testing
 	})
 
 	_, err := app.GetProjectTraceMetrics(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}),
-		connect.NewRequest(&tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "  "}))
+		&tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "  "})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code = %s, want InvalidArgument (err=%v)", connect.CodeOf(err), err)
 	}
@@ -491,7 +491,7 @@ func TestGetSessionTraceMetrics_RequiresWorkReadPermission(t *testing.T) {
 	}, authorizer)
 
 	ctx := authn.WithAuthenticatedUser(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), authn.AuthenticatedUser{ID: "user-1"})
-	_, err := app.GetSessionTraceMetrics(ctx, connect.NewRequest(&tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "project-1", AgentWorkId: "work-1"}))
+	_, err := app.GetSessionTraceMetrics(ctx, &tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "project-1", AgentWorkId: "work-1"})
 	if err != nil {
 		t.Fatalf("GetSessionTraceMetrics: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestGetProjectTraceMetrics_RequiresProjectReadPermission(t *testing.T) {
 	}, authorizer)
 
 	ctx := authn.WithAuthenticatedUser(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), authn.AuthenticatedUser{ID: "user-1"})
-	_, err := app.GetProjectTraceMetrics(ctx, connect.NewRequest(&tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "project-1"}))
+	_, err := app.GetProjectTraceMetrics(ctx, &tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "project-1"})
 	if err != nil {
 		t.Fatalf("GetProjectTraceMetrics: %v", err)
 	}
@@ -530,7 +530,7 @@ func TestGetSessionTraceMetrics_AuthDeniedDoesNotQueryMetrics(t *testing.T) {
 	}, authorizer)
 
 	ctx := authn.WithAuthenticatedUser(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), authn.AuthenticatedUser{ID: "user-1"})
-	_, err := app.GetSessionTraceMetrics(ctx, connect.NewRequest(&tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "project-1", AgentWorkId: "work-1"}))
+	_, err := app.GetSessionTraceMetrics(ctx, &tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "project-1", AgentWorkId: "work-1"})
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("code=%s, want PermissionDenied (err=%v)", connect.CodeOf(err), err)
 	}
@@ -545,7 +545,7 @@ func TestListSpansBySession_RequiresWorkReadPermission(t *testing.T) {
 	}, authorizer)
 
 	ctx := authn.WithAuthenticatedUser(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), authn.AuthenticatedUser{ID: "user-1"})
-	_, err := app.ListSpansBySession(ctx, connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "work-1"}))
+	_, err := app.ListSpansBySession(ctx, &tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "work-1"})
 	if err != nil {
 		t.Fatalf("ListSpansBySession: %v", err)
 	}
@@ -563,7 +563,7 @@ func TestGetSpan_RequiresWorkReadPermissionForFetchedSpan(t *testing.T) {
 	}, authorizer)
 
 	ctx := authn.WithAuthenticatedUser(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), authn.AuthenticatedUser{ID: "user-1"})
-	_, err := app.GetSpan(ctx, connect.NewRequest(&tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "span-1"}))
+	_, err := app.GetSpan(ctx, &tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "span-1"})
 	if err != nil {
 		t.Fatalf("GetSpan: %v", err)
 	}
@@ -590,7 +590,7 @@ func TestGetSpan_RequiresProjectReadPermissionForNonWorkSpan(t *testing.T) {
 	}, authorizer)
 
 	ctx := authn.WithAuthenticatedUser(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), authn.AuthenticatedUser{ID: "user-1"})
-	_, err := app.GetSpan(ctx, connect.NewRequest(&tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "span-1"}))
+	_, err := app.GetSpan(ctx, &tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "span-1"})
 	if err != nil {
 		t.Fatalf("GetSpan: %v", err)
 	}
@@ -609,7 +609,7 @@ func TestGetSpan_NonWorkSpanWithoutProjectID_ReturnsPermissionDenied(t *testing.
 	}, &fakeTraceAuthorizer{})
 
 	ctx := authn.WithAuthenticatedUser(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "test-reader"}), authn.AuthenticatedUser{ID: "user-1"})
-	_, err := app.GetSpan(ctx, connect.NewRequest(&tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "span-1"}))
+	_, err := app.GetSpan(ctx, &tracepublicv1.GetSpanRequest{ProjectId: "project-1", TraceId: "trace-1", SpanId: "span-1"})
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("code=%s, want PermissionDenied (err=%v)", connect.CodeOf(err), err)
 	}
@@ -699,7 +699,7 @@ func TestMissingAuthorityCannotReadSpans(t *testing.T) {
 		t.Fatal("must not query spans without authority")
 		return nil, nil
 	}}, nil)
-	_, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "reader"}), connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "private"}))
+	_, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "reader"}), &tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "private"})
 	if connect.CodeOf(err) != connect.CodeUnavailable {
 		t.Fatalf("missing authority: %v", err)
 	}
@@ -709,7 +709,7 @@ func TestMissingIdentityCannotReadSpans(t *testing.T) {
 		t.Fatal("must not query spans without identity")
 		return nil, nil
 	}})
-	_, err := app.ListSpansBySession(context.Background(), connect.NewRequest(&tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "private"}))
+	_, err := app.ListSpansBySession(context.Background(), &tracepublicv1.ListSpansBySessionRequest{ProjectId: "project-1", AgentWorkId: "private"})
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("missing identity: %v", err)
 	}

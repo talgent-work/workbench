@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import type { MessageHistoryCursor, WorkStateFrame } from "@talgent/workbench-contracts/streamgateway/public/v1/streamgateway_pb";
-import { ContentBlockType, UnifiedMessageKind, type UnifiedMessage } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import type { MessageHistoryCursor, WorkStateFrame } from "@talgent/contracts/streamgateway/public/v1/streamgateway_pb";
+import { ContentBlockType, UnifiedMessageKind, type UnifiedMessage } from "@talgent/contracts/dispatcher/public/v1/unified_message_pb";
 import { useWorkStreamSource } from "../lib/work-stream-source";
 import { WorkConversation } from "../lib/work-conversation";
 import { compareMessageCursor, useWorkStream } from "./use-work-stream";
@@ -13,7 +13,7 @@ function turnAnchor(message: UnifiedMessage): TurnAnchor[] {
   const title = message.payload.value.content.filter(block => block.type === ContentBlockType.TEXT).map(block => block.text.slice(0, 160)).join("\n\n").slice(0, 160) || "Image attachment";
   return [{ id: message.id, turnId: message.turnId, timestamp: message.timestamp, title }];
 }
-const cursorFor = (anchor: { id: string; timestamp: TurnAnchor["timestamp"] }): MessageHistoryCursor => ({ $typeName: "talgent.streamgateway.public.v1.MessageHistoryCursor", id: anchor.id, timestamp: anchor.timestamp });
+const cursorFor = (anchor: { id: string; timestamp: TurnAnchor["timestamp"] }): MessageHistoryCursor => ({ $typeName: "streamgateway.public.v1.MessageHistoryCursor", id: anchor.id, timestamp: anchor.timestamp });
 
 export function useWorkConversation(workId: string | undefined, onWorkState?: (state: WorkStateFrame) => void, onReconnect?: () => void, onActivity?: () => void, onAccessWithdrawn?: () => void) {
   const streamClient = useWorkStreamSource();
@@ -111,7 +111,7 @@ export function useWorkConversation(workId: string | undefined, onWorkState?: (s
     loadOlder: () => {
       const oldest = conversation.getOldest();
       if (!workId || history.isFetching || !hasMore || !oldest?.timestamp) return;
-      setNavigation({ workId, generation, before: { $typeName: "talgent.streamgateway.public.v1.MessageHistoryCursor", timestamp: oldest.timestamp, id: oldest.id } });
+      setNavigation({ workId, generation, before: { $typeName: "streamgateway.public.v1.MessageHistoryCursor", timestamp: oldest.timestamp, id: oldest.id } });
     },
     hasLaterMessages: browsingHistory && (Boolean(before) || Boolean(history.data?.hasMore)),
     loadNewer: () => {

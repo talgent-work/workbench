@@ -1,5 +1,5 @@
 import type { JsonObject } from "@bufbuild/protobuf";
-import type { PermissionMode } from "@talgent/workbench-contracts/agent/public/v1/harness_pb";
+import type { PermissionMode } from "@talgent/contracts/agent/public/v1/harness_pb";
 
 /** What the person chose for a new Work, whatever the Work is for. */
 export interface WorkStartInput {

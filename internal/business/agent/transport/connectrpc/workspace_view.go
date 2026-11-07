@@ -5,11 +5,11 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 )
 
@@ -31,14 +31,14 @@ func readWorkspace(workID, readerID, path string, admission *agentprivatev1.Read
 	return application.ReadWorkspace{ActorUserID: strings.TrimSpace(readerID), WorkID: strings.TrimSpace(workID), Path: path, Admission: readerAdmissionFromProto(admission)}
 }
 
-func (h *WorkspaceReadingHandler) BrowseWorkspace(ctx context.Context, request *connect.Request[agentprivatev1.BrowseWorkspaceRequest]) (*connect.Response[agentprivatev1.BrowseWorkspaceResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *WorkspaceReadingHandler) BrowseWorkspace(ctx context.Context, request *agentprivatev1.BrowseWorkspaceRequest) (*agentprivatev1.BrowseWorkspaceResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	msg := request.Msg
+	msg := request
 	listing, err := h.application.BrowseWorkspace(ctx, readWorkspace(msg.GetWorkId(), msg.GetReaderId(), msg.GetPath(), msg.GetAdmission()))
 	if state, unavailable := workspaceState(err); unavailable {
-		return connect.NewResponse(&agentprivatev1.BrowseWorkspaceResponse{State: state}), nil
+		return &agentprivatev1.BrowseWorkspaceResponse{State: state}, nil
 	}
 	if err != nil {
 		return nil, mapWorkspaceError(err)
@@ -50,17 +50,17 @@ func (h *WorkspaceReadingHandler) BrowseWorkspace(ctx context.Context, request *
 			ModifiedAt: timestamppb.New(entry.ModifiedAt), AttachmentName: entry.AttachmentName,
 		})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *WorkspaceReadingHandler) PreviewWorkspaceFile(ctx context.Context, request *connect.Request[agentprivatev1.PreviewWorkspaceFileRequest]) (*connect.Response[agentprivatev1.PreviewWorkspaceFileResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *WorkspaceReadingHandler) PreviewWorkspaceFile(ctx context.Context, request *agentprivatev1.PreviewWorkspaceFileRequest) (*agentprivatev1.PreviewWorkspaceFileResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	msg := request.Msg
+	msg := request
 	preview, err := h.application.PreviewWorkspaceFile(ctx, readWorkspace(msg.GetWorkId(), msg.GetReaderId(), msg.GetPath(), msg.GetAdmission()))
 	if state, unavailable := workspaceState(err); unavailable {
-		return connect.NewResponse(&agentprivatev1.PreviewWorkspaceFileResponse{State: state}), nil
+		return &agentprivatev1.PreviewWorkspaceFileResponse{State: state}, nil
 	}
 	if err != nil {
 		return nil, mapWorkspaceError(err)
@@ -72,22 +72,22 @@ func (h *WorkspaceReadingHandler) PreviewWorkspaceFile(ctx context.Context, requ
 	if preview.Link != nil {
 		response.AccessUrl, response.ExpiresAt = preview.Link.URL, timestamppb.New(preview.Link.ExpiresAt)
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *WorkspaceReadingHandler) DownloadWorkspaceFile(ctx context.Context, request *connect.Request[agentprivatev1.DownloadWorkspaceFileRequest]) (*connect.Response[agentprivatev1.DownloadWorkspaceFileResponse], error) {
-	if err := authenticateIntegration(h.token, request.Header().Get("Authorization")); err != nil {
+func (h *WorkspaceReadingHandler) DownloadWorkspaceFile(ctx context.Context, request *agentprivatev1.DownloadWorkspaceFileRequest) (*agentprivatev1.DownloadWorkspaceFileResponse, error) {
+	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	msg := request.Msg
+	msg := request
 	link, err := h.application.DownloadWorkspaceFile(ctx, readWorkspace(msg.GetWorkId(), msg.GetReaderId(), msg.GetPath(), msg.GetAdmission()))
 	if state, unavailable := workspaceState(err); unavailable {
-		return connect.NewResponse(&agentprivatev1.DownloadWorkspaceFileResponse{State: state}), nil
+		return &agentprivatev1.DownloadWorkspaceFileResponse{State: state}, nil
 	}
 	if err != nil {
 		return nil, mapWorkspaceError(err)
 	}
-	return connect.NewResponse(&agentprivatev1.DownloadWorkspaceFileResponse{State: agentprivatev1.WorkspaceState_WORKSPACE_STATE_AVAILABLE, AccessUrl: link.URL, ExpiresAt: timestamppb.New(link.ExpiresAt)}), nil
+	return &agentprivatev1.DownloadWorkspaceFileResponse{State: agentprivatev1.WorkspaceState_WORKSPACE_STATE_AVAILABLE, AccessUrl: link.URL, ExpiresAt: timestamppb.New(link.ExpiresAt)}, nil
 }
 
 var workspacePreviewModes = map[application.WorkspacePreviewMode]agentprivatev1.WorkspacePreviewMode{
@@ -134,9 +134,9 @@ func workspaceState(err error) (agentprivatev1.WorkspaceState, bool) {
 func mapWorkspaceError(err error) error {
 	switch {
 	case errors.Is(err, application.ErrWorkspacePathNotFound):
-		return connect.NewError(connect.CodeNotFound, err)
+		return connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
 	case errors.Is(err, application.ErrInvalidWorkspacePath):
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	}
 	return mapAgentError(err)
 }

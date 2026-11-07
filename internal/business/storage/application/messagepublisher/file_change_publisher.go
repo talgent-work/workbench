@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	storageeventsv1 "github.com/talgent-work/workbench/gen/go/talgent/storage/events/v1"
+	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
@@ -58,8 +58,8 @@ func (p *FileChangePublisher) Publish(parent context.Context, change application
 }
 
 // fileChangeMessage maps a committed file change to its published fact.
-func fileChangeMessage(change application.FileChange) *storageeventsv1.FileChanged {
-	return &storageeventsv1.FileChanged{
+func fileChangeMessage(change application.FileChange) *storageintegrationv1.FileChangedV1 {
+	return &storageintegrationv1.FileChangedV1{
 		EventId:      uuid.Must(uuid.NewV7()).String(),
 		OccurredAt:   timestamppb.New(change.OccurredAt),
 		Owner:        change.Owner,
@@ -72,14 +72,14 @@ func fileChangeMessage(change application.FileChange) *storageeventsv1.FileChang
 	}
 }
 
-var fileKinds = map[domain.FileKind]storageeventsv1.FileKind{
-	domain.FileKindAttachment: storageeventsv1.FileKind_FILE_KIND_ATTACHMENT,
-	domain.FileKindArtifact:   storageeventsv1.FileKind_FILE_KIND_ARTIFACT,
+var fileKinds = map[domain.FileKind]storageintegrationv1.FileKind{
+	domain.FileKindAttachment: storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT,
+	domain.FileKindArtifact:   storageintegrationv1.FileKind_FILE_KIND_ARTIFACT,
 }
 
-var fileOperations = map[application.FileOperation]storageeventsv1.FileOperation{
-	application.FileCreated:  storageeventsv1.FileOperation_FILE_OPERATION_CREATED,
-	application.FileReplaced: storageeventsv1.FileOperation_FILE_OPERATION_REPLACED,
-	application.FileRenamed:  storageeventsv1.FileOperation_FILE_OPERATION_RENAMED,
-	application.FileDeleted:  storageeventsv1.FileOperation_FILE_OPERATION_DELETED,
+var fileOperations = map[application.FileOperation]storageintegrationv1.FileOperation{
+	application.FileCreated:  storageintegrationv1.FileOperation_FILE_OPERATION_CREATED,
+	application.FileReplaced: storageintegrationv1.FileOperation_FILE_OPERATION_REPLACED,
+	application.FileRenamed:  storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED,
+	application.FileDeleted:  storageintegrationv1.FileOperation_FILE_OPERATION_DELETED,
 }

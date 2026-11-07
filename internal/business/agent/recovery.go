@@ -17,7 +17,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	"github.com/talgent-work/workbench/internal/pkg/streamownership"
-	pkgtaskqueue "github.com/talgent-work/workbench/pkg/taskqueue"
+	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"go.uber.org/fx"
 	"k8s.io/client-go/dynamic"
 )

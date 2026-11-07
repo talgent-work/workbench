@@ -9,7 +9,7 @@ import (
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/stretchr/testify/require"
 
-	computereventsv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/application/messagepublisher"
 )
@@ -40,7 +40,7 @@ func TestPresencesPublishEachChangeKeyedByItsComputer(t *testing.T) {
 	require.NoError(t, presences.Stop(context.Background()))
 
 	require.Len(t, b.messages, 2)
-	unreachable, ok := b.messages[0].Payload().(*computereventsv1.ComputerBecameUnreachable)
+	unreachable, ok := b.messages[0].Payload().(*computerintegrationv1.ComputerBecameUnreachableV1)
 	require.True(t, ok)
 	require.Equal(t, "computer", b.messages[0].Key())
 	require.Equal(t, "computer", unreachable.GetComputerId())
@@ -48,7 +48,7 @@ func TestPresencesPublishEachChangeKeyedByItsComputer(t *testing.T) {
 	require.True(t, unreachable.GetOccurredAt().AsTime().Equal(at))
 	require.NotEmpty(t, unreachable.GetEventId())
 
-	reachable, ok := b.messages[1].Payload().(*computereventsv1.ComputerBecameReachable)
+	reachable, ok := b.messages[1].Payload().(*computerintegrationv1.ComputerBecameReachableV1)
 	require.True(t, ok)
 	require.Equal(t, "computer", b.messages[1].Key())
 	require.Equal(t, "computer", reachable.GetComputerId())
@@ -66,7 +66,7 @@ func TestRemovalsPublishComputerRemovedKeyedByItsComputer(t *testing.T) {
 	require.NoError(t, removals.Stop(context.Background()))
 
 	require.Len(t, b.messages, 1)
-	removed, ok := b.messages[0].Payload().(*computereventsv1.ComputerRemoved)
+	removed, ok := b.messages[0].Payload().(*computerintegrationv1.ComputerRemovedV1)
 	require.True(t, ok)
 	require.Equal(t, "computer", b.messages[0].Key())
 	require.Equal(t, "computer", removed.GetComputerId())

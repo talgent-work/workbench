@@ -2,19 +2,19 @@ package execution_test
 
 import (
 	"context"
-	"errors"
 	"net/http/httptest"
 	"sync"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 type controlRequest struct {
@@ -45,30 +45,36 @@ func (s *dispatcherServer) observed() []controlRequest {
 	defer s.mu.Unlock()
 	return append([]controlRequest(nil), s.calls...)
 }
-func (s *dispatcherServer) EnqueueInput(_ context.Context, r *connect.Request[dispatcherprivatev1.EnqueueInputRequest]) (*connect.Response[dispatcherprivatev1.EnqueueInputResponse], error) {
-	err := s.record(controlRequest{operation: "enqueue", workID: r.Msg.WorkId, authorization: r.Header().Get("Authorization"), enqueue: r.Msg})
+func (s *dispatcherServer) EnqueueInput(ctx context.Context, r *dispatcherprivatev1.EnqueueInputRequest) (*dispatcherprivatev1.EnqueueInputResponse, error) {
+	err := s.record(controlRequest{operation: "enqueue", workID: r.WorkId, authorization: serverAuthorization(ctx), enqueue: r})
 	handOff := s.handOff
 	if handOff == dispatcherprivatev1.InputHandOff_INPUT_HAND_OFF_UNSPECIFIED {
 		handOff = dispatcherprivatev1.InputHandOff_INPUT_HAND_OFF_BUFFERED
 	}
-	return connect.NewResponse(&dispatcherprivatev1.EnqueueInputResponse{HandOff: handOff}), err
+	return &dispatcherprivatev1.EnqueueInputResponse{HandOff: handOff}, err
 }
-func (s *dispatcherServer) ListBufferedInput(_ context.Context, r *connect.Request[dispatcherprivatev1.ListBufferedInputRequest]) (*connect.Response[dispatcherprivatev1.ListBufferedInputResponse], error) {
-	err := s.record(controlRequest{operation: "list", workID: r.Msg.WorkId, authorization: r.Header().Get("Authorization")})
-	return connect.NewResponse(s.buffered), err
+func (s *dispatcherServer) ListBufferedInput(ctx context.Context, r *dispatcherprivatev1.ListBufferedInputRequest) (*dispatcherprivatev1.ListBufferedInputResponse, error) {
+	err := s.record(controlRequest{operation: "list", workID: r.WorkId, authorization: serverAuthorization(ctx)})
+	return s.buffered, err
 }
-func (s *dispatcherServer) DropInput(_ context.Context, r *connect.Request[dispatcherprivatev1.DropInputRequest]) (*connect.Response[dispatcherprivatev1.DropInputResponse], error) {
-	err := s.record(controlRequest{operation: "drop", workID: r.Msg.WorkId, authorization: r.Header().Get("Authorization")})
-	return connect.NewResponse(&dispatcherprivatev1.DropInputResponse{}), err
+func (s *dispatcherServer) DropInput(ctx context.Context, r *dispatcherprivatev1.DropInputRequest) (*dispatcherprivatev1.DropInputResponse, error) {
+	err := s.record(controlRequest{operation: "drop", workID: r.WorkId, authorization: serverAuthorization(ctx)})
+	return &dispatcherprivatev1.DropInputResponse{}, err
 }
-func (s *dispatcherServer) Stop(_ context.Context, r *connect.Request[dispatcherprivatev1.StopRequest]) (*connect.Response[dispatcherprivatev1.StopResponse], error) {
-	err := s.record(controlRequest{operation: "stop", workID: r.Msg.WorkId, authorization: r.Header().Get("Authorization"), stopID: r.Msg.StopRequestId})
-	return connect.NewResponse(&dispatcherprivatev1.StopResponse{}), err
+func (s *dispatcherServer) Stop(ctx context.Context, r *dispatcherprivatev1.StopRequest) (*dispatcherprivatev1.StopResponse, error) {
+	err := s.record(controlRequest{operation: "stop", workID: r.WorkId, authorization: serverAuthorization(ctx), stopID: r.StopRequestId})
+	return &dispatcherprivatev1.StopResponse{}, err
+}
+
+// serverAuthorization is the Authorization header of the call ctx serves.
+func serverAuthorization(ctx context.Context) string {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	return info.RequestHeader().Get("Authorization")
 }
 
 func controlClient(t *testing.T, remote *dispatcherServer) *execution.DispatcherControl {
 	t.Helper()
-	_, handler := dispatcherprivatev1connect.NewExecutionServiceHandler(remote)
+	handler := connecttest.Handler(func(s *connect.Server) { dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, remote) })
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	return execution.NewDispatcherControl(server.Client(), server.URL, "control-test")
@@ -128,7 +134,7 @@ func TestBufferRefusalsBecomeAcceptanceErrors(t *testing.T) {
 		{connect.CodeUnavailable, domain.ErrExecutionRequest},
 	} {
 		t.Run(test.code.String(), func(t *testing.T) {
-			client := controlClient(t, &dispatcherServer{failure: connect.NewError(test.code, errors.New("refused"))})
+			client := controlClient(t, &dispatcherServer{failure: connect.NewError(test.code, "refused")})
 			_, err := client.BufferInput(context.Background(), "work", command.ExecutionInput{ID: "f28f3171-1268-4f97-b7d2-1ac831099012", Text: "input"})
 			require.ErrorIs(t, err, test.want)
 		})
@@ -156,7 +162,7 @@ func TestInteractionResponsePreservesDecisionAndWork(t *testing.T) {
 func TestControlDoesNotRetryRejectedStop(t *testing.T) {
 	for _, code := range []connect.Code{connect.CodeFailedPrecondition, connect.CodeUnavailable} {
 		t.Run(code.String(), func(t *testing.T) {
-			remote := &dispatcherServer{failure: connect.NewError(code, errors.New("execution unavailable"))}
+			remote := &dispatcherServer{failure: connect.NewError(code, "execution unavailable")}
 			client := controlClient(t, remote)
 			err := client.StopExecution(context.Background(), "work", "stop")
 			require.ErrorIs(t, err, domain.ErrExecutionRequest)

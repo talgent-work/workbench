@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -33,12 +33,13 @@ func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 	client := startupRPCClient(t, f.db)
 	read := func() *agentprivatev1.GetWorkStartupResponse {
 		t.Helper()
-		req := connect.NewRequest(&agentprivatev1.GetWorkStartupRequest{SubjectId: "owner", WorkId: sessionID})
-		req.Header().Set("Authorization", "Bearer control")
-		result, err := client.GetWorkStartup(ctx, req)
+		req := &agentprivatev1.GetWorkStartupRequest{SubjectId: "owner", WorkId: sessionID}
+		reqCtx, reqInfo := connect.NewClientContext(ctx)
+		reqInfo.RequestHeader().Set("Authorization", "Bearer control")
+		result, err := client.GetWorkStartup(reqCtx, req)
 		require.NoError(t, err)
-		require.Equal(t, sessionID, result.Msg.GetWorkId())
-		return result.Msg
+		require.Equal(t, sessionID, result.GetWorkId())
+		return result
 	}
 	initial := read()
 	require.Equal(t, f.request.ID, initial.GetInitialRequestId())
@@ -158,9 +159,10 @@ func TestSessionStartupRPCDistinguishesFailureRestartAndCleanup(t *testing.T) {
 		{"owner", "invalid", connect.CodeUnauthenticated},
 		{"another-owner", "control", connect.CodePermissionDenied},
 	} {
-		req := connect.NewRequest(&agentprivatev1.GetWorkStartupRequest{SubjectId: tc.subject, WorkId: sessionID})
-		req.Header().Set("Authorization", "Bearer "+tc.token)
-		_, err := client.GetWorkStartup(ctx, req)
+		req := &agentprivatev1.GetWorkStartupRequest{SubjectId: tc.subject, WorkId: sessionID}
+		reqCtx, reqInfo := connect.NewClientContext(ctx)
+		reqInfo.RequestHeader().Set("Authorization", "Bearer "+tc.token)
+		_, err := client.GetWorkStartup(reqCtx, req)
 		require.Equal(t, tc.code, connect.CodeOf(err))
 	}
 	session, err = f.sessions.Get(ctx, sessionID)

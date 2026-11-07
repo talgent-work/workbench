@@ -2,12 +2,11 @@ package connectrpc
 
 import (
 	"context"
-	"errors"
 
-	"connectrpc.com/connect"
-	marketplaceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1"
+	"connectrpc.com/connect/v2"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type SelectionHandler struct {
@@ -18,15 +17,16 @@ type SelectionHandler struct {
 func NewSelectionHandler(app *application.Application, token string) *SelectionHandler {
 	return &SelectionHandler{app: app, authentication: NewCredentialHandler(nil, token)}
 }
-func (h *SelectionHandler) ReadPersonalPlugins(ctx context.Context, request *connect.Request[marketplaceprivatev1.ReadPersonalPluginsRequest]) (*connect.Response[marketplaceprivatev1.ReadPersonalPluginsResponse], error) {
-	if err := h.authentication.authenticate(ctx, request.Header()); err != nil {
+func (h *SelectionHandler) ReadPersonalPlugins(ctx context.Context, request *marketplaceprivatev1.ReadPersonalPluginsRequest) (*marketplaceprivatev1.ReadPersonalPluginsResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	actor, ok := authn.CurrentUserID(ctx)
 	if !ok || actor == "" {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("trusted owner required"))
+		return nil, connect.NewError(connect.CodePermissionDenied, "trusted owner required")
 	}
-	page, err := h.app.ReadPersonalSelection(ctx, actor, request.Msg.GetCursor(), int(request.Msg.GetPageSize()))
+	page, err := h.app.ReadPersonalSelection(ctx, actor, request.GetCursor(), int(request.GetPageSize()))
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -38,16 +38,17 @@ func (h *SelectionHandler) ReadPersonalPlugins(ctx context.Context, request *con
 		}
 		result.Plugins = append(result.Plugins, message)
 	}
-	return connect.NewResponse(result), nil
+	return result, nil
 }
-func (h *SelectionHandler) ResolvePlugin(ctx context.Context, request *connect.Request[marketplaceprivatev1.ResolvePluginRequest]) (*connect.Response[marketplaceprivatev1.ResolvePluginResponse], error) {
-	if err := h.authentication.authenticate(ctx, request.Header()); err != nil {
+func (h *SelectionHandler) ResolvePlugin(ctx context.Context, request *marketplaceprivatev1.ResolvePluginRequest) (*marketplaceprivatev1.ResolvePluginResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	if actor, ok := authn.CurrentUserID(ctx); !ok || actor == "" {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("trusted owner required"))
+		return nil, connect.NewError(connect.CodePermissionDenied, "trusted owner required")
 	}
-	release, err := h.app.GetRelease(ctx, request.Msg.GetSlug())
+	release, err := h.app.GetRelease(ctx, request.GetSlug())
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -55,15 +56,16 @@ func (h *SelectionHandler) ResolvePlugin(ctx context.Context, request *connect.R
 	if err != nil {
 		return nil, mapError(err)
 	}
-	return connect.NewResponse(&marketplaceprivatev1.ResolvePluginResponse{Plugin: message}), nil
+	return &marketplaceprivatev1.ResolvePluginResponse{Plugin: message}, nil
 }
-func (h *SelectionHandler) ReadConnectorSelection(ctx context.Context, request *connect.Request[marketplaceprivatev1.ReadConnectorSelectionRequest]) (*connect.Response[marketplaceprivatev1.ReadConnectorSelectionResponse], error) {
-	if err := h.authentication.authenticate(ctx, request.Header()); err != nil {
+func (h *SelectionHandler) ReadConnectorSelection(ctx context.Context, request *marketplaceprivatev1.ReadConnectorSelectionRequest) (*marketplaceprivatev1.ReadConnectorSelectionResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	actor, ok := authn.CurrentUserID(ctx)
 	if !ok || actor == "" {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("trusted owner required"))
+		return nil, connect.NewError(connect.CodePermissionDenied, "trusted owner required")
 	}
 	selection, err := h.app.ReadConnectorSelection(ctx, actor)
 	if err != nil {
@@ -79,5 +81,5 @@ func (h *SelectionHandler) ReadConnectorSelection(ctx context.Context, request *
 		}
 		result.Connectors = append(result.Connectors, message)
 	}
-	return connect.NewResponse(result), nil
+	return result, nil
 }

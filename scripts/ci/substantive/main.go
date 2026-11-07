@@ -7,10 +7,7 @@
 // A file is reported unless it provably compiles to the same thing at both
 // revisions:
 //   - Go source is compared after parsing without comments and printing back.
-//   - Generated TypeScript under gen/ts/ is compared with comments and layout
-//     removed by a lexer for its fixed protobuf-es output. Hand-written
-//     TypeScript may hold regular-expression literals that lexer cannot read,
-//     so it always counts as changed.
+//   - Anything else, TypeScript included, always counts as changed.
 //
 // A file added, deleted or unparsable at either revision is always reported.
 package main
@@ -72,8 +69,6 @@ func equivalent(dir, base, head, file string) (bool, error) {
 	switch {
 	case strings.HasSuffix(file, ".go"):
 		normalize = goCode
-	case strings.HasPrefix(file, "gen/ts/") && strings.HasSuffix(file, ".ts"):
-		normalize = generatedTSCode
 	default:
 		return false, nil
 	}
@@ -120,60 +115,4 @@ func goCode(src []byte) ([]byte, bool) {
 		return nil, false
 	}
 	return bytes.Join(bytes.Fields(out.Bytes()), []byte(" ")), true
-}
-
-// generatedTSCode removes comments and layout from protobuf-es output, keeping
-// string and template literals verbatim and one space only where two words
-// would otherwise join.
-func generatedTSCode(src []byte) ([]byte, bool) {
-	var out []byte
-	space := false
-	word := func(c byte) bool {
-		return c == '_' || c == '$' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
-	}
-	emit := func(c byte) {
-		if space && len(out) > 0 && word(out[len(out)-1]) && word(c) {
-			out = append(out, ' ')
-		}
-		space = false
-		out = append(out, c)
-	}
-	for i := 0; i < len(src); i++ {
-		c := src[i]
-		switch {
-		case c == '/' && i+1 < len(src) && src[i+1] == '/':
-			for i < len(src) && src[i] != '\n' {
-				i++
-			}
-			space = true
-		case c == '/' && i+1 < len(src) && src[i+1] == '*':
-			end := bytes.Index(src[i+2:], []byte("*/"))
-			if end < 0 {
-				return nil, false
-			}
-			i += end + 3
-			space = true
-		case c == '"' || c == '\'' || c == '`':
-			emit(c)
-			for i++; ; i++ {
-				if i >= len(src) {
-					return nil, false
-				}
-				out = append(out, src[i])
-				if src[i] == '\\' && i+1 < len(src) {
-					i++
-					out = append(out, src[i])
-					continue
-				}
-				if src[i] == c {
-					break
-				}
-			}
-		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
-			space = true
-		default:
-			emit(c)
-		}
-	}
-	return out, true
 }

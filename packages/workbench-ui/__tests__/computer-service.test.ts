@@ -1,6 +1,6 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { create } from "@bufbuild/protobuf";
-import { ManagedComputerSchema } from "@talgent/workbench-contracts/computer/public/v1/computer_pb";
+import { ManagedComputerSchema } from "@talgent/contracts/computer/public/v1/computer_pb";
 import { describe, expect, it } from "vitest";
 import { computerNameProblem, expiryLabel, managedComputer, normalizeUserCode, presenceLabel, registrationRefusal } from "../lib/computer-service";
 

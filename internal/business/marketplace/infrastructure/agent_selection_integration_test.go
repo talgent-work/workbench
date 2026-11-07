@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	marketplacepublicv1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/public/v1"
+	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	agentapp "github.com/talgent-work/workbench/internal/business/agent/application"
 	agentdomain "github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
@@ -28,10 +28,10 @@ func TestAgentUsesStartingUserPluginsThroughMarketplaceContract(t *testing.T) {
 	ctx := t.Context()
 	starter, owner := "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "cfe58e71-efc6-5336-8009-449ad568c42b"
 	for _, user := range []string{starter, owner} {
-		_, err := client.InstallPlugin(ctx, request(&marketplacepublicv1.InstallPluginRequest{Slug: "reviewer", Configuration: configuration(t, map[string]any{"token": user, "enabled": false, "paths": []any{"src", "tests"}})}, user))
+		_, err := client.InstallPlugin(as(ctx, user), &marketplacepublicv1.InstallPluginRequest{Slug: "reviewer", Configuration: configuration(t, map[string]any{"token": user, "enabled": false, "paths": []any{"src", "tests"}})})
 		require.NoError(t, err)
 	}
-	_, err := client.DisablePlugin(ctx, request(&marketplacepublicv1.DisablePluginRequest{Slug: "reviewer", Version: 1}, starter))
+	_, err := client.DisablePlugin(as(ctx, starter), &marketplacepublicv1.DisablePluginRequest{Slug: "reviewer", Version: 1})
 	require.NoError(t, err)
 	port, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL, CredentialToken: "selection-test"})
 	require.NoError(t, err)
@@ -44,26 +44,26 @@ func TestAgentUsesStartingUserPluginsThroughMarketplaceContract(t *testing.T) {
 	require.Equal(t, false, snapshot.Plugins[0].Configuration["enabled"])
 	require.Equal(t, []string{"src", "tests"}, snapshot.Plugins[0].Configuration["paths"])
 	require.Equal(t, "1.0.0", snapshot.Plugins[0].Release.Version)
-	retained, err := client.GetInstalledPlugin(ctx, request(&marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"}, starter))
+	retained, err := client.GetInstalledPlugin(as(ctx, starter), &marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"})
 	require.NoError(t, err)
-	require.False(t, retained.Msg.Plugin.Enabled)
+	require.False(t, retained.Plugin.Enabled)
 	newUser := "42fdea5f-3116-56d7-b541-2687b54de564"
 	snapshot, err = app.ResolveStartupCapabilities(ctx, newUser, input)
 	require.NoError(t, err)
 	require.Equal(t, true, snapshot.Plugins[0].Configuration["enabled"])
-	_, err = client.GetInstalledPlugin(ctx, request(&marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"}, newUser))
+	_, err = client.GetInstalledPlugin(as(ctx, newUser), &marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"})
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "requiredness does not auto-install personally")
 	input.Plugins = []agentdomain.PluginChoice{{Slug: "reviewer", Include: true, Configuration: pluginconfig.Configuration{"enabled": "invalid"}}}
 	_, err = app.ResolveStartupCapabilities(ctx, newUser, input)
 	require.ErrorIs(t, err, pluginconfig.ErrInvalidConfiguration)
-	_, err = client.GetInstalledPlugin(ctx, request(&marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"}, newUser))
+	_, err = client.GetInstalledPlugin(as(ctx, newUser), &marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"})
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "static rejection precedes explicit personal installation")
 	input.Plugins[0].Configuration = pluginconfig.Configuration{"paths": []string{"new"}}
 	snapshot, err = app.ResolveStartupCapabilities(ctx, newUser, input)
 	require.NoError(t, err)
-	_, err = client.GetInstalledPlugin(ctx, request(&marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"}, newUser))
+	_, err = client.GetInstalledPlugin(as(ctx, newUser), &marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"})
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "Work-only additions never create personal installations")
-	_, err = client.InstallPlugin(ctx, request(&marketplacepublicv1.InstallPluginRequest{Slug: "reviewer", Configuration: configuration(t, map[string]any{"paths": []any{"later"}})}, newUser))
+	_, err = client.InstallPlugin(as(ctx, newUser), &marketplacepublicv1.InstallPluginRequest{Slug: "reviewer", Configuration: configuration(t, map[string]any{"paths": []any{"later"}})})
 	require.NoError(t, err)
 	require.Equal(t, []string{"new"}, snapshot.Plugins[0].Configuration["paths"])
 }
@@ -78,7 +78,7 @@ func TestNewReleaseValidationPreservesOldSelectionAndPersonalConfiguration(t *te
 	_, _, marketplace, client, server := setupWithCatalog(t, store)
 	publishCatalog(t, marketplace)
 	user := "e6c7e756-007d-5236-a492-7f4b9be0b2e8"
-	_, err = client.InstallPlugin(t.Context(), request(&marketplacepublicv1.InstallPluginRequest{Slug: "reviewer", Configuration: configuration(t, map[string]any{"paths": []any{"old"}})}, user))
+	_, err = client.InstallPlugin(as(t.Context(), user), &marketplacepublicv1.InstallPluginRequest{Slug: "reviewer", Configuration: configuration(t, map[string]any{"paths": []any{"old"}})})
 	require.NoError(t, err)
 	port, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL, CredentialToken: "selection-test"})
 	require.NoError(t, err)
@@ -90,10 +90,10 @@ func TestNewReleaseValidationPreservesOldSelectionAndPersonalConfiguration(t *te
 	require.NoError(t, store.Publish(t.Context(), []marketplaceinfra.SourceReleases{{Source: source, Releases: []marketplaceapp.PluginRelease{release}}}))
 	_, err = app.ResolveStartupCapabilities(t.Context(), user, agentdomain.StartupCapabilityInput{Connectors: []agentdomain.CatalogConnector{connectorcatalogtest.Required()}})
 	require.ErrorIs(t, err, pluginconfig.ErrInvalidConfiguration, "retained array cannot become a number or fall back to the new default")
-	personal, err := client.GetInstalledPlugin(t.Context(), request(&marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"}, user))
+	personal, err := client.GetInstalledPlugin(as(t.Context(), user), &marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer"})
 	require.NoError(t, err)
-	require.Equal(t, []any{"old"}, personal.Msg.Plugin.Configuration.AsMap()["paths"])
-	require.True(t, personal.Msg.Plugin.Enabled)
+	require.Equal(t, []any{"old"}, personal.Plugin.Configuration.AsMap()["paths"])
+	require.True(t, personal.Plugin.Enabled)
 	require.Equal(t, "1.0.0", snapshot.Plugins[0].Release.Version)
 	require.Equal(t, true, snapshot.Plugins[0].Configuration["flag"])
 	require.NoError(t, snapshot.Validate(), "captured declarations remain usable after newer publication")

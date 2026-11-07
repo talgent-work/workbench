@@ -5,14 +5,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	streamgatewaypublicv1 "github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/infrastructure"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 type workReaders struct {
@@ -22,27 +23,28 @@ type workReaders struct {
 	admitted *agentprivatev1.ReaderAdmission
 }
 
-func (a *workReaders) AdmitWorkReader(_ context.Context, request *connect.Request[agentprivatev1.AdmitWorkReaderRequest]) (*connect.Response[agentprivatev1.AdmitWorkReaderResponse], error) {
+func (a *workReaders) AdmitWorkReader(ctx context.Context, request *agentprivatev1.AdmitWorkReaderRequest) (*agentprivatev1.AdmitWorkReaderResponse, error) {
 	a.calls++
-	require.Equal(a.t, "Bearer control", request.Header().Get("Authorization"))
-	require.Equal(a.t, "viewer", request.Msg.GetReaderId())
-	a.admitted = request.Msg.GetAdmission()
-	switch request.Msg.GetWorkId() {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	require.Equal(a.t, "Bearer control", info.RequestHeader().Get("Authorization"))
+	require.Equal(a.t, "viewer", request.GetReaderId())
+	a.admitted = request.GetAdmission()
+	switch request.GetWorkId() {
 	case "denied":
-		return nil, connect.NewError(connect.CodePermissionDenied, query.ErrWorkAccessDenied)
+		return nil, connect.NewError(connect.CodePermissionDenied, query.ErrWorkAccessDenied.Error()).WithCause(query.ErrWorkAccessDenied)
 	case "offline":
-		return nil, connect.NewError(connect.CodeUnavailable, query.ErrWorkAccessUnavailable)
+		return nil, connect.NewError(connect.CodeUnavailable, query.ErrWorkAccessUnavailable.Error()).WithCause(query.ErrWorkAccessUnavailable)
 	}
 	response := &agentprivatev1.AdmitWorkReaderResponse{Basis: agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE}
-	if request.Msg.GetIncludeWorkState() {
-		response.WorkState = &streamgatewaypublicv1.WorkStateFrame{AgentWorkId: request.Msg.GetWorkId(), State: "working", Subagents: []*agentpublicv1.SubAgent{{Id: "a", Type: "Plan", Task: "plan it", Status: "failed"}}}
+	if request.GetIncludeWorkState() {
+		response.WorkState = &streamgatewaypublicv1.WorkStateFrame{AgentWorkId: request.GetWorkId(), State: "working", Subagents: []*agentpublicv1.SubAgent{{Id: "a", Type: "Plan", Task: "plan it", Status: "failed"}}}
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
 func TestWorkMessageAccessAsksAgentFromItsOwnFacts(t *testing.T) {
 	api := &workReaders{t: t}
-	_, handler := agentprivatev1connect.NewWorkAccessServiceHandler(api)
+	handler := connecttest.Handler(func(s *connect.Server) { agentprivatev1connect.RegisterWorkAccessServiceHandler(s, api) })
 	server := httptest.NewServer(handler)
 	defer server.Close()
 	access, err := infrastructure.NewWorkAccess(server.Client(), server.URL, "control")

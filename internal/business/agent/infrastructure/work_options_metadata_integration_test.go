@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
@@ -36,20 +38,23 @@ func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T)
 		Plugins: catalog, Models: creationModels(),
 		Queries: application.Queries{GetWork: query.NewGetWorkHandler(definitions, works, access, application.AssembleAgentWorkEntity, nil)},
 	}
-	_, handler := agentprivatev1connect.NewAgentServiceHandler(transport.NewAgentHandler(app, "control"))
+	handler := connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterAgentServiceHandler(s, transport.NewAgentHandler(app, "control"))
+	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	client := agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL)
+	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	read := func(subject, work, token string) (*agentpublicv1.GetWorkStartOptionsResponse, error) {
-		request := connect.NewRequest(&agentprivatev1.GetWorkStartOptionsRequest{
+		request := &agentprivatev1.GetWorkStartOptionsRequest{
 			SubjectId: subject, WorkId: work, EmployeeId: definition.UsageScope.Reference,
-		})
-		request.Header().Set("Authorization", "Bearer "+token)
-		response, err := client.GetWorkStartOptions(t.Context(), request)
+		}
+		requestCtx, requestInfo := connect.NewClientContext(t.Context())
+		requestInfo.RequestHeader().Set("Authorization", "Bearer "+token)
+		response, err := client.GetWorkStartOptions(requestCtx, request)
 		if err != nil {
 			return nil, err
 		}
-		return response.Msg, nil
+		return response, nil
 	}
 	_, err := read("owner", "", "wrong")
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))

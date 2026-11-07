@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	storagetaskv1 "github.com/talgent-work/workbench/gen/go/talgent/storage/task/v1"
+	storagetaskv1 "github.com/talgent-work/workbench/gen/storage/task/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
@@ -115,7 +115,7 @@ func (q *fakeRenderingQueue) run(t *testing.T, app *application.Application) {
 	}
 	q.mu.Unlock()
 	for _, task := range tasks {
-		payload := &storagetaskv1.RenderPreviewTask{}
+		payload := &storagetaskv1.RenderPreviewTaskV1{}
 		require.NoError(t, proto.Unmarshal(task.Payload(), payload))
 		err := app.RenderPreview(t.Context(), applicationtask.RenderPreview{
 			Owner: payload.GetOwner(), Kind: payload.GetKind(), Name: payload.GetName(), Digest: payload.GetDigest(),

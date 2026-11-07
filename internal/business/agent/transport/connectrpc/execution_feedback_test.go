@@ -7,15 +7,17 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 
 	"github.com/google/uuid"
 	dispatchercommand "github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/agentfeedback"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -33,14 +35,17 @@ func TestFeedbackRPCAuthenticatesBeforeAdvancingWork(t *testing.T) {
 	require.NoError(t, err)
 	store := &sessionStore{session: session}
 	app := &application.Application{Commands: application.Commands{ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(time.Now, store, &rpcProcesses{}, infrastructure.NewExecutionRequestsFactory(port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})}}
-	_, handler := agentprivatev1connect.NewExecutionFeedbackServiceHandler(transport.NewFeedbackHandler(app, nil, "integration-secret"))
+	handler := connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(app, nil, "integration-secret"))
+	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	client := agentprivatev1connect.NewExecutionFeedbackServiceClient(server.Client(), server.URL)
+	client := agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	report := func(token string, kind agentprivatev1.FeedbackKind) error {
-		req := connect.NewRequest(&agentprivatev1.ReportRequest{WorkId: session.ID, Kind: kind, ProcessId: "process"})
+		req := &agentprivatev1.ReportRequest{WorkId: session.ID, Kind: kind, ProcessId: "process"}
+		ctx, info := connect.NewClientContext(ctx)
 		if token != "" {
-			req.Header().Set("Authorization", "Bearer "+token)
+			info.RequestHeader().Set("Authorization", "Bearer "+token)
 		}
 		_, err := client.Report(ctx, req)
 		return err

@@ -16,7 +16,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/pkg/storagepath"
+	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 // Persistent storage layout under the JuiceFS root. Only

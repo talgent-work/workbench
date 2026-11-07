@@ -1,5 +1,5 @@
 import { Code, ConnectError } from "@connectrpc/connect";
-import type { StartupProgress } from "@talgent/workbench-contracts/agent/public/v1/startup_pb";
+import type { StartupProgress } from "@talgent/contracts/agent/public/v1/startup_pb";
 import { isTerminalWorkLifecycle } from "./work-state-presentation";
 import { newestStartupProgress } from "./startup-progress";
 

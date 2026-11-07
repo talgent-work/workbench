@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Button, ListBox } from "@heroui/react";
-import type { PluginSummary } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import type { PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { AlertTriangle, ArrowLeft, Plug, Puzzle, Settings2 } from "lucide-react";
 import { providerName, serviceLabel, useConnectProvider } from "../../lib/marketplace-connections";
 import { pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
