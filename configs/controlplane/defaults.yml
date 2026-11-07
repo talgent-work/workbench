@@ -205,7 +205,7 @@ native-authentication:
   agent-address: "${AGENT_INTERNAL_ADDRESS:http://127.0.0.1:8080}"
   agent-control-token: "${AGENT_CONTROL_TOKEN:}"
 agent-execution:
-  sandbox-namespace: ${K8S_NAMESPACE:talgent}
+  sandbox-namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
   credential-transport: encrypted-network
   # Model Templates (ConfigMap agent-models) and Model Configurations with
   # their api keys (Secret agent-model-configurations), read once at startup.
@@ -230,8 +230,8 @@ agent-execution:
   environment:
     # The controlplane's native API, the platform service a sandbox reaches;
     # its Credential Proxy adds the Work credential to every request to it.
-    TALGENT_API_ADDRESS: "${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent.svc.cluster.local}"
-    OTEL_EXPORTER_OTLP_ENDPOINT: "${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}"
+    TALGENT_API_ADDRESS: "${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}"
   dispatcher:
     address: ${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}
     token: ${DISPATCHER_EXECUTION_CONTROL_TOKEN:}
@@ -276,13 +276,13 @@ computer:
     # Fixed for good: every Work keeps the Cloud it started on.
     id: "${COMPUTER_CLOUD_ID:01a19bc3-075a-7c57-b42b-7fdf73b611ed}"
     name: "${COMPUTER_CLOUD_NAME:Talgent Cloud}"
-    # The room the platform gives runs; services share the quota below, which
-    # each admission still checks.
+    # The room the platform gives runs: the quota below, in the sandbox
+    # namespace, counts only execution Pods; each admission still checks it.
     capacity:
       requests.cpu: "8"
       requests.memory: "12Gi"
       pods: "64"
-    namespace: ${K8S_NAMESPACE:talgent}
+    namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
     quota-name: agent-executions
     # Everything the quota charges for one execution Pod, not just the sandbox
     # container (agent-execution requests/limits): plus the egress sidecar
