@@ -108,8 +108,8 @@ File Spaces on JuiceFS, workspaces and HOMEs on the NAS, links and previews.
 | `agent-token` | `${STORAGE_AGENT_TOKEN:}` | Required. Admits Agent to Storage's private contracts |
 | `file-space-tokens`, `reference-space-tokens` | `${STORAGE_FILE_SPACE_TOKEN:}`, `${STORAGE_REFERENCE_SPACE_TOKEN:}` | Admit further callers of the File Space and Reference Space contracts; an empty token admits no one |
 | `reclaim-interval` | `${STORAGE_RECLAIM_INTERVAL:30s}` | How often accepted reclamations run |
-| `mounts.working-claim` | `${K8S_NAS_PVC_NAME:talgent-nas-root}` | Required. The NAS claim sandboxes mount |
-| `mounts.inputs-claim` | `${K8S_INPUTS_PVC_NAME:talgent-juicefs-inputs}` | Required. The JuiceFS claim sandboxes mount read-only |
+| `mounts.working-claim` | `${K8S_NAS_PVC_NAME:talgent-nas-root}` | Required. The NAS claim sandboxes mount, in their namespace (`SANDBOX_NAMESPACE`) |
+| `mounts.inputs-claim` | `${K8S_INPUTS_PVC_NAME:talgent-juicefs-inputs}` | Required. The JuiceFS claim sandboxes mount read-only, in their namespace |
 | `mounts.inputs-root` | `talgent` | Where `persistent-root` lies within the inputs claim |
 | `preview.gotenberg-address` | `${GOTENBERG_ADDRESS:http://gotenberg:3000}` | The converter |
 | `preview.client-timeout`, `task-deadline`, `retention` | `65s`, `90s`, `720h` | One conversion request; one rendering with its retries; how long a preview is kept |
@@ -278,9 +278,13 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
 
 - **OpenSandbox.** `deploy/opensandbox/server.yaml` and `controller.yaml` are rendered from the
   upstream charts by `deploy/opensandbox/render.sh` with `server-values.yaml`: the Server's
-  image, resources, egress mode `dns+nft`, the namespace and the workload template
-  (`resources.yaml`: Kata RuntimeClass, `fsGroup: 1000`). The Server's API key is Secret
-  `opensandbox-api`.
+  image, resources, egress mode `dns+nft`, and the namespace it creates sandboxes in,
+  `talgent-sandbox`, which must equal controlplane's `SANDBOX_NAMESPACE`. The render drops the
+  chart's ClusterRole: the Server's permissions are in the base's `sandbox.yaml`, a Role in
+  `talgent-sandbox` and, at cluster scope, only reading Namespaces and RuntimeClasses. The
+  workload template, ConfigMap `opensandbox-workload-template` in `resources.yaml`, sets the Kata
+  RuntimeClass, `fsGroup: 1000`, DNS `ndots: 1` and the image pull Secret `ghcr-pull`. The
+  Server's API key is Secret `opensandbox-api`.
 - **Gotenberg.** `deploy/k3s/workbench/gotenberg.yaml`, settings in ConfigMap `gotenberg-config`.
 - **workbench-web** takes no configuration; it serves the built app on port 3000.
 
@@ -292,7 +296,7 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
 | `TALGENT_IMAGE_TAG`, `TALGENT_REGISTRY` | `render-k3s.sh`, `build-and-push-images.sh` | Tag of the Workbench's images (listed in `scripts/deploy/lib/images.sh`), and registry (default `ghcr.io/talgent-work`) |
 | `TALGENT_OVERLAY_IMAGE_TAG` | `render-k3s.sh` | Tag of an overlay's own images of `ghcr.io/talgent-work`; required when the overlay names any |
 | `TALGENT_PUSH_IMAGES` | `build-and-push-images.sh` | `1` pushes what it builds |
-| `TALGENT_NAMESPACE` | all | Must be `talgent` |
+| `TALGENT_NAMESPACE` | all | The platform namespace; must be `talgent` |
 | `TALGENT_SKIP_DB_BOOTSTRAP`, `TALGENT_SKIP_CLICKHOUSE_MIGRATION` | `apply-k3s.sh` | `1` skips the MySQL schema or the ClickHouse projections |
 | `MYSQL_PASSWORD`, `CLICKHOUSE_TALGENT_PASSWORD` | `apply-k3s.sh`, `bootstrap-mysql.sh` | Service account passwords; written to Secrets `mysql-auth`, `clickhouse-auth` |
 | `REDIS_PASSWORD` | `apply-k3s.sh` | The Redis password, written to the optional Secret `redis-auth` when set |

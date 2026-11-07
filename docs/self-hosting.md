@@ -10,20 +10,49 @@ Paths below are relative to the root of the Workbench tree; run the scripts from
 
 ## What a deployment is
 
-Everything runs in the namespace `talgent`; the scripts refuse any other. The base holds:
+A deployment spans two namespaces. The platform namespace `talgent` holds the services, which
+trust each other; the scripts refuse any other name for it. The sandbox namespace
+`talgent-sandbox` runs only the sandboxes Works run in, and everything there is treated as
+untrusted.
 
-| Kind | Objects |
-|---|---|
-| Services | `controlplane` (2 replicas), `dispatcher` (2), `streamgateway` (2), `computer-gateway` (1), `workbench-web` (1) |
-| Supporting services | `otel-collector` (OTel Collector, writes to ClickHouse), `gotenberg` (renders office previews) |
-| Configuration | ConfigMap `workbench-environment` (the deployment's environment), one ConfigMap per service, `agent-models` (Model Templates) |
-| Storage | PersistentVolumes and claims `talgent-juicefs-root`, `talgent-juicefs-inputs`, `talgent-juicefs-originals` (JuiceFS) and `talgent-nas-root` (NFS) |
-| Entry | HTTPRoutes `workbench-web`, `web-api`, `auth`, `computer`; Envoy Gateway SecurityPolicy `web-auth` and rate limits |
-| Isolation and budget | NetworkPolicies, ResourceQuota `agent-executions`, LimitRange `application-requests` |
+| Kind | `talgent` | `talgent-sandbox` |
+|---|---|---|
+| Services | `controlplane` (2 replicas), `dispatcher` (2), `streamgateway` (2), `computer-gateway` (1), `workbench-web` (1); `otel-collector` (OTel Collector, writes to ClickHouse), `gotenberg` (renders office previews); the OpenSandbox Server `opensandbox` | Sandbox Pods, which OpenSandbox creates |
+| Configuration | ConfigMap `workbench-environment` (the deployment's environment), one ConfigMap per service, `agent-models` (Model Templates), `opensandbox-workload-template` (the sandbox Pod template) | |
+| Storage | Claims `talgent-juicefs-root`, `talgent-juicefs-originals` (JuiceFS) and `talgent-nas-root` (NFS) | Claims `talgent-nas-root` and `talgent-juicefs-inputs`, bound to their own PersistentVolumes `talgent-nas-root-sandbox` and `talgent-juicefs-inputs-sandbox` over the same NFS export and JuiceFS file system |
+| Entry | HTTPRoutes `workbench-web`, `web-api`, `auth`, `computer`; Envoy Gateway SecurityPolicy `web-auth` and rate limits | |
+| Budget | LimitRange `application-requests` | ResourceQuota `agent-executions`, LimitRange `application-requests` |
+| Permissions | | Roles of controlplane (reads the quota, observes BatchSandboxes) and of the OpenSandbox Server (manages sandboxes), bound to their ServiceAccounts in `talgent` |
+| Network | NetworkPolicy `gotenberg-isolation` | NetworkPolicies `sandbox-boundary`, `sandbox-native-api` |
 
-`scripts/deploy/apply-k3s.sh` also deploys OpenSandbox (`deploy/opensandbox/`), which creates
-the sandboxes Works run in. The middleware, Envoy Gateway, the CSI drivers and Kata Containers
-are not part of the base; the cluster provides them.
+The sandbox namespace's objects are in `deploy/k3s/workbench/sandbox.yaml`, its budget in
+`agent-capacity.yaml`. The sandboxes' claims have the names Storage grants them
+([`storage.mounts`](configuration.md#storage)). The OpenSandbox Controller runs in
+`opensandbox-system` (`deploy/opensandbox/`). At cluster scope the OpenSandbox Server may only
+read Namespaces and RuntimeClasses. The middleware, Envoy Gateway, the CSI drivers and Kata
+Containers are not part of the base; the cluster provides them.
+
+### Network boundary
+
+NetworkPolicies fence only untrusted workloads; no policy restricts a platform service, so a
+service you add to `talgent` reaches the others without a rule.
+
+- **Sandboxes.** Both policies select every Pod in `talgent-sandbox`. `sandbox-boundary` admits
+  connections only from controlplane, dispatcher and the OpenSandbox Server, on execd's port 44772
+  and the egress sidecar's 18080. Outbound, it allows the internet with every private and
+  reserved IPv4 range denied, the DNS Pods (`k8s-app: kube-dns` in `kube-system`) and the
+  Collector's port 4318. `sandbox-native-api` adds controlplane's native API, port 8081. A rule
+  for a platform service names its namespace and its Pods' labels, because the policy sees the
+  Pod behind a Service. A deployment that sends sandboxes to another platform service instead
+  deletes `sandbox-native-api` and adds a policy of its own in `talgent-sandbox`.
+- **Gotenberg.** It renders untrusted documents, so `gotenberg-isolation` denies all of its
+  outbound traffic, DNS included; links in a document cannot reach the internal network.
+
+Within a sandbox, the egress sidecar enforces the same denial with nft, excepting only the DNS
+Service and the platform addresses controlplane gives it ([`agent-execution`](configuration.md#agent-execution)).
+Those addresses are written `service.namespace`, such as `http://otel-collector.talgent:4318`,
+and the sandbox Pod template resolves with `ndots: 1`: an internet host name takes one query,
+and a platform address falls back to the cluster's search domains.
 
 ## 1. Cluster
 
@@ -72,15 +101,16 @@ The base and its scripts are built for [k3s](https://k3s.io) with Flannel:
   `JUICEFS_CSI_INSTALL_CONFIRM=local-k3s`. Install the NFS driver with fsGroup policy off (for
   its Helm chart, `feature.enableFSGroupPolicy=false`): sandbox Pods run with `fsGroup: 1000`,
   and with the policy on, every mount changes the group of the whole NAS volume.
-- **Cluster DNS.** Inside the cluster, a sandbox reaches only the platform addresses it is given
-  and the DNS Service at `K8S_DNS_SERVICE_IP` (default `10.43.0.10`, k3s's); set it in the
-  environment if yours differs. The NetworkPolicies expect DNS Pods labeled `k8s-app: kube-dns`
-  in `kube-system`.
-- **Capacity.** `deploy/k3s/workbench/agent-capacity.yaml` is the namespace's budget, shared by
-  the services and the sandboxes: 8 CPU and 12 GiB of requests, 64 Pods; a container without
-  requests asks for 100m and 128 MiB, and each sandbox Pod is charged controlplane's
-  `computer.cloud.demand` ([configuration reference](configuration.md#computer)). To change the
-  budget, change the ResourceQuota and `computer.cloud.capacity` together.
+- **Cluster DNS.** A sandbox reaches the DNS Service at `K8S_DNS_SERVICE_IP` (default
+  `10.43.0.10`, k3s's); set it in the environment if yours differs. The NetworkPolicies expect
+  the DNS Pods labeled `k8s-app: kube-dns` in `kube-system`.
+- **Capacity.** `deploy/k3s/workbench/agent-capacity.yaml` is the Cloud's budget, ResourceQuota
+  `agent-executions` in `talgent-sandbox`: 8 CPU and 12 GiB of requests, 64 Pods. Only sandboxes
+  count toward it; each is charged controlplane's `computer.cloud.demand`
+  ([configuration reference](configuration.md#computer)). In both namespaces a container without
+  requests asks for 100m and 128 MiB (LimitRange `application-requests`), the sandbox's egress
+  sidecar included. To change the budget, change the ResourceQuota and `computer.cloud.capacity`
+  together. The platform services' requests come on top and need room on the nodes as well.
 
 ## 2. Middleware
 
@@ -159,8 +189,10 @@ To read the deployed environment: `kubectl -n talgent get configmap workbench-en
 
 ## 4. Secrets
 
-Secrets never enter the repository or the environment file. Inspect them by shape only, for
-example `kubectl -n talgent get secret mysql-auth -o jsonpath='{.data.talgent-password}' | base64 -d | wc -c`.
+Secrets never enter the repository or the environment file, and all of them live in `talgent`
+except the image pull Secret, which the sandboxes need in `talgent-sandbox` too. The sandbox
+namespace's JuiceFS volume reads `talgent-juicefs-secret` from `talgent`. Inspect Secrets by shape
+only, for example `kubectl -n talgent get secret mysql-auth -o jsonpath='{.data.talgent-password}' | base64 -d | wc -c`.
 
 You provide:
 
@@ -173,18 +205,24 @@ You provide:
 | `agent-model-configurations` | `configurations.yml` | The Model Configurations, [section 5](#5-models). controlplane does not start without at least one. |
 | `talgent-juicefs-secret` | `name`, `metaurl`, `storage`, `bucket`, `access-key`, `secret-key`, optional `format-options` | The JuiceFS CSI driver's volume Secret: the file system name, the metadata Redis URL, `s3`, the bucket URL and its credentials. On first mount the driver formats an empty volume with these. |
 | `github-scm` (optional) | `GITHUB_SCM_ENABLED`, `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY_PEM`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `GITHUB_SCM_TOKEN_CIPHER_KEY`, `GITHUB_WEBHOOK_SECRET`; optional `GITHUB_WEB_BASE_URL`, `GITHUB_API_BASE_URL`, `GITHUB_API_VERSION` | The GitHub App through which people authorize repositories for their Works. Without it controlplane runs and GitHub repositories are unavailable; what `GITHUB_SCM_ENABLED=true` requires is in the [configuration reference](configuration.md#marketplace), and `GITHUB_SCM_TOKEN_CIPHER_KEY` is at least 32 random bytes. App settings: callback URL `<WORKBENCH_ORIGIN>/profile`, webhook URL `<WORKBENCH_ORIGIN>/api/scm/github/webhook` with the events `github_app_authorization`, `installation` and `installation_repositories`. |
-| `ghcr-pull` (optional) | a `kubernetes.io/dockerconfigjson` Secret | The image pull Secret controlplane, the Computer Gateway, OpenSandbox and the sandboxes name; create it when your registry needs credentials. |
+| `ghcr-pull` (optional) | a `kubernetes.io/dockerconfigjson` Secret | The image pull Secret your registry needs, if any. controlplane, the Computer Gateway and the OpenSandbox Server name it in `talgent`, the sandbox Pods in `talgent-sandbox`; create it in both namespaces. The scripts never copy a Secret between namespaces. |
 
 The files hold the bare values, without a trailing newline (write them with `printf '%s'`).
 
 ```bash
 kubectl create namespace talgent
+kubectl create namespace talgent-sandbox
 kubectl -n talgent create secret generic agent-model-configurations \
   --from-file=configurations.yml=./configurations.yml
 kubectl -n talgent create secret generic talgent-juicefs-secret \
   --from-literal=name=talgent --from-literal=storage=s3 \
   --from-literal=bucket=https://s3.example.com/talgent \
   --from-file=metaurl=./metaurl --from-file=access-key=./access-key --from-file=secret-key=./secret-key
+# Only when the registry needs credentials
+for ns in talgent talgent-sandbox; do
+  kubectl -n "$ns" create secret docker-registry ghcr-pull \
+    --docker-server=ghcr.io --docker-username=<user> --docker-password="$(cat ./registry-token)"
+done
 ```
 
 The scripts create, once, and never replace:
@@ -296,22 +334,25 @@ scripts/deploy/apply-k3s.sh deploy/k3s/workbench
 `apply-k3s.sh` takes the kustomization directory and, in order:
 
 1. Resolves the environment (`TALGENT_ENVIRONMENT_FILE` or the cluster's ConfigMap) and creates
-   the namespace.
+   the namespace `talgent`.
 2. Renders the base with `render-k3s.sh`: the environment in place of the placeholders, every
    Workbench image of `ghcr.io/talgent-work` at `TALGENT_REGISTRY` (default `ghcr.io/talgent-work`)
    and `TALGENT_IMAGE_TAG`, and, for a `vX.Y.Z` tag, that release as the Talgent Computer version
    the Computers page offers. An overlay kept in another repository names the base
    `../workbench`, where the render places it, and its own images take
    `TALGENT_OVERLAY_IMAGE_TAG`.
-3. Ensures the Secrets of [section 4](#4-secrets) and applies the namespace budget.
+3. Ensures the Secrets of [section 4](#4-secrets), then applies the namespace `talgent-sandbox`
+   with the quota and both LimitRanges, ahead of every Pod.
 4. Applies the MySQL schema, unless skipped.
-5. Runs `apply-opensandbox.sh`: checks the Kata RuntimeClass and the WireGuard backend, applies
-   the environment ConfigMap and the Collector and waits for it, writes the Collector's address
-   into the sandbox NetworkPolicy, then deploys the OpenSandbox Controller (namespace
-   `opensandbox-system`) and Server and waits for them.
-6. Applies the ClickHouse projections once the Collector's tables exist (waiting up to
+5. Runs `apply-opensandbox.sh`: checks the Kata RuntimeClass and the WireGuard backend, ensures
+   Secret `opensandbox-api`, applies the sandbox Pod template, deploys the OpenSandbox Controller
+   (namespace `opensandbox-system`), applies the Server's permissions in `talgent-sandbox`, then
+   the Server, and waits for them.
+6. Applies the environment ConfigMap and the Collector and waits for it.
+7. Applies the ClickHouse projections once the Collector's tables exist (waiting up to
    `CLICKHOUSE_WAIT_SECONDS`, default 120), unless skipped.
-7. Applies everything rendered and waits for controlplane.
+8. Applies everything rendered, the sandbox namespace's storage, permissions and NetworkPolicies
+   included, and waits for controlplane.
 
 Processes do not reload configuration. After changing a ConfigMap or Secret by hand,
 `kubectl -n talgent rollout restart deployment/<service>`. `kubectl apply` does not delete
@@ -347,6 +388,8 @@ publishes signing keys at `/auth/jwks.json`, and lists the Pods and Services. Th
 - Every Deployment runs the new image and no Pod restarts:
   `kubectl -n talgent get deploy -o wide` and `kubectl -n talgent get pods`.
 - No new errors: `kubectl -n talgent logs deploy/<service> --since=10m`.
+- While a Work runs, its sandbox Pod is in `talgent-sandbox`: `kubectl -n talgent-sandbox get pods`.
+  A Pod that cannot pull its image usually lacks `ghcr-pull` there.
 - Signing in: opening `WORKBENCH_ORIGIN` signed out lands on `/login`;
   `<origin>/auth/github/login?next=/` redirects to GitHub; after signing in, the session
   cookies `talgent-access` and `talgent-refresh` are `HttpOnly`.
