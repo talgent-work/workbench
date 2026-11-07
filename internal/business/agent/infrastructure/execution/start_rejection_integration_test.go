@@ -32,7 +32,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	root, err := os.OpenRoot(t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = root.Close() })
-	resources, err := NewEnvironments(p, NewRemovals(db, time.Now), observations)
+	resources, err := NewEnvironments(p, observations)
 	require.NoError(t, err)
 	// Domain delivery is buffered; direct provisioning below exercises the
 	// registration boundary without requiring native UID ownership in this test.

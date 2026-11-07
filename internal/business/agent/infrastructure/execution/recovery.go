@@ -31,24 +31,23 @@ type EnvironmentRecovery struct {
 	provisioning *Provisioning
 	connections  *NativeConnections
 	reclaimer    *Reclaimer
-	removals     *Removals
 	owners       StreamOwners
 }
 
 var _ application.ExecutionEnvironmentRecovery = (*EnvironmentRecovery)(nil)
 
-func NewEnvironmentRecovery(provisioning *Provisioning, connections *NativeConnections, reclaimer *Reclaimer, removals *Removals, owners StreamOwners) (*EnvironmentRecovery, error) {
-	if provisioning == nil || connections == nil || reclaimer == nil || removals == nil || owners == nil {
-		return nil, errors.New("agent: provisioning, connections, removal and stream owners are required for environment recovery")
+func NewEnvironmentRecovery(provisioning *Provisioning, connections *NativeConnections, reclaimer *Reclaimer, owners StreamOwners) (*EnvironmentRecovery, error) {
+	if provisioning == nil || connections == nil || reclaimer == nil || owners == nil {
+		return nil, errors.New("agent: provisioning, connections, reclaimer and stream owners are required for environment recovery")
 	}
-	return &EnvironmentRecovery{provisioning: provisioning, connections: connections, reclaimer: reclaimer, removals: removals, owners: owners}, nil
+	return &EnvironmentRecovery{provisioning: provisioning, connections: connections, reclaimer: reclaimer, owners: owners}, nil
 }
 
 // ReconcileAllocation advances one allocation from its durable facts: a live
 // allocation resolves its submission, receives its first delivery once its
 // environment runs, or has its credentials drained once its stop is admitted; a
-// retired one has its late or duplicate environments removed; an unfinished
-// removal obligation is advanced. A connected allocation needs no call to the
+// retired one is released, and a released one has its late environments
+// removed. A connected allocation needs no call to the
 // environment authority. Each failure is retried by the caller without
 // blocking other allocations.
 func (r *EnvironmentRecovery) ReconcileAllocation(ctx context.Context, allocationID string) (application.AllocationStep, error) {
@@ -77,19 +76,14 @@ func (r *EnvironmentRecovery) ReconcileAllocation(ctx context.Context, allocatio
 			next, err = r.advance(ctx, record)
 			failures = append(failures, err)
 		}
+	case record.DeletedAt != 0 && record.ReleasedAt == 0:
+		failures = append(failures, r.reclaimer.reconcileRelease(ctx, p, record, authority))
 	case record.DeletedAt != 0 && record.Submitted:
 		// Only an authority whose creation can leave surplus environments
 		// has late ones to remove.
 		if surplus, ok := authority.(surplusEnvironments); ok {
 			failures = append(failures, surplus.pruneRetired(ctx, record))
 		}
-	}
-	removal, pending, err := r.removals.pendingFor(ctx, allocationID)
-	if err != nil {
-		return next, withAllocation(errors.Join(append(failures, err)...), record)
-	}
-	if pending {
-		failures = append(failures, r.reclaimer.reconcileRemoval(ctx, r.removals, removal, record, authority))
 	}
 	return next, withAllocation(errors.Join(failures...), record)
 }
@@ -104,7 +98,7 @@ func (r *EnvironmentRecovery) advance(ctx context.Context, record allocationReco
 	if !held {
 		// A run its machine fenced retires here when the Work's own request
 		// to retire it was lost.
-		_, err := retireOutlived(ctx, r.provisioning, r.removals, record)
+		_, err := retireOutlived(ctx, r.provisioning, record)
 		return application.AllocationSettled, err
 	}
 	switch {
@@ -176,7 +170,7 @@ func (r *EnvironmentRecovery) nextStep(ctx context.Context, record allocationRec
 func (r *EnvironmentRecovery) holding(ctx context.Context, record allocationRecord) (draining, held bool, err error) {
 	draining, err = r.connections.credentials.works.draining(ctx, record)
 	if errors.Is(err, errAllocationNotHeld) {
-		// The process exited or never started; removal follows the Work.
+		// The process exited or never started; release follows the Work.
 		return false, false, nil
 	}
 	return draining, err == nil, err
@@ -330,18 +324,18 @@ func (r *EnvironmentRecovery) LiveAllocation(ctx context.Context, workID string)
 	return record.ID, found, err
 }
 
-// ListOutstandingAllocations pages live allocations and those whose removal is
-// unfinished, each with the step it is missing. It reads only durable facts
-// and Dispatcher's stream ownership: a connected allocation whose stream is
-// read needs nothing. A retired allocation with a completed removal is
-// history and is never listed.
+// ListOutstandingAllocations pages live allocations and retired ones whose
+// release is not confirmed, each with the step it is missing. It reads only
+// durable facts and Dispatcher's stream ownership: a connected allocation
+// whose stream is read needs nothing. A released allocation is history and
+// is never listed.
 func (r *EnvironmentRecovery) ListOutstandingAllocations(ctx context.Context, after string, limit int) ([]application.AllocationStatus, error) {
 	var ids []string
 	err := r.provisioning.db.Context(ctx).SQL(`SELECT id FROM (
- SELECT id FROM execution_allocation WHERE deleted_at = 0 AND start_rejected = 0
+ SELECT id FROM execution_allocation WHERE deleted_at = 0 AND start_rejected = 0 AND id > ?
  UNION
- SELECT id FROM execution_removal WHERE completed = 0 AND deleted_at = 0
-) AS outstanding WHERE id > ? ORDER BY id LIMIT ?`, after, limit).Find(&ids)
+ SELECT id FROM execution_allocation WHERE retired = 1 AND released_at = 0 AND id > ?
+) AS outstanding ORDER BY id LIMIT ?`, after, after, limit).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "list_outstanding_allocations").Wrap(err)
 	}
@@ -369,7 +363,7 @@ func (r *EnvironmentRecovery) ListOutstandingAllocations(ctx context.Context, af
 }
 
 // missingStep judges an outstanding allocation from its facts. A record that
-// is not live has only its removal outstanding.
+// is not live has only its release outstanding.
 func (r *EnvironmentRecovery) missingStep(ctx context.Context, record allocationRecord) (application.AllocationStep, error) {
 	if record.ID == "" || record.DeletedAt != 0 || record.SandboxID == "" {
 		return application.AllocationReconcile, nil

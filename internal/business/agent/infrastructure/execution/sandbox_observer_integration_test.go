@@ -66,7 +66,7 @@ func TestSandboxObserverWakesTheOwningAllocation(t *testing.T) {
 	require.NoError(t, err)
 	reclaimer, err := NewReclaimer(&reclamationFeedback{})
 	require.NoError(t, err)
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, NewRemovals(db, time.Now), unread{})
+	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, unread{})
 	require.NoError(t, err)
 
 	owned := correlation(Allocation{WorkID: input.WorkID, ID: allocation.ID})
@@ -127,7 +127,7 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 	require.NoError(t, err)
 	reclaimer, err := NewReclaimer(&reclamationFeedback{})
 	require.NoError(t, err)
-	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, NewRemovals(db, time.Now), unread{})
+	recovery, err := NewEnvironmentRecovery(p, connections, reclaimer, unread{})
 	require.NoError(t, err)
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{BatchSandboxes: "BatchSandboxList"})
 	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("late", correlation(Allocation{WorkID: input.WorkID, ID: allocation.ID})), metav1.CreateOptions{})

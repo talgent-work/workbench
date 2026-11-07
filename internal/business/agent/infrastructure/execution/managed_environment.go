@@ -18,8 +18,8 @@ import (
 // ManagedEnvironment is the Managed realization's environment authority. A
 // Managed allocation's environment is the Work's one directory on its
 // machine, opened idempotently and kept for the Work's life, so it is never
-// duplicated; its compute is the run's processes, whose release the removal
-// obligation records. Its Harness uses the machine's own git credentials, and
+// duplicated; its compute is the run's processes, whose release the
+// allocation records. Its Harness uses the machine's own git credentials, and
 // the machine's own Claude login or the Work's Model Configuration; the
 // Work's credentials (the Work credential for the platform Connector and any
 // Model Configuration key) are delivered to Talgent Computer's local proxy,
@@ -166,13 +166,13 @@ func (m ManagedEnvironment) lost(ctx context.Context, record allocationRecord) (
 }
 
 // release deletes the run's process handles on the machine; the Work's
-// directory stays. A machine not reachable now keeps the obligation pending.
-func (m ManagedEnvironment) release(ctx context.Context, allocation allocationRecord, _ removalRecord) (bool, error) {
-	spec, err := decodeManagedSpecification(allocation)
+// directory stays. A machine not reachable now keeps the release outstanding.
+func (m ManagedEnvironment) release(ctx context.Context, record allocationRecord) (bool, error) {
+	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return false, err
 	}
-	return m.machines.release(ctx, spec, allocation.SessionID, allocation.PreparationProcessID, allocation.ProcessID)
+	return m.machines.release(ctx, spec, record.SessionID, record.PreparationProcessID, record.ProcessID)
 }
 
 // workCredential is the one the Work's credentials deliver to the machine's

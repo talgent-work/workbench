@@ -54,7 +54,7 @@ func startManaged(t *testing.T, f *managedWork, workID string) allocationRecord 
 
 // A run its Managed Computer fenced retires on the Work's request without a
 // compute reclamation and without its exit reaching the allocation; the
-// removal releases the run's processes once the machine is back. A request
+// release deletes the run's processes once the machine is back. A request
 // while the Work still holds the run changes nothing, and recovery retires
 // the allocation when the request was lost.
 func TestAFencedManagedRunRetiresWithoutReclaimingCompute(t *testing.T) {
@@ -87,7 +87,7 @@ func TestAFencedManagedRunRetiresWithoutReclaimingCompute(t *testing.T) {
 	_, live, err = f.provisioning.live(ctx, lost)
 	require.NoError(t, err)
 	require.False(t, live, "recovery retires a fenced run whose request was lost")
-	pending, err := pendingRemovals(ctx, f.removals)
+	pending, err := unreleased(ctx, f.db)
 	require.NoError(t, err)
 	require.NotEmpty(t, pending, "the runs' processes are released once the machine is back")
 	require.Empty(t, f.relay.deleted)

@@ -78,6 +78,9 @@ type allocationRecord struct {
 	CreatedAt       int64  `xorm:"'created_at'"`
 	UpdatedAt       int64  `xorm:"'updated_at'"`
 	DeletedAt       int64  `xorm:"'deleted_at'"`
+	// ReleasedAt is when, in Unix milliseconds, a retired allocation's compute
+	// release was confirmed; zero while its release is outstanding.
+	ReleasedAt int64 `xorm:"'released_at'"`
 }
 
 func (*allocationRecord) TableName() string { return "execution_allocation" }
@@ -319,6 +322,17 @@ func (p *Provisioning) get(ctx context.Context, id string) (allocationRecord, bo
 		return record, false, oops.With("operation", "get_allocation").Wrap(err)
 	}
 	return record, found, nil
+}
+
+// recordRelease records that the retired allocation's compute is released. A
+// release recorded already stays as it was.
+func (p *Provisioning) recordRelease(ctx context.Context, record allocationRecord) error {
+	now := p.now().UnixMilli()
+	_, err := p.db.Context(ctx).Exec("UPDATE execution_allocation SET released_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND deleted_at <> 0 AND released_at = 0", now, now, record.ID)
+	if err != nil {
+		return oops.With("operation", "record_execution_release").Wrap(err)
+	}
+	return nil
 }
 
 // Assignment is selected only by private call sites above; values remain bound.

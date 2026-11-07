@@ -31,7 +31,6 @@ type nativeWorkLifecycleFixture struct {
 	definitions  *infrastructure.AgentDefinitionRepository
 	provisioning *Provisioning
 	connections  *NativeConnections
-	removals     *Removals
 	reclaimer    *Reclaimer
 	external     *lifecycleFixture
 	requests     command.ExecutionRequestsFactory
@@ -59,8 +58,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	provisioning := NewProvisioning(db, provider, credentials, NativeLaunchConfig{Binary: "claude"}, time.Now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
 	observations, err := NewProcessObservations(provisioning, control)
 	require.NoError(t, err)
-	removals := NewRemovals(db, time.Now)
-	resources, err := NewEnvironments(provisioning, removals, observations)
+	resources, err := NewEnvironments(provisioning, observations)
 	require.NoError(t, err)
 	environment, err := NewEnvironment(resources, control, directoryMounts{root: t.TempDir()}, cloudComputers{})
 	require.NoError(t, err)
@@ -70,7 +68,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	require.NoError(t, err)
 	connections, err := NewNativeConnections(provisioning, credentials, dispatchServer.Client(), dispatchServer.URL, "lifecycle-control", feedback, command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
 	require.NoError(t, err)
-	return &nativeWorkLifecycleFixture{db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, removals: removals, reclaimer: reclaimer, external: external, requests: requests}
+	return &nativeWorkLifecycleFixture{db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, reclaimer: reclaimer, external: external, requests: requests}
 }
 
 func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx context.Context, snapshot domain.CapabilitySnapshot, authorization domain.WorkAuthorizationInput) (*domain.AgentWork, string) {

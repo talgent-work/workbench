@@ -290,6 +290,7 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last reconciliation time in Unix milliseconds',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft deletion time; zero means retained',
+  `released_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the retired allocation''s compute release was confirmed; zero while its release is outstanding',
   `retired` tinyint unsigned GENERATED ALWAYS AS (`deleted_at` <> 0) VIRTUAL COMMENT 'Indexed retirement predicate for durable late-result observation',
   `live_session_id` varchar(36) COLLATE utf8mb4_bin GENERATED ALWAYS AS (IF(`deleted_at` = 0, `session_id`, NULL)) STORED COMMENT 'Work of a live allocation; unique per Work',
   `allocation_label` char(48) COLLATE utf8mb4_bin GENERATED ALWAYS AS (LEFT(SHA2(`id`, 256), 48)) STORED COMMENT 'Sandbox allocation label; finds the allocation an observed sandbox belongs to',
@@ -298,25 +299,13 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
   PRIMARY KEY (`id`),
   KEY `idx_deleted_at_updated_at_id` (`deleted_at`, `updated_at`, `id`),
   KEY `idx_retired_submitted_updated_at_id` (`retired`, `submitted`, `updated_at`, `id`),
+  KEY `idx_retired_released_at_id` (`retired`, `released_at`, `id`),
   KEY `idx_sandbox_id_deleted_at_updated_at_id` (`sandbox_id`, `deleted_at`, `updated_at`, `id`),
   UNIQUE KEY `uniq_live_session_id` (`live_session_id`),
   KEY `idx_allocation_label` (`allocation_label`),
   KEY `idx_input_owner_deleted_at` (`input_owner`, `deleted_at`),
   KEY `idx_authorization_ids` ((CAST(`authorization_ids` AS CHAR(36) ARRAY)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent infrastructure durable external allocation records';
-
-CREATE TABLE IF NOT EXISTS `execution_removal` (
-  `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Sandbox allocation identity',
-  `session_id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'AgentWork identity',
-  `sandbox_id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Recorded OpenSandbox identity fencing deletion',
-  `completed` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'One only after removal and Agent feedback acknowledgement',
-  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic persistence version',
-  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last processing time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft deletion time; zero means retained',
-  PRIMARY KEY (`id`),
-  KEY `idx_completed_deleted_at_updated_at_id` (`completed`, `deleted_at`, `updated_at`, `id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent infrastructure durable execution removal obligations';
 
 CREATE TABLE IF NOT EXISTS `login_session` (
   `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Login Session UUIDv7 identity; the sid claim',

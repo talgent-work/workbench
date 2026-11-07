@@ -52,7 +52,7 @@ func TestProcessObservationDistinguishesRetiredEnvironmentFromCurrentStart(t *te
 	defer server.Close()
 	observer, err := NewProcessObservations(NewProvisioning(db, sandboxes, nil, NativeLaunchConfig{}, time.Now, nil, nil), NewDispatcherControl(server.Client(), server.URL, "dispatcher-secret"))
 	require.NoError(t, err)
-	old := allocationRecord{ID: "old-allocation", SessionID: "work", SandboxID: sandboxID, ProcessID: "old-process", CreatedAt: 1, DeletedAt: 2, RequestJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), SpecificationJSON: []byte(`{}`)}
+	old := allocationRecord{ID: "old-allocation", SessionID: "work", SandboxID: sandboxID, ProcessID: "old-process", CreatedAt: 1, DeletedAt: 2, ReleasedAt: 2, RequestJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), SpecificationJSON: []byte(`{}`)}
 	_, err = db.Insert(&old)
 	require.NoError(t, err)
 	observed, err := observer.ObserveProcess(t.Context(), "work")
@@ -113,16 +113,15 @@ func TestLateComputeRequestCannotDeleteRunningCurrentProcess(t *testing.T) {
 	root, err := os.OpenRoot(t.TempDir())
 	require.NoError(t, err)
 	defer root.Close()
-	removals := NewRemovals(db, time.Now)
-	environments, err := NewEnvironments(p, removals, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
+	environments, err := NewEnvironments(p, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
 	require.NoError(t, err)
 	require.NoError(t, environments.Delete(t.Context(), "work"))
 	_, found, err := p.live(t.Context(), "work")
 	require.NoError(t, err)
 	require.True(t, found, "an old Work-level request cannot retire the current live allocation")
-	pending, err := pendingRemovals(t.Context(), removals)
+	pending, err := unreleased(t.Context(), db)
 	require.NoError(t, err)
-	require.Empty(t, pending, "an old request must not create a future deletion obligation for P2")
+	require.Empty(t, pending, "an old request must not leave a release outstanding for P2")
 }
 
 func allocationObserverFixture(t *testing.T, p *Provisioning, state dispatcherprivatev1.ProcessState) *ProcessObservations {

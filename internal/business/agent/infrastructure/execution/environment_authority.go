@@ -82,9 +82,10 @@ type environmentAuthority interface {
 	// lost reports, without reaching the environment, whether it is
 	// authoritatively gone.
 	lost(ctx context.Context, record allocationRecord) (bool, error)
-	// release reclaims the compute a removal obligation names and reports
-	// whether it is gone.
-	release(ctx context.Context, allocation allocationRecord, removal removalRecord) (bool, error)
+	// release reclaims the compute of a retired allocation, found by the
+	// ownership it carries rather than by a recorded environment reference,
+	// and reports whether none remains.
+	release(ctx context.Context, record allocationRecord) (bool, error)
 	// workCredential is the Work credential issued to the environment.
 	workCredential(record allocationRecord) (string, error)
 }
@@ -115,15 +116,8 @@ type deliveredCredentials struct {
 type surplusEnvironments interface {
 	// prune removes a live allocation's environments other than env.
 	prune(ctx context.Context, record allocationRecord, env environment) error
-	// pruneRetired removes every late environment of a retired allocation.
+	// pruneRetired removes every late environment of a released allocation.
 	pruneRetired(ctx context.Context, record allocationRecord) error
-}
-
-// observedCompute is an authority that itself observes whether a retired
-// allocation's compute is gone. For one without it, the completed removal
-// obligation says so.
-type observedCompute interface {
-	released(ctx context.Context, record allocationRecord) (bool, error)
 }
 
 // fencingEnvironment is an authority whose machine fences its Work processes

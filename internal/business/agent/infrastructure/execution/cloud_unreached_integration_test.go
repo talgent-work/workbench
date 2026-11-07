@@ -39,8 +39,7 @@ func TestAnUnreachedCloudRunReleasesItsSandboxWithoutAnExit(t *testing.T) {
 	_, err = db.Insert(&current)
 	require.NoError(t, err)
 	lifecycle.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: correlation(Allocation{ID: current.ID, WorkID: "work"})}
-	removals := NewRemovals(db, time.Now)
-	environments, err := NewEnvironments(p, removals, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
+	environments, err := NewEnvironments(p, allocationObserverFixture(t, p, dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING))
 	require.NoError(t, err)
 
 	require.NoError(t, environments.Delete(t.Context(), "work"))
@@ -53,8 +52,8 @@ func TestAnUnreachedCloudRunReleasesItsSandboxWithoutAnExit(t *testing.T) {
 	_, live, err = p.live(t.Context(), "work")
 	require.NoError(t, err)
 	require.False(t, live, "the Work's reclamation beyond reach retires the allocation")
-	pending, err := pendingRemovals(t.Context(), removals)
+	pending, err := unreleased(t.Context(), db)
 	require.NoError(t, err)
 	require.Len(t, pending, 1, "the sandbox is released, its confirmation completing the stop")
-	require.NoError(t, environments.Delete(t.Context(), "work"), "a repeated request finds the retained removal")
+	require.NoError(t, environments.Delete(t.Context(), "work"), "a repeated request finds the retired allocation")
 }
