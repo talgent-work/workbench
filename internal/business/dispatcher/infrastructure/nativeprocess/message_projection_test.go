@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/adapter/claudecode"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/nativeprocess"
 	"google.golang.org/protobuf/proto"

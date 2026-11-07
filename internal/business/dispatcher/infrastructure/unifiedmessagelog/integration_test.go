@@ -17,7 +17,7 @@ import (
 	sglog "github.com/talgent-work/workbench/internal/business/streamgateway/infrastructure/unifiedmessagelog"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/unifiedmessagelog"
 )
 

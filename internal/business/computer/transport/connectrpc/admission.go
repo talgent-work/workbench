@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	computerprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1/computerprivatev1connect"
+	computerprivatev1 "github.com/talgent-work/contracts/gen/go/computer/private/v1"
+	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
 )
@@ -29,14 +29,15 @@ func NewAdmissionHandler(app *application.Application, token string) *AdmissionH
 	return &AdmissionHandler{application: app, token: controlToken(token)}
 }
 
-func (h *AdmissionHandler) ListUsableComputers(ctx context.Context, req *connect.Request[computerprivatev1.ListUsableComputersRequest]) (*connect.Response[computerprivatev1.ListUsableComputersResponse], error) {
-	if err := h.token.authenticate(req.Header().Get("Authorization")); err != nil {
+func (h *AdmissionHandler) ListUsableComputers(ctx context.Context, req *computerprivatev1.ListUsableComputersRequest) (*computerprivatev1.ListUsableComputersResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := h.token.authenticate(info.RequestHeader().Get("Authorization")); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(req.Msg.GetPersonId()) == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("computer: person is required"))
+	if strings.TrimSpace(req.GetPersonId()) == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "computer: person is required")
 	}
-	computers, err := h.application.ListUsableComputers(ctx, req.Msg.GetPersonId())
+	computers, err := h.application.ListUsableComputers(ctx, req.GetPersonId())
 	if err != nil {
 		return nil, publicError(err)
 	}
@@ -44,14 +45,15 @@ func (h *AdmissionHandler) ListUsableComputers(ctx context.Context, req *connect
 	for _, computer := range computers {
 		response.Computers = append(response.Computers, &computerprivatev1.UsableComputer{Id: computer.ID, Kind: kindToProto(computer.Kind), Name: computer.Name})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *AdmissionHandler) AdmitRun(ctx context.Context, req *connect.Request[computerprivatev1.AdmitRunRequest]) (*connect.Response[computerprivatev1.AdmitRunResponse], error) {
-	if err := h.token.authenticate(req.Header().Get("Authorization")); err != nil {
+func (h *AdmissionHandler) AdmitRun(ctx context.Context, req *computerprivatev1.AdmitRunRequest) (*computerprivatev1.AdmitRunResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := h.token.authenticate(info.RequestHeader().Get("Authorization")); err != nil {
 		return nil, err
 	}
-	msg := req.Msg
+	msg := req
 	admission, err := h.application.AdmitRun(ctx, application.AdmitRun{ComputerID: msg.GetComputerId(), DeskID: msg.GetDeskId(), WorkID: msg.GetWorkId(), WorkOwnerID: msg.GetWorkOwnerId(), StarterID: msg.GetStarterId(), Sandbox: msg.GetSandbox()})
 	if err != nil {
 		return nil, publicError(err)
@@ -60,24 +62,26 @@ func (h *AdmissionHandler) AdmitRun(ctx context.Context, req *connect.Request[co
 	if admission.Answer == application.AnswerRejected {
 		response.ComputerKind = kindToProto(admission.Kind)
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *AdmissionHandler) LeaveDesk(ctx context.Context, req *connect.Request[computerprivatev1.LeaveDeskRequest]) (*connect.Response[computerprivatev1.LeaveDeskResponse], error) {
-	if err := h.token.authenticate(req.Header().Get("Authorization")); err != nil {
+func (h *AdmissionHandler) LeaveDesk(ctx context.Context, req *computerprivatev1.LeaveDeskRequest) (*computerprivatev1.LeaveDeskResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := h.token.authenticate(info.RequestHeader().Get("Authorization")); err != nil {
 		return nil, err
 	}
-	if err := h.application.LeaveDesk(ctx, req.Msg.GetDeskId()); err != nil {
+	if err := h.application.LeaveDesk(ctx, req.GetDeskId()); err != nil {
 		return nil, publicError(err)
 	}
-	return connect.NewResponse(&computerprivatev1.LeaveDeskResponse{}), nil
+	return &computerprivatev1.LeaveDeskResponse{}, nil
 }
 
-func (h *AdmissionHandler) ListOpenDesks(ctx context.Context, req *connect.Request[computerprivatev1.ListOpenDesksRequest]) (*connect.Response[computerprivatev1.ListOpenDesksResponse], error) {
-	if err := h.token.authenticate(req.Header().Get("Authorization")); err != nil {
+func (h *AdmissionHandler) ListOpenDesks(ctx context.Context, req *computerprivatev1.ListOpenDesksRequest) (*computerprivatev1.ListOpenDesksResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := h.token.authenticate(info.RequestHeader().Get("Authorization")); err != nil {
 		return nil, err
 	}
-	msg := req.Msg
+	msg := req
 	desks, err := h.application.ListOpenDesks(ctx, time.UnixMilli(msg.GetOpenedBeforeUnixMs()), msg.GetAfterDeskId(), int(msg.GetLimit()))
 	if err != nil {
 		return nil, publicError(err)
@@ -86,17 +90,18 @@ func (h *AdmissionHandler) ListOpenDesks(ctx context.Context, req *connect.Reque
 	for _, desk := range desks {
 		response.Desks = append(response.Desks, &computerprivatev1.OpenDesk{DeskId: desk.DeskID, WorkId: desk.WorkID})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *AdmissionHandler) DescribeComputer(ctx context.Context, req *connect.Request[computerprivatev1.DescribeComputerRequest]) (*connect.Response[computerprivatev1.DescribeComputerResponse], error) {
-	if err := h.token.authenticate(req.Header().Get("Authorization")); err != nil {
+func (h *AdmissionHandler) DescribeComputer(ctx context.Context, req *computerprivatev1.DescribeComputerRequest) (*computerprivatev1.DescribeComputerResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := h.token.authenticate(info.RequestHeader().Get("Authorization")); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(req.Msg.GetComputerId()) == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("computer: computer is required"))
+	if strings.TrimSpace(req.GetComputerId()) == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "computer: computer is required")
 	}
-	computer, err := h.application.DescribeComputer(ctx, req.Msg.GetComputerId())
+	computer, err := h.application.DescribeComputer(ctx, req.GetComputerId())
 	if err != nil {
 		return nil, publicError(err)
 	}
@@ -104,16 +109,17 @@ func (h *AdmissionHandler) DescribeComputer(ctx context.Context, req *connect.Re
 	if !computer.Presence.Reachable && !computer.Presence.UnreachableSince.IsZero() {
 		response.UnreachableSince = timestamppb.New(computer.Presence.UnreachableSince)
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *AdmissionHandler) GetDesk(ctx context.Context, req *connect.Request[computerprivatev1.GetDeskRequest]) (*connect.Response[computerprivatev1.GetDeskResponse], error) {
-	if err := h.token.authenticate(req.Header().Get("Authorization")); err != nil {
+func (h *AdmissionHandler) GetDesk(ctx context.Context, req *computerprivatev1.GetDeskRequest) (*computerprivatev1.GetDeskResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := h.token.authenticate(info.RequestHeader().Get("Authorization")); err != nil {
 		return nil, err
 	}
-	desk, err := h.application.Desk(ctx, req.Msg.GetDeskId())
+	desk, err := h.application.Desk(ctx, req.GetDeskId())
 	if errors.Is(err, domain.ErrDeskNotFound) {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("computer: desk not found"))
+		return nil, connect.NewError(connect.CodeNotFound, "computer: desk not found")
 	}
 	if err != nil {
 		return nil, publicError(err)
@@ -122,7 +128,7 @@ func (h *AdmissionHandler) GetDesk(ctx context.Context, req *connect.Request[com
 	if !desk.SeatedAt.IsZero() {
 		response.SeatedAt = timestamppb.New(desk.SeatedAt)
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
 var deskStates = map[domain.DeskState]computerprivatev1.DeskState{

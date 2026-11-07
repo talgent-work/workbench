@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Tooltip } from "@heroui/react";
 import { useQuery } from "@tanstack/react-query";
-import { UnifiedMessageKind } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { UnifiedMessageKind } from "@talgent/contracts/dispatcher/public/v1/unified_message_pb";
 import { streamClient } from "../../../lib/client";
 import { formatCompactTokenCount } from "../../../lib/trace-view-model";
 import { tokenCategories, tokenTotal } from "../../../lib/token-usage";

@@ -2,21 +2,20 @@ package connectrpc
 
 import (
 	"context"
-	"net/http"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // Only a verified Work Agent with a workspace publishes Artifacts, from its
 // own workspace into the File Space its Space Token names; nothing about
 // them comes from the request.
 func TestArtifactCommandsTakeTheWorkAgentFromItsVerifiedIdentity(t *testing.T) {
-	header := http.Header{}
+	header := new(connect.Header)
 	header.Set(authn.HeaderSpaceToken, " space ")
 	work := authn.NativeProcess{WorkID: "work-1", Purpose: "work", WorkspaceReference: "ws-1"}
 
@@ -41,7 +40,7 @@ func TestArtifactCommandsTakeTheWorkAgentFromItsVerifiedIdentity(t *testing.T) {
 // Content a Work sent needs no Session Workspace; a workspace file does.
 // The Work's purpose does not decide it.
 func TestSentContentNeedsNoWorkspace(t *testing.T) {
-	header := http.Header{}
+	header := new(connect.Header)
 	header.Set(authn.HeaderSpaceToken, "space")
 	managed := authn.WithNativeProcess(context.Background(), authn.NativeProcess{WorkID: "work-1", Purpose: "project_coordination"})
 
@@ -61,7 +60,7 @@ func TestSentContentNeedsNoWorkspace(t *testing.T) {
 // A Work with a Session Workspace that sends content is refused as an
 // invalid source: it publishes only a file of its workspace.
 func TestSentContentFromAWorkWithAWorkspaceIsAnInvalidSource(t *testing.T) {
-	header := http.Header{}
+	header := new(connect.Header)
 	header.Set(authn.HeaderSpaceToken, "space")
 	cloud := authn.WithNativeProcess(context.Background(), authn.NativeProcess{WorkID: "work-1", Purpose: "work", WorkspaceReference: "ws-1"})
 

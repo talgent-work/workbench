@@ -1,8 +1,8 @@
 package connectrpc
 
 import (
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	streamgatewaypublicv1 "github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

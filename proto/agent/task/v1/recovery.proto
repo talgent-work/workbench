@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package agent.task.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/agent/task/v1;agenttaskv1";
+
+// ReconcileAllocationTaskV1 asks Agent to reconcile one execution environment
+// allocation against its durable record and the environment authority.
+message ReconcileAllocationTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// PrepareAllocationTaskV1 asks Agent to see one allocation's environment
+// preparation through to its exit, then start the Harness and connect it.
+message PrepareAllocationTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// ReconnectAllocationTaskV1 asks Agent to hand one allocation's running Harness
+// process to Dispatcher again, without preparing its environment.
+message ReconnectAllocationTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// DeliverCredentialsTaskV1 asks Agent to replace one allocation's delivered
+// credentials with those Marketplace supplies now.
+message DeliverCredentialsTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// SyncInputsTaskV1 asks Agent to hand one Managed allocation's machine the
+// current inputs of its Work.
+message SyncInputsTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// ObserveSandboxTaskV1 asks Agent to check one allocation against its sandboxes
+// after the environment authority reported a change to them.
+message ObserveSandboxTaskV1 {
+  // Allocation identity of the durable allocation record.
+  string allocation_id = 1;
+}
+
+// RecoverWorkTaskV1 asks Agent to advance one Work's retained execution,
+// input and workspace obligations.
+message RecoverWorkTaskV1 {
+  // AgentWork identity.
+  string work_id = 1;
+}
+
+// RecoverContinuationTaskV1 asks Agent to settle one Work's pending continuation
+// request after admission uncertainty.
+message RecoverContinuationTaskV1 {
+  // AgentWork identity owning the continuation request.
+  string work_id = 1;
+}
+
+// RecoverWorkCreationTaskV1 asks Agent to settle one retained Work creation
+// request after admission uncertainty.
+message RecoverWorkCreationTaskV1 {
+  // Original Work creation request identity.
+  string request_id = 1;
+}
+
+// PrepareInitialExecutionTaskV1 asks Agent to prepare and deliver one Work's
+// initial execution under its Startup Deadline.
+message PrepareInitialExecutionTaskV1 {
+  // AgentWork identity owning the initial execution request.
+  string work_id = 1;
+}
+
+// SweepRecoveryTaskV1 is the periodic fallback that wakes every unfinished
+// recovery obligation. It carries no data.
+message SweepRecoveryTaskV1 {}
+
+// RequestWorkspaceReclamationTaskV1 delivers a Closed Work's one Workspace
+// Reclamation Request to Storage, retried until Storage accepts it.
+message RequestWorkspaceReclamationTaskV1 {
+  // AgentWork identity whose Session Workspace is reclaimed.
+  string work_id = 1;
+  // The Work's opaque Session Workspace reference.
+  string workspace_reference = 2;
+}

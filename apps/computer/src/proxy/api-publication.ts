@@ -10,8 +10,8 @@ import { readHead, type ReadBody } from './request-body.ts'
 // and never forwarded.
 
 export const ARTIFACT_COMMANDS = new Set([
-  '/talgent.storage.private.v1.ArtifactService/CreateArtifact',
-  '/talgent.storage.private.v1.ArtifactService/ReplaceArtifact',
+  '/storage.private.v1.ArtifactService/CreateArtifact',
+  '/storage.private.v1.ArtifactService/ReplaceArtifact',
 ])
 
 // The request forwarded as read, forwarded completed, or answered here with

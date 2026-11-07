@@ -14,8 +14,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	"github.com/talgent-work/workbench/internal/pkg/opensandbox"
-	internalpkg "github.com/talgent-work/workbench/pkg"
 	"go.uber.org/fx"
 )
 

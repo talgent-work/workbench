@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 )
 
 // The Streamgateway reader must project only UnifiedMessage columns so replay

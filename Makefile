@@ -1,7 +1,7 @@
 # Recipes pipe go test into scripts/test/case-budget.py and need pipefail.
 SHELL := bash
 
-.PHONY: generate check-generate check-breaking build image-binaries test test-scripts test-go test-compile test-integration test-integration-compile print-unit-packages print-integration-packages lint clean pnpm-install gen-ts-rebuild gen-ts-test-runtime frontend-typecheck frontend-test frontend-build frontend-lint check-leaks install-hooks
+.PHONY: generate check-generate check-breaking build image-binaries test test-scripts test-go test-compile test-integration test-integration-compile print-unit-packages print-integration-packages lint clean pnpm-install frontend-typecheck frontend-test frontend-build frontend-lint check-leaks install-hooks
 
 UNIT_TEST_DIRS = $(shell find . -name '*_test.go' \
 	-not -path './cmd/*' \
@@ -17,7 +17,7 @@ INTEGRATION_PACKAGES_agent := \
 	./internal/business/agent/infrastructure/execution \
 	./internal/business/agent/infrastructure/turnresults \
 	./internal/business/dispatcher \
-	./pkg/taskqueue
+	./internal/pkg/taskqueue
 
 INTEGRATION_PACKAGES_storage := \
 	./internal/business/account \
@@ -49,18 +49,18 @@ generate:
 # Check whether generated code is in sync with proto definitions
 check-generate:
 	buf generate
-	@if [ -n "$$(git diff gen/)" ]; then \
+	@if [ -n "$$(git status --porcelain -- gen)" ]; then \
 		echo "ERROR: gen/ is out of sync with proto/. Run 'make generate' and commit the result."; \
-		git diff --stat gen/; \
+		git status --short -- gen; \
 		exit 1; \
 	fi
 
-# Every contract package except the task ones only grows within its version:
-# compared with BREAKING_AGAINST, a buf input such as the previous release tag
-# (".git#tag=v0.1.0").
+# A task payload may stay queued across a release, so its contract only grows
+# within its version: compared with BREAKING_AGAINST, a buf input such as the
+# previous release tag (".git#tag=v0.1.0").
 check-breaking:
 	test -n "$(BREAKING_AGAINST)"
-	buf breaking --against '$(BREAKING_AGAINST)' $(foreach dir,$(shell find proto -type d -name task),--exclude-path $(dir))
+	buf breaking --against '$(BREAKING_AGAINST)'
 
 # Build all services
 build:
@@ -122,22 +122,14 @@ test-integration:
 pnpm-install:
 	pnpm install --frozen-lockfile
 
-gen-ts-rebuild:
-	pnpm --filter @talgent/workbench-contracts run rebuild
-
-gen-ts-test-runtime:
-	pnpm --filter @talgent/workbench-contracts run test:runtime
-
 frontend-typecheck:
-	pnpm --filter @talgent/workbench-contracts run build
-	pnpm -r --parallel --stream --filter '!@talgent/workbench-contracts' run typecheck
+	pnpm -r --parallel --stream run typecheck
 
 frontend-test:
 	pnpm -r --parallel --stream run test
 
 frontend-build:
-	pnpm --filter @talgent/workbench-contracts run build
-	pnpm -r --parallel --stream --filter '!@talgent/workbench-contracts' run build
+	pnpm -r --parallel --stream run build
 
 frontend-lint:
 	pnpm --filter @talgent/workbench-ui --filter @talgent/workbench-web --filter @talgent/computer run lint

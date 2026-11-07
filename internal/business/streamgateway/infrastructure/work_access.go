@@ -5,9 +5,10 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 )
 
@@ -20,11 +21,11 @@ type WorkAccess struct {
 
 var _ query.WorkAccessPort = (*WorkAccess)(nil)
 
-func NewWorkAccess(client connect.HTTPClient, address, token string) (*WorkAccess, error) {
+func NewWorkAccess(client connecthttp.HTTPClient, address, token string) (*WorkAccess, error) {
 	if client == nil || strings.TrimSpace(address) == "" || strings.TrimSpace(token) == "" {
 		return nil, errors.New("streamgateway: Agent endpoint and control token are required")
 	}
-	return &WorkAccess{client: agentprivatev1connect.NewWorkAccessServiceClient(client, address), token: token}, nil
+	return &WorkAccess{client: agentprivatev1connect.NewWorkAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0)))), token: token}, nil
 }
 
 func (a *WorkAccess) AuthorizeRead(ctx context.Context, reader string, admission query.ReaderAdmission, workID string) error {
@@ -44,8 +45,9 @@ func (a *WorkAccess) admit(ctx context.Context, reader string, admission query.R
 	if strings.TrimSpace(reader) == "" || strings.TrimSpace(workID) == "" {
 		return nil, query.ErrWorkAccessDenied
 	}
-	request := connect.NewRequest(&agentprivatev1.AdmitWorkReaderRequest{WorkId: workID, ReaderId: reader, Admission: &agentprivatev1.ReaderAdmission{Reference: admission.Reference, Value: admission.Value}, IncludeWorkState: withState})
-	request.Header().Set("Authorization", "Bearer "+a.token)
+	request := &agentprivatev1.AdmitWorkReaderRequest{WorkId: workID, ReaderId: reader, Admission: &agentprivatev1.ReaderAdmission{Reference: admission.Reference, Value: admission.Value}, IncludeWorkState: withState}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+a.token)
 	response, err := a.client.AdmitWorkReader(ctx, request)
 	if err != nil {
 		switch connect.CodeOf(err) {
@@ -55,8 +57,8 @@ func (a *WorkAccess) admit(ctx context.Context, reader string, admission query.R
 			return nil, errors.Join(query.ErrWorkAccessUnavailable, err)
 		}
 	}
-	if response.Msg.GetBasis() == agentprivatev1.WorkReadBasis_WORK_READ_BASIS_UNSPECIFIED {
+	if response.GetBasis() == agentprivatev1.WorkReadBasis_WORK_READ_BASIS_UNSPECIFIED {
 		return nil, query.ErrWorkAccessDenied
 	}
-	return response.Msg, nil
+	return response, nil
 }

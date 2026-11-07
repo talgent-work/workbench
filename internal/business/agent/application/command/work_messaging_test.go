@@ -2,22 +2,22 @@ package command_test
 
 import (
 	"context"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // dispatcherBuffer serves Dispatcher's input buffer API and records each
@@ -25,15 +25,23 @@ import (
 func dispatcherBuffer(t *testing.T) (*execution.DispatcherControl, chan *dispatcherprivatev1.EnqueueInputRequest) {
 	t.Helper()
 	received := make(chan *dispatcherprivatev1.EnqueueInputRequest, 4)
-	mux := http.NewServeMux()
-	mux.Handle(dispatcherprivatev1connect.ExecutionServiceEnqueueInputProcedure, connect.NewUnaryHandler(dispatcherprivatev1connect.ExecutionServiceEnqueueInputProcedure,
-		func(_ context.Context, request *connect.Request[dispatcherprivatev1.EnqueueInputRequest]) (*connect.Response[dispatcherprivatev1.EnqueueInputResponse], error) {
-			received <- request.Msg
-			return connect.NewResponse(&dispatcherprivatev1.EnqueueInputResponse{HandOff: dispatcherprivatev1.InputHandOff_INPUT_HAND_OFF_BUFFERED}), nil
-		}))
-	server := httptest.NewServer(mux)
+	handler := connecttest.Handler(func(s *connect.Server) {
+		dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, enqueueRecorder{received: received})
+	})
+	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	return execution.NewDispatcherControl(server.Client(), server.URL, "control"), received
+}
+
+// enqueueRecorder answers Dispatcher's input buffer hand-off and records it.
+type enqueueRecorder struct {
+	dispatcherprivatev1connect.UnimplementedExecutionServiceHandler
+	received chan *dispatcherprivatev1.EnqueueInputRequest
+}
+
+func (r enqueueRecorder) EnqueueInput(_ context.Context, request *dispatcherprivatev1.EnqueueInputRequest) (*dispatcherprivatev1.EnqueueInputResponse, error) {
+	r.received <- request
+	return &dispatcherprivatev1.EnqueueInputResponse{HandOff: dispatcherprivatev1.InputHandOff_INPUT_HAND_OFF_BUFFERED}, nil
 }
 
 func TestInputCommandPreservesPayloadAndRejectsInvalidDelivery(t *testing.T) {

@@ -9,7 +9,6 @@
 core cmd
 core configs
 core internal
-core pkg
 core proto
 core apps
 core packages

@@ -8,7 +8,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 // Queries reads Computers and Desks for listing.

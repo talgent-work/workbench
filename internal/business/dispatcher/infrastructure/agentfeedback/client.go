@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/samber/oops"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -23,7 +24,7 @@ type Client struct {
 var _ command.ExecutionFeedbackReporter = (*Client)(nil)
 
 func NewClient(httpClient *http.Client, addr, token string) *Client {
-	return &Client{rpc: agentprivatev1connect.NewExecutionFeedbackServiceClient(httpClient, addr), token: token}
+	return &Client{rpc: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, addr, connecthttp.WithReadMaxBytes(0)))), token: token}
 }
 
 func (c *Client) ReportExecution(ctx context.Context, observation command.ExecutionObservation) error {
@@ -34,7 +35,7 @@ func (c *Client) ReportExecution(ctx context.Context, observation command.Execut
 	if c.token == "" {
 		return command.ErrExecutionFeedbackRejected
 	}
-	request := connect.NewRequest(&agentprivatev1.ReportRequest{
+	request := &agentprivatev1.ReportRequest{
 		WorkId: observation.WorkID, Kind: kind,
 		InteractionId:       observation.InteractionID,
 		ObservationSequence: observation.ObservationSequence, TurnCompleted: observation.TurnCompleted,
@@ -42,19 +43,20 @@ func (c *Client) ReportExecution(ctx context.Context, observation command.Execut
 		RequiredInteractionIds: observation.RequiredInteractionIDs,
 		ProcessId:              observation.ProcessID, ExitCode: int32(observation.ExitCode), ExitReason: observation.ExitReason,
 		PermissionMode: observation.PermissionMode,
-	})
-	if !observation.DetachedSince.IsZero() {
-		request.Msg.DetachedSince = timestamppb.New(observation.DetachedSince)
 	}
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	if !observation.DetachedSince.IsZero() {
+		request.DetachedSince = timestamppb.New(observation.DetachedSince)
+	}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	for _, item := range observation.LoadedPlugins {
-		request.Msg.LoadedPlugins = append(request.Msg.LoadedPlugins, &agentprivatev1.LoadedPlugin{Slug: item.Slug, Version: item.Version})
+		request.LoadedPlugins = append(request.LoadedPlugins, &agentprivatev1.LoadedPlugin{Slug: item.Slug, Version: item.Version})
 	}
 	for _, item := range observation.WorkProgress {
-		request.Msg.WorkProgress = append(request.Msg.WorkProgress, &agentpublicv1.WorkProgressItem{Content: item.Content, Status: item.Status, ActiveForm: item.ActiveForm})
+		request.WorkProgress = append(request.WorkProgress, &agentpublicv1.WorkProgressItem{Content: item.Content, Status: item.Status, ActiveForm: item.ActiveForm})
 	}
 	for _, item := range observation.SubAgents {
-		request.Msg.Subagents = append(request.Msg.Subagents, &agentpublicv1.SubAgent{Id: item.ID, Type: item.Type, Task: item.Task, Status: item.Status})
+		request.Subagents = append(request.Subagents, &agentpublicv1.SubAgent{Id: item.ID, Type: item.Type, Task: item.Task, Status: item.Status})
 	}
 	_, err := c.rpc.Report(ctx, request)
 	return c.result(ctx, err)
@@ -67,8 +69,9 @@ func (c *Client) ReportConnectionEnded(ctx context.Context, workID, processID st
 	if c.token == "" {
 		return command.ErrExecutionFeedbackRejected
 	}
-	request := connect.NewRequest(&agentprivatev1.ConnectionEndedRequest{WorkId: workID, ProcessId: processID})
-	request.Header().Set("Authorization", "Bearer "+c.token)
+	request := &agentprivatev1.ConnectionEndedRequest{WorkId: workID, ProcessId: processID}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+c.token)
 	_, err := c.rpc.ConnectionEnded(ctx, request)
 	return c.result(ctx, err)
 }

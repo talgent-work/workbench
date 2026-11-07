@@ -8,15 +8,14 @@ import (
 	"time"
 
 	domainevent "github.com/go-jimu/components/ddd/event"
-	"github.com/talgent-work/workbench/pkg/eventlog"
-	"github.com/talgent-work/workbench/pkg/nativeauth"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/eventlog"
+	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 
-	"connectrpc.com/connect"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/connectlog"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 
 	"go.uber.org/fx"
 
@@ -33,7 +32,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/inputsettlements"
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/userdirectory"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 // StorageConfig locates Storage's Sandbox Mount Contract.
@@ -179,25 +178,17 @@ var Module = fx.Module("domain.agent",
 // RegisterRPCHandlers mounts the work and private APIs on the controlplane
 // listener. recovery is nil where RecoveryModule is not composed.
 func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, config RPCConfig, logger *slog.Logger, recovery *application.Recovery) {
-	publicPath, publicHandler := agentpublicv1connect.NewAgentWorkServiceHandler(transport.NewWorkHandler(app), publicOptions(logger))
-	mux.Handle(publicPath, publicHandler)
-	options := []connect.HandlerOption{connect.WithInterceptors(connectlog.NewInterceptor(logger))}
-	path, handler := agentprivatev1connect.NewAgentServiceHandler(transport.NewAgentHandler(app, config.ControlToken), options...)
-	mux.Handle(path, handler)
-	path, handler = agentprivatev1connect.NewWorkAccessServiceHandler(transport.NewWorkAccessHandler(app, config.ControlToken), options...)
-	mux.Handle(path, handler)
-	path, handler = agentprivatev1connect.NewWorkspaceReadingServiceHandler(transport.NewWorkspaceReadingHandler(app, config.ControlToken), options...)
-	mux.Handle(path, handler)
-	path, handler = agentprivatev1connect.NewWorkFactsServiceHandler(transport.NewWorkFactsHandler(app, config.ControlToken), options...)
-	mux.Handle(path, handler)
-	path, handler = agentprivatev1connect.NewExecutionFeedbackServiceHandler(transport.NewFeedbackHandler(app, recovery, config.FeedbackToken), options...)
-	mux.Handle(path, handler)
-}
-
-// publicOptions take a public service's person from the gateway-asserted
-// identity alone.
-func publicOptions(logger *slog.Logger) connect.HandlerOption {
-	return connect.WithInterceptors(connectlog.NewInterceptor(logger), authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	// A public service's person is the gateway-asserted identity alone.
+	public := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	agentpublicv1connect.RegisterAgentWorkServiceHandler(public, transport.NewWorkHandler(app))
+	connectserver.Mount(mux, public)
+	private := connectserver.New(logger)
+	agentprivatev1connect.RegisterAgentServiceHandler(private, transport.NewAgentHandler(app, config.ControlToken))
+	agentprivatev1connect.RegisterWorkAccessServiceHandler(private, transport.NewWorkAccessHandler(app, config.ControlToken))
+	agentprivatev1connect.RegisterWorkspaceReadingServiceHandler(private, transport.NewWorkspaceReadingHandler(app, config.ControlToken))
+	agentprivatev1connect.RegisterWorkFactsServiceHandler(private, transport.NewWorkFactsHandler(app, config.ControlToken))
+	agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(private, transport.NewFeedbackHandler(app, recovery, config.FeedbackToken))
+	connectserver.Mount(mux, private)
 }
 
 // AgentLibraryProcedures are the Personal Library reads the Agent of a Work
@@ -211,11 +202,12 @@ var AgentLibraryProcedures = []string{
 // the gateway-asserted person, and the Library reads for an Agent acting for
 // its Work's owner.
 func RegisterPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.PersonalWorks, native *nativeauth.LiveWorkClient, logger *slog.Logger) {
-	options := connect.WithInterceptors(connectlog.NewInterceptor(logger), authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{
+	server := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{
 		Enabled: true, NativeProcessVerifier: native, NativeProcedures: AgentLibraryProcedures,
 	}))
-	mux.Handle(agentpublicv1connect.NewPersonalWorkServiceHandler(transport.NewPersonalWorkHandler(works), options))
-	mux.Handle(agentpublicv1connect.NewWorkFileServiceHandler(transport.NewWorkFileHandler(works), options))
+	agentpublicv1connect.RegisterPersonalWorkServiceHandler(server, transport.NewPersonalWorkHandler(works))
+	agentpublicv1connect.RegisterWorkFileServiceHandler(server, transport.NewWorkFileHandler(works))
+	connectserver.Mount(mux, server)
 }
 
 // eventSubscriptions are the handlers of Agent's domain events. Workspace

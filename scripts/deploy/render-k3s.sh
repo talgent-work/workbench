@@ -2,9 +2,9 @@
 # Renders a k3s kustomization (the Workbench base under deploy/k3s, or an
 # overlay of it kept elsewhere, which names the base ../workbench) as it is
 # applied: the deployment's environment (lib/environment.sh) in place of the
-# placeholders, images at TALGENT_REGISTRY with their product's tag
-# (lib/images.sh), the platform release the Workbench's tag names, and the
-# Collector pipeline's hash.
+# placeholders, the components its deployment switches turn on, images at
+# TALGENT_REGISTRY with their product's tag (lib/images.sh), the platform
+# release the Workbench's tag names, and the Collector pipeline's hash.
 #
 # --placeholders renders with the placeholder values the kustomizations' own
 # environment.env files hold, without a deployment's environment: the offline
@@ -54,6 +54,20 @@ else
 fi
 if [[ "${placeholders}" == "0" ]]; then
   find "${work}/tree" -name environment.env -exec cp "${work}/environment.env" {} \;
+  environment_files=("${work}/environment.env")
+else
+  mapfile -t environment_files < <(k3s_placeholder_files "${target}")
+fi
+
+# The deployment switches of the environment: each one turned away from its
+# default adds a component of the base's components/, whichever kustomization
+# is rendered.
+switch_components="$(k3s_switch_components "${environment_files[@]}")"
+if [[ -n "${switch_components}" ]]; then
+  {
+    echo "components:"
+    sed 's#^#  - components/#' <<< "${switch_components}"
+  } >> "${work}/tree/workbench/kustomization.yaml"
 fi
 
 # A vX.Y.Z tag deploys that platform release; the Computer Gateway tells the

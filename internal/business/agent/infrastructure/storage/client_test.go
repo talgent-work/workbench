@@ -6,11 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
 
-	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 )
 
@@ -21,10 +22,10 @@ type judge struct {
 	heads []string
 }
 
-func (j *judge) JudgeFilePreview(_ context.Context, r *connect.Request[storageprivatev1.JudgeFilePreviewRequest]) (*connect.Response[storageprivatev1.JudgeFilePreviewResponse], error) {
-	j.heads = append(j.heads, string(r.Msg.GetHead()))
+func (j *judge) JudgeFilePreview(_ context.Context, r *storageprivatev1.JudgeFilePreviewRequest) (*storageprivatev1.JudgeFilePreviewResponse, error) {
+	j.heads = append(j.heads, string(r.GetHead()))
 	response := &storageprivatev1.JudgeFilePreviewResponse{ReadLimitBytes: 1 << 20}
-	switch r.Msg.GetName() {
+	switch r.GetName() {
 	case "notes.md":
 		response.Preview = &storageprivatev1.FilePreview{Mode: storageprivatev1.PreviewMode_PREVIEW_MODE_DIRECT, Display: storageprivatev1.PreviewDisplay_PREVIEW_DISPLAY_TEXT}
 	case "data.bin":
@@ -32,7 +33,7 @@ func (j *judge) JudgeFilePreview(_ context.Context, r *connect.Request[storagepr
 	default:
 		response.Preview = &storageprivatev1.FilePreview{Mode: storageprivatev1.PreviewMode_PREVIEW_MODE_RENDER, Display: storageprivatev1.PreviewDisplay_PREVIEW_DISPLAY_PDF}
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
 // Storage's verdict on a Managed Work's file reaches Agent with the bytes its
@@ -40,7 +41,9 @@ func (j *judge) JudgeFilePreview(_ context.Context, r *connect.Request[storagepr
 func TestStorageJudgesAManagedWorksFilePreview(t *testing.T) {
 	storage := &judge{}
 	mux := http.NewServeMux()
-	mux.Handle(storageprivatev1connect.NewSandboxMountServiceHandler(storage))
+	srv := connect.NewServer()
+	storageprivatev1connect.RegisterSandboxMountServiceHandler(srv, storage)
+	connecthttp.Mount(mux, srv, connecthttp.WithReadMaxBytes(0))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	client, err := NewClient(server.Client(), Config{Address: server.URL, Token: "storage-token"})

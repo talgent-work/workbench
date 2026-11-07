@@ -8,19 +8,22 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	marketplaceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
+	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func TestCredentialSupplyRetainsOwnerAuthorizationAndTarget(t *testing.T) {
 	service := &credentialService{}
 	mux := http.NewServeMux()
-	mux.Handle(marketplaceprivatev1connect.NewCredentialServiceHandler(service))
+	srv := connect.NewServer()
+	marketplaceprivatev1connect.RegisterCredentialServiceHandler(srv, service)
+	connecthttp.Mount(mux, srv, connecthttp.WithReadMaxBytes(0))
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	client, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL, CredentialToken: "service-secret"})
@@ -66,10 +69,11 @@ type credentialService struct {
 	reject   bool
 }
 
-func (s *credentialService) SupplyRepositoryCredential(_ context.Context, r *connect.Request[marketplaceprivatev1.SupplyRepositoryCredentialRequest]) (*connect.Response[marketplaceprivatev1.SupplyRepositoryCredentialResponse], error) {
-	if s.reject || r.Header().Get("Authorization") != "Bearer service-secret" || r.Header().Get(authn.HeaderServiceID) != "agent" || r.Header().Get(authn.HeaderDelegatedUserID) != "owner" {
-		return nil, connect.NewError(connect.CodePermissionDenied, nil)
+func (s *credentialService) SupplyRepositoryCredential(ctx context.Context, r *marketplaceprivatev1.SupplyRepositoryCredentialRequest) (*marketplaceprivatev1.SupplyRepositoryCredentialResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if s.reject || info.RequestHeader().Get("Authorization") != "Bearer service-secret" || info.RequestHeader().Get(authn.HeaderServiceID) != "agent" || info.RequestHeader().Get(authn.HeaderDelegatedUserID) != "owner" {
+		return nil, connect.NewError(connect.CodePermissionDenied, "")
 	}
-	s.received = application.RepositoryCredentialRequest{OwnerUserID: r.Msg.OwnerUserId, AuthorizationID: r.Msg.AuthorizationId, RepositoryID: r.Msg.RepositoryId, CloneURL: r.Msg.CloneUrl}
-	return connect.NewResponse(&marketplaceprivatev1.SupplyRepositoryCredentialResponse{Username: "x-access-token", Password: "provider-secret", ExpiresAtUnixMs: 1900000000000}), nil
+	s.received = application.RepositoryCredentialRequest{OwnerUserID: r.OwnerUserId, AuthorizationID: r.AuthorizationId, RepositoryID: r.RepositoryId, CloneURL: r.CloneUrl}
+	return &marketplaceprivatev1.SupplyRepositoryCredentialResponse{Username: "x-access-token", Password: "provider-secret", ExpiresAtUnixMs: 1900000000000}, nil
 }

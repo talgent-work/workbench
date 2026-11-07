@@ -9,13 +9,13 @@ KAFKA_CONTAINER="${KAFKA_CONTAINER:-kafka}"
 # The Workbench's Integration Messages, and any further topics given as
 # arguments, such as an overlay's.
 TOPICS=(
-  "talgent.agent.events.v1.PlatformInputSettled"
-  "talgent.marketplace.events.v1.CredentialChanged"
-  "talgent.storage.events.v1.FileChanged"
-  "talgent.computer.events.v1.DeskAssigned"
-  "talgent.computer.events.v1.ComputerBecameUnreachable"
-  "talgent.computer.events.v1.ComputerBecameReachable"
-  "talgent.computer.events.v1.ComputerRemoved"
+  "agent.integration.v1.PlatformInputSettledV1"
+  "marketplace.integration.v1.CredentialChangedV1"
+  "storage.integration.v1.FileChangedV1"
+  "computer.integration.v1.DeskAssignedV1"
+  "computer.integration.v1.ComputerBecameUnreachableV1"
+  "computer.integration.v1.ComputerBecameReachableV1"
+  "computer.integration.v1.ComputerRemovedV1"
   "$@"
 )
 

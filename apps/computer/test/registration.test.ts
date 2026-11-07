@@ -36,7 +36,7 @@ const started = {
 test('start sends the machine name and reads the codes', async () => {
   const { deps, calls } = stub([{ status: 200, body: { ...started, expiresInSeconds: 600, intervalSeconds: 5 } }])
   const result = await startRegistration(deps, 'https://talgent.example', 'laptop')
-  assert.equal(calls[0].url, 'https://talgent.example/api/talgent.computer.public.v1.RegistrationService/StartRegistration')
+  assert.equal(calls[0].url, 'https://talgent.example/api/computer.public.v1.RegistrationService/StartRegistration')
   assert.deepEqual(calls[0].body, { machineName: 'laptop' })
   assert.equal(result.userCode, 'ABCD-EFGH')
   assert.equal(result.expiresInSeconds, 600)

@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { ModelVendor, WorkModelOptionSchema, type WorkModelOption, type WorkModelSelection } from "@talgent/workbench-contracts/agent/public/v1/model_pb";
+import { ModelVendor, WorkModelOptionSchema, type WorkModelOption, type WorkModelSelection } from "@talgent/contracts/agent/public/v1/model_pb";
 
 // What a Work's conversation uses for its model: a Model Configuration the
 // platform provides, or, on a Managed Computer, the machine's own Claude login.

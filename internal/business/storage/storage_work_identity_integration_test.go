@@ -11,19 +11,20 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	agentmodule "github.com/talgent-work/workbench/internal/business/agent"
 	agentapplication "github.com/talgent-work/workbench/internal/business/agent/application"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	agentdomain "github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/nativeauth"
 )
 
 // A Work's identity reaches Storage as Agent assembles it: a Work started on
@@ -58,7 +59,7 @@ func TestAManagedWorkIdentityCarriesNoWorkspaceSoItsSentContentIsTaken(t *testin
 	require.NoError(t, err)
 
 	storageMux := http.NewServeMux()
-	storageMux.Handle(artifactServiceHandler(f.app))
+	mountArtifactService(storageMux, f.app, slog.Default())
 	storageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The native API resolves the Work's credential through Agent.
 		process, err := live.VerifyNativeProcess(r.Context(), r.Header.Get("X-Work"), "credential")
@@ -69,12 +70,12 @@ func TestAManagedWorkIdentityCarriesNoWorkspaceSoItsSentContentIsTaken(t *testin
 		storageMux.ServeHTTP(w, r.WithContext(authn.WithNativeProcess(r.Context(), process)))
 	}))
 	t.Cleanup(storageServer.Close)
-	client := storageprivatev1connect.NewArtifactServiceClient(storageServer.Client(), storageServer.URL)
+	client := storageprivatev1connect.NewArtifactServiceClient(connect.NewClient(connecthttp.NewTransport(storageServer.Client(), storageServer.URL)))
 	publish := func(workID, name string) error {
-		request := connect.NewRequest(&storageprivatev1.CreateArtifactRequest{Name: name, Content: []byte("sent")})
-		request.Header().Set(authn.HeaderSpaceToken, space.SpaceToken)
-		request.Header().Set("X-Work", workID)
-		_, err := client.CreateArtifact(t.Context(), request)
+		ctx, info := connect.NewClientContext(t.Context())
+		info.RequestHeader().Set(authn.HeaderSpaceToken, space.SpaceToken)
+		info.RequestHeader().Set("X-Work", workID)
+		_, err := client.CreateArtifact(ctx, &storageprivatev1.CreateArtifactRequest{Name: name, Content: []byte("sent")})
 		return err
 	}
 

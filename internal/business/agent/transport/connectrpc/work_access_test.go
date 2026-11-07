@@ -10,14 +10,15 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	domainevent "github.com/go-jimu/components/ddd/event"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	agentmodule "github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
@@ -25,8 +26,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
-	"github.com/talgent-work/workbench/pkg/authn"
 )
 
 // accessFixture serves Agent's handlers over in-memory Works: a human's Work
@@ -71,10 +72,10 @@ func newAccessFixtureWith(t *testing.T, views application.WorkspaceViewPort) *ac
 	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, slog.Default(), nil)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	f.public = agentpublicv1connect.NewAgentWorkServiceClient(server.Client(), server.URL)
-	f.access = agentprivatev1connect.NewWorkAccessServiceClient(server.Client(), server.URL)
-	f.workspaces = agentprivatev1connect.NewWorkspaceReadingServiceClient(server.Client(), server.URL)
-	f.agent = agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL)
+	f.public = agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	f.access = agentprivatev1connect.NewWorkAccessServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	f.workspaces = agentprivatev1connect.NewWorkspaceReadingServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	f.agent = agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	return f
 }
 
@@ -96,20 +97,21 @@ func accessWork(t *testing.T, sessions *rpcSessions, definition *domain.AgentDef
 	return work.ID
 }
 
-func asUser[T any](user string, message *T) *connect.Request[T] {
-	request := connect.NewRequest(message)
-	request.Header().Set(authn.HeaderServiceID, "gateway-test")
-	request.Header().Set(authn.HeaderDelegatedUserID, user)
-	return request
+// asUser is the context of a call the gateway delegates for user.
+func asUser(ctx context.Context, user string) context.Context {
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set(authn.HeaderServiceID, "gateway-test")
+	info.RequestHeader().Set(authn.HeaderDelegatedUserID, user)
+	return ctx
 }
 
 func (f *accessFixture) admit(t *testing.T, work, reader string, admission *agentprivatev1.ReaderAdmission) (agentprivatev1.WorkReadBasis, connect.Code) {
 	t.Helper()
-	response, err := f.access.AdmitWorkReader(context.Background(), authenticated(&agentprivatev1.AdmitWorkReaderRequest{WorkId: work, ReaderId: reader, Admission: admission}, "control"))
+	response, err := f.access.AdmitWorkReader(authenticated(context.Background(), "control"), &agentprivatev1.AdmitWorkReaderRequest{WorkId: work, ReaderId: reader, Admission: admission})
 	if err != nil {
 		return 0, connect.CodeOf(err)
 	}
-	return response.Msg.GetBasis(), 0
+	return response.GetBasis(), 0
 }
 
 var memberOfProjectA = &agentprivatev1.ReaderAdmission{Reference: "project", Value: "project-a"}
@@ -123,22 +125,22 @@ func TestWorkReadersFollowOwnerVisibilityAndWorkShares(t *testing.T) {
 	_, code := f.admit(t, f.humanWork, "member", memberOfProjectA)
 	require.Equal(t, connect.CodePermissionDenied, code, "an employee's Work is private by default")
 
-	_, err := f.access.GrantWorkShare(ctx, authenticated(&agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "reader", Admission: memberOfProjectA}, "control"))
+	_, err := f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "reader", Admission: memberOfProjectA})
 	require.NoError(t, err)
 	basis, _ = f.admit(t, f.humanWork, "reader", nil)
 	require.Equal(t, agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE, basis)
 
-	_, err = f.access.GrantWorkShare(ctx, authenticated(&agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "outsider", Admission: &agentprivatev1.ReaderAdmission{Reference: "project", Value: "project-b"}}, "control"))
+	_, err = f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "outsider", Admission: &agentprivatev1.ReaderAdmission{Reference: "project", Value: "project-b"}})
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a Work Share never crosses the Work's Project")
-	_, err = f.access.GrantWorkShare(ctx, authenticated(&agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "reader", ReaderId: "member", Admission: memberOfProjectA}, "control"))
+	_, err = f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "reader", ReaderId: "member", Admission: memberOfProjectA})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "only the owner shares")
-	_, err = f.access.GrantWorkShare(ctx, connect.NewRequest(&agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "member", Admission: memberOfProjectA}))
+	_, err = f.access.GrantWorkShare(ctx, &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "member", Admission: memberOfProjectA})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err), "only a trusted caller supplies membership")
 
-	changed, err := f.public.ChangeWorkVisibility(ctx, asUser("owner", &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: true}))
+	changed, err := f.public.ChangeWorkVisibility(asUser(ctx, "owner"), &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: true})
 	require.NoError(t, err)
-	require.True(t, changed.Msg.GetWork().GetVisibilityPublic())
-	require.Equal(t, []string{"reader"}, changed.Msg.GetWork().GetShareReaderIds())
+	require.True(t, changed.GetWork().GetVisibilityPublic())
+	require.Equal(t, []string{"reader"}, changed.GetWork().GetShareReaderIds())
 	basis, _ = f.admit(t, f.humanWork, "member", memberOfProjectA)
 	require.Equal(t, agentprivatev1.WorkReadBasis_WORK_READ_BASIS_PUBLIC, basis)
 	_, code = f.admit(t, f.humanWork, "member", nil)
@@ -155,33 +157,33 @@ func TestAnAdmittedReaderStartsFromTheWorksCurrentState(t *testing.T) {
 	ctx := context.Background()
 	f := newAccessFixture(t)
 	require.NoError(t, f.sessions.items[f.digitalWork].RecordSubAgents(10, []domain.SubAgent{{ID: "a", Type: "Explore", Task: "map the code", Status: domain.SubAgentRunning}}))
-	response, err := f.access.AdmitWorkReader(ctx, authenticated(&agentprivatev1.AdmitWorkReaderRequest{WorkId: f.digitalWork, ReaderId: "member", Admission: memberOfProjectA, IncludeWorkState: true}, "control"))
+	response, err := f.access.AdmitWorkReader(authenticated(ctx, "control"), &agentprivatev1.AdmitWorkReaderRequest{WorkId: f.digitalWork, ReaderId: "member", Admission: memberOfProjectA, IncludeWorkState: true})
 	require.NoError(t, err)
-	state := response.Msg.GetWorkState()
+	state := response.GetWorkState()
 	require.Equal(t, f.digitalWork, state.GetAgentWorkId())
 	require.Equal(t, "starting", state.GetState())
 	require.Len(t, state.GetSubagents(), 1)
 	require.Equal(t, "map the code", state.GetSubagents()[0].GetTask())
 	require.Equal(t, "running", state.GetSubagents()[0].GetStatus())
 
-	response, err = f.access.AdmitWorkReader(ctx, authenticated(&agentprivatev1.AdmitWorkReaderRequest{WorkId: f.digitalWork, ReaderId: "member", Admission: memberOfProjectA}, "control"))
+	response, err = f.access.AdmitWorkReader(authenticated(ctx, "control"), &agentprivatev1.AdmitWorkReaderRequest{WorkId: f.digitalWork, ReaderId: "member", Admission: memberOfProjectA})
 	require.NoError(t, err)
-	require.Nil(t, response.Msg.GetWorkState(), "only a caller asking for it reads the state")
-	_, err = f.access.AdmitWorkReader(ctx, authenticated(&agentprivatev1.AdmitWorkReaderRequest{WorkId: f.humanWork, ReaderId: "member", Admission: memberOfProjectA, IncludeWorkState: true}, "control"))
+	require.Nil(t, response.GetWorkState(), "only a caller asking for it reads the state")
+	_, err = f.access.AdmitWorkReader(authenticated(ctx, "control"), &agentprivatev1.AdmitWorkReaderRequest{WorkId: f.humanWork, ReaderId: "member", Admission: memberOfProjectA, IncludeWorkState: true})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 }
 
 func TestOnlyTheOwnerOfAHumansWorkChangesItsAccess(t *testing.T) {
 	ctx := context.Background()
 	f := newAccessFixture(t)
-	_, err := f.public.ChangeWorkVisibility(ctx, asUser("member", &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: true}))
+	_, err := f.public.ChangeWorkVisibility(asUser(ctx, "member"), &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: true})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	_, err = f.public.RevokeWorkShare(ctx, asUser("member", &agentpublicv1.RevokeWorkShareRequest{WorkId: f.humanWork, ReaderUserId: "reader"}))
+	_, err = f.public.RevokeWorkShare(asUser(ctx, "member"), &agentpublicv1.RevokeWorkShareRequest{WorkId: f.humanWork, ReaderUserId: "reader"})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 
-	_, err = f.public.ChangeWorkVisibility(ctx, asUser("owner", &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.digitalWork, Public: false}))
+	_, err = f.public.ChangeWorkVisibility(asUser(ctx, "owner"), &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.digitalWork, Public: false})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a project-scoped Agent's Work keeps its declared visibility")
-	_, err = f.access.GrantWorkShare(ctx, authenticated(&agentprivatev1.GrantWorkShareRequest{WorkId: f.digitalWork, RequesterId: "owner", ReaderId: "member", Admission: memberOfProjectA}, "control"))
+	_, err = f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.digitalWork, RequesterId: "owner", ReaderId: "member", Admission: memberOfProjectA})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a project-scoped Agent's Work has no Work Shares")
 	basis, _ := f.admit(t, f.digitalWork, "member", memberOfProjectA)
 	require.Equal(t, agentprivatev1.WorkReadBasis_WORK_READ_BASIS_PUBLIC, basis, "a project-scoped Agent's Work is public within its Project")
@@ -191,12 +193,12 @@ func TestRevokingAShareOrMakingTheWorkPrivateWithdrawsReadersImmediately(t *test
 	ctx := context.Background()
 	f := newAccessFixture(t)
 	for _, reader := range []string{"reader", "kept"} {
-		_, err := f.access.GrantWorkShare(ctx, authenticated(&agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: reader, Admission: memberOfProjectA}, "control"))
+		_, err := f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: reader, Admission: memberOfProjectA})
 		require.NoError(t, err)
 	}
-	revoked, err := f.public.RevokeWorkShare(ctx, asUser("owner", &agentpublicv1.RevokeWorkShareRequest{WorkId: f.humanWork, ReaderUserId: "reader"}))
+	revoked, err := f.public.RevokeWorkShare(asUser(ctx, "owner"), &agentpublicv1.RevokeWorkShareRequest{WorkId: f.humanWork, ReaderUserId: "reader"})
 	require.NoError(t, err)
-	require.Equal(t, []string{"kept"}, revoked.Msg.GetWork().GetShareReaderIds())
+	require.Equal(t, []string{"kept"}, revoked.GetWork().GetShareReaderIds())
 	_, code := f.admit(t, f.humanWork, "reader", nil)
 	require.Equal(t, connect.CodePermissionDenied, code)
 	require.Eventually(t, func() bool {
@@ -205,9 +207,9 @@ func TestRevokingAShareOrMakingTheWorkPrivateWithdrawsReadersImmediately(t *test
 		})
 	}, time.Second, 10*time.Millisecond)
 
-	_, err = f.public.ChangeWorkVisibility(ctx, asUser("owner", &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: true}))
+	_, err = f.public.ChangeWorkVisibility(asUser(ctx, "owner"), &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: true})
 	require.NoError(t, err)
-	_, err = f.public.ChangeWorkVisibility(ctx, asUser("owner", &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: false}))
+	_, err = f.public.ChangeWorkVisibility(asUser(ctx, "owner"), &agentpublicv1.ChangeWorkVisibilityRequest{WorkId: f.humanWork, Public: false})
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return slices.ContainsFunc(f.withdrawals.all(), func(w eventhandler.WorkAccessWithdrawal) bool {
@@ -219,33 +221,33 @@ func TestRevokingAShareOrMakingTheWorkPrivateWithdrawsReadersImmediately(t *test
 func TestOwnerOperationsRefuseOtherReaders(t *testing.T) {
 	ctx := context.Background()
 	f := newAccessFixture(t)
-	_, err := f.access.GrantWorkShare(ctx, authenticated(&agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "reader", Admission: memberOfProjectA}, "control"))
+	_, err := f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "reader", Admission: memberOfProjectA})
 	require.NoError(t, err)
-	_, err = f.public.GetWork(ctx, asUser("reader", &agentpublicv1.GetWorkRequest{WorkId: f.humanWork}))
+	_, err = f.public.GetWork(asUser(ctx, "reader"), &agentpublicv1.GetWorkRequest{WorkId: f.humanWork})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "a Work Share holder reads the stream, not the owner's Work controls")
-	owned, err := f.public.GetWork(ctx, asUser("owner", &agentpublicv1.GetWorkRequest{WorkId: f.humanWork}))
+	owned, err := f.public.GetWork(asUser(ctx, "owner"), &agentpublicv1.GetWorkRequest{WorkId: f.humanWork})
 	require.NoError(t, err)
-	require.Equal(t, []string{"reader"}, owned.Msg.GetWork().GetShareReaderIds())
+	require.Equal(t, []string{"reader"}, owned.GetWork().GetShareReaderIds())
 }
 
 func TestCancelledCreationRequestIdentityNeverCreatesAWork(t *testing.T) {
 	ctx := context.Background()
 	f := newAccessFixture(t)
 	requestID := uuid.NewString()
-	outcome, err := f.agent.GetWorkCreation(ctx, authenticated(&agentprivatev1.GetWorkCreationRequest{RequestId: requestID}, "control"))
+	outcome, err := f.agent.GetWorkCreation(authenticated(ctx, "control"), &agentprivatev1.GetWorkCreationRequest{RequestId: requestID})
 	require.NoError(t, err)
-	require.Equal(t, agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_UNKNOWN, outcome.Msg.GetOutcome())
+	require.Equal(t, agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_UNKNOWN, outcome.GetOutcome())
 
-	cancelled, err := f.agent.CancelWorkCreation(ctx, authenticated(&agentprivatev1.CancelWorkCreationRequest{RequestId: requestID}, "control"))
+	cancelled, err := f.agent.CancelWorkCreation(authenticated(ctx, "control"), &agentprivatev1.CancelWorkCreationRequest{RequestId: requestID})
 	require.NoError(t, err)
-	require.Empty(t, cancelled.Msg.GetWorkId())
-	outcome, err = f.agent.GetWorkCreation(ctx, authenticated(&agentprivatev1.GetWorkCreationRequest{RequestId: requestID}, "control"))
+	require.Empty(t, cancelled.GetWorkId())
+	outcome, err = f.agent.GetWorkCreation(authenticated(ctx, "control"), &agentprivatev1.GetWorkCreationRequest{RequestId: requestID})
 	require.NoError(t, err)
-	require.Equal(t, agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_CANCELLED, outcome.Msg.GetOutcome())
+	require.Equal(t, agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_CANCELLED, outcome.GetOutcome())
 
 	works := len(f.sessions.items)
-	_, err = f.agent.PrepareWorkExecution(ctx, authenticated(&agentprivatev1.PrepareWorkExecutionRequest{SubjectId: "owner", RequestId: requestID, WorkBranch: "talgent/" + "TAL-1", InputId: uuid.NewString(), Input: "Start",
-		Creation: &agentprivatev1.CreateWorkRequest{SubjectId: "owner", AgentId: uuid.NewString(), WorkspaceReference: "workspace", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project-a"}}, "control"))
+	_, err = f.agent.PrepareWorkExecution(authenticated(ctx, "control"), &agentprivatev1.PrepareWorkExecutionRequest{SubjectId: "owner", RequestId: requestID, WorkBranch: "talgent/" + "TAL-1", InputId: uuid.NewString(), Input: "Start",
+		Creation: &agentprivatev1.CreateWorkRequest{SubjectId: "owner", AgentId: uuid.NewString(), WorkspaceReference: "workspace", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project-a"}})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a delayed request carrying a cancelled identity is refused")
 	require.Len(t, f.sessions.items, works, "and creates nothing")
 }

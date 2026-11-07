@@ -1,4 +1,4 @@
-import type { WorkFile } from "@talgent/workbench-contracts/agent/public/v1/work_file_pb";
+import type { WorkFile } from "@talgent/contracts/agent/public/v1/work_file_pb";
 import { useCurrentUser } from "../../lib/account-service";
 import { requestWorkFilePreview, useDownloadWorkFile, workFileKey, workFilePreview } from "../../lib/work-file-service";
 import { useOwnWorkUsageStatus } from "../analytics/work-usage/work-status";

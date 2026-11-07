@@ -10,8 +10,8 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
-	pkgtaskqueue "github.com/talgent-work/workbench/pkg/taskqueue"
 	"go.uber.org/fx"
 )
 

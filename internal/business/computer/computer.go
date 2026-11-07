@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
@@ -23,8 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1/computerprivatev1connect"
-	"github.com/talgent-work/workbench/gen/go/talgent/computer/public/v1/computerpublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/computer/private/v1/computerprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/computer/public/v1/computerpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/application/messagepublisher"
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
@@ -32,10 +31,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/computer/infrastructure/cluster"
 	"github.com/talgent-work/workbench/internal/business/computer/infrastructure/registration"
 	transport "github.com/talgent-work/workbench/internal/business/computer/transport/connectrpc"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/computerconnection"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/connectlog"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 // Database is the Workbench core's MySQL engine, holding Computers and Desks.
@@ -261,11 +260,13 @@ func registerHandlers(mux *http.ServeMux, app *application.Application, config C
 	if err != nil || verification.Scheme != "https" && verification.Scheme != "http" || verification.Host == "" {
 		return errors.New("computer: an absolute verification URI is required")
 	}
-	options := connect.WithInterceptors(connectlog.NewInterceptor(logger))
-	mux.Handle(computerprivatev1connect.NewAdmissionServiceHandler(transport.NewAdmissionHandler(app, config.ControlToken), options))
-	mux.Handle(computerprivatev1connect.NewConnectionServiceHandler(transport.NewConnectionHandler(app, config.ControlToken), options))
-	mux.Handle(computerpublicv1connect.NewRegistrationServiceHandler(transport.NewRegistrationHandler(app, verification.String()), options))
-	mux.Handle(computerpublicv1connect.NewComputerServiceHandler(transport.NewComputerHandler(app),
-		connect.WithInterceptors(connectlog.NewInterceptor(logger), authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))))
+	server := connectserver.New(logger)
+	computerprivatev1connect.RegisterAdmissionServiceHandler(server, transport.NewAdmissionHandler(app, config.ControlToken))
+	computerprivatev1connect.RegisterConnectionServiceHandler(server, transport.NewConnectionHandler(app, config.ControlToken))
+	computerpublicv1connect.RegisterRegistrationServiceHandler(server, transport.NewRegistrationHandler(app, verification.String()))
+	connectserver.Mount(mux, server)
+	public := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	computerpublicv1connect.RegisterComputerServiceHandler(public, transport.NewComputerHandler(app))
+	connectserver.Mount(mux, public)
 	return nil
 }

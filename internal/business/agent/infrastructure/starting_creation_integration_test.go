@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"

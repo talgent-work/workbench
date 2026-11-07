@@ -1,6 +1,6 @@
 import type { JsonObject } from "@bufbuild/protobuf";
 import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Connector, InstalledPlugin, PluginSummary } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import type { Connector, InstalledPlugin, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { marketplaceClient } from "./client";
 import { useCurrentUser } from "./account-service";
 

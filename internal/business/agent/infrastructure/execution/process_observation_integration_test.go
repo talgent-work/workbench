@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"xorm.io/xorm"
 )
@@ -26,11 +27,12 @@ type nativeProcessObservation struct {
 	state dispatcherprivatev1.ProcessState
 }
 
-func (h nativeProcessObservation) ObserveProcess(_ context.Context, request *connect.Request[dispatcherprivatev1.ObserveProcessRequest]) (*connect.Response[dispatcherprivatev1.ObserveProcessResponse], error) {
-	if request.Header().Get("Authorization") != "Bearer dispatcher-secret" || request.Msg.ProcessId != "current-process" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, domain.ErrInvalidWork)
+func (h nativeProcessObservation) ObserveProcess(ctx context.Context, request *dispatcherprivatev1.ObserveProcessRequest) (*dispatcherprivatev1.ObserveProcessResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if info.RequestHeader().Get("Authorization") != "Bearer dispatcher-secret" || request.ProcessId != "current-process" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, domain.ErrInvalidWork.Error()).WithCause(domain.ErrInvalidWork)
 	}
-	return connect.NewResponse(&dispatcherprivatev1.ObserveProcessResponse{State: h.state}), nil
+	return &dispatcherprivatev1.ObserveProcessResponse{State: h.state}, nil
 }
 
 // An old deleted allocation is not evidence that the process of a newly
@@ -42,7 +44,9 @@ func TestProcessObservationDistinguishesRetiredEnvironmentFromCurrentStart(t *te
 	t.Cleanup(func() { _ = db.Close() })
 	sandboxes, _, lifecycle := sandboxClient(t)
 	mux := http.NewServeMux()
-	path, handler := dispatcherprivatev1connect.NewExecutionServiceHandler(nativeProcessObservation{state: dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING})
+	path, handler := "/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, nativeProcessObservation{state: dispatcherprivatev1.ProcessState_PROCESS_STATE_RUNNING})
+	})
 	mux.Handle(path, handler)
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -124,7 +128,9 @@ func TestLateComputeRequestCannotDeleteRunningCurrentProcess(t *testing.T) {
 func allocationObserverFixture(t *testing.T, p *Provisioning, state dispatcherprivatev1.ProcessState) *ProcessObservations {
 	t.Helper()
 	mux := http.NewServeMux()
-	path, handler := dispatcherprivatev1connect.NewExecutionServiceHandler(nativeProcessObservation{state: state})
+	path, handler := "/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, nativeProcessObservation{state: state})
+	})
 	mux.Handle(path, handler)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)

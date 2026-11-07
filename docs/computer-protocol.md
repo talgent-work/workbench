@@ -420,7 +420,7 @@ request to answer gets `202`. A call without a string `source_path` is forwarded
 `source_content`, and the platform Connector refuses it.
 
 On its `/api` route the proxy likewise completes a Connect JSON `POST` of
-`talgent.storage.private.v1.ArtifactService/CreateArtifact` or `ReplaceArtifact` whose body has a string
+`storage.private.v1.ArtifactService/CreateArtifact` or `ReplaceArtifact` whose body has a string
 `path` and no `content`: it reads `path` as above and forwards the body with `path` replaced by
 `content`, the file's bytes base64-encoded. A source failing the checks above is answered by the proxy
 as the native API refuses a Cloud Work's source, and never forwarded: `404`

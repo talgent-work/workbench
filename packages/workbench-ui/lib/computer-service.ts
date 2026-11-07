@@ -1,6 +1,6 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AdmissionPolicy as AdmissionPolicyMessage, UsableComputerKind, type ManagedComputer as ManagedComputerMessage } from "@talgent/workbench-contracts/computer/public/v1/computer_pb";
+import { AdmissionPolicy as AdmissionPolicyMessage, UsableComputerKind, type ManagedComputer as ManagedComputerMessage } from "@talgent/contracts/computer/public/v1/computer_pb";
 import { useCurrentUser } from "./account-service";
 import { computerClient } from "./client";
 import { timeAgo } from "./relative-time";

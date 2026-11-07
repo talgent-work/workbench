@@ -81,9 +81,8 @@ Credential Proxy adds; the core runtime plugin (`plugins/talgent-runtime`) teach
 | Path | Contents |
 |---|---|
 | `cmd/` | The four Go services |
-| `internal/` | Bounded contexts and shared infrastructure |
-| `pkg/` | What a service built on the Workbench uses: service assembly and test kits |
-| `proto/`, `gen/` | Contracts (ConnectRPC) and the code generated from them; `gen/ts` is `@talgent/workbench-contracts` |
+| `internal/` | Bounded contexts, shared infrastructure (`internal/pkg`) and test kits (`internal/testsupport`) |
+| `proto/`, `gen/` | The task payloads the queues persist and their generated Go code; every other contract, Go and TypeScript (`@talgent/contracts`), comes from the [contracts repository](https://github.com/talgent-work/contracts) |
 | `apps/workbench-web/` | The web app |
 | `apps/computer/` | Talgent Computer |
 | `packages/workbench-ui/` | The pages and components the web app is built from (`@talgent/workbench-ui`) |
@@ -127,8 +126,8 @@ Images build with `scripts/deploy/build-and-push-images.sh` (see the
 ## Releases
 
 Every merge to the main branch is a release `vX.Y.Z`. That one version names the Go module, the
-npm packages (`@talgent/workbench-ui`, `@talgent/workbench-contracts`,
-`@talgent/computer`), the images under `ghcr.io/talgent-work`, the Kubernetes base with
+npm packages (`@talgent/workbench-ui`, which takes `@talgent/contracts` from the web app
+that hosts it, and `@talgent/computer`), the images under `ghcr.io/talgent-work`, the Kubernetes base with
 its schema, and the core runtime plugin.
 
 ## Contributing

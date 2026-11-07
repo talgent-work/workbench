@@ -3,11 +3,10 @@ package connectrpc
 import (
 	"context"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
 )
 
@@ -20,15 +19,15 @@ func NewWorkFileHandler(works *personalwork.PersonalWorks) *WorkFileHandler {
 	return &WorkFileHandler{works: works}
 }
 
-func (h *WorkFileHandler) ListWorkFiles(ctx context.Context, request *connect.Request[agentpublicv1.ListWorkFilesRequest]) (*connect.Response[agentpublicv1.ListWorkFilesResponse], error) {
-	files, err := h.works.ListFiles(ctx, currentPerson(ctx), request.Msg.GetWorkId())
+func (h *WorkFileHandler) ListWorkFiles(ctx context.Context, request *agentpublicv1.ListWorkFilesRequest) (*agentpublicv1.ListWorkFilesResponse, error) {
+	files, err := h.works.ListFiles(ctx, currentPerson(ctx), request.GetWorkId())
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
 	response := &agentpublicv1.ListWorkFilesResponse{Files: make([]*agentpublicv1.WorkFile, 0, len(files))}
 	for _, file := range files {
 		item := &agentpublicv1.WorkFile{
-			WorkId: request.Msg.GetWorkId(), Kind: workFileKindToProto(file.Kind), Name: file.Name, SizeBytes: file.SizeBytes,
+			WorkId: request.GetWorkId(), Kind: workFileKindToProto(file.Kind), Name: file.Name, SizeBytes: file.SizeBytes,
 			ContentType: file.ContentType, UpdatedAt: timestamppb.New(file.UpdatedAt), UploaderUserId: file.UploaderUserID,
 		}
 		for _, link := range file.ShareLinks {
@@ -36,52 +35,52 @@ func (h *WorkFileHandler) ListWorkFiles(ctx context.Context, request *connect.Re
 		}
 		response.Files = append(response.Files, item)
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *WorkFileHandler) CreateWorkAttachmentUpload(ctx context.Context, request *connect.Request[agentpublicv1.CreateWorkAttachmentUploadRequest]) (*connect.Response[agentpublicv1.CreateWorkAttachmentUploadResponse], error) {
-	msg := request.Msg
+func (h *WorkFileHandler) CreateWorkAttachmentUpload(ctx context.Context, request *agentpublicv1.CreateWorkAttachmentUploadRequest) (*agentpublicv1.CreateWorkAttachmentUploadResponse, error) {
+	msg := request
 	link, err := h.works.IssueAttachmentUpload(ctx, currentPerson(ctx), msg.GetWorkId(), msg.GetName(), msg.GetReplace(), msg.GetContentType())
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.CreateWorkAttachmentUploadResponse{UploadUrl: link.URL, ExpiresAt: timestamppb.New(link.ExpiresAt)}), nil
+	return &agentpublicv1.CreateWorkAttachmentUploadResponse{UploadUrl: link.URL, ExpiresAt: timestamppb.New(link.ExpiresAt)}, nil
 }
 
-func (h *WorkFileHandler) RenameWorkAttachment(ctx context.Context, request *connect.Request[agentpublicv1.RenameWorkAttachmentRequest]) (*connect.Response[agentpublicv1.RenameWorkAttachmentResponse], error) {
-	msg := request.Msg
+func (h *WorkFileHandler) RenameWorkAttachment(ctx context.Context, request *agentpublicv1.RenameWorkAttachmentRequest) (*agentpublicv1.RenameWorkAttachmentResponse, error) {
+	msg := request
 	if err := h.works.RenameAttachment(ctx, currentPerson(ctx), msg.GetWorkId(), msg.GetName(), msg.GetNewName()); err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.RenameWorkAttachmentResponse{}), nil
+	return &agentpublicv1.RenameWorkAttachmentResponse{}, nil
 }
 
-func (h *WorkFileHandler) DeleteWorkFile(ctx context.Context, request *connect.Request[agentpublicv1.DeleteWorkFileRequest]) (*connect.Response[agentpublicv1.DeleteWorkFileResponse], error) {
-	file, err := workFile(request.Msg.GetWorkId(), request.Msg.GetKind(), request.Msg.GetName())
+func (h *WorkFileHandler) DeleteWorkFile(ctx context.Context, request *agentpublicv1.DeleteWorkFileRequest) (*agentpublicv1.DeleteWorkFileResponse, error) {
+	file, err := workFile(request.GetWorkId(), request.GetKind(), request.GetName())
 	if err == nil {
 		err = h.works.DeleteFile(ctx, currentPerson(ctx), file)
 	}
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.DeleteWorkFileResponse{}), nil
+	return &agentpublicv1.DeleteWorkFileResponse{}, nil
 }
 
-func (h *WorkFileHandler) CreateWorkFileAccessLink(ctx context.Context, request *connect.Request[agentpublicv1.CreateWorkFileAccessLinkRequest]) (*connect.Response[agentpublicv1.CreateWorkFileAccessLinkResponse], error) {
-	file, err := workFile(request.Msg.GetWorkId(), request.Msg.GetKind(), request.Msg.GetName())
+func (h *WorkFileHandler) CreateWorkFileAccessLink(ctx context.Context, request *agentpublicv1.CreateWorkFileAccessLinkRequest) (*agentpublicv1.CreateWorkFileAccessLinkResponse, error) {
+	file, err := workFile(request.GetWorkId(), request.GetKind(), request.GetName())
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	inline := request.Msg.GetDisposition() == agentpublicv1.WorkFileAccessDisposition_WORK_FILE_ACCESS_DISPOSITION_PREVIEW
+	inline := request.GetDisposition() == agentpublicv1.WorkFileAccessDisposition_WORK_FILE_ACCESS_DISPOSITION_PREVIEW
 	link, err := h.works.IssueAccessLink(ctx, currentPerson(ctx), file, inline)
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.CreateWorkFileAccessLinkResponse{AccessUrl: link.URL, ExpiresAt: timestamppb.New(link.ExpiresAt), AccessPath: link.Path}), nil
+	return &agentpublicv1.CreateWorkFileAccessLinkResponse{AccessUrl: link.URL, ExpiresAt: timestamppb.New(link.ExpiresAt), AccessPath: link.Path}, nil
 }
 
-func (h *WorkFileHandler) CreateWorkFileShareLink(ctx context.Context, request *connect.Request[agentpublicv1.CreateWorkFileShareLinkRequest]) (*connect.Response[agentpublicv1.CreateWorkFileShareLinkResponse], error) {
-	file, err := workFile(request.Msg.GetWorkId(), request.Msg.GetKind(), request.Msg.GetName())
+func (h *WorkFileHandler) CreateWorkFileShareLink(ctx context.Context, request *agentpublicv1.CreateWorkFileShareLinkRequest) (*agentpublicv1.CreateWorkFileShareLinkResponse, error) {
+	file, err := workFile(request.GetWorkId(), request.GetKind(), request.GetName())
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
@@ -89,34 +88,34 @@ func (h *WorkFileHandler) CreateWorkFileShareLink(ctx context.Context, request *
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.CreateWorkFileShareLinkResponse{ShareLink: shareLinkToProto(link)}), nil
+	return &agentpublicv1.CreateWorkFileShareLinkResponse{ShareLink: shareLinkToProto(link)}, nil
 }
 
-func (h *WorkFileHandler) StopWorkFileSharing(ctx context.Context, request *connect.Request[agentpublicv1.StopWorkFileSharingRequest]) (*connect.Response[agentpublicv1.StopWorkFileSharingResponse], error) {
-	file, err := workFile(request.Msg.GetWorkId(), request.Msg.GetKind(), request.Msg.GetName())
+func (h *WorkFileHandler) StopWorkFileSharing(ctx context.Context, request *agentpublicv1.StopWorkFileSharingRequest) (*agentpublicv1.StopWorkFileSharingResponse, error) {
+	file, err := workFile(request.GetWorkId(), request.GetKind(), request.GetName())
 	if err == nil {
 		err = h.works.StopSharing(ctx, currentPerson(ctx), file)
 	}
 	if err != nil {
 		return nil, mapPersonalWorkError(ctx, err)
 	}
-	return connect.NewResponse(&agentpublicv1.StopWorkFileSharingResponse{}), nil
+	return &agentpublicv1.StopWorkFileSharingResponse{}, nil
 }
 
-func (h *WorkFileHandler) GetWorkFilePreview(ctx context.Context, request *connect.Request[agentpublicv1.GetWorkFilePreviewRequest]) (*connect.Response[agentpublicv1.GetWorkFilePreviewResponse], error) {
-	preview, err := h.preview(ctx, request.Msg.GetWorkId(), request.Msg.GetKind(), request.Msg.GetName(), false)
+func (h *WorkFileHandler) GetWorkFilePreview(ctx context.Context, request *agentpublicv1.GetWorkFilePreviewRequest) (*agentpublicv1.GetWorkFilePreviewResponse, error) {
+	preview, err := h.preview(ctx, request.GetWorkId(), request.GetKind(), request.GetName(), false)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&agentpublicv1.GetWorkFilePreviewResponse{Preview: preview}), nil
+	return &agentpublicv1.GetWorkFilePreviewResponse{Preview: preview}, nil
 }
 
-func (h *WorkFileHandler) RequestWorkFilePreview(ctx context.Context, request *connect.Request[agentpublicv1.RequestWorkFilePreviewRequest]) (*connect.Response[agentpublicv1.RequestWorkFilePreviewResponse], error) {
-	preview, err := h.preview(ctx, request.Msg.GetWorkId(), request.Msg.GetKind(), request.Msg.GetName(), true)
+func (h *WorkFileHandler) RequestWorkFilePreview(ctx context.Context, request *agentpublicv1.RequestWorkFilePreviewRequest) (*agentpublicv1.RequestWorkFilePreviewResponse, error) {
+	preview, err := h.preview(ctx, request.GetWorkId(), request.GetKind(), request.GetName(), true)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&agentpublicv1.RequestWorkFilePreviewResponse{Preview: preview}), nil
+	return &agentpublicv1.RequestWorkFilePreviewResponse{Preview: preview}, nil
 }
 
 func (h *WorkFileHandler) preview(ctx context.Context, workID string, kind agentpublicv1.WorkFileKind, name string, render bool) (*agentpublicv1.WorkFilePreview, error) {

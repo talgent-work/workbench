@@ -10,10 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/dispatcher"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
@@ -23,6 +25,7 @@ import (
 	dispatcherredis "github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/redis"
 	transport "github.com/talgent-work/workbench/internal/business/dispatcher/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/transport/routing"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 )
 
@@ -115,14 +118,14 @@ func (r *nativeReplicas) servedReplica(instance string, feedback command.Executi
 	server.Config.Handler = mux
 	server.Start()
 	r.t.Cleanup(server.Close)
-	return manager, dispatcherprivatev1connect.NewExecutionServiceClient(server.Client(), server.URL)
+	return manager, dispatcherprivatev1connect.NewExecutionServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 }
 
 func routedMux(manager *dispatcher.NativeExecutions, ownership *dispatcherredis.Ownership, buffer *dispatcherredis.InputBuffer) *http.ServeMux {
 	app := application.NewApplication(manager, command.NewConnectExecutionHandler(manager), command.NewEnqueueInputHandler(buffer), command.NewDropInputHandler(buffer), command.NewStopExecutionHandler(manager), manager, manager, manager, manager, buffer)
 	local := transport.NewExecutionHandler(app, "control-test")
 	routed := routing.NewNativeExecutionHandler(local, ownership, ownership.Self(), "control-test", peer.NewNativeClients(http.DefaultClient))
-	path, handler := dispatcherprivatev1connect.NewExecutionServiceHandler(routed)
+	path, handler := "/"+dispatcherprivatev1connect.ExecutionServiceName+"/", connecttest.Handler(func(s *connect.Server) { dispatcherprivatev1connect.RegisterExecutionServiceHandler(s, routed) })
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	return mux

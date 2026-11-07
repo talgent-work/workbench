@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { WorkInfo } from "@talgent/workbench-contracts/agent/public/v1/work_pb";
+import type { WorkInfo } from "@talgent/contracts/agent/public/v1/work_pb";
 import { agentWorkClient } from "../lib/client";
 import { isStaleWorkControl, workControlErrorMessage } from "../lib/work-projection";
 

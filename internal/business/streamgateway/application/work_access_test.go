@@ -7,14 +7,16 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	streamgatewaypublicv1 "github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1/streamgatewaypublicv1connect"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
+	"github.com/talgent-work/contracts/gen/go/streamgateway/public/v1/streamgatewaypublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application"
 	"github.com/talgent-work/workbench/internal/business/streamgateway/application/query"
 	streamrpc "github.com/talgent-work/workbench/internal/business/streamgateway/transport/connectrpc"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
 // recordingAccess admits every reader and records the admission it was given.
@@ -58,15 +60,16 @@ func (f *fakeStream) publishAccess(sessionID string, payload *query.WorkAccessPa
 	}
 }
 
-func watchAs(t *testing.T, client streamgatewaypublicv1connect.StreamGatewayServiceClient, ctx context.Context, reader string, admission string) *connect.ServerStreamForClient[streamgatewaypublicv1.WatchStreamResponse] {
+func watchAs(t *testing.T, client streamgatewaypublicv1connect.StreamGatewayServiceClient, ctx context.Context, reader string, admission string) *watched {
 	t.Helper()
-	request := connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"})
-	request.Header().Set(authn.HeaderServiceID, "test")
-	request.Header().Set(authn.HeaderDelegatedUserID, reader)
+	request := &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set(authn.HeaderServiceID, "test")
+	info.RequestHeader().Set(authn.HeaderDelegatedUserID, reader)
 	if admission != "" {
-		request.Header().Set(authn.HeaderReaderAdmission, admission)
+		info.RequestHeader().Set(authn.HeaderReaderAdmission, admission)
 	}
-	stream, err := client.WatchStream(ctx, request)
+	stream, err := watch(client.WatchStream(ctx, request))
 	require.NoError(t, err)
 	return stream
 }
@@ -80,19 +83,21 @@ func newAccessServer(t *testing.T) (*fakeStream, *recordingAccess, streamgateway
 	app.Queries.WatchStream.SetSettleDelay(0)
 	app.Queries.WatchStream.SetReadmissionInterval(20 * time.Millisecond)
 	mux := http.NewServeMux()
-	path, handler := streamgatewaypublicv1connect.NewStreamGatewayServiceHandler(streamrpc.NewHandler(app), connect.WithInterceptors(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})))
+	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
+	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
 	mux.Handle(path, handler)
 	srv, httpClient := newH2CTestServer(t, mux)
-	return stream, access, streamgatewaypublicv1connect.NewStreamGatewayServiceClient(httpClient, srv.URL)
+	return stream, access, streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
 }
 
-func receiveReplay(t *testing.T, stream *connect.ServerStreamForClient[streamgatewaypublicv1.WatchStreamResponse]) {
+func receiveReplay(t *testing.T, stream *watched) {
 	t.Helper()
 	require.True(t, stream.Receive(), "replay: %v", stream.Err())
 	require.Equal(t, "m1", stream.Msg().GetMessage().GetId())
 }
 
-func requireWithdrawn(t *testing.T, stream *connect.ServerStreamForClient[streamgatewaypublicv1.WatchStreamResponse]) {
+func requireWithdrawn(t *testing.T, stream *watched) {
 	t.Helper()
 	require.True(t, stream.Receive(), "withdrawal frame: %v", stream.Err())
 	require.Equal(t, "w1", stream.Msg().GetAccessWithdrawn().GetAgentWorkId(), "withdrawal is a distinct frame, not a connection error")
@@ -158,11 +163,12 @@ func TestClientCannotSupplyItsOwnReaderAdmission(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, access, client := newAccessServer(t)
-	request := connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"})
-	request.Header().Set(authn.HeaderAuthenticatedBy, "envoy")
-	request.Header().Set(authn.HeaderSubject, "290572ed-90f8-50b8-a98e-9cdbac589df3")
-	request.Header().Set(authn.HeaderReaderAdmission, "project=project-a")
-	stream, err := client.WatchStream(ctx, request)
+	request := &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+	info.RequestHeader().Set(authn.HeaderSubject, "290572ed-90f8-50b8-a98e-9cdbac589df3")
+	info.RequestHeader().Set(authn.HeaderReaderAdmission, "project=project-a")
+	stream, err := watch(client.WatchStream(ctx, request))
 	require.NoError(t, err)
 	defer stream.Close()
 	receiveReplay(t, stream)

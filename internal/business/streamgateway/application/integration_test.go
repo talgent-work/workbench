@@ -9,20 +9,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	clickhouseGo "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
-	streamgatewaypublicv1 "github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/streamgateway/public/v1/streamgatewaypublicv1connect"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
+	"github.com/talgent-work/contracts/gen/go/streamgateway/public/v1/streamgatewaypublicv1connect"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	agentinfra "github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	agentrpc "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
@@ -68,10 +70,12 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 	app.Queries.WatchStream.SetSettleDelay(0) // we pre-poll visibility below, so no settle delay needed.
 
 	mux := http.NewServeMux()
-	path, handler := streamgatewaypublicv1connect.NewStreamGatewayServiceHandler(streamrpc.NewHandler(app))
+	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
+	})
 	mux.Handle(path, handler)
 	srv, httpClient := newH2CTestServer(t, mux)
-	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(httpClient, srv.URL)
+	client := streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
 
 	publisher := messagedelivery.NewLiveNATSPublisher(lazyConn)
 	base := time.Now().UTC().Truncate(time.Millisecond)
@@ -103,7 +107,7 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 	waitForHistory(1)
 	rpcCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	streams := make(map[string]*connect.ServerStreamForClient[streamgatewaypublicv1.WatchStreamResponse])
+	streams := make(map[string]*watched)
 	receive := func(sessionID string, expected *dispatcherpublicv1.UnifiedMessage, replay bool) {
 		t.Helper()
 		sub := streams[sessionID]
@@ -112,7 +116,7 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 		require.True(t, proto.Equal(expected, sub.Msg().GetMessage()), "message payload and Session attribution: got %v, want %v", sub.Msg().GetMessage(), expected)
 	}
 	for _, sessionID := range sessions {
-		sub, err := client.WatchStream(rpcCtx, connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: sessionID}))
+		sub, err := watch(client.WatchStream(rpcCtx, &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: sessionID}))
 		require.NoError(t, err)
 		defer sub.Close()
 		streams[sessionID] = sub
@@ -160,19 +164,19 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 	// both Sessions have the same timestamp and local IDs.
 	for _, sessionID := range sessions {
 		live := messages[sessionID][1]
-		sub, err := client.WatchStream(rpcCtx, connect.NewRequest(&streamgatewaypublicv1.WatchStreamRequest{
+		sub, err := watch(client.WatchStream(rpcCtx, &streamgatewaypublicv1.WatchStreamRequest{
 			AgentWorkId: sessionID, AfterTimestamp: live.Timestamp, AfterId: live.Id,
 		}))
 		require.NoError(t, err)
 		defer sub.Close()
 		streams[sessionID] = sub
 		receive(sessionID, messages[sessionID][2], true)
-		history, err := client.ListMessagesBySession(rpcCtx, connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{
+		history, err := client.ListMessagesBySession(rpcCtx, &streamgatewaypublicv1.ListMessagesBySessionRequest{
 			AgentWorkId: sessionID, Limit: 2, TurnIds: []string{"turn-" + sessionID},
-		}))
+		})
 		require.NoError(t, err)
-		require.Len(t, history.Msg.Messages, 2)
-		for i, message := range history.Msg.Messages {
+		require.Len(t, history.Messages, 2)
+		for i, message := range history.Messages {
 			require.True(t, proto.Equal(messages[sessionID][i+1], message), "filtered history must contain only this Session's messages in time order")
 		}
 	}
@@ -202,13 +206,13 @@ func TestIntegration_WatchStream_EndToEnd(t *testing.T) {
 		require.NoError(t, publisher.PublishLive(ctx, produced))
 		receive(workID, message, false)
 	}
-	var history *connect.Response[streamgatewaypublicv1.ListMessagesBySessionResponse]
+	var history *streamgatewaypublicv1.ListMessagesBySessionResponse
 	require.Eventually(t, func() bool {
 		var err error
-		history, err = client.ListMessagesBySession(rpcCtx, connect.NewRequest(&streamgatewaypublicv1.ListMessagesBySessionRequest{AgentWorkId: workID, TurnIds: []string{"payload-turn"}, Limit: 20}))
-		return err == nil && len(history.Msg.Messages) == len(variants)
+		history, err = client.ListMessagesBySession(rpcCtx, &streamgatewaypublicv1.ListMessagesBySessionRequest{AgentWorkId: workID, TurnIds: []string{"payload-turn"}, Limit: 20})
+		return err == nil && len(history.Messages) == len(variants)
 	}, 5*time.Second, 50*time.Millisecond)
-	for i, actual := range history.Msg.Messages {
+	for i, actual := range history.Messages {
 		require.True(t, proto.Equal(variants[i], actual), "stored payload %d must match live delivery: got %v, want %v", i, actual, variants[i])
 	}
 }

@@ -2,19 +2,19 @@ package plugincatalog_test
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
-	marketplaceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
+	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func TestServiceSupplyTransmitsRetainedAuthorityAndCurrentMaterial(t *testing.T) {
@@ -46,9 +46,8 @@ func TestServiceSupplyLimitsFailureFeedbackToKnownReasons(t *testing.T) {
 		{"provider-secret", "unavailable", connect.CodeInternal},
 	} {
 		t.Run(scenario.expected+"/"+scenario.code.String(), func(t *testing.T) {
-			failure := connect.NewError(scenario.code, errors.New("provider-secret"))
-			failure.Meta().Set("X-Talgent-Credential-Status", scenario.reported)
-			client := newServiceSupplyClient(t, &serviceSupplyEndpoint{failure: failure})
+			failure := connect.NewError(scenario.code, "provider-secret")
+			client := newServiceSupplyClient(t, &serviceSupplyEndpoint{failure: failure, status: scenario.reported})
 			material, err := client.SupplyServiceCredential(t.Context(), application.ServiceCredentialRequest{OwnerUserID: "owner", AuthorizationID: "retained", Target: "github-api"})
 			var unavailable *application.ServiceCredentialUnavailable
 			require.ErrorAs(t, err, &unavailable)
@@ -63,7 +62,9 @@ func TestServiceSupplyLimitsFailureFeedbackToKnownReasons(t *testing.T) {
 func newServiceSupplyClient(t *testing.T, service *serviceSupplyEndpoint) *plugincatalog.Client {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.Handle(marketplaceprivatev1connect.NewCredentialServiceHandler(service))
+	srv := connect.NewServer()
+	marketplaceprivatev1connect.RegisterCredentialServiceHandler(srv, service)
+	connecthttp.Mount(mux, srv, connecthttp.WithReadMaxBytes(0))
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	client, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL, CredentialToken: "service-secret"})
@@ -76,15 +77,21 @@ type serviceSupplyEndpoint struct {
 	received application.ServiceCredentialRequest
 	token    string
 	failure  error
+	// status is the credential status Marketplace states with failure.
+	status string
 }
 
-func (s *serviceSupplyEndpoint) SupplyServiceCredential(_ context.Context, r *connect.Request[marketplaceprivatev1.SupplyServiceCredentialRequest]) (*connect.Response[marketplaceprivatev1.SupplyServiceCredentialResponse], error) {
-	if r.Header().Get("Authorization") != "Bearer service-secret" || r.Header().Get(authn.HeaderServiceID) != "agent" || r.Header().Get(authn.HeaderDelegatedUserID) != r.Msg.OwnerUserId {
-		return nil, connect.NewError(connect.CodePermissionDenied, nil)
+func (s *serviceSupplyEndpoint) SupplyServiceCredential(ctx context.Context, r *marketplaceprivatev1.SupplyServiceCredentialRequest) (*marketplaceprivatev1.SupplyServiceCredentialResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if info.RequestHeader().Get("Authorization") != "Bearer service-secret" || info.RequestHeader().Get(authn.HeaderServiceID) != "agent" || info.RequestHeader().Get(authn.HeaderDelegatedUserID) != r.OwnerUserId {
+		return nil, connect.NewError(connect.CodePermissionDenied, "")
 	}
-	s.received = application.ServiceCredentialRequest{OwnerUserID: r.Msg.OwnerUserId, AuthorizationID: r.Msg.AuthorizationId, Target: r.Msg.Target}
+	s.received = application.ServiceCredentialRequest{OwnerUserID: r.OwnerUserId, AuthorizationID: r.AuthorizationId, Target: r.Target}
 	if s.failure != nil {
+		if s.status != "" {
+			info.ResponseHeader().Set("X-Talgent-Credential-Status", s.status)
+		}
 		return nil, s.failure
 	}
-	return connect.NewResponse(&marketplaceprivatev1.SupplyServiceCredentialResponse{Token: s.token, ExpiresAtUnixMs: 1900000000000}), nil
+	return &marketplaceprivatev1.SupplyServiceCredentialResponse{Token: s.token, ExpiresAtUnixMs: 1900000000000}, nil
 }

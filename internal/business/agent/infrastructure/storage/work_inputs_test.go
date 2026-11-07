@@ -2,18 +2,18 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 )
 
@@ -26,38 +26,39 @@ type fileSpace struct {
 
 var updated = time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
 
-func (f *fileSpace) ResolveInputSources(_ context.Context, r *connect.Request[storageprivatev1.ResolveInputSourcesRequest]) (*connect.Response[storageprivatev1.ResolveInputSourcesResponse], error) {
-	f.tokens = append(f.tokens, r.Header().Get("Authorization"))
-	resolved := make([]*storageprivatev1.ResolvedInputSource, 0, len(r.Msg.GetInputSources()))
-	for _, source := range r.Msg.GetInputSources() {
+func (f *fileSpace) ResolveInputSources(ctx context.Context, r *storageprivatev1.ResolveInputSourcesRequest) (*storageprivatev1.ResolveInputSourcesResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	f.tokens = append(f.tokens, info.RequestHeader().Get("Authorization"))
+	resolved := make([]*storageprivatev1.ResolvedInputSource, 0, len(r.GetInputSources()))
+	for _, source := range r.GetInputSources() {
 		owner := ""
 		if source == "file-space/case-1" {
 			owner = "case-1"
 		}
 		resolved = append(resolved, &storageprivatev1.ResolvedInputSource{InputSource: source, Owner: owner})
 	}
-	return connect.NewResponse(&storageprivatev1.ResolveInputSourcesResponse{InputSources: resolved}), nil
+	return &storageprivatev1.ResolveInputSourcesResponse{InputSources: resolved}, nil
 }
 
-func (f *fileSpace) ListFiles(_ context.Context, r *connect.Request[storageprivatev1.ListFilesRequest]) (*connect.Response[storageprivatev1.ListFilesResponse], error) {
-	if r.Msg.GetOwner() != "case-1" {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such space"))
+func (f *fileSpace) ListFiles(_ context.Context, r *storageprivatev1.ListFilesRequest) (*storageprivatev1.ListFilesResponse, error) {
+	if r.GetOwner() != "case-1" {
+		return nil, connect.NewError(connect.CodeNotFound, "no such space")
 	}
-	return connect.NewResponse(&storageprivatev1.ListFilesResponse{Files: []*storageprivatev1.File{
+	return &storageprivatev1.ListFilesResponse{Files: []*storageprivatev1.File{
 		{Kind: storageprivatev1.FileKind_FILE_KIND_ATTACHMENT, Name: "brief.pdf", SizeBytes: 1024, UpdatedAt: timestamppb.New(updated)},
 		{Kind: storageprivatev1.FileKind_FILE_KIND_ARTIFACT, Name: "report.md", SizeBytes: 3},
 		{Kind: storageprivatev1.FileKind_FILE_KIND_ATTACHMENT, Name: "gone.csv", SizeBytes: 2},
-	}}), nil
+	}}, nil
 }
 
-func (f *fileSpace) IssueAccessLink(_ context.Context, r *connect.Request[storageprivatev1.IssueAccessLinkRequest]) (*connect.Response[storageprivatev1.IssueAccessLinkResponse], error) {
-	if r.Msg.GetName() == "gone.csv" {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("gone"))
+func (f *fileSpace) IssueAccessLink(_ context.Context, r *storageprivatev1.IssueAccessLinkRequest) (*storageprivatev1.IssueAccessLinkResponse, error) {
+	if r.GetName() == "gone.csv" {
+		return nil, connect.NewError(connect.CodeNotFound, "gone")
 	}
-	if r.Msg.GetDisposition() != storageprivatev1.AccessDisposition_ACCESS_DISPOSITION_DOWNLOAD || r.Msg.GetKind() != storageprivatev1.FileKind_FILE_KIND_ATTACHMENT {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("an input is downloaded as an Attachment"))
+	if r.GetDisposition() != storageprivatev1.AccessDisposition_ACCESS_DISPOSITION_DOWNLOAD || r.GetKind() != storageprivatev1.FileKind_FILE_KIND_ATTACHMENT {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "an input is downloaded as an Attachment")
 	}
-	return connect.NewResponse(&storageprivatev1.IssueAccessLinkResponse{AccessPath: "/v1/storage/content?grant=" + r.Msg.GetName()}), nil
+	return &storageprivatev1.IssueAccessLinkResponse{AccessPath: "/v1/storage/content?grant=" + r.GetName()}, nil
 }
 
 // A Work's inputs are its input source's owner and that space's current
@@ -66,7 +67,9 @@ func (f *fileSpace) IssueAccessLink(_ context.Context, r *connect.Request[storag
 func TestWorkInputsAreTheAttachmentsOfTheInputSourcesSpace(t *testing.T) {
 	space := &fileSpace{}
 	mux := http.NewServeMux()
-	mux.Handle(storageprivatev1connect.NewFileSpaceServiceHandler(space))
+	srv := connect.NewServer()
+	storageprivatev1connect.RegisterFileSpaceServiceHandler(srv, space)
+	connecthttp.Mount(mux, srv, connecthttp.WithReadMaxBytes(0))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	inputs, err := NewWorkInputs(server.Client(), Config{Address: server.URL, Token: "storage-token"})

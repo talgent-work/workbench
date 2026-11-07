@@ -7,13 +7,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	traceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/trace/private/v1"
+	traceprivatev1 "github.com/talgent-work/contracts/gen/go/trace/private/v1"
 
 	"google.golang.org/protobuf/proto"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // respond answers every call with one status, or with message on success.

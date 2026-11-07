@@ -6,7 +6,9 @@
 # hostnames, the issuer web-auth validates, the NAS export). environment.env
 # holds placeholders only; scripts/deploy/render-k3s.sh renders a deployment
 # with its real environment, read from the cluster's ConfigMap or from a file
-# outside the repository, and scripts/deploy/apply-k3s.sh applies it.
+# outside the repository, and scripts/deploy/apply-k3s.sh applies it. The
+# environment's deployment switches add components of components/ at render
+# time; each component says what its switch changes.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

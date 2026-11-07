@@ -10,7 +10,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/talgent-work/workbench/internal/business/computer/domain"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 var computerColumns = []string{"id", "kind", "owner_id", "name", "capacity", "occupied", "admission_policy", "waiting_line", "reachable", "unreachable_since", "talgent_computer_version", "claude_code_version", "claude_code_sandbox", "credential_digest", "credential_expires_at", "pending_credential_digest", "pending_credential_expires_at", "pending_credential_issued_at", "retired_credential_digest", "retired_credential_expires_at", "state", "version"}

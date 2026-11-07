@@ -1,7 +1,7 @@
 package connectrpc
 
 import (
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 

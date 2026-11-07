@@ -1,5 +1,5 @@
 import { Code, ConnectError } from "@connectrpc/connect";
-import { ComputerOutdatedSchema, SandboxUnavailableSchema } from "@talgent/workbench-contracts/agent/public/v1/harness_pb";
+import { ComputerOutdatedSchema, SandboxUnavailableSchema } from "@talgent/contracts/agent/public/v1/harness_pb";
 
 /** Why a start failed; computer is the one it was started on. A full Managed
  * Computer, one without Claude Code's sandbox, or one below the Minimum

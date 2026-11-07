@@ -7,10 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/coder/websocket"
 
-	computerprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/computer/private/v1"
+	computerprivatev1 "github.com/talgent-work/contracts/gen/go/computer/private/v1"
 )
 
 // Revalidate is how often each connection's Computer Credential is checked
@@ -140,20 +139,20 @@ func (w *credentialWatch) check(ctx context.Context) (due, ok bool) {
 	w.mu.Unlock()
 	call, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	authenticated, err := w.gateway.computers.Authenticate(call, connect.NewRequest(&computerprivatev1.AuthenticateRequest{Credential: presented}))
+	authenticated, err := w.gateway.computers.Authenticate(call, &computerprivatev1.AuthenticateRequest{Credential: presented})
 	if err != nil {
 		if ctx.Err() == nil {
 			w.logger.WarnContext(ctx, "computer gateway: credential not checked", "error", err)
 		}
 		return false, false
 	}
-	switch authenticated.Msg.GetRefusal() {
+	switch authenticated.GetRefusal() {
 	case computerprivatev1.CredentialRefusal_CREDENTIAL_REFUSAL_UNSPECIFIED:
-		if authenticated.Msg.GetRotationDue() && !w.rotates && !w.unsupportedLogged {
+		if authenticated.GetRotationDue() && !w.rotates && !w.unsupportedLogged {
 			w.unsupportedLogged = true
 			w.logger.WarnContext(ctx, "computer gateway: the machine's Talgent Computer cannot rotate its credential; it is refused once the credential expires unless it upgrades")
 		}
-		return w.rotates && authenticated.Msg.GetRotationDue() && !rotating, true
+		return w.rotates && authenticated.GetRotationDue() && !rotating, true
 	case computerprivatev1.CredentialRefusal_CREDENTIAL_REFUSAL_COMPUTER_REMOVED:
 		w.logger.InfoContext(ctx, "computer gateway: computer removed; ending its connection")
 		_ = w.conn.Close(CloseComputerRemoved, "computer removed")
@@ -161,7 +160,7 @@ func (w *credentialWatch) check(ctx context.Context) (due, ok bool) {
 		w.logger.InfoContext(ctx, "computer gateway: credential revoked; ending its connection")
 		_ = w.conn.Close(CloseCredentialRejected, "credential rejected")
 	default:
-		w.logger.WarnContext(ctx, "computer gateway: credential not checked", "refusal", authenticated.Msg.GetRefusal().String())
+		w.logger.WarnContext(ctx, "computer gateway: credential not checked", "refusal", authenticated.GetRefusal().String())
 	}
 	return false, false
 }
@@ -189,7 +188,7 @@ func (w *credentialWatch) rotate(ctx context.Context) {
 	}
 	call, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	issued, err := w.gateway.computers.RotateCredential(call, connect.NewRequest(&computerprivatev1.RotateCredentialRequest{ComputerId: w.computerID, Credential: presented}))
+	issued, err := w.gateway.computers.RotateCredential(call, &computerprivatev1.RotateCredentialRequest{ComputerId: w.computerID, Credential: presented})
 	if err != nil {
 		if ctx.Err() == nil {
 			w.logger.WarnContext(ctx, "computer gateway: credential not rotated", "error", err)
@@ -197,9 +196,9 @@ func (w *credentialWatch) rotate(ctx context.Context) {
 		return
 	}
 	w.mu.Lock()
-	w.successor, w.saved, w.issuedAt = issued.Msg.GetCredential(), false, w.gateway.now()
+	w.successor, w.saved, w.issuedAt = issued.GetCredential(), false, w.gateway.now()
 	w.mu.Unlock()
-	frame := credentialFrame{Type: "credential", Credential: issued.Msg.GetCredential(), ExpiresAtUnixMS: issued.Msg.GetExpiresAtUnixMs()}
+	frame := credentialFrame{Type: "credential", Credential: issued.GetCredential(), ExpiresAtUnixMS: issued.GetExpiresAtUnixMs()}
 	if err := w.relay.sendJSON(ctx, frame); err != nil {
 		return
 	}
@@ -218,7 +217,7 @@ func (w *credentialWatch) confirm(ctx context.Context) {
 	}
 	call, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	if _, err := w.gateway.computers.ConfirmCredential(call, connect.NewRequest(&computerprivatev1.ConfirmCredentialRequest{ComputerId: w.computerID, Credential: successor})); err != nil {
+	if _, err := w.gateway.computers.ConfirmCredential(call, &computerprivatev1.ConfirmCredentialRequest{ComputerId: w.computerID, Credential: successor}); err != nil {
 		if ctx.Err() == nil {
 			w.logger.WarnContext(ctx, "computer gateway: rotated credential not confirmed", "error", err)
 		}

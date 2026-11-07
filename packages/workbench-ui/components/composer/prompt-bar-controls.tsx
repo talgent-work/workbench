@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Button, Dropdown, Kbd, Label, ListBox, Popover, SearchField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { Brain, BrainCircuit, ChevronDown, Gauge, Paperclip, Plus, SquareSlash, Zap } from "lucide-react";
-import type { ModelVendor } from "@talgent/workbench-contracts/agent/public/v1/model_pb";
+import type { ModelVendor } from "@talgent/contracts/agent/public/v1/model_pb";
 import { modelVendors } from "../../lib/model-vendors";
 import { thinkingLevelName as levelName } from "../../lib/thinking-levels";
 import { startModelKey, type StartModel } from "../../lib/work-model";

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 var (

@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/samber/oops"
-	dispatcherprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/dispatcher/private/v1/dispatcherprivatev1connect"
+	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
+	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -44,7 +45,7 @@ func NewNativeConnections(provisioning *Provisioning, credentials *SandboxCreden
 	if provisioning == nil || credentials == nil || client == nil || feedback == nil || checkouts == nil || strings.TrimSpace(address) == "" || strings.TrimSpace(token) == "" {
 		return nil, errors.New("agent: provisioning, HTTP client, checkout outcomes and authenticated Dispatcher endpoint are required")
 	}
-	return &NativeConnections{provisioning: provisioning, credentials: credentials, http: client, dispatcher: dispatcherprivatev1connect.NewExecutionServiceClient(client, address), token: token, feedback: feedback, checkouts: checkouts}, nil
+	return &NativeConnections{provisioning: provisioning, credentials: credentials, http: client, dispatcher: dispatcherprivatev1connect.NewExecutionServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0)))), token: token, feedback: feedback, checkouts: checkouts}, nil
 }
 
 // launchTimeout bounds starting the Harness and connecting it, which hold the
@@ -324,11 +325,12 @@ func (n *NativeConnections) reconnect(ctx context.Context, record allocationReco
 }
 
 func (n *NativeConnections) connect(ctx context.Context, record allocationRecord, box environment) error {
-	request := connect.NewRequest(&dispatcherprivatev1.ConnectRequest{
+	request := &dispatcherprivatev1.ConnectRequest{
 		WorkId:   record.SessionID,
 		Endpoint: box.endpoint, AccessToken: box.token, ProcessId: record.ProcessID, NativeSessionId: record.NativeSessionID,
-	})
-	request.Header().Set("Authorization", "Bearer "+n.token)
+	}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer "+n.token)
 	if _, err := n.dispatcher.Connect(ctx, request); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()

@@ -11,10 +11,10 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/workbench/internal/business/computergateway"
-	internalpkg "github.com/talgent-work/workbench/pkg"
-	pkghttpserver "github.com/talgent-work/workbench/pkg/httpserver"
-	"github.com/talgent-work/workbench/pkg/lifecyclelog"
-	pkgredis "github.com/talgent-work/workbench/pkg/redis"
+	internalpkg "github.com/talgent-work/workbench/internal/pkg"
+	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
+	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
+	pkgredis "github.com/talgent-work/workbench/internal/pkg/redis"
 )
 
 // Option is the configuration tree, from configs/computer-gateway/defaults.yml.

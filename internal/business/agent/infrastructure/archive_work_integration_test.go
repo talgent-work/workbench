@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -23,6 +24,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	agenttransport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"xorm.io/xorm"
 )
 
@@ -35,13 +37,16 @@ func TestExecutionArchiveRPCRequiresStoppedSessionWithoutPendingContinuation(t *
 	receipts := infrastructure.NewContinuationRequests(f.db, time.Now)
 	handler := command.NewCloseWorkHandler(f.sessions, authorization, factory, commandtest.NoClosureObligations{}, commandtest.NoClosureObligations{}, receipts, &commandtest.InputBuffer{})
 	app := &application.Application{Works: f.sessions, Commands: application.Commands{CloseWork: handler}}
-	_, endpoint := agentprivatev1connect.NewAgentServiceHandler(agenttransport.NewAgentHandler(app, "control"))
+	endpoint := connecttest.Handler(func(s *connect.Server) {
+		agentprivatev1connect.RegisterAgentServiceHandler(s, agenttransport.NewAgentHandler(app, "control"))
+	})
 	server := httptest.NewServer(endpoint)
 	t.Cleanup(server.Close)
-	client := agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL)
+	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	archive := func(subject, token, sessionID string) error {
-		r := connect.NewRequest(&agentprivatev1.CloseWorkRequest{SubjectId: subject, WorkId: sessionID, RequestId: uuid.NewString()})
-		r.Header().Set("Authorization", "Bearer "+token)
+		r := &agentprivatev1.CloseWorkRequest{SubjectId: subject, WorkId: sessionID, RequestId: uuid.NewString()}
+		ctx, info := connect.NewClientContext(ctx)
+		info.RequestHeader().Set("Authorization", "Bearer "+token)
 		_, err := client.CloseWork(ctx, r)
 		return err
 	}
@@ -65,11 +70,12 @@ func TestExecutionArchiveRPCRequiresStoppedSessionWithoutPendingContinuation(t *
 	require.NoError(t, archive("owner", "control", id), "closed archive remains idempotent")
 	// A caller's completion closing an already closed Work is acknowledged
 	// under its own request, so the completion settles.
-	completion := connect.NewRequest(&agentprivatev1.CloseWorkRequest{SubjectId: "owner", WorkId: id, RequestId: "case-completion"})
-	completion.Header().Set("Authorization", "Bearer control")
+	completion := &agentprivatev1.CloseWorkRequest{SubjectId: "owner", WorkId: id, RequestId: "case-completion"}
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer control")
 	acknowledged, err := client.CloseWork(ctx, completion)
 	require.NoError(t, err)
-	require.Equal(t, "case-completion", acknowledged.Msg.RequestId)
+	require.Equal(t, "case-completion", acknowledged.RequestId)
 	closed, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkClosed, closed.State)

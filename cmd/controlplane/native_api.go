@@ -8,9 +8,9 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/storage"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/nativeapi"
-	"github.com/talgent-work/workbench/pkg/nativeauth"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/nativeapi"
+	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 )
 
 // registerNativeAPI serves the core's procedures an Agent reaches with its

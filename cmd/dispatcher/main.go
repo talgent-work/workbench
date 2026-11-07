@@ -10,14 +10,14 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/talgent-work/workbench/internal/business/dispatcher"
+	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	pkgclickhouse "github.com/talgent-work/workbench/internal/pkg/clickhouse"
+	pkghttpserver "github.com/talgent-work/workbench/internal/pkg/httpserver"
+	pkgintegrationmessage "github.com/talgent-work/workbench/internal/pkg/integrationmessage"
+	pkgkafka "github.com/talgent-work/workbench/internal/pkg/kafka"
+	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
-	internalpkg "github.com/talgent-work/workbench/pkg"
-	pkghttpserver "github.com/talgent-work/workbench/pkg/httpserver"
-	pkgintegrationmessage "github.com/talgent-work/workbench/pkg/integrationmessage"
-	pkgkafka "github.com/talgent-work/workbench/pkg/kafka"
-	"github.com/talgent-work/workbench/pkg/lifecyclelog"
-	pkgredis "github.com/talgent-work/workbench/pkg/redis"
+	pkgredis "github.com/talgent-work/workbench/internal/pkg/redis"
 )
 
 // Option is the top-level configuration tree for the dispatcher service.

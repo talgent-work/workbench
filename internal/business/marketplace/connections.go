@@ -7,12 +7,11 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/credential"
 
-	"connectrpc.com/connect"
 	domainevent "github.com/go-jimu/components/ddd/event"
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"go.uber.org/fx"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/messagepublisher"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
@@ -23,9 +22,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
-	"github.com/talgent-work/workbench/pkg/connectlog"
-	"github.com/talgent-work/workbench/pkg/eventlog"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	"github.com/talgent-work/workbench/internal/pkg/eventlog"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 type ConnectionConfig struct {
@@ -117,10 +116,10 @@ var ConnectionsModule = fx.Module(
 	fx.Provide(application.NewPersonalConnections),
 	TaskqueueModule,
 	fx.Invoke(func(params connectionHandlerParams) {
-		opts := []connect.HandlerOption{connect.WithInterceptors(connectlog.NewInterceptor(params.Logger), gatewayActor())}
 		params.Mux.Handle(marketplacehttp.GitHubWebhookPath, params.Webhook)
-		credentialPath, credentialHandler := marketplaceprivatev1connect.NewCredentialServiceHandler(marketplaceconnect.NewCredentialHandler(params.App, params.Config.CredentialToken), opts...)
-		params.Mux.Handle(credentialPath, credentialHandler)
+		server := connectserver.New(params.Logger, gatewayActor())
+		marketplaceprivatev1connect.RegisterCredentialServiceHandler(server, marketplaceconnect.NewCredentialHandler(params.App, params.Config.CredentialToken))
+		connectserver.Mount(params.Mux, server)
 	}),
 )
 

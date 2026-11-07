@@ -6,11 +6,11 @@ import (
 	"errors"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 
@@ -27,16 +27,16 @@ func NewTurnResultHandler(results *query.WorkTurnResults, token string) *TurnRes
 	return &TurnResultHandler{results: results, token: token}
 }
 
-func (h *TurnResultHandler) ListWorkTurnResults(ctx context.Context, request *connect.Request[agentprivatev1.ListWorkTurnResultsRequest]) (*connect.Response[agentprivatev1.ListWorkTurnResultsResponse], error) {
-	if strings.TrimSpace(h.token) == "" || subtle.ConstantTimeCompare([]byte(request.Header().Get("Authorization")), []byte("Bearer "+h.token)) != 1 {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("agent: control authentication required"))
+func (h *TurnResultHandler) ListWorkTurnResults(ctx context.Context, request *agentprivatev1.ListWorkTurnResultsRequest) (*agentprivatev1.ListWorkTurnResultsResponse, error) {
+	if strings.TrimSpace(h.token) == "" || subtle.ConstantTimeCompare([]byte(requestHeader(ctx).Get("Authorization")), []byte("Bearer "+h.token)) != 1 {
+		return nil, connect.NewError(connect.CodeUnauthenticated, "agent: control authentication required")
 	}
-	results, err := h.results.List(ctx, request.Msg.GetWorkId())
+	results, err := h.results.List(ctx, request.GetWorkId())
 	if errors.Is(err, query.ErrInvalidTurnResultQuery) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	}
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("agent: turn results unavailable"))
+		return nil, connect.NewError(connect.CodeUnavailable, "agent: turn results unavailable")
 	}
 	response := &agentprivatev1.ListWorkTurnResultsResponse{Results: make([]*agentprivatev1.WorkTurnResult, 0, len(results))}
 	for _, result := range results {
@@ -44,5 +44,5 @@ func (h *TurnResultHandler) ListWorkTurnResults(ctx context.Context, request *co
 			Order: int32(result.Order), Text: result.Text, Last: result.Last, OccurredAt: timestamppb.New(result.OccurredAt), MessageId: result.MessageID,
 		})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }

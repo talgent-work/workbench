@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, CloseButton } from "@heroui/react";
-import { PluginPreparationStatus, type WorkPluginResult } from "@talgent/workbench-contracts/agent/public/v1/plugin_pb";
-import type { WorkStartupRepository } from "@talgent/workbench-contracts/agent/public/v1/work_pb";
+import { PluginPreparationStatus, type WorkPluginResult } from "@talgent/contracts/agent/public/v1/plugin_pb";
+import type { WorkStartupRepository } from "@talgent/contracts/agent/public/v1/work_pb";
 import { MessageInput, type MessageInputProps } from "../chat/message-input";
 import type { SlashCandidate } from "../composer/use-slash-completion";
 import { agentWorkClient } from "../../lib/client";

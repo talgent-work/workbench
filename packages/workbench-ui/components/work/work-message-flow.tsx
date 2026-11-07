@@ -2,7 +2,7 @@ import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useRef,
 import { Button, Tooltip } from "@heroui/react";
 import { ArrowDown, Check, ChevronDown, Copy, FilePenLine, FileSearch, Search, Terminal, Wrench } from "lucide-react";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { ContentBlockType, MessageDetailFormat, ResultStatus, UnifiedMessageKind, type UnifiedMessage } from "@talgent/workbench-contracts/dispatcher/public/v1/unified_message_pb";
+import { ContentBlockType, MessageDetailFormat, ResultStatus, UnifiedMessageKind, type UnifiedMessage } from "@talgent/contracts/dispatcher/public/v1/unified_message_pb";
 import { Markdown } from "../markdown";
 import { ToolMessageDetail } from "./tool-message-detail";
 import { ToolReadingContent } from "./tool-reading-content";

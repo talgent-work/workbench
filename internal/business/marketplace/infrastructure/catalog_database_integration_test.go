@@ -5,7 +5,7 @@ package infrastructure_test
 import (
 	"testing"
 
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"

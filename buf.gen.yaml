@@ -1,13 +1,10 @@
 version: v2
+# The Workbench's own contracts: the task payloads its queues persist. The
+# generator runs from the go.mod tool directive, so the generated code always
+# matches the protobuf runtime this module requires.
 plugins:
-  # Go
-  - remote: buf.build/protocolbuffers/go:v1.36.11
-    out: gen/go
+  - local: [go, tool, protoc-gen-go]
+    out: gen
     opt: paths=source_relative
-  - remote: buf.build/connectrpc/go:v1.19.1
-    out: gen/go
-    opt: paths=source_relative
-  # TypeScript
-  - remote: buf.build/bufbuild/es:v2.11.0
-    out: gen/ts
-    opt: target=ts,import_extension=js
+# Output of a removed proto file is deleted with it.
+clean: true

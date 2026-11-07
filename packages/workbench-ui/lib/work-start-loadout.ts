@@ -1,6 +1,6 @@
 import type { JsonObject } from "@bufbuild/protobuf";
-import type { WorkStartConnector, WorkStartPlugin } from "@talgent/workbench-contracts/agent/public/v1/work_start_options_pb";
-import type { Connector, InstalledPlugin, PluginRelease, PluginSummary } from "@talgent/workbench-contracts/marketplace/public/v1/marketplace_pb";
+import type { WorkStartConnector, WorkStartPlugin } from "@talgent/contracts/agent/public/v1/work_start_options_pb";
+import type { Connector, InstalledPlugin, PluginRelease, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { pluginDisplayName, pluginPresentation } from "./marketplace-plugins";
 import { missingRequired, parseParameters, parameterLabel } from "./plugin-parameters";
 import type { WorkStartDraft } from "./work-start-draft";

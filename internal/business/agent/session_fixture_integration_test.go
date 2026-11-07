@@ -9,17 +9,18 @@ import (
 	"sync"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-func sessionControlRequest[T any](message *T) *connect.Request[T] {
-	request := connect.NewRequest(message)
-	request.Header().Set("Authorization", "Bearer control")
-	return request
+// sessionControlRequest is the context of a call under the control token.
+func sessionControlRequest(ctx context.Context) context.Context {
+	ctx, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer control")
+	return ctx
 }
 
 type sessionCommandRecorder struct {

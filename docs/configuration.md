@@ -14,7 +14,9 @@ types they fill; the [self-hosting guide](self-hosting.md) shows how a deploymen
   and merges it over the defaults.
 - In the Kubernetes base, the ConfigMap `<process>-config` (key `defaults.yml`) replaces the
   image's file, mounted at `/app/configs/<process>/`. Its `${NAME}` values come from ConfigMap
-  `workbench-environment` and from Secrets, both as environment variables.
+  `workbench-environment` and from Secrets, both as environment variables. The environment's
+  `CONTROLPLANE_PROFILE` activates a controlplane profile from ConfigMap `controlplane-profile`
+  ([switches](self-hosting.md#switches)).
 - Processes read their configuration once; restart them after a change.
 
 In the tables, **Default** is the value of `configs/<process>/defaults.yml`, which suits a local
@@ -159,8 +161,8 @@ How Agent reaches Computer and Managed Computers.
 | `address`, `token` | `${COMPUTER_ADDRESS:http://127.0.0.1:8080}`, `${COMPUTER_CONTROL_TOKEN:}` | | Computer's admission contract |
 | `relay-address` | `${COMPUTER_RELAY_ADDRESS:}` | `http://computer-gateway.talgent.svc.cluster.local:8085` | The Computer Gateway's relay; empty leaves Managed Computers unreachable. The keys below are required with it. |
 | `mcp-address` | `${COMPUTER_MCP_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/mcp` | HTTPS address of the platform Connector a Managed Work calls |
-| `content-address` | `${COMPUTER_CONTENT_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api/v1/storage/content` | Where a Managed Computer downloads its Works' inputs, Storage's Access Links; same origin as `mcp-address` |
-| `api-address` | `${COMPUTER_API_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api` | HTTPS address of the native API a Managed Work calls; same origin as `mcp-address`. Empty, Managed Works get no native API |
+| `content-address` | `${COMPUTER_CONTENT_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api/v1/storage/content` | Where a Managed Computer downloads its Works' inputs, Storage's Access Links; same origin as `mcp-address`. The base's is served by the `computer-api` rule, so with `COMPUTER_NATIVE_API_ACCESS=disabled` a profile names another |
+| `api-address` | `${COMPUTER_API_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api` | HTTPS address of the native API a Managed Work calls; same origin as `mcp-address`. Empty, Managed Works get no native API; a profile empties it with `COMPUTER_NATIVE_API_ACCESS=disabled` |
 | `workspace-file-address` | `${AGENT_WORKSPACE_FILE_ADDRESS:/api/v1/agent/workspace-files}` | | Where a browser reads a Managed Work's files |
 | `telemetry-address` | `${COMPUTER_TELEMETRY_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/otel` | HTTPS address a Managed Work's Claude Code sends telemetry to |
 | `telemetry-collector-address` | `${COMPUTER_TELEMETRY_COLLECTOR_ADDRESS:}` | `http://otel-collector:4318` | The Collector controlplane forwards that telemetry to |
@@ -180,7 +182,7 @@ How Agent reaches Computer and Managed Computers.
 | `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 32, retry `1s`–`60s` | Each starting Work holds a worker while it prepares |
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
 | `native-api.addr` | `${NATIVE_API_ADDR::8081}` | The API Agents call with their Work credential |
-| `native-api.gateway-token` | none | When set, only a platform Connector presenting it reaches the native API; empty, any caller with a current Work credential does |
+| `native-api.gateway-token` | none | When set, only a platform Connector presenting it reaches the native API; empty, any caller with a current Work credential does. The base gives controlplane `GATEWAY_TOKEN` (Secret `native-execution-control`) for a profile to name |
 | `native-authentication.agent-address`, `agent-control-token` | `${AGENT_INTERNAL_ADDRESS:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent, which verifies each Work credential |
 
 ### marketplace
@@ -198,7 +200,7 @@ How Agent reaches Computer and Managed Computers.
 | `platform-connector.gateway-address` | `${NATIVE_GATEWAY_ADDRESS:}` | The MCP server every Work connects to as the platform Connector, with `description` and `category`; empty publishes none |
 | `directory` | `${MARKETPLACE_DIRECTORY:/mnt/talgent/marketplace}` | Where owned archives are kept |
 | `name`, `owner` | `talgent`, `Talgent` | The catalog's name and owner |
-| `connections.credential-token` | `${AGENT_CONTROL_TOKEN:}` | Admits callers of Marketplace's private services: Work selection, Provider credentials, and synchronization (`talgent.marketplace.private.v1.SynchronizationService`, with `Authorization: Bearer <token>`) |
+| `connections.credential-token` | `${AGENT_CONTROL_TOKEN:}` | Admits callers of Marketplace's private services: Work selection, Provider credentials, and synchronization (`marketplace.private.v1.SynchronizationService`, with `Authorization: Bearer <token>`) |
 | `connections.github.*` | `${GITHUB_SCM_ENABLED:false}`, `${GITHUB_APP_ID:}`, `${GITHUB_APP_SLUG:}`, `${GITHUB_APP_PRIVATE_KEY_PEM:}`, `${GITHUB_OAUTH_CLIENT_ID:}`, `${GITHUB_OAUTH_CLIENT_SECRET:}`, `${GITHUB_WEB_BASE_URL:https://github.com}`, `${GITHUB_API_BASE_URL:https://api.github.com}`, `${GITHUB_API_VERSION:2026-03-10}`, `${GITHUB_SCM_TOKEN_CIPHER_KEY:}`, `${GITHUB_WEBHOOK_SECRET:}` | The GitHub App for repository access (keys `enabled`, `app-id`, `app-slug`, `private-key-pem`, `oauth-client-id`, `oauth-client-secret`, `web-base-url`, `api-base-url`, `api-version`, `token-cipher-key`, `webhook-secret`). Enabled, it requires the App ID, private key, OAuth client and cipher key. Base: Secret `github-scm`. |
 | `connections.maintenance.*` | `enabled: true`, `scan-interval: 5m`, `proactive-refresh-window: 30m`, `request-refresh-skew: 5m`, `refresh-lease-duration: 30s`, `batch-size: 100`, `queue-name: scm-maintenance` | Refreshing Provider tokens before they expire |
 | `marketplace-taskqueue` | queues `marketplace-maintenance` and `scm-maintenance`, concurrency 6 | Synchronization and token maintenance; `queue-names` must include `marketplace-maintenance` |

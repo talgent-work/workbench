@@ -19,7 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // Prefix is where the controlplane serves the endpoint; the computer route

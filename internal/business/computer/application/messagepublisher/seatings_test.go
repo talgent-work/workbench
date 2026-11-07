@@ -11,7 +11,7 @@ import (
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/stretchr/testify/require"
 
-	computereventsv1 "github.com/talgent-work/workbench/gen/go/talgent/computer/events/v1"
+	computerintegrationv1 "github.com/talgent-work/contracts/gen/go/computer/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/computer/application"
 	"github.com/talgent-work/workbench/internal/business/computer/application/messagepublisher"
 )
@@ -20,7 +20,7 @@ import (
 // release or its context.
 type bus struct {
 	mu        sync.Mutex
-	published []*computereventsv1.DeskAssigned
+	published []*computerintegrationv1.DeskAssignedV1
 	started   chan struct{}
 	release   chan struct{}
 }
@@ -36,7 +36,7 @@ func (b *bus) Publish(ctx context.Context, msg integrationmessage.Message) error
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.published = append(b.published, msg.Payload().(*computereventsv1.DeskAssigned))
+	b.published = append(b.published, msg.Payload().(*computerintegrationv1.DeskAssignedV1))
 	return nil
 }
 

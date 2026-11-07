@@ -8,7 +8,7 @@ import (
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/stretchr/testify/require"
 
-	agenteventsv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/events/v1"
+	agentintegrationv1 "github.com/talgent-work/contracts/gen/go/agent/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/inputsettlements"
 )
@@ -28,10 +28,10 @@ func TestSettlementIsPublishedKeyedByWork(t *testing.T) {
 	require.Len(t, published.published, 1)
 	msg := published.published[0]
 	require.Equal(t, "work", msg.Key())
-	payload, ok := msg.Payload().(*agenteventsv1.PlatformInputSettled)
+	payload, ok := msg.Payload().(*agentintegrationv1.PlatformInputSettledV1)
 	require.True(t, ok)
 	require.Equal(t, "input", payload.GetInputId())
-	require.Equal(t, agenteventsv1.PlatformInputOutcome_PLATFORM_INPUT_OUTCOME_DROPPED, payload.GetOutcome())
+	require.Equal(t, agentintegrationv1.PlatformInputOutcome_PLATFORM_INPUT_OUTCOME_DROPPED, payload.GetOutcome())
 	require.Equal(t, at, payload.GetOccurredAt().AsTime())
 	require.Error(t, inputsettlements.NewPublisher(published).Settled(context.Background(), command.InputSettlement{WorkID: "work", InputID: "input", Outcome: "lost"}))
 }

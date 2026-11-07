@@ -11,7 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
@@ -22,14 +23,14 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"xorm.io/xorm"
 
-	agentprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/private/v1/agentprivatev1connect"
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/computer"
-	"github.com/talgent-work/workbench/pkg/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
 // managedLaptop is employee-a's Managed Computer: one Desk, queuing runs
@@ -80,24 +81,24 @@ func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
 	require.NoError(t, app.Start(ctx))
 	t.Cleanup(func() { require.NoError(t, app.Stop(context.Background())) })
 	return &managedQueue{
-		oneRoomCloud: oneRoomCloud{client: agentprivatev1connect.NewAgentServiceClient(server.Client(), server.URL), feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(server.Client(), server.URL), processes: processes, db: db, quota: quota, kube: kube},
+		oneRoomCloud: oneRoomCloud{client: agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), processes: processes, db: db, quota: quota, kube: kube},
 		port:         port, recovery: recovery, seating: seating,
 	}
 }
 
 func (q *managedQueue) createOn(ctx context.Context, definition, computerID, subject string) (string, error) {
-	response, err := q.client.CreateWork(ctx, sessionControlRequest(&agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, WorkspaceReference: subject, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a", ComputerId: computerID}))
+	response, err := q.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, WorkspaceReference: subject, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a", ComputerId: computerID})
 	if err != nil {
 		return "", err
 	}
-	return response.Msg.WorkId, nil
+	return response.WorkId, nil
 }
 
 func (q *managedQueue) state(t *testing.T, ctx context.Context, workID string) agentprivatev1.WorkState {
 	t.Helper()
-	response, err := q.client.GetWork(ctx, sessionControlRequest(&agentprivatev1.GetWorkRequest{SubjectId: "employee-a", WorkId: workID}))
+	response, err := q.client.GetWork(sessionControlRequest(ctx), &agentprivatev1.GetWorkRequest{SubjectId: "employee-a", WorkId: workID})
 	require.NoError(t, err)
-	return response.Msg.GetState()
+	return response.GetState()
 }
 
 func (q *managedQueue) startedFor(workID string) int {
@@ -157,7 +158,7 @@ func TestAFullManagedComputerQueuesOrRejectsByItsPolicy(t *testing.T) {
 	// A stop withdraws a queued first start: the Work is closed at once.
 	withdrawn, err := q.createOn(ctx, definition, managedLaptop, "work-c")
 	require.NoError(t, err)
-	_, err = q.client.StopWork(ctx, sessionControlRequest(&agentprivatev1.StopWorkRequest{SubjectId: "employee-a", WorkId: withdrawn, RequestId: uuid.NewString()}))
+	_, err = q.client.StopWork(sessionControlRequest(ctx), &agentprivatev1.StopWorkRequest{SubjectId: "employee-a", WorkId: withdrawn, RequestId: uuid.NewString()})
 	require.NoError(t, err)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_CLOSED, q.state(t, ctx, withdrawn))
 	require.Eventually(t, func() bool { _, state := q.deskOf(t, withdrawn); return state == "vacated" }, 10*time.Second, 50*time.Millisecond)
@@ -191,14 +192,14 @@ func TestAFullManagedComputerQueuesOrRejectsByItsPolicy(t *testing.T) {
 
 	// A Restart queued behind it is withdrawn by a stop back to Failed, and
 	// the Work is then closed.
-	_, err = q.client.RestartWork(ctx, sessionControlRequest(&agentprivatev1.RestartWorkRequest{SubjectId: "employee-a", WorkId: running, RequestId: uuid.NewString()}))
+	_, err = q.client.RestartWork(sessionControlRequest(ctx), &agentprivatev1.RestartWorkRequest{SubjectId: "employee-a", WorkId: running, RequestId: uuid.NewString()})
 	require.NoError(t, err)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STARTING, q.state(t, ctx, running))
 	require.Equal(t, 1, q.startedFor(running), "the queued Restart asks for no startup")
-	_, err = q.client.StopWork(ctx, sessionControlRequest(&agentprivatev1.StopWorkRequest{SubjectId: "employee-a", WorkId: running, RequestId: uuid.NewString()}))
+	_, err = q.client.StopWork(sessionControlRequest(ctx), &agentprivatev1.StopWorkRequest{SubjectId: "employee-a", WorkId: running, RequestId: uuid.NewString()})
 	require.NoError(t, err)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_FAILED, q.state(t, ctx, running))
-	_, err = q.client.CloseWork(ctx, sessionControlRequest(&agentprivatev1.CloseWorkRequest{SubjectId: "employee-a", WorkId: running, RequestId: uuid.NewString()}))
+	_, err = q.client.CloseWork(sessionControlRequest(ctx), &agentprivatev1.CloseWorkRequest{SubjectId: "employee-a", WorkId: running, RequestId: uuid.NewString()})
 	require.NoError(t, err)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_CLOSED, q.state(t, ctx, running))
 

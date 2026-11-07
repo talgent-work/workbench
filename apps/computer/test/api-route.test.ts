@@ -13,7 +13,7 @@ import { send, Upstream } from './support/upstream.ts'
 // naming a file of the Work, sends the file's bytes as content instead.
 
 const TOKEN = 'run-token'
-const CREATE = '/talgent.storage.private.v1.ArtifactService/CreateArtifact'
+const CREATE = '/storage.private.v1.ArtifactService/CreateArtifact'
 
 let dir: string
 let upstream: Upstream
@@ -55,10 +55,10 @@ const api = (path: string, body?: string, token = TOKEN, headers: Record<string,
   send(`${proxy.origin()}/w/w-1/api/${token}${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', ...headers }, body })
 
 test('a call reaches the native API with the Work identity, never one the process adds', async () => {
-  const answer = await api('/talgent.agent.public.v1.PersonalWorkService/ListLibraryFiles', '{"nameQuery":"report"}', TOKEN, { 'x-talgent-work-id': 'forged', authorization: 'Bearer x' })
+  const answer = await api('/agent.public.v1.PersonalWorkService/ListLibraryFiles', '{"nameQuery":"report"}', TOKEN, { 'x-talgent-work-id': 'forged', authorization: 'Bearer x' })
   assert.equal(answer.status, 200)
   const seen = upstream.last()
-  assert.equal(seen.url, '/computer/v1/api/talgent.agent.public.v1.PersonalWorkService/ListLibraryFiles')
+  assert.equal(seen.url, '/computer/v1/api/agent.public.v1.PersonalWorkService/ListLibraryFiles')
   assert.equal(seen.headers['x-talgent-work-id'], 'w-1')
   assert.equal(seen.headers['x-talgent-work-credential'], 'cred')
   assert.equal(seen.headers['x-talgent-space-token'], 'space')

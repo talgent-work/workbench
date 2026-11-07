@@ -3,10 +3,10 @@ package connectrpc
 import (
 	"context"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
-	storageprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/storage/private/v1/storageprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
@@ -24,11 +24,12 @@ func NewReferenceSpaceHandler(app *application.Application, tokens ...string) *R
 	return &ReferenceSpaceHandler{application: app, tokens: tokens}
 }
 
-func (h *ReferenceSpaceHandler) ReadReferenceFiles(ctx context.Context, request *connect.Request[storageprivatev1.ReadReferenceFilesRequest]) (*connect.Response[storageprivatev1.ReadReferenceFilesResponse], error) {
-	if err := authenticateAny(request.Header().Get("Authorization"), h.tokens); err != nil {
+func (h *ReferenceSpaceHandler) ReadReferenceFiles(ctx context.Context, request *storageprivatev1.ReadReferenceFilesRequest) (*storageprivatev1.ReadReferenceFilesResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := authenticateAny(info.RequestHeader().Get("Authorization"), h.tokens); err != nil {
 		return nil, err
 	}
-	files, err := h.application.ReadReferenceFiles(ctx, request.Msg.GetOwner(), request.Msg.GetPaths())
+	files, err := h.application.ReadReferenceFiles(ctx, request.GetOwner(), request.GetPaths())
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -36,23 +37,24 @@ func (h *ReferenceSpaceHandler) ReadReferenceFiles(ctx context.Context, request 
 	for _, file := range files {
 		response.Files = append(response.Files, &storageprivatev1.ReferenceFile{Path: string(file.Path), Content: file.Content})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *ReferenceSpaceHandler) ReplaceReferenceContent(ctx context.Context, request *connect.Request[storageprivatev1.ReplaceReferenceContentRequest]) (*connect.Response[storageprivatev1.ReplaceReferenceContentResponse], error) {
-	if err := authenticateAny(request.Header().Get("Authorization"), h.tokens); err != nil {
+func (h *ReferenceSpaceHandler) ReplaceReferenceContent(ctx context.Context, request *storageprivatev1.ReplaceReferenceContentRequest) (*storageprivatev1.ReplaceReferenceContentResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	if err := authenticateAny(info.RequestHeader().Get("Authorization"), h.tokens); err != nil {
 		return nil, err
 	}
-	files := make([]application.ReferenceFile, 0, len(request.Msg.GetFiles()))
-	for _, file := range request.Msg.GetFiles() {
+	files := make([]application.ReferenceFile, 0, len(request.GetFiles()))
+	for _, file := range request.GetFiles() {
 		path, err := domain.ParseReferencePath(file.GetPath())
 		if err != nil {
 			return nil, mapError(err)
 		}
 		files = append(files, application.ReferenceFile{Path: path, Content: file.GetContent()})
 	}
-	if err := h.application.ReplaceReferenceContent(ctx, request.Msg.GetOwner(), files); err != nil {
+	if err := h.application.ReplaceReferenceContent(ctx, request.GetOwner(), files); err != nil {
 		return nil, mapError(err)
 	}
-	return connect.NewResponse(&storageprivatev1.ReplaceReferenceContentResponse{}), nil
+	return &storageprivatev1.ReplaceReferenceContentResponse{}, nil
 }

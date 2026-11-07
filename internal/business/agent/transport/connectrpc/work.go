@@ -6,15 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
-	agentpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/agent/public/v1/agentpublicv1connect"
-	dispatcherpublicv1 "github.com/talgent-work/workbench/gen/go/talgent/dispatcher/public/v1"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
+	dispatcherpublicv1 "github.com/talgent-work/contracts/gen/go/dispatcher/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -28,54 +27,54 @@ func NewWorkHandler(app *application.Application) *WorkHandler {
 	return &WorkHandler{application: app}
 }
 
-func (h *WorkHandler) SetThinkingLevel(ctx context.Context, request *connect.Request[agentpublicv1.SetThinkingLevelRequest]) (*connect.Response[agentpublicv1.SetThinkingLevelResponse], error) {
+func (h *WorkHandler) SetThinkingLevel(ctx context.Context, request *agentpublicv1.SetThinkingLevelRequest) (*agentpublicv1.SetThinkingLevelResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	err := h.application.SetThinkingLevel(ctx, application.SetThinkingLevel{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), Level: request.Msg.GetLevel()})
+	err := h.application.SetThinkingLevel(ctx, application.SetThinkingLevel{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Level: request.GetLevel()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.SetThinkingLevelResponse{}), nil
+	return &agentpublicv1.SetThinkingLevelResponse{}, nil
 }
 
-func (h *WorkHandler) GetThinkingLevel(ctx context.Context, request *connect.Request[agentpublicv1.GetThinkingLevelRequest]) (*connect.Response[agentpublicv1.GetThinkingLevelResponse], error) {
+func (h *WorkHandler) GetThinkingLevel(ctx context.Context, request *agentpublicv1.GetThinkingLevelRequest) (*agentpublicv1.GetThinkingLevelResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	level, err := h.application.GetThinkingLevel(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId())})
+	level, err := h.application.GetThinkingLevel(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.GetThinkingLevelResponse{Level: level}), nil
+	return &agentpublicv1.GetThinkingLevelResponse{Level: level}, nil
 }
 
-func (h *WorkHandler) SendMessage(ctx context.Context, request *connect.Request[agentpublicv1.SendMessageRequest]) (*connect.Response[agentpublicv1.SendMessageResponse], error) {
+func (h *WorkHandler) SendMessage(ctx context.Context, request *agentpublicv1.SendMessageRequest) (*agentpublicv1.SendMessageResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	err := h.application.Commands.SendMessage.Handle(ctx, command.SendWorkMessage{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), Input: command.ExecutionInput{ID: strings.TrimSpace(request.Msg.GetInputId()), Text: request.Msg.GetText()}})
+	err := h.application.Commands.SendMessage.Handle(ctx, command.SendWorkMessage{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Input: command.ExecutionInput{ID: strings.TrimSpace(request.GetInputId()), Text: request.GetText()}})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.SendMessageResponse{}), nil
+	return &agentpublicv1.SendMessageResponse{}, nil
 }
 
-func (h *WorkHandler) RespondToInteraction(ctx context.Context, request *connect.Request[agentpublicv1.RespondToInteractionRequest]) (*connect.Response[agentpublicv1.RespondToInteractionResponse], error) {
+func (h *WorkHandler) RespondToInteraction(ctx context.Context, request *agentpublicv1.RespondToInteractionRequest) (*agentpublicv1.RespondToInteractionResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	err := h.application.Commands.ReplyToInteraction.Handle(ctx, command.ReplyToWorkInteraction{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), Response: command.InteractionResponse{InteractionID: strings.TrimSpace(request.Msg.GetInteractionId()), Allow: request.Msg.GetAllow(), AlwaysAllow: request.Msg.GetAlwaysAllow(), UpdatedInputJSON: request.Msg.GetUpdatedInputJson()}})
+	err := h.application.Commands.ReplyToInteraction.Handle(ctx, command.ReplyToWorkInteraction{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Response: command.InteractionResponse{InteractionID: strings.TrimSpace(request.GetInteractionId()), Allow: request.GetAllow(), AlwaysAllow: request.GetAlwaysAllow(), UpdatedInputJSON: request.GetUpdatedInputJson()}})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.RespondToInteractionResponse{}), nil
+	return &agentpublicv1.RespondToInteractionResponse{}, nil
 }
 
-func (h *WorkHandler) GetWork(ctx context.Context, request *connect.Request[agentpublicv1.GetWorkRequest]) (*connect.Response[agentpublicv1.GetWorkResponse], error) {
+func (h *WorkHandler) GetWork(ctx context.Context, request *agentpublicv1.GetWorkRequest) (*agentpublicv1.GetWorkResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.Queries.GetWorkView.Handle(ctx, query.GetWorkView{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId())})
+	value, err := h.application.Queries.GetWorkView.Handle(ctx, query.GetWorkView{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.GetWorkResponse{Work: workViewToProto(value)}), nil
+	return &agentpublicv1.GetWorkResponse{Work: workViewToProto(value)}, nil
 }
 
-func (h *WorkHandler) ListWorkLifecycleEvents(ctx context.Context, request *connect.Request[agentpublicv1.ListWorkLifecycleEventsRequest]) (*connect.Response[agentpublicv1.ListWorkLifecycleEventsResponse], error) {
+func (h *WorkHandler) ListWorkLifecycleEvents(ctx context.Context, request *agentpublicv1.ListWorkLifecycleEventsRequest) (*agentpublicv1.ListWorkLifecycleEventsResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	events, err := h.application.Queries.ListWorkLifecycleEvents.Handle(ctx, query.ListWorkLifecycleEvents{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId())})
+	events, err := h.application.Queries.ListWorkLifecycleEvents.Handle(ctx, query.ListWorkLifecycleEvents{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -83,61 +82,61 @@ func (h *WorkHandler) ListWorkLifecycleEvents(ctx context.Context, request *conn
 	for _, event := range events {
 		response.Events = append(response.Events, &agentpublicv1.WorkLifecycleEvent{State: string(event.State), OccurredAt: timestamppb.New(event.OccurredAt)})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *WorkHandler) StopWork(ctx context.Context, request *connect.Request[agentpublicv1.StopWorkRequest]) (*connect.Response[agentpublicv1.StopWorkResponse], error) {
+func (h *WorkHandler) StopWork(ctx context.Context, request *agentpublicv1.StopWorkRequest) (*agentpublicv1.StopWorkResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.StopWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), ExpectedVersion: expectedVersion(request.Msg.ExpectedVersion)})
+	value, err := h.application.StopWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.StopWorkResponse{Work: workViewToProto(value)}), nil
+	return &agentpublicv1.StopWorkResponse{Work: workViewToProto(value)}, nil
 }
 
-func (h *WorkHandler) ResumeWork(ctx context.Context, request *connect.Request[agentpublicv1.ResumeWorkRequest]) (*connect.Response[agentpublicv1.ResumeWorkResponse], error) {
+func (h *WorkHandler) ResumeWork(ctx context.Context, request *agentpublicv1.ResumeWorkRequest) (*agentpublicv1.ResumeWorkResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.ResumeWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), ExpectedVersion: expectedVersion(request.Msg.ExpectedVersion)})
+	value, err := h.application.ResumeWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.ResumeWorkResponse{Work: workViewToProto(value)}), nil
+	return &agentpublicv1.ResumeWorkResponse{Work: workViewToProto(value)}, nil
 }
 
-func (h *WorkHandler) ArchiveWork(ctx context.Context, request *connect.Request[agentpublicv1.ArchiveWorkRequest]) (*connect.Response[agentpublicv1.ArchiveWorkResponse], error) {
+func (h *WorkHandler) ArchiveWork(ctx context.Context, request *agentpublicv1.ArchiveWorkRequest) (*agentpublicv1.ArchiveWorkResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.CloseWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), ExpectedVersion: expectedVersion(request.Msg.ExpectedVersion)})
+	value, err := h.application.CloseWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.ArchiveWorkResponse{Work: workViewToProto(value)}), nil
+	return &agentpublicv1.ArchiveWorkResponse{Work: workViewToProto(value)}, nil
 }
 
-func (h *WorkHandler) RestartWork(ctx context.Context, request *connect.Request[agentpublicv1.RestartWorkRequest]) (*connect.Response[agentpublicv1.RestartWorkResponse], error) {
+func (h *WorkHandler) RestartWork(ctx context.Context, request *agentpublicv1.RestartWorkRequest) (*agentpublicv1.RestartWorkResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.RestartWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), ExpectedVersion: expectedVersion(request.Msg.ExpectedVersion)})
+	value, err := h.application.RestartWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.RestartWorkResponse{Work: workViewToProto(value)}), nil
+	return &agentpublicv1.RestartWorkResponse{Work: workViewToProto(value)}, nil
 }
 
-func (h *WorkHandler) ChangeWorkVisibility(ctx context.Context, request *connect.Request[agentpublicv1.ChangeWorkVisibilityRequest]) (*connect.Response[agentpublicv1.ChangeWorkVisibilityResponse], error) {
+func (h *WorkHandler) ChangeWorkVisibility(ctx context.Context, request *agentpublicv1.ChangeWorkVisibilityRequest) (*agentpublicv1.ChangeWorkVisibilityResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.ChangeWorkVisibility(ctx, application.ChangeWorkVisibility{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), Public: request.Msg.GetPublic()})
+	value, err := h.application.ChangeWorkVisibility(ctx, application.ChangeWorkVisibility{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Public: request.GetPublic()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.ChangeWorkVisibilityResponse{Work: workViewToProto(value)}), nil
+	return &agentpublicv1.ChangeWorkVisibilityResponse{Work: workViewToProto(value)}, nil
 }
 
-func (h *WorkHandler) RevokeWorkShare(ctx context.Context, request *connect.Request[agentpublicv1.RevokeWorkShareRequest]) (*connect.Response[agentpublicv1.RevokeWorkShareResponse], error) {
+func (h *WorkHandler) RevokeWorkShare(ctx context.Context, request *agentpublicv1.RevokeWorkShareRequest) (*agentpublicv1.RevokeWorkShareResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.RevokeWorkShare(ctx, application.RevokeWorkShare{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId()), ReaderID: strings.TrimSpace(request.Msg.GetReaderUserId())})
+	value, err := h.application.RevokeWorkShare(ctx, application.RevokeWorkShare{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ReaderID: strings.TrimSpace(request.GetReaderUserId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.RevokeWorkShareResponse{Work: workViewToProto(value)}), nil
+	return &agentpublicv1.RevokeWorkShareResponse{Work: workViewToProto(value)}, nil
 }
 
 func workViewToProto(value query.WorkView) *agentpublicv1.WorkInfo {
@@ -222,9 +221,9 @@ var modelVendors = map[string]agentpublicv1.ModelVendor{
 	"minimax":   agentpublicv1.ModelVendor_MODEL_VENDOR_MINIMAX,
 }
 
-func (h *WorkHandler) ListPendingInteractions(ctx context.Context, request *connect.Request[agentpublicv1.ListPendingInteractionsRequest]) (*connect.Response[agentpublicv1.ListPendingInteractionsResponse], error) {
+func (h *WorkHandler) ListPendingInteractions(ctx context.Context, request *agentpublicv1.ListPendingInteractionsRequest) (*agentpublicv1.ListPendingInteractionsResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	items, err := h.application.ListPendingInteractions(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.GetWorkId())})
+	items, err := h.application.ListPendingInteractions(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -232,24 +231,24 @@ func (h *WorkHandler) ListPendingInteractions(ctx context.Context, request *conn
 	for _, item := range items {
 		response.Interactions = append(response.Interactions, &dispatcherpublicv1.PendingInteraction{Id: item.ID, ToolCallId: item.ToolCallID, ToolName: item.ToolName, Prompt: item.Prompt, CanAlwaysAllow: item.CanAlwaysAllow, QuestionInputJson: item.QuestionInputJSON, ReplySubmitted: item.ReplySubmitted, TurnId: item.TurnID, Agent: item.Agent})
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
-func (h *WorkHandler) CancelTurn(ctx context.Context, request *connect.Request[agentpublicv1.CancelTurnRequest]) (*connect.Response[agentpublicv1.CancelTurnResponse], error) {
+func (h *WorkHandler) CancelTurn(ctx context.Context, request *agentpublicv1.CancelTurnRequest) (*agentpublicv1.CancelTurnResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	err := h.application.CancelTurn(ctx, application.CancelTurn{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.WorkId), TurnID: request.Msg.TurnId})
+	err := h.application.CancelTurn(ctx, application.CancelTurn{ActorUserID: actor, WorkID: strings.TrimSpace(request.WorkId), TurnID: request.TurnId})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.CancelTurnResponse{}), nil
+	return &agentpublicv1.CancelTurnResponse{}, nil
 }
-func (h *WorkHandler) GetCurrentTurn(ctx context.Context, request *connect.Request[agentpublicv1.GetCurrentTurnRequest]) (*connect.Response[agentpublicv1.GetCurrentTurnResponse], error) {
+func (h *WorkHandler) GetCurrentTurn(ctx context.Context, request *agentpublicv1.GetCurrentTurnRequest) (*agentpublicv1.GetCurrentTurnResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	turn, err := h.application.GetCurrentTurn(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.Msg.WorkId)})
+	turn, err := h.application.GetCurrentTurn(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.WorkId)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return connect.NewResponse(&agentpublicv1.GetCurrentTurnResponse{TurnId: turn.ID, CancelRequested: turn.CancelRequested, Active: turn.Active}), nil
+	return &agentpublicv1.GetCurrentTurnResponse{TurnId: turn.ID, CancelRequested: turn.CancelRequested, Active: turn.Active}, nil
 }
 
 // workModelFromProto maps a requested model selection; an absent one selects

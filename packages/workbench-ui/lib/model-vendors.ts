@@ -1,4 +1,4 @@
-import { ModelVendor } from "@talgent/workbench-contracts/agent/public/v1/model_pb";
+import { ModelVendor } from "@talgent/contracts/agent/public/v1/model_pb";
 
 // Each Model Vendor the platform knows has a bundled mark; see product-icons/README.md.
 export const modelVendors: Record<ModelVendor, { label: string; icon?: string }> = {

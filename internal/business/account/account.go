@@ -14,20 +14,19 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"go.uber.org/fx"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/gen/go/talgent/account/private/v1/accountprivatev1connect"
-	"github.com/talgent-work/workbench/gen/go/talgent/account/public/v1/accountpublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/account/private/v1/accountprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/account/public/v1/accountpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/account/application"
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 	"github.com/talgent-work/workbench/internal/business/account/infrastructure"
 	accountconnect "github.com/talgent-work/workbench/internal/business/account/transport/connectrpc"
 	accounthttp "github.com/talgent-work/workbench/internal/business/account/transport/http"
-	"github.com/talgent-work/workbench/pkg/authn"
-	"github.com/talgent-work/workbench/pkg/connectlog"
-	pkgmysql "github.com/talgent-work/workbench/pkg/mysql"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
+	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
 // Database is the name of Account's own MySQL connection (talgent_account).
@@ -206,15 +205,13 @@ func newHTTPHandler(app *application.Application, cfg accounthttp.Config, logger
 
 func register(r registration) {
 	r.Mux.Handle(accounthttp.PathPrefix, r.Handler)
-	path, handler := accountprivatev1connect.NewUserDirectoryServiceHandler(
-		accountconnect.NewUserDirectory(r.App),
-		connect.WithInterceptors(connectlog.NewInterceptor(r.Logger)),
-	)
-	r.Mux.Handle(path, handler)
+	private := connectserver.New(r.Logger)
+	accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
+	connectserver.Mount(r.Mux, private)
 	// The browser reads who is signed in under the gateway-verified identity.
-	path, handler = accountpublicv1connect.NewSessionServiceHandler(accountconnect.Session{},
-		connect.WithInterceptors(connectlog.NewInterceptor(r.Logger), authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})))
-	r.Mux.Handle(path, handler)
+	public := connectserver.New(r.Logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	accountpublicv1connect.RegisterSessionServiceHandler(public, accountconnect.Session{})
+	connectserver.Mount(r.Mux, public)
 }
 
 // Module wires Account into the controlplane process. The named MySQL

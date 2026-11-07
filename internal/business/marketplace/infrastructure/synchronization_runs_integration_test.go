@@ -14,21 +14,23 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	marketplaceprivatev1 "github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1"
-	"github.com/talgent-work/workbench/gen/go/talgent/marketplace/private/v1/marketplaceprivatev1connect"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
+	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	catalogtask "github.com/talgent-work/workbench/internal/business/marketplace/application/task"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/business/marketplace/transport/taskprocessor"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
+	runtimequeue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
+	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
-	"github.com/talgent-work/workbench/pkg/authn"
-	runtimequeue "github.com/talgent-work/workbench/pkg/taskqueue"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -56,35 +58,40 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 	producer.RequireStart()
 	defer producer.RequireStop()
 	app := application.NewCatalogSynchronization(runs, synchronizer, enqueuer, time.Minute, true, logger)
-	_, handler := marketplaceprivatev1connect.NewSynchronizationServiceHandler(transport.NewSynchronizationHandler(app, "fixture-platform-token"))
+	handler := connecttest.Handler(func(s *connect.Server) {
+		marketplaceprivatev1connect.RegisterSynchronizationServiceHandler(s, transport.NewSynchronizationHandler(app, "fixture-platform-token"))
+	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	client := marketplaceprivatev1connect.NewSynchronizationServiceClient(server.Client(), server.URL)
-	request := func(force bool) *connect.Request[marketplaceprivatev1.RequestSynchronizationRequest] {
-		req := connect.NewRequest(&marketplaceprivatev1.RequestSynchronizationRequest{Force: force})
-		req.Header().Set("Authorization", "Bearer fixture-platform-token")
-		return req
+	client := marketplaceprivatev1connect.NewSynchronizationServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
+	// platform is the context of a call under the platform token, with any
+	// further header pairs.
+	platform := func(pairs ...string) context.Context {
+		ctx, info := connect.NewClientContext(t.Context())
+		info.RequestHeader().Set("Authorization", "Bearer fixture-platform-token")
+		for i := 0; i+1 < len(pairs); i += 2 {
+			info.RequestHeader().Set(pairs[i], pairs[i+1])
+		}
+		return ctx
 	}
-	_, err = client.RequestSynchronization(t.Context(), connect.NewRequest(&marketplaceprivatev1.RequestSynchronizationRequest{}))
+	_, err = client.RequestSynchronization(t.Context(), &marketplaceprivatev1.RequestSynchronizationRequest{})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	native := request(false)
-	native.Header().Set(authn.HeaderNativeWorkID, "work")
-	_, err = client.RequestSynchronization(t.Context(), native)
+	_, err = client.RequestSynchronization(platform(authn.HeaderNativeWorkID, "work"), &marketplaceprivatev1.RequestSynchronizationRequest{})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	first, err := client.RequestSynchronization(t.Context(), request(false))
+	first, err := client.RequestSynchronization(platform(), &marketplaceprivatev1.RequestSynchronizationRequest{})
 	require.NoError(t, err)
-	require.Equal(t, "queued", first.Msg.Run.Status)
+	require.Equal(t, "queued", first.Run.Status)
 	var wg sync.WaitGroup
 	results := make(chan *marketplaceprivatev1.SynchronizationRun, 12)
 	failures := make(chan error, 12)
 	for range 12 {
 		wg.Go(func() {
-			response, err := client.RequestSynchronization(t.Context(), request(true))
+			response, err := client.RequestSynchronization(platform(), &marketplaceprivatev1.RequestSynchronizationRequest{Force: true})
 			if err != nil {
 				failures <- err
 				return
 			}
-			results <- response.Msg.Run
+			results <- response.Run
 		})
 	}
 	wg.Wait()
@@ -94,7 +101,7 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 		require.NoError(t, err)
 	}
 	for run := range results {
-		require.Equal(t, first.Msg.Run.Id, run.Id)
+		require.Equal(t, first.Run.Id, run.Id)
 		require.False(t, run.Force)
 	}
 	worker := fxtest.NewLifecycle(t)
@@ -105,18 +112,16 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 	waitResult := func(id string) *marketplaceprivatev1.SynchronizationRun {
 		var run *marketplaceprivatev1.SynchronizationRun
 		require.Eventually(t, func() bool {
-			req := connect.NewRequest(&marketplaceprivatev1.GetSynchronizationRequest{})
-			req.Header().Set("Authorization", "Bearer fixture-platform-token")
-			response, err := client.GetSynchronization(t.Context(), req)
+			response, err := client.GetSynchronization(platform(), &marketplaceprivatev1.GetSynchronizationRequest{})
 			if err != nil {
 				return false
 			}
-			run = response.Msg.Run
+			run = response.Run
 			return run != nil && run.Id == id && run.Status == "partial_failure"
 		}, 10*time.Second, 20*time.Millisecond)
 		return run
 	}
-	run := waitResult(first.Msg.Run.Id)
+	run := waitResult(first.Run.Id)
 	require.Len(t, run.Failures, 1)
 	require.Equal(t, "source", run.Failures[0].Source)
 	require.Equal(t, "missing", run.Failures[0].Slug)
@@ -125,18 +130,18 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1.0.0", release.Version)
 	require.NoError(t, app.Execute(t.Context(), run.Id), "duplicate delivery is a no-op after completion")
-	next, err := client.RequestSynchronization(t.Context(), request(true))
+	next, err := client.RequestSynchronization(platform(), &marketplaceprivatev1.RequestSynchronizationRequest{Force: true})
 	require.NoError(t, err)
-	require.NotEqual(t, run.Id, next.Msg.Run.Id)
-	require.True(t, next.Msg.Run.Force)
-	waitResult(next.Msg.Run.Id)
+	require.NotEqual(t, run.Id, next.Run.Id)
+	require.True(t, next.Run.Force)
+	waitResult(next.Run.Id)
 	// The periodic trigger uses the same admission and execution command.
 	periodic, err := catalogtask.NewSynchronization("")
 	require.NoError(t, err)
 	require.NoError(t, taskprocessor.NewSynchronizationProcessor(app).Process(t.Context(), periodic))
 	latest, err := runs.Latest(t.Context())
 	require.NoError(t, err)
-	require.NotEqual(t, next.Msg.Run.Id, latest.ID)
+	require.NotEqual(t, next.Run.Id, latest.ID)
 	waitResult(latest.ID)
 	// A stopped process cannot reserve the platform slot forever. No sleep or
 	// production mutation is needed to exercise the expired persisted reservation.
