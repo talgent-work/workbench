@@ -557,50 +557,6 @@ spec:
     matchLabels:
       talgent.io/storage: juicefs-root
 ---
-# The same JuiceFS filesystem, claimed again for Work input sources. Sandboxes
-# mount it read-only: OpenSandbox requires every mount of one claim to share its
-# read-only policy, and talgent-juicefs-root is mounted read-write. A distinct
-# volumeHandle gives it its own CSI mount.
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: talgent-juicefs-inputs
-  labels:
-    talgent.io/storage: juicefs-inputs
-spec:
-  capacity:
-    storage: 100Gi
-  accessModes:
-    - ReadWriteMany
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
-  # File attributes (uploader, producing Work) are extended attributes.
-  mountOptions:
-    - enable-xattr
-  csi:
-    driver: csi.juicefs.com
-    volumeHandle: talgent-juicefs-inputs-rustfs
-    fsType: juicefs
-    nodePublishSecretRef:
-      name: talgent-juicefs-secret
-      namespace: talgent
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: talgent-juicefs-inputs
-  namespace: talgent
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: ""
-  resources:
-    requests:
-      storage: 100Gi
-  selector:
-    matchLabels:
-      talgent.io/storage: juicefs-inputs
----
 # The same JuiceFS filesystem, claimed read-only for Storage's standing
 # originals mount (Storage's Originals Mount Contract).
 apiVersion: v1
@@ -645,8 +601,8 @@ spec:
 ---
 # Process files and Agent HOME on the NAS, which Storage alone writes:
 # workspaces/, homes/ and .reclaim/ under the share. A static PV keeps that
-# fixed layout; sandboxes mount their own directory by subPath. Sandboxes
-# cannot reach the NAS: sandbox-boundary denies private networks.
+# fixed layout. Sandboxes mount their own directory by subPath through the
+# claim of the same name in talgent-sandbox (sandbox.yaml).
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -694,35 +650,6 @@ kind: ServiceAccount
 metadata:
   name: talgent-controlplane
   namespace: talgent
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: talgent-controlplane
-  namespace: talgent
-rules:
-  - apiGroups: [""]
-    resources: ["resourcequotas"]
-    verbs: ["get"]
-  # Agent observes the OpenSandbox resources that are the environment
-  # authority; creation and deletion go through the OpenSandbox API.
-  - apiGroups: ["sandbox.opensandbox.io"]
-    resources: ["batchsandboxes"]
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: talgent-controlplane
-  namespace: talgent
-subjects:
-  - kind: ServiceAccount
-    name: talgent-controlplane
-    namespace: talgent
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: talgent-controlplane
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1049,40 +976,6 @@ spec:
     - name: http
       port: 8084
       targetPort: 8084
----
-# Only Works reach the controlplane's native API, which admits each call by
-# its Work credential: sandboxes, and Managed Works through the Envoy
-# Gateway; its business port stays open to the cluster. The rule names the Pods' port, as the CNI sees the backend.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: controlplane-native-api
-  namespace: talgent
-spec:
-  podSelector:
-    matchLabels:
-      app: controlplane
-  policyTypes: [Ingress]
-  ingress:
-    - ports:
-        - port: 8080
-          protocol: TCP
-    - from:
-        - podSelector:
-            matchExpressions:
-              - key: batch-sandbox.sandbox.opensandbox.io/name
-                operator: Exists
-      ports:
-        - port: 8081
-          protocol: TCP
-    # Managed Works, through the computer route's computer-api rule.
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: envoy-gateway-system
-      ports:
-        - port: 8081
-          protocol: TCP
 ---
 apiVersion: apps/v1
 kind: Deployment

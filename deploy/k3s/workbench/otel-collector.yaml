@@ -3,10 +3,10 @@
 # them to ClickHouse (CLICKHOUSE_ADDR of workbench-environment) as the
 # CLICKHOUSE_USER account.
 #
-# scripts/deploy/apply-opensandbox.sh applies these objects (selected by their
-# app.kubernetes.io/name label) before the sandbox NetworkPolicy, which needs
-# this Service's ClusterIP. It also creates the otelcol-config ConfigMap from
-# configs/otelcol/config.yaml (the only copy of the pipeline);
+# scripts/deploy/apply-k3s.sh applies these objects (selected by their
+# app.kubernetes.io/name label) before the ClickHouse migration, which reads
+# the native tables the Collector creates. It also creates the otelcol-config
+# ConfigMap from configs/otelcol/config.yaml (the only copy of the pipeline);
 # scripts/deploy/render-k3s.sh stamps its hash below so a config change rolls
 # the Pods.
 #
@@ -130,43 +130,3 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: otel-collector
----
-# Only sandboxes and controlplane send telemetry, controlplane its own and
-# that of Managed Works it attributed (the computer route's
-# computer-telemetry rule); the Collector only reaches ClickHouse's native
-# port and DNS. A deployment narrows the egress to its ClickHouse address.
-# Kubelet probes are allowed by the policy implementation regardless of these
-# rules.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: otel-collector-isolation
-  namespace: talgent
-  labels:
-    app.kubernetes.io/name: otel-collector
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: otel-collector
-  policyTypes: [Ingress, Egress]
-  ingress:
-    - from:
-        - podSelector:
-            matchExpressions:
-              - key: batch-sandbox.sandbox.opensandbox.io/name
-                operator: Exists
-        - podSelector:
-            matchLabels:
-              app: controlplane
-      ports:
-        - protocol: TCP
-          port: 4318
-  egress:
-    - ports:
-        - protocol: TCP
-          port: 9000
-    - ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53

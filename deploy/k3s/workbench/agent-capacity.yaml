@@ -1,3 +1,15 @@
+# The sandbox namespace and its budget. scripts/deploy/apply-k3s.sh applies
+# these objects (selected by their app.kubernetes.io/name label) ahead of
+# every Pod. sandbox.yaml holds what else lives in the namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: talgent-sandbox
+  labels:
+    app.kubernetes.io/name: agent-capacity
+---
+# Pods that declare no requests, the sandbox's egress sidecar among them, get
+# these, so the quota and the scheduler see every Pod's share.
 apiVersion: v1
 kind: LimitRange
 metadata:
@@ -12,13 +24,28 @@ spec:
         cpu: 100m
         memory: 128Mi
 ---
-# Agent checks this namespace-wide budget before requesting an environment.
-# Service Pods share the namespace; their requests count toward the same budget.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: application-requests
+  namespace: talgent-sandbox
+  labels:
+    app.kubernetes.io/name: agent-capacity
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+---
+# The Cloud's execution capacity: Agent checks this budget before requesting
+# an environment. Only sandboxes run in the namespace, so only they count
+# toward it.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: agent-executions
-  namespace: talgent
+  namespace: talgent-sandbox
   labels:
     app.kubernetes.io/name: agent-capacity
 spec:

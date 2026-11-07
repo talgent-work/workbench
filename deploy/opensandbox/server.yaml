@@ -45,7 +45,7 @@ data:
     readiness_timeout_seconds = 60.0
     [kubernetes]
     kubeconfig_path = ""
-    namespace = "talgent"
+    namespace = "talgent-sandbox"
     workload_provider = "batchsandbox"
     sandbox_create_timeout_seconds = 300
     # The informer cache stopped following BatchSandbox status on this cluster:
@@ -59,67 +59,6 @@ data:
 
     [ingress]
     mode = "direct"
----
-# Source: opensandbox-server/templates/server.yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: opensandbox-role
-  labels:
-    helm.sh/chart: opensandbox-server-0.1.0
-    app.kubernetes.io/name: opensandbox-server
-    app.kubernetes.io/instance: opensandbox
-    app.kubernetes.io/version: "0.2.2"
-    app.kubernetes.io/managed-by: kubectl
-    app.kubernetes.io/component: opensandbox-server
-    app.kubernetes.io/part-of: opensandbox
-rules:
-  - apiGroups: [""]
-    resources: ["pods", "pods/status", "pods/log", "events", "services", "configmaps"]
-    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list"]
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["create", "delete", "get"]
-  - apiGroups: [""]
-    resources: ["persistentvolumeclaims"]
-    verbs: ["create", "delete", "get", "list", "patch"]
-  - apiGroups: ["node.k8s.io"]
-    resources: ["runtimeclasses"]
-    verbs: ["get", "list"]
-  - apiGroups: ["sandbox.opensandbox.io"]
-    resources: ["batchsandboxes", "batchsandboxes/status", "batchsandboxes/finalizers"]
-    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
-  - apiGroups: ["sandbox.opensandbox.io"]
-    resources: ["pools", "pools/status", "pools/finalizers"]
-    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
-  - apiGroups: ["sandbox.opensandbox.io"]
-    resources: ["sandboxsnapshots", "sandboxsnapshots/status", "sandboxsnapshots/finalizers"]
-    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
----
-# Source: opensandbox-server/templates/server.yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: opensandbox-rolebinding
-  labels:
-    helm.sh/chart: opensandbox-server-0.1.0
-    app.kubernetes.io/name: opensandbox-server
-    app.kubernetes.io/instance: opensandbox
-    app.kubernetes.io/version: "0.2.2"
-    app.kubernetes.io/managed-by: kubectl
-    app.kubernetes.io/component: opensandbox-server
-    app.kubernetes.io/part-of: opensandbox
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: opensandbox-role
-subjects:
-  - kind: ServiceAccount
-    name: opensandbox
-    namespace: talgent
 ---
 # Source: opensandbox-server/templates/server.yaml
 apiVersion: v1
@@ -178,7 +117,7 @@ spec:
         # The server parses config.toml once at startup, so an in-place update
         # of the ConfigMap leaves the running pod on the previous configuration.
         # Hashing the rendered TOML rolls the Deployment whenever it changes.
-        checksum/config: 2cd83c2f6018deaa25115243809b16b6434fb9e8f3dd4764dca6e77b51edfa39
+        checksum/config: 0601ed90ade3d7690986fa91c2e17168864e44689fefd94436dffd57b3311522
         talgent.io/runtime-config-sha256: TALGENT_RUNTIME_CONFIG_SHA256
     spec:
       imagePullSecrets:
