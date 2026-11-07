@@ -15,7 +15,7 @@ import (
 // New is a Connect server whose every call carries ContractsVersionHeader
 // and is logged once; interceptors run inside them, in order.
 func New(logger *slog.Logger, interceptors ...connect.ServerInterceptor) *connect.Server {
-	shared := []connect.ServerInterceptor{NewContractsVersionInterceptor(builtContractsVersion()), connectlog.NewInterceptor(logger)}
+	shared := []connect.ServerInterceptor{NewContractsVersionInterceptor(BuiltContractsVersion()), connectlog.NewInterceptor(logger)}
 	return connect.NewServer(append(shared, interceptors...)...)
 }
 
