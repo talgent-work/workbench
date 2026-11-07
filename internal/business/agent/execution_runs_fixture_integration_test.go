@@ -37,7 +37,7 @@ type realizedEnvironments struct {
 
 var _ command.ExecutionEnvironmentPort = realizedEnvironments{}
 
-func (r realizedEnvironments) Observe(_ context.Context, e *domain.AgentExecution, _ bool) (domain.EnvironmentObservation, error) {
+func (r realizedEnvironments) Observe(_ context.Context, e *domain.AgentExecution) (domain.EnvironmentObservation, error) {
 	if e.Environment == "" || e.State == domain.ExecutionReleased {
 		return domain.EnvironmentObservation{}, nil
 	}

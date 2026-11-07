@@ -56,7 +56,7 @@ func newOnboarding(t *testing.T) *onboardingFixture {
 	lifecycle.mu.Lock()
 	lifecycle.createPending = true
 	lifecycle.mu.Unlock()
-	_, err = steps.handler.Reconcile(ctx, record.ID, false)
+	_, err = steps.handler.Reconcile(ctx, record.ID)
 	require.NoError(t, err)
 	lifecycle.mu.Lock()
 	lifecycle.info.Status.State = sdk.StateRunning
@@ -99,11 +99,11 @@ func (f *onboardingFixture) execution(t *testing.T) *domain.AgentExecution {
 }
 
 // step is what the execution decides from its observation now, without
-// taking it; full lists its environments though Dispatcher reads its process.
-func (f *onboardingFixture) step(t *testing.T, full bool) []domain.ExecutionStepKind {
+// taking it.
+func (f *onboardingFixture) step(t *testing.T) []domain.ExecutionStepKind {
 	t.Helper()
 	run := f.execution(t)
-	observation, err := f.steps.environment.Observe(context.Background(), run, full)
+	observation, err := f.steps.environment.Observe(context.Background(), run)
 	require.NoError(t, err)
 	decision, err := run.Reconcile(observation, time.Now())
 	require.NoError(t, err)
@@ -114,36 +114,42 @@ func (f *onboardingFixture) step(t *testing.T, full bool) []domain.ExecutionStep
 	return kinds
 }
 
+// observationCalls are the environment authority calls of one observation of
+// a bound sandbox: the ownership listing, then the bound sandbox and its
+// endpoint.
+const observationCalls = 3
+
 func stepKinds(kinds ...domain.ExecutionStepKind) []domain.ExecutionStepKind {
 	return append([]domain.ExecutionStepKind{}, kinds...)
 }
 
 // Each execution's missing step follows from its durable facts and its
-// observation; a steady connected Work whose stream Dispatcher reads costs no
-// call to the environment authority, the Vault or Dispatcher.
+// observation of the sandboxes carrying its ownership; a steady connected
+// Work costs one listing and one confirmation of its bound sandbox per
+// decision, and no call to the Vault.
 func TestSweepNamesOnlyTheMissingOnboardingStep(t *testing.T) {
 	f := newOnboarding(t)
-	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t, false), "a sandbox not yet delivered")
+	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t), "a sandbox not yet delivered")
 	f.at(t, "sandbox_ready = 1")
-	require.Equal(t, stepKinds(domain.StepPrepare), f.step(t, false), "a delivered sandbox not yet prepared")
+	require.Equal(t, stepKinds(domain.StepPrepare), f.step(t), "a delivered sandbox not yet prepared")
 	f.at(t, "plugins_prepared = 1, process_id = 'process-1'")
 	f.delivered(t)
-	require.Equal(t, stepKinds(domain.StepConnect), f.step(t, false), "a running process whose stream nobody reads")
+	require.Equal(t, stepKinds(domain.StepConnect), f.step(t), "a running process whose stream nobody reads")
 	f.owners.reading = StreamReading{ProcessID: "process-0"}
-	require.Equal(t, stepKinds(domain.StepConnect), f.step(t, false), "Dispatcher reads an earlier process")
-	f.owners.reading = StreamReading{ProcessID: "process-1"}
+	require.Equal(t, stepKinds(domain.StepConnect), f.step(t), "Dispatcher reads an earlier process")
+	f.owners.reading = StreamReading{ProcessID: "process-1", Endpoint: "http://192.0.2.8:44772"}
 	before := f.authorityCalls()
-	require.Equal(t, stepKinds(), f.step(t, false), "a connected Work needs nothing")
+	require.Equal(t, stepKinds(), f.step(t), "a connected Work needs nothing")
 	f.at(t, "credentials_expire_at = 1")
-	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t, false), "a delivery past its declared expiry is fetched once more")
+	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t), "a delivery past its declared expiry is fetched once more")
 	f.at(t, "credentials_expire_at = 0")
-	require.Equal(t, stepKinds(), f.step(t, false), "a delivery that does not expire waits for change facts")
+	require.Equal(t, stepKinds(), f.step(t), "a delivery that does not expire waits for change facts")
 	f.at(t, "model_credential_digest = 'rotated-away'")
-	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t, false), "a rotated model key reaches the running Work")
-	require.Equal(t, before, f.authorityCalls(), "a read process is observed without the environment authority")
+	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t), "a rotated model key reaches the running Work")
+	require.Equal(t, before+4*observationCalls, f.authorityCalls(), "each decision lists the owned sandboxes and confirms the bound one, nothing more")
 	f.delivered(t)
 	f.at(t, "process_exited = 1")
-	require.Equal(t, stepKinds(), f.step(t, false), "an exited process is not reconnected")
+	require.Equal(t, stepKinds(), f.step(t), "an exited process is not reconnected")
 	f.lifecycle.vault.mu.Lock()
 	require.Nil(t, f.lifecycle.vault.state, "deciding never touches the Vault")
 	f.lifecycle.vault.mu.Unlock()
@@ -157,15 +163,15 @@ func TestObservedSandboxDeletionLosesTheEnvironment(t *testing.T) {
 	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
 	f.delivered(t)
 	f.owners.reading = StreamReading{ProcessID: "process-1", Endpoint: "http://192.0.2.8:44772"}
-	require.Equal(t, stepKinds(), f.step(t, true), "a running sandbox at the read endpoint needs nothing")
+	require.Equal(t, stepKinds(), f.step(t), "a running sandbox at the read endpoint needs nothing")
 	f.owners.reading.Endpoint = "http://192.0.2.9:44772"
-	require.Equal(t, stepKinds(domain.StepConnect), f.step(t, true), "a moved endpoint is connected again")
+	require.Equal(t, stepKinds(domain.StepConnect), f.step(t), "a moved endpoint is connected again")
 	require.False(t, f.execution(t).Outcome.Lost)
 
 	f.lifecycle.mu.Lock()
 	f.lifecycle.info = nil
 	f.lifecycle.mu.Unlock()
-	_, err := f.steps.handler.Reconcile(ctx, f.record.ID, true)
+	_, err := f.steps.handler.Reconcile(ctx, f.record.ID)
 	require.NoError(t, err)
 	lost := f.execution(t)
 	require.True(t, lost.Outcome.Lost)
@@ -192,10 +198,10 @@ func TestSweepWakesTheDrainOfAStoppedWork(t *testing.T) {
 	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
 	f.owners.reading = StreamReading{ProcessID: "process-1"}
 	f.requestExit(t)
-	require.Equal(t, stepKinds(domain.StepWithdrawCredentials, domain.StepSignalExit), f.step(t, false))
+	require.Equal(t, stepKinds(domain.StepWithdrawCredentials, domain.StepSignalExit), f.step(t))
 	before := f.authorityCalls()
 	require.NoError(t, f.steps.handler.RunLongStep(context.Background(), f.record.ID))
-	require.Equal(t, before, f.authorityCalls(), "a stopping Work is never prepared")
+	require.Equal(t, before+observationCalls, f.authorityCalls(), "a stopping Work is observed and never prepared")
 }
 
 // A stopping Work whose sandbox is gone drains by learning the loss: the
@@ -208,7 +214,7 @@ func TestDrainOfAGoneSandboxLearnsTheLoss(t *testing.T) {
 	f.lifecycle.mu.Lock()
 	f.lifecycle.info = nil
 	f.lifecycle.mu.Unlock()
-	_, err := f.steps.handler.Reconcile(ctx, f.record.ID, false)
+	_, err := f.steps.handler.Reconcile(ctx, f.record.ID)
 	require.NoError(t, err)
 	lost := f.execution(t)
 	require.True(t, lost.Outcome.Lost)
@@ -227,7 +233,7 @@ func TestStaleAllocationReportsNoLoss(t *testing.T) {
 	f.lifecycle.mu.Lock()
 	f.lifecycle.info = nil
 	f.lifecycle.mu.Unlock()
-	_, err := f.steps.handler.Reconcile(context.Background(), f.record.ID, false)
+	_, err := f.steps.handler.Reconcile(context.Background(), f.record.ID)
 	require.NoError(t, err)
 	stale := f.execution(t)
 	require.False(t, stale.Outcome.Lost)

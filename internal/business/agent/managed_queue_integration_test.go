@@ -129,7 +129,7 @@ func (q *managedQueue) reconcile(t *testing.T, ctx context.Context, workID strin
 	t.Helper()
 	latest := q.runs.latest(t, ctx, workID)
 	require.NotNil(t, latest)
-	_, err := q.reconciliation.Reconcile(ctx, latest.ID, false)
+	_, err := q.reconciliation.Reconcile(ctx, latest.ID)
 	require.NoError(t, err)
 }
 

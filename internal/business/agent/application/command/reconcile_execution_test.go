@@ -42,13 +42,13 @@ func TestCreationIsSubmittedOnceAfterItsSubmissionIsRecorded(t *testing.T) {
 	w := newWorld(t, startingSession(t))
 	execution := w.begin(t)
 	w.environment.Answer = domain.CreationAnswer{EnvironmentID: "environment"}
-	w.environment.Observed = func(execution *domain.AgentExecution, _ bool) domain.EnvironmentObservation {
+	w.environment.Observed = func(execution *domain.AgentExecution) domain.EnvironmentObservation {
 		if execution.Creation.Submitted {
 			return running("environment")
 		}
 		return domain.EnvironmentObservation{}
 	}
-	long, err := w.reconciliation().Reconcile(ctx, execution.ID, false)
+	long, err := w.reconciliation().Reconcile(ctx, execution.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, w.environment.Submitted)
 	require.True(t, w.environment.SubmittedState[0].Creation.Submitted, "the submission is durable before the creation is sent")
@@ -58,7 +58,7 @@ func TestCreationIsSubmittedOnceAfterItsSubmissionIsRecorded(t *testing.T) {
 	require.True(t, long, "the delivered environment's preparation is due")
 	require.Zero(t, w.environment.Prepared, "a reconciliation never takes a long step")
 
-	_, err = w.reconciliation().Reconcile(ctx, execution.ID, false)
+	_, err = w.reconciliation().Reconcile(ctx, execution.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, w.environment.Submitted, "a creation is never submitted twice")
 }
@@ -69,13 +69,13 @@ func TestARefusedCreationRejectsTheStart(t *testing.T) {
 	w := newWorld(t, startingSession(t))
 	execution := w.begin(t)
 	w.environment.Answer = domain.CreationAnswer{Refused: true}
-	_, err := w.reconciliation().Reconcile(ctx, execution.ID, false)
+	_, err := w.reconciliation().Reconcile(ctx, execution.ID)
 	require.NoError(t, err)
 	require.True(t, w.execution(t).Outcome.Rejected)
 	require.NoError(t, w.coordination.ApplyExecutionReports(ctx, w.work().ID))
 	require.True(t, w.work().HarnessProcess.StartRejected)
 	require.False(t, w.work().HoldsActiveProcess())
-	_, err = w.reconciliation().Reconcile(ctx, execution.ID, false)
+	_, err = w.reconciliation().Reconcile(ctx, execution.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, w.environment.Submitted)
 }
@@ -94,7 +94,7 @@ func TestTheFirstStartsPreparationGatesTheCreation(t *testing.T) {
 			request.WorkID = w.work().ID
 			initial := &initialRequestStore{request: request}
 			reconcile := command.NewReconcileExecutionHandler(w.now, w.executions, w.environment, w.harness, w.computers, noMounts{}, initial)
-			_, err := reconcile.Reconcile(ctx, execution.ID, false)
+			_, err := reconcile.Reconcile(ctx, execution.ID)
 			require.NoError(t, err)
 			require.Zero(t, w.environment.Submitted)
 			require.Equal(t, name == "rejected", w.execution(t).Outcome.Rejected)
@@ -107,7 +107,7 @@ func TestTheFirstStartsPreparationGatesTheCreation(t *testing.T) {
 func TestSurplusEnvironmentsAreDeleted(t *testing.T) {
 	w := boundWorld(t)
 	w.environment.Observation = running("surplus", "environment")
-	_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID, false)
+	_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID)
 	require.NoError(t, err)
 	require.Equal(t, []string{"surplus"}, w.environment.Deleted)
 	require.Equal(t, "environment", w.execution(t).Environment)
@@ -122,14 +122,14 @@ func TestReleaseIsConfirmedOnlyAfterTheDeskIsLeftAndNothingRemains(t *testing.T)
 	require.True(t, w.execution(t).Retired())
 
 	w.environment.Observation = running("environment")
-	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID)
 	require.NoError(t, err)
 	require.Contains(t, w.environment.Deleted, "environment")
 	require.Empty(t, w.computers.Left, "the Desk is held while an environment remains")
 	require.Equal(t, domain.ExecutionRetired, w.execution(t).State)
 
 	w.environment.Observation = domain.EnvironmentObservation{}
-	_, err = w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	_, err = w.reconciliation().Reconcile(ctx, w.execution(t).ID)
 	require.NoError(t, err)
 	require.Equal(t, []string{"desk-test"}, w.computers.Left)
 	require.Equal(t, domain.ExecutionReleased, w.execution(t).State)
@@ -141,13 +141,13 @@ func TestADeletionIsFollowedByTheReleaseInOneReconciliation(t *testing.T) {
 	ctx := context.Background()
 	w := stoppingWorld(t)
 	w.exit(t, 0)
-	w.environment.Observed = func(*domain.AgentExecution, bool) domain.EnvironmentObservation {
+	w.environment.Observed = func(*domain.AgentExecution) domain.EnvironmentObservation {
 		if len(w.environment.Deleted) > 0 {
 			return domain.EnvironmentObservation{}
 		}
 		return running("environment")
 	}
-	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID)
 	require.NoError(t, err)
 	require.Equal(t, []string{"environment"}, w.environment.Deleted)
 	require.Equal(t, []string{"desk-test"}, w.computers.Left)
@@ -159,7 +159,7 @@ func TestADeletionIsFollowedByTheReleaseInOneReconciliation(t *testing.T) {
 func TestSeatingIsRecoveredFromComputer(t *testing.T) {
 	w := newWorld(t, admittedSession(t, true))
 	execution := w.begin(t)
-	_, err := w.reconciliation().Reconcile(context.Background(), execution.ID, false)
+	_, err := w.reconciliation().Reconcile(context.Background(), execution.ID)
 	require.NoError(t, err)
 	require.True(t, w.execution(t).Queued(), "an unseated Desk keeps the execution Queued")
 	require.Zero(t, w.environment.Submitted)
@@ -168,7 +168,7 @@ func TestSeatingIsRecoveredFromComputer(t *testing.T) {
 	w.computers.Seat("desk-test", seatedAt)
 	w.environment.Answer = domain.CreationAnswer{EnvironmentID: "environment"}
 	w.environment.Observation = running("environment")
-	_, err = w.reconciliation().Reconcile(context.Background(), execution.ID, false)
+	_, err = w.reconciliation().Reconcile(context.Background(), execution.ID)
 	require.NoError(t, err)
 	seated := w.execution(t)
 	require.Equal(t, domain.ExecutionStarting, seated.State)
@@ -189,7 +189,7 @@ func TestAnExitRequestWithdrawsCredentialsAndSignalsTheExit(t *testing.T) {
 			})
 			w.environment.Observation = running("environment")
 			w.environment.Observation.Attached = true
-			_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID, false)
+			_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID)
 			require.NoError(t, err)
 			require.Equal(t, 1, w.environment.Withdrawn)
 			require.True(t, w.execution(t).Credentials.Withdrawn)
@@ -263,7 +263,7 @@ func TestReconciliationReconnectsAndReplacesCredentialsItself(t *testing.T) {
 	w.environment.Observation = running("environment")
 	require.NoError(t, w.reconciliation().RunLongStep(ctx, w.execution(t).ID))
 	connected := w.environment.Connected
-	long, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	long, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID)
 	require.NoError(t, err)
 	require.False(t, long)
 	require.Equal(t, connected+1, w.environment.Connected, "a process Dispatcher does not read is reconnected once")
@@ -271,10 +271,10 @@ func TestReconciliationReconnectsAndReplacesCredentialsItself(t *testing.T) {
 	w.environment.Observation.Attached = true
 	w.change(t, func(execution *domain.AgentExecution) { require.True(t, execution.MarkCredentialsChanged()) })
 	delivered := w.environment.Delivered
-	_, err = w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	_, err = w.reconciliation().Reconcile(ctx, w.execution(t).ID)
 	require.NoError(t, err)
 	require.Equal(t, delivered+1, w.environment.Delivered, "changed credentials are replaced")
-	_, err = w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	_, err = w.reconciliation().Reconcile(ctx, w.execution(t).ID)
 	require.NoError(t, err)
 	require.Equal(t, delivered+1, w.environment.Delivered, "the replacement is recorded")
 }
@@ -287,7 +287,7 @@ func TestReconciliationSyncsChangedInputs(t *testing.T) {
 		execution.Realization = domain.RealizationManaged
 		require.True(t, execution.MarkInputsChanged())
 	})
-	_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID, false)
+	_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, w.environment.Synced)
 	require.Zero(t, w.execution(t).Inputs.Due, "the sync is recorded")

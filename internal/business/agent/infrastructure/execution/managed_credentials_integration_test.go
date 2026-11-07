@@ -68,8 +68,8 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	digest, err := authority.(credentialDelivery).modelDigest(record)
 	require.NoError(t, err)
 	require.NotEqual(t, record.ModelCredentialDigest, digest, "the observation sees the rotation")
-	f.owners.reading = StreamReading{ProcessID: record.ProcessID}
-	long, err := f.steps.handler.Reconcile(ctx, record.ID, false)
+	f.owners.reading = f.reading(t, record)
+	long, err := f.steps.handler.Reconcile(ctx, record.ID)
 	require.NoError(t, err)
 	require.False(t, long)
 	f.relay.mu.Lock()
@@ -86,7 +86,7 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	_, err = run.RequestExit(domain.WorkStopRequested{WorkID: run.WorkID, StartAdmittedAt: run.StartAdmittedAt, StopRequestID: "stop-1"})
 	require.NoError(t, err)
 	require.NoError(t, f.steps.executions.Save(ctx, run))
-	_, err = f.steps.handler.Reconcile(ctx, record.ID, false)
+	_, err = f.steps.handler.Reconcile(ctx, record.ID)
 	require.NoError(t, err)
 	require.True(t, current(t, f.steps, record.ID).Credentials.Withdrawn)
 	require.Equal(t, []string{"stop-1"}, f.steps.harness.Stops, "the process is asked to exit under the Work's stop")
@@ -121,7 +121,7 @@ func TestManagedFirstDeliveryNeedsTheModelConfigurationsKey(t *testing.T) {
 	withdrawn, err := NewModelCatalog([]ModelTemplate{fixtureModels().Provided()[0].Template}, []ModelConfiguration{{ID: "other", Name: "other", Template: "fixture-template", APIKey: "other-key"}})
 	require.NoError(t, err)
 	f.provisioning.managed.models = withdrawn
-	long, err := f.steps.handler.Reconcile(ctx, begun.ID, false)
+	long, err := f.steps.handler.Reconcile(ctx, begun.ID)
 	require.ErrorIs(t, err, errModelConfigurationNotProvided)
 	require.False(t, long, "nothing is prepared before the first delivery")
 	record, _, err := latestAllocation(ctx, f.db, input.WorkID)

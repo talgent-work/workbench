@@ -341,7 +341,7 @@ func (f *managedWork) launch(t *testing.T, id string) allocationRecord {
 func (f *managedWork) decided(t *testing.T, id string) []domain.ExecutionStepKind {
 	t.Helper()
 	run := current(t, f.steps, id)
-	observation, err := f.steps.environment.Observe(context.Background(), run, false)
+	observation, err := f.steps.environment.Observe(context.Background(), run)
 	require.NoError(t, err)
 	decision, err := run.Reconcile(observation, time.Now())
 	require.NoError(t, err)
@@ -461,7 +461,7 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	input.HarnessSessionReference = "context"
 	next := f.begin(t, input)
 	require.NotEqual(t, record.ID, next.ID)
-	_, err = f.steps.handler.Reconcile(ctx, next.ID, false)
+	_, err = f.steps.handler.Reconcile(ctx, next.ID)
 	require.NoError(t, err)
 	resumed, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)

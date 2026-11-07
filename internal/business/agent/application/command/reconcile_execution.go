@@ -37,17 +37,17 @@ const reconcileRounds = 4
 // withdrawal, the connection of its launched process, input sync, the exit
 // signal and its Desk's departure, then confirms a retired execution's
 // release. It reports whether the execution's last decision called for a
-// long step, which RunLongStep takes apart. A full reconciliation lists the
-// environments carrying the execution's ownership even when Dispatcher reads
-// its process.
-func (h *ReconcileExecutionHandler) Reconcile(ctx context.Context, executionID string, full bool) (bool, error) {
+// long step, which RunLongStep takes apart. Every decision observes the
+// environments carrying the execution's ownership as listed now, so a wake
+// absorbed by a pending reconciliation is observed all the same.
+func (h *ReconcileExecutionHandler) Reconcile(ctx context.Context, executionID string) (bool, error) {
 	// A step that changed nothing, such as a deletion or a connection, would
 	// be decided again in the next round; it is taken once per
 	// reconciliation.
 	unchanged := map[domain.ExecutionStep]bool{}
 	long := false
 	for range reconcileRounds {
-		outcome, err := h.round(ctx, executionID, full, unchanged)
+		outcome, err := h.round(ctx, executionID, unchanged)
 		long = outcome.longStepDue
 		if err != nil || !outcome.again {
 			return long, err
@@ -65,9 +65,9 @@ type roundOutcome struct {
 // round makes one decision and takes its short steps; another round follows
 // at once after a step that changed the execution, or after a retired
 // execution deleted environments, so it leaves its Desk once none remains.
-func (h *ReconcileExecutionHandler) round(ctx context.Context, executionID string, full bool, unchanged map[domain.ExecutionStep]bool) (roundOutcome, error) {
+func (h *ReconcileExecutionHandler) round(ctx context.Context, executionID string, unchanged map[domain.ExecutionStep]bool) (roundOutcome, error) {
 	var outcome roundOutcome
-	execution, decision, observation, err := h.decide(ctx, executionID, full)
+	execution, decision, observation, err := h.decide(ctx, executionID)
 	if err != nil || execution == nil {
 		return outcome, err
 	}
@@ -103,7 +103,9 @@ func (h *ReconcileExecutionHandler) round(ctx context.Context, executionID strin
 
 // decide loads the execution, applies its Desk's seating while Queued,
 // observes it and lets it decide; a change is saved before any step is taken.
-func (h *ReconcileExecutionHandler) decide(ctx context.Context, executionID string, full bool) (*domain.AgentExecution, domain.ExecutionDecision, domain.EnvironmentObservation, error) {
+// A released execution is observed too: a sandbox appearing after its release
+// carries its ownership and is deleted.
+func (h *ReconcileExecutionHandler) decide(ctx context.Context, executionID string) (*domain.AgentExecution, domain.ExecutionDecision, domain.EnvironmentObservation, error) {
 	var none domain.ExecutionDecision
 	var observation domain.EnvironmentObservation
 	execution, err := h.executions.Get(ctx, executionID)
@@ -112,9 +114,6 @@ func (h *ReconcileExecutionHandler) decide(ctx context.Context, executionID stri
 	}
 	if err != nil {
 		return nil, none, observation, err
-	}
-	if execution.State == domain.ExecutionReleased && !full {
-		return nil, none, observation, nil
 	}
 	seated, err := h.seat(ctx, execution)
 	if err != nil {
@@ -125,7 +124,7 @@ func (h *ReconcileExecutionHandler) decide(ctx context.Context, executionID stri
 		return nil, none, observation, err
 	}
 	held := observation.CreationHeld
-	if observation, err = h.environments.Observe(ctx, execution, full || execution.Retired()); err != nil {
+	if observation, err = h.environments.Observe(ctx, execution); err != nil {
 		return nil, none, observation, err
 	}
 	observation.CreationHeld = held
@@ -189,7 +188,7 @@ func (h *ReconcileExecutionHandler) confirmRelease(ctx context.Context, executio
 		return err
 	}
 	if deleted {
-		if observation, err = h.environments.Observe(ctx, execution, true); err != nil {
+		if observation, err = h.environments.Observe(ctx, execution); err != nil {
 			return err
 		}
 	}

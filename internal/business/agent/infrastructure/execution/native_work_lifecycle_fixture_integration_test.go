@@ -146,7 +146,7 @@ func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx c
 	require.NoError(t, f.coordination.BeginExecution(ctx, work.ID))
 	run, err := f.executions.Latest(ctx, work.ID)
 	require.NoError(t, err)
-	_, err = f.reconcile.Reconcile(ctx, run.ID, false)
+	_, err = f.reconcile.Reconcile(ctx, run.ID)
 	require.NoError(t, err)
 	return work, startID
 }
@@ -164,7 +164,8 @@ func (f *nativeWorkLifecycleFixture) run(t *testing.T, ctx context.Context, work
 	_, err = run.RecordLaunch(processID)
 	require.NoError(t, err)
 	require.NoError(t, f.executions.Save(ctx, run))
-	f.readings.set(workID, StreamReading{ProcessID: processID})
+	// Dispatcher reads it at the endpoint the sandbox exposes.
+	f.readings.set(workID, StreamReading{ProcessID: processID, Endpoint: "http://" + f.external.endpoint})
 	run, err = f.executions.Get(ctx, run.ID)
 	require.NoError(t, err)
 	return run

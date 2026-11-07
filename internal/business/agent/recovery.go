@@ -159,7 +159,7 @@ var environmentRecoveryOptions = fx.Options(
 
 // runSandboxObserver watches Talgent's sandboxes for the life of the process.
 func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg ExecutionConfig, db *xorm.Engine, recovery *application.Recovery, logger *slog.Logger) error {
-	observer, err := execution.NewSandboxObserver(client, cfg.SandboxNamespace, db, recovery.WakeSandboxObservation, logger)
+	observer, err := execution.NewSandboxObserver(client, cfg.SandboxNamespace, db, recovery.WakeExecution, logger)
 	if err != nil {
 		return err
 	}
@@ -194,8 +194,8 @@ func runSandboxObserver(lc fx.Lifecycle, client dynamic.Interface, cfg Execution
 }
 
 // dispatcherStreams reads the stream ownership Dispatcher publishes in the
-// shared Redis, so Agent's sweep sees a running process nobody
-// reads without asking Dispatcher or the environment authority.
+// shared Redis, so Agent's sweep sees a running process nobody reads without
+// asking Dispatcher.
 type dispatcherStreams struct {
 	reader *streamownership.Reader
 }

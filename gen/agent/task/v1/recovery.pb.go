@@ -27,13 +27,9 @@ const (
 type ReconcileExecutionTaskV1 struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// AgentExecution identity.
-	ExecutionId string `protobuf:"bytes,1,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
-	// Whether every environment carrying the execution's ownership is listed
-	// even while Dispatcher reads its launched process, as after the
-	// environment authority reported a change to one of them.
-	ObserveEnvironments bool `protobuf:"varint,2,opt,name=observe_environments,json=observeEnvironments,proto3" json:"observe_environments,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	ExecutionId   string `protobuf:"bytes,1,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReconcileExecutionTaskV1) Reset() {
@@ -71,13 +67,6 @@ func (x *ReconcileExecutionTaskV1) GetExecutionId() string {
 		return x.ExecutionId
 	}
 	return ""
-}
-
-func (x *ReconcileExecutionTaskV1) GetObserveEnvironments() bool {
-	if x != nil {
-		return x.ObserveEnvironments
-	}
-	return false
 }
 
 // RunLongExecutionStepTaskV1 asks Agent to take the step of one AgentExecution
@@ -367,10 +356,9 @@ var File_agent_task_v1_recovery_proto protoreflect.FileDescriptor
 
 const file_agent_task_v1_recovery_proto_rawDesc = "" +
 	"\n" +
-	"\x1cagent/task/v1/recovery.proto\x12\ragent.task.v1\"p\n" +
+	"\x1cagent/task/v1/recovery.proto\x12\ragent.task.v1\"Y\n" +
 	"\x18ReconcileExecutionTaskV1\x12!\n" +
-	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\x121\n" +
-	"\x14observe_environments\x18\x02 \x01(\bR\x13observeEnvironments\"?\n" +
+	"\fexecution_id\x18\x01 \x01(\tR\vexecutionIdJ\x04\b\x02\x10\x03R\x14observe_environments\"?\n" +
 	"\x1aRunLongExecutionStepTaskV1\x12!\n" +
 	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\",\n" +
 	"\x11RecoverWorkTaskV1\x12\x17\n" +

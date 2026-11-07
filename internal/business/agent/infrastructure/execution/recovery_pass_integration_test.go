@@ -79,7 +79,7 @@ func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeCon
 // reconcile reconciles one execution and takes the long step it decided,
 // though a short step failed, as its long step task would.
 func (s *executionSteps) reconcile(ctx context.Context, id string) error {
-	long, err := s.handler.Reconcile(ctx, id, false)
+	long, err := s.handler.Reconcile(ctx, id)
 	if !long {
 		return err
 	}
@@ -89,7 +89,7 @@ func (s *executionSteps) reconcile(ctx context.Context, id string) error {
 // shortSteps reconciles one execution, taking only its short steps, as its
 // Reconcile execution task does.
 func (s *executionSteps) shortSteps(ctx context.Context, id string) error {
-	_, err := s.handler.Reconcile(ctx, id, false)
+	_, err := s.handler.Reconcile(ctx, id)
 	return err
 }
 

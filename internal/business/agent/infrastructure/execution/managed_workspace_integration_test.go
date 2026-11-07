@@ -46,6 +46,15 @@ func lastManifest(t *testing.T, relay *machineRelay) []manifestFile {
 // their own, never its credentials, and their own step syncs them; a change
 // in any other space leaves it alone. A failing sync never fails the start:
 // the inputs stay due for the next reconciliation.
+// reading is Dispatcher reading the record's launched process at the relay
+// endpoint it was handed.
+func (f *managedWork) reading(t *testing.T, record allocationRecord) StreamReading {
+	t.Helper()
+	spec, err := decodeManagedSpecification(record)
+	require.NoError(t, err)
+	return StreamReading{ProcessID: record.ProcessID, Endpoint: f.provisioning.managed.machines.endpoint(spec, record.SessionID)}
+}
+
 func TestManagedWorkReceivesItsCurrentInputs(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
@@ -75,12 +84,15 @@ func TestManagedWorkReceivesItsCurrentInputs(t *testing.T) {
 	require.EqualValues(t, 1, marked.InputsDue, "the change stays due until it is synced")
 	require.Equal(t, record.CredentialsExpireAt, marked.CredentialsExpireAt, "the credentials are not due")
 	// Dispatcher reads the Work's process, so nothing else is missing.
-	f.owners.reading = StreamReading{ProcessID: marked.ProcessID}
+	f.owners.reading = f.reading(t, marked)
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepSyncInputs}, f.decided(t, record.ID), "the due inputs are found")
 
-	// The machine is away: the inputs stay due.
+	// The machine is away: its environment is observed not running, nothing
+	// is synced and the inputs stay due.
 	f.relay.set(func(m *machineRelay) { m.unreachable = true })
-	require.Error(t, f.steps.shortSteps(ctx, record.ID))
+	manifestsBefore := len(f.relay.manifests)
+	require.NoError(t, f.steps.shortSteps(ctx, record.ID))
+	require.Len(t, f.relay.manifests, manifestsBefore, "nothing is synced while the machine is away")
 	away, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, away.InputsDue, "the inputs stay due while the machine is away")
@@ -112,7 +124,7 @@ func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 	require.NoError(t, err)
 	require.Positive(t, synced.InputsSyncedAt, "a sync records when it happened")
 	require.Zero(t, synced.InputsDue)
-	f.owners.reading = StreamReading{ProcessID: synced.ProcessID}
+	f.owners.reading = f.reading(t, synced)
 	require.Empty(t, f.decided(t, synced.ID), "fresh inputs need nothing")
 
 	stale := time.Now().Add(-managedInputsRefresh - time.Minute).UnixMilli()

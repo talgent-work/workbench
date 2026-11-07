@@ -62,16 +62,11 @@ const (
 	preparationAttemptTimeout = domain.StartupDeadline + time.Minute
 )
 
-// WakeExecution wakes the execution's reconciliation.
+// WakeExecution wakes the execution's reconciliation, as after a commit, the
+// environment authority's report of a change to one of its sandboxes, or a
+// change fact that marked it.
 func (r *Recovery) WakeExecution(ctx context.Context, executionID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID, false))
-}
-
-// WakeSandboxObservation follows the environment authority's report of a
-// change to one of the execution's sandboxes: its reconciliation lists every
-// environment the execution owns.
-func (r *Recovery) WakeSandboxObservation(ctx context.Context, executionID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID, true))
+	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID))
 }
 
 // wakeLongStep wakes the execution's long step, whose attempt may last until
@@ -151,11 +146,9 @@ func (r *Recovery) enqueue(ctx context.Context, timeout time.Duration) func(task
 }
 
 // ReconcileExecution takes the short steps the execution decides and wakes
-// its long step when one is due, even when a short step failed. Unless
-// observeEnvironments, a launched process Dispatcher reads may be observed
-// from that alone.
-func (r *Recovery) ReconcileExecution(ctx context.Context, executionID string, observeEnvironments bool) error {
-	long, err := r.reconciliation.Reconcile(ctx, executionID, observeEnvironments)
+// its long step when one is due, even when a short step failed.
+func (r *Recovery) ReconcileExecution(ctx context.Context, executionID string) error {
+	long, err := r.reconciliation.Reconcile(ctx, executionID)
 	if long {
 		err = errors.Join(err, r.wakeLongStep(ctx, executionID))
 	}

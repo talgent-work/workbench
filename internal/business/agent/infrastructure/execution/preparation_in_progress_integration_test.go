@@ -81,7 +81,7 @@ func newPreparingAllocation(t *testing.T) *preparingAllocation {
 	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret", command.NewRecordRepositoryCheckoutsHandler(infrastructure.NewInitialExecutionRequests(db, time.Now)))
 	require.NoError(t, err)
 	f.steps = newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
-	long, err := f.steps.handler.Reconcile(ctx, record.ID, false)
+	long, err := f.steps.handler.Reconcile(ctx, record.ID)
 	require.NoError(t, err)
 	require.True(t, long, "the preparation follows the first delivery")
 	f.record, _, err = latestAllocation(ctx, db, input.WorkID)

@@ -25,7 +25,7 @@ func reconcileAt(t *testing.T, w *world, at time.Time) {
 	if execution.Environment != "" {
 		w.environment.Observation.Environments = []domain.ObservedEnvironment{{ID: execution.Environment, Running: true}}
 	}
-	_, err := w.reconciliation().Reconcile(ctx, execution.ID, false)
+	_, err := w.reconciliation().Reconcile(ctx, execution.ID)
 	require.NoError(t, err)
 	// The execution's report event applies its reports; the execution requests they
 	// leave on the Work are passed by the events the Work's save commits.

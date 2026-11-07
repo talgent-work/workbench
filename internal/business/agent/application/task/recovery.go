@@ -33,15 +33,9 @@ const (
 	RequestWorkspaceReclamationType taskqueue.TaskType = "agent.workspace.request-reclamation.v1"
 )
 
-// NewReconcileExecution wakes the execution's short steps. A wake that must
-// list every environment the execution owns has its own key, so a pending
-// ordinary reconciliation cannot absorb it.
-func NewReconcileExecution(executionID string, observeEnvironments bool) (taskqueue.Task, error) {
-	object := "execution"
-	if observeEnvironments {
-		object = "execution-environments"
-	}
-	return keyed(ReconcileExecutionType, RecoveryQueue, object, executionID, &agenttaskv1.ReconcileExecutionTaskV1{ExecutionId: executionID, ObserveEnvironments: observeEnvironments})
+// NewReconcileExecution wakes the execution's short steps.
+func NewReconcileExecution(executionID string) (taskqueue.Task, error) {
+	return keyed(ReconcileExecutionType, RecoveryQueue, "execution", executionID, &agenttaskv1.ReconcileExecutionTaskV1{ExecutionId: executionID})
 }
 
 // NewRunLongExecutionStep wakes the execution's long step on the preparation

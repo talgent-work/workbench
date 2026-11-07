@@ -86,7 +86,10 @@ type lifecycleFixture struct {
 	mu                 sync.Mutex
 	loseCreateResponse bool
 	// createPending creates each sandbox not yet running.
-	createPending    bool
+	createPending bool
+	// distinct creates each sandbox under its own identity among others, so
+	// several executions each own one.
+	distinct         bool
 	create           sdk.CreateSandboxRequest
 	info             *sdk.SandboxInfo
 	pages            [][]sdk.SandboxInfo
@@ -141,6 +144,19 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.createPending {
 			f.info.Status.State = "Pending"
 		}
+		if f.distinct {
+			created := *f.info
+			// The next create decodes into the same request, metadata map included.
+			created.Metadata = maps.Clone(created.Metadata)
+			created.ID = fmt.Sprintf("9c8b7a6d-5e4f-4a3b-8c2d-%012d", f.creates)
+			if f.others == nil {
+				f.others = map[string]sdk.SandboxInfo{}
+			}
+			f.others[created.ID] = created
+			f.info = nil
+			_ = json.NewEncoder(w).Encode(created)
+			return
+		}
 		if f.loseCreateResponse {
 			http.Error(w, "response lost after allocation", 500)
 			return
@@ -159,7 +175,8 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(sdk.ListSandboxesResponse{Items: items, Pagination: sdk.PaginationInfo{HasNextPage: page+1 < len(f.pages)}})
 	case r.Method == "GET" && strings.HasSuffix(r.URL.Path, fmt.Sprintf("/endpoints/%d", CredentialManagementPort)):
-		if f.info == nil {
+		owner, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/v1/sandboxes/"), "/")
+		if f.info == nil && f.others[owner].ID == "" {
 			// A deleted sandbox exposes no endpoints.
 			w.WriteHeader(404)
 			return

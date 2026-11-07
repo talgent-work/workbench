@@ -18,7 +18,7 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 	return append([]taskqueue.Processor{
 		processor(logger, agenttask.ReconcileExecutionType, func() *agenttaskv1.ReconcileExecutionTaskV1 { return &agenttaskv1.ReconcileExecutionTaskV1{} },
 			func(ctx context.Context, p *agenttaskv1.ReconcileExecutionTaskV1) error {
-				return recovery.ReconcileExecution(ctx, p.GetExecutionId(), p.GetObserveEnvironments())
+				return recovery.ReconcileExecution(ctx, p.GetExecutionId())
 			}),
 		processor(logger, agenttask.RecoverWorkType, func() *agenttaskv1.RecoverWorkTaskV1 { return &agenttaskv1.RecoverWorkTaskV1{} },
 			func(ctx context.Context, p *agenttaskv1.RecoverWorkTaskV1) error {

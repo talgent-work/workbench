@@ -15,9 +15,9 @@ type StreamReading struct {
 	ProcessID, Endpoint string
 }
 
-// StreamOwners reads which Harness process Dispatcher reads for a Work, so a
-// connected execution whose stream is read is observed without asking its
-// environment authority.
+// StreamOwners reads which Harness process Dispatcher reads for a Work, and
+// at which endpoint, so an observation shows whether the bound environment's
+// process is attached without asking Dispatcher.
 type StreamOwners interface {
 	Reading(ctx context.Context, workID string) (StreamReading, bool, error)
 }
@@ -67,11 +67,10 @@ func (e *ExecutionEnvironment) record(ctx context.Context, execution *domain.Age
 }
 
 // Observe shows the execution's environments as its authority lists them, and
-// whether Dispatcher reads its launched process at the bound one. Unless
-// full, a running process whose stream Dispatcher reads is observed from that
-// alone. An execution whose environment was never specified submitted no
-// creation, so nothing carries its ownership.
-func (e *ExecutionEnvironment) Observe(ctx context.Context, execution *domain.AgentExecution, full bool) (domain.EnvironmentObservation, error) {
+// whether Dispatcher reads its launched process at the bound one. An execution
+// whose environment was never specified submitted no creation, so nothing
+// carries its ownership.
+func (e *ExecutionEnvironment) Observe(ctx context.Context, execution *domain.AgentExecution) (domain.EnvironmentObservation, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil || !record.specified() {
 		return domain.EnvironmentObservation{}, err
@@ -85,22 +84,17 @@ func (e *ExecutionEnvironment) Observe(ctx context.Context, execution *domain.Ag
 	if err != nil {
 		return observation, err
 	}
-	if read && !full {
-		observation.Environments = []domain.ObservedEnvironment{{ID: execution.Environment, Running: true}}
-		observation.Attached = true
-	} else {
-		attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
-		view, err := authority.observe(attempt, record, execution.Retired())
-		cancel()
-		if err != nil {
-			return domain.EnvironmentObservation{}, withExecution(err, execution)
-		}
-		observation.Environments, observation.Removed = view.environments, view.removed
-		if view.removed {
-			observation.LossReason = domain.ComputerRemovedReason
-		}
-		observation.Attached = read && view.endpoint != "" && reading.Endpoint == view.endpoint
+	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
+	view, err := authority.observe(attempt, record, execution.Retired())
+	cancel()
+	if err != nil {
+		return domain.EnvironmentObservation{}, withExecution(err, execution)
 	}
+	observation.Environments, observation.Removed = view.environments, view.removed
+	if view.removed {
+		observation.LossReason = domain.ComputerRemovedReason
+	}
+	observation.Attached = read && view.endpoint != "" && reading.Endpoint == view.endpoint
 	if delivery, delivers := authority.(credentialDelivery); delivers {
 		if observation.ModelDigest, err = delivery.modelDigest(record); err != nil {
 			return domain.EnvironmentObservation{}, withExecution(err, execution)

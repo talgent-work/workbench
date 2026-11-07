@@ -91,7 +91,7 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	lifecycle.mu.Lock()
 	settle(lifecycle)
 	lifecycle.mu.Unlock()
-	_, err = f.steps.handler.Reconcile(ctx, f.allocation(t).ID, false)
+	_, err = f.steps.handler.Reconcile(ctx, f.allocation(t).ID)
 	require.Error(t, err, "the create's answer is lost")
 	record := f.allocation(t)
 	require.True(t, record.Submitted)
@@ -152,7 +152,7 @@ func (f *unboundStart) recover(t *testing.T) {
 // answers whether it leaves a long step to its long step task.
 func (f *unboundStart) reconcile(t *testing.T) bool {
 	t.Helper()
-	long, err := f.steps.handler.Reconcile(context.Background(), f.allocation(t).ID, false)
+	long, err := f.steps.handler.Reconcile(context.Background(), f.allocation(t).ID)
 	require.NoError(t, err)
 	return long
 }

@@ -83,8 +83,8 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, late.ID, found)
-	// A late sandbox wakes a full reconciliation of the released execution.
-	_, err = steps.handler.Reconcile(ctx, late.ID, true)
+	// A late sandbox wakes the reconciliation of the released execution.
+	_, err = steps.handler.Reconcile(ctx, late.ID)
 	require.NoError(t, err)
 	mu.Lock()
 	require.Equal(t, map[string]int{late.AllocationLabel: 1}, lists, "only the observed allocation is checked")

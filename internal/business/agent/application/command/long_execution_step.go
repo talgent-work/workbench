@@ -21,7 +21,7 @@ const launchTimeout = 30 * time.Second
 // RunLongStep takes the long step the execution's current facts call for, if
 // any; a step no longer decided is not taken.
 func (h *ReconcileExecutionHandler) RunLongStep(ctx context.Context, executionID string) error {
-	execution, decision, _, err := h.decide(ctx, executionID, false)
+	execution, decision, _, err := h.decide(ctx, executionID)
 	if err != nil || execution == nil {
 		return err
 	}

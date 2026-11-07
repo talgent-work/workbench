@@ -12,11 +12,10 @@ import (
 // and reports what it observed; it decides none of them, and the environment
 // authority of each Computer owns actual environment state.
 type ExecutionEnvironmentPort interface {
-	// Observe shows the environments carrying the execution's ownership,
-	// whether Dispatcher reads its launched process there, and the model key
-	// a delivery would carry now. Unless full, an execution whose process
-	// Dispatcher reads may be shown from that attachment alone.
-	Observe(ctx context.Context, execution *domain.AgentExecution, full bool) (domain.EnvironmentObservation, error)
+	// Observe shows the environments carrying the execution's ownership as
+	// its authority lists them now, whether Dispatcher reads its launched
+	// process there, and the model key a delivery would carry now.
+	Observe(ctx context.Context, execution *domain.AgentExecution) (domain.EnvironmentObservation, error)
 	// PrepareCreation fixes the environment's specification from the
 	// execution and its Mount Grants and what its submission freezes. It is
 	// repeatable and creates nothing.

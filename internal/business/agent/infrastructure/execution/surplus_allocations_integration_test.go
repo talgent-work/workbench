@@ -119,7 +119,7 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	// binding commit, and only the committed binding's surplus is deleted.
 	var workers sync.WaitGroup
 	for range 2 {
-		workers.Go(func() { _, _ = newWorker().handler.Reconcile(ctx, record.ID, false) })
+		workers.Go(func() { _, _ = newWorker().handler.Reconcile(ctx, record.ID) })
 	}
 	workers.Wait()
 	record, _, err = latestAllocation(ctx, db, input.WorkID)
@@ -172,8 +172,8 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	released, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.NotZero(t, released.ReleasedAt)
-	// A late sandbox wakes a full reconciliation of the released execution.
-	_, err = steps.handler.Reconcile(ctx, record.ID, true)
+	// A late sandbox wakes the reconciliation of the released execution.
+	_, err = steps.handler.Reconcile(ctx, record.ID)
 	require.NoError(t, err)
 	mu.Lock()
 	require.NotContains(t, objects, late)

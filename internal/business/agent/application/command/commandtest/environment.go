@@ -14,9 +14,9 @@ import (
 type Environment struct {
 	mu sync.Mutex
 	// Observation is what Observe shows; Observed lets it depend on the
-	// execution and on a full observation.
+	// execution.
 	Observation domain.EnvironmentObservation
-	Observed    func(execution *domain.AgentExecution, full bool) domain.EnvironmentObservation
+	Observed    func(execution *domain.AgentExecution) domain.EnvironmentObservation
 	ObserveErr  error
 	// Answer is SubmitCreation's answer; SubmitErr loses it.
 	Answer    domain.CreationAnswer
@@ -40,7 +40,7 @@ type Environment struct {
 
 var _ command.ExecutionEnvironmentPort = (*Environment)(nil)
 
-func (e *Environment) Observe(_ context.Context, execution *domain.AgentExecution, full bool) (domain.EnvironmentObservation, error) {
+func (e *Environment) Observe(_ context.Context, execution *domain.AgentExecution) (domain.EnvironmentObservation, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Observations++
@@ -48,7 +48,7 @@ func (e *Environment) Observe(_ context.Context, execution *domain.AgentExecutio
 		return domain.EnvironmentObservation{}, e.ObserveErr
 	}
 	if e.Observed != nil {
-		return e.Observed(execution, full), nil
+		return e.Observed(execution), nil
 	}
 	return e.Observation, nil
 }

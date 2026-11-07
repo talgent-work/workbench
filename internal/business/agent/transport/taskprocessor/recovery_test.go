@@ -2,7 +2,6 @@ package taskprocessor_test
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -23,8 +22,8 @@ type observed struct {
 	ids []string
 }
 
-func (o *observed) Observe(_ context.Context, execution *domain.AgentExecution, full bool) (domain.EnvironmentObservation, error) {
-	o.ids = append(o.ids, fmt.Sprintf("%s:%t", execution.ID, full))
+func (o *observed) Observe(_ context.Context, execution *domain.AgentExecution) (domain.EnvironmentObservation, error) {
+	o.ids = append(o.ids, execution.ID)
 	return domain.EnvironmentObservation{}, nil
 }
 
@@ -72,18 +71,14 @@ func processorFor(t *testing.T, processors []taskqueue.Processor, kind taskqueue
 	return nil
 }
 
-// The reconciliation task delegates its execution once; one woken by a
-// sandbox report reconciles it against every environment it owns.
+// The reconciliation task delegates its execution once.
 func TestReconcileTaskDelegatesItsExecutionOnce(t *testing.T) {
 	environments := &observed{}
 	recovery, id := recovery(t, environments)
-	processor := processorFor(t, taskprocessor.RecoveryProcessors(recovery, slog.Default()), agenttask.ReconcileExecutionType)
-	for _, observe := range []bool{false, true} {
-		task, err := agenttask.NewReconcileExecution(id, observe)
-		require.NoError(t, err)
-		require.NoError(t, processor.Process(context.Background(), task))
-	}
-	require.Equal(t, []string{id + ":false", id + ":true"}, environments.ids)
+	task, err := agenttask.NewReconcileExecution(id)
+	require.NoError(t, err)
+	require.NoError(t, processorFor(t, taskprocessor.RecoveryProcessors(recovery, slog.Default()), agenttask.ReconcileExecutionType).Process(context.Background(), task))
+	require.Equal(t, []string{id}, environments.ids)
 }
 
 // The long step task is served only by the preparation workers, and decides
@@ -97,7 +92,7 @@ func TestLongStepTaskRunsOnlyOnThePreparationWorkers(t *testing.T) {
 	task, err := agenttask.NewRunLongExecutionStep(id)
 	require.NoError(t, err)
 	require.NoError(t, processorFor(t, taskprocessor.PreparationProcessors(recovery, slog.Default()), agenttask.RunLongExecutionStepType).Process(context.Background(), task))
-	require.Equal(t, []string{id + ":false"}, environments.ids)
+	require.Equal(t, []string{id}, environments.ids)
 }
 
 // A task queued under a type no longer enqueued is dropped without

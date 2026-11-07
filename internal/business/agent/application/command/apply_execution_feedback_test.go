@@ -116,7 +116,7 @@ func TestAuthoritativeEnvironmentLossFailsStoppingWork(t *testing.T) {
 	ctx := context.Background()
 	w := stoppingWorld(t)
 	w.environment.Observation = domain.EnvironmentObservation{}
-	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID, false)
+	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID)
 	require.NoError(t, err)
 	require.Empty(t, w.harness.Observed, "an authoritative loss is the observation")
 	require.NoError(t, w.coordination.ApplyExecutionReports(ctx, w.work().ID))
@@ -136,7 +136,7 @@ func TestAuthoritativeEnvironmentLossFailsWorkingWork(t *testing.T) {
 	ctx := context.Background()
 	w := runningWorld(t)
 	w.environment.Observation = domain.EnvironmentObservation{}
-	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID, true)
+	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID)
 	require.NoError(t, err)
 	require.NoError(t, w.coordination.ApplyExecutionReports(ctx, w.work().ID))
 	require.Equal(t, domain.WorkFailed, w.work().State)

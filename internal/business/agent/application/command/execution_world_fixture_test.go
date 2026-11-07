@@ -138,7 +138,7 @@ func (w *world) exit(t *testing.T, code int) {
 func (w *world) release(t *testing.T) {
 	t.Helper()
 	w.environment.Observation = domain.EnvironmentObservation{}
-	_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID, false)
+	_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.ExecutionReleased, w.execution(t).State)
 	require.NoError(t, w.coordination.ApplyExecutionReports(context.Background(), w.work().ID))

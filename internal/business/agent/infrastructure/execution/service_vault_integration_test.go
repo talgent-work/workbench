@@ -185,6 +185,8 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	require.NoError(t, err)
 	authorizationID := uuid.NewString()
 	shared := domain.WorkAuthorizationInput{OwnerUserID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerUserID: "lifecycle-owner", AuthorizationID: authorizationID, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
+	// Each Work's execution owns its own sandbox.
+	f.external.distinct = true
 	first, _ := f.createWithAuthorization(t, ctx, snapshot, shared)
 	second, _ := f.createWithAuthorization(t, ctx, snapshot, shared)
 	supply := &currentServiceSupply{token: "first-provider-token"}
@@ -217,7 +219,7 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 			require.ElementsMatch(t, allocations, markChanged(authorizationID))
 		}
 		for _, allocation := range using {
-			_, err := f.reconcile.Reconcile(ctx, allocation, false)
+			_, err := f.reconcile.Reconcile(ctx, allocation)
 			require.NoError(t, err)
 		}
 		if stage.token != "" {
@@ -246,7 +248,7 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	require.ElementsMatch(t, allocations, marked)
 	before := writes.writesWith("reauthorized-provider-token")
 	for _, allocation := range marked {
-		_, err := f.reconcile.Reconcile(ctx, allocation, false)
+		_, err := f.reconcile.Reconcile(ctx, allocation)
 		require.ErrorIs(t, err, errSupplyTemporarilyUnavailable)
 		record, _, err := f.provisioning.get(ctx, allocation)
 		require.NoError(t, err)

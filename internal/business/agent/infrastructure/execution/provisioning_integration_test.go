@@ -47,7 +47,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		return NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, now, infrastructure.NewInitialExecutionRequests(db, time.Now), nil)
 	}
 	reconcile := func(steps *executionSteps, id string) error {
-		_, err := steps.handler.Reconcile(ctx, id, false)
+		_, err := steps.handler.Reconcile(ctx, id)
 		return err
 	}
 	beginAgain := func(launch domain.LaunchSpecification) error {
@@ -108,7 +108,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		mu.Unlock()
 		batch, cancel := context.WithTimeout(ctx, reconciliationAttemptTimeout/2)
 		defer cancel()
-		_, err = steps.handler.Reconcile(batch, before.ID, false)
+		_, err = steps.handler.Reconcile(batch, before.ID)
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 		require.NoError(t, batch.Err(), "per-attempt expiry must leave the batch alive for persistence and later obligations")
 		after, found, err := latestAllocation(ctx, db, input.WorkID)

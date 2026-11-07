@@ -8,12 +8,10 @@ option go_package = "github.com/talgent-work/workbench/gen/agent/task/v1;agentta
 // AgentExecution's current facts call for, and to wake its long step when one
 // is due.
 message ReconcileExecutionTaskV1 {
+  reserved 2;
+  reserved "observe_environments";
   // AgentExecution identity.
   string execution_id = 1;
-  // Whether every environment carrying the execution's ownership is listed
-  // even while Dispatcher reads its launched process, as after the
-  // environment authority reported a change to one of them.
-  bool observe_environments = 2;
 }
 
 // RunLongExecutionStepTaskV1 asks Agent to take the step of one AgentExecution

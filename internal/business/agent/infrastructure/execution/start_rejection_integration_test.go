@@ -46,7 +46,7 @@ func TestRejectedPreparationConvergesWithoutCreatingComputeAndRestartsRetainedIn
 	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: query.StartRequest{ID: input.RequestID, Kind: query.StartKindStart, WorkID: work.ID}, InitialExecution: &input}))
 	require.NoError(t, coordination.BeginExecution(ctx, work.ID), "waiting preparation must not suppress the execution's beginning")
 	reconcile := func(id string) error {
-		_, err := steps.handler.Reconcile(ctx, id, false)
+		_, err := steps.handler.Reconcile(ctx, id)
 		return err
 	}
 	first, found, err := p.live(ctx, work.ID)
