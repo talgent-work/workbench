@@ -21,46 +21,65 @@ import (
 	"xorm.io/xorm"
 )
 
-// unboundStart is one Cloud Work whose start submitted its sandbox's create
-// and never learned the sandbox's identity. Agent's Work recovery, the
-// Policies between the Work and its AgentExecution and the execution's
-// reconciliation run as their tasks would, on a shared clock; Dispatcher is
-// unreachable, since no Harness process ever connected.
-type unboundStart struct {
+// cloudStart is one Cloud Work whose start began its execution. Agent's Work
+// recovery, the Policies between the Work and its AgentExecution and the
+// execution's reconciliation run as their tasks would, on a shared clock,
+// against the OpenSandbox fixture, whose controller keeps that clock too.
+// Dispatcher reads only the processes readings names, and is unreachable
+// otherwise.
+type cloudStart struct {
 	db           *xorm.Engine
 	works        *infrastructure.AgentWorkRepository
 	steps        *executionSteps
 	coordination *command.ExecutionCoordination
 	recovery     *command.RecoverWorkHandler
 	lifecycle    *lifecycleFixture
+	readings     *streamReadings
 	workID       string
 	admission    domain.StartAdmission
 	mu           sync.Mutex
 	at           time.Time
 }
 
-func (f *unboundStart) now() time.Time {
+func (f *cloudStart) now() time.Time {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.at
 }
 
-func (f *unboundStart) advance(by time.Duration) {
+func (f *cloudStart) advance(by time.Duration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.at = f.at.Add(by)
 }
 
-// newUnboundStart creates the Work, begins its start's execution and submits
-// the create, whose answer is lost however the authority settles it.
-func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart {
+// newUnboundStart begins a Cloud Work's start and submits the create, whose
+// answer is lost however the authority settles it.
+func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *cloudStart {
+	t.Helper()
+	f := newCloudStart(t)
+	f.lifecycle.mu.Lock()
+	settle(f.lifecycle)
+	f.lifecycle.mu.Unlock()
+	_, err := f.steps.handler.Reconcile(context.Background(), f.allocation(t).ID)
+	require.Error(t, err, "the create's answer is lost")
+	record := f.allocation(t)
+	require.True(t, record.Submitted)
+	require.Empty(t, record.SandboxID, "the sandbox's identity is never recorded")
+	require.Equal(t, 1, f.creates())
+	return f
+}
+
+// newCloudStart creates the Work and begins its start's execution.
+func newCloudStart(t *testing.T) *cloudStart {
 	t.Helper()
 	ctx := context.Background()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	f := &unboundStart{db: db, at: time.Now()}
+	f := &cloudStart{db: db, at: time.Now(), readings: &streamReadings{}}
 	provider, _, lifecycle := sandboxClient(t)
+	lifecycle.clock = f.now
 	f.lifecycle = lifecycle
 	initial := infrastructure.NewInitialExecutionRequests(db, f.now)
 	works := infrastructure.NewAgentWorkRepository(db, f.now)
@@ -69,7 +88,7 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	attachNativeCredentials(t, db, p, lifecycle)
 	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture", command.NewRecordRepositoryCheckoutsHandler(initial))
 	require.NoError(t, err)
-	f.works, f.steps = works, newExecutionSteps(t, p, connections, unread{}, nil, f.now)
+	f.works, f.steps = works, newExecutionSteps(t, p, connections, f.readings, nil, f.now)
 	f.coordination = command.NewExecutionCoordination(f.now, works, f.steps.executions, f.steps.desks, f.steps.harness)
 	f.recovery = command.NewRecoverWorkHandler(f.now, works, f.steps.harness, command.NewInputAcceptance(works, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil)
 
@@ -87,16 +106,6 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *unboundStart
 	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}}))
 	f.workID = work.ID
 	require.NoError(t, f.coordination.BeginExecution(ctx, work.ID))
-
-	lifecycle.mu.Lock()
-	settle(lifecycle)
-	lifecycle.mu.Unlock()
-	_, err = f.steps.handler.Reconcile(ctx, f.allocation(t).ID)
-	require.Error(t, err, "the create's answer is lost")
-	record := f.allocation(t)
-	require.True(t, record.Submitted)
-	require.Empty(t, record.SandboxID, "the sandbox's identity is never recorded")
-	require.Equal(t, 1, f.creates())
 	return f
 }
 
@@ -106,7 +115,7 @@ func createdThenDeleted(l *lifecycleFixture) { l.createFailure = true }
 // The server creates the sandbox; its answer is what is lost.
 func createdUnanswered(l *lifecycleFixture) { l.loseCreateResponse = true }
 
-func (f *unboundStart) allocation(t *testing.T) allocationRecord {
+func (f *cloudStart) allocation(t *testing.T) allocationRecord {
 	t.Helper()
 	record, found, err := latestAllocation(context.Background(), f.db, f.workID)
 	require.NoError(t, err)
@@ -114,26 +123,26 @@ func (f *unboundStart) allocation(t *testing.T) allocationRecord {
 	return record
 }
 
-func (f *unboundStart) work(t *testing.T) *domain.AgentWork {
+func (f *cloudStart) work(t *testing.T) *domain.AgentWork {
 	t.Helper()
 	work, err := f.works.Get(context.Background(), f.workID)
 	require.NoError(t, err)
 	return work
 }
 
-func (f *unboundStart) creates() int {
+func (f *cloudStart) creates() int {
 	f.lifecycle.mu.Lock()
 	defer f.lifecycle.mu.Unlock()
 	return f.lifecycle.creates
 }
 
-func (f *unboundStart) setPages(pages [][]sdk.SandboxInfo) {
+func (f *cloudStart) setPages(pages [][]sdk.SandboxInfo) {
 	f.lifecycle.mu.Lock()
 	defer f.lifecycle.mu.Unlock()
 	f.lifecycle.pages = pages
 }
 
-func (f *unboundStart) sandboxPresent() bool {
+func (f *cloudStart) sandboxPresent() bool {
 	f.lifecycle.mu.Lock()
 	defer f.lifecycle.mu.Unlock()
 	return f.lifecycle.info != nil
@@ -141,7 +150,7 @@ func (f *unboundStart) sandboxPresent() bool {
 
 // recover runs the Work's recovery and the Policies between the Work and its
 // execution, as their tasks would.
-func (f *unboundStart) recover(t *testing.T) {
+func (f *cloudStart) recover(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, f.recovery.Handle(ctx, f.workID))
@@ -150,7 +159,7 @@ func (f *unboundStart) recover(t *testing.T) {
 
 // reconcile runs the execution's reconciliation as its task would, and
 // answers whether it leaves a long step to its long step task.
-func (f *unboundStart) reconcile(t *testing.T) bool {
+func (f *cloudStart) reconcile(t *testing.T) bool {
 	t.Helper()
 	long, err := f.steps.handler.Reconcile(context.Background(), f.allocation(t).ID)
 	require.NoError(t, err)
@@ -159,7 +168,7 @@ func (f *unboundStart) reconcile(t *testing.T) bool {
 
 // retire asks the execution to retire for cause, as a Work whose execution
 // ended so would.
-func (f *unboundStart) retire(t *testing.T, cause domain.RetirementCause) {
+func (f *cloudStart) retire(t *testing.T, cause domain.RetirementCause) {
 	t.Helper()
 	require.NoError(t, f.steps.retire(context.Background(), f.workID, cause, f.now()))
 }
@@ -167,7 +176,7 @@ func (f *unboundStart) retire(t *testing.T, cause domain.RetirementCause) {
 // failAtStartupDeadline lets the Startup Deadline and the abandonment margin
 // pass; the execution's reconciliation fails the start and abandons it, and
 // the Policies report both to the Work, which retires the execution.
-func (f *unboundStart) failAtStartupDeadline(t *testing.T) {
+func (f *cloudStart) failAtStartupDeadline(t *testing.T) {
 	t.Helper()
 	f.advance(domain.StartupDeadline + 2*time.Minute)
 	f.reconcile(t)
@@ -184,7 +193,7 @@ func (f *unboundStart) failAtStartupDeadline(t *testing.T) {
 }
 
 // The Work's release is confirmed and Restart continues its Harness Session.
-func (f *unboundStart) requireRestartable(t *testing.T) {
+func (f *cloudStart) requireRestartable(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 	f.recover(t)

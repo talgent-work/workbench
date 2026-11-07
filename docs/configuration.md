@@ -137,6 +137,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `environment.TALGENT_API_ADDRESS` | `${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}` | The platform API a sandbox calls, on the standard port: the only kind its Credential Proxy adds the Work credential to |
 | `environment.OTEL_EXPORTER_OTLP_ENDPOINT` | `${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}` | Where Claude Code sends its telemetry |
 | `dispatcher.address`, `dispatcher.token` | `${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}`, `${DISPATCHER_EXECUTION_CONTROL_TOKEN:}` | Dispatcher, which drives each run |
+| `lease.duration`, `lease.renewal-threshold` | `2h`, `1h` | How long a sandbox lives unless renewed, and how much of its lease remains when a running Work's sandbox is renewed; the threshold must stay below the duration and well above `agent-recovery.sweep-interval`. Before rolling back past the release that leases sandboxes, see [Operations](self-hosting.md#9-operations) |
 
 ### computer
 

@@ -47,6 +47,35 @@ type ExecutionConfig struct {
 	Dispatcher          ExecutionClientConfig        `json:"dispatcher" yaml:"dispatcher" toml:"dispatcher"`
 	// SandboxNamespace is where OpenSandbox creates Talgent's sandboxes.
 	SandboxNamespace string `json:"sandbox-namespace" yaml:"sandbox-namespace" toml:"sandbox-namespace"`
+	// Lease is how long each sandbox lives unless renewed, and how much of
+	// its lease remains when it is renewed.
+	Lease ExecutionLeaseConfig `json:"lease" yaml:"lease" toml:"lease"`
+}
+
+// ExecutionLeaseConfig leases every sandbox: it expires after Duration unless
+// renewed, and a wanted one is renewed once less than RenewalThreshold
+// remains. They default to two hours and one hour.
+type ExecutionLeaseConfig struct {
+	Duration         Duration `json:"duration" yaml:"duration" toml:"duration"`
+	RenewalThreshold Duration `json:"renewal-threshold" yaml:"renewal-threshold" toml:"renewal-threshold"`
+}
+
+const (
+	defaultLeaseDuration         = 2 * time.Hour
+	defaultLeaseRenewalThreshold = time.Hour
+)
+
+// terms are the configured lease terms, defaults filling what is unset;
+// Sandboxes validates them.
+func (c ExecutionLeaseConfig) terms() domain.LeaseTerms {
+	terms := domain.LeaseTerms{Duration: c.Duration.Duration(), RenewalThreshold: c.RenewalThreshold.Duration()}
+	if terms.Duration == 0 {
+		terms.Duration = defaultLeaseDuration
+	}
+	if terms.RenewalThreshold == 0 {
+		terms.RenewalThreshold = defaultLeaseRenewalThreshold
+	}
+	return terms
 }
 
 func (cfg ExecutionConfig) Validate() error {
@@ -81,7 +110,7 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, mod
 		}
 		resources.Limits[corev1.ResourceName(name)] = quantity
 	}
-	return execution.NewSandboxes(client, execution.SandboxConfig{Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow})
+	return execution.NewSandboxes(client, execution.SandboxConfig{Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
 }
 
 var ExecutionModule = fx.Module("agent.execution-integration",

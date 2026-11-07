@@ -27,7 +27,7 @@ func NewAgentExecutionRepository(db *xorm.Engine, now func() time.Time) *AgentEx
 }
 
 // factColumns are the columns holding an execution's facts.
-var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted", "start_rejected", "sandbox_id", "sandbox_ready", "plugins_prepared", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "inputs_due", "inputs_synced_at", "start_failure", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "request_json", "request_hash", "version", "updated_at"}
+var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted", "start_rejected", "sandbox_id", "lease_expires_at", "sandbox_ready", "plugins_prepared", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "inputs_due", "inputs_synced_at", "start_failure", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "request_json", "request_hash", "version", "updated_at"}
 
 func (r *AgentExecutionRepository) Get(ctx context.Context, id string) (*domain.AgentExecution, error) {
 	record, found, err := r.get(ctx, id)
@@ -136,7 +136,7 @@ func recordFromExecution(e *domain.AgentExecution) (allocationRecord, error) {
 	return allocationRecord{
 		ID: e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch, RequestHash: storageKey(string(launch)),
 		State: string(e.State), StartAdmittedAt: millis(e.StartAdmittedAt), DeskID: e.Desk.ID, SeatedAt: millis(e.Desk.SeatedAt), DeskLeftAt: millis(e.Desk.LeftAt),
-		Submitted: e.Creation.Submitted, StartRejected: e.Outcome.Rejected, SandboxID: e.Environment,
+		Submitted: e.Creation.Submitted, StartRejected: e.Outcome.Rejected, SandboxID: e.Environment, LeaseExpiresAt: millis(e.Lease),
 		SandboxReady: e.Credentials.Delivered, EnvironmentPrepared: e.Process.PreparationEnded,
 		ProcessID: e.Process.ID, ProcessPrepared: e.Process.Prepared, ProcessStarted: e.Process.Started, ProcessExited: e.Process.Exited, ExitCode: e.Process.Exit.ExitCode, ExitReason: e.Process.Exit.Reason,
 		ExitRequestID: e.ExitRequest.StopRequestID, ExitCancels: e.ExitRequest.CancelWaitingTurn,
@@ -158,6 +158,7 @@ func executionFromRecord(r allocationRecord) (*domain.AgentExecution, error) {
 		Launch:      launch,
 		Creation:    domain.CreationSubmission{Submitted: r.Submitted},
 		Environment: r.SandboxID,
+		Lease:       fromMillis(r.LeaseExpiresAt),
 		Process: domain.LaunchedProcess{ID: r.ProcessID, PreparationEnded: r.EnvironmentPrepared, Prepared: r.ProcessPrepared, Started: r.ProcessStarted, Exited: r.ProcessExited,
 			Exit: domain.HarnessExit{ExitCode: r.ExitCode, Reason: r.ExitReason}},
 		ExitRequest: domain.ExitRequest{StopRequestID: r.ExitRequestID, CancelWaitingTurn: r.ExitCancels},

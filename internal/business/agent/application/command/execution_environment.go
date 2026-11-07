@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -41,6 +42,9 @@ type ExecutionEnvironmentPort interface {
 	Launch(ctx context.Context, execution *domain.AgentExecution) (string, error)
 	// Connect hands the launched process to Dispatcher.
 	Connect(ctx context.Context, execution *domain.AgentExecution) error
+	// RenewLease renews the bound environment's lease to expiresAt and
+	// reports the expiry the authority returned.
+	RenewLease(ctx context.Context, execution *domain.AgentExecution, expiresAt time.Time) (time.Time, error)
 	// SyncInputs hands a Managed Computer the current inputs of its Work and
 	// reports how many due changes it covered.
 	SyncInputs(ctx context.Context, execution *domain.AgentExecution) (int64, error)

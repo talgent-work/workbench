@@ -359,6 +359,11 @@ data:
       dispatcher:
         address: ${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}
         token: ${DISPATCHER_EXECUTION_CONTROL_TOKEN:}
+      # Every sandbox expires after its lease unless Agent renews it; a
+      # running Work's lease is renewed once less than the threshold remains.
+      lease:
+        duration: "2h"
+        renewal-threshold: "1h"
     # Storage's and Marketplace's records.
     workbench-mysql:
       dsn: ${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_ADDR})/${WORKBENCH_MYSQL_DATABASE}?charset=utf8mb4&parseTime=true

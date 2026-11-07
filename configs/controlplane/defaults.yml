@@ -237,6 +237,13 @@ agent-execution:
   dispatcher:
     address: ${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}
     token: ${DISPATCHER_EXECUTION_CONTROL_TOKEN:}
+  # Every sandbox expires after its lease unless Agent renews it, so one Agent
+  # lost track of is reclaimed within a lease. A running Work's lease is
+  # renewed once less than the threshold remains; keep the threshold well
+  # above the recovery sweep interval.
+  lease:
+    duration: "2h"
+    renewal-threshold: "1h"
 agent-rpc:
   control-token: ${AGENT_CONTROL_TOKEN:}
   feedback-token: ${AGENT_FEEDBACK_TOKEN:}

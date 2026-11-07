@@ -74,6 +74,9 @@ func (realizedEnvironments) Connect(context.Context, *domain.AgentExecution) err
 func (realizedEnvironments) SyncInputs(_ context.Context, e *domain.AgentExecution) (int64, error) {
 	return e.Inputs.Due, nil
 }
+func (realizedEnvironments) RenewLease(_ context.Context, _ *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
+	return expiresAt, nil
+}
 func (realizedEnvironments) ReconcileComputer(context.Context, string) error { return nil }
 
 // moduleRuns drives the AgentExecutions of a composed Agent module where no

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 
@@ -43,8 +44,12 @@ func init() {
 	}
 }
 
+// fixtureLease is the deployment's default: two-hour leases renewed once less
+// than an hour remains.
+var fixtureLease = domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}
+
 func config() SandboxConfig {
-	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
+	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Lease: fixtureLease, Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")},
 		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("1Gi")},
 	}}
@@ -108,6 +113,70 @@ type lifecycleFixture struct {
 	others map[string]sdk.SandboxInfo
 	// requests counts every call to the environment authority.
 	requests int
+	// unleased creates each sandbox without an expiry, as a sandbox created
+	// before leasing carries none.
+	unleased bool
+	// renewals are the expiries each accepted lease renewal asked for.
+	renewals []time.Time
+	// clock is the controller's time: a sandbox whose expiry passed is
+	// deleted before the next call. Nil is the wall clock.
+	clock func() time.Time
+}
+
+func (f *lifecycleFixture) now() time.Time {
+	if f.clock == nil {
+		return time.Now()
+	}
+	return f.clock()
+}
+
+// leased gives info the expiry the create's timeout asks for, as the server
+// does, unless the fixture creates sandboxes without one.
+func (f *lifecycleFixture) leased(info *sdk.SandboxInfo) {
+	if f.create.Timeout == nil || f.unleased {
+		return
+	}
+	expiresAt := f.now().Add(time.Duration(*f.create.Timeout) * time.Second).UTC()
+	info.ExpiresAt = &expiresAt
+}
+
+// expire deletes every sandbox whose expiry passed, as the BatchSandbox
+// controller enforces it.
+func (f *lifecycleFixture) expire() {
+	expired := func(info sdk.SandboxInfo) bool {
+		return info.ExpiresAt != nil && !f.now().Before(*info.ExpiresAt)
+	}
+	if f.info != nil && expired(*f.info) {
+		f.info = nil
+	}
+	maps.DeleteFunc(f.others, func(_ string, info sdk.SandboxInfo) bool { return expired(info) })
+}
+
+// renew moves a sandbox's expiry to the requested time, which may be any
+// future time, a shorter one included; a sandbox created without an expiry
+// is refused, as OpenSandbox refuses it.
+func (f *lifecycleFixture) renew(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/sandboxes/"), "/renew-expiration")
+	var info *sdk.SandboxInfo
+	if f.info != nil && f.info.ID == id {
+		info = f.info
+	} else if other, found := f.others[id]; found {
+		info = &other
+		defer func() { f.others[id] = *info }()
+	}
+	if info == nil {
+		http.Error(w, `{"code":"SANDBOX_NOT_FOUND"}`, 404)
+		return
+	}
+	var request sdk.RenewExpirationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || info.ExpiresAt == nil || !request.ExpiresAt.After(f.now()) {
+		http.Error(w, `{"code":"INVALID_EXPIRATION"}`, 400)
+		return
+	}
+	f.renewals = append(f.renewals, request.ExpiresAt)
+	expiresAt := request.ExpiresAt.UTC()
+	info.ExpiresAt = &expiresAt
+	_ = json.NewEncoder(w).Encode(sdk.RenewExpirationResponse{ExpiresAt: expiresAt})
 }
 
 func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +188,10 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	f.expire()
 	switch {
+	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/renew-expiration"):
+		f.renew(w, r)
 	case r.Method == "POST" && r.URL.Path == "/v1/sandboxes":
 		f.creates++
 		if err := json.NewDecoder(r.Body).Decode(&f.create); err != nil {
@@ -129,6 +201,7 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.refuseStatus != 0 {
 			if f.createOnRefusal {
 				f.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: f.create.Metadata, Status: sdk.SandboxStatus{State: sdk.StateRunning}}
+				f.leased(f.info)
 				if f.createPending {
 					f.info.Status.State = "Pending"
 				}
@@ -141,6 +214,7 @@ func (f *lifecycleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: f.create.Metadata, Status: sdk.SandboxStatus{State: sdk.StateRunning}}
+		f.leased(f.info)
 		if f.createPending {
 			f.info.Status.State = "Pending"
 		}
@@ -279,7 +353,7 @@ func TestNativeSandboxSubmissionRetainsHomeAndWorkspaceWithoutExecutor(t *testin
 	spec := fixture.create
 	require.Equal(t, "native-claude:test", spec.Image.URI)
 	require.Equal(t, []string{"sleep", "infinity"}, spec.Entrypoint)
-	require.Nil(t, spec.Timeout)
+	require.Equal(t, 7200, *spec.Timeout, "every sandbox expires unless renewed")
 	require.Equal(t, "execd-secret", spec.Env["EXECD_ACCESS_TOKEN"])
 	require.Equal(t, input.WorkID, spec.Env["TALGENT_WORK_ID"])
 	require.NotContains(t, spec.Env, workCredentialEnv, "the Work credential reaches the Gateway through the Credential Proxy, never the sandbox")
@@ -392,21 +466,21 @@ func TestSandboxEndpointRequiresCurrentIdentityAndResolvesAgain(t *testing.T) {
 	input := request()
 	_, err := provider.submitRequest(context.Background(), input, "execd-secret")
 	require.NoError(t, err)
-	endpoint, ready, err := provider.Endpoint(context.Background(), owner(input), sandboxID)
+	bound, err := provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
-	require.True(t, ready)
-	require.Equal(t, "http://192.0.2.8:44772", endpoint)
+	require.True(t, bound.running)
+	require.Equal(t, "http://192.0.2.8:44772", bound.endpoint)
 	fixture.endpoint = "192.0.2.9:44772"
-	endpoint, ready, err = provider.Endpoint(context.Background(), owner(input), sandboxID)
+	bound, err = provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
-	require.True(t, ready)
-	require.Equal(t, "http://192.0.2.9:44772", endpoint)
+	require.True(t, bound.running)
+	require.Equal(t, "http://192.0.2.9:44772", bound.endpoint)
 	fixture.info.Status.State = sdk.StatePending
-	_, ready, err = provider.Endpoint(context.Background(), owner(input), sandboxID)
+	bound, err = provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
-	require.False(t, ready)
+	require.False(t, bound.running)
 	other := Allocation{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
-	_, _, err = provider.Endpoint(context.Background(), other, sandboxID)
+	_, err = provider.inspect(context.Background(), other, sandboxID)
 	require.ErrorIs(t, err, errEnvironmentConflict)
 }
 
@@ -478,5 +552,18 @@ func TestNativeTelemetryAttributionAcrossContinueAndFresh(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "talgent.agent_work_id=session,talgent.case_id=case,talgent.project_id=project", fixture.create.Env["OTEL_RESOURCE_ATTRIBUTES"], "telemetry is attributed per Work")
 		})
+	}
+}
+
+// A lease needs a renewal threshold below its duration, or it would be
+// renewed on every reconciliation.
+func TestSandboxLeaseNeedsAThresholdBelowItsDuration(t *testing.T) {
+	client, err := shared.NewLifecycleClient(http.DefaultClient, shared.Config{Address: "http://opensandbox.invalid/v1", APIKey: "lifecycle-secret"})
+	require.NoError(t, err)
+	for _, lease := range []domain.LeaseTerms{{}, {Duration: time.Hour, RenewalThreshold: time.Hour}, {Duration: time.Hour}, {Duration: time.Millisecond, RenewalThreshold: time.Microsecond}} {
+		cfg := config()
+		cfg.Lease = lease
+		_, err := NewSandboxes(client, cfg)
+		require.Error(t, err, "lease %+v", lease)
 	}
 }
