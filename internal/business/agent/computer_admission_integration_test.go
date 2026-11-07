@@ -26,6 +26,7 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
+	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/computer"
@@ -41,6 +42,9 @@ type oneRoomCloud struct {
 	runs     *moduleRuns
 	// deleting keeps a retired execution's environment until it is cleared.
 	deleting *atomic.Bool
+	// recovery wakes an execution as the sandbox observer does when its
+	// environment's deletion completes.
+	recovery *application.Recovery
 	db       *xorm.Engine
 	quota    *corev1.ResourceQuota
 	kube     *fake.Clientset
@@ -58,6 +62,7 @@ func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
 	port := &sessionCommandRecorder{}
 	runs := &moduleRuns{}
 	deleting := &atomic.Bool{}
+	var recovery *application.Recovery
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -68,11 +73,12 @@ func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(func() kubernetes.Interface { return kube }),
 		fx.Provide(func() command.RunningHarnessPort { return port }),
+		fx.Populate(&recovery),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(ctx))
 	t.Cleanup(func() { require.NoError(t, app.Stop(context.Background())) })
-	return &oneRoomCloud{
+	return &oneRoomCloud{recovery: recovery,
 		client:   agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
 		feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
 		runs:     runs, deleting: deleting, db: db, quota: quota, kube: kube,
@@ -158,9 +164,10 @@ func TestCloudSeatsOneRunPerRoomAndFreesItAfterRelease(t *testing.T) {
 	require.EqualValues(t, 1, cloud.desks(t, "occupied"), "a running run holds its room")
 	cloud.deleting.Store(true)
 	cloud.report(t, ctx, seated, agentprivatev1.FeedbackKind_FEEDBACK_KIND_EXITED, 1)
-	cloud.runs.awaitRetired(t, ctx, seated)
-	require.Never(t, func() bool { return cloud.desks(t, "occupied") == 0 }, 500*time.Millisecond, 50*time.Millisecond, "an exited run holds its room until compute is released")
+	retired := cloud.runs.await(t, ctx, seated, (*domain.AgentExecution).Retired, "the Work retires its execution")
+	require.Never(t, func() bool { return cloud.desks(t, "occupied") == 0 }, 250*time.Millisecond, 25*time.Millisecond, "an exited run holds its room until compute is released")
 	cloud.deleting.Store(false)
+	require.NoError(t, cloud.recovery.WakeExecution(ctx, retired.ID), "the deletion's completion wakes the execution")
 	require.Eventually(t, func() bool { return cloud.desks(t, "occupied") == 0 }, 10*time.Second, 50*time.Millisecond)
 	require.EqualValues(t, 1, cloud.desks(t, "vacated"))
 	cloud.runs.await(t, ctx, seated, func(e *domain.AgentExecution) bool { return e.State == domain.ExecutionReleased }, "the failed run's compute is released")
