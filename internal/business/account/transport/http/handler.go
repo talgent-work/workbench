@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 
 	"github.com/talgent-work/workbench/internal/business/account/application"
 	"github.com/talgent-work/workbench/internal/business/account/domain"
@@ -61,7 +60,7 @@ type Handler struct {
 	// targets are where a sign-in may return.
 	targets returnTargets
 	logger  *slog.Logger
-	router  chi.Router
+	router  *http.ServeMux
 }
 
 func NewHandler(app Application, cfg Config, logger *slog.Logger) (*Handler, error) {
@@ -76,12 +75,12 @@ func NewHandler(app Application, cfg Config, logger *slog.Logger) (*Handler, err
 		return nil, err
 	}
 	h := &Handler{app: app, cfg: cfg, attempts: loginAttempts{key: cfg.LoginAttemptKey, ttl: cfg.LoginAttemptTTL}, targets: targets, logger: logger}
-	router := chi.NewRouter()
-	router.Get("/auth/github/login", h.login)
-	router.Get(callbackPath, h.callback)
-	router.Post(refreshPath, h.refresh)
-	router.Post("/auth/logout", h.logout)
-	router.Get("/auth/jwks.json", h.jwks)
+	router := http.NewServeMux()
+	router.HandleFunc("GET /auth/github/login", h.login)
+	router.HandleFunc("GET "+callbackPath, h.callback)
+	router.HandleFunc("POST "+refreshPath, h.refresh)
+	router.HandleFunc("POST /auth/logout", h.logout)
+	router.HandleFunc("GET /auth/jwks.json", h.jwks)
 	h.router = router
 	return h, nil
 }
