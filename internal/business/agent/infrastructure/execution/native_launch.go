@@ -3,6 +3,7 @@ package execution
 import (
 	"encoding/json"
 	"errors"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -299,7 +300,7 @@ func machineServer(connector domain.SelectedConnector) (map[string]any, bool) {
 // environment and headers hold only credential placeholders.
 func nativeServer(connector domain.SelectedConnector) map[string]any {
 	if connector.Type == "http" {
-		server := map[string]any{"type": "http", "url": connector.URL}
+		server := map[string]any{"type": "http", "url": sandboxConnectorURL(connector)}
 		if len(connector.Headers) > 0 {
 			server["headers"] = connector.Headers
 		}
@@ -310,4 +311,21 @@ func nativeServer(connector domain.SelectedConnector) map[string]any {
 		server["env"] = connector.Environment
 	}
 	return server
+}
+
+// sandboxConnectorURL is where a Cloud sandbox's Harness reaches a retained
+// Connector. The Talgent Connector, reached with the Work's own identity, is
+// served at the sandbox's Gateway address, which the Harness expands from its
+// environment: the Credential Proxy adds the Work credential only to requests
+// to that address, and a Work keeps the Connector address of its creation
+// even after the deployment renames the Gateway. Where the sandbox names no
+// Gateway, the retained origin applies.
+func sandboxConnectorURL(connector domain.SelectedConnector) string {
+	address, err := url.Parse(connector.URL)
+	if !connector.UsesWorkIdentity() || err != nil || address.Host == "" || address.User != nil {
+		return connector.URL
+	}
+	origin := address.Scheme + "://" + address.Host
+	address.Scheme, address.Host = "", ""
+	return "${" + gatewayAddressEnv + ":-" + origin + "}" + address.String()
 }

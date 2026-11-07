@@ -93,7 +93,7 @@ func TestNativeLaunchPreservesArgumentsAndSeparatesDiagnostics(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(value("--mcp-config")), &mcp))
 	require.Equal(t, "http", mcp.MCPServers["talgent"].Type)
-	require.Equal(t, "http://gateway.test/mcp?retained='quoted'", mcp.MCPServers["talgent"].URL)
+	require.Equal(t, "${TALGENT_GATEWAY_ADDRESS:-http://gateway.test}/mcp?retained='quoted'", mcp.MCPServers["talgent"].URL)
 	require.Empty(t, mcp.MCPServers["talgent"].Headers, "the Credential Proxy adds the Work credential; the declaration carries none")
 	var settings struct {
 		PluginConfigs map[string]struct{ Options map[string]string }
@@ -161,6 +161,19 @@ func TestNativeLaunchDeclaresSelectedConnectorsWithPlaceholdersOnly(t *testing.T
 	require.NoError(t, err)
 	require.Contains(t, launch.Command, `"github":{"args":["stdio"],"command":"github-mcp-server","env":{"GITHUB_PERSONAL_ACCESS_TOKEN":"${GITHUB_PERSONAL_ACCESS_TOKEN}"}}`)
 	require.Contains(t, launch.Command, `"remote":{"headers":{"Authorization":"Bearer ${TOKEN}"},"type":"http","url":"https://mcp.example.test/mcp"}`)
+}
+
+// A Work keeps the Talgent Connector it was created with, possibly at an
+// address the deployment has since renamed. The Harness reaches it at the
+// sandbox's current Gateway address, the one the Credential Proxy adds the
+// Work credential to, and at the retained origin only where the sandbox names
+// no Gateway.
+func TestNativeLaunchReachesTheTalgentConnectorAtTheSandboxGatewayAddress(t *testing.T) {
+	input := request()
+	input.Capabilities.Connectors[0].URL = "http://connector.talgent.svc.cluster.local/mcp"
+	launch, err := (NativeLaunchConfig{Binary: "claude"}).prepare(sandboxLayout, input, owner(input), "")
+	require.NoError(t, err)
+	require.Contains(t, launch.Command, `"talgent":{"type":"http","url":"${TALGENT_GATEWAY_ADDRESS:-http://connector.talgent.svc.cluster.local}/mcp"}`)
 }
 
 // On a Managed Computer the Talgent Connector is reached through the local
