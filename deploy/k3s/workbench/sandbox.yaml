@@ -288,8 +288,9 @@ spec:
 ---
 # A sandbox reaches the platform through controlplane's native API, which
 # admits each call by its Work credential. A deployment that routes sandboxes
-# to another platform service deletes this policy and opens that service with
-# a policy of its own.
+# to another platform service drops this policy with
+# SANDBOX_NATIVE_API_ACCESS=disabled and opens that service with a policy of
+# its own.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

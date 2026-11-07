@@ -267,9 +267,9 @@ data:
       # Computer connects to.
       mcp-address: "${WORKBENCH_ORIGIN}/computer/v1/mcp"
       # Where a Managed Work calls the native API directly, through its
-      # local proxy: the computer route's computer-api rule. Empty, as where
-      # Agents reach the platform only through a Gateway, gives Managed Works
-      # none.
+      # local proxy: the computer route's computer-api rule. Empty, as a
+      # profile sets it where Agents reach the platform only through a Gateway
+      # (COMPUTER_NATIVE_API_ACCESS=disabled), gives Managed Works none.
       api-address: "${WORKBENCH_ORIGIN}/computer/v1/api"
       # Where Storage's Access Links are served on that origin, from which a
       # Managed Computer downloads its Works' inputs: the native API's, through
@@ -373,7 +373,8 @@ data:
           workers: 4
           request-timeout-seconds: 120
           archive-base-url: ${MARKETPLACE_ARCHIVE_BASE_URL}
-          # Keyed by name: an overlay's profile adds sources beside these.
+          # Keyed by name: a profile (CONTROLPLANE_PROFILE) adds sources
+          # beside these.
           sources:
             claude-plugins-official:
               uri: https://github.com/anthropics/claude-plugins-official.git
@@ -1064,6 +1065,13 @@ spec:
                 secretKeyRef:
                   name: native-execution-control
                   key: STORAGE_LINK_SECRET
+            # The token a platform Connector presents to the native API, for a
+            # controlplane profile's native-api.gateway-token.
+            - name: GATEWAY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: GATEWAY_TOKEN
             - name: GITHUB_SCM_ENABLED
               valueFrom:
                 secretKeyRef:
@@ -1885,8 +1893,9 @@ spec:
     # Talgent Computer's local proxy, which adds its Work credential and
     # Space Token, as a sandbox's Credential Proxy does in the cluster. The
     # native API admits each call by that credential, so no JWT policy
-    # targets it; every other internal trust header is stripped. An overlay
-    # whose Agents reach the platform only through a Gateway removes it.
+    # targets it; every other internal trust header is stripped.
+    # COMPUTER_NATIVE_API_ACCESS=disabled removes it, where Agents reach the
+    # platform only through a Gateway.
     - name: computer-api
       matches:
         - path:

@@ -44,7 +44,8 @@ service you add to `talgent` reaches the others without a rule.
   Collector's port 4318. `sandbox-native-api` adds controlplane's native API, port 8081. A rule
   for a platform service names its namespace and its Pods' labels, because the policy sees the
   Pod behind a Service. A deployment that sends sandboxes to another platform service instead
-  deletes `sandbox-native-api` and adds a policy of its own in `talgent-sandbox`.
+  turns `SANDBOX_NATIVE_API_ACCESS` off ([switches](#switches)), which drops
+  `sandbox-native-api`, and adds a policy of its own in `talgent-sandbox`.
 - **Gotenberg.** It renders untrusted documents, so `gotenberg-isolation` denies all of its
   outbound traffic, DNS included; links in a document cannot reach the internal network.
 
@@ -166,6 +167,10 @@ ACCOUNT_COOKIE_DOMAIN=
 MARKETPLACE_ARCHIVE_BASE_URL=https://workbench.example.com/marketplace/archives
 NAS_SERVER=192.0.2.20
 NAS_SHARE=/exports/talgent
+SANDBOX_NATIVE_API_ACCESS=enabled
+COMPUTER_NATIVE_API_ACCESS=enabled
+ADDITIONAL_ENTRY_HOST=
+CONTROLPLANE_PROFILE=
 ```
 
 | Key | Meaning |
@@ -180,12 +185,37 @@ NAS_SHARE=/exports/talgent
 | `ACCOUNT_COOKIE_DOMAIN` | Empty keeps session cookies on the Workbench host; a parent domain shares one sign-in with sibling entries |
 | `MARKETPLACE_ARCHIVE_BASE_URL` | Where Works download owned Plugin archives: `<origin>/marketplace/archives` |
 | `NAS_SERVER`, `NAS_SHARE` | The NFS export of PersistentVolume `talgent-nas-root` |
+| `SANDBOX_NATIVE_API_ACCESS`, `COMPUTER_NATIVE_API_ACCESS`, `ADDITIONAL_ENTRY_HOST`, `CONTROLPLANE_PROFILE` | Deployment switches, below |
 
 The file may also set any `${NAME}` the service configuration reads, such as `LOG_LEVEL` or
 `K8S_DNS_SERVICE_IP`; the [configuration reference](configuration.md) lists them. Passwords
 never go into it.
 
 To read the deployed environment: `kubectl -n talgent get configmap workbench-environment -o yaml`.
+
+### Switches
+
+A few keys of the environment change which objects the base renders. `render-k3s.sh` adds, for
+each switch turned away from its default, a component of `deploy/k3s/workbench/components/`,
+and refuses a value a switch does not take. The defaults are the base as described here.
+
+| Key | Default | Turned |
+|---|---|---|
+| `SANDBOX_NATIVE_API_ACCESS` | `enabled`: sandboxes call controlplane's native API on Service `controlplane`'s port `agent` | `disabled`: no NetworkPolicy `sandbox-native-api`, no port `agent`, and sandboxes get no `TALGENT_API_ADDRESS` (`NATIVE_PLATFORM_API_ADDRESS` is empty) |
+| `COMPUTER_NATIVE_API_ACCESS` | `enabled`: Managed Works call the native API through the `computer` route's `computer-api` rule | `disabled`: no `computer-api` rule and no BackendTrafficPolicy `computer-api-rate-limit`. A controlplane profile then sets [`agent-computer`](configuration.md#agent-computer) `api-address` empty and `content-address` to a route that serves Access Links |
+| `ADDITIONAL_ENTRY_HOST` | empty: every route serves `WORKBENCH_HOST` only | a host name: the `web-api`, `auth` and `computer` routes serve it too; `workbench-web` stays on `WORKBENCH_HOST`. Add the host to the proxy in front of the Gateway |
+| `CONTROLPLANE_PROFILE` | empty: controlplane reads its defaults only | a profile name: controlplane also reads `controlplane_<profile>.yml` from ConfigMap `controlplane-profile`, which you provide, and mounts Secret `controlplane-profile-secrets`, if present, at `/etc/talgent/profile` (mode 0400) |
+
+A profile is merged over controlplane's defaults: maps merge, lists replace
+([configuration reference](configuration.md#how-a-process-reads-its-configuration)). Its
+`${NAME}` values read the environment as the defaults do, so values only the profile uses go in
+the environment file too; `GATEWAY_TOKEN` (Secret `native-execution-control`) is there for
+`native-api.gateway-token`. A deployment whose Agents reach the platform only through a
+platform Connector turns both access switches off and, in its profile, sets the Connector's
+address (`agent-execution.environment.TALGENT_GATEWAY_ADDRESS`,
+`marketplace.platform-connector.gateway-address`), `native-api.gateway-token` and the
+`agent-computer` addresses above. After changing the profile ConfigMap or Secret,
+`kubectl -n talgent rollout restart deployment/controlplane`.
 
 ## 4. Secrets
 
@@ -406,7 +436,8 @@ controlplane's log).
 ## 9. Operations
 
 - **Upgrading.** Check out the new release and deploy it as in [section 7](#7-deploy); the
-  schema step creates what the release adds. Services may be upgraded one at a time with
+  schema step creates what the release adds. A release that adds a key to `environment.env`
+  needs it in the environment: deploy once with `TALGENT_ENVIRONMENT_FILE` setting it. Services may be upgraded one at a time with
   `kubectl -n talgent set image deploy/<service> <service>=<image>`; record the image you
   replace, it is the rollback target.
 - **Rolling back.** `kubectl -n talgent rollout undo deploy/<service>`, or set the previous

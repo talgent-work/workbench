@@ -2,7 +2,9 @@
 # Sandboxes run in their own namespace, talgent-sandbox, and NetworkPolicies
 # fence only untrusted workloads. The base, rendered offline from its
 # placeholders, keeps every sandbox boundary there and grants the platform
-# namespace nothing a sandbox needs.
+# namespace nothing a sandbox needs. Rendered again with an environment that
+# turns every deployment switch away from its default, each switch changes
+# what it names and nothing else.
 set -euo pipefail
 
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -12,7 +14,36 @@ trap 'rm -rf "$work"' EXIT
 TALGENT_IMAGE_TAG=v0.0.0 bash "$root_dir/scripts/deploy/render-k3s.sh" --placeholders \
   "$root_dir/deploy/k3s/workbench" > "$work/rendered.yaml"
 
-RENDERED="$work/rendered.yaml" SERVER="$root_dir/deploy/opensandbox/server.yaml" python3 - <<'PYTHON'
+# The placeholders with every switch turned, as a deployment's environment
+# file outside the repository.
+switched=(
+  SANDBOX_NATIVE_API_ACCESS=disabled
+  COMPUTER_NATIVE_API_ACCESS=disabled
+  ADDITIONAL_ENTRY_HOST=entry.example.org
+  CONTROLPLANE_PROFILE=example
+)
+{
+  grep -vE "^($(printf '%s\n' "${switched[@]%%=*}" | paste -sd'|'))=" "$root_dir/deploy/k3s/workbench/environment.env"
+  printf '%s\n' "${switched[@]}"
+} > "$work/switched.env"
+TALGENT_ENVIRONMENT_FILE="$work/switched.env" TALGENT_IMAGE_TAG=v0.0.0 \
+  bash "$root_dir/scripts/deploy/render-k3s.sh" "$root_dir/deploy/k3s/workbench" > "$work/switched.yaml" 2> "$work/switched.log" \
+  || { cat "$work/switched.log" >&2; exit 1; }
+
+# A switch refuses a value it does not take instead of rendering its default.
+sed 's/^SANDBOX_NATIVE_API_ACCESS=.*/SANDBOX_NATIVE_API_ACCESS=off/' "$work/switched.env" > "$work/invalid.env"
+if TALGENT_ENVIRONMENT_FILE="$work/invalid.env" TALGENT_IMAGE_TAG=v0.0.0 \
+  bash "$root_dir/scripts/deploy/render-k3s.sh" "$root_dir/deploy/k3s/workbench" > /dev/null 2> "$work/invalid.log"; then
+  echo "expected: the render refuses SANDBOX_NATIVE_API_ACCESS=off" >&2
+  exit 1
+fi
+grep -q "SANDBOX_NATIVE_API_ACCESS is enabled or disabled, not 'off'" "$work/invalid.log" || {
+  echo "expected: the render names the switch and the value it refuses, got:" >&2
+  cat "$work/invalid.log" >&2
+  exit 1
+}
+
+RENDERED="$work/rendered.yaml" SWITCHED="$work/switched.yaml" SERVER="$root_dir/deploy/opensandbox/server.yaml" python3 - <<'PYTHON'
 import os, sys
 import yaml
 
@@ -102,6 +133,102 @@ check(any("pods" in rule["resources"] and "create" in rule["verbs"] for _, r in 
 
 # The sandboxes' namespace is configured as SANDBOX_NAMESPACE only.
 check("K8S_NAMESPACE" not in open(os.environ["RENDERED"]).read(), "the rendered base never names K8S_NAMESPACE")
+
+# The deployment switches, each by default and turned.
+switched = [d for d in yaml.safe_load_all(open(os.environ["SWITCHED"])) if d]
+
+def find(rendered, kind, name):
+    return next((d for d in rendered if d["kind"] == kind and d["metadata"]["name"] == name), None)
+
+def container_env(rendered, deployment):
+    container = find(rendered, "Deployment", deployment)["spec"]["template"]["spec"]["containers"][0]
+    return {e["name"]: e for e in container.get("env", [])}
+
+def service_ports(rendered, name):
+    return [p["name"] for p in find(rendered, "Service", name)["spec"]["ports"]]
+
+# SANDBOX_NATIVE_API_ACCESS: enabled, a sandbox reaches controlplane's native
+# API on the Service's agent port; disabled, no policy, port or address leads
+# it there.
+check(service_ports(docs, "controlplane") == ["http", "native", "agent"],
+      f"by default Service controlplane has the ports http, native and agent, got {service_ports(docs, 'controlplane')}")
+check("NATIVE_PLATFORM_API_ADDRESS" not in container_env(docs, "controlplane"),
+      "by default controlplane gives sandboxes the native API's address")
+check(find(switched, "NetworkPolicy", "sandbox-native-api") is None,
+      "SANDBOX_NATIVE_API_ACCESS=disabled renders no NetworkPolicy sandbox-native-api")
+check(find(switched, "NetworkPolicy", "sandbox-boundary") is not None,
+      "SANDBOX_NATIVE_API_ACCESS=disabled keeps NetworkPolicy sandbox-boundary")
+check(service_ports(switched, "controlplane") == ["http", "native"],
+      f"SANDBOX_NATIVE_API_ACCESS=disabled leaves Service controlplane the ports http and native, got {service_ports(switched, 'controlplane')}")
+check(container_env(switched, "controlplane").get("NATIVE_PLATFORM_API_ADDRESS") == {"name": "NATIVE_PLATFORM_API_ADDRESS", "value": ""},
+      "SANDBOX_NATIVE_API_ACCESS=disabled gives sandboxes no native API address")
+
+# COMPUTER_NATIVE_API_ACCESS: enabled, a Managed Work calls the native API
+# through the computer route's computer-api rule, under its own rate limit;
+# disabled, neither is rendered and the route's other rules stay.
+def rules(rendered, route):
+    return [r["name"] for r in find(rendered, "HTTPRoute", route)["spec"]["rules"]]
+
+computer_rules = ["computer-registration", "computer-telemetry", "computer-api", "computer-connection"]
+check(rules(docs, "computer") == computer_rules,
+      f"by default the computer route has the rules {computer_rules}, got {rules(docs, 'computer')}")
+check(find(docs, "BackendTrafficPolicy", "computer-api-rate-limit") is not None,
+      "by default BackendTrafficPolicy computer-api-rate-limit limits the computer-api rule")
+without_api = [r for r in computer_rules if r != "computer-api"]
+check(rules(switched, "computer") == without_api,
+      f"COMPUTER_NATIVE_API_ACCESS=disabled leaves the computer route the rules {without_api}, got {rules(switched, 'computer')}")
+check(find(switched, "BackendTrafficPolicy", "computer-api-rate-limit") is None,
+      "COMPUTER_NATIVE_API_ACCESS=disabled renders no BackendTrafficPolicy computer-api-rate-limit")
+
+# ADDITIONAL_ENTRY_HOST: empty, every route serves WORKBENCH_HOST only; set,
+# the web-api, auth and computer routes serve that host too, while the
+# Workbench's pages stay on its own.
+def hostnames(rendered, route):
+    return find(rendered, "HTTPRoute", route)["spec"]["hostnames"]
+
+for route in ("workbench-web", "web-api", "auth", "computer"):
+    check(hostnames(docs, route) == ["workbench.example.com"],
+          f"by default route {route} serves only WORKBENCH_HOST, got {hostnames(docs, route)}")
+for route in ("web-api", "auth", "computer"):
+    check(hostnames(switched, route) == ["workbench.example.com", "entry.example.org"],
+          f"ADDITIONAL_ENTRY_HOST=entry.example.org adds it to route {route}, got {hostnames(switched, route)}")
+check(hostnames(switched, "workbench-web") == ["workbench.example.com"],
+      f"ADDITIONAL_ENTRY_HOST leaves route workbench-web on WORKBENCH_HOST, got {hostnames(switched, 'workbench-web')}")
+
+# CONTROLPLANE_PROFILE: empty, controlplane reads its defaults only; set, it
+# also reads controlplane_<profile>.yml of ConfigMap controlplane-profile
+# beside them, and the files of Secret controlplane-profile-secrets, if there
+# is one, under /etc/talgent/profile. Either way a profile may name the
+# platform Connector's token as ${GATEWAY_TOKEN}.
+def pod_spec(rendered, deployment):
+    return find(rendered, "Deployment", deployment)["spec"]["template"]["spec"]
+
+def mounted(rendered, deployment, path):
+    spec = pod_spec(rendered, deployment)
+    mount = next((m for m in spec["containers"][0]["volumeMounts"] if m["mountPath"] == path), None)
+    if mount is None:
+        return None
+    return next(v for v in spec["volumes"] if v["name"] == mount["name"]), mount
+
+for rendered, how in ((docs, "by default"), (switched, "with CONTROLPLANE_PROFILE set")):
+    check(container_env(rendered, "controlplane").get("GATEWAY_TOKEN", {}).get("valueFrom")
+          == {"secretKeyRef": {"name": "native-execution-control", "key": "GATEWAY_TOKEN"}},
+          f"{how} controlplane reads GATEWAY_TOKEN from Secret native-execution-control")
+check("JIMU_PROFILES_ACTIVE" not in container_env(docs, "controlplane"), "by default controlplane activates no profile")
+check(mounted(docs, "controlplane", "/app/configs/controlplane")[0].get("configMap") == {"name": "controlplane-config"},
+      "by default controlplane's configuration is ConfigMap controlplane-config alone")
+check(mounted(docs, "controlplane", "/etc/talgent/profile") is None, "by default controlplane mounts no profile Secret")
+check(container_env(switched, "controlplane").get("JIMU_PROFILES_ACTIVE") == {"name": "JIMU_PROFILES_ACTIVE", "value": "example"},
+      f"CONTROLPLANE_PROFILE=example activates profile example, got {container_env(switched, 'controlplane').get('JIMU_PROFILES_ACTIVE')}")
+configuration = mounted(switched, "controlplane", "/app/configs/controlplane")[0]
+check(configuration.get("projected", {}).get("sources") == [{"configMap": {"name": "controlplane-config"}},
+                                                           {"configMap": {"name": "controlplane-profile"}}],
+      f"CONTROLPLANE_PROFILE puts ConfigMap controlplane-profile beside controlplane-config, got {configuration}")
+profile_secrets = mounted(switched, "controlplane", "/etc/talgent/profile")
+check(profile_secrets is not None and profile_secrets[1].get("readOnly") is True
+      and profile_secrets[0].get("secret", {}).get("secretName") == "controlplane-profile-secrets"
+      and profile_secrets[0]["secret"].get("optional") is True,
+      f"CONTROLPLANE_PROFILE mounts the optional Secret controlplane-profile-secrets read-only at /etc/talgent/profile, got {profile_secrets}")
 
 if failures:
     print("\n".join(f"expected: {f}" for f in failures), file=sys.stderr)

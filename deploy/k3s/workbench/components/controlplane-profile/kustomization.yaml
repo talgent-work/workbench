@@ -1,0 +1,65 @@
+# CONTROLPLANE_PROFILE set: controlplane activates that profile
+# (JIMU_PROFILES_ACTIVE) and reads controlplane_<profile>.yml beside its
+# defaults, merged over them: maps merge, lists replace. The deployment
+# provides ConfigMap controlplane-profile holding that file; controlplane does
+# not start without it. Files the profile names that must stay secret, such
+# as a private catalog source's SSH key, go in Secret
+# controlplane-profile-secrets, mounted at /etc/talgent/profile when present.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  # The tests fail the render if the container or its configuration volume
+  # moves.
+  - target:
+      kind: Deployment
+      name: controlplane
+    patch: |-
+      - op: test
+        path: /spec/template/spec/containers/0/name
+        value: controlplane
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: JIMU_PROFILES_ACTIVE
+          value: profile
+      - op: test
+        path: /spec/template/spec/volumes/0
+        value:
+          name: config
+          configMap:
+            name: controlplane-config
+      - op: replace
+        path: /spec/template/spec/volumes/0
+        value:
+          name: config
+          projected:
+            sources:
+              - configMap:
+                  name: controlplane-config
+              - configMap:
+                  name: controlplane-profile
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          mountPath: /etc/talgent/profile
+          name: profile-secrets
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: profile-secrets
+          secret:
+            secretName: controlplane-profile-secrets
+            optional: true
+            defaultMode: 0400
+replacements:
+  - source:
+      kind: ConfigMap
+      name: workbench-environment
+      fieldPath: data.CONTROLPLANE_PROFILE
+    targets:
+      - select:
+          kind: Deployment
+          name: controlplane
+        fieldPaths:
+          - spec.template.spec.containers.0.env.[name=JIMU_PROFILES_ACTIVE].value
