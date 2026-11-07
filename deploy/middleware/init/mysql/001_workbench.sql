@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
   `inputs_synced_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds of a Managed allocation''s last successful inputs sync; zero before the first. The recovery sweep syncs again once it is older than the refresh interval, before the copies'' Access Links expire',
   `submitted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'External submission may have happened; never blindly resubmit',
   `sandbox_id` varchar(36) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Observed external sandbox identity',
+  `lease_expires_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the bound sandbox expires unless renewed, as OpenSandbox last returned it; zero while none is known',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic persistence version',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last reconciliation time in Unix milliseconds',

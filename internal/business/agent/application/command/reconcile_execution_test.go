@@ -352,3 +352,22 @@ func TestALongStepNoLongerDecidedIsNotTaken(t *testing.T) {
 	require.NoError(t, w.reconciliation().RunLongStep(context.Background(), w.execution(t).ID))
 	require.Equal(t, 1, w.environment.Prepared, "a launched execution prepares nothing more")
 }
+
+// A lease near its expiry is renewed in one reconciliation, and the expiry
+// the authority returned is recorded, so the next reconciliation leaves it.
+func TestALeaseNearExpiryIsRenewedAndItsExpiryRecorded(t *testing.T) {
+	w := runningWorld(t)
+	terms := domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}
+	expiry := w.at.Add(30 * time.Minute)
+	w.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true, LeaseExpiresAt: expiry}}, Attached: true, Lease: terms}
+	_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID)
+	require.NoError(t, err)
+	renewed := w.at.Add(2 * time.Hour).UTC()
+	require.Len(t, w.environment.Renewals, 1)
+	require.True(t, renewed.Equal(w.environment.Renewals[0]))
+	require.True(t, renewed.Equal(w.execution(t).Lease), "the returned expiry is the lease")
+
+	_, err = w.reconciliation().Reconcile(context.Background(), w.execution(t).ID)
+	require.NoError(t, err)
+	require.Len(t, w.environment.Renewals, 1, "a renewed lease is left alone")
+}

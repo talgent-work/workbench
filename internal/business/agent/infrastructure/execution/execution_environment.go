@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -103,6 +104,9 @@ func (e *ExecutionEnvironment) Observe(ctx context.Context, execution *domain.Ag
 	if inputs, syncs := authority.(inputDelivery); syncs {
 		observation.InputsRefresh = inputs.refresh()
 	}
+	if leases, leased := authority.(leasing); leased {
+		observation.Lease = leases.leaseTerms()
+	}
 	return observation, nil
 }
 
@@ -188,6 +192,27 @@ func (e *ExecutionEnvironment) DeleteEnvironment(ctx context.Context, execution 
 	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
 	defer cancel()
 	return withExecution(authority.remove(attempt, record, environmentID), execution)
+}
+
+// RenewLease extends the bound environment's lease to expiresAt and answers
+// the expiry its authority returned.
+func (e *ExecutionEnvironment) RenewLease(ctx context.Context, execution *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
+	record, err := e.record(ctx, execution)
+	if err != nil {
+		return time.Time{}, err
+	}
+	authority, err := e.provisioning.authority(record)
+	if err != nil {
+		return time.Time{}, withExecution(err, execution)
+	}
+	leases, leased := authority.(leasing)
+	if !leased || record.SandboxID == "" {
+		return time.Time{}, withExecution(domain.ErrExecutionRequest, execution)
+	}
+	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
+	defer cancel()
+	renewed, err := leases.renew(attempt, record, expiresAt)
+	return renewed, withExecution(err, execution)
 }
 
 // DeliverCredentials delivers the Work's current credentials into the bound

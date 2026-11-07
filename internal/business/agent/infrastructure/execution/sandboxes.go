@@ -54,16 +54,18 @@ type SandboxConfig struct {
 	Models       *ModelCatalog
 	NetworkDeny  []string
 	NetworkAllow []string
-
-	// CreationTimeout is the OpenSandbox server's own sandbox creation
+	// Lease is how every sandbox is leased: created to expire after its
+	// duration, and renewed while its execution wants it.
+	Lease domain.LeaseTerms
+	// CreationTimeout equals the OpenSandbox server's own sandbox creation
 	// timeout (sandbox_create_timeout_seconds), after which it deletes a
 	// sandbox that never became ready and answers the create; zero is the
-	// server's default, five minutes.
+	// five minutes the deployed server is configured with.
 	CreationTimeout time.Duration
 }
 
-// defaultServerCreationTimeout is the OpenSandbox server's default sandbox
-// creation timeout.
+// defaultServerCreationTimeout is the sandbox creation timeout the deployed
+// OpenSandbox server is configured with (deploy/opensandbox/server.yaml).
 const defaultServerCreationTimeout = 5 * time.Minute
 
 // creationAnswerMargin is how much longer than the server's creation timeout
@@ -102,6 +104,10 @@ func (c SandboxConfig) Validate() error {
 	}
 	if strings.TrimSpace(c.Image) == "" {
 		return errors.New("agent: native image is required")
+	}
+	// OpenSandbox takes the duration in whole seconds.
+	if err := c.Lease.Validate(); err != nil || c.Lease.Duration < time.Second {
+		return errors.New("agent: the sandbox lease needs a duration of at least a second and a positive renewal threshold below it")
 	}
 	// Every Work reaches the platform, through its native API or the Gateway
 	// where one is deployed, with the credentials the Credential Proxy adds.
@@ -211,32 +217,43 @@ func (s *Sandboxes) listCorrelated(ctx context.Context, owner Allocation) ([]sdk
 // endpoint lookup's 404 is not equivalent to disappearance of that environment.
 var errSandboxAbsent = errors.New("agent: bound sandbox is absent")
 
-// Endpoint resolves only a running, matching sandbox and returns direct execd
-// access. Gateway credentials are deliberately not interpreted as execd tokens.
-func (s *Sandboxes) Endpoint(ctx context.Context, owner Allocation, id string) (string, bool, error) {
+// boundSandbox is the bound sandbox as a GET shows it: its direct execd
+// endpoint while it runs, and its lease's expiry, zero when it was created
+// without one.
+type boundSandbox struct {
+	endpoint  string
+	running   bool
+	expiresAt time.Time
+}
+
+// inspect shows only a matching sandbox, resolving direct execd access while
+// it runs. Gateway credentials are deliberately not interpreted as execd
+// tokens.
+func (s *Sandboxes) inspect(ctx context.Context, owner Allocation, id string) (boundSandbox, error) {
 	if err := validateSandboxOwner(owner, id); err != nil {
-		return "", false, err
+		return boundSandbox{}, err
 	}
 	info, err := s.client.GetSandbox(ctx, id)
 	if isSandboxNotFound(err) {
-		return "", false, errSandboxAbsent
+		return boundSandbox{}, errSandboxAbsent
 	}
 	if err != nil {
-		return "", false, sandboxError(ctx, "inspect", err)
+		return boundSandbox{}, sandboxError(ctx, "inspect", err)
 	}
 	if !matchesSandbox(info, owner) || info.ID != id {
-		return "", false, errEnvironmentConflict
+		return boundSandbox{}, errEnvironmentConflict
 	}
+	bound := boundSandbox{expiresAt: leaseExpiry(info)}
 	if info.Status.State != sdk.StateRunning {
-		return "", false, nil
+		return bound, nil
 	}
 	proxy := false
 	endpoint, err := s.client.GetEndpoint(ctx, id, 44772, &proxy)
 	if err != nil {
-		return "", false, sandboxError(ctx, "endpoint", err)
+		return boundSandbox{}, sandboxError(ctx, "endpoint", err)
 	}
 	if len(endpoint.Headers) != 0 {
-		return "", false, errors.New("agent: direct execd endpoint must not require gateway headers")
+		return boundSandbox{}, errors.New("agent: direct execd endpoint must not require gateway headers")
 	}
 	address := endpoint.Endpoint
 	if !strings.Contains(address, "://") {
@@ -244,9 +261,47 @@ func (s *Sandboxes) Endpoint(ctx context.Context, owner Allocation, id string) (
 	}
 	u, err := url.Parse(address)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", false, errors.New("agent: invalid execd endpoint")
+		return boundSandbox{}, errors.New("agent: invalid execd endpoint")
 	}
-	return address, true, nil
+	bound.endpoint, bound.running = address, true
+	return bound, nil
+}
+
+// leaseExpiry is when OpenSandbox deletes the sandbox unless renewed; zero
+// for a sandbox created without an expiry.
+func leaseExpiry(info *sdk.SandboxInfo) time.Time {
+	if info.ExpiresAt == nil {
+		return time.Time{}
+	}
+	return recordedExpiry(*info.ExpiresAt)
+}
+
+// recordedExpiry is an expiry OpenSandbox returned, to the millisecond the
+// execution's record keeps, so observing a recorded lease again changes
+// nothing.
+func recordedExpiry(expiresAt time.Time) time.Time {
+	return expiresAt.Truncate(time.Millisecond).UTC()
+}
+
+// lease is how every sandbox is leased.
+func (s *Sandboxes) lease() domain.LeaseTerms { return s.config.Lease }
+
+// renew moves the bound sandbox's expiry to expiresAt and returns the expiry
+// OpenSandbox answered. OpenSandbox accepts any future time, a shorter one
+// included, so the caller asks only for later ones; it refuses a sandbox
+// created without an expiry.
+func (s *Sandboxes) renew(ctx context.Context, owner Allocation, id string, expiresAt time.Time) (time.Time, error) {
+	if err := validateSandboxOwner(owner, id); err != nil {
+		return time.Time{}, err
+	}
+	answer, err := s.client.RenewExpiration(ctx, id, expiresAt)
+	if isSandboxNotFound(err) {
+		return time.Time{}, errSandboxAbsent
+	}
+	if err != nil {
+		return time.Time{}, sandboxError(ctx, "renew", err)
+	}
+	return recordedExpiry(answer.ExpiresAt), nil
 }
 
 // Delete removes one sandbox once its exact ownership is confirmed, and
@@ -354,9 +409,11 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpec
 	if err != nil {
 		return sdk.CreateSandboxRequest{}, err
 	}
+	// Every sandbox expires unless its execution renews it, so one Agent
+	// lost track of is reclaimed within a lease.
+	lease := int(s.config.Lease.Duration / time.Second)
 	spec := sdk.CreateSandboxRequest{
-		Image: &sdk.ImageSpec{URI: s.config.Image},
-		// nil timeout deliberately omits automatic expiration. Session owns stop.
+		Image: &sdk.ImageSpec{URI: s.config.Image}, Timeout: &lease,
 		Entrypoint: []string{"sleep", "infinity"}, Env: env, Metadata: correlation(owner),
 		ResourceLimits: sdk.ResourceLimits{}, ResourceRequests: sdk.ResourceLimits{},
 		NetworkPolicy:   &sdk.NetworkPolicy{DefaultAction: "allow"},

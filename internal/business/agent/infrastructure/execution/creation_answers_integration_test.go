@@ -16,7 +16,7 @@ import (
 // and returns once the create reached the server; the long step's outcome
 // arrives on the channel. A create still waiting when the test ends is
 // abandoned, so the server's close never waits for it.
-func (f *unboundStart) submitting(t *testing.T, ctx context.Context, answer chan struct{}, failure int, code string) <-chan error {
+func (f *cloudStart) submitting(t *testing.T, ctx context.Context, answer chan struct{}, failure int, code string) <-chan error {
 	t.Helper()
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)

@@ -38,6 +38,9 @@ type allocationRecord struct {
 	// Managed Computer the execution's own identity, standing for the Work's
 	// opened directory.
 	SandboxID string `xorm:"'sandbox_id'"`
+	// LeaseExpiresAt is the bound sandbox's expiry, in Unix milliseconds, as
+	// OpenSandbox last returned it; zero while none is known.
+	LeaseExpiresAt int64 `xorm:"'lease_expires_at'"`
 	// SandboxReady records the first credential delivery into the bound
 	// environment.
 	SandboxReady bool `xorm:"sandbox_ready"`

@@ -125,7 +125,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | Key | Default | Meaning |
 |---|---|---|
 | `sandbox-namespace` | `${SANDBOX_NAMESPACE:talgent-sandbox}` | Required. Where sandboxes are created; the namespace holds only them |
-| `sandbox-creation-timeout` | `${SANDBOX_CREATION_TIMEOUT:5m}` | The OpenSandbox server's `sandbox_create_timeout_seconds` (`deploy/opensandbox/server.yaml`); a create waits 30 seconds longer for its answer. Below 14m30s |
+| `sandbox-creation-timeout` | `${SANDBOX_CREATION_TIMEOUT:5m}` | Must equal the OpenSandbox server's `sandbox_create_timeout_seconds` (`deploy/opensandbox/server.yaml`); a create waits 30 seconds longer for its answer. Below 14m30s |
 | `credential-transport` | `encrypted-network` | How credentials reach a sandbox's Vault: `https`, or `encrypted-network` (plain HTTP inside a cluster whose pod network is encrypted) |
 | `models.templates-path` | `${MODEL_TEMPLATES_PATH:/etc/talgent/models/templates.yml}` | Model Templates; base: ConfigMap `agent-models` |
 | `models.configurations-path` | `${MODEL_CONFIGURATIONS_PATH:/etc/talgent/model-configurations/configurations.yml}` | Model Configurations with their keys; base: Secret `agent-model-configurations`. At least one is required. |
@@ -138,6 +138,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `environment.TALGENT_API_ADDRESS` | `${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}` | The platform API a sandbox calls, on the standard port: the only kind its Credential Proxy adds the Work credential to |
 | `environment.OTEL_EXPORTER_OTLP_ENDPOINT` | `${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}` | Where Claude Code sends its telemetry |
 | `dispatcher.address`, `dispatcher.token` | `${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}`, `${DISPATCHER_EXECUTION_CONTROL_TOKEN:}` | Dispatcher, which drives each run |
+| `lease.duration`, `lease.renewal-threshold` | `2h`, `1h` | How long a sandbox lives unless renewed, and how much of its lease remains when a running Work's sandbox is renewed; the threshold must stay below the duration and well above `agent-recovery.sweep-interval`. Before rolling back past the release that leases sandboxes, see [Operations](self-hosting.md#9-operations) |
 
 ### computer
 

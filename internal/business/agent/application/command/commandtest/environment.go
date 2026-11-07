@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -38,6 +39,9 @@ type Environment struct {
 	Deleted                                 []string
 	Delivered, Withdrawn, Prepared          int
 	Launched, Connected, Synced, Reconciled int
+	// Renewals are the expiries each lease renewal asked for; each is
+	// granted.
+	Renewals []time.Time
 }
 
 var _ command.ExecutionEnvironmentPort = (*Environment)(nil)
@@ -139,4 +143,11 @@ func (e *Environment) ReconcileComputer(context.Context, string) error {
 	defer e.mu.Unlock()
 	e.Reconciled++
 	return nil
+}
+
+func (e *Environment) RenewLease(_ context.Context, _ *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.Renewals = append(e.Renewals, expiresAt)
+	return expiresAt, e.StepErr
 }

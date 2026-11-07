@@ -24,6 +24,8 @@ func (h *ReconcileExecutionHandler) takeShortStep(ctx context.Context, execution
 		return h.syncInputs(ctx, execution)
 	case domain.StepLeaveDesk:
 		return h.leaveDesk(ctx, execution)
+	case domain.StepRenewLease:
+		return h.renewLease(ctx, execution, step)
 	case domain.StepConnect:
 		return false, h.environments.Connect(ctx, execution)
 	case domain.StepSignalExit:
@@ -42,6 +44,18 @@ func (h *ReconcileExecutionHandler) deliverCredentials(ctx context.Context, exec
 	}
 	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
 		return execution.RecordCredentialDelivery(delivery), nil
+	})
+}
+
+// renewLease renews the bound environment's lease to the decided expiry and
+// records the expiry the authority returned, which only ever extends it.
+func (h *ReconcileExecutionHandler) renewLease(ctx context.Context, execution *domain.AgentExecution, step domain.ExecutionStep) (bool, error) {
+	expiresAt, err := h.environments.RenewLease(ctx, execution, step.LeaseExpiresAt)
+	if err != nil {
+		return false, err
+	}
+	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
+		return execution.RecordLease(expiresAt), nil
 	})
 }
 
