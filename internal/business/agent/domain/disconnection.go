@@ -33,15 +33,16 @@ func (s *AgentWork) Disconnected() bool { return !s.DisconnectedSince.IsZero() }
 // ObservesEnvironment reports whether the Work has a run whose process may
 // still be in its execution environment, so a Disconnection applies to it:
 // a seated start, a Working or Stopping Work, or a Closing one whose compute
-// is not released yet.
-func (s *AgentWork) ObservesEnvironment() bool {
+// is not released yet. startQueued is the supplied fact, held by the
+// start's AgentExecution, that the start still waits for its Desk.
+func (s *AgentWork) ObservesEnvironment(startQueued bool) bool {
 	p := s.HarnessProcess
 	if p == nil || p.ComputeReclaimed {
 		return false
 	}
 	switch s.State {
 	case WorkStarting:
-		return !p.DeskWaiting
+		return !startQueued
 	case WorkWorking, WorkStopping, WorkClosing:
 		return true
 	default:
@@ -53,8 +54,8 @@ func (s *AgentWork) ObservesEnvironment() bool {
 // Work's Disconnection. A Cloud Work's start is not yet observed through
 // Dispatcher's attachment, which the start itself establishes: its Startup
 // Deadline governs it, so its Disconnection counts only once it works.
-func (s *AgentWork) countsDisconnection() bool {
-	if !s.ObservesEnvironment() {
+func (s *AgentWork) countsDisconnection(startQueued bool) bool {
+	if !s.ObservesEnvironment(startQueued) {
 		return false
 	}
 	return s.OnManagedComputer() || s.State != WorkStarting
@@ -81,13 +82,14 @@ func sameOrLater(origin, than time.Time) bool {
 // sandbox. A repeated or earlier fact keeps the origin of the Disconnection
 // under way, while a later one is a new loss after a return of observation
 // this Work never saw: a machine's fence counts from it, so the new
-// Disconnection starts there. A Cloud Work's start records none. It changes
-// no State and reports whether anything changed.
-func (s *AgentWork) RecordDisconnection(since time.Time) (bool, error) {
+// Disconnection starts there. A Cloud Work's start records none, and
+// neither does a start whose Desk still waits, as startQueued says. It
+// changes no State and reports whether anything changed.
+func (s *AgentWork) RecordDisconnection(since time.Time, startQueued bool) (bool, error) {
 	if since.IsZero() {
 		return false, ErrInvalidWork
 	}
-	if !s.countsDisconnection() {
+	if !s.countsDisconnection(startQueued) {
 		return false, nil
 	}
 	since = s.disconnectionOrigin(since)
@@ -127,7 +129,8 @@ func (s *AgentWork) EndDisconnectionOf(since time.Time) bool {
 // DisconnectionDue reports whether the Work's Disconnection has lasted the
 // Disconnection timeout at now while it is Working, Stopping or Closing.
 func (s *AgentWork) DisconnectionDue(now time.Time) bool {
-	if !s.Disconnected() || !s.ObservesEnvironment() || s.State == WorkStarting {
+	// A start is never Due, so whether it waits for its Desk does not matter.
+	if !s.Disconnected() || !s.ObservesEnvironment(false) || s.State == WorkStarting {
 		return false
 	}
 	return !now.Before(s.DisconnectedSince.Add(DisconnectionTimeout))
@@ -162,7 +165,7 @@ func (s *AgentWork) StopBeyondReach(now time.Time, inputPending bool) bool {
 // observe now: a stop or close requested now is admitted at once, whatever
 // its Turn facts, and ends the run without reaching its process.
 func (s *AgentWork) beyondReach() bool {
-	return s.Disconnected() && s.ObservesEnvironment() && s.State != WorkStarting
+	return s.Disconnected() && s.ObservesEnvironment(false) && s.State != WorkStarting
 }
 
 // stopBeyondReach stops a Work during a Disconnection at once: a Working

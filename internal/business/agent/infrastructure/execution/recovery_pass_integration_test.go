@@ -101,7 +101,7 @@ func (s *executionSteps) reconcile(ctx context.Context, id string) error {
 
 // pass reconciles every outstanding execution once, as one sweep would.
 func (s *executionSteps) pass(ctx context.Context, db *xorm.Engine) error {
-	ids, err := NewExecutionLookups(db).ListOutstandingExecutions(ctx, "", 1000)
+	ids, err := infrastructure.NewExecutionQueryRepository(db).ListOutstandingExecutions(ctx, "", 1000)
 	if err != nil {
 		return err
 	}

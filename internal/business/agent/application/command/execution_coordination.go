@@ -43,8 +43,10 @@ func (c *ExecutionCoordination) Coordinate(ctx context.Context, workID string) e
 
 // BeginExecution begins the AgentExecution of the Work's admitted start
 // (Begin execution), with the LaunchSpecification taken from the Work and
-// where its Computer realizes it. A start that has its execution already
-// changes nothing.
+// where its Computer realizes it. An earlier execution still unretired, whose
+// retirement request was lost, retires first (Superseded execution). A start
+// that has its execution already changes nothing, so a concurrent beginning
+// that won is taken as done.
 func (c *ExecutionCoordination) BeginExecution(ctx context.Context, workID string) error {
 	work, err := c.works.Get(ctx, workID)
 	if err != nil {
@@ -54,9 +56,32 @@ func (c *ExecutionCoordination) BeginExecution(ctx context.Context, workID strin
 	if !ok {
 		return nil
 	}
-	current, err := c.latest(ctx, workID)
+	for range coordinationAttempts {
+		err = c.begin(ctx, work, admitted)
+		if !errors.Is(err, domain.ErrConcurrentModification) && !errors.Is(err, domain.ErrExecutionAdmission) {
+			return err
+		}
+	}
+	return err
+}
+
+// begin makes one attempt to supersede the Work's earlier execution and
+// begin the admitted start's own.
+func (c *ExecutionCoordination) begin(ctx context.Context, work *domain.AgentWork, admitted domain.WorkStartAdmitted) error {
+	current, err := c.latest(ctx, work.ID)
 	if err != nil || (current != nil && current.Serves(admitted.StartAdmittedAt)) {
 		return err
+	}
+	if current != nil {
+		superseded, err := current.Retire(admitted, c.now())
+		if err != nil {
+			return err
+		}
+		if superseded {
+			if err := c.executions.Save(ctx, current); err != nil {
+				return err
+			}
+		}
 	}
 	place, err := c.computers.DescribeComputer(ctx, work.ComputerID)
 	if err != nil {

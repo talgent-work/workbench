@@ -148,8 +148,9 @@ type HarnessProcess struct {
 	StartingSince time.Time
 	ContextMode   ContextMode
 	// DeskID is the Desk the admitted start took on the Work's Computer, and
-	// DeskWaiting whether its Computer admitted it waiting in its line; the
-	// start's AgentExecution holds that Desk.
+	// DeskWaiting whether its Computer admitted it waiting in its line: the
+	// admission its start intent carries. The start's AgentExecution holds
+	// that Desk and whether it still waits.
 	DeskID      string
 	DeskWaiting bool
 	// StartWithdrawn records that a stop or close withdrew the start while

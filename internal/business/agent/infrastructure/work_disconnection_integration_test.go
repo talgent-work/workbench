@@ -30,7 +30,7 @@ func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T
 	require.NoError(t, err)
 	reportReady(t, work)
 	lost := time.Now().Add(time.Second).UTC().Truncate(time.Millisecond)
-	changed, err := work.RecordDisconnection(lost)
+	changed, err := work.RecordDisconnection(lost, false)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.NoError(t, f.sessions.Save(ctx, work))

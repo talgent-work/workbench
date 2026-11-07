@@ -24,15 +24,15 @@ func turningWork(t *testing.T) (*domain.AgentWork, *executionPort) {
 func TestADisconnectionIsRecordedWithoutChangingState(t *testing.T) {
 	work, _ := turningWork(t)
 	lost := time.Now()
-	changed, err := work.RecordDisconnection(lost)
+	changed, err := work.RecordDisconnection(lost, false)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, domain.WorkWorking, work.State)
 	require.True(t, work.Disconnected())
-	changed, err = work.RecordDisconnection(lost)
+	changed, err = work.RecordDisconnection(lost, false)
 	require.NoError(t, err)
 	require.False(t, changed, "a repeated fact keeps the Disconnection's origin")
-	changed, err = work.RecordDisconnection(lost.Add(-time.Second))
+	changed, err = work.RecordDisconnection(lost.Add(-time.Second), false)
 	require.NoError(t, err)
 	require.False(t, changed, "an earlier loss does not move the origin back")
 	require.Equal(t, lost.UTC(), work.DisconnectedSince)
@@ -42,18 +42,25 @@ func TestADisconnectionIsRecordedWithoutChangingState(t *testing.T) {
 	require.False(t, work.EndDisconnection())
 	require.Equal(t, domain.WorkWorking, work.State)
 
-	changed, err = work.RecordDisconnection(work.HarnessProcess.StartingSince.Add(-time.Hour))
+	changed, err = work.RecordDisconnection(work.HarnessProcess.StartingSince.Add(-time.Hour), false)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, work.HarnessProcess.StartingSince, work.DisconnectedSince, "a Disconnection never precedes the current start")
 
-	_, err = work.RecordDisconnection(time.Time{})
+	_, err = work.RecordDisconnection(time.Time{}, false)
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
 
 	queued, _ := queuedWork(t, time.Now())
-	changed, err = queued.RecordDisconnection(time.Now())
+	changed, err = queued.RecordDisconnection(time.Now(), true)
 	require.NoError(t, err)
 	require.False(t, changed, "a start waiting for its Desk has no environment to lose")
+	require.False(t, queued.ObservesEnvironment(true))
+	// Its execution was seated since: the admission's waiting no longer
+	// decides, and the seated start's environment can be lost.
+	require.True(t, queued.ObservesEnvironment(false))
+	changed, err = queued.RecordDisconnection(time.Now(), false)
+	require.NoError(t, err)
+	require.True(t, changed, "a seated start's environment is observed, whatever its admission")
 }
 
 // A loss newer than the Disconnection under way follows a return of reach
@@ -62,10 +69,10 @@ func TestADisconnectionIsRecordedWithoutChangingState(t *testing.T) {
 func TestANewerLossStartsANewDisconnection(t *testing.T) {
 	work, _ := turningWork(t)
 	first := time.Now()
-	_, err := work.RecordDisconnection(first)
+	_, err := work.RecordDisconnection(first, false)
 	require.NoError(t, err)
 	again := first.Add(4 * time.Minute)
-	changed, err := work.RecordDisconnection(again)
+	changed, err := work.RecordDisconnection(again, false)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, again.UTC(), work.DisconnectedSince)
@@ -84,7 +91,7 @@ func TestStopBeyondReachStopsAManagedWorkPastTheTimeout(t *testing.T) {
 	work, port := turningWork(t)
 	work.Events.Drain()
 	lost := time.Now()
-	_, err := work.RecordDisconnection(lost)
+	_, err := work.RecordDisconnection(lost, false)
 	require.NoError(t, err)
 
 	stopped := work.StopBeyondReach(lost.Add(domain.DisconnectionTimeout-time.Second), false)
@@ -115,7 +122,7 @@ func TestStopBeyondReachEndsStoppingAndClosingManagedWorks(t *testing.T) {
 	require.NoError(t, work.Stop("user-stop", false))
 	require.Equal(t, domain.WorkStopping, work.State)
 	lost := time.Now()
-	_, err := work.RecordDisconnection(lost)
+	_, err := work.RecordDisconnection(lost, false)
 	require.NoError(t, err)
 	stopped := work.StopBeyondReach(lost.Add(domain.DisconnectionTimeout), false)
 	require.True(t, stopped)
@@ -129,7 +136,7 @@ func TestStopBeyondReachEndsStoppingAndClosingManagedWorks(t *testing.T) {
 	require.NoError(t, closing.RecordFailure("model unavailable"))
 	require.NoError(t, closing.Close("close", domain.ClosureFacts{}))
 	require.Equal(t, domain.WorkClosing, closing.State)
-	_, err = closing.RecordDisconnection(time.Now())
+	_, err = closing.RecordDisconnection(time.Now(), false)
 	require.NoError(t, err)
 	stopped = closing.StopBeyondReach(time.Now().Add(domain.DisconnectionTimeout), false)
 	require.True(t, stopped)
@@ -141,7 +148,7 @@ func TestStopBeyondReachEndsStoppingAndClosingManagedWorks(t *testing.T) {
 func TestStopDuringADisconnectionIsAdmittedAtOnce(t *testing.T) {
 	work, port := turningWork(t)
 	require.ErrorIs(t, work.Stop("stop", false), domain.ErrTurnActive, "while observed, a running Turn refuses a stop")
-	_, err := work.RecordDisconnection(time.Now())
+	_, err := work.RecordDisconnection(time.Now(), false)
 	require.NoError(t, err)
 	require.NoError(t, work.Stop("stop", false))
 	require.Equal(t, domain.WorkStopped, work.State)
@@ -157,7 +164,7 @@ func TestStopDuringADisconnectionIsAdmittedAtOnce(t *testing.T) {
 func TestCloseDuringADisconnectionIsAdmittedAtOnce(t *testing.T) {
 	work, _ := turningWork(t)
 	require.ErrorIs(t, work.Close("close", domain.ClosureFacts{}), domain.ErrTurnActive)
-	_, err := work.RecordDisconnection(time.Now())
+	_, err := work.RecordDisconnection(time.Now(), false)
 	require.NoError(t, err)
 	require.ErrorIs(t, work.Close("close", domain.ClosureFacts{InputPending: true}), domain.ErrInputPending)
 	require.Equal(t, domain.WorkWorking, work.State)
@@ -178,7 +185,7 @@ func TestCloseDuringADisconnectionIsAdmittedAtOnce(t *testing.T) {
 
 	stopping, _ := runningHarnessWork(t, domain.HarnessChoice{})
 	require.NoError(t, stopping.Stop("stop", false))
-	_, err = stopping.RecordDisconnection(time.Now())
+	_, err = stopping.RecordDisconnection(time.Now(), false)
 	require.NoError(t, err)
 	require.NoError(t, stopping.Close("close", domain.ClosureFacts{}))
 	require.Equal(t, domain.WorkClosed, stopping.State, "a Stopping Work is closed without its release confirmation")

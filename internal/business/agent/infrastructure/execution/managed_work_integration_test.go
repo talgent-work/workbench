@@ -357,7 +357,7 @@ func (f *managedWork) decided(t *testing.T, id string) []domain.ExecutionStepKin
 func (f *managedWork) markInputsChanged(t *testing.T, owner string) []string {
 	t.Helper()
 	ctx := context.Background()
-	ids, err := NewExecutionLookups(f.db).ListExecutionsReadingInputs(ctx, owner)
+	ids, err := infrastructure.NewExecutionQueryRepository(f.db).ListExecutionsReadingInputs(ctx, owner)
 	require.NoError(t, err)
 	marked, err := f.steps.handler.MarkInputsChanged(ctx, ids)
 	require.NoError(t, err)

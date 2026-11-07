@@ -2,8 +2,9 @@ package query
 
 import "context"
 
-// ExecutionRecoveryReader finds the AgentExecutions with unfinished
-// obligations and those a published change concerns.
+// ExecutionRecoveryReader, a facet of ExecutionQueryRepository, finds the
+// AgentExecutions with unfinished obligations and those a published change
+// concerns.
 type ExecutionRecoveryReader interface {
 	// ListOutstandingExecutions pages executions that are not retired, or
 	// retired and not released, in identity order after afterID.

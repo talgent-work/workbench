@@ -26,14 +26,14 @@ func cloudTurningWork(t *testing.T) (*domain.AgentWork, *executionPort) {
 func TestACloudStartRecordsNoDisconnection(t *testing.T) {
 	work := newSession(t)
 	require.Equal(t, domain.WorkStarting, work.State)
-	require.True(t, work.ObservesEnvironment())
-	changed, err := work.RecordDisconnection(time.Now())
+	require.True(t, work.ObservesEnvironment(false))
+	changed, err := work.RecordDisconnection(time.Now(), false)
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.False(t, work.Disconnected())
 
 	ready(t, work)
-	changed, err = work.RecordDisconnection(time.Now())
+	changed, err = work.RecordDisconnection(time.Now(), false)
 	require.NoError(t, err)
 	require.True(t, changed, "a Working Cloud Work's loss is its Disconnection")
 }
@@ -44,21 +44,21 @@ func TestACloudStartRecordsNoDisconnection(t *testing.T) {
 func TestAReturnEndsOnlyTheDisconnectionItFollows(t *testing.T) {
 	work, _ := cloudTurningWork(t)
 	first := time.Now()
-	_, err := work.RecordDisconnection(first)
+	_, err := work.RecordDisconnection(first, false)
 	require.NoError(t, err)
 	require.True(t, work.EndDisconnectionOf(first))
 	require.False(t, work.Disconnected())
 	require.False(t, work.EndDisconnectionOf(first), "nothing is under way")
 
 	later := first.Add(time.Minute)
-	_, err = work.RecordDisconnection(later)
+	_, err = work.RecordDisconnection(later, false)
 	require.NoError(t, err)
 	require.False(t, work.EndDisconnectionOf(first), "a late return of an earlier loss keeps the later one")
 	require.Equal(t, later.UTC(), work.DisconnectedSince)
 	require.True(t, work.EndDisconnectionOf(later.Add(time.Second)))
 
 	early := work.HarnessProcess.StartingSince.Add(-time.Hour)
-	_, err = work.RecordDisconnection(early)
+	_, err = work.RecordDisconnection(early, false)
 	require.NoError(t, err)
 	require.True(t, work.EndDisconnectionOf(early), "a loss before the start counts from the start on return too")
 	require.Equal(t, domain.WorkWorking, work.State)
@@ -71,7 +71,7 @@ func TestAReturnEndsOnlyTheDisconnectionItFollows(t *testing.T) {
 func TestStopBeyondReachReclaimsACloudWorksSandbox(t *testing.T) {
 	work, port := cloudTurningWork(t)
 	lost := time.Now()
-	_, err := work.RecordDisconnection(lost)
+	_, err := work.RecordDisconnection(lost, false)
 	require.NoError(t, err)
 	stopped := work.StopBeyondReach(lost.Add(domain.DisconnectionTimeout-time.Second), false)
 	require.False(t, stopped, "a short loss changes nothing")
@@ -123,7 +123,7 @@ func TestAReleaseVouchesForNoExitWithoutAStopBeyondReach(t *testing.T) {
 func TestStopAndCloseDuringACloudDisconnectionReclaimTheSandbox(t *testing.T) {
 	work, port := cloudTurningWork(t)
 	require.ErrorIs(t, work.Stop("stop", false), domain.ErrTurnActive)
-	_, err := work.RecordDisconnection(time.Now())
+	_, err := work.RecordDisconnection(time.Now(), false)
 	require.NoError(t, err)
 	require.NoError(t, work.Stop("stop", false))
 	require.Equal(t, domain.WorkStopping, work.State)
@@ -134,7 +134,7 @@ func TestStopAndCloseDuringACloudDisconnectionReclaimTheSandbox(t *testing.T) {
 	require.Equal(t, domain.WorkStopped, work.State)
 
 	closing, port := cloudTurningWork(t)
-	_, err = closing.RecordDisconnection(time.Now())
+	_, err = closing.RecordDisconnection(time.Now(), false)
 	require.NoError(t, err)
 	require.ErrorIs(t, closing.Close("close", domain.ClosureFacts{InputPending: true}), domain.ErrInputPending)
 	require.NoError(t, closing.Close("close", domain.ClosureFacts{}))
@@ -151,7 +151,7 @@ func TestStopAndCloseDuringACloudDisconnectionReclaimTheSandbox(t *testing.T) {
 	require.NoError(t, failed.Close("close", domain.ClosureFacts{}))
 	require.Equal(t, domain.WorkClosing, failed.State)
 	lost := time.Now()
-	_, err = failed.RecordDisconnection(lost)
+	_, err = failed.RecordDisconnection(lost, false)
 	require.NoError(t, err)
 	stopped := failed.StopBeyondReach(lost.Add(domain.DisconnectionTimeout), false)
 	require.True(t, stopped)

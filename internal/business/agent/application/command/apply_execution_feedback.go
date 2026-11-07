@@ -153,7 +153,7 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 		}
 	case AttachmentLost, AttachmentReturned:
 		var changed bool
-		if changed, err = h.applyAttachment(session, feedback); err == nil && !changed {
+		if changed, err = h.applyAttachment(ctx, session, feedback); err == nil && !changed {
 			return nil
 		}
 	default:
@@ -244,7 +244,7 @@ func (h *ApplyExecutionFeedbackHandler) observeProcess(ctx context.Context, exec
 // loss has lasted the Disconnection timeout. The report names the current
 // process, and a return ends only the loss it follows, never a later one. A
 // Managed Work's Disconnection follows its Computer's Presence instead.
-func (h *ApplyExecutionFeedbackHandler) applyAttachment(session *domain.AgentWork, feedback ExecutionFeedback) (bool, error) {
+func (h *ApplyExecutionFeedbackHandler) applyAttachment(ctx context.Context, session *domain.AgentWork, feedback ExecutionFeedback) (bool, error) {
 	if session.OnManagedComputer() {
 		return false, nil
 	}
@@ -254,7 +254,14 @@ func (h *ApplyExecutionFeedbackHandler) applyAttachment(session *domain.AgentWor
 	if feedback.Kind == AttachmentReturned {
 		return session.EndDisconnectionOf(feedback.DetachedSince), nil
 	}
-	recorded, err := session.RecordDisconnection(feedback.DetachedSince)
+	queued := false
+	if session.State == domain.WorkStarting {
+		var err error
+		if queued, err = startQueued(ctx, h.executions, session); err != nil {
+			return false, err
+		}
+	}
+	recorded, err := session.RecordDisconnection(feedback.DetachedSince, queued)
 	if err != nil {
 		return false, err
 	}

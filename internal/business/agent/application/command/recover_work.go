@@ -63,8 +63,14 @@ func (h *RecoverWorkHandler) recover(ctx context.Context, sessionID string) erro
 	if unread != nil {
 		reached = false
 	}
-	if reached && !session.ObservesEnvironment() {
-		return errors.Join(h.sessions.Save(ctx, session), unreadRemoval)
+	if reached {
+		queued, err := h.reach.startQueued(ctx, session)
+		if err != nil {
+			return errors.Join(err, unreadRemoval)
+		}
+		if !session.ObservesEnvironment(queued) {
+			return errors.Join(h.sessions.Save(ctx, session), unreadRemoval)
+		}
 	}
 	// Advance a retained end before considering a new policy stop.
 	changed, err := session.RecoverExecution()

@@ -29,7 +29,7 @@ type releaseFixture struct {
 	db           *xorm.Engine
 	provisioning *Provisioning
 	steps        *executionSteps
-	lookups      *ExecutionLookups
+	lookups      *infrastructure.ExecutionQueryRepository
 	lifecycle    *lifecycleFixture
 	record       allocationRecord
 	// metadata is what the execution's sandboxes carry.
@@ -61,7 +61,7 @@ func newRelease(t *testing.T) *releaseFixture {
 	require.NoError(t, err)
 	var spec sdk.CreateSandboxRequest
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
-	return &releaseFixture{db: db, provisioning: p, steps: steps, lookups: NewExecutionLookups(db), lifecycle: lifecycle, record: record, metadata: spec.Metadata}
+	return &releaseFixture{db: db, provisioning: p, steps: steps, lookups: infrastructure.NewExecutionQueryRepository(db), lifecycle: lifecycle, record: record, metadata: spec.Metadata}
 }
 
 // abandon reconciles the start, which no environment answered, past its

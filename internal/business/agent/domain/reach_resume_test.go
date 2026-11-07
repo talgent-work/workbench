@@ -72,7 +72,7 @@ func TestAWorkStoppedBeyondReachWithInputAwaitsTheReconnection(t *testing.T) {
 				require.NoError(t, work.Stop("user-stop", false))
 			}
 			lost := time.Now()
-			_, err := work.RecordDisconnection(lost)
+			_, err := work.RecordDisconnection(lost, false)
 			require.NoError(t, err)
 			stopped := work.StopBeyondReach(lost.Add(domain.DisconnectionTimeout), name != "no input")
 			require.True(t, stopped)

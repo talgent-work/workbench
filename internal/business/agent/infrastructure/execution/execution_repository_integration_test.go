@@ -4,6 +4,7 @@ package execution
 
 import (
 	"context"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"slices"
 	"testing"
 	"time"
@@ -161,12 +162,12 @@ func TestAgentExecutionRepositoryAdmitsOneUnretiredExecutionPerWork(t *testing.T
 	require.Equal(t, second.ID, latest.ID)
 }
 
-func TestExecutionLookupsFindTheExecutionsAChangeConcerns(t *testing.T) {
+func TestExecutionQueryRepositoryFindsTheExecutionsAChangeConcerns(t *testing.T) {
 	ctx := context.Background()
 	db := executionDatabase(t)
 	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
 	repository := NewAgentExecutionRepository(db, func() time.Time { return now })
-	lookups := NewExecutionLookups(db)
+	lookups := infrastructure.NewExecutionQueryRepository(db)
 
 	live := begin(t, repository, "lookup-live", now, domain.RealizationCloud)
 	retired := begin(t, repository, "lookup-retired", now, domain.RealizationCloud)

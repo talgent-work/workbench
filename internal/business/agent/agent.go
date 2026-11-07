@@ -95,7 +95,6 @@ var Module = fx.Module("domain.agent",
 	// Each run of a Work is an AgentExecution; the Policies between the two
 	// Roots pass the Work's intents and the execution's reports.
 	fx.Provide(fx.Annotate(newCommittedExecutions, fx.As(fx.Self()), fx.As(new(domain.AgentExecutionRepository)))),
-	fx.Provide(fx.Annotate(execution.NewExecutionLookups, fx.As(new(query.ExecutionRecoveryReader)))),
 	fx.Provide(command.NewExecutionCoordination),
 	fx.Provide(eventhandler.NewBeginExecution, eventhandler.NewRequestProcessExit, eventhandler.NewRetireExecution, eventhandler.NewApplyExecutionReport, eventhandler.NewConfirmComputeRelease),
 	// Storage owns every space a Work uses.
@@ -117,7 +116,7 @@ var Module = fx.Module("domain.agent",
 	fx.Provide(fx.Annotate(newCommittedInitialExecutions, fx.As(new(command.InitialExecutionRequests)), fx.As(new(command.InitialExecutionReader)), fx.As(new(query.InitialExecutionRecoveryReader)), fx.As(new(query.WorkPreparationReader)))),
 	fx.Provide(fx.Annotate(infrastructure.NewWorkQueryRepository, fx.As(new(personalwork.Works)), fx.As(new(query.WorkQueryRepository)), fx.As(new(query.WorkOriginQueryRepository)), fx.As(fx.Self()), fx.As(new(query.WorkOriginsReader)), fx.As(new(query.WorkLifecycleReader)), fx.As(new(query.WorkListReader)), fx.As(new(query.RecentRepositoryReader)))),
 	fx.Provide(newWorkViewReader),
-	fx.Provide(fx.Annotate(infrastructure.NewExecutionQueryRepository, fx.As(new(query.ExecutionQueryRepository)), fx.As(new(query.WorkStartupReader)), fx.As(new(query.RecoveryWorkQueryRepository)), fx.As(new(command.ComputerWorks)), fx.As(new(command.ReachResumeWorks)))),
+	fx.Provide(fx.Annotate(infrastructure.NewExecutionQueryRepository, fx.As(new(query.ExecutionQueryRepository)), fx.As(new(query.WorkStartupReader)), fx.As(new(query.RecoveryWorkQueryRepository)), fx.As(new(query.ExecutionRecoveryReader)), fx.As(new(command.ComputerWorks)), fx.As(new(command.ReachResumeWorks)))),
 	fx.Provide(fx.Annotate(infrastructure.NewWorkReportQueryRepository, fx.As(new(query.WorkReportReader)))),
 	fx.Provide(
 		query.NewGetWorkReportHandler,

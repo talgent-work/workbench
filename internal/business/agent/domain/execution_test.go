@@ -223,3 +223,38 @@ func TestARetiredExecutionWithoutEnvironmentsIsReleasedOnceItsDeskLeft(t *testin
 	require.NoError(t, err)
 	require.True(t, confirmed)
 }
+
+// An execution still unretired when its Work admits a later start retires as
+// superseded, whatever its facts, and then releases as any retired one; its
+// own or an earlier start supersedes nothing.
+func TestALaterStartSupersedesAnUnretiredExecution(t *testing.T) {
+	work, execution := launchedExecution(t)
+	start := execution.StartAdmittedAt
+	later := domain.WorkStartAdmitted{WorkID: work.ID, StartAdmittedAt: start.Add(time.Second), DeskID: "desk-next"}
+	for _, stale := range []time.Time{start, start.Add(-time.Second)} {
+		superseded, err := execution.Retire(domain.WorkStartAdmitted{WorkID: work.ID, StartAdmittedAt: stale}, time.Now())
+		require.NoError(t, err)
+		require.False(t, superseded)
+	}
+	_, err := execution.Retire(domain.WorkStartAdmitted{WorkID: "other", StartAdmittedAt: later.StartAdmittedAt}, time.Now())
+	require.ErrorIs(t, err, domain.ErrInvalidExecution)
+	_, err = execution.Retire(domain.WorkStopRequested{WorkID: work.ID, StartAdmittedAt: start, StopRequestID: "stop"}, time.Now())
+	require.ErrorIs(t, err, domain.ErrInvalidExecution)
+	_, err = execution.Retire(later, time.Time{})
+	require.ErrorIs(t, err, domain.ErrInvalidExecution)
+
+	superseded, err := execution.Retire(later, time.Now())
+	require.NoError(t, err)
+	require.True(t, superseded)
+	require.Equal(t, domain.ExecutionRetired, execution.State)
+	require.Equal(t, domain.RetiredSuperseded, execution.Retirement)
+	superseded, err = execution.Retire(later, time.Now())
+	require.NoError(t, err)
+	require.False(t, superseded, "a retired execution is not superseded again")
+	require.Equal(t, []domain.ExecutionStep{{Kind: domain.StepDeleteEnvironment, EnvironmentID: "env-1"}}, decide(t, execution, runningEnvironment("env-1"), time.Now()).Steps)
+	require.Equal(t, []domain.ExecutionStepKind{domain.StepLeaveDesk}, kinds(decide(t, execution, domain.EnvironmentObservation{}, time.Now())))
+	require.True(t, execution.RecordDeskLeft(time.Now()))
+	released, err := execution.ConfirmRelease(domain.EnvironmentObservation{}, time.Now())
+	require.NoError(t, err)
+	require.True(t, released)
+}

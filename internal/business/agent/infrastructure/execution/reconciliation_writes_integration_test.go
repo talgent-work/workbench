@@ -74,7 +74,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
 
-	outstanding, err := NewExecutionLookups(db).ListOutstandingExecutions(ctx, "", 1000)
+	outstanding, err := infrastructure.NewExecutionQueryRepository(db).ListOutstandingExecutions(ctx, "", 1000)
 	require.NoError(t, err)
 	require.Equal(t, []string{live.ID}, outstanding, "only the live execution has unfinished obligations")
 

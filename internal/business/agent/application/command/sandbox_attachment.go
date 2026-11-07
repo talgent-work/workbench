@@ -26,7 +26,14 @@ import (
 // (ApplyExecutionFeedbackHandler). A run already reclaimed beyond reach
 // completes on its release confirmation and is not observed again.
 func (h *ComputerReachHandler) recoverAttachment(ctx context.Context, work *domain.AgentWork) (bool, error) {
-	if !work.Disconnected() || !work.ObservesEnvironment() || work.HarnessProcess.Unreached {
+	if !work.Disconnected() || work.HarnessProcess.Unreached {
+		return false, nil
+	}
+	queued, err := h.startQueued(ctx, work)
+	if err != nil {
+		return false, err
+	}
+	if !work.ObservesEnvironment(queued) {
 		return false, nil
 	}
 	observation, err := h.observeProcess(ctx, work.ID)

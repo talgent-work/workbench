@@ -252,3 +252,48 @@ func TestCoordinateRepairsLostRetirementAndRelease(t *testing.T) {
 	require.Equal(t, domain.WorkStopped, w.work().State, "the missed release report")
 	require.True(t, w.work().HarnessProcess.ComputeReclaimed)
 }
+
+// A withdrawn Resume whose retirement request was lost leaves its Queued
+// execution unretired; the next admitted start supersedes it before its own
+// execution begins, and the superseded one releases as any retired one.
+func TestALaterStartSupersedesAWithdrawnStartWhoseRetirementWasLost(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t, stoppedSession(t))
+	waiting := fixtureAdmission(w.work().AgentID)
+	waiting.AdmittedAt, waiting.Seat.Waiting, waiting.Seat.DeskID = w.now().Add(-30*time.Second), true, "desk-waiting"
+	require.NoError(t, w.work().Resume(waiting))
+	require.NoError(t, w.works.Save(ctx, w.work()))
+	withdrawn := w.begin(t)
+	require.True(t, withdrawn.Queued())
+	require.NoError(t, command.NewStopWorkHandler(w.works, sessionAccess{}, w.executions).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: w.work().ID, RequestID: "stop-waiting"}))
+	require.True(t, w.work().HarnessProcess.StartWithdrawn)
+	require.Equal(t, domain.WorkStopped, w.work().State)
+	// The retirement request is lost: the queued execution stays unretired.
+	require.False(t, w.execution(t).Retired())
+
+	require.NoError(t, w.work().Resume(fixtureAdmissionAt(w.work().AgentID, w.now())))
+	require.NoError(t, w.works.Save(ctx, w.work()))
+	require.NoError(t, w.coordination.Coordinate(ctx, w.work().ID))
+	superseded, err := w.executions.Get(ctx, withdrawn.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.RetiredSuperseded, superseded.Retirement, "the earlier execution retires first")
+	current := w.execution(t)
+	require.NotEqual(t, withdrawn.ID, current.ID, "the admitted start begins its own execution")
+	require.True(t, current.Serves(w.work().HarnessProcess.StartingSince))
+	require.Equal(t, domain.ExecutionStarting, current.State)
+
+	require.True(t, superseded.RecordDeskLeft(w.now()))
+	released, err := superseded.ConfirmRelease(domain.EnvironmentObservation{}, w.now())
+	require.NoError(t, err)
+	require.True(t, released)
+	require.NoError(t, w.executions.Save(ctx, superseded))
+	require.NoError(t, w.coordination.Coordinate(ctx, w.work().ID))
+	require.Equal(t, domain.WorkStarting, w.work().State, "the superseded release reports nothing about the current start")
+}
+
+// fixtureAdmissionAt is a seated admission at the given time.
+func fixtureAdmissionAt(agentID string, at time.Time) domain.StartAdmission {
+	admission := fixtureAdmission(agentID)
+	admission.AdmittedAt = at
+	return admission
+}

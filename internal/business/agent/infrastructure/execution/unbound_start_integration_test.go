@@ -193,7 +193,7 @@ func (f *unboundStart) requireRestartable(t *testing.T) {
 	work := f.work(t)
 	require.True(t, work.HarnessProcess.ComputeReclaimed, "the release is confirmed to the Work")
 	require.Equal(t, domain.WorkFailed, work.State)
-	outstanding, err := NewExecutionLookups(f.db).ListOutstandingExecutions(ctx, "", 100)
+	outstanding, err := infrastructure.NewExecutionQueryRepository(f.db).ListOutstandingExecutions(ctx, "", 100)
 	require.NoError(t, err)
 	require.Empty(t, outstanding, "nothing is left to retry")
 	session := work.HarnessSessionReference

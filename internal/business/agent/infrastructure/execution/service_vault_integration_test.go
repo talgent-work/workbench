@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -196,7 +197,7 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	for _, work := range []*domain.AgentWork{first, second} {
 		allocations = append(allocations, f.run(t, ctx, work.ID, "process-"+work.ID).ID)
 	}
-	lookups := NewExecutionLookups(f.db)
+	lookups := infrastructure.NewExecutionQueryRepository(f.db)
 	markChanged := func(authorization string) []string {
 		t.Helper()
 		ids, err := lookups.ListExecutionsUsingAuthorization(ctx, authorization)

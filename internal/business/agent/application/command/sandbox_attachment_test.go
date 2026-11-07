@@ -102,13 +102,13 @@ func TestRecoveryFollowsDispatchersAttachment(t *testing.T) {
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
 	require.Empty(t, w.harness.Observed, "a connected Work's attachment is not asked for")
 
-	_, err := store.session.RecordDisconnection(w.now())
+	_, err := store.session.RecordDisconnection(w.now(), false)
 	require.NoError(t, err)
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
 	require.Equal(t, []string{"process"}, w.harness.Observed, "the launched process's attachment is read")
 	require.False(t, store.session.Disconnected(), "an attached sandbox ends the Disconnection")
 
-	_, err = store.session.RecordDisconnection(w.now())
+	_, err = store.session.RecordDisconnection(w.now(), false)
 	require.NoError(t, err)
 	w.harness.Observation.Attachment = command.AttachmentDetached
 	require.NoError(t, recover.Handle(ctx, store.session.ID))
@@ -142,7 +142,7 @@ func TestRecoveryStopsBeyondReachOnlyOnAnObservedLoss(t *testing.T) {
 	recover := recoverOver(w, w.now, reachOver(w, w.now, &presencePlace{}))
 	// Past the Disconnection timeout, well within the idle timeout.
 	w.advance(domain.DisconnectionTimeout + 2*time.Minute)
-	_, err := store.session.RecordDisconnection(w.now().Add(-domain.DisconnectionTimeout))
+	_, err := store.session.RecordDisconnection(w.now().Add(-domain.DisconnectionTimeout), false)
 	require.NoError(t, err)
 
 	require.ErrorIs(t, recover.Handle(ctx, store.session.ID), outage)

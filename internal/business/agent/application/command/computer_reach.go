@@ -176,7 +176,11 @@ func (h *ComputerReachHandler) recover(ctx context.Context, work *domain.AgentWo
 	if !work.OnManagedComputer() {
 		return h.recoverAttachment(ctx, work)
 	}
-	if !work.ObservesEnvironment() {
+	queued, err := h.startQueued(ctx, work)
+	if err != nil {
+		return false, err
+	}
+	if !work.ObservesEnvironment(queued) {
 		return false, nil
 	}
 	place, err := h.describe(ctx, work.ComputerID, false)
@@ -186,13 +190,34 @@ func (h *ComputerReachHandler) recover(ctx context.Context, work *domain.AgentWo
 	if !place.Managed || place.Removed {
 		return false, nil
 	}
-	return h.apply(ctx, work, place)
+	return h.applyQueued(ctx, work, place, queued)
+}
+
+// startQueued is the supplied fact that the Work's start still waits for its
+// Desk, which only a Starting Work's execution can say. A recovery wired
+// without Computer reach observes no Presence, so the fact decides nothing
+// there.
+func (h *ComputerReachHandler) startQueued(ctx context.Context, work *domain.AgentWork) (bool, error) {
+	if h == nil || work.State != domain.WorkStarting {
+		return false, nil
+	}
+	return startQueued(ctx, h.executions, work)
 }
 
 // apply records or ends the Work's Disconnection from its Computer's
 // Presence, then stops it beyond reach when its Disconnection has lasted the
 // Disconnection timeout.
 func (h *ComputerReachHandler) apply(ctx context.Context, work *domain.AgentWork, place ComputerDescription) (bool, error) {
+	queued, err := h.startQueued(ctx, work)
+	if err != nil {
+		return false, err
+	}
+	return h.applyQueued(ctx, work, place, queued)
+}
+
+// applyQueued is apply with the supplied fact that the Work's start still
+// waits for its Desk already read.
+func (h *ComputerReachHandler) applyQueued(ctx context.Context, work *domain.AgentWork, place ComputerDescription, queued bool) (bool, error) {
 	if !work.OnManagedComputer() {
 		return false, nil
 	}
@@ -208,7 +233,7 @@ func (h *ComputerReachHandler) apply(ctx context.Context, work *domain.AgentWork
 			since = h.now()
 		}
 	}
-	recorded, err := work.RecordDisconnection(since)
+	recorded, err := work.RecordDisconnection(since, queued)
 	if err != nil {
 		return false, err
 	}

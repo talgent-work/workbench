@@ -6,10 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
 
 // presencePlace is Computer's description of the Work's Computer.
@@ -104,7 +106,7 @@ func TestRecoveryStopsAManagedWorkBeyondReach(t *testing.T) {
 	ctx := context.Background()
 	w := managedWorking(t)
 	sessions := w.works
-	_, err := sessions.session.RecordDisconnection(time.Now())
+	_, err := sessions.session.RecordDisconnection(time.Now(), false)
 	require.NoError(t, err)
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, Reachable: true}}
 	clock := &testClock{at: time.Now().Add(domain.DisconnectionTimeout + time.Minute)}
@@ -193,4 +195,56 @@ func TestAnUnreadablePresenceHoldsBackNoOtherRecovery(t *testing.T) {
 	stops := sessions.committedStops()
 	require.Len(t, stops, 1)
 	require.True(t, stops[0].CancelWaitingTurn, "the held Turn is cancelled before the exit signal")
+}
+
+// A fenced run whose retirement request was lost stays unretired; the Resume
+// admitted afterwards supersedes it before its own execution begins.
+func TestAResumeSupersedesAFencedRunWhoseRetirementWasLost(t *testing.T) {
+	ctx := context.Background()
+	w := managedWorking(t)
+	sessions := w.works
+	_, err := sessions.session.RecordDisconnection(time.Now(), false)
+	require.NoError(t, err)
+	place := &presencePlace{description: command.ComputerDescription{Managed: true, UnreachableSince: time.Now()}}
+	clock := &testClock{at: time.Now().Add(domain.DisconnectionTimeout + time.Minute)}
+	require.NoError(t, recoverOver(w, clock.now, reachOver(w, clock.now, place)).Handle(ctx, sessions.session.ID))
+	require.Equal(t, domain.WorkStopped, sessions.session.State)
+	fenced := w.execution(t)
+	require.False(t, fenced.Retired(), "the retirement request is lost")
+
+	require.NoError(t, sessions.session.Resume(fixtureAdmissionAt(sessions.session.AgentID, clock.at)))
+	require.NoError(t, sessions.Save(ctx, sessions.session))
+	require.NoError(t, w.coordination.BeginExecution(ctx, sessions.session.ID))
+	superseded, err := w.executions.Get(ctx, fenced.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.RetiredSuperseded, superseded.Retirement)
+	require.NotEqual(t, fenced.ID, w.execution(t).ID, "the Resume begins its own execution")
+}
+
+// Whether a Managed start still waits for its Desk is its execution's fact:
+// a start queued at admission records no Disconnection while Queued, and
+// records one once its execution is seated.
+func TestASeatedManagedStartRecordsItsDisconnection(t *testing.T) {
+	ctx := context.Background()
+	agent := definitionFixture(t)
+	admission := fixtureAdmission(agent.ID)
+	admission.Seat.Waiting = true
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: true, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, AgentID: agent.ID, WorkspaceReference: "workspace"}, admission)
+	require.NoError(t, err)
+	w := newWorld(t, settled(work))
+	require.True(t, w.begin(t).Queued())
+	place := &presencePlace{description: command.ComputerDescription{Managed: true, UnreachableSince: time.Now()}}
+	recover := recoverOver(w, time.Now, reachOver(w, time.Now, place))
+
+	require.NoError(t, recover.Handle(ctx, w.work().ID))
+	require.False(t, w.work().Disconnected(), "a queued start has no environment to lose")
+
+	w.change(t, func(execution *domain.AgentExecution) {
+		seated, err := execution.Seat(time.Now())
+		require.NoError(t, err)
+		require.True(t, seated)
+	})
+	require.NoError(t, recover.Handle(ctx, w.work().ID))
+	require.True(t, w.work().Disconnected(), "the seated start's Disconnection is recorded, whatever its admission")
+	require.Equal(t, domain.WorkStarting, w.work().State)
 }

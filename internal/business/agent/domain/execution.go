@@ -126,6 +126,9 @@ const (
 	RetiredFenced RetirementCause = "fenced"
 	// RetiredWithdrawn is a start withdrawn while its Desk waited.
 	RetiredWithdrawn RetirementCause = "withdrawn"
+	// RetiredSuperseded is an execution still unretired when its Work
+	// admitted a later start (Superseded execution).
+	RetiredSuperseded RetirementCause = "superseded"
 )
 
 // AgentExecution is one run of a Work's Harness process on its Computer, from
@@ -271,21 +274,42 @@ func (e *AgentExecution) RequestExit(requested WorkStopRequested) (bool, error) 
 	return changed, nil
 }
 
-// Retire stops wanting its run once its Work's execution ended
-// (Execution retirement): its exit was acknowledged, its start was rejected
-// or abandoned, its environment was lost, or its Work reclaimed an unreached
-// run, its machine fenced it, or its waiting start was withdrawn. A cause its
-// own facts contradict retires nothing. A repeated retirement changes nothing.
-func (e *AgentExecution) Retire(requested WorkComputeReleaseRequested, now time.Time) (bool, error) {
-	if requested.WorkID != e.WorkID || now.IsZero() {
+// Retire stops wanting its run (Execution retirement): once its Work's
+// execution ended, as its Work's WorkComputeReleaseRequested says, by its
+// exit acknowledged, its start rejected or abandoned, its environment lost,
+// or its Work reclaiming an unreached run, its machine fencing it, or its
+// waiting start withdrawn; or once its Work admitted a later start while it
+// was unretired, as that start's WorkStartAdmitted says (Superseded
+// execution). A cause its own facts contradict, or one about its own or an
+// earlier start, retires nothing. A repeated retirement changes nothing.
+func (e *AgentExecution) Retire(cause Event, now time.Time) (bool, error) {
+	if now.IsZero() {
 		return false, ErrInvalidExecution
 	}
-	// A request about an earlier start, delivered late, never retires the
-	// execution of a later one.
-	if e.Retired() || !e.Serves(requested.StartAdmittedAt) || !e.ended(requested.Cause) {
-		return false, nil
+	var retirement RetirementCause
+	switch c := cause.(type) {
+	case WorkComputeReleaseRequested:
+		if c.WorkID != e.WorkID {
+			return false, ErrInvalidExecution
+		}
+		// A request about an earlier start, delivered late, never retires
+		// the execution of a later one.
+		if e.Retired() || !e.Serves(c.StartAdmittedAt) || !e.ended(c.Cause) {
+			return false, nil
+		}
+		retirement = c.Cause
+	case WorkStartAdmitted:
+		if c.WorkID != e.WorkID || c.StartAdmittedAt.IsZero() {
+			return false, ErrInvalidExecution
+		}
+		if e.Retired() || !e.StartAdmittedAt.Truncate(time.Millisecond).Before(c.StartAdmittedAt.Truncate(time.Millisecond)) {
+			return false, nil
+		}
+		retirement = RetiredSuperseded
+	default:
+		return false, ErrInvalidExecution
 	}
-	e.State, e.Retirement, e.RetiredAt = ExecutionRetired, requested.Cause, now.UTC()
+	e.State, e.Retirement, e.RetiredAt = ExecutionRetired, retirement, now.UTC()
 	return true, nil
 }
 
