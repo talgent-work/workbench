@@ -25,7 +25,7 @@
   "scripts": {
     "build": "tsc --noEmit && node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/*.test.ts\"",
+    "test": "node --test --test-timeout=3000 \"test/**/*.test.ts\"",
     "test:installed": "node test/installed/install-register-online.ts && node test/installed/upgrade-online.ts",
     "lint": "eslint ."
   },

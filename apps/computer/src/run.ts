@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { reconnectBackoff } from './backoff.ts'
 import { ClaudeCodeMissingError, PACKAGE_ROOT, prepareClaudeCode, removeUnusedCopies, type BundledClaudeCode } from './claude-code.ts'
 import type { CliIO } from './cli.ts'
 import { runConnection } from './connection.ts'
@@ -150,6 +151,7 @@ async function connect(options: Connecting): Promise<number> {
       }),
       signal: options.signal,
       log,
+      backoff: reconnectBackoff(process.env),
       relay: (link) => new Tunnel(service, link, log),
       heard: () => void fence.heard(),
       // The welcome precedes every relayed call, so the connection's

@@ -18,16 +18,21 @@ func Environment(t *testing.T, name string) string {
 	return value
 }
 
-// Redis callers serialize across processes before resetting the shared queue DB.
-func Redis(t *testing.T) string {
+// redisDatabases is how many logical databases a Redis server has by default.
+const redisDatabases = 16
+
+// RedisDB leases one logical database of the shared Redis, emptied, and returns
+// the server's address and the database's index. Each test holds its own, so
+// packages run their Redis cases side by side instead of queueing for one.
+func RedisDB(t *testing.T) (string, int) {
 	t.Helper()
 	address := Environment(t, "TALGENT_TEST_REDIS_ADDR")
-	unlock := Lock(t, "redis")
-	t.Cleanup(unlock)
-	client := redis.NewClient(&redis.Options{Addr: address})
+	db, release := LeaseSlot(t, "redis-db", redisDatabases)
+	t.Cleanup(release)
+	client := redis.NewClient(&redis.Options{Addr: address, DB: db})
 	require.NoError(t, client.FlushDB(t.Context()).Err())
 	require.NoError(t, client.Close())
-	return address
+	return address, db
 }
 
 func ClickHouse(t *testing.T, database string) string {

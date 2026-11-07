@@ -91,3 +91,6 @@ Thumbs.db
 /.marketplace-publish/
 
 /.plugin-source/
+
+# Binaries make image-binaries compiled for the images
+/bin/

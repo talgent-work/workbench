@@ -1,25 +1,15 @@
 import assert from 'node:assert/strict'
-import { access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { output, Pipe } from './support/execd-client.ts'
 import type { Decision, Inventory } from './support/gateway.ts'
-import { computerTarget, eventually } from './support/targets.ts'
+import { computerTarget, eventually, exists } from './support/targets.ts'
 
 // Reconciliation on reconnecting, driven through the Gateway protocol against the
 // executable: every connection opens a round in which nothing new is
 // reserved or started until the platform's decision for that round ends the
 // processes it names and removes the Works it names.
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
-}
 
 describe('reconciliation on reconnecting', () => {
   let target: Awaited<ReturnType<typeof computerTarget>>

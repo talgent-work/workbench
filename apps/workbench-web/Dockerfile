@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1.7
 ARG NODE_VERSION=24
+# DIST picks where the built app comes from: "builder" (the default, a local
+# build) builds it here; "prebuilt" (CI) takes apps/workbench-web/dist that the
+# CI build of the same commands produced, and BuildKit skips the builder stage.
+ARG DIST=builder
 
 FROM node:${NODE_VERSION}-bookworm-slim AS builder
 ENV PNPM_HOME=/pnpm
@@ -20,7 +24,12 @@ COPY gen/ts gen/ts
 RUN pnpm --filter @talgent/workbench-contracts run build \
  && pnpm --filter @talgent/workbench-web run build
 
+FROM scratch AS prebuilt
+COPY apps/workbench-web/dist /repo/apps/workbench-web/dist
+
+FROM ${DIST} AS dist
+
 FROM nginx:1.27-alpine
 COPY apps/workbench-web/nginx.conf.template /etc/nginx/templates/default.conf.template
-COPY --from=builder /repo/apps/workbench-web/dist /usr/share/nginx/html
+COPY --from=dist /repo/apps/workbench-web/dist /usr/share/nginx/html
 EXPOSE 3000

@@ -114,10 +114,14 @@ type Provisioning struct {
 	now     func() time.Time
 	native  NativeLaunchConfig
 	initial command.InitialExecutionReader
+	// attemptTimeout bounds one submission attempt against the environment
+	// authority; it is reconciliationAttemptTimeout except in tests that
+	// exercise its expiry.
+	attemptTimeout time.Duration
 }
 
 func NewProvisioning(db *xorm.Engine, sandboxes *Sandboxes, credentials *SandboxCredentials, native NativeLaunchConfig, now func() time.Time, initial command.InitialExecutionReader, managed *ManagedEnvironment) *Provisioning {
-	return &Provisioning{db: db, sandboxes: sandboxes, credentials: credentials, managed: managed, native: native, now: now, initial: initial}
+	return &Provisioning{db: db, sandboxes: sandboxes, credentials: credentials, managed: managed, native: native, now: now, initial: initial, attemptTimeout: reconciliationAttemptTimeout}
 }
 
 // Register durably accepts the admitted start as the Work's one live
@@ -233,7 +237,7 @@ func (p *Provisioning) reconcile(ctx context.Context, record allocationRecord) e
 	if err != nil {
 		return err
 	}
-	attempt, release := context.WithTimeout(ctx, reconciliationAttemptTimeout)
+	attempt, release := context.WithTimeout(ctx, p.attemptTimeout)
 	defer release()
 	var id string
 	if !record.Submitted {

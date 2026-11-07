@@ -47,7 +47,10 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 	require.NoError(t, err)
 	runs := infrastructure.NewSynchronizationRuns(db)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg := runtimequeue.Config{RedisAddr: middlewaretest.Redis(t), WorkerConcurrency: 2, QueueName: "marketplace-maintenance"}
+	// An idle worker polls every 10ms instead of every second, so it picks up
+	// each run, and stops, without waiting out the provider's idle poll.
+	redisAddr, redisDB := middlewaretest.RedisDB(t)
+	cfg := runtimequeue.Config{RedisAddr: redisAddr, RedisDB: redisDB, WorkerConcurrency: 2, QueueName: "marketplace-maintenance"}.WithTaskCheckInterval(10 * time.Millisecond)
 	producer := fxtest.NewLifecycle(t)
 	enqueuer := runtimequeue.NewEnqueuer(producer, cfg, slog.Default())
 	producer.RequireStart()

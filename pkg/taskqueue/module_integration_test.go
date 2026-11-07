@@ -11,6 +11,7 @@ import (
 	"time"
 
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
+	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -18,8 +19,7 @@ import (
 // Identical task type names in separate runtime owners must neither collide
 // during registration nor dispatch through a different owner's processor.
 func TestNamedModulesIsolateWorkersAndSchemas(t *testing.T) {
-	addr, cleanup := startRedis(t)
-	defer cleanup()
+	addr, db := middlewaretest.RedisDB(t)
 	type receipt struct{ owner, payload string }
 	processed := make(chan receipt, 3)
 	clients := make(map[string]componenttaskqueue.Enqueuer)
@@ -28,7 +28,7 @@ func TestNamedModulesIsolateWorkersAndSchemas(t *testing.T) {
 	for _, name := range []string{"storage", "execution", "sandbox"} {
 		tag := fmt.Sprintf(`name:%q`, name)
 		options = append(options,
-			fx.Supply(fx.Annotate(Config{RedisAddr: addr, QueueName: name, WorkerConcurrency: 1}, fx.ResultTags(tag))),
+			fx.Supply(fx.Annotate(Config{RedisAddr: addr, RedisDB: db, QueueName: name, WorkerConcurrency: 1, taskCheckInterval: testTaskCheckInterval}, fx.ResultTags(tag))),
 			NamedModule(name),
 			fx.Module("business."+name,
 				Bind(name),

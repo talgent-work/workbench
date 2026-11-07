@@ -33,10 +33,13 @@ type Application struct {
 	preview     PreviewSettings
 	// workspaceListLimit bounds the entries one workspace directory lists.
 	workspaceListLimit int
-	linkTTL            time.Duration
-	uploadTTL          time.Duration
-	now                func() time.Time
-	logger             *slog.Logger
+	// sentContentLimit bounds the content a Work without a Session
+	// Workspace sends.
+	sentContentLimit int
+	linkTTL          time.Duration
+	uploadTTL        time.Duration
+	now              func() time.Time
+	logger           *slog.Logger
 }
 
 // Ports are the storage mechanisms Storage's use cases run on.
@@ -108,10 +111,15 @@ const (
 	defaultUploadTTL = 2 * time.Minute
 )
 
-// WorkspaceSettings bound how Session Workspaces are read.
+// WorkspaceSettings bound how Session Workspaces are read, and what a Work
+// without one sends instead.
 type WorkspaceSettings struct {
 	// ListEntries bounds the entries one directory lists (1000).
 	ListEntries int
+	// SentContentBytes bounds the content a Work without a Session Workspace
+	// sends (domain.MaxSentContentBytes). Only tests lower it: content at the
+	// real bound costs seconds to send and store.
+	SentContentBytes int
 }
 
 // defaultWorkspaceListEntries is a conservative starting point.
@@ -123,6 +131,17 @@ func (s WorkspaceSettings) listLimit() int {
 	}
 	return s.ListEntries
 }
+
+func (s WorkspaceSettings) sentContentLimit() int {
+	if s.SentContentBytes <= 0 {
+		return domain.MaxSentContentBytes
+	}
+	return s.SentContentBytes
+}
+
+// SentContentLimit is the most content a Work without a Session Workspace
+// sends to publish an Artifact.
+func (a *Application) SentContentLimit() int { return a.sentContentLimit }
 
 func NewApplication(spaces domain.FileSpaceRepository, ports Ports, lifetimes LinkLifetimes, preview PreviewSettings, workspace WorkspaceSettings, logger *slog.Logger) *Application {
 	if lifetimes.Access <= 0 {
@@ -138,6 +157,7 @@ func NewApplication(spaces domain.FileSpaceRepository, ports Ports, lifetimes Li
 	return &Application{
 		spaces: spaces, persistent: ports.Persistent, working: ports.Working, links: ports.Links, mounts: ports.Mounts, references: ports.References, previews: ports.Previews, inspector: ports.Inspector,
 		converter: ports.Converter, rendering: ports.RenderingTasks, enqueuer: ports.Enqueuer, fileChanges: ports.FileChanges, preview: preview, workspaceListLimit: workspace.listLimit(),
+		sentContentLimit: workspace.sentContentLimit(),
 
 		linkTTL: lifetimes.Access, uploadTTL: lifetimes.Upload, now: time.Now, logger: logger.With("component", "storage.application"),
 	}

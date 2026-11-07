@@ -91,6 +91,21 @@ type Config struct {
 	// Both zero keeps the provider's default retry delay.
 	RetryDelayMin Duration `yaml:"retry-delay-min" toml:"retry-delay-min" json:"retry-delay-min"`
 	RetryDelayMax Duration `yaml:"retry-delay-max" toml:"retry-delay-max" json:"retry-delay-max"`
+
+	// taskCheckInterval is how often an idle worker polls its queues for new
+	// tasks; zero keeps the provider's one-second default. Only tests shorten
+	// it (WithTaskCheckInterval): an idle poll delays both the pickup of a
+	// task and the worker's shutdown by up to one and a half intervals.
+	taskCheckInterval time.Duration
+}
+
+// WithTaskCheckInterval returns cfg with idle workers polling every interval,
+// for tests that run tasks and restart workers within a few hundred
+// milliseconds. Deployments keep the provider's default; configuration files
+// cannot set it.
+func (cfg Config) WithTaskCheckInterval(interval time.Duration) Config {
+	cfg.taskCheckInterval = interval
+	return cfg
 }
 
 func (cfg Config) Validate() error {

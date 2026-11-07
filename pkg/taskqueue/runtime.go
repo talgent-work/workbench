@@ -128,6 +128,7 @@ func NewWorker(
 		// tasks; check as often as the shortest configured delay so the delay
 		// is not stretched to the provider's five-second default.
 		DelayedTaskCheckInterval: delayedTaskCheck(cfg),
+		TaskCheckInterval:        cfg.taskCheckInterval,
 	})
 
 	for _, processor := range in.Processors {

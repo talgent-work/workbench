@@ -25,6 +25,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The Go lane: one environment compiles the images' binaries and runs the
+  # script and unit tests, from one Go cache (.github/actions/go-cache).
   test:
     needs: generate
     if: needs.generate.outputs.generated_changed != 'true'
@@ -38,22 +40,28 @@ jobs:
         go-version-file: go.mod
         cache: false
 
-    - name: Cache Go test dependencies and build outputs
-      uses: actions/cache@v5
+    - uses: ./.github/actions/go-cache
+      id: go-cache
       with:
-        path: |
-          ~/go/pkg/mod
-          ~/.cache/go-build
-        key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.job }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
-        restore-keys: |
-          go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.job }}-${{ hashFiles('go.mod', 'go.sum') }}-
-          go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.job }}-
+        name: ${{ github.job }}
+        go-version: ${{ steps.go.outputs.go-version }}
+
+    # Image Publish packages them once every check passed.
+    - name: Compile the image binaries
+      run: make image-binaries
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: image-binaries
+        path: bin/
+        retention-days: 1
+        if-no-files-found: error
 
     - name: Run tests
       # /tmp on the runner is a 4G tmpfs; a cold -race compile overflows it.
       env:
         TMPDIR: ${{ runner.temp }}
-      run: make test
+      run: make -j2 -Otarget test
 
     - name: Check the public tree for leaks
       env:
@@ -68,6 +76,15 @@ jobs:
         sudo -n /tmp/talgent-storage.test -test.v
         go test -race -c -o /tmp/talgent-agent-execution.test ./internal/business/agent/infrastructure/execution
         sudo -n /tmp/talgent-agent-execution.test -test.v
+
+    - name: Save the Go caches of a new go.mod or go.sum
+      if: ${{ !cancelled() && steps.go-cache.outputs.save-key != '' }}
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ steps.go-cache.outputs.save-key }}
 
   generate:
     if: github.event.deleted != true
@@ -122,6 +139,8 @@ jobs:
         gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_BRANCH" \
           -f "build_all=$BUILD_ALL" -f "services=$SERVICES"
 
+  # The Web lane: one environment builds the web app the image takes, then
+  # tests and lints it.
   frontend:
     needs: generate
     if: needs.generate.outputs.generated_changed != 'true'
@@ -152,6 +171,14 @@ jobs:
     # so no separate type-check pass is needed.
     - name: Build (all workspaces)
       run: make frontend-build
+
+    # Image Publish packages it once every check passed.
+    - uses: actions/upload-artifact@v4
+      with:
+        name: web-dist
+        path: apps/workbench-web/dist/
+        retention-days: 1
+        if-no-files-found: error
 
     - name: Test (all workspaces)
       run: make frontend-test
@@ -227,56 +254,24 @@ jobs:
         go-version-file: go.mod
         cache: false
 
-    - name: Cache Go test dependencies and build outputs
-      uses: actions/cache@v5
+    - uses: ./.github/actions/go-cache
+      id: go-cache
       with:
-        path: |
-          ~/go/pkg/mod
-          ~/.cache/go-build
-        key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.job }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
-        restore-keys: |
-          go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.job }}-${{ hashFiles('go.mod', 'go.sum') }}-
-          go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.job }}-
-
-    - uses: actions/setup-node@v6
-      with:
-        node-version: "24"
+        name: ${{ github.job }}
+        go-version: ${{ steps.go.outputs.go-version }}
 
     - name: Run integration tests with production storage ownership privileges
       run: |
         sudo -n env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" make test-integration
 
-    # The native cases run the Claude Code and execd the sandbox ships, as the
-    # unprivileged user the sandbox runs them as.
-    - name: Install the sandbox's native binaries
-      run: |
-        claude_version="$(sed -n 's/.*@anthropic-ai\/claude-code@\([0-9.]*\).*/\1/p' deploy/sandbox/Dockerfile.base)"
-        test -n "$claude_version"
-        npm install --prefix "$RUNNER_TEMP/claude" --no-save "@anthropic-ai/claude-code@$claude_version"
-        execd_image="$(sed -n 's/^FROM //p' deploy/execd/Dockerfile | head -n 1)"
-        container="$(docker create "$execd_image")"
-        docker cp "$container:/execd" "$RUNNER_TEMP/execd"
-        docker rm "$container"
-
-    - name: Run native Harness integration tests
-      env:
-        CLAUDE_BINARY: ${{ runner.temp }}/claude/node_modules/.bin/claude
-        EXECD_BINARY: ${{ runner.temp }}/execd
-      run: make test-native
-
-    # A Managed Computer serves the same execd protocol: Talgent Computer is
-    # checked against the real execd, then the Dispatcher's native cases run
-    # through the Computer Gateway against it.
-    - name: Run native cases through Talgent Computer
-      env:
-        CLAUDE_BINARY: ${{ runner.temp }}/claude/node_modules/.bin/claude
-        EXECD_BINARY: ${{ runner.temp }}/execd
-      run: |
-        corepack enable
-        pnpm install --frozen-lockfile --filter @talgent/computer...
-        pnpm --filter @talgent/computer run build
-        pnpm --filter @talgent/computer test
-        TALGENT_COMPUTER_PROGRAM="$PWD/apps/computer/dist/talgent-computer.mjs" make test-native-computer
+    - name: Save the Go caches of a new go.mod or go.sum
+      if: ${{ !cancelled() && steps.go-cache.outputs.save-key != '' }}
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ steps.go-cache.outputs.save-key }}
 
   # A contract package only grows within its version: every package except
   # the task ones is compared with the previous release.
@@ -305,13 +300,32 @@ jobs:
         echo "Comparing with $previous"
         make check-breaking BREAKING_AGAINST=".git#tag=${previous}"
 
+  # Selection runs beside the checks; it publishes nothing.
   images:
-    needs: [generate, test, frontend, integration-test, breaking, image-baseline]
-    uses: ./.github/workflows/docker-build.yml
+    needs: [generate, image-baseline]
+    uses: ./.github/workflows/image-build.yml
     with:
+      compile: false
       build_all: ${{ inputs.build_all || false }}
       services: ${{ inputs.services || '' }}
       base_ref: ${{ needs.image-baseline.outputs.base_ref }}
+    permissions:
+      contents: read
+      packages: read
+
+  # Packages the binaries and web app the checks' environments built, only
+  # once every check passed.
+  publish:
+    needs: [images, test, frontend, integration-test, breaking]
+    uses: ./.github/workflows/image-publish.yml
+    with:
+      tag: ${{ needs.images.outputs.tag }}
+      current_ref: ${{ needs.images.outputs.current_ref }}
+      matrix: ${{ needs.images.outputs.matrix }}
+      sandbox_required: ${{ needs.images.outputs.sandbox_required }}
+      sandbox_base_required: ${{ needs.images.outputs.sandbox_base_required }}
+      reuse: ${{ needs.images.outputs.reuse }}
+      previous_tag: ${{ needs.images.outputs.previous_tag }}
     permissions:
       contents: read
       packages: write
@@ -335,7 +349,7 @@ jobs:
       run: python3 scripts/ci/previous-image-build.py
 
   record-image-baseline:
-    needs: images
+    needs: publish
     # A manually selected subset cannot advance the baseline for all images.
     if: inputs.services == '' || inputs.build_all == true
     runs-on: ubuntu-latest

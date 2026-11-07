@@ -35,17 +35,19 @@ var fastTiming = dispatcherredis.OwnershipConfig{
 
 // nativeReplicas is the Redis shared by Dispatcher replicas in one test.
 type nativeReplicas struct {
-	t     *testing.T
-	redis string
+	t       *testing.T
+	redis   string
+	redisDB int
 }
 
 func newNativeReplicas(t *testing.T) *nativeReplicas {
 	t.Helper()
-	return &nativeReplicas{t: t, redis: middlewaretest.Redis(t)}
+	addr, db := middlewaretest.RedisDB(t)
+	return &nativeReplicas{t: t, redis: addr, redisDB: db}
 }
 
 func (r *nativeReplicas) client() *goredis.Client {
-	rdb := goredis.NewClient(&goredis.Options{Addr: r.redis})
+	rdb := goredis.NewClient(&goredis.Options{Addr: r.redis, DB: r.redisDB})
 	r.t.Cleanup(func() { _ = rdb.Close() })
 	return rdb
 }
@@ -124,12 +126,4 @@ func routedMux(manager *dispatcher.NativeExecutions, ownership *dispatcherredis.
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	return mux
-}
-
-// privateAPI serves a replica's private API, routed through the replica set.
-func privateAPI(t *testing.T, manager *dispatcher.NativeExecutions, ownership *dispatcherredis.Ownership, buffer *dispatcherredis.InputBuffer) (string, dispatcherprivatev1connect.ExecutionServiceClient) {
-	t.Helper()
-	server := httptest.NewServer(routedMux(manager, ownership, buffer))
-	t.Cleanup(server.Close)
-	return server.URL, dispatcherprivatev1connect.NewExecutionServiceClient(server.Client(), server.URL)
 }

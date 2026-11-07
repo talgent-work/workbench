@@ -82,14 +82,30 @@ jobs:
         TAG: ${{ needs.auto-tag.outputs.new_tag }}
       run: gh workflow run publish-npm.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
 
-  docker-build:
+  # Builds what changed since the previous release; the other images receive
+  # the new tag from the previous release's images. A release runs no tests,
+  # so Image Build compiles the binaries and web app itself.
+  images:
     needs: auto-tag
     if: needs.auto-tag.outputs.new_tag != ''
-    uses: ./.github/workflows/docker-build.yml
-    # Builds what changed since the previous release; the other images receive
-    # the new tag from the previous release's images.
+    uses: ./.github/workflows/image-build.yml
     with:
       tag: ${{ needs.auto-tag.outputs.new_tag }}
+    permissions:
+      contents: read
+      packages: read
+
+  publish:
+    needs: images
+    uses: ./.github/workflows/image-publish.yml
+    with:
+      tag: ${{ needs.images.outputs.tag }}
+      current_ref: ${{ needs.images.outputs.current_ref }}
+      matrix: ${{ needs.images.outputs.matrix }}
+      sandbox_required: ${{ needs.images.outputs.sandbox_required }}
+      sandbox_base_required: ${{ needs.images.outputs.sandbox_base_required }}
+      reuse: ${{ needs.images.outputs.reuse }}
+      previous_tag: ${{ needs.images.outputs.previous_tag }}
     permissions:
       contents: read
       packages: write
