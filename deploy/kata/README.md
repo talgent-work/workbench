@@ -42,14 +42,15 @@ runtime; only sandboxes started afterwards get the new virtiofsd arguments.
 
 Deploy the complete matching image set with `scripts/deploy/apply-opensandbox.sh`.
 That command refuses a missing Kata RuntimeClass or non-WireGuard node backend,
-installs the sandbox NetworkPolicy, and uses official Server v0.2.2 and egress v1.1.7 images pinned by digest. The controlled execd installer derives from the pinned official v1.1.0 image and changes only its shared-HOME NSS bootstrap; see `deploy/execd/Dockerfile`.
-Telemetry uses the `otel-collector:4318` ClusterIP Service in front of the
+and uses official Server v0.2.2 and egress v1.1.7 images pinned by digest. The controlled execd installer derives from the pinned official v1.1.0 image and changes only its shared-HOME NSS bootstrap; see `deploy/execd/Dockerfile`.
+The sandbox NetworkPolicies are declared in `deploy/k3s/workbench/sandbox.yaml`.
+Telemetry uses the `otel-collector.talgent:4318` Service in front of the
 in-cluster Collector Pods (`deploy/k3s/workbench/otel-collector.yaml`).
-The deployment renders the assigned ClusterIP into NetworkPolicy. Agent
-provisioning excludes only that ServiceIP from nft denies, never the node IP.
-CNI permits only port 4318 on the Service and its post-DNAT backend; nft blocks
-direct node traffic before host DNAT. Verify actual Service delivery and direct
-node port denials together.
+NetworkPolicy admits port 4318 of the Collector Pods, selected by namespace and
+Pod labels, which is the backend CNI sees after Service DNAT. Agent provisioning
+excludes only the Service's ClusterIP from nft denies, never the node IP; nft
+blocks direct node traffic before host DNAT. Verify actual Service delivery and
+direct node port denials together.
 DNS and native API service exceptions follow the same two-layer policy check.
 
 Upstream egress exports the public MITM certificate and upstream execd bootstrap
