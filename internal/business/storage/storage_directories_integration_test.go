@@ -223,3 +223,26 @@ func TestDirectoriesAreLaidOutByOwnerAndName(t *testing.T) {
 	_, err := f.app.OpenDirectory(t.Context(), tooLong)
 	require.ErrorIs(t, err, domain.ErrInvalidLocator, "an owner that is not one path element is refused")
 }
+
+// A Directory reclaimed while its space is being allocated is not left
+// recreated: the opening fails as reclaimed and queues its removal again.
+func TestADirectoryReclaimedDuringItsAllocationIsRemovedAgain(t *testing.T) {
+	f := newFixture(t)
+	f.nas.meanwhile = func() {
+		f.nas.meanwhile = nil
+		require.NoError(t, f.app.RequestWorkReclamation(t.Context(), "work-1"))
+		f.removals()
+	}
+	_, err := f.app.AcquireMounts(t.Context(), "work-1", []application.MountRequest{{Directory: workDirectory("work-1", "home")}})
+	require.ErrorIs(t, err, domain.ErrDirectoryReclaimed)
+	f.removals()
+	require.NoDirExists(t, f.folder(workDirectory("work-1", "home")), "a reclaimed Directory is never recreated")
+}
+
+// A Work mounts no Directory another Work owns.
+func TestAWorkMountsNoOtherWorksDirectory(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.app.AcquireMounts(t.Context(), "work-1", []application.MountRequest{{Directory: workDirectory("work-2", "home")}})
+	require.ErrorIs(t, err, application.ErrInvalidRequest)
+	require.NoDirExists(t, f.folder(workDirectory("work-2", "home")))
+}

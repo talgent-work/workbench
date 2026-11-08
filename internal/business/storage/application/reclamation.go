@@ -36,7 +36,12 @@ func (a *Application) reclaim(ctx context.Context, id domain.DirectoryID) error 
 	if _, err := a.changeDirectory(ctx, id, (*domain.Directory).Reclaim); err != nil {
 		return err
 	}
-	return task.RequestContentRemoval(ctx, a.tasks, task.RemoveReclaimedContent{Directory: id}, directoryKey(id))
+	return a.requestRemoval(ctx, id)
+}
+
+// requestRemoval queues the removal of a reclaimed Directory's content.
+func (a *Application) requestRemoval(ctx context.Context, id domain.DirectoryID) error {
+	return task.RequestContentRemoval(ctx, a.tasks.Maintenance, task.RemoveReclaimedContent{Directory: id}, directoryKey(id))
 }
 
 // RemoveReclaimedContent removes a reclaimed Directory's content once no

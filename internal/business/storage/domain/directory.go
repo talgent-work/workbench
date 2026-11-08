@@ -52,12 +52,7 @@ func NewDirectory(located LocatedDirectory) (*Directory, error) {
 // Open is a repeated opening of the existing Directory: it is returned
 // unchanged, whatever backend and lifetime the opening located, since the
 // first allocation wins. A reclaimed Directory is never recreated.
-func (d *Directory) Open() error {
-	if d.State == DirectoryReclaimed {
-		return ErrDirectoryReclaimed
-	}
-	return nil
-}
+func (d *Directory) Open() error { return d.admitExisting() }
 
 // AwaitsAllocation reports whether its space must still be allocated, as
 // every opening asks while it is Allocating.
@@ -92,16 +87,20 @@ func (d *Directory) admitUse() error {
 func (d *Directory) Reclaimed() bool { return d.State == DirectoryReclaimed }
 
 // AdmitRead answers a read of a reclaimed Directory that it was reclaimed.
-func (d *Directory) AdmitRead() error {
-	if d.State == DirectoryReclaimed {
+func (d *Directory) AdmitRead() error { return d.admitExisting() }
+
+// admitExisting refuses a reclaimed Directory, which never returns.
+func (d *Directory) admitExisting() error {
+	if d.Reclaimed() {
 		return ErrDirectoryReclaimed
 	}
 	return nil
 }
 
-// MountAdmission is a Mount Grant the Directory issued to itself: read-only
-// or read-write as requested, with the mount points its caller names inside
-// it, which are prepared before the grant is handed out.
+// MountAdmission is the Directory's admission of one mount request: the
+// access it grants, read-only or read-write as requested, and the mount
+// points its caller names inside it. The Mount Grant handed out carries this
+// access at the Directory's backend location once the points are prepared.
 type MountAdmission struct {
 	Directory   DirectoryID
 	ReadOnly    bool

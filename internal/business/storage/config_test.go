@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
 
@@ -30,7 +31,7 @@ func TestConfigNeedsOnlyAgentAmongItsCallers(t *testing.T) {
 // Artifact unless a test lowers the bound; cases exercise the bound lowered.
 func TestTheSentContentBoundIs64MiB(t *testing.T) {
 	require.Equal(t, 64<<20, domain.MaxSentContentBytes)
-	app, err := assemble(validConfig(t), nil, nil, nil, nil, slog.Default())
+	app, err := assemble(validConfig(t), nil, nil, application.TaskLanes{}, nil, slog.Default())
 	require.NoError(t, err)
 	require.Equal(t, domain.MaxSentContentBytes, app.SentContentLimit())
 }

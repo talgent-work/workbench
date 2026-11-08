@@ -59,7 +59,7 @@ func (a *Application) RequestFilePreview(ctx context.Context, at Position) (File
 		return FilePreview{}, err
 	}
 	render := task.RenderPreview{Directory: opened.position.Directory, Name: opened.position.Name, Digest: opened.key.Digest}
-	if err := task.RequestRendering(ctx, a.tasks, render, a.preview.Rendering, a.now()); err != nil {
+	if err := task.RequestRendering(ctx, a.tasks.Renderings, render, a.preview.Rendering, a.now()); err != nil {
 		// Never queued, the request holds nothing back from the next opening.
 		return FilePreview{}, errors.Join(fmt.Errorf("storage: request rendering: %w", err), a.previewCopies.Remove(context.WithoutCancel(ctx), opened.key))
 	}

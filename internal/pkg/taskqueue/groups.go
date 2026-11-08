@@ -27,3 +27,7 @@ func groupTag(group string, flatten bool) string {
 	}
 	return fmt.Sprintf("group:%q", group)
 }
+
+// EnqueuerTag tags a parameter that takes queue's client, for a business
+// module enqueuing on more than the one queue Bind selects.
+func EnqueuerTag(queue string) string { return fmt.Sprintf(`name:%q`, queue) }

@@ -108,7 +108,7 @@ func (a *Application) ReadShared(ctx context.Context, token string) (OpenedFile,
 		return OpenedFile{}, domain.ErrShareLinkRevoked
 	}
 	if err := directory.AdmitRead(); err != nil {
-		return OpenedFile{}, ErrFileNotFound
+		return OpenedFile{}, err
 	}
 	backend, err := a.backends.of(directory)
 	if err != nil {

@@ -40,7 +40,8 @@ func (a *Application) AcquireMounts(ctx context.Context, workID string, requests
 		if err != nil {
 			return nil, err
 		}
-		if seen[directory.ID] {
+		// A Work mounts no other Work's Directory.
+		if owner, ok := directory.ID.Owner.Work(); seen[directory.ID] || ok && owner != workID {
 			return nil, ErrInvalidRequest
 		}
 		seen[directory.ID] = true

@@ -271,7 +271,9 @@ func (f *DirectoryFiles) RemoveReclaimed(ctx context.Context, id domain.Director
 	}
 	// A publication waiting on the lock file finds no folder once it gets
 	// it; nothing locks a reclaimed Directory again.
-	_ = os.Remove(f.areaPath(locksArea, id))
+	if err := os.Remove(f.areaPath(locksArea, id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		failures = append(failures, err)
+	}
 	return oops.With("operation", "storage.remove_reclaimed", "directory", f.relative(id)).Wrap(errors.Join(failures...))
 }
 

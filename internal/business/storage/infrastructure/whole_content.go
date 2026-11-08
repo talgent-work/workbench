@@ -189,10 +189,13 @@ func (f *DirectoryFiles) removeEarlier(id domain.DirectoryID, current string) er
 	}
 	// A link left by a switch that failed before its rename is no entry.
 	links, err := filepath.Glob(filepath.Join(f.folder(id), ".link-*"))
+	failures := []error{err}
 	for _, link := range links {
-		_ = os.Remove(link)
+		if err := os.Remove(link); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			failures = append(failures, err)
+		}
 	}
-	return operation.Wrap(err)
+	return operation.Wrap(errors.Join(failures...))
 }
 
 // linkEntries makes the Directory's visible entries the content's: each
@@ -239,8 +242,7 @@ func replaceLink(space, name, target string) error {
 		return err
 	}
 	if err := os.Rename(link, filepath.Join(space, name)); err != nil {
-		_ = os.Remove(link)
-		return err
+		return errors.Join(err, os.Remove(link))
 	}
 	return nil
 }

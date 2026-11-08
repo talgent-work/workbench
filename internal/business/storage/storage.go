@@ -139,10 +139,8 @@ func parseDuration(value string, fallback time.Duration) (time.Duration, error) 
 var Module = fx.Module(
 	"domain.storage",
 	pkgmysql.Bind(Database),
-	// Storage queues every task through the preview lane's client; the task
-	// names its own lane, so both lanes share one Redis.
-	pkgtaskqueue.Bind(PreviewQueue),
-	fx.Provide(newApplication),
+	// Each lane's tasks go through that lane's own client.
+	fx.Provide(fx.Annotate(newApplication, fx.ParamTags(``, ``, pkgtaskqueue.EnqueuerTag(PreviewQueue), pkgtaskqueue.EnqueuerTag(MaintenanceQueue)))),
 	fx.Provide(
 		fx.Annotate(newRenderPreviewProcessor, fx.As(new(componenttaskqueue.Processor)), fx.ResultTags(pkgtaskqueue.ProcessorTag(PreviewQueue))),
 		fx.Annotate(newMaintenanceProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(MaintenanceQueue))),
@@ -162,7 +160,8 @@ const PreviewQueue = applicationtask.Queue
 // and lapsed Preview Copies on.
 const MaintenanceQueue = applicationtask.MaintenanceQueue
 
-func newApplication(config Config, engine *xorm.Engine, tasks componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
+func newApplication(config Config, engine *xorm.Engine, renderings, maintenance componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
+	tasks := application.TaskLanes{Renderings: renderings, Maintenance: maintenance}
 	return assemble(config, infrastructure.NewDirectoryRepository(engine), infrastructure.NewDirectoryQueries(engine), tasks, bus, logger)
 }
 
@@ -190,7 +189,7 @@ const (
 
 // assemble builds Storage's application over its mechanisms; unset link
 // lifetimes and preview settings take the application's defaults.
-func assemble(config Config, directories domain.DirectoryRepository, queries query.DirectoryQueryRepository, tasks componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
+func assemble(config Config, directories domain.DirectoryRepository, queries query.DirectoryQueryRepository, tasks application.TaskLanes, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -208,7 +207,7 @@ func assembleWith(config Config, directories domain.DirectoryRepository, ports a
 
 // mechanisms are Storage's mechanisms over its configured file systems,
 // link signing, converter, publisher and task queue.
-func mechanisms(config Config, queries query.DirectoryQueryRepository, tasks componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) application.Ports {
+func mechanisms(config Config, queries query.DirectoryQueryRepository, tasks application.TaskLanes, bus integrationmessage.Publisher, logger *slog.Logger) application.Ports {
 	uid := config.SandboxUID
 	if uid == 0 {
 		uid = nativeSandboxUID

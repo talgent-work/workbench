@@ -80,7 +80,13 @@ func (a *Application) open(ctx context.Context, located domain.LocatedDirectory)
 	if err := backend.Allocate(ctx, directory.ID); err != nil {
 		return nil, err
 	}
-	return a.changeDirectory(ctx, directory.ID, (*domain.Directory).RecordAllocation)
+	allocated, err := a.changeDirectory(ctx, directory.ID, (*domain.Directory).RecordAllocation)
+	if errors.Is(err, domain.ErrDirectoryReclaimed) {
+		// Reclaimed while its space was being allocated: its removal may
+		// already have run, so the space just allocated is removed again.
+		return nil, errors.Join(err, a.requestRemoval(ctx, directory.ID))
+	}
+	return allocated, err
 }
 
 // establish records a new Directory; a concurrent opening that won holds the

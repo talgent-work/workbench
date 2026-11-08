@@ -30,7 +30,7 @@ type Application struct {
 	converter        ConverterPort
 	// publisher publishes committed file changes; nil publishes none.
 	publisher message.Publisher
-	tasks     taskqueue.Enqueuer
+	tasks     TaskLanes
 	preview   PreviewSettings
 	// workspaceListLimit bounds the entries one workspace directory lists.
 	workspaceListLimit int
@@ -55,8 +55,17 @@ type Ports struct {
 	Converter  ConverterPort
 	// Publisher publishes committed file changes.
 	Publisher message.Publisher
-	// Tasks queues renderings and content removals.
-	Tasks taskqueue.Enqueuer
+	// Tasks queues renderings and content removals, each on its own lane.
+	Tasks TaskLanes
+}
+
+// TaskLanes are the task queue lanes Storage enqueues on, each through its
+// own client.
+type TaskLanes struct {
+	// Renderings queues Render preview.
+	Renderings taskqueue.Enqueuer
+	// Maintenance queues Remove reclaimed content.
+	Maintenance taskqueue.Enqueuer
 }
 
 // PreviewSettings are Storage's preview configuration: every limit, how long

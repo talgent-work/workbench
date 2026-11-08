@@ -77,13 +77,16 @@ func (h *DirectoryHandler) ListDirectoryFiles(ctx context.Context, request *stor
 	for _, directory := range request.GetDirectories() {
 		named = append(named, namedFromProto(directory))
 	}
-	files, err := h.application.ListDirectoryFiles(ctx, named)
+	listed, err := h.application.ListDirectoryFiles(ctx, named)
 	if err != nil {
 		return nil, mapError(err)
 	}
-	response := &storageprivatev1.ListDirectoryFilesResponse{Files: make([]*storageprivatev1.File, 0, len(files))}
-	for _, file := range files {
+	response := &storageprivatev1.ListDirectoryFilesResponse{Files: make([]*storageprivatev1.File, 0, len(listed.Files))}
+	for _, file := range listed.Files {
 		response.Files = append(response.Files, storedFileToProto(file))
+	}
+	for _, reclaimed := range listed.Reclaimed {
+		response.Reclaimed = append(response.Reclaimed, namedToProto(reclaimed))
 	}
 	return response, nil
 }

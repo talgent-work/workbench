@@ -80,7 +80,8 @@ func mapError(err error) error {
 	case errors.Is(err, domain.ErrConcurrentModification):
 		return connect.NewError(connect.CodeAborted, err.Error()).WithCause(err)
 	default:
-		// Private callers only: the cause stays for the completion log.
-		return connect.NewError(connect.CodeInternal, err.Error()).WithCause(err)
+		// Work Agents call these handlers too, so the message names no cause;
+		// the cause stays for the completion log.
+		return connect.NewError(connect.CodeInternal, "storage: internal error").WithCause(err)
 	}
 }

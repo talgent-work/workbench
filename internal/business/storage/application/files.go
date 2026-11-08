@@ -81,42 +81,53 @@ func (a *Application) ListFiles(ctx context.Context, named Named) ([]DirectoryFi
 	return files, nil
 }
 
+// DirectoryFiles answer the Directory file query: the files of the named
+// Directories, and those named that were reclaimed, each as named.
+type DirectoryFiles struct {
+	Files     []StoredFile
+	Reclaimed []Named
+}
+
 // maxDirectoryFileQuery bounds the Directories one Directory file query names.
 const maxDirectoryFileQuery = 1000
 
 // ListDirectoryFiles is the Directory file query: the files Storage wrote
 // into the given Directories, Directory by Directory as given. The caller
 // names only Directories whose files it authorized its reader to see; one
-// never opened, or reclaimed, has none.
-func (a *Application) ListDirectoryFiles(ctx context.Context, named []Named) ([]StoredFile, error) {
+// never opened has none, and one reclaimed answers that it was reclaimed.
+func (a *Application) ListDirectoryFiles(ctx context.Context, named []Named) (DirectoryFiles, error) {
 	if len(named) > maxDirectoryFileQuery {
-		return nil, ErrInvalidRequest
+		return DirectoryFiles{}, ErrInvalidRequest
 	}
 	seen := make(map[domain.DirectoryID]bool, len(named))
-	var files []StoredFile
+	var result DirectoryFiles
 	for _, each := range named {
 		id, err := each.ID()
 		if err != nil {
-			return nil, err
+			return DirectoryFiles{}, err
 		}
 		if seen[id] {
 			continue
 		}
 		seen[id] = true
 		_, backend, err := a.readable(ctx, id)
-		if errors.Is(err, domain.ErrDirectoryNotOpen) || errors.Is(err, domain.ErrDirectoryReclaimed) {
+		if errors.Is(err, domain.ErrDirectoryNotOpen) {
+			continue
+		}
+		if errors.Is(err, domain.ErrDirectoryReclaimed) {
+			result.Reclaimed = append(result.Reclaimed, each)
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return DirectoryFiles{}, err
 		}
 		stored, err := a.writtenFiles(ctx, backend, id)
 		if err != nil {
-			return nil, err
+			return DirectoryFiles{}, err
 		}
-		files = append(files, stored...)
+		result.Files = append(result.Files, stored...)
 	}
-	return files, nil
+	return result, nil
 }
 
 // writtenFiles are the files of the Directory that Storage wrote: each

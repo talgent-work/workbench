@@ -126,7 +126,9 @@ func (f *DirectoryFiles) commit(ctx context.Context, staged string, position dom
 			return application.StoredFile{}, operation.Wrap(err)
 		}
 	}
-	_ = unix.Fsync(target)
+	if err := unix.Fsync(target); err != nil {
+		return application.StoredFile{}, operation.Wrap(err)
+	}
 	return statAt(target, position)
 }
 
@@ -152,7 +154,9 @@ func (f *DirectoryFiles) Rename(ctx context.Context, from, to domain.FilePositio
 	case err != nil:
 		return application.StoredFile{}, operation.Wrap(err)
 	}
-	_ = unix.Fsync(fd)
+	if err := unix.Fsync(fd); err != nil {
+		return application.StoredFile{}, operation.Wrap(err)
+	}
 	return statAt(fd, to)
 }
 

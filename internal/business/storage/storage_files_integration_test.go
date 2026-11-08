@@ -232,20 +232,39 @@ func TestPublicationRefusesWhatIsNotOneWorkspaceFile(t *testing.T) {
 }
 
 // The Directory file query lists the files Storage wrote into exactly the
-// Directories named; one never opened has none.
+// Directories named; one never opened has none, and one reclaimed answers
+// that it was reclaimed.
 func TestDirectoryFileQueryListsTheNamedDirectories(t *testing.T) {
 	f := newFixture(t)
 	first, second, other := named("artifacts", "work", "work-1"), named("artifacts", "work", "work-2"), named("artifacts", "work", "work-3")
 	for _, directory := range []application.Named{first, second, other} {
 		f.upload(directory, f.open(fileSpace(directory)), directory.Owner[0].Value+".md", "x", false)
 	}
-	files, err := f.app.ListDirectoryFiles(t.Context(), []application.Named{first, second, first, named("artifacts", "work", "never-opened")})
+	scratch := workDirectory("work-1", "scratch")
+	f.upload(scratch.Directory, f.open(scratch), "notes.md", "x", false)
+	require.NoError(t, f.app.RequestWorkReclamation(t.Context(), "work-1"))
+	listed, err := f.app.ListDirectoryFiles(t.Context(), []application.Named{first, second, first, named("artifacts", "work", "never-opened"), scratch.Directory})
 	require.NoError(t, err)
-	var listed []string
-	for _, file := range files {
-		listed = append(listed, file.Position.Name)
+	var names []string
+	for _, file := range listed.Files {
+		names = append(names, file.Position.Name)
 	}
-	require.Equal(t, []string{"work-1.md", "work-2.md"}, listed)
+	require.Equal(t, []string{"work-1.md", "work-2.md"}, names)
+	require.Equal(t, []application.Named{scratch.Directory}, listed.Reclaimed, "unlike one never opened")
+}
+
+// A Share Link into a reclaimed Directory answers that it was reclaimed.
+func TestAShareLinkIntoAReclaimedDirectoryAnswersReclaimed(t *testing.T) {
+	f := newFixture(t)
+	scratch := workDirectory("work-1", "scratch")
+	f.upload(scratch.Directory, f.open(scratch), "notes.md", "x", false)
+	share, err := f.app.CreateShareLink(t.Context(), at(scratch.Directory, "notes.md"), "user-1")
+	require.NoError(t, err)
+	require.NoError(t, f.app.RequestWorkReclamation(t.Context(), "work-1"))
+	_, err = f.app.ReadShared(t.Context(), share.Token)
+	require.ErrorIs(t, err, domain.ErrDirectoryReclaimed)
+	status, _, _ := f.get(share.URL)
+	require.Equal(t, http.StatusGone, status)
 }
 
 // Files keep their origin on the file itself, laid out as the originals

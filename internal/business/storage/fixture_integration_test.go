@@ -84,7 +84,7 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	}
 	configure(&config)
 	require.NoError(t, config.Validate())
-	ports := mechanisms(config, infrastructure.NewDirectoryQueries(engine), f.queue, f.published, slog.Default())
+	ports := mechanisms(config, infrastructure.NewDirectoryQueries(engine), application.TaskLanes{Renderings: f.queue, Maintenance: f.queue}, f.published, slog.Default())
 	f.nas = &interruptibleBackend{DirectoryBackendPort: ports.Backends[domain.BackendNAS]}
 	ports.Backends[domain.BackendNAS] = f.nas
 	f.app = assembleWith(config, f.directories, ports, slog.Default())
@@ -219,11 +219,17 @@ func (d *interruptibleDirectories) Save(ctx context.Context, directory *domain.D
 type interruptibleBackend struct {
 	application.DirectoryBackendPort
 	failing atomic.Bool
+	// meanwhile, when set, runs between an allocation's read and its space's
+	// creation, as a concurrent change would.
+	meanwhile func()
 }
 
 func (b *interruptibleBackend) Allocate(ctx context.Context, id domain.DirectoryID) error {
 	if b.failing.Load() {
 		return errInterrupted
+	}
+	if b.meanwhile != nil {
+		b.meanwhile()
 	}
 	return b.DirectoryBackendPort.Allocate(ctx, id)
 }
