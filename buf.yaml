@@ -10,5 +10,15 @@ breaking:
   use:
   - FILE
   ignore_unstable_packages: true
+  # Storage keeps one kind of space, the Directory, so Render preview names
+  # its Directory instead of an owner and kind, and Work reclamation names
+  # only the Work; both removed fields stay reserved. A task of the old shape
+  # still queued at that release is not converted: the spaces it names are
+  # deleted with that release's deployment. Remove this exemption in the
+  # first commit after that release, once the check compares against it.
+  ignore_only:
+    FIELD_NO_DELETE:
+    - proto/agent/task/v1/recovery.proto
+    - proto/storage/task/v1/render_preview.proto
 modules:
 - path: proto
