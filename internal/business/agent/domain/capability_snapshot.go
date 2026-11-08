@@ -73,10 +73,8 @@ func (c CapabilitySnapshot) Validate() error {
 				return fmt.Errorf("%w: inconsistent effective parameters", ErrInvalidCapabilities)
 			}
 		}
-		for _, agent := range plugin.Release.Agents {
-			if agent.Name == c.StartupAgent {
-				roleFound = true
-			}
+		if plugin.Release.declaresAgent(c.StartupAgent) {
+			roleFound = true
 		}
 	}
 	if !roleFound {
@@ -85,10 +83,24 @@ func (c CapabilitySnapshot) Validate() error {
 	return nil
 }
 
+// TakesUp reports whether the Work can take up a Plugin's current release.
+// It cannot when the retained release declares the startup Agent and the
+// current one no longer does: the startup Agent stays as established, so
+// taking that release up would leave the Work without its role.
+func (c CapabilitySnapshot) TakesUp(current PluginRelease) bool {
+	for _, selected := range c.Plugins {
+		if selected.Release.Slug == current.Slug {
+			return !selected.Release.declaresAgent(c.StartupAgent) || current.declaresAgent(c.StartupAgent)
+		}
+	}
+	return true
+}
+
 // UpgradePlugins takes up the current release of every selected Plugin; the
 // selection, Prompt, startup Agent and Connectors stay as established. A
-// Plugin without a current release keeps its retained one, as Plugin
-// preparation degrades rather than blocks a start. A retained value that
+// Plugin without a current release, or whose current release no longer
+// declares the startup Agent, keeps its retained one, as Plugin preparation
+// degrades rather than blocks a start. A retained value that
 // differs from the old release's default was chosen by the starting user and
 // carries over while the new release still accepts it; any other parameter
 // takes the new release's default.
@@ -100,7 +112,7 @@ func (c CapabilitySnapshot) UpgradePlugins(current []PluginRelease) (CapabilityS
 	upgraded := c.Clone()
 	for i, selected := range upgraded.Plugins {
 		release, found := bySlug[selected.Release.Slug]
-		if !found {
+		if !found || !c.TakesUp(release) {
 			continue
 		}
 		chosen := pluginconfig.Configuration{}

@@ -75,6 +75,47 @@ func TestResumeKeepsTheRetainedReleaseOfAPluginWithNoCurrentOne(t *testing.T) {
 	require.Equal(t, domain.WorkStarting, work.State)
 }
 
+// A Plugin whose current release no longer declares the startup Agent keeps
+// its retained release and configuration, so the Work continues in its role;
+// every other Plugin still takes up its current release.
+func TestUpgradeKeepsTheRetainedReleaseOfAPluginThatDroppedTheStartupAgent(t *testing.T) {
+	retained, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{RequiredPlugins: []string{"review", "lint"}, DefaultStartupAgent: "review:worker"}, []domain.PluginRelease{pluginRelease("review", "1"), pluginRelease("lint", "1")})
+	require.NoError(t, err)
+	dropped := pluginRelease("review", "2")
+	dropped.Agents = []domain.AgentComponent{{Name: "review:other"}}
+	lint := pluginRelease("lint", "2")
+	lint.Agents = nil
+	require.False(t, retained.TakesUp(dropped))
+	require.True(t, retained.TakesUp(lint), "a release that never declared the startup Agent is not held back")
+
+	upgraded, err := retained.UpgradePlugins([]domain.PluginRelease{dropped, lint})
+	require.NoError(t, err)
+	bySlug := func(snapshot domain.CapabilitySnapshot) map[string]domain.SelectedPlugin {
+		plugins := map[string]domain.SelectedPlugin{}
+		for _, plugin := range snapshot.Plugins {
+			plugins[plugin.Release.Slug] = plugin
+		}
+		return plugins
+	}
+	require.Equal(t, bySlug(retained)["review"], bySlug(upgraded)["review"], "the Plugin keeps its retained release and configuration")
+	require.Equal(t, "2", bySlug(upgraded)["lint"].Release.Version)
+	require.Equal(t, "review:worker", upgraded.StartupAgent)
+}
+
+// Resume continues a Work whose startup Agent its Plugin's current release
+// dropped, on the retained release, instead of refusing it on every attempt.
+func TestResumeContinuesAWorkWhosePluginDroppedTheStartupAgent(t *testing.T) {
+	work, port := stoppedWork(t)
+	before := work.CapabilitySnapshot.Clone()
+	dropped := reviewV2()
+	dropped.Agents = nil
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-next"}, ModelConfigurationProvided: true, CurrentPlugins: []domain.PluginRelease{dropped}}
+	require.NoError(t, work.Resume(admission))
+	require.Equal(t, before, work.CapabilitySnapshot)
+	require.Equal(t, domain.WorkStarting, work.State)
+	require.Equal(t, "review:worker", port.launch().Capabilities.StartupAgent)
+}
+
 // Restart takes up current releases and the current Soul the same way.
 func TestRestartUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 	work, port := startingWork(t)

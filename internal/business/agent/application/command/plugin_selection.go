@@ -56,16 +56,21 @@ func resolveStartupCapabilities(ctx context.Context, catalog MarketplacePort, ca
 	return domain.NewCapabilitySnapshot(input, releases)
 }
 
-// PluginUpgrades reads the current release of each selected Plugin, which a
-// Resume or Restart takes up while keeping the selection. A Plugin it cannot
-// resolve is left out, so the Work keeps its retained release.
+// PluginUpgrades reads the current release of each Plugin a Work selected,
+// which a Resume or Restart takes up while keeping the selection. A Plugin it
+// cannot resolve, or whose current release the Work cannot take up, is left
+// out, so the Work keeps its retained release.
 type PluginUpgrades interface {
-	CurrentReleases(ctx context.Context, catalogUser string, selected []domain.SelectedPlugin) ([]domain.PluginRelease, error)
+	CurrentReleases(ctx context.Context, catalogUser string, capabilities domain.CapabilitySnapshot) ([]domain.PluginRelease, error)
 }
 
 // CatalogPluginUpgrades resolves current releases from Marketplace's catalog
-// as the requesting Owner sees it. An unavailable catalog or a withdrawn
-// Plugin degrades to the retained release instead of blocking the start.
+// as the requesting Owner sees it. An unavailable catalog, a withdrawn Plugin
+// or a current release that no longer declares the Work's startup Agent
+// degrades to the retained release instead of blocking the start. Each
+// degradation is logged for operators: a release that dropped an Agent still
+// in use calls for the Plugin's maintainer or a data migration, not for the
+// Work's user.
 type CatalogPluginUpgrades struct {
 	catalog MarketplacePort
 	logger  *slog.Logger
@@ -75,12 +80,12 @@ func NewCatalogPluginUpgrades(catalog MarketplacePort, logger *slog.Logger) *Cat
 	return &CatalogPluginUpgrades{catalog: catalog, logger: logger}
 }
 
-func (u *CatalogPluginUpgrades) CurrentReleases(ctx context.Context, catalogUser string, selected []domain.SelectedPlugin) ([]domain.PluginRelease, error) {
+func (u *CatalogPluginUpgrades) CurrentReleases(ctx context.Context, catalogUser string, capabilities domain.CapabilitySnapshot) ([]domain.PluginRelease, error) {
 	if strings.TrimSpace(catalogUser) == "" {
 		return nil, access.ErrAccessDenied
 	}
-	releases := make([]domain.PluginRelease, 0, len(selected))
-	for _, plugin := range selected {
+	releases := make([]domain.PluginRelease, 0, len(capabilities.Plugins))
+	for _, plugin := range capabilities.Plugins {
 		release, err := u.catalog.ResolvePlugin(ctx, catalogUser, plugin.Release.Slug)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
@@ -88,6 +93,12 @@ func (u *CatalogPluginUpgrades) CurrentReleases(ctx context.Context, catalogUser
 		if err != nil {
 			u.logger.WarnContext(ctx, "plugin keeps its retained release; its current release could not be resolved",
 				slog.String("plugin", plugin.Release.Slug), slog.String("retained_version", plugin.Release.Version), slog.Any("error", err))
+			continue
+		}
+		if !capabilities.TakesUp(release) {
+			u.logger.WarnContext(ctx, "plugin keeps its retained release; its current release no longer declares the Work's startup Agent",
+				slog.String("plugin", plugin.Release.Slug), slog.String("retained_version", plugin.Release.Version),
+				slog.String("current_version", release.Version), slog.String("startup_agent", capabilities.StartupAgent))
 			continue
 		}
 		releases = append(releases, release)

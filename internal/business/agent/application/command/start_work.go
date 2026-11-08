@@ -100,7 +100,7 @@ func (h workStartup) admit(ctx context.Context, request StartWork, operation sta
 	_, provided := h.models.Option(session.WorkModel)
 	// Each start takes up the current releases of the selected Plugins and the
 	// definition's current Soul (Agent model: Capability stability).
-	current, err := h.plugins.CurrentReleases(ctx, request.SubjectID, session.CapabilitySnapshot.Plugins)
+	current, err := h.plugins.CurrentReleases(ctx, request.SubjectID, session.CapabilitySnapshot)
 	if err != nil {
 		return false, err
 	}
