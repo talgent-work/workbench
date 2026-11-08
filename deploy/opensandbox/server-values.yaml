@@ -38,7 +38,7 @@ configToml: |
   port = 80
   [runtime]
   type = "kubernetes"
-  execd_image = "ghcr.io/talgent-work/execd@sha256:2e71df9ea1f2b23b0a32f31f252de7b84a0d10e9c27e3c4961a1f3fa6990d72b"
+  execd_image = "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd:v1.1.0@sha256:6cf7dba2f21f0b536e100563d841ac58a9f31c2b0a081b7ac76796a24d6f47e2"
   [egress]
   image = "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress:v1.1.7@sha256:db7345d567b0970f384b8e3fa7a93a71b7f43d4b16bb2009de34096e9a87b3b5"
   mode = "dns+nft"

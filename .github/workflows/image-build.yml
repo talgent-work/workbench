@@ -213,9 +213,6 @@ jobs:
           extra_inputs() {
             printf 'deploy/%s/' "$1"
           }
-          add_execd() {
-            MATRIX+=("$(jq -nc '{name: "execd", dockerfile: "deploy/execd/Dockerfile", build_args: ""}')")
-          }
           # A TS service's inputs: its own apps/<service>/ directory and those of
           # the workspace packages it depends on, transitively, such as
           # workbench-ui and the generated contracts.
@@ -245,7 +242,6 @@ jobs:
           service_exists() {
             local svc="$1"
             [ "$svc" = "sandbox" ] && return 0
-            [ "$svc" = "execd" ] && return 0
             local candidate
             for candidate in "${GO_SERVICES[@]}" "${TS_SERVICES[@]}"; do
               [ "$candidate" = "$svc" ] && return 0
@@ -256,10 +252,6 @@ jobs:
             local svc="$1"
             if [ "$svc" = "sandbox" ]; then
               add_sandbox
-              return 0
-            fi
-            if [ "$svc" = "execd" ]; then
-              add_execd
               return 0
             fi
             local candidate
@@ -282,7 +274,6 @@ jobs:
             echo "build_all=true — building all services"
             add_sandbox
             SANDBOX_BASE_REQUIRED=true
-            add_execd
             for svc in "${GO_SERVICES[@]}"; do add_go "$svc"; done
             for svc in "${TS_SERVICES[@]}"; do add_ts "$svc"; done
           elif [ -n "${SELECTED_SERVICES}" ]; then
@@ -293,7 +284,7 @@ jobs:
               svc="$(printf '%s' "$raw" | xargs | tr '[:upper:]' '[:lower:]')"
               [ -z "$svc" ] && continue
               if ! service_exists "$svc"; then
-                echo "::error::Unknown service '${svc}'. Valid services: sandbox execd ${GO_SERVICES[*]} ${TS_SERVICES[*]}"
+                echo "::error::Unknown service '${svc}'. Valid services: sandbox ${GO_SERVICES[*]} ${TS_SERVICES[*]}"
                 exit 1
               fi
               if [ "$svc" = "sandbox" ]; then
@@ -311,7 +302,6 @@ jobs:
               echo "No usable comparison base — building all services"
               add_sandbox
               SANDBOX_BASE_REQUIRED=true
-              add_execd
               for svc in "${GO_SERVICES[@]}"; do add_go "$svc"; done
               for svc in "${TS_SERVICES[@]}"; do add_ts "$svc"; done
             else
@@ -335,11 +325,6 @@ jobs:
               if echo "$DIFF" | grep -qE "$SANDBOX_INPUT_PATTERN"; then
                 echo "Native sandbox inputs changed — rebuilding sandbox"
                 add_sandbox
-              fi
-
-              if echo "$DIFF" | grep -qE '^(deploy/execd/|\.dockerignore$)'; then
-                echo "Native bootstrap inputs changed — rebuilding execd installer"
-                add_execd
               fi
 
               for svc in "${GO_SERVICES[@]}"; do
@@ -387,7 +372,7 @@ jobs:
           if [ "${RELEASE:-}" = "true" ] && [ "${BUILD_ALL}" != "true" ] && [ -z "${SELECTED_SERVICES}" ] && $DIFF_AVAILABLE; then
             BUILT=" $(printf '%s\n' "${MATRIX[@]}" | jq -r '.name' | tr '\n' ' ') "
             $SANDBOX_REQUIRED && BUILT+="sandbox "
-            for svc in sandbox execd "${GO_SERVICES[@]}" "${TS_SERVICES[@]}"; do
+            for svc in sandbox "${GO_SERVICES[@]}" "${TS_SERVICES[@]}"; do
               case "$BUILT" in *" $svc "*) continue ;; esac
               if docker buildx imagetools inspect "ghcr.io/talgent-work/${svc}:${PREV_TAG}" >/dev/null 2>&1; then
                 echo "Unchanged since ${PREV_TAG}: $svc — reusing its image"

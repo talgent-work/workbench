@@ -80,7 +80,6 @@ for dockerfile in Dockerfile deploy/controlplane/Dockerfile; do
   grep -Fq 'bash scripts/image-binaries.sh /out' "${ROOT_DIR}/${dockerfile}" || fail "${dockerfile} compiles from source as CI does"
 done
 grep -Fq 'FROM ${DIST} AS dist' "${ROOT_DIR}/apps/workbench-web/Dockerfile" || fail "the web image takes the CI build"
-assert_publishes "if: contains(inputs.matrix, '\"name\":\"execd\"')" "execd's shared HOME bootstrap is verified before it is published"
 
 # Native Sandbox is a released workload image. No Executor base-image chain remains.
 assert_publishes 'build-args: SANDBOX_BASE_IMAGE=${{ needs.sandbox-base.outputs.image }}' "sandbox environment digest"
@@ -134,7 +133,6 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
     ("full release", "true", "", "", "workflow_call", None, "true"),
     ("sandbox selection", "false", "sandbox", "", "workflow_dispatch", set(), "true"),
     ("dashboard selection", "false", "controlplane,workbench-web", "", "workflow_dispatch", {"controlplane", "workbench-web"}, "false"),
-    ("execd selection", "false", "execd", "", "workflow_dispatch", {"execd"}, "false"),
     ("retired Executor", "false", "executor", "", "push", set(), "false"),
     ("plugin authoring only", "false", "", "plugins/talgent-runtime/skills/triaging-inbox/SKILL.md", "push", set(), "false"),
     ("catalog dependency", "false", "", "internal/business/marketplace/infrastructure/catalog_sync.go", "push", {"controlplane"}, "false"),
@@ -142,8 +140,6 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
     ("catalog test only", "false", "", "internal/business/marketplace/infrastructure/catalog_sync_integration_test.go", "push", set(), "false"),
     ("Go dependency lock", "false", "", "go.sum", "push", {"controlplane", "dispatcher", "streamgateway", "computer-gateway"}, "false"),
     ("runtime plugin hook", "false", "", "plugins/talgent-runtime/hooks/open-actions.mjs", "push", set(), "false"),
-    ("execd bootstrap change", "false", "", "deploy/execd/trust-mitm-ca-nss.sh", "push", {"execd"}, "false"),
-    ("execd verification change", "false", "", "deploy/execd/verify-nss-bootstrap.py", "push", {"execd"}, "false"),
     ("Workbench web change", "false", "", "apps/workbench-web/src/app.tsx", "push", {"workbench-web"}, "false"),
     ("workbench-ui feeds the web app", "false", "", "packages/workbench-ui/lib/client.ts", "push", {"workbench-web"}, "false"),
     ("branch already built", "false", "", "", "push", set(), "false"),
@@ -155,7 +151,7 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
     ("a Go service's own deploy directory", "false", "", "deploy/computer-gateway/Dockerfile", "push", {"computer-gateway"}, "false"),
     ("sandbox environment", "false", "", "deploy/sandbox/Dockerfile.base", "push", set(), "true"),
     ("sandbox assembly", "false", "", "deploy/sandbox/Dockerfile", "push", set(), "true"),
-    ("build context rules", "false", "", ".dockerignore", "push", {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web", "execd"}, "true"),
+    ("build context rules", "false", "", ".dockerignore", "push", {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web"}, "true"),
     ("branch docs only", "false", "", "docs/guide.md", "push", set(), "false"),
     # These run the real substantive filter: the listed files are identical at
     # both revisions, as a comment-only change compiles to the same code.
@@ -191,7 +187,7 @@ for name, build_all, selected, changed, event, expected, sandbox_required in [
             assert values["go"] == str(bool(names & {"controlplane", "dispatcher", "streamgateway", "computer-gateway"})).lower(), (name, values)
             assert values["web"] == str("workbench-web" in names).lower(), (name, values)
             if build_all == "true":
-                assert names == {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web", "execd"}, names
+                assert names == {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web"}, names
             if expected is not None:
                 assert names == expected, names
         print(name+": PASS")
@@ -209,7 +205,7 @@ b = body.rindex("\n\n", a, body.index("\n  go-binaries:", a))  # the job after s
 script = "\n".join(line[10:] for line in body[a:b].splitlines()[1:])
 script = script.replace("${{ github.event.repository.default_branch || 'master' }}", "master")
 script = script.replace('go run ./scripts/ci/substantive "$1" "$2"', 'cat')
-everything = {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web", "execd", "sandbox"}
+everything = {"controlplane", "dispatcher", "streamgateway", "computer-gateway", "workbench-web", "sandbox"}
 for name, changed, missing, built, sandbox in [
     ("release of a Workbench web change", "apps/workbench-web/src/app.tsx", "", {"workbench-web"}, "false"),
     ("release of a shared Go change", "internal/pkg/taskqueue/runtime.go", "", {"controlplane", "dispatcher", "streamgateway", "computer-gateway"}, "false"),

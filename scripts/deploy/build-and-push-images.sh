@@ -15,11 +15,6 @@ for svc in "${services[@]}"; do
   build_service "${svc}"
 done
 
-execd_image="${REGISTRY}/execd:${TAG}"
-docker build -f deploy/execd/Dockerfile -t "${execd_image}" .
-python3 deploy/execd/verify-nss-bootstrap.py "${execd_image}"
-push_image "${execd_image}"
-
 sandbox_base="${REGISTRY}/sandbox-base:env-$(cat deploy/sandbox/Dockerfile.base .dockerignore | sha256sum | cut -d' ' -f1)"
 if ! docker image inspect "${sandbox_base}" >/dev/null 2>&1; then
   docker build -f deploy/sandbox/Dockerfile.base -t "${sandbox_base}" .
