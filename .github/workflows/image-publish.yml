@@ -6,8 +6,8 @@ name: Image Publish
 #
 # The Go images and the web app's compile nothing: each takes the binaries
 # (artifact image-binaries, BINARY=prebuilt) or the web app (artifact
-# web-dist, DIST=prebuilt) built before it. execd and the sandbox compile
-# nothing of ours and build as they are.
+# web-dist, DIST=prebuilt) built before it. The sandbox compiles nothing of
+# ours and builds as it is.
 on:
   workflow_call:
     inputs:
@@ -70,14 +70,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify shared HOME bootstrap with real NSS
-        if: contains(inputs.matrix, '"name":"execd"')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libnss3-tools
-          docker build -f deploy/execd/Dockerfile -t talgent-execd:nss-check .
-          python3 deploy/execd/verify-nss-bootstrap.py talgent-execd:nss-check
 
       - name: Package and push
         if: inputs.matrix != '[]'

@@ -8,7 +8,7 @@ REGISTRY="${TALGENT_REGISTRY:-ghcr.io/talgent-work}"
 # an overlay deploys belongs to another product's release and takes
 # OVERLAY_TAG.
 WORKBENCH_IMAGES=(
-  controlplane dispatcher streamgateway computer-gateway workbench-web execd sandbox sandbox-base
+  controlplane dispatcher streamgateway computer-gateway workbench-web sandbox sandbox-base
 )
 # A tree carries no release of its own images: the tag names them.
 if [[ -z "${TALGENT_IMAGE_TAG:-}" ]]; then
