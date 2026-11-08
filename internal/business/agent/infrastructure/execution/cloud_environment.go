@@ -87,7 +87,7 @@ func (c cloudEnvironment) claim(ctx context.Context, record executionRecord) ([]
 	if err != nil {
 		return nil, err
 	}
-	return c.credentials.plan(ctx, request.HomeBinding.OwnerID, record.SessionID)
+	return c.credentials.plan(ctx, request.RepresentedPerson, record.SessionID)
 }
 
 func (c cloudEnvironment) create(ctx context.Context, record executionRecord) (string, error) {
@@ -191,7 +191,7 @@ func (cloudEnvironment) workCredential(record executionRecord) (string, error) {
 	return spec.Env[workCredentialEnv], nil
 }
 
-func (c cloudEnvironment) deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
+func (c cloudEnvironment) deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
 	admitted, err := decodeStartRequest(record.RequestJSON)
 	if err != nil {
 		return deliveredCredentials{}, oops.With("operation", "decode_native_request").Wrap(err)
@@ -200,7 +200,7 @@ func (c cloudEnvironment) deliver(ctx context.Context, record executionRecord, r
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
 		return deliveredCredentials{}, oops.With("operation", "decode_native_spec").Wrap(err)
 	}
-	return c.credentials.prepare(ctx, record, admitted, spec, redelivery, holding)
+	return c.credentials.prepare(ctx, record, admitted, spec, supply, redelivery, holding)
 }
 
 func (c cloudEnvironment) withdraw(ctx context.Context, record executionRecord) error {

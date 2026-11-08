@@ -232,7 +232,7 @@ func (s *AgentWork) confirmTermination() {
 	p := s.HarnessProcess
 	if s.State == WorkClosing && (p == nil || (p.ComputeReclaimed && (p.ended() || p.EnvironmentLost))) {
 		s.State = WorkClosed
-		s.record(WorkClosedEvent{WorkID: s.ID, WorkspaceReference: s.WorkspaceReference})
+		s.record(WorkClosedEvent{WorkID: s.ID, Cloud: s.ComputerKind == ComputerCloud})
 	} else if s.State == WorkStopping && p.Exited && p.ComputeReclaimed {
 		s.State = WorkStopped
 		s.endExecution()

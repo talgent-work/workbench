@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -48,7 +49,7 @@ func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	client := agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	_, err := client.CreateWork(context.Background(), &agentprivatev1.CreateWorkRequest{SubjectId: "untrusted", AgentId: "agent", WorkspaceReference: "other-workspace"})
+	_, err := client.CreateWork(context.Background(), &agentprivatev1.CreateWorkRequest{SubjectId: "untrusted", AgentId: "agent"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 	_, err = client.GetAgentDefinitionForPurpose(context.Background(), &agentprivatev1.GetAgentDefinitionForPurposeRequest{UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "other"}, Purpose: "work"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
@@ -112,28 +113,30 @@ func storageStub() fx.Option {
 
 type stubStorage struct{ command.StoragePort }
 
-func (stubStorage) AcquireMounts(_ context.Context, request domain.SandboxMountRequest) (domain.SandboxMounts, error) {
-	mounts := domain.SandboxMounts{Workspace: &domain.MountGrant{ClaimName: "nas", SubPath: "workspaces/" + request.WorkspaceReference}, Home: domain.MountGrant{ClaimName: "nas", SubPath: "homes/" + request.HomeOwner}}
-	if request.InputSource.Present() {
-		mounts.Inputs = &domain.MountGrant{ClaimName: "inputs", SubPath: "attachments/" + request.InputSource.Reference, ReadOnly: true}
-	}
-	for _, mount := range request.ReadOnlyMounts {
-		if mounts.ReadOnly == nil {
-			mounts.ReadOnly = map[string]domain.MountGrant{}
-		}
-		mounts.ReadOnly[mount.Name] = domain.MountGrant{ClaimName: "inputs", SubPath: "references/" + mount.Reference, ReadOnly: true}
+func (stubStorage) AcquireMounts(_ context.Context, workID string, requests []domain.DirectoryMount) (domain.SandboxMounts, error) {
+	mounts := make(domain.SandboxMounts, 0, len(requests))
+	for i, request := range requests {
+		mounts = append(mounts, domain.MountGrant{ClaimName: "nas", SubPath: fmt.Sprintf("directories/%s/%d", workID, i), ReadOnly: request.ReadOnly})
 	}
 	return mounts, nil
 }
 
-func (stubStorage) RequestWorkspaceReclamation(context.Context, string, string) error { return nil }
+func (stubStorage) OpenDirectory(context.Context, domain.LocatedDirectory) (string, error) {
+	return "space-token", nil
+}
+
+func (stubStorage) ListFiles(context.Context, domain.Directory) ([]command.SpaceFile, error) {
+	return nil, nil
+}
+
+func (stubStorage) RequestWorkReclamation(context.Context, string) error { return nil }
 
 // Module tests use the real publication transport. Unauthenticated requests do
 // not connect; lifecycle fixtures exercise current schema and real NATS wiring.
 func sessionStateTransport(t *testing.T) fx.Option {
 	t.Helper()
 	serverURL := middlewaretest.Environment(t, "TALGENT_TEST_NATS_URL")
-	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() query.RootTurnResultReader { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }),
+	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() query.DispatcherMessageLogPort { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }),
 		// The Library reads' native callers are verified by the native API in
 		// front; no test here reaches it.
 		fx.Provide(func() (*nativeauth.LiveWorkClient, error) {

@@ -39,9 +39,9 @@ const (
 	RunLongExecutionStepType taskqueue.TaskType = "agent.execution.run-long-step.v1"
 	RecoverWorkType          taskqueue.TaskType = "agent.work.recover.v1"
 	SweepRecoveryType        taskqueue.TaskType = "agent.recovery.sweep.v1"
-	// RequestWorkspaceReclamationType delivers a Closed Work's one request to
+	// RequestWorkReclamationType delivers a Closed Work's one request to
 	// Storage; it is a delivery, not a recovery obligation of the Work.
-	RequestWorkspaceReclamationType taskqueue.TaskType = "agent.workspace.request-reclamation.v1"
+	RequestWorkReclamationType taskqueue.TaskType = "agent.workspace.request-reclamation.v1"
 )
 
 // NewReconcileExecution wakes the execution's short steps.
@@ -59,11 +59,8 @@ func NewRecoverWork(workID string) (taskqueue.Task, error) {
 	return keyed(RecoverWorkType, RecoveryQueue, "work", workID, &agenttaskv1.RecoverWorkTaskV1{WorkId: workID})
 }
 
-func NewRequestWorkspaceReclamation(workID, workspaceReference string) (taskqueue.Task, error) {
-	if strings.TrimSpace(workspaceReference) == "" {
-		return taskqueue.Task{}, taskqueue.ErrNilPayload
-	}
-	return keyed(RequestWorkspaceReclamationType, RecoveryQueue, "workspace-reclamation", workID, &agenttaskv1.RequestWorkspaceReclamationTaskV1{WorkId: workID, WorkspaceReference: workspaceReference})
+func NewRequestWorkReclamation(workID string) (taskqueue.Task, error) {
+	return keyed(RequestWorkReclamationType, RecoveryQueue, "workspace-reclamation", workID, &agenttaskv1.RequestWorkspaceReclamationTaskV1{WorkId: workID})
 }
 
 // NewSweepRecovery is the static envelope fired by the periodic sweep. It has

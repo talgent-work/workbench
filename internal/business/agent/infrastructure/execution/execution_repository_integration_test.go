@@ -33,7 +33,7 @@ func begin(t *testing.T, repository *AgentExecutionRepository, workID string, ad
 	t.Helper()
 	launch := request()
 	launch.WorkID = workID
-	launch.AuthorizationSelection = domain.WorkAuthorizationSelection{OwnerUserID: launch.HomeBinding.OwnerID, Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: usedAuthorization, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
+	launch.AuthorizationSelection = domain.WorkAuthorizationSelection{OwnerUserID: launch.RepresentedPerson, Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: usedAuthorization, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
 	run, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: domain.WorkStartAdmitted{WorkID: workID, StartAdmittedAt: admittedAt, DeskID: "desk-" + workID}, Launch: launch, Realization: realization})
 	require.NoError(t, err)
 	require.NoError(t, repository.Save(context.Background(), run))
@@ -86,7 +86,8 @@ func TestAgentExecutionRepositoryRoundTripsUnderItsVersion(t *testing.T) {
 	require.Equal(t, domain.ExecutionStarting, stored.State)
 	require.Equal(t, run.Launch.WorkID, stored.Launch.WorkID)
 	require.Equal(t, run.Launch.Capabilities, stored.Launch.Capabilities)
-	require.Equal(t, run.Launch.HomeBinding, stored.Launch.HomeBinding)
+	require.Equal(t, run.Launch.LocatedLayout, stored.Launch.LocatedLayout)
+	require.Equal(t, run.Launch.RepresentedPerson, stored.Launch.RepresentedPerson)
 	require.True(t, run.Launch.PreparationBound.Equal(stored.Launch.PreparationBound))
 	latest, err := repository.Latest(ctx, launch.WorkID)
 	require.NoError(t, err)
@@ -179,10 +180,6 @@ func TestExecutionQueryRepositoryFindsTheExecutionsAChangeConcerns(t *testing.T)
 	managed := begin(t, repository, "lookup-managed", now, domain.RealizationManaged)
 	managedRetired := begin(t, repository, "lookup-managed-retired", now, domain.RealizationManaged)
 	retire(t, repository, managedRetired, now, false)
-	for _, id := range []string{live.ID, managed.ID, managedRetired.ID} {
-		_, err := db.Exec("UPDATE agent_execution SET input_owner = ? WHERE id = ?", "input-owner", id)
-		require.NoError(t, err)
-	}
 
 	t.Run("outstanding executions page unretired and unreleased ones in id order", func(t *testing.T) {
 		want := []string{live.ID, retired.ID, managed.ID, managedRetired.ID}
@@ -217,14 +214,15 @@ func TestExecutionQueryRepositoryFindsTheExecutionsAChangeConcerns(t *testing.T)
 		require.Empty(t, blank)
 	})
 
-	t.Run("an input source concerns the unretired managed executions reading it", func(t *testing.T) {
-		reading, err := lookups.ListExecutionsReadingInputs(ctx, "input-owner")
+	t.Run("an inputs Directory concerns the unretired managed executions reading it", func(t *testing.T) {
+		// Every execution here reads the inputs testLayout located.
+		reading, err := lookups.ListExecutionsReadingInputs(ctx, testLayout().Inputs.Directory)
 		require.NoError(t, err)
 		require.Equal(t, []string{managed.ID}, reading, "a cloud or retired execution syncs no inputs")
-		other, err := lookups.ListExecutionsReadingInputs(ctx, "other-owner")
+		other, err := lookups.ListExecutionsReadingInputs(ctx, workDirectory("other-work", "inputs"))
 		require.NoError(t, err)
 		require.Empty(t, other)
-		blank, err := lookups.ListExecutionsReadingInputs(ctx, "")
+		blank, err := lookups.ListExecutionsReadingInputs(ctx, domain.Directory{})
 		require.NoError(t, err)
 		require.Empty(t, blank)
 	})

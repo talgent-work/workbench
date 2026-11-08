@@ -108,7 +108,7 @@ func startingCreationDatabase(t *testing.T) (*xorm.Engine, *infrastructure.Agent
 	t.Cleanup(func() { _ = db.Close() })
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	works := infrastructure.NewAgentWorkRepository(db, time.Now)
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}, Capabilities: domain.CapabilityConfiguration{RequiredPlugins: []string{"runtime"}}})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, Capabilities: domain.CapabilityConfiguration{RequiredPlugins: []string{"runtime"}}})
 	require.NoError(t, err)
 	require.NoError(t, definitions.Save(t.Context(), agent))
 	agent, err = definitions.Get(t.Context(), agent.ID)
@@ -117,7 +117,7 @@ func startingCreationDatabase(t *testing.T) (*xorm.Engine, *infrastructure.Agent
 }
 
 func creationInput(agentID, reference string) command.CreateWork {
-	return command.CreateWork{StartingUserID: "owner", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agentID, WorkspaceReference: reference, Subject: domain.WorkSubject{Kind: "case", ID: reference}, ProjectID: "project"}
+	return command.CreateWork{StartingUserID: "owner", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agentID, Subject: domain.WorkSubject{Kind: "case", ID: reference}, ProjectID: "project"}
 }
 func creationModels() query.ModelConfigurations {
 	return query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "fixture"}})

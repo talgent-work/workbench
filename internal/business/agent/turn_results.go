@@ -19,7 +19,7 @@ import (
 // only a process that composes Module with it reads them.
 var TurnResultModule = fx.Module("agent.turn_results",
 	fx.Provide(
-		fx.Annotate(turnresults.NewReader, fx.As(new(query.RootTurnResultReader))),
+		fx.Annotate(turnresults.NewReader, fx.As(new(query.DispatcherMessageLogPort))),
 		query.NewWorkTurnResults,
 	),
 	fx.Invoke(registerTurnResultHandler),

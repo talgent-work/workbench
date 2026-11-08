@@ -10,43 +10,24 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// Where each granted space appears in the sandbox.
-const (
-	workspaceMountPath  = "/workspace"
-	homeMountPath       = "/home/talgent"
-	workInputsMountPath = "/workspace/inputs"
-)
+// homeMountPath is the sandbox's HOME, where the layout's $HOME is mounted.
+const homeMountPath = "/home/talgent"
 
-// sandboxVolumes places the grants Storage issued: the workspace and HOME
-// read-write, the input source's Attachments read-only at /workspace/inputs
-// and each read-only mount at /workspace/<name>, the name its caller gave. A Work
-// without a Session Workspace writes to the sandbox's own /workspace, which
-// ends with it. A grant is used exactly as issued; a missing or mis-scoped
-// grant fails the start.
+// sandboxVolumes places the grants Storage issued for the Work's located
+// layout, one per located Directory in layout order, each at its path with
+// $HOME at the sandbox's HOME and in its access mode. A grant is used
+// exactly as issued; a missing, surplus or mis-scoped grant fails the start.
 func sandboxVolumes(request domain.LaunchSpecification, mounts domain.SandboxMounts) ([]sdk.Volume, error) {
-	if !validGrant(mounts.Home, false) {
+	located := request.LocatedLayout.Mounts
+	if len(located) != len(mounts) {
 		return nil, domain.ErrExecutionRequest
 	}
-	var volumes []sdk.Volume
-	if request.WorkspaceReference != "" {
-		if mounts.Workspace == nil || !validGrant(*mounts.Workspace, false) {
+	volumes := make([]sdk.Volume, 0, len(located))
+	for i, mount := range located {
+		if !validGrant(mounts[i], mount.ReadOnly) {
 			return nil, domain.ErrExecutionRequest
 		}
-		volumes = append(volumes, volume("workspace", workspaceMountPath, *mounts.Workspace))
-	}
-	volumes = append(volumes, volume("home", homeMountPath, mounts.Home))
-	if request.InputSource.Present() {
-		if mounts.Inputs == nil || !validGrant(*mounts.Inputs, true) {
-			return nil, domain.ErrExecutionRequest
-		}
-		volumes = append(volumes, volume("inputs", workInputsMountPath, *mounts.Inputs))
-	}
-	for i, mount := range request.ReadOnlyMounts {
-		grant, granted := mounts.ReadOnly[mount.Name]
-		if !granted || !validGrant(grant, true) {
-			return nil, domain.ErrExecutionRequest
-		}
-		volumes = append(volumes, volume(fmt.Sprintf("read-only-%d", i), path.Join(workspaceMountPath, mount.Name), grant))
+		volumes = append(volumes, volume(fmt.Sprintf("directory-%d", i), domain.SandboxPath(mount.Path, homeMountPath), mounts[i]))
 	}
 	return volumes, nil
 }

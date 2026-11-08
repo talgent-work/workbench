@@ -24,8 +24,6 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
 	input.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
-	input.InputSource = domain.WorkInputSource{Reference: "file-space/case-1", SpaceToken: "space-token"}
-	f.inputs.owners = map[string]string{"file-space/case-1": "case-credentials"}
 	record := f.launch(t, f.begin(t, input).ID)
 	require.True(t, record.CredentialsDelivered)
 	require.Equal(t, "harness-handle", record.ProcessID)

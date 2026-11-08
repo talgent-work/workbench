@@ -50,7 +50,7 @@ func config() SandboxConfig {
 	}}
 }
 func request() domain.LaunchSpecification {
-	return domain.LaunchSpecification{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "session", Capabilities: domain.CapabilitySnapshot{Prompt: "fixed prompt\n", Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, HarnessSessionReference: "context", ContextMode: domain.ContextContinue, WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}}
+	return domain.LaunchSpecification{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "session", Capabilities: domain.CapabilitySnapshot{Prompt: "fixed prompt\n", Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, HarnessSessionReference: "context", ContextMode: domain.ContextContinue, RepresentedPerson: "user-home", AgentHarness: "claude-code", LocatedLayout: testLayout()}
 }
 
 const fixtureAllocationID = "01900000-0000-7000-8000-000000000001"
@@ -276,9 +276,6 @@ func (f *lifecycleFixture) listed(filter string) []sdk.SandboxInfo {
 	return items
 }
 
-// testMounts are the Mount Grants Storage issues for request's spaces.
-var testMounts = domain.SandboxMounts{Workspace: &domain.MountGrant{ClaimName: "nas-root", SubPath: "workspaces/key"}, Home: domain.MountGrant{ClaimName: "nas-root", SubPath: "homes/key"}}
-
 func sandboxClient(t *testing.T) (*Sandboxes, *fake.Clientset, *lifecycleFixture) {
 	t.Helper()
 	fixture := &lifecycleFixture{endpoint: "192.0.2.8:44772"}
@@ -317,14 +314,13 @@ func TestNativeSandboxSubmissionRetainsHomeAndWorkspaceWithoutExecutor(t *testin
 	}
 
 	require.Equal(t, "/home/talgent", spec.Env["HOME"])
-	require.Equal(t, "/home/talgent/.claude", spec.Env["CLAUDE_CONFIG_DIR"])
-	require.Regexp(t, "^[a-f0-9]{64}$", spec.Env["CLAUDE_CODE_PROJECT_DIR_NAME"])
-	projectDirectory := spec.Env["CLAUDE_CODE_PROJECT_DIR_NAME"]
+	require.Equal(t, "/home/talgent/.claude", spec.Env["CLAUDE_CONFIG_DIR"], "the Agent Harness keeps its state at its own mount")
 	require.Equal(t, "500m", spec.ResourceRequests["cpu"])
 	require.Equal(t, "1Gi", spec.ResourceLimits["memory"])
-	require.Len(t, spec.Volumes, 2)
+	require.Len(t, spec.Volumes, 4)
 	paths := map[string]string{}
 	claims := map[string]string{}
+	readOnly := map[string]bool{}
 	for _, mount := range spec.Volumes {
 		claims[mount.MountPath] = mount.PVC.ClaimName
 		require.NotNil(t, mount.PVC.DeleteOnSandboxTermination)
@@ -332,18 +328,13 @@ func TestNativeSandboxSubmissionRetainsHomeAndWorkspaceWithoutExecutor(t *testin
 		require.False(t, *mount.PVC.CreateIfNotExists)
 		require.Nil(t, mount.Host)
 		paths[mount.MountPath] = mount.SubPath
+		readOnly[mount.MountPath] = mount.ReadOnly
 	}
-	// Storage chose each space; the sandbox mounts its grants as issued.
-	require.Equal(t, map[string]string{"/workspace": "nas-root", "/home/talgent": "nas-root"}, claims)
-	require.Equal(t, map[string]string{"/workspace": "workspaces/key", "/home/talgent": "homes/key"}, paths)
-	other := input
-	other.WorkID = "other-session"
-	other.HarnessSessionReference = "new-context"
-	other.HomeBinding.Namespace = "../other/project"
-	_, err = provider.submitRequest(context.Background(), other, "execd-secret-2")
-	require.NoError(t, err)
-	require.Regexp(t, "^[a-f0-9]{64}$", fixture.create.Env["CLAUDE_CODE_PROJECT_DIR_NAME"], "opaque namespaces must not become relative filesystem paths")
-	require.NotEqual(t, projectDirectory, fixture.create.Env["CLAUDE_CODE_PROJECT_DIR_NAME"])
+	// Storage chose each Directory; the sandbox mounts its grants as issued,
+	// each at its located path with $HOME at the sandbox's HOME.
+	require.Equal(t, map[string]string{"/home/talgent": "nas-root", "/workspace": "nas-root", "/home/talgent/.claude": "nas-root", "/workspace/inputs": "juicefs-inputs"}, claims)
+	require.Equal(t, map[string]string{"/home/talgent": "homes/key", "/workspace": "workspaces/key", "/home/talgent/.claude": "harness/key", "/workspace/inputs": "talgent/inputs/key"}, paths)
+	require.Equal(t, map[string]bool{"/home/talgent": false, "/workspace": false, "/home/talgent/.claude": false, "/workspace/inputs": true}, readOnly)
 }
 
 // Observation lists only the sandboxes carrying the execution's exact
@@ -393,16 +384,6 @@ func TestSandboxCreateFailureDoesNotRetryOrExposeResponseBody(t *testing.T) {
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "must-not-leak-token")
 	require.Equal(t, 1, fixture.creates)
-}
-
-func TestSandboxWithoutInputSourceMountsNoInputsClaim(t *testing.T) {
-	provider, _, _ := sandboxClient(t)
-	input := request()
-	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "test-token", "work-credential-fixture")
-	require.NoError(t, err)
-	for _, volume := range spec.Volumes {
-		require.NotEqual(t, workInputsMountPath, volume.MountPath)
-	}
 }
 
 func TestSandboxEndpointRequiresCurrentIdentityAndResolvesAgain(t *testing.T) {

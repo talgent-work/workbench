@@ -60,7 +60,7 @@ func (realizedEnvironments) SubmitCreation(_ context.Context, e *domain.AgentExe
 func (realizedEnvironments) DeleteEnvironment(context.Context, *domain.AgentExecution, string) error {
 	return nil
 }
-func (realizedEnvironments) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
+func (realizedEnvironments) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, _ command.CredentialSupply, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
 	return domain.CredentialDelivery{}, holding(ctx)
 }
 func (realizedEnvironments) WithdrawCredentials(context.Context, *domain.AgentExecution) error {
@@ -76,7 +76,7 @@ func (realizedEnvironments) Launch(ctx context.Context, _ *domain.AgentExecution
 	return launchedProcess, nil
 }
 func (realizedEnvironments) Connect(context.Context, *domain.AgentExecution) error { return nil }
-func (realizedEnvironments) SyncInputs(ctx context.Context, e *domain.AgentExecution, holding command.EnvironmentHolding) (int64, error) {
+func (realizedEnvironments) SyncInputs(ctx context.Context, e *domain.AgentExecution, _ command.ManagedInputs, holding command.EnvironmentHolding) (int64, error) {
 	return e.Inputs.Due, holding(ctx)
 }
 func (realizedEnvironments) RenewLease(_ context.Context, _ *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {

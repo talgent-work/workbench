@@ -64,7 +64,6 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 		preparation.WorkBranch = "talgent/" + key
 		creation.InitialExecution = &preparation
 		creation.RequestID = preparation.RequestID
-		creation.WorkspaceReference = uuid.NewString()
 		creation.Subject, creation.ProjectID = domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, projectID
 		id, e := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels())).Handle(ctx, creation)
 		require.NoError(t, e)
@@ -210,10 +209,10 @@ func insertStartingWorks(t *testing.T, db *xorm.Engine, agentID, startedBy strin
 	values := make([]string, n)
 	args := make([]any, 0, 8*n)
 	for i := range values {
-		values[i] = "(?, ?, ?, 'case', ?, ?, 1, '{}', '', '', '{}', '{}', '', ?, 'personal', 1, ?, ?, 0)"
+		values[i] = "(?, ?, ?, 'case', ?, ?, 1, '{}', '', 'claude-code', '{\"mounts\":[]}', '{}', '{}', '', ?, 1, ?, ?, 0)"
 		args = append(args, uuid.NewString(), agentID, startedBy, uuid.NewString(), project(), startedBy, createdAt, createdAt)
 	}
-	_, err := db.Exec(append([]any{"INSERT INTO agent_session (id, agent_id, started_by, subject_kind, subject_id, project_ref, state, capabilities, context_ref, workspace_ref, trace_attributes, harness_process, failure_reason, home_owner_id, home_namespace, version, created_at, updated_at, deleted_at) VALUES " + strings.Join(values, ",")}, args...)...)
+	_, err := db.Exec(append([]any{"INSERT INTO agent_session (id, agent_id, started_by, subject_kind, subject_id, project_ref, state, capabilities, context_ref, agent_harness, located_layout, trace_attributes, harness_process, failure_reason, represented_person, version, created_at, updated_at, deleted_at) VALUES " + strings.Join(values, ",")}, args...)...)
 	require.NoError(t, err)
 }
 

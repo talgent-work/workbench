@@ -9,33 +9,40 @@ import (
 
 	marketplaceintegrationv1 "github.com/talgent-work/contracts/gen/go/marketplace/integration/v1"
 	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
 )
 
-type changedSpaces []string
+type changedDirectories []domain.Directory
 
-func (c *changedSpaces) InputsChanged(_ context.Context, owner string) error {
-	*c = append(*c, owner)
+func (c *changedDirectories) InputsChanged(_ context.Context, directory domain.Directory) error {
+	*c = append(*c, directory)
 	return nil
 }
 
-// Every change of an Attachment, whatever its operation, wakes the inputs of
-// the space's owner; an Artifact is no Work's input.
-func TestAttachmentChangesWakeTheirSpacesInputs(t *testing.T) {
-	changed := &changedSpaces{}
+func directoryOf(condition, value, name string) *storageintegrationv1.Directory {
+	return &storageintegrationv1.Directory{Owner: []*storageintegrationv1.OwnerFact{{Condition: condition, Value: value}}, Name: name}
+}
+
+// Every change in a Directory, whatever its operation, wakes the Works
+// reading that Directory; a change naming no Directory wakes none.
+func TestFileChangesWakeTheirDirectorysReaders(t *testing.T) {
+	changed := &changedDirectories{}
 	handler := messagehandler.NewFileChangedHandler(changed)
 	require.Equal(t, []integrationmessage.Kind{"storage.integration.v1.FileChangedV1"}, handler.Listening())
 	for _, fact := range []*storageintegrationv1.FileChangedV1{
-		{Owner: "owner-1", Kind: storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT, Name: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
-		{Owner: "owner-1", Kind: storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT, Name: "b.pdf", PreviousName: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED},
-		{Owner: "owner-2", Kind: storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT, Name: "b.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_DELETED},
-		{Owner: "owner-3", Kind: storageintegrationv1.FileKind_FILE_KIND_ARTIFACT, Name: "report.md", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
+		{Directory: directoryOf("subject", "case:1", "inputs"), Name: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
+		{Directory: directoryOf("subject", "case:1", "inputs"), Name: "b.pdf", PreviousName: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED},
+		{Directory: directoryOf("work", "work-2", "inputs"), Name: "b.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_DELETED},
+		{Name: "report.md", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
 	} {
 		msg, err := integrationmessage.New(integrationmessage.KindOf(fact), fact)
 		require.NoError(t, err)
 		require.NoError(t, handler.Handle(context.Background(), msg))
 	}
-	require.Equal(t, changedSpaces{"owner-1", "owner-1", "owner-2"}, *changed)
+	caseInputs := domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:1"}}, Name: "inputs"}
+	workInputs := domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "work-2"}}, Name: "inputs"}
+	require.Equal(t, changedDirectories{caseInputs, caseInputs, workInputs}, *changed)
 
 	other := &marketplaceintegrationv1.CredentialChangedV1{AuthorizationId: "authorization-1"}
 	msg, err := integrationmessage.New(integrationmessage.KindOf(other), other)

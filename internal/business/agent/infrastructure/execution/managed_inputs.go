@@ -7,60 +7,42 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/samber/oops"
+
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 )
 
-// A Work on a Managed Computer has its input source's Attachments as current
-// read-only copies under <work root>/inputs, as a Cloud Work has them mounted
-// at /workspace/inputs. Agent hands the machine the whole list with a fresh
-// Access Link for each.
+// A Work on a Managed Computer has the files of its located inputs as
+// current read-only copies under <work root>/inputs, as a Cloud Work has them
+// mounted at /workspace/inputs (Managed layout). Agent hands the machine the
+// whole list with a fresh Access Link for each, which Application obtained
+// from Storage.
 //
 // Syncing the inputs is its own step, never a Required Startup Step: the
 // first delivery attempts it once and a failure there is only logged, so a
 // start never waits for or fails on it. The execution keeps its own due
 // marker (inputs_due): a new Managed execution starts due, a File Change
-// Published Fact for the input source's File Space adds to it, and a sync
-// clears only the marks it read, so a change during a sync stays due. The
-// recovery sweep finds a due execution and syncs it again. The input
-// source's File Space owner, recorded by the sync before it lists, lets a
+// Published Fact for its located inputs adds to it, and a sync clears only the
+// marks it read, so a change during a sync stays due. The recovery sweep
+// finds a due execution and syncs it again. The located inputs Directory,
+// recorded with the execution when it begins (inputs_directory), lets a
 // change find its executions by an indexed query.
 //
 // A manifest's Access Links expire (storage.link-ttl), and the machine stops
 // retrying a download within that lifetime, so a copy it could not fetch
 // would stay stale without another change. Each successful sync records when
 // it happened (inputs_synced_at), and the recovery sweep marks the inputs of
-// a live execution with an input source due again once that is older than
+// a live execution with located inputs due again once that is older than
 // the refresh interval; the machine skips the files it already holds.
-
-// WorkInputFiles is Storage's File Space Contract as the Managed realization
-// reads a Work's input source. Agent keeps the source opaque.
-type WorkInputFiles interface {
-	// InputOwner names the File Space owner of the input source; empty when
-	// it names none.
-	InputOwner(ctx context.Context, source string) (string, error)
-	// InputAttachments lists the Attachments of owner's File Space, each with
-	// a fresh Access Link the Work downloads it through.
-	InputAttachments(ctx context.Context, owner string) ([]InputAttachment, error)
-}
-
-// InputAttachment is one Attachment and the path of its Access Link, as
-// Storage issues it for the platform's public address.
-type InputAttachment struct {
-	Name       string
-	SizeBytes  int64
-	UpdatedAt  time.Time
-	AccessPath string
-}
 
 // inputDelivery is an authority whose Works receive their inputs as copies
 // the platform hands their machine.
 type inputDelivery interface {
 	// syncInputs hands the machine the current inputs of the execution's
 	// Work; the execution records the changes it covered.
-	syncInputs(ctx context.Context, record executionRecord) error
+	syncInputs(ctx context.Context, record executionRecord, inputs command.ManagedInputs) error
 	// refresh is how long synced input copies stay current.
 	refresh() time.Duration
 }
@@ -83,7 +65,7 @@ type inputManifestFile struct {
 // deliverInputs replaces the Work's input manifest on its machine. Each link
 // is the Access Link's grant on the Gateway's content address, which the
 // machine downloads with the Work's identity.
-func (m *ManagedComputers) deliverInputs(ctx context.Context, spec managedSpecification, workID string, attachments []InputAttachment) error {
+func (m *ManagedComputers) deliverInputs(ctx context.Context, spec managedSpecification, workID string, attachments []command.InputFile) error {
 	manifest := inputManifest{Files: make([]inputManifestFile, 0, len(attachments))}
 	for _, attachment := range attachments {
 		link, err := m.contentLink(attachment.AccessPath)
@@ -115,49 +97,17 @@ func (m *ManagedComputers) contentLink(accessPath string) (string, error) {
 	return m.content + "?" + link.RawQuery, nil
 }
 
-// syncInputs records the File Space owner of the Work's input source, then
-// hands the machine that space's current Attachments; a Work without an input
-// source has none to copy. The owner is recorded before the listing, so a
-// change after it is either listed or marks the execution due again.
-func (m ManagedEnvironment) syncInputs(ctx context.Context, record executionRecord) error {
+// syncInputs hands the machine the current files of the Work's located
+// inputs; a Work whose layout located none has none to copy.
+func (m ManagedEnvironment) syncInputs(ctx context.Context, record executionRecord, inputs command.ManagedInputs) error {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return err
 	}
-	admitted, err := decodeStartRequest(record.RequestJSON)
-	if err != nil {
-		return oops.With("operation", "decode_native_request").Wrap(err)
+	if !inputs.Located {
+		return nil
 	}
-	if source := strings.TrimSpace(admitted.InputSource.Reference); source != "" {
-		owner, err := m.inputs.InputOwner(ctx, source)
-		if err != nil {
-			return oops.With("operation", "resolve_input_owner", "work_id", record.SessionID).Wrap(err)
-		}
-		if owner == "" {
-			return oops.With("work_id", record.SessionID).Errorf("agent: the Work's input source names no File Space")
-		}
-		if err := m.recordInputOwner(ctx, record, owner); err != nil {
-			return err
-		}
-		attachments, err := m.inputs.InputAttachments(ctx, owner)
-		if err != nil {
-			return oops.With("operation", "list_work_inputs", "work_id", record.SessionID).Wrap(err)
-		}
-		if err := m.machines.deliverInputs(ctx, spec, record.SessionID, attachments); err != nil {
-			return err
-		}
-	}
-	return nil
+	return m.machines.deliverInputs(ctx, spec, record.SessionID, inputs.Files)
 }
 
 func (m ManagedEnvironment) refresh() time.Duration { return m.inputsRefresh }
-
-func (m ManagedEnvironment) recordInputOwner(ctx context.Context, record executionRecord, owner string) error {
-	if record.InputOwner == owner {
-		return nil
-	}
-	if _, err := m.records.db.Context(ctx).Exec(`UPDATE agent_execution SET input_owner = ? WHERE id = ?`, owner, record.ID); err != nil {
-		return oops.With("operation", "record_input_owner").Wrap(err)
-	}
-	return nil
-}

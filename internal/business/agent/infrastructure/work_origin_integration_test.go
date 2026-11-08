@@ -46,10 +46,10 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 	ids := map[string]string{}
 	definitions := map[string]string{}
 	for _, purpose := range []string{"work", "case_coordinator"} {
-		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: purpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: purpose}, HomeBinding: domain.HomeBinding{OwnerID: purpose, Namespace: "personal"}})
+		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: purpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: purpose}})
 		require.NoError(t, err)
 		require.NoError(t, agents.Save(ctx, definition))
-		id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkspaceReference: "workspace-" + purpose})
+		id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"})
 		require.NoError(t, err)
 		ids[purpose], definitions[purpose] = id, definition.ID
 	}

@@ -31,8 +31,7 @@ type agentDefinitionDO struct {
 	Purpose          string `xorm:"purpose varchar(64)"`
 	ScopeKind        string `xorm:"scope_kind varchar(64)"`
 	ScopeRef         string `xorm:"scope_ref varchar(255)"`
-	HomeOwnerID      string `xorm:"home_owner_id varchar(255)"`
-	HomeNamespace    string `xorm:"home_namespace varchar(64)"`
+	WorkLayout       string `xorm:"work_layout JSON"`
 	VisibilityPublic bool   `xorm:"visibility_public"`
 	ID               string `xorm:"id pk varchar(36)"`
 	Capabilities     string `xorm:"capabilities text"`
@@ -72,18 +71,17 @@ type agentWorkDO struct {
 	State           uint8   `xorm:"state tinyint"`
 	Capabilities    string  `xorm:"capabilities text"`
 	ContextRef      string  `xorm:"context_ref varchar(36)"`
-	WorkspaceRef    string  `xorm:"workspace_ref varchar(512)"`
-	InputSource     string  `xorm:"input_source varchar(512)"`
-	InputSpaceToken string  `xorm:"input_space_token"`
-	ReadOnlyMounts  string  `xorm:"read_only_mounts JSON"`
+	AgentHarness    string  `xorm:"agent_harness varchar(64)"`
+	LocatedLayout   string  `xorm:"located_layout JSON"`
 	DisplayTitle    string  `xorm:"display_title varchar(200)"`
 	StartingContext string  `xorm:"starting_context"`
-	HomeOwnerID     string  `xorm:"home_owner_id varchar(255)"`
-	TraceAttributes string  `xorm:"trace_attributes JSON"`
-	HomeNamespace   string  `xorm:"home_namespace varchar(64)"`
-	HarnessProcess  string  `xorm:"harness_process text"`
-	HoldsProcess    bool    `xorm:"holds_process"`
-	StopReason      string  `xorm:"stop_reason"`
+	// RepresentedPerson is the person the Work's Agent represents; empty for
+	// one that represents no person.
+	RepresentedPerson string `xorm:"represented_person varchar(255)"`
+	TraceAttributes   string `xorm:"trace_attributes JSON"`
+	HarnessProcess    string `xorm:"harness_process text"`
+	HoldsProcess      bool   `xorm:"holds_process"`
+	StopReason        string `xorm:"stop_reason"`
 	// DisconnectedSince is the Disconnection origin in Unix milliseconds;
 	// zero while the Work's execution environment is observed.
 	DisconnectedSince int64 `xorm:"disconnected_since bigint"`

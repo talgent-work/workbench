@@ -25,11 +25,11 @@ type Config struct {
 	Token   string `json:"token" yaml:"token" toml:"token"`
 }
 
-// Client is Agent's one client of Storage's contract. It names a Work's
-// spaces by business identity; it never sees a location.
+// Client is Agent's one client of Storage's contract. It names each
+// Directory by its owner and name; it never sees a location.
 type Client struct {
 	mounts storageprivatev1connect.SandboxMountServiceClient
-	files  storageprivatev1connect.FileSpaceServiceClient
+	files  storageprivatev1connect.DirectoryServiceClient
 	token  string
 }
 
@@ -45,7 +45,7 @@ func NewClient(httpClient connecthttp.HTTPClient, config Config) (*Client, error
 	transport := connect.NewClient(connecthttp.NewTransport(httpClient, config.Address, connecthttp.WithReadMaxBytes(0)))
 	return &Client{
 		mounts: storageprivatev1connect.NewSandboxMountServiceClient(transport),
-		files:  storageprivatev1connect.NewFileSpaceServiceClient(transport),
+		files:  storageprivatev1connect.NewDirectoryServiceClient(transport),
 		token:  config.Token,
 	}, nil
 }
@@ -57,42 +57,27 @@ func authorized(ctx context.Context, token string) context.Context {
 	return ctx
 }
 
-func referenceMounts(mounts []domain.ReadOnlyMount) []*storageprivatev1.ReferenceMount {
-	out := make([]*storageprivatev1.ReferenceMount, 0, len(mounts))
+func (c *Client) AcquireMounts(ctx context.Context, workID string, mounts []domain.DirectoryMount) (domain.SandboxMounts, error) {
+	request := &storageprivatev1.AcquireMountsRequest{WorkId: workID}
 	for _, mount := range mounts {
-		out = append(out, &storageprivatev1.ReferenceMount{Name: mount.Name, Owner: mount.Reference})
+		request.Mounts = append(request.Mounts, &storageprivatev1.MountRequest{Directory: locatedToProto(mount.Directory), ReadOnly: mount.ReadOnly, MountPoints: mount.MountPoints})
 	}
-	return out
-}
-
-func (c *Client) AcquireMounts(ctx context.Context, input domain.SandboxMountRequest) (domain.SandboxMounts, error) {
-	response, err := c.mounts.AcquireMounts(authorized(ctx, c.token), &storageprivatev1.AcquireMountsRequest{
-		HomeOwner: input.HomeOwner, WorkId: input.WorkID, WorkspaceReference: input.WorkspaceReference,
-		InputSource: input.InputSource.Reference, SpaceToken: input.InputSource.SpaceToken, ReferenceMounts: referenceMounts(input.ReadOnlyMounts),
-	})
+	response, err := c.mounts.AcquireMounts(authorized(ctx, c.token), request)
 	if err != nil {
-		return domain.SandboxMounts{}, oops.With("operation", "storage.acquire_mounts", "work_id", input.WorkID).Wrap(err)
+		return nil, oops.With("operation", "storage.acquire_mounts", "work_id", workID).Wrap(err)
 	}
-	mounts := domain.SandboxMounts{Home: grantFromProto(response.GetHome())}
-	if workspace := response.GetWorkspace(); workspace != nil {
-		grant := grantFromProto(workspace)
-		mounts.Workspace = &grant
+	if len(response.GetGrants()) != len(mounts) {
+		return nil, oops.With("operation", "storage.acquire_mounts", "work_id", workID).Errorf("storage granted %d of %d Directories", len(response.GetGrants()), len(mounts))
 	}
-	if inputs := response.GetInputs(); inputs != nil {
-		grant := grantFromProto(inputs)
-		mounts.Inputs = &grant
+	grants := make(domain.SandboxMounts, 0, len(mounts))
+	for _, grant := range response.GetGrants() {
+		grants = append(grants, grantFromProto(grant))
 	}
-	for _, reference := range response.GetReferences() {
-		if mounts.ReadOnly == nil {
-			mounts.ReadOnly = make(map[string]domain.MountGrant)
-		}
-		mounts.ReadOnly[reference.GetName()] = grantFromProto(reference.GetGrant())
-	}
-	return mounts, nil
+	return grants, nil
 }
 
-func (c *Client) RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error {
-	_, err := c.mounts.RequestWorkspaceReclamation(authorized(ctx, c.token), &storageprivatev1.RequestWorkspaceReclamationRequest{WorkId: workID, WorkspaceReference: workspaceReference})
+func (c *Client) RequestWorkReclamation(ctx context.Context, workID string) error {
+	_, err := c.mounts.RequestWorkReclamation(authorized(ctx, c.token), &storageprivatev1.RequestWorkReclamationRequest{WorkId: workID})
 	if err != nil {
 		return oops.With("operation", "storage.request_reclamation", "work_id", workID).Wrap(err)
 	}
@@ -100,7 +85,7 @@ func (c *Client) RequestWorkspaceReclamation(ctx context.Context, workID, worksp
 }
 
 func (c *Client) WorkspaceView(ctx context.Context, workspace domain.WorkspaceLocation, path string) (application.WorkspaceListing, error) {
-	response, err := c.mounts.GetWorkspaceView(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceViewRequest{WorkspaceReference: workspace.SessionWorkspace, InputSource: workspace.InputSource.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
+	response, err := c.mounts.GetWorkspaceView(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceViewRequest{Layout: workspaceLayoutToProto(workspace.SessionWorkspace), Path: path})
 	if err != nil {
 		return application.WorkspaceListing{}, workspaceError("storage.workspace_view", err)
 	}
@@ -108,14 +93,14 @@ func (c *Client) WorkspaceView(ctx context.Context, workspace domain.WorkspaceLo
 	for _, entry := range response.GetEntries() {
 		listing.Entries = append(listing.Entries, application.WorkspaceEntry{
 			Name: entry.GetName(), Kind: workspaceEntryKinds[entry.GetKind()], SizeBytes: entry.GetSizeBytes(),
-			ModifiedAt: entry.GetModifiedAt().AsTime(), AttachmentName: entry.GetAttachmentName(),
+			ModifiedAt: entry.GetModifiedAt().AsTime(), AttachmentName: entry.GetPosition().GetName(),
 		})
 	}
 	return listing, nil
 }
 
 func (c *Client) PreviewWorkspaceFile(ctx context.Context, workspace domain.WorkspaceLocation, path string) (application.WorkspaceFilePreview, error) {
-	response, err := c.mounts.GetWorkspaceFilePreview(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceFilePreviewRequest{WorkspaceReference: workspace.SessionWorkspace, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
+	response, err := c.mounts.GetWorkspaceFilePreview(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceFilePreviewRequest{Layout: workspaceLayoutToProto(workspace.SessionWorkspace), Path: path})
 	if err != nil {
 		return application.WorkspaceFilePreview{}, workspaceError("storage.workspace_file_preview", err)
 	}
@@ -154,7 +139,7 @@ func workspacePreviewFromProto(preview *storageprivatev1.FilePreview) applicatio
 }
 
 func (c *Client) WorkspaceFileLink(ctx context.Context, workspace domain.WorkspaceLocation, path string) (application.WorkspaceFileLink, error) {
-	response, err := c.mounts.IssueWorkspaceFileLink(authorized(ctx, c.token), &storageprivatev1.IssueWorkspaceFileLinkRequest{WorkspaceReference: workspace.SessionWorkspace, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
+	response, err := c.mounts.IssueWorkspaceFileLink(authorized(ctx, c.token), &storageprivatev1.IssueWorkspaceFileLinkRequest{Layout: workspaceLayoutToProto(workspace.SessionWorkspace), Path: path})
 	if err != nil {
 		return application.WorkspaceFileLink{}, workspaceError("storage.workspace_file_link", err)
 	}
@@ -164,9 +149,9 @@ func (c *Client) WorkspaceFileLink(ctx context.Context, workspace domain.Workspa
 // workspaceError maps Storage's refusals to Agent's workspace outcomes.
 func workspaceError(operation string, err error) error {
 	switch storageerror.ReasonOf(err) {
-	case storageprivatev1.ErrorReason_ERROR_REASON_WORKSPACE_NOT_CREATED:
+	case storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED:
 		return domain.ErrWorkspaceNotCreated
-	case storageprivatev1.ErrorReason_ERROR_REASON_WORKSPACE_RECLAIMED:
+	case storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED:
 		return application.ErrWorkspaceReclaimed
 	case storageprivatev1.ErrorReason_ERROR_REASON_INVALID_WORKSPACE_PATH:
 		return application.ErrInvalidWorkspacePath

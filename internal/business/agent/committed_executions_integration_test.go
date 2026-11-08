@@ -30,7 +30,7 @@ func TestCommittedExecutionWakesAndDispatchesOnlyAfterItsCommit(t *testing.T) {
 	executions.wake = func(_ context.Context, id string) { woken = append(woken, id) }
 
 	launch := domain.LaunchSpecification{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: "committed-work", HarnessSessionReference: "context",
-		ContextMode: domain.ContextContinue, WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "project"}}
+		ContextMode: domain.ContextContinue, RepresentedPerson: "owner", AgentHarness: "claude-code"}
 	run, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: domain.WorkStartAdmitted{WorkID: launch.WorkID, StartAdmittedAt: time.UnixMilli(time.Now().UnixMilli()), DeskID: "desk"}, Launch: launch, Realization: domain.RealizationCloud})
 	require.NoError(t, err)
 	require.NoError(t, executions.Save(ctx, run))

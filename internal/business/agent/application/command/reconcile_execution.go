@@ -21,15 +21,15 @@ type ReconcileExecutionHandler struct {
 	// environment on each realization, fixing each submission's creation
 	// deadline.
 	creationWaits domain.CreationWaits
-	executions   domain.AgentExecutionRepository
-	environments ExecutionEnvironmentPort
-	harness      DispatcherPort
-	computers    ComputerPort
-	mounts       StoragePort
+	executions    domain.AgentExecutionRepository
+	environments  ExecutionEnvironmentPort
+	harness       DispatcherPort
+	computers     ComputerPort
+	storage       StoragePort
 }
 
-func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, creationWaits domain.CreationWaits, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, mounts StoragePort) *ReconcileExecutionHandler {
-	return &ReconcileExecutionHandler{now: now, lease: lease, creationWaits: creationWaits, executions: executions, environments: environments, harness: harness, computers: computers, mounts: mounts}
+func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, creationWaits domain.CreationWaits, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, storage StoragePort) *ReconcileExecutionHandler {
+	return &ReconcileExecutionHandler{now: now, lease: lease, creationWaits: creationWaits, executions: executions, environments: environments, harness: harness, computers: computers, storage: storage}
 }
 
 // reconcileRounds bounds the decisions one reconciliation makes: after a step

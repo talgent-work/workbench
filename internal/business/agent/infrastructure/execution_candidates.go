@@ -43,15 +43,14 @@ func (r *ExecutionQueryRepository) ListExecutionsUsingAuthorization(ctx context.
 }
 
 // ListExecutionsReadingInputs lists the unretired Managed executions whose
-// inputs sync recorded owner's File Space as their Work's input source. One
-// that has not recorded its owner yet is due from its start.
-func (r *ExecutionQueryRepository) ListExecutionsReadingInputs(ctx context.Context, owner string) ([]string, error) {
-	if strings.TrimSpace(owner) == "" {
+// Work's located inputs are the Directory, recorded when each began.
+func (r *ExecutionQueryRepository) ListExecutionsReadingInputs(ctx context.Context, directory domain.Directory) ([]string, error) {
+	if !directory.Present() {
 		return nil, nil
 	}
 	var ids []string
 	err := r.db.Context(ctx).SQL(`SELECT id FROM agent_execution
- WHERE input_owner = ? AND deleted_at = 0 AND realization = ?`, owner, string(domain.RealizationManaged)).Find(&ids)
+ WHERE inputs_directory = ? AND deleted_at = 0 AND realization = ?`, DirectoryKey(directory), string(domain.RealizationManaged)).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "list_executions_reading_inputs").Wrap(err)
 	}

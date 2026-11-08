@@ -110,16 +110,16 @@ type sessionWorkspaces struct {
 func (s *sessionWorkspaces) WorkspaceView(_ context.Context, location domain.WorkspaceLocation, _ string) (application.WorkspaceListing, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.reads = append(s.reads, location.SessionWorkspace)
+	s.reads = append(s.reads, sessionWorkspace(location))
 	return application.WorkspaceListing{Total: 1, Entries: []application.WorkspaceEntry{{Name: "report.md", Kind: application.WorkspaceFile, SizeBytes: 8}}}, nil
 }
 
 func (s *sessionWorkspaces) PreviewWorkspaceFile(_ context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceFilePreview, error) {
-	return application.WorkspaceFilePreview{Mode: application.WorkspacePreviewDirect, Display: application.WorkspacePreviewText, Link: &application.WorkspaceFileLink{URL: "https://storage.test/" + location.SessionWorkspace + "/" + path, ExpiresAt: time.Now().Add(time.Minute)}}, nil
+	return application.WorkspaceFilePreview{Mode: application.WorkspacePreviewDirect, Display: application.WorkspacePreviewText, Link: &application.WorkspaceFileLink{URL: "https://storage.test/" + sessionWorkspace(location) + "/" + path, ExpiresAt: time.Now().Add(time.Minute)}}, nil
 }
 
 func (s *sessionWorkspaces) WorkspaceFileLink(_ context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceFileLink, error) {
-	return application.WorkspaceFileLink{URL: "https://storage.test/" + location.SessionWorkspace + "/" + path + "?download", ExpiresAt: time.Now().Add(time.Minute)}, nil
+	return application.WorkspaceFileLink{URL: "https://storage.test/" + sessionWorkspace(location) + "/" + path + "?download", ExpiresAt: time.Now().Add(time.Minute)}, nil
 }
 
 func (s *sessionWorkspaces) JudgeFilePreview(_ context.Context, _ string, size int64, _ []byte) (application.WorkspaceFilePreview, int64, error) {
@@ -180,7 +180,6 @@ func startWorkspaceReading(t *testing.T, ctx context.Context) *workspaceReading 
 		reading: agentprivatev1connect.NewWorkspaceReadingServiceClient(connect.NewClient(transport))}
 	created, err := r.client.CreateAgentDefinition(sessionControlRequest(ctx), &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee-a"}, AgentName: "Fixture Agent",
 		UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "employee-a"}, Purpose: "work",
-		HomeBinding: &agentprivatev1.HomeBinding{OwnerId: "employee-a", Namespace: "personal"},
 	})
 	require.NoError(t, err)
 	r.agentID = created.AgentId
@@ -188,9 +187,15 @@ func startWorkspaceReading(t *testing.T, ctx context.Context) *workspaceReading 
 }
 
 // create starts a Work on a Computer, with a Session Workspace when named.
-func (r *workspaceReading) create(t *testing.T, ctx context.Context, computerID, workspace string) string {
+// sessionWorkspace names the Work Directory a location reads: its owning
+// Work.
+func sessionWorkspace(location domain.WorkspaceLocation) string {
+	return location.SessionWorkspace.Workspace.Owner[0].Value
+}
+
+func (r *workspaceReading) create(t *testing.T, ctx context.Context, computerID string) string {
 	t.Helper()
-	response, err := r.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: r.agentID, WorkspaceReference: workspace, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: uuid.NewString()}, ProjectId: "project-a", ComputerId: computerID})
+	response, err := r.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: r.agentID, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: uuid.NewString()}, ProjectId: "project-a", ComputerId: computerID})
 	require.NoError(t, err)
 	return response.WorkId
 }
@@ -227,25 +232,20 @@ func (r *workspaceReading) open(t *testing.T, link string) (int, string, string)
 	return response.StatusCode, response.Header.Get("Content-Disposition"), string(body)
 }
 
-// A Cloud Work's workspace is its Session Workspace in Storage, browsed and
-// previewed there with Storage's own links; a Cloud Work without one has
-// nothing to read yet.
+// A Cloud Work's workspace is its own Session Workspace in Storage, browsed
+// and previewed there with Storage's own links.
 func TestACloudWorksWorkspaceIsReadFromItsSessionWorkspace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	r := startWorkspaceReading(t, ctx)
-	work := r.create(t, ctx, "", "case-workspace")
+	work := r.create(t, ctx, "")
 
 	listing := r.browse(t, ctx, work)
 	require.Equal(t, agentprivatev1.WorkspaceState_WORKSPACE_STATE_AVAILABLE, listing.State)
 	require.Equal(t, "report.md", listing.Entries[0].Name)
-	require.Equal(t, []string{"case-workspace"}, r.storage.reads)
-	require.Equal(t, "https://storage.test/case-workspace/report.md", r.preview(t, ctx, work, "report.md").AccessUrl)
-	require.Equal(t, "https://storage.test/case-workspace/report.md?download", r.download(t, ctx, work, "report.md").AccessUrl)
-
-	bare := r.create(t, ctx, "", "")
-	require.Equal(t, agentprivatev1.WorkspaceState_WORKSPACE_STATE_NOT_CREATED, r.browse(t, ctx, bare).State)
-	require.Len(t, r.storage.reads, 1, "Storage is not asked for a workspace that does not exist")
+	require.Equal(t, []string{work}, r.storage.reads)
+	require.Equal(t, "https://storage.test/"+work+"/report.md", r.preview(t, ctx, work, "report.md").AccessUrl)
+	require.Equal(t, "https://storage.test/"+work+"/report.md?download", r.download(t, ctx, work, "report.md").AccessUrl)
 }
 
 // A Managed Work's files are read on its machine through its Computer, and
@@ -256,7 +256,7 @@ func TestAManagedWorksFilesAreReadThroughItsComputer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	r := startWorkspaceReading(t, ctx)
-	work := r.create(t, ctx, managedLaptop, "named-by-caller")
+	work := r.create(t, ctx, managedLaptop)
 	require.Equal(t, agentprivatev1.WorkspaceState_WORKSPACE_STATE_NOT_CREATED, r.browse(t, ctx, work).State, "the machine never opened its directory")
 
 	r.machine.set(func(m *workspaceMachine) { m.files[work] = map[string]string{"notes.md": "# notes\n"} })

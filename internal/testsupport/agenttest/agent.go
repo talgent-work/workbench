@@ -81,9 +81,7 @@ type Config struct {
 // Start is a start the Agent admitted.
 type Start struct {
 	WorkID, ModelConfigurationID, ThinkingLevel string
-	// InputSource and SpaceToken are the Work's read-only inputs.
-	InputSource, SpaceToken string
-	Authorizations          Authorizations
+	Authorizations                              Authorizations
 }
 
 // Authorizations are a Work's service authorizations, fixed at its creation.
@@ -189,7 +187,7 @@ func (a *Agent) Work(ctx context.Context, workID string) (Work, error) {
 
 // Definition is a person's own Agent Definition, which their Works run.
 type Definition struct {
-	Name, HomeOwnerID, StartupAgent string
+	Name, StartupAgent string
 }
 
 // ErrNoDefinition is the answer for a person without an Agent Definition.
@@ -208,7 +206,7 @@ func (a *Agent) EmployeeDefinition(ctx context.Context, user string) (Definition
 	if err != nil {
 		return Definition{}, err
 	}
-	return Definition{Name: definition.AgentName, HomeOwnerID: definition.HomeBinding.OwnerID, StartupAgent: definition.Capabilities.StartupAgent}, nil
+	return Definition{Name: definition.AgentName, StartupAgent: definition.Capabilities.StartupAgent}, nil
 }
 
 func (cfg Config) models() query.ModelConfigurations {
@@ -255,7 +253,7 @@ func (w startedWorks) started(work *domain.AgentWork) {
 		}
 		launch := work.LaunchSpecification()
 		w.onStart(Start{WorkID: launch.WorkID, ModelConfigurationID: launch.WorkModel.ConfigurationID, ThinkingLevel: launch.ThinkingLevel,
-			InputSource: launch.InputSource.Reference, SpaceToken: launch.InputSource.SpaceToken, Authorizations: authorizations(launch.AuthorizationSelection)})
+			Authorizations: authorizations(launch.AuthorizationSelection)})
 	}
 }
 

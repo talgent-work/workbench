@@ -61,7 +61,7 @@ type Application struct {
 	WorkQueries      query.WorkQueryRepository
 	ExecutionQueries query.ExecutionQueryRepository
 	// Workspaces serves workspace browsing; Storage owns a Cloud Work's view.
-	Workspaces        WorkspacePort
+	Workspaces        WorkspaceReadingPort
 	Models            query.ModelConfigurations
 	Definitions       domain.AgentDefinitionRepository
 	DefinitionQueries query.AgentDefinitionQueryRepository
@@ -79,7 +79,7 @@ func NewApplication(
 	catalog command.MarketplacePort,
 	workQueries query.WorkQueryRepository,
 	sessions domain.AgentWorkRepository,
-	workspaces WorkspacePort,
+	workspaces WorkspaceReadingPort,
 	models query.ModelConfigurations,
 	definitions domain.AgentDefinitionRepository,
 	definitionQueries query.AgentDefinitionQueryRepository,

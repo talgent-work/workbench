@@ -24,11 +24,11 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 			func(ctx context.Context, p *agenttaskv1.RecoverWorkTaskV1) error {
 				return recovery.RecoverWork(ctx, p.GetWorkId())
 			}),
-		processor(logger, agenttask.RequestWorkspaceReclamationType, func() *agenttaskv1.RequestWorkspaceReclamationTaskV1 {
+		processor(logger, agenttask.RequestWorkReclamationType, func() *agenttaskv1.RequestWorkspaceReclamationTaskV1 {
 			return &agenttaskv1.RequestWorkspaceReclamationTaskV1{}
 		},
 			func(ctx context.Context, p *agenttaskv1.RequestWorkspaceReclamationTaskV1) error {
-				return recovery.SendWorkspaceReclamation(ctx, p.GetWorkId(), p.GetWorkspaceReference())
+				return recovery.SendWorkReclamation(ctx, p.GetWorkId())
 			}),
 		processor(logger, agenttask.SweepRecoveryType, func() *agenttaskv1.SweepRecoveryTaskV1 { return &agenttaskv1.SweepRecoveryTaskV1{} },
 			func(ctx context.Context, _ *agenttaskv1.SweepRecoveryTaskV1) error { return recovery.Sweep(ctx) }),

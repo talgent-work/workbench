@@ -27,12 +27,12 @@ type connection interface {
 	Conn(ctx context.Context) (driver.Conn, error)
 }
 
-// Reader implements query.RootTurnResultReader over ClickHouse.
+// Reader implements query.DispatcherMessageLogPort over ClickHouse.
 type Reader struct {
 	conn connection
 }
 
-var _ query.RootTurnResultReader = (*Reader)(nil)
+var _ query.DispatcherMessageLogPort = (*Reader)(nil)
 
 func NewReader(conn *pkgclickhouse.LazyConn) *Reader {
 	return &Reader{conn: conn}

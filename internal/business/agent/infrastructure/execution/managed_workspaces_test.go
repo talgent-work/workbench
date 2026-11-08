@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -159,14 +160,14 @@ func newMachineFiles(t *testing.T) (*machineFiles, *ManagedComputers, *ManagedWo
 func TestManagedInputsHandTheMachineTheWholeListOfAttachments(t *testing.T) {
 	machine, machines, _, spec := newMachineFiles(t)
 	updated := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
-	require.NoError(t, machines.deliverInputs(context.Background(), spec, "session", []InputAttachment{
+	require.NoError(t, machines.deliverInputs(context.Background(), spec, "session", []command.InputFile{
 		{Name: "brief.pdf", SizeBytes: 1024, UpdatedAt: updated, AccessPath: "/v1/storage/content?grant=signed.grant"},
 	}))
 	require.JSONEq(t, `{"files":[{"name":"brief.pdf","size":1024,"updated_at":"2026-11-02T10:00:00Z","url":"`+managedContentAddress+`?grant=signed.grant"}]}`, string(machine.manifest))
 
 	require.NoError(t, machines.deliverInputs(context.Background(), spec, "session", nil))
-	require.JSONEq(t, `{"files":[]}`, string(machine.manifest), "an emptied input source empties inputs/")
-	require.Error(t, machines.deliverInputs(context.Background(), spec, "session", []InputAttachment{{Name: "x", AccessPath: "/v1/storage/content"}}), "a link without a grant is never sent")
+	require.JSONEq(t, `{"files":[]}`, string(machine.manifest), "an emptied inputs Directory empties inputs/")
+	require.Error(t, machines.deliverInputs(context.Background(), spec, "session", []command.InputFile{{Name: "x", AccessPath: "/v1/storage/content"}}), "a link without a grant is never sent")
 
 	machine.unreachable = true
 	require.ErrorIs(t, machines.deliverInputs(context.Background(), spec, "session", nil), errMachineUnreachable)

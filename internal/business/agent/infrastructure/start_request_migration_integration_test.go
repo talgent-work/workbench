@@ -56,8 +56,8 @@ CREATE TABLE agent_session_creation_request (
 ) ENGINE=InnoDB`)
 	require.NoError(t, err)
 	const work, request = "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000011"
-	_, err = conn.ExecContext(ctx, `INSERT INTO agent_session (id, agent_id, started_by, state, capabilities, authorization_selection, repository_selection, context_ref, read_only_mounts, trace_attributes, harness_process, failure_reason, work_progress)
- VALUES (?, 'agent', 'owner', 2, '{}', '{}', '{}', '', '[]', '{}', '{}', '', '')`, work)
+	_, err = conn.ExecContext(ctx, `INSERT INTO agent_session (id, agent_id, started_by, state, capabilities, authorization_selection, repository_selection, context_ref, agent_harness, located_layout, trace_attributes, harness_process, failure_reason, work_progress)
+ VALUES (?, 'agent', 'owner', 2, '{}', '{}', '{}', '', 'claude-code', '{"mounts":[]}', '{}', '{}', '', '')`, work)
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, `INSERT INTO agent_start_request (id, session_id, kind) VALUES (?, ?, 'start')`, request, work)
 	require.NoError(t, err)

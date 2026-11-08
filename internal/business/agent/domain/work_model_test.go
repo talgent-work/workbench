@@ -27,7 +27,7 @@ func TestTheMachineLoginIsOnlyForAManagedComputer(t *testing.T) {
 }
 
 func machineLoginInput(managed bool) domain.WorkInput {
-	return domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: managed, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(), WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}}
+	return domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: managed, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(), RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout()}
 }
 
 // seated is the Computer's answer seating a new start request, which derives

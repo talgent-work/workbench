@@ -8,35 +8,46 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// StoragePort reaches Storage's contract, which keeps every space a Work
-// uses: the Mount Grants of a Cloud start, the Workspace Reclamation Request
-// of a Closed Work, the File Spaces Agent names by a Personal Work's
-// identity, the Owner File Query and the resolution of input sources to their
-// File Space owners. Agent decides every access itself before calling
-// Storage; Storage decides where each space lives.
+// StoragePort reaches Storage's contract, which keeps every Directory a Work
+// uses: the Mount Grants of a Cloud start, one per located Directory, the
+// Work Reclamation Request of a Closed Work, the opening of a located
+// Directory for its Space Token, and the File Space commands and queries of
+// Personal Work files and the Personal Library, each naming a Directory by
+// its owner and name. Agent decides every access itself before calling
+// Storage; Storage decides where each Directory lives.
 type StoragePort interface {
-	// AcquireMounts obtains the Mount Grants of a Cloud start; Storage
-	// decides whether each space is created or reused.
-	AcquireMounts(ctx context.Context, request domain.SandboxMountRequest) (domain.SandboxMounts, error)
-	// RequestWorkspaceReclamation sends the Workspace Reclamation Request, an
-	// asynchronous request Storage accepts idempotently and completes on its
-	// own schedule.
-	RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error
-	OpenFileSpace(ctx context.Context, owner string) (domain.WorkInputSource, error)
-	// ResolveOwners names the owner of each input source's File Space, in
-	// order; an unknown one resolves to "".
-	ResolveOwners(ctx context.Context, inputSources []string) ([]string, error)
-	ListFiles(ctx context.Context, owner string) ([]SpaceFile, error)
-	ListOwnerFiles(ctx context.Context, owners []string) ([]SpaceFile, error)
-	IssueAttachmentUpload(ctx context.Context, space domain.WorkInputSource, owner, name string, replace bool, contentType, uploader string) (FileLink, error)
-	RenameAttachment(ctx context.Context, space domain.WorkInputSource, owner, name, newName, actor string) error
-	DeleteFile(ctx context.Context, space domain.WorkInputSource, owner string, kind FileKind, name, actor string) error
-	IssueAccessLink(ctx context.Context, owner string, kind FileKind, name string, inline bool) (FileLink, error)
-	CreateShareLink(ctx context.Context, owner string, kind FileKind, name, actor string) (ShareLink, error)
-	RevokeShareLinks(ctx context.Context, owner string, kind FileKind, name, actor string) error
+	// AcquireMounts obtains the Mount Grants of a Cloud start, one per
+	// requested Directory in request order, with each Directory's mount
+	// points prepared; Storage opens each Directory as needed.
+	AcquireMounts(ctx context.Context, workID string, mounts []domain.DirectoryMount) (domain.SandboxMounts, error)
+	// RequestWorkReclamation sends the Work Reclamation Request, naming only
+	// the Work; Storage accepts it idempotently and completes it on its own
+	// schedule.
+	RequestWorkReclamation(ctx context.Context, workID string) error
+	// OpenDirectory opens a located Directory and returns its Space Token,
+	// the same on every opening.
+	OpenDirectory(ctx context.Context, directory domain.LocatedDirectory) (string, error)
+	// ListFiles lists the files Storage wrote into one Directory, with their
+	// Share Links.
+	ListFiles(ctx context.Context, directory domain.Directory) ([]SpaceFile, error)
+	// ListDirectoryFiles lists the files of the given Directories, without
+	// Share Links.
+	ListDirectoryFiles(ctx context.Context, directories []domain.Directory) ([]SpaceFile, error)
+	IssueUpload(ctx context.Context, position FilePosition, spaceToken string, replace bool, contentType, uploader string) (FileLink, error)
+	RenameFile(ctx context.Context, position FilePosition, spaceToken, newName, actor string) error
+	DeleteFile(ctx context.Context, position FilePosition, spaceToken, actor string) error
+	IssueAccessLink(ctx context.Context, position FilePosition, inline bool) (FileLink, error)
+	CreateShareLink(ctx context.Context, position FilePosition, actor string) (ShareLink, error)
+	RevokeShareLinks(ctx context.Context, position FilePosition, actor string) error
 	// FilePreview tells how a file is shown; render first asks for its
 	// Preview Copy.
-	FilePreview(ctx context.Context, owner string, kind FileKind, name string, render bool) (FilePreview, error)
+	FilePreview(ctx context.Context, position FilePosition, render bool) (FilePreview, error)
+}
+
+// FilePosition is a file's identity: its Directory and its name.
+type FilePosition struct {
+	Directory domain.Directory
+	Name      string
 }
 
 var (
@@ -48,7 +59,8 @@ var (
 	ErrInvalidFileName = errors.New("agent: invalid Work file name")
 )
 
-// FileKind is where a file sits in its File Space.
+// FileKind is what a file of a File Space is: an Attachment a person
+// uploaded, or an Artifact a Work published.
 type FileKind string
 
 const (
@@ -58,7 +70,7 @@ const (
 
 // SpaceFile is one file of a File Space, as Storage keeps it.
 type SpaceFile struct {
-	Owner          string
+	Directory      domain.Directory
 	Kind           FileKind
 	Name           string
 	SizeBytes      int64

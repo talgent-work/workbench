@@ -54,13 +54,14 @@ type launchLayout struct {
 const sandboxDiagnostics = "/tmp/"
 
 // sandboxLayout is a Cloud sandbox's: diagnostics in /tmp, HOME the Work's
-// mounted HOME, and preparation bounded by coreutils timeout.
+// mounted HOME with the Harness state mounted where the Agent Harness keeps
+// it, and preparation bounded by coreutils timeout.
 var sandboxLayout = launchLayout{
 	diagnostic: func(name string) string { return shellWord(sandboxDiagnostics + name) },
 	server:     func(connector domain.SelectedConnector) (map[string]any, bool) { return nativeServer(connector), true },
 	recovered:  recoveredContext,
 	preparation: func(budget, arguments string) string {
-		return "umask 077; " + budget + "mkdir -p \"$HOME/.claude\" && exec timeout -k 5s \"${remaining}s\" node -e" + arguments + " 2>/dev/null"
+		return "umask 077; " + budget + "mkdir -p \"" + harnessState + "\" && exec timeout -k 5s \"${remaining}s\" node -e" + arguments + " 2>/dev/null"
 	},
 }
 
@@ -228,15 +229,18 @@ func permissionArguments(mode domain.PermissionMode) []string {
 	return []string{"--permission-mode", string(mode), "--allow-dangerously-skip-permissions"}
 }
 
+// harnessState is the Agent Harness's state mount as its variable names it
+// in a Cloud sandbox.
+var harnessState = "${" + domain.ClaudeCode.StateVariable + ":?}"
+
 // recoveredContext continues the Work's conversation when its transcript
-// exists in the Work's HOME, where the sandbox's CLAUDE_CONFIG_DIR and
-// CLAUDE_CODE_PROJECT_DIR_NAME place it, and otherwise starts it as fresh
-// does. A transcript the Harness cannot resume fails the start like any other
-// Harness error.
+// exists in the Harness state mount, which the Works of its definition share
+// and where the Harness keeps each project's transcripts, and otherwise
+// starts it as fresh does. The session identity is the Work's own, so any
+// project holding it is the Work's. A transcript the Harness cannot resume
+// fails the start like any other Harness error.
 func recoveredContext(sessionID string, fresh []string) string {
-	id := shellWord(sessionID)
-	return "if test -e \"${CLAUDE_CONFIG_DIR:?}/projects/${CLAUDE_CODE_PROJECT_DIR_NAME:?}/\"" + shellWord(sessionID+".jsonl") +
-		"; then set -- \"$@\" --resume " + id + "; else set -- \"$@\"" + shellWords(fresh) + "; fi; "
+	return recoveredTranscript(harnessState, sessionID, fresh)
 }
 
 // recoveredManagedContext is recoveredContext on a Managed Computer, where
@@ -245,8 +249,14 @@ func recoveredContext(sessionID string, fresh []string) string {
 // The session identity is the Work's own, so any project holding it is the
 // Work's.
 func recoveredManagedContext(sessionID string, fresh []string) string {
+	return recoveredTranscript("${"+domain.ClaudeCode.StateVariable+":-$HOME/"+domain.ClaudeCode.StatePath+"}", sessionID, fresh)
+}
+
+// recoveredTranscript resumes the session when a project under the Harness
+// state holds its transcript, and otherwise starts it as fresh does.
+func recoveredTranscript(state, sessionID string, fresh []string) string {
 	id := shellWord(sessionID)
-	return "talgent_transcript=; for talgent_file in \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}\"/projects/*/" + shellWord(sessionID+".jsonl") +
+	return "talgent_transcript=; for talgent_file in \"" + state + "\"/projects/*/" + shellWord(sessionID+".jsonl") +
 		"; do if test -e \"$talgent_file\"; then talgent_transcript=1; fi; done; if test -n \"$talgent_transcript\"; then set -- \"$@\" --resume " + id + "; else set -- \"$@\"" + shellWords(fresh) + "; fi; "
 }
 
@@ -271,8 +281,9 @@ func nativeSessionID(workID, sessionReference string) string {
 
 // freshContext starts the Work's own conversation: empty, or a fork of the
 // source Work's conversation up to the named position. Works of one
-// definition share its HOME and run in /workspace, so the source transcript
-// is the one the native Harness resumes; the source continues unchanged.
+// definition share its Harness state and run in /workspace, so the source
+// transcript is the one the native Harness resumes; the source continues
+// unchanged.
 func freshContext(starting *domain.StartingContext, sessionID string) []string {
 	if starting == nil {
 		return []string{"--session-id", sessionID}

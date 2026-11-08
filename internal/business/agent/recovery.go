@@ -87,7 +87,7 @@ var RecoveryModule = fx.Module("agent.recovery",
 		application.NewRecovery,
 		// A Closed Work's Workspace Reclamation Request is queued on the
 		// recovery queue, which delivers it to Storage.
-		eventhandler.NewWorkspaceReclamations,
+		eventhandler.NewWorkReclamations,
 		command.NewReconcileExecutionHandler,
 		fx.Annotate(taskprocessor.RecoveryProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(RecoveryQueue))),
 		fx.Annotate(taskprocessor.PreparationProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(PreparationQueue))),

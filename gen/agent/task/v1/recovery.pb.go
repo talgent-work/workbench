@@ -202,16 +202,15 @@ func (*SweepRecoveryTaskV1) Descriptor() ([]byte, []int) {
 	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{3}
 }
 
-// RequestWorkspaceReclamationTaskV1 delivers a Closed Work's one Workspace
-// Reclamation Request to Storage, retried until Storage accepts it.
+// RequestWorkspaceReclamationTaskV1 delivers a Closed Work's one Work
+// Reclamation Request to Storage, retried until Storage accepts it. Storage
+// reclaims every Directory with that Work's lifetime.
 type RequestWorkspaceReclamationTaskV1 struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// AgentWork identity whose Session Workspace is reclaimed.
-	WorkId string `protobuf:"bytes,1,opt,name=work_id,json=workId,proto3" json:"work_id,omitempty"`
-	// The Work's opaque Session Workspace reference.
-	WorkspaceReference string `protobuf:"bytes,2,opt,name=workspace_reference,json=workspaceReference,proto3" json:"workspace_reference,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The closed AgentWork's identity.
+	WorkId        string `protobuf:"bytes,1,opt,name=work_id,json=workId,proto3" json:"work_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RequestWorkspaceReclamationTaskV1) Reset() {
@@ -247,13 +246,6 @@ func (*RequestWorkspaceReclamationTaskV1) Descriptor() ([]byte, []int) {
 func (x *RequestWorkspaceReclamationTaskV1) GetWorkId() string {
 	if x != nil {
 		return x.WorkId
-	}
-	return ""
-}
-
-func (x *RequestWorkspaceReclamationTaskV1) GetWorkspaceReference() string {
-	if x != nil {
-		return x.WorkspaceReference
 	}
 	return ""
 }
@@ -683,10 +675,9 @@ const file_agent_task_v1_recovery_proto_rawDesc = "" +
 	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\",\n" +
 	"\x11RecoverWorkTaskV1\x12\x17\n" +
 	"\awork_id\x18\x01 \x01(\tR\x06workId\"\x15\n" +
-	"\x13SweepRecoveryTaskV1\"m\n" +
+	"\x13SweepRecoveryTaskV1\"W\n" +
 	"!RequestWorkspaceReclamationTaskV1\x12\x17\n" +
-	"\awork_id\x18\x01 \x01(\tR\x06workId\x12/\n" +
-	"\x13workspace_reference\x18\x02 \x01(\tR\x12workspaceReference\"@\n" +
+	"\awork_id\x18\x01 \x01(\tR\x06workIdJ\x04\b\x02\x10\x03R\x13workspace_reference\"@\n" +
 	"\x19ReconcileAllocationTaskV1\x12#\n" +
 	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\">\n" +
 	"\x17PrepareAllocationTaskV1\x12#\n" +

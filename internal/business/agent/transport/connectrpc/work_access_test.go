@@ -49,7 +49,7 @@ func newAccessFixture(t *testing.T) *accessFixture {
 }
 
 // newAccessFixtureWith also serves workspaces through views, Storage's stand-in.
-func newAccessFixtureWith(t *testing.T, views application.WorkspacePort) *accessFixture {
+func newAccessFixtureWith(t *testing.T, views application.WorkspaceReadingPort) *accessFixture {
 	t.Helper()
 	agents := &rpcAgents{items: map[string]*domain.AgentDefinition{}}
 	dispatcher := domainevent.NewDispatcher(domainevent.WithDelayClose(0))
@@ -80,7 +80,7 @@ func newAccessFixtureWith(t *testing.T, views application.WorkspacePort) *access
 
 func accessDefinition(t *testing.T, agents *rpcAgents, scope domain.UsageScope, rule domain.VisibilityRule) *domain.AgentDefinition {
 	t.Helper()
-	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", UsageScope: scope, HomeBinding: domain.HomeBinding{OwnerID: scope.Reference, Namespace: "personal"}, Visibility: rule})
+	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", UsageScope: scope, Visibility: rule})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(context.Background(), definition))
 	return definition
@@ -89,7 +89,7 @@ func accessDefinition(t *testing.T, agents *rpcAgents, scope domain.UsageScope, 
 func accessWork(t *testing.T, sessions *rpcSessions, definition *domain.AgentDefinition, owner string) string {
 	t.Helper()
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project-a", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: owner, ID: uuid.NewString(), AgentID: definition.ID, Visibility: definition.Visibility,
-		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding,
+		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(),
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	sessions.items[work.ID] = work

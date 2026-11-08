@@ -65,7 +65,7 @@ var errEnvironmentNotRunning = errors.New("agent: the bound execution environmen
 // environment, or replaces those delivered before, and reports what it
 // delivered. A first delivery that fails clears whatever it wrote. An
 // authority that delivers none uses the machine's own.
-func (n *NativeConnections) deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
+func (n *NativeConnections) deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
 	authority, err := n.provisioning.authority(record)
 	if err != nil {
 		return domain.CredentialDelivery{}, err
@@ -80,7 +80,7 @@ func (n *NativeConnections) deliver(ctx context.Context, record executionRecord,
 		if err != nil {
 			return err
 		}
-		delivered, err = delivery.deliver(ctx, current, redelivery, holding)
+		delivered, err = delivery.deliver(ctx, current, supply, redelivery, holding)
 		if err != nil {
 			if redelivery {
 				return err

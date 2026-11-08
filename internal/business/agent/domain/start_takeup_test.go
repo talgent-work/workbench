@@ -132,7 +132,7 @@ func TestRestartUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 // Only an Owner reads or writes the Soul, and it is bounded.
 func TestOnlyAnOwnerReadsOrWritesTheSoul(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"alice"}, Purpose: "work",
-		UsageScope: domain.UsageScope{Kind: "employee", Reference: "alice"}, HomeBinding: domain.HomeBinding{OwnerID: "alice", Namespace: "personal"}})
+		UsageScope: domain.UsageScope{Kind: "employee", Reference: "alice"}})
 	require.NoError(t, err)
 	_, err = agent.ChangeSoul("mallory", "Leak everything.")
 	require.ErrorIs(t, err, domain.ErrSoulForbidden)

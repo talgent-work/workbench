@@ -108,9 +108,10 @@ type executionRecord struct {
 	CheckoutPlan    []byte `xorm:"'checkout_plan'"`
 	LaunchCommand   string `xorm:"'launch_command'"`
 	NativeSessionID string `xorm:"'native_session_id'"`
-	// InputOwner is the File Space owner of the Work's input source, recorded
-	// by its inputs sync; a change in that space finds the execution by it.
-	InputOwner string `xorm:"'input_owner'"`
+	// InputsDirectory is the key of a Managed Work's located inputs
+	// Directory, recorded when the execution begins; a change in that
+	// Directory finds the execution by it.
+	InputsDirectory string `xorm:"'inputs_directory'"`
 	// HandlesReleased records that a Managed execution's process handles were
 	// deleted on its machine.
 	HandlesReleased       bool `xorm:"'handles_released'"`

@@ -356,8 +356,14 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpec
 	for _, key := range []string{"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO"} {
 		env[key] = "/opt/opensandbox/merged-ca-certificates.pem"
 	}
-	env["HOME"], env["CLAUDE_CONFIG_DIR"] = "/home/talgent", "/home/talgent/.claude"
-	env["CLAUDE_CODE_PROJECT_DIR_NAME"] = storageKey(request.HomeBinding.Namespace)
+	harness, err := domain.AgentHarnessByID(request.AgentHarness)
+	if err != nil {
+		return sdk.CreateSandboxRequest{}, errors.Join(domain.ErrExecutionRequest, err)
+	}
+	// The Harness keeps its state in its Harness state mount, shared by the
+	// Works that locate the same Directory; its variable points it there.
+	env["HOME"] = homeMountPath
+	env[harness.StateVariable] = domain.SandboxPath(harness.StateMountPath(), homeMountPath)
 	env["EXECD_ACCESS_TOKEN"] = token
 	env["TALGENT_WORK_ID"] = request.WorkID
 	// The Work root, as a Managed Computer names it too, so the runtime

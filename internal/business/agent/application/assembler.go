@@ -32,11 +32,11 @@ func AssembleWorkPluginResults(work *domain.AgentWork, outcomes []query.PluginRe
 }
 
 func AssembleAgentDefinition(agent *domain.AgentDefinition) query.AgentDefinition {
-	return query.AgentDefinition{Owners: slices.Clone(agent.Owners), AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: agent.UsageScope, HomeBinding: agent.HomeBinding, Visibility: agent.Visibility, ID: agent.ID, Capabilities: agent.ProvideCapabilities()}
+	return query.AgentDefinition{Owners: slices.Clone(agent.Owners), AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: agent.UsageScope, WorkLayout: agent.WorkLayout.Clone(), Visibility: agent.Visibility, ID: agent.ID, Capabilities: agent.ProvideCapabilities()}
 }
 
 func AssembleAgentWorkEntity(session *domain.AgentWork, definition *domain.AgentDefinition) query.AgentWork {
-	result := query.AgentWork{AgentName: definition.AgentName, WorkspaceReference: session.WorkspaceReference, Version: session.Version, StopRequestID: session.StopRequestReference, StopReason: session.StopReason, ID: session.ID, AgentID: session.AgentID, State: session.State,
+	result := query.AgentWork{AgentName: definition.AgentName, Version: session.Version, StopRequestID: session.StopRequestReference, StopReason: session.StopReason, ID: session.ID, AgentID: session.AgentID, State: session.State,
 		Capabilities: session.CapabilitySnapshot.Clone(), HarnessSessionReference: session.HarnessSessionReference, FailureReason: session.FailureReason}
 	if progress := session.Progress; progress != nil {
 		result.Progress = &query.WorkProgress{UpdatedAt: progress.UpdatedAt, Items: make([]query.WorkProgressItem, len(progress.Items))}
@@ -49,8 +49,12 @@ func AssembleAgentWorkEntity(session *domain.AgentWork, definition *domain.Agent
 }
 
 func AssembleWorkIdentity(session *domain.AgentWork, definition *domain.AgentDefinition, subject string) query.WorkIdentity {
-	return query.WorkIdentity{AgentName: definition.AgentName, WorkID: session.ID, AgentID: session.AgentID, SubjectID: subject, WorkspaceReference: session.WorkspaceReference,
+	identity := query.WorkIdentity{AgentName: definition.AgentName, WorkID: session.ID, AgentID: session.AgentID, SubjectID: subject,
 		ProjectID: session.ProjectID, Subject: session.Subject, Purpose: definition.Purpose}
+	if workspace, ok := session.LocatedLayout.Workspace(); ok {
+		identity.Workspace = &workspace
+	}
+	return identity
 }
 
 func AssembleWorkPluginOption(release domain.PluginRelease, required bool) query.WorkPluginOption {

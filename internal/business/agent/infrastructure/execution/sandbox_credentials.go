@@ -116,12 +116,12 @@ var staleDelivery = time.UnixMilli(1)
 // it has and reports itself stale. It reports the service access observed and
 // the earliest declared expiry of what it delivered, zero when nothing
 // delivered expires.
-func (c *SandboxCredentials) prepare(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
-	statuses, expiry, digest, err := c.write(ctx, record, admitted, spec, redelivery, holding)
+func (c *SandboxCredentials) prepare(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
+	statuses, expiry, digest, err := c.write(ctx, record, admitted, spec, supply, redelivery, holding)
 	return deliveredCredentials{Statuses: statuses, ExpiresAt: expiry, ModelDigest: digest}, err
 }
 
-func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool, holding command.EnvironmentHolding) ([]ServiceAccessStatus, time.Time, string, error) {
+func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) ([]ServiceAccessStatus, time.Time, string, error) {
 	var none time.Time
 	if err := holding(ctx); err != nil {
 		return nil, none, "", err
@@ -135,7 +135,7 @@ func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, 
 	// belongs to this endpoint; otherwise, as when the configuration is
 	// withdrawn, it keeps the credential already delivered.
 	model := renewalCredential(c.models, admitted.WorkModel, spec.Env["ANTHROPIC_BASE_URL"])
-	owner := admitted.HomeBinding.OwnerID
+	owner := admitted.RepresentedPerson
 	requirements := serviceRequirements(admitted.Capabilities, admitted.AuthorizationSelection)
 	repositories, err := c.repositories.Resolve(ctx, owner, record.SessionID)
 	if err != nil {
@@ -174,7 +174,7 @@ func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, 
 	if err != nil {
 		return nil, none, "", err
 	}
-	if plan, err = withPlatformCredentials(plan, spec.Env, admitted.InputSource.SpaceToken); err != nil {
+	if plan, err = withPlatformCredentials(plan, spec.Env, supply.SpaceToken); err != nil {
 		return nil, none, "", err
 	}
 	client, err := c.client(ctx, record.SandboxID, true)

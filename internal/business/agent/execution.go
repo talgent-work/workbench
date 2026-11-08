@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
-	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/telemetryingest"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
@@ -224,21 +223,17 @@ func relayClient() *http.Client {
 }
 
 // newManagedEnvironment is the Managed realization, nil without Managed
-// Computers. Its Works' inputs are read through Storage's File Space
-// Contract and synced again by the recovery sweep at its refresh interval.
-func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, client *http.Client, storage StorageConfig, recovery RecoveryConfig) (*execution.ManagedEnvironment, error) {
+// Computers. Its Works' located inputs, which Application reads from
+// Storage, are synced again by the recovery sweep at its refresh interval.
+func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, recovery RecoveryConfig) (*execution.ManagedEnvironment, error) {
 	if machines == nil {
 		return nil, nil
-	}
-	inputs, err := agentstorage.NewWorkInputs(client, storage)
-	if err != nil {
-		return nil, err
 	}
 	refresh, err := recovery.inputsRefreshInterval()
 	if err != nil {
 		return nil, err
 	}
-	return execution.NewManagedEnvironment(db, machines, models, sessions, inputs, refresh)
+	return execution.NewManagedEnvironment(db, machines, models, sessions, refresh)
 }
 
 // registerManagedTelemetry takes the telemetry of Works on Managed Computers,

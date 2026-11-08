@@ -19,7 +19,7 @@ func personalWork(t *testing.T) visibleWork {
 	definition := newDefinition(t, "employee", domain.VisibilityRule{})
 	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, DisplayTitle: "Draft the plan",
-		WorkspaceReference: "workspace-a", InputSource: domain.WorkInputSource{Reference: "file-space/a", SpaceToken: "token"}, HomeBinding: definition.HomeBinding, Visibility: definition.Visibility,
+		RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(), Visibility: definition.Visibility,
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	require.True(t, work.Personal())
@@ -95,7 +95,7 @@ func TestAnEmployeeDefinitionRepresentsItsPersonPrivately(t *testing.T) {
 	require.Equal(t, []string{"jack"}, definition.Owners)
 	require.Equal(t, domain.UsageScope{Kind: "employee", Reference: "jack"}, definition.UsageScope)
 	require.Equal(t, "work", definition.Purpose)
-	require.Equal(t, domain.HomeBinding{OwnerID: "jack", Namespace: "personal"}, definition.HomeBinding)
+	require.Equal(t, "jack", definition.RepresentedPerson())
 	require.True(t, definition.RepresentsHuman())
 	require.False(t, definition.Visibility.Public, "its Works start private")
 	require.Equal(t, "talgent-runtime:personal-work-executor", definition.ProvideCapabilities().StartupAgent)

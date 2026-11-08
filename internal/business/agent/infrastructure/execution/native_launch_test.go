@@ -141,7 +141,7 @@ func TestEveryRunOfAWorkContinuesItsHarnessSession(t *testing.T) {
 	restarted, err := config.prepare(sandboxLayout, input, owner(input), "")
 	require.NoError(t, err)
 	require.Equal(t, fresh.SessionID, restarted.SessionID)
-	require.Contains(t, restarted.Command, "/projects/${CLAUDE_CODE_PROJECT_DIR_NAME:?}/\"'"+fresh.SessionID+".jsonl'", "a restart continues the conversation whose transcript exists")
+	require.Contains(t, restarted.Command, "\"${CLAUDE_CONFIG_DIR:?}\"/projects/*/'"+fresh.SessionID+".jsonl'", "a restart continues the conversation whose transcript exists")
 	input.WorkID = "another-session"
 	separate, err := config.prepare(sandboxLayout, input, owner(input), "")
 	require.NoError(t, err)

@@ -81,7 +81,7 @@ func (m *ManagedComputers) forgetCredentials(ctx context.Context, spec managedSp
 // delivered declares an expiry. The Work's inputs, whose downloads
 // authenticate with the Work credential delivered here, are synced as their
 // own step once it is delivered.
-func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
+func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return deliveredCredentials{}, err
@@ -93,7 +93,7 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord,
 	if err := holding(ctx); err != nil {
 		return deliveredCredentials{}, err
 	}
-	credentials := workCredentials{Gateway: workGatewayCredential{URL: m.machines.gateway, WorkID: record.SessionID, WorkCredential: spec.WorkCredential, SpaceToken: admitted.InputSource.SpaceToken}}
+	credentials := workCredentials{Gateway: workGatewayCredential{URL: m.machines.gateway, WorkID: record.SessionID, WorkCredential: spec.WorkCredential, SpaceToken: supply.SpaceToken}}
 	if spec.APIAddress != "" {
 		credentials.API = &workAPICredential{URL: spec.APIAddress}
 	}

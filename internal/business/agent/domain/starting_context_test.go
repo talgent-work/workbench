@@ -14,7 +14,6 @@ func pmDefinition(t *testing.T) *domain.AgentDefinition {
 	t.Helper()
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "project_coordination",
 		UsageScope:   domain.UsageScope{Kind: "project", Reference: "project-a"},
-		HomeBinding:  domain.HomeBinding{OwnerID: "project-a", Namespace: "pm"},
 		Capabilities: domain.CapabilityConfiguration{Prompt: "Base", StartupAgent: "pm:coordinator"},
 	})
 	require.NoError(t, err)

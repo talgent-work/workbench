@@ -20,7 +20,7 @@ import (
 
 // creation is a CreateWork request of the employee's Work about the subject.
 func creation(definition, requestID, subject string) *agentprivatev1.CreateWorkRequest {
-	return &agentprivatev1.CreateWorkRequest{RequestId: requestID, SubjectId: "employee-a", AgentId: definition, WorkspaceReference: subject, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a"}
+	return &agentprivatev1.CreateWorkRequest{RequestId: requestID, SubjectId: "employee-a", AgentId: definition, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a"}
 }
 
 // desksOf counts the Desks the Work's runs ever took on its Computer.

@@ -15,7 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 // managedInputsRefresh is how long synced inputs stay current here.
@@ -40,12 +42,12 @@ func lastManifest(t *testing.T, relay *machineRelay) []manifestFile {
 	return manifest.Files
 }
 
-// A Managed Work with an input source has its Attachments listed to its
-// machine once its credentials are delivered, recording the source's owner;
-// Storage's report of a change in that File Space marks its inputs due on
-// their own, never its credentials, and their own step syncs them; a change
-// in any other space leaves it alone. A failing sync never fails the start:
-// the inputs stay due for the next reconciliation.
+// A Managed Work has the files of its located inputs Directory listed to its
+// machine once its credentials are delivered, recording that Directory's
+// key; Storage's report of a change in that Directory marks its inputs due
+// on their own, never its credentials, and their own step syncs them; a
+// change in any other Directory leaves it alone. A failing sync never fails
+// the start: the inputs stay due for the next reconciliation.
 // reading is Dispatcher reading the record's launched process at the relay
 // endpoint it was handed.
 func (f *managedWork) reading(t *testing.T, record executionRecord) StreamReading {
@@ -59,26 +61,26 @@ func TestManagedWorkReceivesItsCurrentInputs(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
 	updated := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
-	owner := "case-" + uuid.NewString()
-	f.inputs.owners = map[string]string{"file-space/case-1": owner}
-	f.inputs.attachments = map[string][]InputAttachment{owner: {{Name: "brief.pdf", SizeBytes: 1024, UpdatedAt: updated, AccessPath: "/v1/storage/content?grant=first"}}}
+	inputs := caseInputs()
+	brief := managedFile{SpaceFile: command.SpaceFile{Name: "brief.pdf", SizeBytes: 1024, UpdatedAt: updated}, link: "/v1/storage/content?grant=first"}
+	f.storage.place(inputs, brief)
 
-	input := withInputs(managedRequest())
+	input := readingInputs(managedRequest(), inputs)
 	record := f.launch(t, f.begin(t, input).ID)
 	require.Equal(t, []manifestFile{{Name: "brief.pdf", Size: 1024, UpdatedAt: "2026-11-02T10:00:00Z", URL: managedContentAddress + "?grant=first"}}, lastManifest(t, f.relay))
 	require.True(t, f.relay.afterDelivery[0], "the machine downloads with the Work credential delivered first")
-	require.Positive(t, f.inputs.bound)
-	require.LessOrEqual(t, f.inputs.bound, reconciliationAttemptTimeout, "a sync never holds up the start for long")
+	require.Positive(t, f.storage.bound)
+	require.LessOrEqual(t, f.storage.bound, reconciliationAttemptTimeout, "a sync never holds up the start for long")
 	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
-	require.Equal(t, owner, record.InputOwner)
+	require.Equal(t, infrastructure.DirectoryKey(inputs), record.InputsDirectory)
 	require.Zero(t, record.InputsDue)
 	require.Positive(t, record.InputsSyncedAt)
 
-	require.Empty(t, f.markInputsChanged(t, "case-other"))
+	require.Empty(t, f.markInputsChanged(t, caseInputs()))
 
-	f.inputs.attachments[owner] = append(f.inputs.attachments[owner], InputAttachment{Name: "data.csv", SizeBytes: 3, UpdatedAt: updated, AccessPath: "/v1/storage/content?grant=second"})
-	require.Equal(t, []string{record.ID}, f.markInputsChanged(t, owner))
+	f.storage.place(inputs, brief, managedFile{SpaceFile: command.SpaceFile{Name: "data.csv", SizeBytes: 3, UpdatedAt: updated}, link: "/v1/storage/content?grant=second"})
+	require.Equal(t, []string{record.ID}, f.markInputsChanged(t, inputs))
 	marked, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, marked.InputsDue, "the change stays due until it is synced")
@@ -115,10 +117,10 @@ func TestManagedWorkReceivesItsCurrentInputs(t *testing.T) {
 func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
-	owner := "case-" + uuid.NewString()
-	f.inputs.owners = map[string]string{"file-space/case-1": owner}
-	f.inputs.attachments = map[string][]InputAttachment{owner: {{Name: "brief.pdf", SizeBytes: 1, UpdatedAt: time.Now(), AccessPath: "/v1/storage/content?grant=first"}}}
-	input := withInputs(managedRequest())
+	inputs := caseInputs()
+	brief := command.SpaceFile{Name: "brief.pdf", SizeBytes: 1, UpdatedAt: time.Now()}
+	f.storage.place(inputs, managedFile{SpaceFile: brief, link: "/v1/storage/content?grant=first"})
+	input := readingInputs(managedRequest(), inputs)
 	synced := f.launch(t, f.begin(t, input).ID)
 	synced, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
@@ -130,7 +132,7 @@ func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 	stale := time.Now().Add(-managedInputsRefresh - time.Minute).UnixMilli()
 	_, err = f.db.Exec(`UPDATE agent_execution SET inputs_synced_at = ?, version = version + 1 WHERE id = ?`, stale, synced.ID)
 	require.NoError(t, err)
-	f.inputs.attachments[owner][0].AccessPath = "/v1/storage/content?grant=second"
+	f.storage.place(inputs, managedFile{SpaceFile: brief, link: "/v1/storage/content?grant=second"})
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepSyncInputs}, f.decided(t, synced.ID), "inputs older than the refresh interval are synced")
 	require.NoError(t, f.steps.shortSteps(ctx, synced.ID))
 	require.Equal(t, managedContentAddress+"?grant=second", lastManifest(t, f.relay)[0].URL)
@@ -146,21 +148,22 @@ func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 func TestAFailingInputsSyncLeavesTheStartReady(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
-	f.inputs.err = errors.New("storage unavailable")
-	input := withInputs(managedRequest())
+	f.storage.err = errors.New("storage unavailable")
+	inputs := caseInputs()
+	input := readingInputs(managedRequest(), inputs)
 	record := f.launch(t, f.begin(t, input).ID)
 	require.True(t, record.CredentialsDelivered, "the inputs are not a Required Startup Step")
 	require.Zero(t, record.InputsSyncedAt, "the inputs stay due")
 	require.Empty(t, f.relay.manifests)
 
-	f.inputs.err = nil
-	owner := "case-" + uuid.NewString()
-	f.inputs.owners = map[string]string{"file-space/case-1": owner}
+	f.storage.mu.Lock()
+	f.storage.err = nil
+	f.storage.mu.Unlock()
 	require.NoError(t, f.steps.shortSteps(ctx, record.ID))
 	require.Empty(t, lastManifest(t, f.relay))
 	synced, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
-	require.Equal(t, owner, synced.InputOwner)
+	require.Equal(t, infrastructure.DirectoryKey(inputs), synced.InputsDirectory)
 	require.Zero(t, synced.InputsDue)
 	require.Positive(t, synced.InputsSyncedAt)
 }
@@ -225,7 +228,7 @@ func TestManagedWorkspaceIsReadThroughTheRelay(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrWorkspaceUnavailable)
 	require.Empty(t, cloud.reads)
 
-	cloudWork := domain.WorkspaceLocation{WorkID: uuid.NewString(), SessionWorkspace: "workspace"}
+	cloudWork := domain.WorkspaceLocation{WorkID: uuid.NewString(), SessionWorkspace: domain.WorkspaceLayout{Workspace: workDirectory("cloud-work", "workspace")}}
 	_, err = views.WorkspaceView(ctx, cloudWork, "")
 	require.NoError(t, err)
 	require.Equal(t, []string{cloudWork.WorkID}, cloud.reads)

@@ -32,7 +32,7 @@ func TestDefinitionPurposeLookupPreservesScopeAndConcurrentUniqueness(t *testing
 		{ScopeKind: "project", ScopeReference: "project-b", Purpose: "project_coordination"},
 		{ScopeKind: "project", ScopeReference: "project-a", Purpose: "caller-defined"},
 	} {
-		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: selection.Purpose, UsageScope: domain.UsageScope{Kind: selection.ScopeKind, Reference: selection.ScopeReference}, HomeBinding: domain.HomeBinding{OwnerID: selection.ScopeReference + "/" + selection.Purpose, Namespace: "context"}})
+		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: selection.Purpose, UsageScope: domain.UsageScope{Kind: selection.ScopeKind, Reference: selection.ScopeReference}})
 		require.NoError(t, err)
 		require.NoError(t, agents.Save(ctx, definition))
 		id, err := lookup.Handle(ctx, selection)
@@ -50,7 +50,7 @@ func TestDefinitionPurposeLookupPreservesScopeAndConcurrentUniqueness(t *testing
 	var ready sync.WaitGroup
 	ready.Add(contenders)
 	for range contenders {
-		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "concurrent"}, HomeBinding: domain.HomeBinding{OwnerID: "concurrent-home", Namespace: "context"}})
+		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "concurrent"}})
 		require.NoError(t, err)
 		go func() { ready.Done(); <-start; results <- agents.Save(ctx, definition) }()
 	}
@@ -92,7 +92,7 @@ func TestAgentAppearancesReadEmployeeWorkAgentsAndWorkAgents(t *testing.T) {
 		{"Carol Other", "employee", "carol", "other"},
 		{"Project Dave", "project", "dave", "work"},
 	} {
-		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{fixture.reference}, AgentName: fixture.name, Purpose: fixture.purpose, UsageScope: domain.UsageScope{Kind: fixture.kind, Reference: fixture.reference}, HomeBinding: domain.HomeBinding{OwnerID: fixture.reference + "/" + fixture.purpose, Namespace: "context"}})
+		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{fixture.reference}, AgentName: fixture.name, Purpose: fixture.purpose, UsageScope: domain.UsageScope{Kind: fixture.kind, Reference: fixture.reference}})
 		require.NoError(t, err)
 		require.NoError(t, agents.Save(ctx, definition))
 		definitions[fixture.reference] = definition
@@ -120,7 +120,7 @@ func TestAgentAppearancesReadEmployeeWorkAgentsAndWorkAgents(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, views)
 
-	_, err = db.Exec("INSERT INTO agent_session (id, agent_id, started_by, subject_kind, subject_id, project_ref, state, capabilities, context_ref, workspace_ref, trace_attributes, harness_process, failure_reason, home_owner_id, home_namespace, version, created_at, updated_at, deleted_at) VALUES (?, ?, 'bob', 'case', 'bob-work', 'project', 1, '{}', '', '', '{}', '{}', '', 'bob', 'personal', 1, 0, 0, 0)", "work-bob", definitions["bob"].ID)
+	_, err = db.Exec("INSERT INTO agent_session (id, agent_id, started_by, subject_kind, subject_id, project_ref, state, capabilities, context_ref, agent_harness, located_layout, trace_attributes, harness_process, failure_reason, represented_person, version, created_at, updated_at, deleted_at) VALUES (?, ?, 'bob', 'case', 'bob-work', 'project', 1, '{}', '', 'claude-code', '{\"mounts\":[]}', '{}', '{}', '', 'bob', 1, 0, 0, 0)", "work-bob", definitions["bob"].ID)
 	require.NoError(t, err)
 	views, err = lookup.ListWorkAgents(ctx, []string{"work-bob", "work-missing"})
 	require.NoError(t, err)

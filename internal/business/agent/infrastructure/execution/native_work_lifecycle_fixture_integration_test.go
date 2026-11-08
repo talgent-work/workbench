@@ -28,9 +28,12 @@ import (
 // Dispatcher is a server that fails the case on any call instead of a running
 // replica holding the shared Redis.
 type nativeWorkLifecycleFixture struct {
-	db           *xorm.Engine
-	works        *infrastructure.AgentWorkRepository
-	definitions  *infrastructure.AgentDefinitionRepository
+	db          *xorm.Engine
+	works       *infrastructure.AgentWorkRepository
+	definitions *infrastructure.AgentDefinitionRepository
+	// agentID is the lifecycle owner's own definition, which every Work here
+	// is of, once the first was created.
+	agentID      string
 	provisioning *Provisioning
 	connections  *NativeConnections
 	executions   *AgentExecutionRepository
@@ -131,12 +134,15 @@ func (c *cloudDesks) departures() []string {
 func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx context.Context, snapshot domain.CapabilitySnapshot, authorization domain.WorkAuthorizationInput) (*domain.AgentWork, string) {
 	t.Helper()
 	snapshot.Connectors = request().Capabilities.Connectors
-	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Native lifecycle", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "lifecycle-owner", Namespace: "personal"}})
+	if f.agentID == "" {
+		created, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Native lifecycle", UsageScope: domain.UsageScope{Kind: "employee", Reference: "lifecycle-owner"}})
+		require.NoError(t, err)
+		require.NoError(t, f.definitions.Save(ctx, created))
+		f.agentID = created.ID
+	}
+	definition, err := f.definitions.Get(ctx, f.agentID)
 	require.NoError(t, err)
-	require.NoError(t, f.definitions.Save(ctx, definition))
-	definition, err = f.definitions.Get(ctx, definition.ID)
-	require.NoError(t, err)
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: uuid.NewString(), HomeBinding: definition.HomeBinding, Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-" + uuid.NewString()}, ModelConfigurationProvided: true})
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: definition.RepresentedPerson(), WorkLayout: domain.DefaultWorkLayout(), Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-" + uuid.NewString()}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	startID := uuid.NewString()
 	work.DefinitionVersion = definition.Version

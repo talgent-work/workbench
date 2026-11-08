@@ -101,7 +101,6 @@ func (c *oneRoomCloud) definition(t *testing.T, ctx context.Context) string {
 	t.Helper()
 	created, err := c.client.CreateAgentDefinition(sessionControlRequest(ctx), &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee-a"}, AgentName: "Fixture Agent",
 		UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "employee-a"}, Purpose: "work",
-		HomeBinding:  &agentprivatev1.HomeBinding{OwnerId: "employee-a", Namespace: "personal"},
 		Capabilities: &agentprivatev1.Capabilities{Prompt: "base prompt", StartupAgent: "custom:base", RequiredPlugins: []string{"custom"}},
 	})
 	require.NoError(t, err)
@@ -109,7 +108,7 @@ func (c *oneRoomCloud) definition(t *testing.T, ctx context.Context) string {
 }
 
 func (c *oneRoomCloud) create(ctx context.Context, definition, subject string) (string, error) {
-	response, err := c.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, WorkspaceReference: subject, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a"})
+	response, err := c.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a"})
 	if err != nil {
 		return "", err
 	}

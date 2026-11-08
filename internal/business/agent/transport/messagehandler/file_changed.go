@@ -7,16 +7,17 @@ import (
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 
 	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// InputChanges follows a change of the Attachments in a File Space.
+// InputChanges follows a change of the files in a Directory.
 type InputChanges interface {
-	InputsChanged(ctx context.Context, owner string) error
+	InputsChanged(ctx context.Context, directory domain.Directory) error
 }
 
-// FileChangedHandler consumes Storage's File Change Published Fact. Only an
-// Attachment is a Work's input; an Artifact's change names no input, and
-// Agent claims the space by its owner whatever the operation.
+// FileChangedHandler consumes Storage's File Change Published Fact. Agent
+// claims the Directory by its owner and name whatever the operation; only
+// the Works reading it as their located inputs follow it.
 type FileChangedHandler struct {
 	changes InputChanges
 }
@@ -34,8 +35,12 @@ func (h *FileChangedHandler) Handle(ctx context.Context, msg integrationmessage.
 	if !ok || fact == nil {
 		return fmt.Errorf("agent file changed: unexpected payload %T", msg.Payload())
 	}
-	if fact.GetKind() != storageintegrationv1.FileKind_FILE_KIND_ATTACHMENT {
+	directory := domain.Directory{Name: fact.GetDirectory().GetName()}
+	for _, fact := range fact.GetDirectory().GetOwner() {
+		directory.Owner = append(directory.Owner, domain.OwnerFact{Condition: domain.LocatorCondition(fact.GetCondition()), Value: fact.GetValue()})
+	}
+	if !directory.Present() || len(directory.Owner) == 0 {
 		return nil
 	}
-	return h.changes.InputsChanged(ctx, fact.GetOwner())
+	return h.changes.InputsChanged(ctx, directory)
 }

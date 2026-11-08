@@ -52,7 +52,7 @@ func (h *ReconcileExecutionHandler) RunLongStep(ctx context.Context, executionID
 }
 
 // submit fixes the environment's specification with the Mount Grants
-// Storage issues on a Cloud, records the submission, and only then submits
+// Storage issues on a Cloud for exactly the Work's located layout, records the submission, and only then submits
 // the creation once, waiting for its answer (Single creation). Its answer is
 // recorded: a created environment is bound unless one is already, and a
 // definite refusal or failure rejects a start that bound nothing (Creation
@@ -63,7 +63,7 @@ func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domai
 	var mounts domain.SandboxMounts
 	if execution.Realization == domain.RealizationCloud {
 		var err error
-		if mounts, err = h.mounts.AcquireMounts(ctx, execution.Launch.MountRequest()); err != nil {
+		if mounts, err = h.storage.AcquireMounts(ctx, execution.WorkID, execution.Launch.LocatedLayout.MountRequests()); err != nil {
 			return err
 		}
 	}

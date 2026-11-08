@@ -62,7 +62,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 		{"", "revoked"}, {"", "reconnect_required"}, {"reauthorized-provider-token", ""},
 	} {
 		supply.token, supply.reason = stage.token, stage.reason
-		delivery, err := f.provisioning.credentials.prepare(ctx, record, admitted, spec, stage.token != "initial-provider-token", admitting)
+		delivery, err := f.provisioning.credentials.prepare(ctx, record, admitted, spec, command.CredentialSupply{}, stage.token != "initial-provider-token", admitting)
 		statuses, expiry := delivery.Statuses, delivery.ExpiresAt
 		require.NoError(t, err)
 		if stage.token == "" {

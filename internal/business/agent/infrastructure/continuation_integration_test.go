@@ -90,7 +90,7 @@ func TestRefusedResumeRetainsNothingAndARepeatAsksAgain(t *testing.T) {
 	require.Len(t, starts, 1)
 	require.Equal(t, domain.ContextContinue, starts[0].ContextMode)
 	require.Equal(t, before.HarnessSessionReference, starts[0].HarnessSessionReference)
-	require.Equal(t, before.WorkspaceReference, starts[0].WorkspaceReference)
+	require.Equal(t, before.LocatedLayout, starts[0].LocatedLayout)
 	require.NoError(t, handler.Handle(ctx, request), "an admitted request answers its original admission")
 	require.Equal(t, 2, capacity.calls, "a repeat whose Desk the current start holds asks nothing")
 	require.Len(t, starts, 1)
