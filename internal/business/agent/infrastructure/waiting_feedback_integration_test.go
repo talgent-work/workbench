@@ -26,7 +26,7 @@ func (p *currentProcessFacts) ObserveProcess(context.Context, string, string) (c
 }
 
 func TestCurrentProcessRestoresIdlenessAfterLostInputAndReplyFeedback(t *testing.T) {
-	f, id := runningInputSession(t)
+	f, id := workingSession(t)
 	ctx := t.Context()
 	now := time.Now().UTC()
 	buffer := &commandtest.InputBuffer{}

@@ -5,7 +5,6 @@ package infrastructure_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -13,10 +12,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
-	"github.com/talgent-work/workbench/internal/testsupport/computertest"
 )
 
 // closingBuffer commits a permanent close while an input is being handed
@@ -34,20 +31,10 @@ func (b closingBuffer) BufferInput(ctx context.Context, workID string, input com
 	return handOff, err
 }
 
-func runningInputSession(t *testing.T) (workCreationFixture, string) {
-	t.Helper()
-	f, id := stoppedContinuationSession(t)
-	ctx := context.Background()
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
-	require.NoError(t, err)
-	newRuns(t, f.db, f.sessions).ready(ctx, ref)
-	return f, ref
-}
-
 // An input handed off while a close stops the Work is accepted.
 func TestInputAcceptanceAndPermanentCloseShareOneOrder(t *testing.T) {
 	ctx := context.Background()
-	f, ref := runningInputSession(t)
+	f, ref := workingSession(t)
 	buffer := closingBuffer{InputBuffer: &commandtest.InputBuffer{}}
 	// The close read the buffer before the input was appended, so it saw
 	// nothing pending, and its stop commits after the append.
@@ -69,7 +56,7 @@ func TestInputAcceptanceAndPermanentCloseShareOneOrder(t *testing.T) {
 // Accepting input commits the Work against the version the acceptance read;
 // a stale version commits nothing.
 func TestAcceptanceCommitsTheWorkAgainstItsVersion(t *testing.T) {
-	f, ref := runningInputSession(t)
+	f, ref := workingSession(t)
 	ctx := context.Background()
 	stale, err := f.sessions.Get(ctx, ref)
 	require.NoError(t, err)

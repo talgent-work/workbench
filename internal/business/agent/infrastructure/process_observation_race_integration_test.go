@@ -38,7 +38,7 @@ func (b *executionSaveBarrier) Save(ctx context.Context, execution *domain.Agent
 // execution it was read against, which already recorded the exit, and leaves
 // the resumed one alone.
 func TestProcessObservationCannotReclaimConcurrentResume(t *testing.T) {
-	f, id := runningInputSession(t)
+	f, id := workingSession(t)
 	ctx := t.Context()
 	feedback := newRuns(t, f.db, f.sessions)
 	previous := feedback.latest(ctx, id)
