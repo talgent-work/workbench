@@ -6,31 +6,79 @@ import (
 	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
-func fileKindFromProto(kind storageprivatev1.FileKind) domain.FileKind {
-	switch kind {
-	case storageprivatev1.FileKind_FILE_KIND_ATTACHMENT:
-		return domain.FileKindAttachment
-	case storageprivatev1.FileKind_FILE_KIND_ARTIFACT:
-		return domain.FileKindArtifact
-	default:
-		return ""
+func namedFromProto(directory *storageprivatev1.Directory) application.Named {
+	named := application.Named{Name: directory.GetName()}
+	for _, fact := range directory.GetOwner().GetFacts() {
+		named.Owner = append(named.Owner, domain.OwnerFact{Condition: fact.GetCondition(), Value: fact.GetValue()})
+	}
+	return named
+}
+
+func namedToProto(named application.Named) *storageprivatev1.Directory {
+	owner := &storageprivatev1.DirectoryOwner{}
+	for _, fact := range named.Owner {
+		owner.Facts = append(owner.Facts, &storageprivatev1.OwnerFact{Condition: fact.Condition, Value: fact.Value})
+	}
+	return &storageprivatev1.Directory{Owner: owner, Name: named.Name}
+}
+
+func positionFromProto(position *storageprivatev1.FilePosition) application.Position {
+	return application.Position{Directory: namedFromProto(position.GetDirectory()), Name: position.GetName()}
+}
+
+func positionToProto(position domain.FilePosition) *storageprivatev1.FilePosition {
+	return &storageprivatev1.FilePosition{Directory: namedToProto(application.AssembleNamed(position.Directory)), Name: position.Name}
+}
+
+var backends = map[storageprivatev1.Backend]domain.Backend{
+	storageprivatev1.Backend_BACKEND_NAS:     domain.BackendNAS,
+	storageprivatev1.Backend_BACKEND_JUICEFS: domain.BackendJuiceFS,
+}
+
+var lifetimes = map[storageprivatev1.Lifetime]domain.Lifetime{
+	storageprivatev1.Lifetime_LIFETIME_WORK:      domain.LifetimeWork,
+	storageprivatev1.Lifetime_LIFETIME_PERMANENT: domain.LifetimePermanent,
+}
+
+func locatedFromProto(located *storageprivatev1.LocatedDirectory) application.Located {
+	return application.Located{
+		Directory: namedFromProto(located.GetDirectory()), Backend: backends[located.GetBackend()], Lifetime: lifetimes[located.GetLifetime()],
 	}
 }
 
-func fileKindToProto(kind domain.FileKind) storageprivatev1.FileKind {
-	switch kind {
-	case domain.FileKindAttachment:
-		return storageprivatev1.FileKind_FILE_KIND_ATTACHMENT
-	case domain.FileKindArtifact:
-		return storageprivatev1.FileKind_FILE_KIND_ARTIFACT
-	default:
-		return storageprivatev1.FileKind_FILE_KIND_UNSPECIFIED
+func layoutFromProto(layout *storageprivatev1.WorkspaceLayout) application.Layout {
+	mapped := application.Layout{Workspace: namedFromProto(layout.GetWorkspace())}
+	for _, mount := range layout.GetMounts() {
+		mapped.Mounts = append(mapped.Mounts, application.Mount{Path: mount.GetPath(), Directory: namedFromProto(mount.GetDirectory())})
 	}
+	return mapped
 }
 
-func spaceFileToProto(file application.SpaceFile) *storageprivatev1.File {
+// layoutFromIdentity is the Session Workspace a verified Work identity
+// carries, nil for a Work without one.
+func layoutFromIdentity(layout *authn.WorkspaceLayout) *application.Layout {
+	if layout == nil {
+		return nil
+	}
+	mapped := &application.Layout{Workspace: namedFromIdentity(layout.Workspace)}
+	for _, mount := range layout.Mounts {
+		mapped.Mounts = append(mapped.Mounts, application.Mount{Path: mount.Path, Directory: namedFromIdentity(mount.Directory)})
+	}
+	return mapped
+}
+
+func namedFromIdentity(directory authn.Directory) application.Named {
+	named := application.Named{Name: directory.Name}
+	for _, fact := range directory.Owner {
+		named.Owner = append(named.Owner, domain.OwnerFact{Condition: fact.Condition, Value: fact.Value})
+	}
+	return named
+}
+
+func directoryFileToProto(file application.DirectoryFile) *storageprivatev1.File {
 	message := storedFileToProto(file.StoredFile)
 	for _, link := range file.ShareLinks {
 		message.ShareLinks = append(message.ShareLinks, shareLinkToProto(link))
@@ -40,18 +88,9 @@ func spaceFileToProto(file application.SpaceFile) *storageprivatev1.File {
 
 func storedFileToProto(file application.StoredFile) *storageprivatev1.File {
 	return &storageprivatev1.File{
-		Owner: file.Position.Owner, Kind: fileKindToProto(file.Position.Kind), Name: file.Position.Name,
-		SizeBytes: file.SizeBytes, ContentType: file.ContentType(), UpdatedAt: timestamppb.New(file.ModifiedAt),
+		Position: positionToProto(file.Position), SizeBytes: file.SizeBytes, ContentType: file.ContentType(), UpdatedAt: timestamppb.New(file.ModifiedAt),
 		UploaderUserId: file.Attributes.UploaderUserID, WorkId: file.Attributes.WorkID,
 	}
-}
-
-func referenceMountsFromProto(mounts []*storageprivatev1.ReferenceMount) []domain.ReferenceMount {
-	out := make([]domain.ReferenceMount, 0, len(mounts))
-	for _, mount := range mounts {
-		out = append(out, domain.ReferenceMount{Name: mount.GetName(), Owner: mount.GetOwner()})
-	}
-	return out
 }
 
 func shareLinkToProto(link application.ShareLinkView) *storageprivatev1.ShareLink {
@@ -72,8 +111,8 @@ func workspaceListingToProto(listing application.WorkspaceListing) *storagepriva
 	response := &storageprivatev1.GetWorkspaceViewResponse{Total: uint32(listing.Total), Entries: make([]*storageprivatev1.WorkspaceEntry, 0, len(listing.Entries))}
 	for _, entry := range listing.Entries {
 		message := &storageprivatev1.WorkspaceEntry{Name: entry.Name, Kind: workspaceEntryKinds[entry.Kind], SizeBytes: entry.SizeBytes, ModifiedAt: timestamppb.New(entry.ModifiedAt)}
-		if entry.Attachment != nil {
-			message.AttachmentName = entry.Attachment.Name
+		if entry.Position != nil {
+			message.Position = positionToProto(*entry.Position)
 		}
 		response.Entries = append(response.Entries, message)
 	}

@@ -19,7 +19,7 @@ import (
 
 // ContentApplication is the Storage use cases these endpoints delegate to.
 type ContentApplication interface {
-	UploadAttachment(ctx context.Context, token string, content io.Reader) (application.SpaceFile, error)
+	Upload(ctx context.Context, token string, content io.Reader) (application.DirectoryFile, error)
 	ReadAccess(ctx context.Context, token string) (application.OpenedFile, bool, error)
 	ReadShared(ctx context.Context, token string) (application.OpenedFile, error)
 }
@@ -39,7 +39,7 @@ func Register(mux *http.ServeMux, app ContentApplication, maxUploadBytes int64) 
 			writeError(w, &http.MaxBytesError{Limit: maxUploadBytes})
 			return
 		}
-		file, err := app.UploadAttachment(r.Context(), r.URL.Query().Get("grant"), http.MaxBytesReader(w, r.Body, maxUploadBytes))
+		file, err := app.Upload(r.Context(), r.URL.Query().Get("grant"), http.MaxBytesReader(w, r.Body, maxUploadBytes))
 		if err != nil {
 			writeError(w, err)
 			return
@@ -104,9 +104,13 @@ func writeError(w http.ResponseWriter, err error) {
 		status, code = http.StatusRequestEntityTooLarge, "file_too_large"
 	case errors.Is(err, application.ErrInvalidLink):
 		status, code = http.StatusUnauthorized, "invalid_link"
-	case errors.Is(err, application.ErrFileNotFound), errors.Is(err, domain.ErrShareLinkNotFound),
-		errors.Is(err, application.ErrWorkspaceNotCreated), errors.Is(err, application.ErrWorkspaceReclaimed), errors.Is(err, application.ErrInvalidWorkspacePath):
+	case errors.Is(err, application.ErrFileNotFound), errors.Is(err, domain.ErrShareLinkNotFound), errors.Is(err, domain.ErrDirectoryNotOpen),
+		errors.Is(err, application.ErrInvalidWorkspacePath):
 		status, code = http.StatusNotFound, "not_found"
+	case errors.Is(err, domain.ErrDirectoryReclaimed):
+		status, code = http.StatusGone, "directory_reclaimed"
+	case errors.Is(err, domain.ErrDirectoryNotAllocated), errors.Is(err, domain.ErrSpaceTokenRejected):
+		status, code = http.StatusConflict, "directory_unavailable"
 	case errors.Is(err, domain.ErrShareLinkRevoked):
 		status, code = http.StatusGone, "share_link_revoked"
 	case errors.Is(err, application.ErrContentChanged):

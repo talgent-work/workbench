@@ -1,13 +1,13 @@
-// Package storage composes the Storage Bounded Context: File Spaces and
-// their files and Reference Spaces on JuiceFS, Session Workspaces and HOMEs on the NAS, sandbox
-// mounts, links and workspace reclamation.
+// Package storage composes the Storage Bounded Context: Directories on
+// JuiceFS and the NAS with the files in them, sandbox mounts, links,
+// previews and Work reclamation.
 package storage
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -19,7 +19,7 @@ import (
 
 	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
-	"github.com/talgent-work/workbench/internal/business/storage/application/messagepublisher"
+	"github.com/talgent-work/workbench/internal/business/storage/application/query"
 	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 	"github.com/talgent-work/workbench/internal/business/storage/infrastructure"
@@ -34,7 +34,7 @@ import (
 // defaultMaxUploadBytes bounds one upload when none is configured.
 const defaultMaxUploadBytes = 1 << 30
 
-// Database is the Workbench core's MySQL engine, holding File Spaces.
+// Database is the Workbench core's MySQL engine, holding Directories.
 const Database = "workbench"
 
 // Config is Storage's trusted deployment configuration.
@@ -43,9 +43,10 @@ type Config struct {
 	PersistentRoot string `json:"persistent-root" yaml:"persistent-root" toml:"persistent-root"`
 	// WorkingRoot is the controlplane's mount of the NAS export root.
 	WorkingRoot string `json:"working-root" yaml:"working-root" toml:"working-root"`
-	// SandboxUID owns every new workspace and HOME. Sandboxes never run as
-	// root, so zero selects 1000, the native sandbox image's
-	// user; a negative value keeps the controlplane's own user.
+	// SandboxUID owns every NAS Directory and every mount point Storage
+	// prepares. Sandboxes never run as root, so zero selects 1000, the native
+	// sandbox image's user; a negative value keeps the controlplane's own
+	// user.
 	SandboxUID int `json:"sandbox-uid" yaml:"sandbox-uid" toml:"sandbox-uid"`
 	// PublicBaseURL prefixes every link, such as /api behind the gateway.
 	PublicBaseURL string `json:"public-base-url" yaml:"public-base-url" toml:"public-base-url"`
@@ -60,19 +61,18 @@ type Config struct {
 	MaxUploadBytes int64 `json:"max-upload-bytes" yaml:"max-upload-bytes" toml:"max-upload-bytes"`
 	// Control tokens of the callers of Storage's private contracts. A Work
 	// Agent's Artifact commands carry its verified Work identity instead.
-	// AgentToken admits Agent, the core's caller, to the File Space and
+	// AgentToken admits Agent, the core's caller, to the Directory and
 	// Sandbox Mount contracts.
 	AgentToken string `json:"agent-token" yaml:"agent-token" toml:"agent-token"`
-	// FileSpaceTokens admit further callers that open and change File Spaces
-	// for the owners they name; none is required.
+	// FileSpaceTokens admit further callers to the whole Directory contract,
+	// for the Directories they locate; none is required.
 	FileSpaceTokens []string `json:"file-space-tokens" yaml:"file-space-tokens" toml:"file-space-tokens"`
-	// ReferenceSpaceTokens admit callers to the Reference Space Contract and
-	// the Owner File Query; none is required.
+	// ReferenceSpaceTokens admit callers that replace and consult whole
+	// content: opening, content replacement and reading, and the Directory
+	// file query; none is required.
 	ReferenceSpaceTokens []string `json:"reference-space-tokens" yaml:"reference-space-tokens" toml:"reference-space-tokens"`
 	// Mounts names the shared volume claims Mount Grants point into.
 	Mounts MountConfig `json:"mounts" yaml:"mounts" toml:"mounts"`
-	// ReclaimInterval is how often accepted reclamations are attempted.
-	ReclaimInterval string `json:"reclaim-interval" yaml:"reclaim-interval" toml:"reclaim-interval"`
 	// Preview is Storage's preview configuration.
 	Preview PreviewConfig `json:"preview" yaml:"preview" toml:"preview"`
 	// WorkspaceListEntries bounds the entries one workspace directory lists;
@@ -84,14 +84,16 @@ type Config struct {
 	sentContentBytes int
 }
 
-// MountConfig names the claims sandboxes mount.
+// MountConfig names the claims sandboxes mount Directories from, one per
+// backend; each Directory is granted as its own subPath.
 type MountConfig struct {
-	// WorkingClaim claims the NAS export root, mounted read-write.
-	WorkingClaim string `json:"working-claim" yaml:"working-claim" toml:"working-claim"`
-	// InputsClaim claims the JuiceFS volume again for read-only mounts.
-	InputsClaim string `json:"inputs-claim" yaml:"inputs-claim" toml:"inputs-claim"`
-	// InputsRoot is where PersistentRoot lies within the inputs claim.
-	InputsRoot string `json:"inputs-root" yaml:"inputs-root" toml:"inputs-root"`
+	// NASClaim claims the NAS export root.
+	NASClaim string `json:"nas-claim" yaml:"nas-claim" toml:"nas-claim"`
+	// JuiceFSClaim claims the JuiceFS volume; OpenSandbox requires every
+	// mount of one claim to share its read-only mode.
+	JuiceFSClaim string `json:"juicefs-claim" yaml:"juicefs-claim" toml:"juicefs-claim"`
+	// JuiceFSRoot is where PersistentRoot lies within the JuiceFS claim.
+	JuiceFSRoot string `json:"juicefs-root" yaml:"juicefs-root" toml:"juicefs-root"`
 }
 
 // Validate rejects a configuration Storage cannot serve with.
@@ -105,8 +107,8 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.AgentToken) == "" {
 		return errors.New("storage: Agent's control token is required")
 	}
-	if strings.TrimSpace(c.Mounts.WorkingClaim) == "" || strings.TrimSpace(c.Mounts.InputsClaim) == "" {
-		return errors.New("storage: working and inputs claims are required")
+	if strings.TrimSpace(c.Mounts.NASClaim) == "" || strings.TrimSpace(c.Mounts.JuiceFSClaim) == "" {
+		return errors.New("storage: NAS and JuiceFS claims are required")
 	}
 	if _, err := parseDuration(c.LinkTTL, time.Minute); err != nil {
 		return err
@@ -120,11 +122,7 @@ func (c Config) Validate() error {
 	if c.MaxUploadBytes < 0 {
 		return errors.New("storage: max upload bytes must not be negative")
 	}
-	if err := c.Preview.validate(); err != nil {
-		return err
-	}
-	_, err := parseDuration(c.ReclaimInterval, time.Second)
-	return err
+	return c.Preview.validate()
 }
 
 func parseDuration(value string, fallback time.Duration) (time.Duration, error) {
@@ -141,11 +139,16 @@ func parseDuration(value string, fallback time.Duration) (time.Duration, error) 
 var Module = fx.Module(
 	"domain.storage",
 	pkgmysql.Bind(Database),
+	// Storage queues every task through the preview lane's client; the task
+	// names its own lane, so both lanes share one Redis.
 	pkgtaskqueue.Bind(PreviewQueue),
 	fx.Provide(newApplication),
-	fx.Provide(fx.Annotate(newRenderPreviewProcessor, fx.As(new(componenttaskqueue.Processor)), fx.ResultTags(pkgtaskqueue.ProcessorTag(PreviewQueue)))),
+	fx.Provide(
+		fx.Annotate(newRenderPreviewProcessor, fx.As(new(componenttaskqueue.Processor)), fx.ResultTags(pkgtaskqueue.ProcessorTag(PreviewQueue))),
+		fx.Annotate(newMaintenanceProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(MaintenanceQueue))),
+		fx.Annotate(applicationtask.NewLapsePreviewCopies, fx.ResultTags(pkgtaskqueue.PeriodicTaskTag(MaintenanceQueue))),
+	),
 	fx.Invoke(registerHandlers),
-	fx.Invoke(runMaintenance),
 )
 
 // nativeSandboxUID is the user of the native sandbox image.
@@ -155,50 +158,84 @@ const nativeSandboxUID = 1000
 // its worker concurrency bounds conversions per controlplane replica.
 const PreviewQueue = applicationtask.Queue
 
-// Rendering is how Storage queues renderings and reads their state.
-type Rendering struct {
-	Enqueuer componenttaskqueue.Enqueuer
-	Tasks    infrastructure.TaskStates
-}
+// MaintenanceQueue is the taskqueue module Storage removes reclaimed content
+// and lapsed Preview Copies on.
+const MaintenanceQueue = applicationtask.MaintenanceQueue
 
-func newApplication(config Config, engine *xorm.Engine, enqueuer componenttaskqueue.Enqueuer, tasks *pkgtaskqueue.KeyedTasks, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
-	return assemble(config, infrastructure.NewFileSpaceRepository(engine), Rendering{Enqueuer: enqueuer, Tasks: tasks}, messagepublisher.NewFileChangePublisher(bus, logger), logger)
+func newApplication(config Config, engine *xorm.Engine, tasks componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
+	return assemble(config, infrastructure.NewDirectoryRepository(engine), infrastructure.NewDirectoryQueries(engine), tasks, bus, logger)
 }
 
 func newRenderPreviewProcessor(app *application.Application, logger *slog.Logger) *taskprocessor.RenderPreviewProcessor {
 	return taskprocessor.NewRenderPreviewProcessor(app, logger)
 }
 
-// assemble builds Storage's application over its storage mechanisms and the
-// publisher of its file changes; unset
-// link lifetimes and preview settings take the application's defaults.
-func assemble(config Config, spaces domain.FileSpaceRepository, rendering Rendering, fileChanges application.FileChangesPort, logger *slog.Logger) (*application.Application, error) {
+func newMaintenanceProcessors(app *application.Application, logger *slog.Logger) []componenttaskqueue.Processor {
+	return []componenttaskqueue.Processor{
+		taskprocessor.NewRemoveReclaimedContentProcessor(app, logger),
+		taskprocessor.NewLapsePreviewCopiesProcessor(app),
+	}
+}
+
+// Layouts of Storage's file systems: the published Directories of each,
+// beside Storage's own areas. JuiceFS publishes its Directories as the
+// originals mount; the preview area lies beside them.
+const (
+	juiceFSDirectories = "assets/directories"
+	juiceFSPrivate     = "assets/storage"
+	juiceFSPreviews    = "assets/previews"
+	nasDirectories     = "directories"
+	nasPrivate         = "storage"
+)
+
+// assemble builds Storage's application over its mechanisms; unset link
+// lifetimes and preview settings take the application's defaults.
+func assemble(config Config, directories domain.DirectoryRepository, queries query.DirectoryQueryRepository, tasks componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
+	return assembleWith(config, directories, mechanisms(config, queries, tasks, bus, logger), logger), nil
+}
+
+// assembleWith builds the application of a validated configuration over the
+// given mechanisms.
+func assembleWith(config Config, directories domain.DirectoryRepository, ports application.Ports, logger *slog.Logger) *application.Application {
 	access, _ := parseDuration(config.LinkTTL, 0)
 	upload, _ := parseDuration(config.UploadLinkTTL, 0)
+	return application.NewApplication(directories, ports, application.LinkLifetimes{Access: access, Upload: upload}, config.Preview.settings(),
+		application.WorkspaceSettings{ListEntries: config.WorkspaceListEntries, SentContentBytes: config.sentContentBytes}, logger)
+}
+
+// mechanisms are Storage's mechanisms over its configured file systems,
+// link signing, converter, publisher and task queue.
+func mechanisms(config Config, queries query.DirectoryQueryRepository, tasks componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) application.Ports {
 	uid := config.SandboxUID
 	if uid == 0 {
 		uid = nativeSandboxUID
 	}
-	persistent := infrastructure.NewPersistentFiles(config.PersistentRoot)
-	ports := application.Ports{
-		Persistent: persistent,
-		Previews:   persistent,
-		Inspector:  infrastructure.ContentInspector{},
-		Working:    infrastructure.NewWorkingFiles(config.WorkingRoot, uid),
+	previews := infrastructure.NewPreviewCopies(config.PersistentRoot, juiceFSPreviews, path.Join(juiceFSPrivate, "pending"))
+	return application.Ports{
+		DirectoryQueries: queries,
+		PreviewCopies:    previews,
+		PreviewQueries:   previews,
+		Backends: application.DirectoryBackends{
+			domain.BackendJuiceFS: infrastructure.NewDirectoryFiles(infrastructure.DirectoryLayout{
+				Root: config.PersistentRoot, Published: juiceFSDirectories, Private: juiceFSPrivate,
+				Claim: config.Mounts.JuiceFSClaim, ClaimRoot: config.Mounts.JuiceFSRoot, SandboxUID: uid,
+			}),
+			domain.BackendNAS: infrastructure.NewDirectoryFiles(infrastructure.DirectoryLayout{
+				Root: config.WorkingRoot, Published: nasDirectories, Private: nasPrivate,
+				Claim: config.Mounts.NASClaim, SandboxUID: uid, SandboxWrites: true,
+			}),
+		},
 		Links: infrastructure.NewLinks(config.PublicBaseURL, config.LinkSecret, infrastructure.LinkPaths{
 			Upload: storagehttp.UploadPath, Content: storagehttp.ContentPath, SharePrefix: storagehttp.SharePrefix,
 		}),
-		References:     infrastructure.NewReferenceSpaces(config.PersistentRoot),
-		Mounts:         infrastructure.MountLayout{WorkingClaim: config.Mounts.WorkingClaim, InputsClaim: config.Mounts.InputsClaim, InputsRoot: config.Mounts.InputsRoot},
-		Converter:      infrastructure.NewGotenberg(config.Preview.GotenbergAddress, config.Preview.clientTimeout(), logger),
-		RenderingTasks: infrastructure.RenderingTasks{Tasks: rendering.Tasks, Queue: applicationtask.Queue},
-		Enqueuer:       rendering.Enqueuer,
-		FileChanges:    fileChanges,
+		Inspection: infrastructure.ContentInspector{},
+		Converter:  infrastructure.NewGotenberg(config.Preview.GotenbergAddress, config.Preview.clientTimeout(), logger),
+		Publisher:  bus,
+		Tasks:      tasks,
 	}
-	return application.NewApplication(spaces, ports, application.LinkLifetimes{Access: access, Upload: upload}, config.Preview.settings(), application.WorkspaceSettings{ListEntries: config.WorkspaceListEntries, SentContentBytes: config.sentContentBytes}, logger), nil
 }
 
 // artifactMessageOverhead is the room an Artifact command takes beside its
@@ -215,9 +252,8 @@ var AgentArtifactProcedures = []string{
 
 func registerHandlers(app *application.Application, config Config, mux *http.ServeMux, logger *slog.Logger) {
 	server := connectserver.New(logger)
-	storageprivatev1connect.RegisterFileSpaceServiceHandler(server, storageconnect.NewFileSpaceHandler(app, append([]string{config.AgentToken}, config.FileSpaceTokens...), config.ReferenceSpaceTokens))
+	storageprivatev1connect.RegisterDirectoryServiceHandler(server, storageconnect.NewDirectoryHandler(app, append([]string{config.AgentToken}, config.FileSpaceTokens...), config.ReferenceSpaceTokens))
 	storageprivatev1connect.RegisterSandboxMountServiceHandler(server, storageconnect.NewSandboxMountHandler(app, config.AgentToken))
-	storageprivatev1connect.RegisterReferenceSpaceServiceHandler(server, storageconnect.NewReferenceSpaceHandler(app, config.ReferenceSpaceTokens...))
 	connectserver.Mount(mux, server)
 	mountArtifactService(mux, app, logger)
 	limit := config.MaxUploadBytes
@@ -234,64 +270,4 @@ func mountArtifactService(mux connecthttp.ServeMux, app *application.Application
 	server := connectserver.New(logger)
 	storageprivatev1connect.RegisterArtifactServiceHandler(server, storageconnect.NewArtifactHandler(app))
 	connectserver.Mount(mux, server, connecthttp.WithReadMaxBytes(app.SentContentLimit()+artifactMessageOverhead))
-}
-
-// previewSweepInterval is how often lapsed Preview Copies and recorded
-// failures are removed.
-const previewSweepInterval = time.Hour
-
-// runMaintenance attempts accepted workspace reclamations until each
-// completes, and removes lapsed Preview Copies and recorded failures.
-// Replicas share the reclamations through the workspace locks; sweeps are
-// idempotent.
-func runMaintenance(lc fx.Lifecycle, config Config, app *application.Application, logger *slog.Logger) {
-	interval, _ := parseDuration(config.ReclaimInterval, 30*time.Second)
-	runPeriodically(lc, interval, func(ctx context.Context) {
-		if err := app.ReclaimRequestedWorkspaces(ctx); err != nil && ctx.Err() == nil {
-			logger.WarnContext(ctx, "workspace reclamation remains pending", "error", err)
-		}
-	})
-	runPeriodically(lc, previewSweepInterval, func(ctx context.Context) {
-		if err := app.SweepPreviewCopies(ctx); err != nil && ctx.Err() == nil {
-			logger.WarnContext(ctx, "lapsed preview copies remain", "error", err)
-		}
-	})
-}
-
-// runPeriodically runs work at start and on every interval until stop.
-func runPeriodically(lc fx.Lifecycle, interval time.Duration, work func(context.Context)) {
-	var cancel context.CancelFunc
-	done := make(chan struct{})
-	lc.Append(fx.Hook{
-		OnStart: func(context.Context) error {
-			var ctx context.Context
-			ctx, cancel = context.WithCancel(context.Background())
-			go func() {
-				defer close(done)
-				ticker := time.NewTicker(interval)
-				defer ticker.Stop()
-				for {
-					work(ctx)
-					select {
-					case <-ctx.Done():
-						return
-					case <-ticker.C:
-					}
-				}
-			}()
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			if cancel == nil {
-				return nil
-			}
-			cancel()
-			select {
-			case <-done:
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		},
-	})
 }

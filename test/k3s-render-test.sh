@@ -86,7 +86,7 @@ check(binding is not None and where(binding) == "talgent-sandbox"
 # Sandboxes mount claims of the names Storage grants, bound to PVs of their own.
 claims = {(d["metadata"]["name"], where(d)): d for d in docs if d["kind"] == "PersistentVolumeClaim"}
 volumes = {d["metadata"]["name"]: d for d in docs if d["kind"] == "PersistentVolume"}
-for claim in ("talgent-nas-root", "talgent-juicefs-inputs"):
+for claim in ("talgent-nas-root", "talgent-juicefs-directories"):
     sandbox_claim = claims.get((claim, "talgent-sandbox"))
     check(sandbox_claim is not None, f"claim {claim} is in talgent-sandbox")
     if sandbox_claim is None:
@@ -99,11 +99,11 @@ check(nas_sandbox is not None and nas_sandbox["spec"]["csi"]["volumeAttributes"]
       "the sandbox NAS PV mounts the platform's NFS share")
 check(nas_sandbox is not None and nas_sandbox["spec"]["csi"]["volumeHandle"] == "talgent-nas-root-sandbox",
       "the sandbox NAS PV has a volume handle of its own")
-inputs = volumes.get("talgent-juicefs-inputs-sandbox")
-check(inputs is not None and inputs["spec"]["csi"]["nodePublishSecretRef"] == volumes["talgent-juicefs-root"]["spec"]["csi"]["nodePublishSecretRef"],
-      "the sandbox inputs PV mounts the platform's JuiceFS file system")
-check(inputs is not None and inputs["spec"]["csi"]["volumeHandle"] == "talgent-juicefs-inputs-rustfs-sandbox",
-      "the sandbox inputs PV has a volume handle of its own")
+directories = volumes.get("talgent-juicefs-directories-sandbox")
+check(directories is not None and directories["spec"]["csi"]["nodePublishSecretRef"] == volumes["talgent-juicefs-root"]["spec"]["csi"]["nodePublishSecretRef"],
+      "the sandbox JuiceFS PV mounts the platform's JuiceFS file system")
+check(directories is not None and directories["spec"]["csi"]["volumeHandle"] == "talgent-juicefs-directories-rustfs-sandbox",
+      "the sandbox JuiceFS PV has a volume handle of its own")
 check(("talgent-nas-root", "talgent") in claims and ("talgent-juicefs-root", "talgent") in claims,
       "controlplane keeps its claims in talgent")
 

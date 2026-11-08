@@ -7,29 +7,39 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
+	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
-// Only a verified Work Agent with a workspace publishes Artifacts, from its
-// own workspace into the File Space its Space Token names; nothing about
-// them comes from the request.
+var workspaceLayout = &authn.WorkspaceLayout{
+	Workspace: authn.Directory{Owner: []authn.OwnerFact{{Condition: "work", Value: "work-1"}}, Name: "workspace"},
+	Mounts:    []authn.MountedDirectory{{Path: "inputs", Directory: authn.Directory{Owner: []authn.OwnerFact{{Condition: "subject", Value: "case:1"}}, Name: "inputs"}}},
+}
+
+// Only a verified Work Agent with a Session Workspace publishes Artifacts,
+// from its own workspace into the File Space its Space Token names; nothing
+// about them comes from the request.
 func TestArtifactCommandsTakeTheWorkAgentFromItsVerifiedIdentity(t *testing.T) {
 	header := new(connect.Header)
 	header.Set(authn.HeaderSpaceToken, " space ")
-	work := authn.NativeProcess{WorkID: "work-1", Purpose: "work", WorkspaceReference: "ws-1"}
+	work := authn.NativeProcess{WorkID: "work-1", Purpose: "work", Workspace: workspaceLayout}
 
 	source, err := workAgent(authn.WithNativeProcess(context.Background(), work), header, true)
 	require.NoError(t, err)
 	require.Equal(t, "work-1", source.WorkID)
-	require.Equal(t, "ws-1", source.WorkspaceReference)
 	require.Equal(t, "space", source.SpaceToken)
+	require.Equal(t, &application.Layout{
+		Workspace: application.Named{Owner: []domain.OwnerFact{{Condition: "work", Value: "work-1"}}, Name: "workspace"},
+		Mounts: []application.Mount{{Path: "inputs", Directory: application.Named{
+			Owner: []domain.OwnerFact{{Condition: "subject", Value: "case:1"}}, Name: "inputs",
+		}}},
+	}, source.Workspace)
 
-	pm := work
-	pm.Purpose, pm.WorkspaceReference = "project_coordination", ""
 	for name, ctx := range map[string]context.Context{
 		"no verified identity":         context.Background(),
-		"a coordinating Work":          authn.WithNativeProcess(context.Background(), pm),
 		"a Work without its workspace": authn.WithNativeProcess(context.Background(), authn.NativeProcess{WorkID: "work-1", Purpose: "work"}),
 	} {
 		_, err := workAgent(ctx, header, true)
@@ -38,7 +48,6 @@ func TestArtifactCommandsTakeTheWorkAgentFromItsVerifiedIdentity(t *testing.T) {
 }
 
 // Content a Work sent needs no Session Workspace; a workspace file does.
-// The Work's purpose does not decide it.
 func TestSentContentNeedsNoWorkspace(t *testing.T) {
 	header := new(connect.Header)
 	header.Set(authn.HeaderSpaceToken, "space")
@@ -47,8 +56,7 @@ func TestSentContentNeedsNoWorkspace(t *testing.T) {
 	source, err := publishingAgent(managed, header, "", []byte{})
 	require.NoError(t, err)
 	require.Equal(t, "work-1", source.WorkID)
-	require.Equal(t, "space", source.SpaceToken)
-	require.Empty(t, source.WorkspaceReference)
+	require.Nil(t, source.Workspace)
 	require.NotNil(t, source.Content, "an empty file sent stays content")
 
 	_, err = publishingAgent(managed, header, "out.md", nil)
@@ -57,16 +65,17 @@ func TestSentContentNeedsNoWorkspace(t *testing.T) {
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 }
 
-// A Work with a Session Workspace that sends content is refused as an
-// invalid source: it publishes only a file of its workspace.
-func TestSentContentFromAWorkWithAWorkspaceIsAnInvalidSource(t *testing.T) {
-	header := new(connect.Header)
-	header.Set(authn.HeaderSpaceToken, "space")
-	cloud := authn.WithNativeProcess(context.Background(), authn.NativeProcess{WorkID: "work-1", Purpose: "work", WorkspaceReference: "ws-1"})
-
-	source, err := publishingAgent(cloud, header, "", []byte("x"))
-	require.NoError(t, err)
-	require.Equal(t, "ws-1", source.WorkspaceReference, "the verified workspace travels with the content")
-	err = mapError(domain.ErrSentContentWithWorkspace)
-	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+// Each Directory refusal reaches its caller with a reason of its own.
+func TestDirectoryRefusalsCarryTheirReason(t *testing.T) {
+	for err, want := range map[error]storageprivatev1.ErrorReason{
+		domain.ErrInvalidLocator:           storageprivatev1.ErrorReason_ERROR_REASON_INVALID_LOCATOR,
+		domain.ErrDirectoryNotOpen:         storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN,
+		domain.ErrDirectoryNotAllocated:    storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED,
+		domain.ErrDirectoryReclaimed:       storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED,
+		domain.ErrPermanentDirectory:       storageprivatev1.ErrorReason_ERROR_REASON_PERMANENT_DIRECTORY,
+		domain.ErrSentContentWithWorkspace: storageprivatev1.ErrorReason_ERROR_REASON_INVALID_SOURCE,
+		application.ErrNameTaken:           storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN,
+	} {
+		require.Equal(t, want, storageerror.ReasonOf(mapError(err)), err.Error())
+	}
 }

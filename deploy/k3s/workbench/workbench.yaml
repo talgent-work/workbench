@@ -229,11 +229,11 @@ data:
         - "${STORAGE_FILE_SPACE_TOKEN:}"
       reference-space-tokens:
         - "${STORAGE_REFERENCE_SPACE_TOKEN:}"
-      reclaim-interval: 30s
+      # Sandboxes mount each Directory from its backend's claim by subPath.
       mounts:
-        working-claim: talgent-nas-root
-        inputs-claim: talgent-juicefs-inputs
-        inputs-root: talgent
+        nas-claim: talgent-nas-root
+        juicefs-claim: talgent-juicefs-directories
+        juicefs-root: talgent
       # Every preview limit and timing in one place; conservative
       # starting points, not capacity-tested.
       preview:
@@ -496,6 +496,17 @@ data:
       retry-delay-min: 2s
       shutdown-timeout: 30s
       worker-concurrency: 1
+    # Storage removes reclaimed Directories' content, retrying while a
+    # publication copies from one, and lapses Preview Copies hourly.
+    storage-maintenance-taskqueue:
+      queue-name: storage-maintenance
+      redis-addr: ${REDIS_ADDR}
+      redis-db: 0
+      redis-password: ${REDIS_PASSWORD:}
+      retry-delay-max: 5m
+      retry-delay-min: 10s
+      shutdown-timeout: 30s
+      worker-concurrency: 2
     clickhouse:
       dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}?database=default
     # Trace runs in this process with its own telemetry database; a
@@ -610,10 +621,10 @@ spec:
     matchLabels:
       talgent.io/storage: juicefs-originals
 ---
-# Process files and Agent HOME on the NAS, which Storage alone writes:
-# workspaces/, homes/ and .reclaim/ under the share. A static PV keeps that
-# fixed layout. Sandboxes mount their own directory by subPath through the
-# claim of the same name in talgent-sandbox (sandbox.yaml).
+# NAS Directories, which Storage alone allocates: directories/<owner>/<name>
+# under the share, with Storage's own staging and locks under storage/. A
+# static PV keeps that fixed layout. Sandboxes mount each Directory by subPath
+# through the claim of the same name in talgent-sandbox (sandbox.yaml).
 apiVersion: v1
 kind: PersistentVolume
 metadata:

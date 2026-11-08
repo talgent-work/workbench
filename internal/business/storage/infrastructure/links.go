@@ -26,7 +26,7 @@ type Links struct {
 	secret  []byte
 }
 
-var _ application.LinkPort = (*Links)(nil)
+var _ application.LinkSigningPort = (*Links)(nil)
 
 func NewLinks(baseURL, secret string, paths LinkPaths) *Links {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -34,20 +34,18 @@ func NewLinks(baseURL, secret string, paths LinkPaths) *Links {
 }
 
 type linkClaims struct {
-	Purpose     string `json:"p"`
+	Purpose string `json:"p"`
+	// Owner and Directory name the Directory: its owner element and name.
 	Owner       string `json:"o"`
-	Kind        string `json:"k,omitempty"`
-	Name        string `json:"n"`
+	Directory   string `json:"dn"`
+	Path        string `json:"n"`
+	Workspace   bool   `json:"w,omitempty"`
 	Replace     bool   `json:"r,omitempty"`
 	Uploader    string `json:"u,omitempty"`
 	ContentType string `json:"c,omitempty"`
 	Download    bool   `json:"d,omitempty"`
 	Digest      string `json:"h,omitempty"`
 	PreviewCopy bool   `json:"v,omitempty"`
-	Workspace   string `json:"w,omitempty"`
-	File        string `json:"wf,omitempty"`
-	Reference   string `json:"wr,omitempty"`
-	Entry       string `json:"we,omitempty"`
 	FileSize    int64  `json:"ws,omitempty"`
 	FileTime    int64  `json:"wt,omitempty"`
 	ExpiresAt   int64  `json:"e"`
@@ -59,7 +57,11 @@ const (
 )
 
 func (l *Links) UploadURL(grant application.UploadGrant, expiresAt time.Time) string {
-	return l.signedURL(l.paths.Upload, linkClaims{Purpose: uploadPurpose, Owner: grant.Owner, Name: grant.Name, Replace: grant.Replace, Uploader: grant.UploaderUserID, ContentType: grant.ContentType, ExpiresAt: expiresAt.Unix()})
+	claims := linkClaims{
+		Purpose: uploadPurpose, Owner: ownerKey(grant.Position.Directory.Owner), Directory: grant.Position.Directory.Name, Path: grant.Position.Name,
+		Replace: grant.Replace, Uploader: grant.UploaderUserID, ContentType: grant.ContentType, ExpiresAt: expiresAt.Unix(),
+	}
+	return l.baseURL + l.signedPath(l.paths.Upload, claims)
 }
 
 func (l *Links) VerifyUpload(token string, now time.Time) (application.UploadGrant, error) {
@@ -67,20 +69,27 @@ func (l *Links) VerifyUpload(token string, now time.Time) (application.UploadGra
 	if err != nil {
 		return application.UploadGrant{}, err
 	}
-	return application.UploadGrant{Owner: claims.Owner, Name: claims.Name, Replace: claims.Replace, UploaderUserID: claims.Uploader, ContentType: claims.ContentType}, nil
+	id, err := directoryIDFromDO(claims.Owner, claims.Directory)
+	if err != nil {
+		return application.UploadGrant{}, application.ErrInvalidLink
+	}
+	position, err := domain.NewFilePosition(id, claims.Path)
+	if err != nil {
+		return application.UploadGrant{}, application.ErrInvalidLink
+	}
+	return application.UploadGrant{Position: position, Replace: claims.Replace, UploaderUserID: claims.Uploader, ContentType: claims.ContentType}, nil
 }
 
 func (l *Links) AccessLink(grant application.AccessGrant, expiresAt time.Time) application.AccessLink {
-	if grant.Workspace != "" {
-		claims := linkClaims{Purpose: accessPurpose, Workspace: grant.Workspace, File: string(grant.WorkspacePath), Reference: grant.ReferenceOwner, Entry: grant.ReferenceEntry, Download: grant.Download, ExpiresAt: expiresAt.Unix()}
-		if version := grant.WorkspaceVersion; version != nil {
-			// A size of zero is a version too, so the time always marks one.
-			claims.FileSize, claims.FileTime = version.SizeBytes, version.ModifiedAt.UnixNano()
-		}
-		path := l.signedPath(l.paths.Content, claims)
-		return application.AccessLink{URL: l.baseURL + path, Path: path}
+	claims := linkClaims{
+		Purpose: accessPurpose, Owner: ownerKey(grant.Directory.Owner), Directory: grant.Directory.Name, Path: grant.Path, Workspace: grant.Workspace,
+		Download: grant.Download, Digest: grant.ContentDigest, PreviewCopy: grant.PreviewCopy, ExpiresAt: expiresAt.Unix(),
 	}
-	path := l.signedPath(l.paths.Content, linkClaims{Purpose: accessPurpose, Owner: grant.Owner, Kind: string(grant.Position.Kind), Name: grant.Position.Name, Download: grant.Download, Digest: grant.ContentDigest, PreviewCopy: grant.PreviewCopy, ExpiresAt: expiresAt.Unix()})
+	if version := grant.WorkspaceVersion; version != nil {
+		// A size of zero is a version too, so the time always marks one.
+		claims.FileSize, claims.FileTime = version.SizeBytes, version.ModifiedAt.UnixNano()
+	}
+	path := l.signedPath(l.paths.Content, claims)
 	return application.AccessLink{URL: l.baseURL + path, Path: path}
 }
 
@@ -89,31 +98,28 @@ func (l *Links) VerifyAccess(token string, now time.Time) (application.AccessGra
 	if err != nil {
 		return application.AccessGrant{}, err
 	}
-	if claims.Workspace != "" {
-		file, err := domain.ParseWorkspaceFile(claims.File)
-		// A link reads a Reference Space only with the entry it reads there.
-		if err != nil || (claims.Reference == "") != (claims.Entry == "") {
-			return application.AccessGrant{}, application.ErrInvalidLink
-		}
-		grant := application.AccessGrant{Workspace: claims.Workspace, WorkspacePath: file, ReferenceOwner: claims.Reference, ReferenceEntry: claims.Entry, Download: claims.Download}
-		if claims.FileTime != 0 {
-			grant.WorkspaceVersion = &application.WorkspaceFileVersion{SizeBytes: claims.FileSize, ModifiedAt: time.Unix(0, claims.FileTime).UTC()}
-		}
-		return grant, nil
-	}
-	position, err := domain.NewFilePosition(claims.Owner, domain.FileKind(claims.Kind), claims.Name)
+	id, err := directoryIDFromDO(claims.Owner, claims.Directory)
 	if err != nil {
 		return application.AccessGrant{}, application.ErrInvalidLink
 	}
-	return application.AccessGrant{Owner: claims.Owner, Position: position, Download: claims.Download, ContentDigest: claims.Digest, PreviewCopy: claims.PreviewCopy}, nil
+	grant := application.AccessGrant{
+		Directory: id, Path: claims.Path, Workspace: claims.Workspace, Download: claims.Download, ContentDigest: claims.Digest, PreviewCopy: claims.PreviewCopy,
+	}
+	if claims.Workspace {
+		if _, err := domain.ParseWorkspaceFile(claims.Path); err != nil {
+			return application.AccessGrant{}, application.ErrInvalidLink
+		}
+	} else if domain.ValidateFileName(claims.Path) != nil {
+		return application.AccessGrant{}, application.ErrInvalidLink
+	}
+	if claims.FileTime != 0 {
+		grant.WorkspaceVersion = &application.WorkspaceFileVersion{SizeBytes: claims.FileSize, ModifiedAt: time.Unix(0, claims.FileTime).UTC()}
+	}
+	return grant, nil
 }
 
 func (l *Links) ShareURL(token string) string {
 	return l.baseURL + l.paths.SharePrefix + url.PathEscape(token)
-}
-
-func (l *Links) signedURL(endpoint string, claims linkClaims) string {
-	return l.baseURL + l.signedPath(endpoint, claims)
 }
 
 // signedPath is the endpoint with its signed grant, without the public base.
@@ -135,7 +141,7 @@ func (l *Links) verify(token, purpose string, now time.Time) (linkClaims, error)
 		return linkClaims{}, application.ErrInvalidLink
 	}
 	var claims linkClaims
-	if err := json.Unmarshal(payload, &claims); err != nil || claims.Purpose != purpose || claims.ExpiresAt <= now.Unix() || (claims.Workspace == "" && claims.Owner == "") {
+	if err := json.Unmarshal(payload, &claims); err != nil || claims.Purpose != purpose || claims.ExpiresAt <= now.Unix() || claims.Owner == "" {
 		return linkClaims{}, application.ErrInvalidLink
 	}
 	return claims, nil

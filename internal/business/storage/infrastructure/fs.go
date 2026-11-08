@@ -91,8 +91,9 @@ func readAttributes(fd int) (application.FileAttributes, error) {
 		switch {
 		case err == nil:
 			values[key] = string(buf[:n])
-		case errors.Is(err, unix.ENODATA):
-			// An empty value is never written.
+		case errors.Is(err, unix.ENODATA), errors.Is(err, unix.ENOTSUP):
+			// An empty value is never written, and a file system without
+			// extended attributes, such as an NFS v4.1 share, records none.
 		default:
 			return application.FileAttributes{}, err
 		}

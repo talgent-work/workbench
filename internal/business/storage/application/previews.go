@@ -4,11 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 
 	"github.com/talgent-work/workbench/internal/business/storage/application/task"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
+
+// ErrConverterBusy means the converter had no capacity for a rendering now;
+// the rendering is retried after a short delay, without counting as failed.
+var ErrConverterBusy = errors.New("storage: the converter is busy")
 
 // FilePreview is how a file is shown, with an Access Link for inline reading
 // when the verdict shows bytes. Rendering says a Preview Copy of the content
@@ -22,8 +27,8 @@ type FilePreview struct {
 // PreviewFile tells how an existing Attachment or Artifact is shown, judged
 // afresh from its current content; the owner's context decided the reader
 // first. Nothing is rendered by asking.
-func (a *Application) PreviewFile(ctx context.Context, owner string, kind domain.FileKind, name string) (FilePreview, error) {
-	opened, err := a.openForPreview(ctx, owner, kind, name)
+func (a *Application) PreviewFile(ctx context.Context, at Position) (FilePreview, error) {
+	opened, err := a.openForPreview(ctx, at)
 	if err != nil {
 		return FilePreview{}, err
 	}
@@ -31,10 +36,11 @@ func (a *Application) PreviewFile(ctx context.Context, owner string, kind domain
 }
 
 // RequestFilePreview asks for the current content's Preview Copy when the
-// file needs one, also after the work the space holds has ended; a content
-// already rendering, rendered or found unrenderable is not rendered again.
-func (a *Application) RequestFilePreview(ctx context.Context, owner string, kind domain.FileKind, name string) (FilePreview, error) {
-	opened, err := a.openForPreview(ctx, owner, kind, name)
+// file needs one, also after the work its Directory serves has ended; a
+// content already rendering, rendered or found unrenderable is not rendered
+// again.
+func (a *Application) RequestFilePreview(ctx context.Context, at Position) (FilePreview, error) {
+	opened, err := a.openForPreview(ctx, at)
 	if err != nil {
 		return FilePreview{}, err
 	}
@@ -42,64 +48,114 @@ func (a *Application) RequestFilePreview(ctx context.Context, owner string, kind
 	if err != nil || preview.Verdict.Mode != domain.PreviewRender || preview.Rendering {
 		return preview, err
 	}
-	render := task.RenderPreview{
-		Owner: opened.position.Owner, Kind: string(opened.position.Kind),
-		Name: opened.position.Name, Digest: opened.key.Digest,
+	requested := domain.RequestRendering(opened.key, a.now())
+	err = a.previewCopies.Add(ctx, requested)
+	if errors.Is(err, domain.ErrConcurrentModification) {
+		// Another opening requested it first; its rendering serves this one.
+		preview.Rendering = true
+		return preview, nil
 	}
-	if err := task.RequestRendering(ctx, a.enqueuer, render, a.preview.Rendering, a.now()); err != nil {
-		return FilePreview{}, fmt.Errorf("storage: request rendering: %w", err)
+	if err != nil {
+		return FilePreview{}, err
+	}
+	render := task.RenderPreview{Directory: opened.position.Directory, Name: opened.position.Name, Digest: opened.key.Digest}
+	if err := task.RequestRendering(ctx, a.tasks, render, a.preview.Rendering, a.now()); err != nil {
+		// Never queued, the request holds nothing back from the next opening.
+		return FilePreview{}, errors.Join(fmt.Errorf("storage: request rendering: %w", err), a.previewCopies.Remove(context.WithoutCancel(ctx), opened.key))
 	}
 	preview.Rendering = true
 	return preview, nil
 }
 
-// RenderPreview renders one requested content. A content that meanwhile has
-// a Preview Copy or a recorded failure, or that is no longer at its position,
-// is left alone. A busy converter returns ErrConverterBusy so the rendering
-// is retried; any other temporary failure leaves nothing behind.
-func (a *Application) RenderPreview(ctx context.Context, render task.RenderPreview) error {
+// RenderPreview renders one requested content. A content whose rendering
+// was settled or abandoned meanwhile is left alone, and one no longer at its
+// position is abandoned. A busy converter returns ErrConverterBusy so the
+// rendering is retried; any other failure abandons it, leaving the next
+// opening to request it again.
+func (a *Application) RenderPreview(ctx context.Context, render task.RenderPreview) (err error) {
 	key, err := domain.NewPreviewKey(render.Digest)
 	if err != nil {
 		return err
 	}
-	outcome, err := a.previews.PreviewOutcome(ctx, key, a.previewSince())
-	if err != nil || outcome.Copy || outcome.Failure != domain.PreviewRefusalNone {
-		return err
-	}
-	position, err := domain.NewFilePosition(render.Owner, domain.FileKind(render.Kind), render.Name)
-	if err != nil {
-		return err
-	}
-	opened, err := a.persistent.Open(ctx, position.Owner, position)
-	if errors.Is(err, ErrFileNotFound) {
+	requested, err := a.previewCopies.Get(ctx, key)
+	if errors.Is(err, domain.ErrPreviewCopyNotFound) {
 		return nil
 	}
-	if err != nil {
+	if err != nil || requested.State != domain.PreviewRendering {
 		return err
 	}
-	defer opened.Content.Close()
-	if opened.File.Attributes.ContentDigest != key.Digest {
-		return nil
-	}
-	result, pdf, err := a.converter.Render(ctx, position.Name, opened.Content, a.preview.Limits.RenderedPDF)
+	defer func() {
+		if err != nil && !errors.Is(err, ErrConverterBusy) {
+			err = errors.Join(err, a.abandon(ctx, requested))
+		}
+	}()
+	settled, pdf, err := a.renderContent(ctx, render, key)
 	if err != nil {
 		return err
 	}
 	if pdf != nil {
 		defer pdf.Close()
 	}
+	if settled.Temporary() {
+		a.logger.WarnContext(ctx, "preview rendering failed for now; the next opening may try again", "digest", key.Digest)
+		return a.abandon(ctx, requested)
+	}
+	if err := requested.Settle(settled, a.now()); err != nil {
+		return err
+	}
+	if settled.Copy && pdf == nil {
+		return a.abandon(ctx, requested)
+	}
+	return a.previewCopies.Save(ctx, requested, pdf)
+}
+
+// renderContent renders the content still at the requested position; one
+// replaced or gone settles nothing.
+func (a *Application) renderContent(ctx context.Context, render task.RenderPreview, key domain.PreviewKey) (domain.RenderingSettlement, io.ReadCloser, error) {
+	position, err := domain.NewFilePosition(render.Directory, render.Name)
+	if err != nil {
+		return domain.RenderingSettlement{}, nil, err
+	}
+	_, backend, err := a.readable(ctx, position.Directory)
+	if err != nil {
+		return domain.RenderingSettlement{}, nil, nothingToRender(err)
+	}
+	opened, err := backend.Open(ctx, position)
+	if err != nil {
+		return domain.RenderingSettlement{}, nil, nothingToRender(err)
+	}
+	defer opened.Content.Close()
+	if opened.File.Attributes.ContentDigest != key.Digest {
+		return domain.RenderingSettlement{}, nil, nil
+	}
+	result, pdf, err := a.converter.Render(ctx, position.Name, opened.Content, a.preview.Limits.RenderedPDF)
+	if err != nil {
+		return domain.RenderingSettlement{}, nil, err
+	}
 	if result.Outcome == domain.ConverterBusy {
-		return ErrConverterBusy
+		if pdf != nil {
+			pdf.Close()
+		}
+		return domain.RenderingSettlement{}, nil, ErrConverterBusy
 	}
-	settled := domain.SettleRendering(result, a.preview.Limits)
-	switch {
-	case settled.Copy && pdf != nil:
-		return a.previews.StorePreview(ctx, key, pdf)
-	case settled.Failure != domain.PreviewRefusalNone:
-		return a.previews.RecordFailure(ctx, key, settled.Failure)
+	return domain.SettleRendering(result, a.preview.Limits), pdf, nil
+}
+
+// nothingToRender treats a file gone from its position as a temporary
+// outcome: nothing is recorded about the content.
+func nothingToRender(err error) error {
+	if errors.Is(err, ErrFileNotFound) || errors.Is(err, domain.ErrDirectoryNotOpen) || errors.Is(err, domain.ErrDirectoryReclaimed) {
+		return nil
 	}
-	a.logger.WarnContext(ctx, "preview rendering failed for now; the next opening may try again", "digest", key.Digest, "outcome", int(result.Outcome))
-	return nil
+	return err
+}
+
+// abandon removes a rendering that left no outcome.
+func (a *Application) abandon(ctx context.Context, requested *domain.PreviewCopy) error {
+	if err := requested.Abandon(); err != nil {
+		return err
+	}
+	return a.previewCopies.Remove(context.WithoutCancel(ctx), requested.Key)
 }
 
 // openedForPreview is a file as a preview judges it.
@@ -110,12 +166,16 @@ type openedForPreview struct {
 	key       domain.PreviewKey
 }
 
-func (a *Application) openForPreview(ctx context.Context, owner string, kind domain.FileKind, name string) (openedForPreview, error) {
-	_, position, err := a.existingFile(ctx, owner, kind, name)
+func (a *Application) openForPreview(ctx context.Context, at Position) (openedForPreview, error) {
+	_, backend, position, err := a.existingFile(ctx, at)
 	if err != nil {
 		return openedForPreview{}, err
 	}
-	stored, structure, err := a.persistent.Inspect(ctx, position.Owner, position)
+	return a.inspectForPreview(ctx, backend, position)
+}
+
+func (a *Application) inspectForPreview(ctx context.Context, backend DirectoryBackendPort, position domain.FilePosition) (openedForPreview, error) {
+	stored, structure, err := backend.Inspect(ctx, position)
 	if err != nil {
 		return openedForPreview{}, err
 	}
@@ -131,33 +191,48 @@ func (a *Application) filePreview(ctx context.Context, opened openedForPreview) 
 		Source: domain.PreviewOfSpaceFile, Name: opened.position.Name, SizeBytes: opened.stored.SizeBytes, Structure: opened.structure,
 	}
 	verdict := domain.AdmitForPreview(subject, a.preview.Limits)
+	var current *domain.PreviewCopy
 	// Only an admitted office file has an outcome to look up.
 	if verdict.Mode == domain.PreviewRender {
-		outcome, err := a.previews.PreviewOutcome(ctx, opened.key, a.previewSince())
-		if err != nil {
+		var err error
+		if current, err = a.currentPreviewCopy(ctx, opened.key); err != nil {
 			return FilePreview{}, err
 		}
-		subject.Outcome = outcome
-		verdict = domain.AdmitForPreview(subject, a.preview.Limits)
+		if current != nil {
+			subject.Outcome = current.Outcome()
+			verdict = domain.AdmitForPreview(subject, a.preview.Limits)
+		}
 	}
 	preview := FilePreview{Verdict: verdict}
 	switch {
 	case verdict.Mode == domain.PreviewRender:
-		rendering, err := a.rendering.Rendering(ctx, opened.key)
-		if err != nil {
-			return FilePreview{}, err
-		}
-		preview.Rendering = rendering
+		preview.Rendering = current != nil && current.State == domain.PreviewRendering
 	case verdict.Readable():
-		expiresAt := a.now().UTC().Add(a.linkTTL)
-		grant := AccessGrant{
-			Owner: opened.position.Owner, Position: opened.position, ContentDigest: opened.key.Digest,
+		link := a.accessLink(AccessGrant{
+			Directory: opened.position.Directory, Path: opened.position.Name, ContentDigest: opened.key.Digest,
 			PreviewCopy: verdict.Mode == domain.PreviewShowCopy,
-		}
-		link := a.links.AccessLink(grant, expiresAt)
-		preview.Link = &Link{URL: link.URL, Path: link.Path, ExpiresAt: expiresAt}
+		})
+		preview.Link = &link
 	}
 	return preview, nil
+}
+
+// currentPreviewCopy is the content's Preview Copy, nil when it has none. A
+// lapsed one, or a rendering past its deadline that can no longer be running,
+// is removed and holds nothing.
+func (a *Application) currentPreviewCopy(ctx context.Context, key domain.PreviewKey) (*domain.PreviewCopy, error) {
+	current, err := a.previewCopies.Get(ctx, key)
+	if errors.Is(err, domain.ErrPreviewCopyNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	now := a.now()
+	if current.Lapsed(now, a.preview.Retention) || current.RenderingAbandoned(now, a.preview.Rendering.Deadline) {
+		return nil, a.previewCopies.Remove(ctx, key)
+	}
+	return current, nil
 }
 
 // readPreviewCopy opens the Preview Copy a preview link names, under the
@@ -167,15 +242,47 @@ func (a *Application) readPreviewCopy(ctx context.Context, grant AccessGrant) (O
 	if err != nil {
 		return OpenedFile{}, ErrInvalidLink
 	}
-	opened, err := a.previews.OpenPreview(ctx, key, a.previewSince())
+	current, err := a.currentPreviewCopy(ctx, key)
 	if err != nil {
 		return OpenedFile{}, err
 	}
-	name := grant.Position.Name
-	position := grant.Position
-	position.Name = name[:len(name)-len(path.Ext(name))] + ".pdf"
-	return OpenedFile{Content: opened.Content, File: StoredFile{
-		Position: position, SizeBytes: opened.SizeBytes, ModifiedAt: opened.MadeAt,
+	if current == nil || current.State != domain.PreviewRendered {
+		return OpenedFile{}, ErrFileNotFound
+	}
+	content, size, err := a.previewCopies.OpenRendering(ctx, key)
+	if err != nil {
+		return OpenedFile{}, err
+	}
+	name := grant.Path[:len(grant.Path)-len(path.Ext(grant.Path))] + ".pdf"
+	return OpenedFile{Content: content, File: StoredFile{
+		Position: domain.FilePosition{Directory: grant.Directory, Name: name}, SizeBytes: size, ModifiedAt: current.MadeAt,
 		Attributes: FileAttributes{ContentType: "application/pdf", ContentDigest: key.Digest},
 	}}, nil
+}
+
+// LapsePreviewCopies removes every Preview Copy and recorded failure made,
+// and every rendering requested, longer ago than the retention period; their
+// files may still exist, which does not keep them.
+func (a *Application) LapsePreviewCopies(ctx context.Context) error {
+	lapsed, err := a.previewQueries.MadeBefore(ctx, a.now().Add(-a.preview.Retention))
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, key := range lapsed {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current, err := a.previewCopies.Get(ctx, key)
+		if errors.Is(err, domain.ErrPreviewCopyNotFound) {
+			continue
+		}
+		if err == nil && current.Lapsed(a.now(), a.preview.Retention) {
+			err = a.previewCopies.Remove(ctx, key)
+		}
+		if err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }

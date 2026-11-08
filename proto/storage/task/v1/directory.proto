@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package storage.task.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/storage/task/v1;storagetaskv1";
+
+// OwnerFact is one condition of a Directory owner with its value.
+message OwnerFact {
+  // The condition's name.
+  string condition = 1;
+  // The locating caller's value.
+  string value = 2;
+}
+
+// Directory is one Directory's identity: its owner's facts in condition
+// order and its name.
+message Directory {
+  // Owner facts ordered by condition name.
+  repeated OwnerFact owner = 1;
+  // Name within the owner.
+  string name = 2;
+}

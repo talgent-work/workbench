@@ -68,7 +68,8 @@ type Option struct {
 	Kubernetes                pkgkubernetes.Config `json:"kubernetes" toml:"kubernetes" yaml:"kubernetes"`
 	// Storage renders Preview Copies on its own lane; its concurrency is the
 	// conversions one replica runs at once.
-	StoragePreviewTaskQueue pkgtaskqueue.Config `name:"storage-preview" json:"storage-preview-taskqueue" toml:"storage-preview-taskqueue" yaml:"storage-preview-taskqueue"`
+	StoragePreviewTaskQueue     pkgtaskqueue.Config `name:"storage-preview" json:"storage-preview-taskqueue" toml:"storage-preview-taskqueue" yaml:"storage-preview-taskqueue"`
+	StorageMaintenanceTaskQueue pkgtaskqueue.Config `name:"storage-maintenance" json:"storage-maintenance-taskqueue" toml:"storage-maintenance-taskqueue" yaml:"storage-maintenance-taskqueue"`
 	// ClickHouse holds Work message streams, read for Work turn results.
 	ClickHouse pkgclickhouse.Config `json:"clickhouse" toml:"clickhouse" yaml:"clickhouse"`
 
@@ -153,6 +154,7 @@ func appOptions(opt Option) []fx.Option {
 		// stops in reverse: HTTP, tasks, then messages).
 		pkgtaskqueue.NamedModule(marketplace.Queue),
 		pkgtaskqueue.NamedModule(storage.PreviewQueue),
+		pkgtaskqueue.NamedModule(storage.MaintenanceQueue),
 		pkgtaskqueue.NamedModule(agent.RecoveryQueue),
 		pkgtaskqueue.NamedModule(agent.PreparationQueue),
 		internalpkg.HTTPModule,

@@ -8,9 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/go-jimu/components/taskqueue"
-	"google.golang.org/protobuf/proto"
 
-	storagetaskv1 "github.com/talgent-work/workbench/gen/storage/task/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
@@ -41,20 +39,18 @@ func (*RenderPreviewProcessor) TaskType() taskqueue.TaskType {
 }
 
 func (p *RenderPreviewProcessor) Process(ctx context.Context, queued taskqueue.Task) error {
-	payload := &storagetaskv1.RenderPreviewTaskV1{}
-	if err := proto.Unmarshal(queued.Payload(), payload); err != nil {
+	render, err := applicationtask.ParseRenderPreview(queued.Payload())
+	if err != nil {
 		p.logger.ErrorContext(ctx, "preview rendering task is unreadable", slog.Any("error", err))
 		return taskqueue.ErrSkipRetry
 	}
-	err := p.app.RenderPreview(ctx, applicationtask.RenderPreview{
-		Owner: payload.GetOwner(), Kind: payload.GetKind(), Name: payload.GetName(), Digest: payload.GetDigest(),
-	})
+	err = p.app.RenderPreview(ctx, render)
 	switch {
 	case err == nil:
 		return nil
 	case errors.Is(err, application.ErrConverterBusy) && ctx.Err() == nil:
 		return fmt.Errorf("%w: %w", pkgtaskqueue.ErrRetryLater, err)
 	}
-	p.logger.WarnContext(ctx, "preview rendering ended without a result", slog.String("digest", payload.GetDigest()), slog.Any("error", err))
+	p.logger.WarnContext(ctx, "preview rendering ended without a result", slog.String("digest", render.Digest), slog.Any("error", err))
 	return taskqueue.ErrSkipRetry
 }

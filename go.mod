@@ -158,3 +158,7 @@ require (
 )
 
 tool google.golang.org/protobuf/cmd/protoc-gen-go
+
+// Temporary for the persistent directories integration branch: replaced by the
+// released contracts version before merge.
+replace github.com/talgent-work/contracts => ../contracts
