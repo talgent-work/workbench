@@ -51,24 +51,23 @@ type Queries struct {
 }
 
 type Application struct {
-	RecentRepositories   query.RecentRepositoryReader
-	Services             *ServiceAccess
-	Repositories         *RepositoryAccess
-	WorkPrincipals       access.WorkAuthorizer
-	Harness              command.DispatcherPort
-	PluginResults        query.PluginResultReader
-	ServiceAccessResults query.ServiceAccessReader
-	Catalog              command.MarketplacePort
-	Works                domain.AgentWorkRepository
+	Services       *ServiceAccess
+	Repositories   *RepositoryAccess
+	WorkPrincipals access.WorkAuthorizer
+	Harness        command.DispatcherPort
+	Catalog        command.MarketplacePort
+	Works          domain.AgentWorkRepository
+	// WorkQueries presents each Work view with its current model option.
+	WorkQueries      query.WorkQueryRepository
+	ExecutionQueries query.ExecutionQueryRepository
 	// Workspaces serves workspace browsing; Storage owns a Cloud Work's view.
-	Workspaces       WorkspacePort
-	Models           query.ModelConfigurations
-	Definitions      domain.AgentDefinitionRepository
-	DefinitionLookup query.AgentDefinitionLookup
-	WorkViews        query.WorkViewReader
-	Logger           *slog.Logger
-	Commands         Commands
-	Queries          Queries
+	Workspaces        WorkspacePort
+	Models            query.ModelConfigurations
+	Definitions       domain.AgentDefinitionRepository
+	DefinitionQueries query.AgentDefinitionQueryRepository
+	Logger            *slog.Logger
+	Commands          Commands
+	Queries           Queries
 }
 
 func NewApplication(
@@ -76,16 +75,14 @@ func NewApplication(
 	services *ServiceAccess,
 	workPrincipals access.WorkAuthorizer,
 	harness command.DispatcherPort,
-	pluginResults query.PluginResultReader,
-	serviceAccessResults query.ServiceAccessReader,
+	executionQueries query.ExecutionQueryRepository,
 	catalog command.MarketplacePort,
-	recentRepositories query.RecentRepositoryReader,
+	workQueries query.WorkQueryRepository,
 	sessions domain.AgentWorkRepository,
 	workspaces WorkspacePort,
 	models query.ModelConfigurations,
 	definitions domain.AgentDefinitionRepository,
-	definitionLookup query.AgentDefinitionLookup,
-	sessionViews query.WorkViewReader,
+	definitionQueries query.AgentDefinitionQueryRepository,
 	logger *slog.Logger,
 	workReport *query.GetWorkReportHandler,
 	ensure *command.EnsureAgentDefinitionHandler,
@@ -122,18 +119,16 @@ func NewApplication(
 	coordination *command.ExecutionCoordination,
 ) *Application {
 	return &Application{Repositories: repositories, Services: services, WorkPrincipals: workPrincipals,
-		Harness:              harness,
-		PluginResults:        pluginResults,
-		ServiceAccessResults: serviceAccessResults,
-		Catalog:              catalog,
-		RecentRepositories:   recentRepositories,
-		Works:                sessions,
-		Workspaces:           workspaces,
-		Models:               models,
-		Definitions:          definitions,
-		DefinitionLookup:     definitionLookup,
-		WorkViews:            sessionViews,
-		Logger:               logger,
+		Harness:           harness,
+		ExecutionQueries:  executionQueries,
+		Catalog:           catalog,
+		WorkQueries:       workQueries,
+		Works:             sessions,
+		Workspaces:        workspaces,
+		Models:            models,
+		Definitions:       definitions,
+		DefinitionQueries: definitionQueries,
+		Logger:            logger,
 		Commands: Commands{
 			EnsureAgentDefinition:  ensure,
 			ChangeAgentAppearance:  appearance,

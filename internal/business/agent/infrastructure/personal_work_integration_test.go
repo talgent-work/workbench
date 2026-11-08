@@ -94,8 +94,8 @@ func personalWorksFixture(t *testing.T, db *xorm.Engine, spaces *librarySpaces) 
 	options := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
 	create := creationCoordinator(db, startupAuthority{}, nil, options, &personalStartupCatalog{})
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	lookup := infrastructure.NewAgentDefinitionLookup(db)
-	app := &application.Application{Definitions: definitions, DefinitionLookup: lookup, Works: infrastructure.NewAgentWorkRepository(db, time.Now), WorkViews: infrastructure.NewWorkQueryRepository(db), Commands: application.Commands{
+	lookup := infrastructure.NewAgentDefinitionQueryRepository(db)
+	app := &application.Application{Definitions: definitions, DefinitionQueries: lookup, Works: infrastructure.NewAgentWorkRepository(db, time.Now), WorkQueries: infrastructure.NewWorkQueryRepository(db), Commands: application.Commands{
 		EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup),
 		CreateWork:            create,
 	}}

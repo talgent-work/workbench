@@ -69,25 +69,14 @@ type WorkStartupRequest struct {
 // workspace preparation has ended ("checked_out" or "not_checked_out").
 type WorkStartupRepository struct{ RepositoryID, Name, BaseBranch, CheckoutStatus, CheckoutReason string }
 
-// WorkQueryRepository groups Work views and attribution.
-type WorkQueryRepository interface {
-	WorkViewReader
-	WorkListReader
-	WorkOriginQueryRepository
-}
-
-type WorkViewReader interface {
-	GetWorkView(context.Context, string) (WorkView, error)
-}
-
 type GetWorkView struct{ ActorUserID, WorkID string }
 
 type GetWorkViewHandler struct {
 	authorization access.WorkAuthorizer
-	reader        WorkViewReader
+	reader        WorkQueryRepository
 }
 
-func NewGetWorkViewHandler(authorization access.WorkAuthorizer, reader WorkViewReader) *GetWorkViewHandler {
+func NewGetWorkViewHandler(authorization access.WorkAuthorizer, reader WorkQueryRepository) *GetWorkViewHandler {
 	return &GetWorkViewHandler{authorization: authorization, reader: reader}
 }
 

@@ -21,20 +21,14 @@ type ResolvedWorkStart struct {
 // split them into requests of at most this many.
 const MaxResolvedWorkStarts = 200
 
-// WorkOriginsReader reads the origins of several Works at once; a Work that
-// does not exist is absent from the result.
-type WorkOriginsReader interface {
-	ListWorkOrigins(ctx context.Context, workIDs []string) (map[string]WorkOrigin, error)
-}
-
 // ResolveWorkStartsHandler reports who started each Work of one Project and
 // when, in one read, so the caller can show where each Work began without
 // asking Work by Work.
 type ResolveWorkStartsHandler struct {
-	origins WorkOriginsReader
+	origins WorkQueryRepository
 }
 
-func NewResolveWorkStartsHandler(origins WorkOriginsReader) *ResolveWorkStartsHandler {
+func NewResolveWorkStartsHandler(origins WorkQueryRepository) *ResolveWorkStartsHandler {
 	return &ResolveWorkStartsHandler{origins: origins}
 }
 

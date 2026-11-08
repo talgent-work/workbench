@@ -1,7 +1,5 @@
 package query
 
-import "context"
-
 // ServiceAccessObservation reports the latest credential-supply observation,
 // not proof of authentication or a continuing access grant.
 type ServiceAccessObservation struct {
@@ -19,9 +17,4 @@ type RepositoryPreparation struct {
 	RepositoryID, TargetPath string
 	Prepared                 bool
 	Reason                   string
-}
-
-type ServiceAccessReader interface {
-	ReadServiceAccess(context.Context, string) ([]ServiceAccessObservation, error)
-	ReadRepositoryPreparation(context.Context, string) ([]RepositoryPreparation, error)
 }

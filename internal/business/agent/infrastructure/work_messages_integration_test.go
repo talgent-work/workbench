@@ -85,7 +85,7 @@ func (m *workMessaging) DropBuffer(context.Context, string) error { return nil }
 func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.T) {
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	feedback := newRuns(t, f.db, f.sessions)
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {
@@ -93,7 +93,7 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 	}
 	messaging := &workMessaging{}
 	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
-		principals := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+		principals := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 		admitted := command.NewInputAcceptance(sessions, messaging)
 		input := command.NewDeliverWorkInputHandler(sessions, principals, admitted)

@@ -16,6 +16,10 @@ func (r rootResults) ListRootTurnResults(context.Context, string) ([]query.RootT
 	return r, nil
 }
 
+func (rootResults) FindCallPosition(context.Context, string, string) (string, bool, error) {
+	panic("unexpected context position query")
+}
+
 // Turn results keep stream order; the last one reporting text is the final
 // conclusion, and a turn without text takes no position.
 func TestWorkTurnResultsNumberAndMarkTheLast(t *testing.T) {

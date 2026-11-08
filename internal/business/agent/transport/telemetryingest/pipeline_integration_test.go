@@ -29,7 +29,7 @@ func TestManagedTelemetryLandsUnderItsRunsAttribution(t *testing.T) {
 	collector, err := NewCollector(http.DefaultClient, middlewaretest.Environment(t, "TALGENT_TEST_OTLP_URL"))
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	Register(mux, runs{"work-a": "token-a"}, collector, slog.New(slog.DiscardHandler))
+	Register(mux, runs{issued: map[string]string{"work-a": "token-a"}}, collector, slog.New(slog.DiscardHandler))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 

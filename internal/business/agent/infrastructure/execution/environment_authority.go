@@ -87,8 +87,6 @@ type environmentAuthority interface {
 	// unless the authority keeps its own. environmentLost is its
 	// authoritative loss.
 	resolve(ctx context.Context, record allocationRecord, client *http.Client) (environment, environmentState, error)
-	// workCredential is the Work credential issued to the environment.
-	workCredential(record allocationRecord) (string, error)
 }
 
 // credentialDelivery is an authority that delivers the Work's credentials

@@ -11,7 +11,7 @@ func (a *Application) ListPendingInteractions(ctx context.Context, input Control
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
 		return nil, err
 	}
-	work, err := a.WorkViews.GetWorkView(ctx, input.WorkID)
+	work, err := a.WorkQueries.GetWorkView(ctx, input.WorkID)
 	if err != nil {
 		return nil, err
 	}

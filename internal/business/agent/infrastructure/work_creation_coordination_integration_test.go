@@ -29,7 +29,7 @@ func (c *creationCapacity) AdmitRoom(context.Context) error { return c.err }
 func creationCoordinator(db *xorm.Engine, capacity computertest.RoomCheck, registrar domain.AgentWorkRepository, options agentquery.ModelConfigurations, catalog commandtest.PluginCatalog) *command.CreateWorkHandler {
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	if registrar == nil {
 		registrar = sessions
 	}

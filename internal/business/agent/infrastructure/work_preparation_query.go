@@ -9,8 +9,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 
-var _ query.WorkPreparationReader = (*WorkQueryRepository)(nil)
-
 type workPreparationRow struct {
 	ID                  string `xorm:"id"`
 	StartedBy           string `xorm:"started_by"`

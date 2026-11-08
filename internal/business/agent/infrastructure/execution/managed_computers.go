@@ -108,9 +108,9 @@ type managedSpecification struct {
 	ComputerID string `json:"managedComputerId"`
 	// AccessToken is the execd token every call of the Work presents.
 	AccessToken string `json:"accessToken"`
-	// WorkCredential is issued as on a Cloud and verified by WorkCredentials.
-	// It reaches only the machine's local proxy, in the Work's credentials,
-	// never Environment.
+	// WorkCredential is issued as on a Cloud and verified by
+	// ExecutionQueryRepository. It reaches only the machine's local proxy, in
+	// the Work's credentials, never Environment.
 	WorkCredential string `json:"workCredential"`
 	// ModelEndpoint is the Model Template's endpoint the start was realized
 	// with, where the local proxy sends the Work's model requests; empty on

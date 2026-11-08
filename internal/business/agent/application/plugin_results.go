@@ -21,7 +21,7 @@ func (a *Application) GetWorkPluginResults(ctx context.Context, input ControlWor
 	if err != nil {
 		return nil, err
 	}
-	outcomes, err := a.PluginResults.ListCurrentPluginResults(ctx, work.ID)
+	outcomes, err := a.ExecutionQueries.ListCurrentPluginResults(ctx, work.ID)
 	if err != nil {
 		return nil, err
 	}

@@ -35,7 +35,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	observed := end.Add(-25 * time.Hour)
 	clock := func() time.Time { return observed }
 	sessions := infrastructure.NewAgentWorkRepository(f.db, clock)
-	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	id, err := command.NewCreateWorkHandler(time.Now, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels())).Handle(ctx, f.request)
 	require.NoError(t, err)
 	observed = observed.Add(15 * time.Minute)
@@ -62,7 +62,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	project := f.request.ProjectID
 	observed = end
-	report := query.NewGetWorkReportHandler(infrastructure.NewWorkReportQueryRepository(db), clock)
+	report := query.NewGetWorkReportHandler(infrastructure.NewWorkQueryRepository(db), clock)
 	app := &application.Application{Queries: application.Queries{GetWorkReport: report}}
 	handler := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterWorkFactsServiceHandler(s, transport.NewWorkFactsHandler(app, "control"))
@@ -86,7 +86,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	rows, err := db.QueryString("EXPLAIN SELECT id FROM agent_session WHERE project_ref=? AND deleted_at=0 AND created_at<?", project, end.UnixMilli())
 	require.NoError(t, err)
 	require.Contains(t, rows[0]["possible_keys"], "idx_project_ref_deleted_at_created_at_id")
-	histories, err := infrastructure.NewWorkReportQueryRepository(db).ReadWorkHistory(ctx, query.WorkReportScope{ProjectID: project, Purpose: "work"}, end)
+	histories, err := infrastructure.NewWorkQueryRepository(db).ReadWorkHistory(ctx, query.WorkReportScope{ProjectID: project, Purpose: "work"}, end)
 	require.NoError(t, err)
 	require.Len(t, histories, 1)
 	require.Len(t, histories[0].Facts, 5, "Starting, Working, Stopping, Stopped, Closed only; duplicates and failed saves add no facts")

@@ -14,13 +14,11 @@ type GetAgentDefinitionForPurpose struct {
 	Purpose        string
 }
 
-type AgentDefinitionLookup interface {
-	FindForPurpose(context.Context, GetAgentDefinitionForPurpose) (string, error)
+type GetAgentDefinitionForPurposeHandler struct {
+	definitions AgentDefinitionQueryRepository
 }
 
-type GetAgentDefinitionForPurposeHandler struct{ definitions AgentDefinitionLookup }
-
-func NewGetAgentDefinitionForPurposeHandler(definitions AgentDefinitionLookup) *GetAgentDefinitionForPurposeHandler {
+func NewGetAgentDefinitionForPurposeHandler(definitions AgentDefinitionQueryRepository) *GetAgentDefinitionForPurposeHandler {
 	return &GetAgentDefinitionForPurposeHandler{definitions: definitions}
 }
 

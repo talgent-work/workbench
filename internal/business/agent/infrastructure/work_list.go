@@ -15,8 +15,6 @@ import (
 // it; no Work records an owner of its own.
 const agentOwnerColumn = "(SELECT JSON_UNQUOTE(JSON_EXTRACT(d.owners, '$[0]')) FROM agent_definition d WHERE d.id = s.agent_id)"
 
-var _ query.WorkListReader = (*WorkQueryRepository)(nil)
-
 // ListWorkViews lists every established Work matching the filter, whatever
 // became of its first input: a caller associates a Work Agent created even when
 // its first input was refused, so lists show what callers associate. A

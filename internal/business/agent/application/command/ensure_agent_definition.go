@@ -25,10 +25,10 @@ type InitializedAgentDefinition struct {
 
 type EnsureAgentDefinitionHandler struct {
 	agents domain.AgentDefinitionRepository
-	lookup query.AgentDefinitionLookup
+	lookup query.AgentDefinitionQueryRepository
 }
 
-func NewEnsureAgentDefinitionHandler(agents domain.AgentDefinitionRepository, lookup query.AgentDefinitionLookup) *EnsureAgentDefinitionHandler {
+func NewEnsureAgentDefinitionHandler(agents domain.AgentDefinitionRepository, lookup query.AgentDefinitionQueryRepository) *EnsureAgentDefinitionHandler {
 	return &EnsureAgentDefinitionHandler{agents: agents, lookup: lookup}
 }
 

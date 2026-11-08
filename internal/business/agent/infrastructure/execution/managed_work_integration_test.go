@@ -409,7 +409,7 @@ func (f *managedWork) exit(t *testing.T, record allocationRecord) {
 func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
-	db, relay, provisioning, receiver := f.db, f.relay, f.provisioning, f.receiver
+	db, relay, receiver := f.db, f.relay, f.receiver
 
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
@@ -449,8 +449,7 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 		require.True(t, strings.HasPrefix(call, http.MethodPut+" /relay/") || strings.Contains(call, "/relay/"+managedComputerID+"/works/"+input.WorkID) || call == http.MethodGet+" /relay/"+managedComputerID+"/reconciliation", call)
 	}
 
-	credentials, err := NewWorkCredentials(provisioning)
-	require.NoError(t, err)
+	credentials := NewExecutionQueryRepository(db)
 	require.NoError(t, credentials.VerifyWorkCredential(ctx, input.WorkID, spec.WorkCredential))
 	require.Error(t, credentials.VerifyWorkCredential(ctx, input.WorkID, "forged"))
 

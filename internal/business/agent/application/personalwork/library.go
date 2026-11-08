@@ -8,6 +8,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -24,14 +25,14 @@ type LibraryFilter struct {
 
 // LibraryFile is one Artifact in a Personal Library.
 type LibraryFile struct {
-	Work LibraryWork
+	Work query.LibraryWork
 	File command.SpaceFile
 }
 
 // Library is a person's Personal Library and the Works it draws from.
 type Library struct {
 	Files []LibraryFile
-	Works []LibraryWork
+	Works []query.LibraryWork
 }
 
 // Library lists the Artifacts of the person's Personal Works and of each Work
@@ -55,13 +56,13 @@ func (p *PersonalWorks) Library(ctx context.Context, person Person, filter Libra
 	// for narrowing.
 	read := works
 	if filter.WorkID != "" {
-		read = slices.DeleteFunc(slices.Clone(works), func(work LibraryWork) bool { return work.WorkID != filter.WorkID })
+		read = slices.DeleteFunc(slices.Clone(works), func(work query.LibraryWork) bool { return work.WorkID != filter.WorkID })
 	}
 	owners, err := p.spaceOwners(ctx, read)
 	if err != nil {
 		return Library{}, err
 	}
-	byOwner := make(map[string][]LibraryWork, len(read))
+	byOwner := make(map[string][]query.LibraryWork, len(read))
 	for i, work := range read {
 		if owners[i] != "" {
 			byOwner[owners[i]] = append(byOwner[owners[i]], work)
@@ -89,7 +90,7 @@ func (p *PersonalWorks) Library(ctx context.Context, person Person, filter Libra
 // spaceOwners names each Work's File Space owner, in order: a Personal Work's
 // space is named by the Work itself, other Works' only by their input
 // sources.
-func (p *PersonalWorks) spaceOwners(ctx context.Context, works []LibraryWork) ([]string, error) {
+func (p *PersonalWorks) spaceOwners(ctx context.Context, works []query.LibraryWork) ([]string, error) {
 	owners := make([]string, len(works))
 	var sources []string
 	var positions []int

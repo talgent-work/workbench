@@ -61,6 +61,7 @@ func (e *recordingEnqueuer) reconciliations(t *testing.T) []string {
 // ones, those using each authorization, and the Managed ones reading each
 // owner's File Space.
 type executionLookups struct {
+	query.ExecutionQueryRepository
 	outstanding   []string
 	using, inputs map[string][]string
 }
@@ -150,10 +151,13 @@ func page(ids []string, after string, limit int) []string {
 	return result
 }
 
-type idList []string
+type recoveryWorks struct {
+	query.ExecutionQueryRepository
+	ids []string
+}
 
-func (l idList) ListWorkIDs(_ context.Context, after string, limit int) ([]string, error) {
-	return page(l, after, limit), nil
+func (l recoveryWorks) ListWorkIDs(_ context.Context, after string, limit int) ([]string, error) {
+	return page(l.ids, after, limit), nil
 }
 
 func TestWakingAWorkAlsoWakesItsUnreleasedExecution(t *testing.T) {
@@ -289,11 +293,11 @@ func TestALongStepHoldsBackNoShortStep(t *testing.T) {
 }
 
 func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
-	var executions idList
+	var executions []string
 	for n := range 250 {
 		executions = append(executions, fmt.Sprintf("execution-%03d", n))
 	}
-	works := idList{"work-1", "work-2"}
+	works := recoveryWorks{ids: []string{"work-1", "work-2"}}
 	app := &application.Application{Queries: application.Queries{
 		ListRecoveryWorks: query.NewListRecoveryWorksHandler(works),
 	}}

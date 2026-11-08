@@ -17,20 +17,14 @@ type WorkContextPosition struct {
 	Position string
 }
 
-// CallPositionReader reads the Harness position of the message holding a
-// call's result in a Work's own stream; found is false while there is none.
-type CallPositionReader interface {
-	FindCallPosition(ctx context.Context, workID, callID string) (position string, found bool, err error)
-}
-
 // ResolveWorkContextPositionHandler is the Work Context Position Query. The
 // position is after the call's result, never inside an unfinished call.
 type ResolveWorkContextPositionHandler struct {
-	origins   WorkOriginQueryRepository
-	positions CallPositionReader
+	origins   WorkQueryRepository
+	positions RootTurnResultReader
 }
 
-func NewResolveWorkContextPositionHandler(origins WorkOriginQueryRepository, positions CallPositionReader) *ResolveWorkContextPositionHandler {
+func NewResolveWorkContextPositionHandler(origins WorkQueryRepository, positions RootTurnResultReader) *ResolveWorkContextPositionHandler {
 	return &ResolveWorkContextPositionHandler{origins: origins, positions: positions}
 }
 

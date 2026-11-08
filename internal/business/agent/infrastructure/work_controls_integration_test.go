@@ -48,7 +48,7 @@ func (c *workCapacity) AdmitRoom(context.Context) error {
 func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	id := f.committedCreation(t)
 	capacity := &workCapacity{available: true}
 	ref := id
@@ -99,11 +99,11 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	id := f.committedCreation(t)
 	capacity := &workCapacity{available: true}
 	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
-		principal := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+		principal := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 		definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 		reader := infrastructure.NewWorkQueryRepository(db)
-		app := &application.Application{WorkPrincipals: principal, WorkViews: reader, Commands: application.Commands{
+		app := &application.Application{WorkPrincipals: principal, WorkQueries: reader, Commands: application.Commands{
 			StopWork:    command.NewStopWorkHandler(sessions, principal, executionsOf(db)),
 			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),

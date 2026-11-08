@@ -24,10 +24,13 @@ import (
 )
 
 // runs issues one telemetry token per Work's live run.
-type runs map[string]string
+type runs struct {
+	query.ExecutionQueryRepository
+	issued map[string]string
+}
 
 func (r runs) RunTelemetryAttribution(_ context.Context, workID, token string) (map[string]string, error) {
-	if issued, ok := r[workID]; !ok || issued != token || token == "" {
+	if issued, ok := r.issued[workID]; !ok || issued != token || token == "" {
 		return nil, query.ErrTelemetryTokenRejected
 	}
 	return map[string]string{"talgent.agent_work_id": workID, "talgent.user_id": "person-" + workID, "talgent.computer_id": "computer-1", "talgent.computer_name": "Studio Mac"}, nil
@@ -58,7 +61,7 @@ func newEndpoint(t *testing.T) (*httptest.Server, *collectorFixture) {
 	collector, err := NewCollector(upstream.Client(), upstream.URL)
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	Register(mux, runs{"work-a": "token-a", "work-b": "token-b"}, collector, slog.New(slog.DiscardHandler))
+	Register(mux, runs{issued: map[string]string{"work-a": "token-a", "work-b": "token-b"}}, collector, slog.New(slog.DiscardHandler))
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server, fixture

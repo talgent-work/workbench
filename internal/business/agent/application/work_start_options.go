@@ -31,7 +31,7 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 	if err := employee.UsageScope.Validate(); err != nil {
 		return query.WorkStartOptions{}, err
 	}
-	id, err := a.DefinitionLookup.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: employee.UsageScope.Kind, ScopeReference: employee.UsageScope.Reference, Purpose: employee.Purpose})
+	id, err := a.DefinitionQueries.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: employee.UsageScope.Kind, ScopeReference: employee.UsageScope.Reference, Purpose: employee.Purpose})
 	switch {
 	case errors.Is(err, domain.ErrAgentDefinitionNotFound):
 		base = employee.Capabilities.Clone()
@@ -98,7 +98,7 @@ func (a *Application) ListWorkStartRepositories(ctx context.Context, owner strin
 		reachable[repository.RepoID] = true
 		value.Repositories = append(value.Repositories, query.WorkRepositoryOption{ID: repository.RepoID, Provider: repository.Provider, RepoName: repository.RepoName, DefaultBranch: repository.DefaultBranch})
 	}
-	recent, err := a.RecentRepositories.ListRecentRepositoryIDs(ctx, owner)
+	recent, err := a.WorkQueries.ListRecentRepositoryIDs(ctx, owner)
 	if err != nil {
 		return query.WorkStartRepositories{}, err
 	}

@@ -26,7 +26,7 @@ type committedWorks struct {
 }
 
 type workStateUpdates struct {
-	reader query.WorkViewReader
+	reader query.WorkQueryRepository
 	stream eventhandler.LiveStreamPort
 	logger *slog.Logger
 	// Recovery wakes are wired by RecoveryModule; without it a commit only
@@ -34,7 +34,7 @@ type workStateUpdates struct {
 	wakeWork func(context.Context, string)
 }
 
-func newWorkStateUpdates(reader query.WorkViewReader, stream eventhandler.LiveStreamPort, logger *slog.Logger) *workStateUpdates {
+func newWorkStateUpdates(reader query.WorkQueryRepository, stream eventhandler.LiveStreamPort, logger *slog.Logger) *workStateUpdates {
 	return &workStateUpdates{reader: reader, stream: stream, logger: logger}
 }
 

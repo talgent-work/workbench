@@ -24,7 +24,7 @@ func completionHandler(db *xorm.Engine) *command.CloseWorkHandler {
 }
 
 func completionHandlerOver(db *xorm.Engine, works domain.AgentWorkRepository) *command.CloseWorkHandler {
-	return command.NewCloseWorkHandler(works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), executionsOf(db), &commandtest.InputBuffer{})
+	return command.NewCloseWorkHandler(works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), executionsOf(db), &commandtest.InputBuffer{})
 }
 
 // Closing a running Work for a completed Subject waits for its first input and
@@ -83,7 +83,7 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 			observed, err := f.sessions.Get(ctx, id)
 			require.NoError(t, err)
 			require.Equal(t, domain.WorkFailed, observed.State)
-			restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+			restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 			retry := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			request := command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			if startupFirst {
