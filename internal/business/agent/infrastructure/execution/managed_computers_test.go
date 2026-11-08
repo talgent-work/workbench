@@ -55,33 +55,11 @@ const managedTelemetryAddress = "https://workbench.example/computer/v1/otel"
 // managedAPIAddress is where the same origin serves the native API.
 const managedAPIAddress = "https://workbench.example/computer/v1/api"
 
-// inputFiles is Storage's File Space Contract for Managed Works' inputs:
-// owners by input source, and each owner's Attachments.
-type inputFiles struct {
-	owners      map[string]string
-	attachments map[string][]InputAttachment
-	err         error
-	// bound is how long the last sync had left when it began, zero when
-	// it was unbounded.
-	bound time.Duration
-}
-
-func (f *inputFiles) InputOwner(ctx context.Context, source string) (string, error) {
-	f.bound = 0
-	if deadline, ok := ctx.Deadline(); ok {
-		f.bound = time.Until(deadline)
-	}
-	return f.owners[source], f.err
-}
-
-func (f *inputFiles) InputAttachments(_ context.Context, owner string) ([]InputAttachment, error) {
-	return f.attachments[owner], f.err
-}
-
 func managedRequest() domain.LaunchSpecification {
 	input := request()
 	input.ComputerID = managedComputerID
 	input.WorkModel = domain.WorkModelSelection{MachineLogin: true}
+	input.LocatedLayout.Mounts = nil
 	return input
 }
 
@@ -128,13 +106,12 @@ func TestManagedEnvironmentHoldsNoMountsVaultHomeOrPlatformCredentials(t *testin
 	require.ErrorIs(t, err, domain.ErrExecutionRequest, "a Managed start names its Computer")
 }
 
-// A Work of a Project on a Managed Computer has no read-only mount: its
+// A Work of a Project on a Managed Computer mounts no Directory: its
 // environment names its Project, from which the runtime plugin points it to
 // the platform Connector's tools, and sets no TALGENT_KNOWLEDGE_ROOT.
-func TestAManagedWorkOfAProjectNamesItsProjectAndNoReadOnlyMountRoot(t *testing.T) {
+func TestAManagedWorkOfAProjectNamesItsProjectAndNoKnowledgeRoot(t *testing.T) {
 	input := managedRequest()
 	input.ProjectID = "project"
-	input.ReadOnlyMounts = []domain.ReadOnlyMount{{Name: "reference", Reference: "project"}}
 	spec, err := managedSpecificationFor(input, fixtureModels(), "execd-token", "work-credential")
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{"TALGENT_WORK_ID": "session", "DISABLE_AUTOUPDATER": "1", "TALGENT_PROJECT_ID": "project"}, spec.Environment)
@@ -157,13 +134,12 @@ func TestManagedLaunchKeepsEverythingInsideTheWorkRoot(t *testing.T) {
 	require.NotContains(t, managed.PreparationCommand, "$HOME", "Plugin installation writes nothing to the machine's ~/.claude")
 	require.NotContains(t, managed.PreparationCommand, "exec timeout")
 	require.True(t, strings.HasSuffix(managed.PreparationCommand, " machine 2>/dev/null"), "checkouts use the machine's git credentials")
-	require.Contains(t, cloud.PreparationCommand, `mkdir -p "$HOME/.claude" && exec timeout -k 5s`, "the Cloud preparation is unchanged")
+	require.Contains(t, cloud.PreparationCommand, `mkdir -p "${CLAUDE_CONFIG_DIR:?}" && exec timeout -k 5s`, "the Cloud preparation creates the Agent Harness's state")
 
 	input.ContextMode = domain.ContextRecover
 	recovered, err := config.prepare(machineLayout, input, owner(input), "")
 	require.NoError(t, err)
 	require.Contains(t, recovered.Command, `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/'`+recovered.SessionID+`.jsonl'`)
-	require.NotContains(t, recovered.Command, "CLAUDE_CODE_PROJECT_DIR_NAME")
 }
 
 // A recovered Managed start resumes the conversation whose transcript the
@@ -171,7 +147,7 @@ func TestManagedLaunchKeepsEverythingInsideTheWorkRoot(t *testing.T) {
 func TestManagedRecoveredStartFindsTheTranscriptInTheMachinesHome(t *testing.T) {
 	home := t.TempDir()
 	run := func() string {
-		script := recoveredManagedContext("session-id", []string{"--session-id", "session-id"}) + `printf '%s ' "$@"`
+		script := recoveredManagedContext(domain.ClaudeCode, "session-id", []string{"--session-id", "session-id"}) + `printf '%s ' "$@"`
 		cmd := exec.Command("sh", "-c", script)
 		cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
 		output, err := cmd.Output()
@@ -341,19 +317,19 @@ func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 	require.IsType(t, cloudEnvironment{}, authority)
 	_, err = cloudOnly.authority(executionRecord{Realization: realizationManaged})
 	require.ErrorIs(t, err, errManagedNotConfigured)
-	require.ErrorIs(t, cloudOnly.specify(context.Background(), executionRecord{Realization: realizationManaged, SpecificationJSON: []byte("null")}, domain.SandboxMounts{}), errManagedNotConfigured, "a Managed execution's creation is refused before anything is specified")
+	require.ErrorIs(t, cloudOnly.specify(context.Background(), executionRecord{Realization: realizationManaged, SpecificationJSON: []byte("null")}, command.CreationSupply{}), errManagedNotConfigured, "a Managed execution's creation is refused before anything is specified")
 	_, err = cloudOnly.authority(executionRecord{Realization: "kubernetes"})
 	require.Error(t, err)
 
 	machines, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
-	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, nil, unusedWorks{}, &inputFiles{}, time.Minute)
+	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, nil, unusedWorks{}, time.Minute)
 	require.Error(t, err, "the Managed realization needs the Model Configurations")
-	_, err = NewManagedEnvironment(nil, machines, fixtureModels(), unusedWorks{}, &inputFiles{}, time.Minute)
+	_, err = NewManagedEnvironment(nil, machines, fixtureModels(), unusedWorks{}, time.Minute)
 	require.Error(t, err, "the Managed realization keeps its marks on the executions")
-	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, &inputFiles{}, 0)
+	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, 0)
 	require.Error(t, err, "inputs are refreshed at a positive interval")
-	managed, err := NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, &inputFiles{}, time.Minute)
+	managed, err := NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, time.Minute)
 	require.NoError(t, err)
 	authority, err = NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, managed).authority(executionRecord{Realization: realizationManaged})
 	require.NoError(t, err)

@@ -14,6 +14,7 @@ import (
 
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
@@ -72,8 +73,29 @@ func (c *LiveWorkClient) verify(ctx context.Context, workID, credential string, 
 	return authn.NativeProcess{
 		WorkID: workID, SubjectID: work.GetSubjectId(), AgentID: work.GetAgentId(), ProjectID: strings.TrimSpace(work.GetProjectId()),
 		WorkSubjectKind: strings.TrimSpace(work.GetSubject().GetKind()), WorkSubjectID: strings.TrimSpace(work.GetSubject().GetId()),
-		Purpose: strings.TrimSpace(work.GetPurpose()), WorkspaceReference: work.GetWorkspaceReference(),
+		Purpose: strings.TrimSpace(work.GetPurpose()), Workspace: workspaceLayout(work.GetWorkspace()),
 	}, nil
+}
+
+// workspaceLayout maps the Work's Session Workspace as Agent located it; a
+// Work without one has none.
+func workspaceLayout(layout *storageprivatev1.WorkspaceLayout) *authn.WorkspaceLayout {
+	if layout.GetWorkspace() == nil {
+		return nil
+	}
+	mapped := &authn.WorkspaceLayout{Workspace: directory(layout.GetWorkspace())}
+	for _, mount := range layout.GetMounts() {
+		mapped.Mounts = append(mapped.Mounts, authn.MountedDirectory{Path: mount.GetPath(), Directory: directory(mount.GetDirectory())})
+	}
+	return mapped
+}
+
+func directory(named *storageprivatev1.Directory) authn.Directory {
+	mapped := authn.Directory{Name: named.GetName()}
+	for _, fact := range named.GetOwner().GetFacts() {
+		mapped.Owner = append(mapped.Owner, authn.OwnerFact{Condition: fact.GetCondition(), Value: fact.GetValue()})
+	}
+	return mapped
 }
 
 // ActingWorkClient resolves a native process that acts: Agent admits its

@@ -44,13 +44,12 @@ func (p *definitionSessionLookup) facts(request domain.WorkCreationRequest) doma
 func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work",
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: "employee-a"},
-		HomeBinding:  domain.HomeBinding{OwnerID: "employee-a", Namespace: "personal"},
 		Capabilities: domain.CapabilityConfiguration{Prompt: "Base", StartupAgent: "employees:member"},
 	})
 	require.NoError(t, err)
 	lookup := &definitionSessionLookup{}
 	subject := domain.WorkSubject{Kind: "case", ID: "case-a"}
-	request := domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-a", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: "Specific"}}
+	request := domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: "Specific"}}
 	unresolved := request
 	unresolved.WorkModel = domain.WorkModelSelection{}
 	session, isNew, err := createWork(agent, request, lookup)
@@ -58,7 +57,7 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 	require.True(t, isNew)
 	require.Equal(t, domain.WorkStarting, session.State)
 	require.Equal(t, agent.ID, session.AgentID)
-	require.Equal(t, agent.HomeBinding, session.HomeBinding)
+	require.Equal(t, domain.ClaudeCode.ID, session.AgentHarnessReference, "a Work names no Harness runs the default")
 	require.Equal(t, "Specific", session.CapabilitySnapshot.Prompt)
 	require.Equal(t, subject, session.Subject)
 	require.Equal(t, "project-a", session.ProjectID)
@@ -114,12 +113,11 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 
 // A Work without a Subject is never located by one: each creation
 // establishes its own Work and keeps the trace attributes its caller
-// supplied. Without a Project it is a Personal Work: private, with no
-// read-only mount; with one it keeps the mounts its caller supplied.
+// supplied. Without a Project it is a Personal Work, private whatever its
+// definition declares.
 func TestWorkWithoutSubjectIsNeverReused(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work",
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: "owner"},
-		HomeBinding:  domain.HomeBinding{OwnerID: "owner", Namespace: "personal"},
 		Capabilities: domain.CapabilityConfiguration{Prompt: "Base", StartupAgent: "employees:member"},
 		Visibility:   domain.VisibilityRule{Public: true},
 	})
@@ -127,7 +125,7 @@ func TestWorkWithoutSubjectIsNeverReused(t *testing.T) {
 	existing := &domain.AgentWork{ID: "existing"}
 	lookup := &definitionSessionLookup{session: existing}
 	request := domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
-		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, WorkspaceReference: "workspace-a",
+		WorkModel:       domain.WorkModelSelection{ConfigurationID: "deployment-default"},
 		TraceAttributes: map[string]string{"talgent.case_id": "supplied"},
 		Capabilities:    domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}}
 	first, isNew, err := createWork(agent, request, lookup)
@@ -145,34 +143,22 @@ func TestWorkWithoutSubjectIsNeverReused(t *testing.T) {
 	require.Equal(t, "supplied", attributes["talgent.case_id"], "Agent carries the caller's attributes unchanged")
 	require.NotContains(t, attributes, "talgent.subject_kind")
 	require.NotContains(t, attributes, "talgent.project_id")
-
-	request.ReadOnlyMounts = []domain.ReadOnlyMount{{Name: "reference", Reference: "space-1"}}
-	_, _, err = createWork(agent, request, lookup)
-	require.ErrorIs(t, err, domain.ErrInvalidWork, "a Personal Work has no read-only mount")
-	request.ProjectID = "project-a"
-	withProject, _, err := createWork(agent, request, lookup)
-	require.NoError(t, err)
-	require.Equal(t, request.ReadOnlyMounts, withProject.ReadOnlyMounts)
-
-	for _, mounts := range [][]domain.ReadOnlyMount{{{Name: "inputs", Reference: "x"}}, {{Name: "a/b", Reference: "x"}}, {{Name: "a", Reference: ""}}, {{Name: "a", Reference: "x"}, {Name: "a", Reference: "y"}}} {
-		request.ReadOnlyMounts = mounts
-		_, _, err = createWork(agent, request, lookup)
-		require.ErrorIs(t, err, domain.ErrInvalidWork, "mounts %v", mounts)
-	}
 }
 
-// A project-scoped Agent's Works have no Session Workspace: a Work established
-// without a workspace reference starts without one.
-func TestWorkWithoutSessionWorkspace(t *testing.T) {
+// A project-scoped Agent's Works have a Session Workspace like every Cloud
+// Work, which no caller opts out of.
+func TestProjectWorkHasSessionWorkspace(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "project_coordination",
-		UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"}, HomeBinding: domain.HomeBinding{OwnerID: "project/project-a/project_coordination", Namespace: "project_coordination"},
+		UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"},
 		Visibility: domain.VisibilityRule{Public: true}})
 	require.NoError(t, err)
 	work, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Subject: domain.WorkSubject{Kind: "project", ID: "project-a"}, ProjectID: "project-a",
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
 		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
 	require.NoError(t, err)
-	require.Empty(t, work.WorkspaceReference)
+	workspace, ok := work.LocatedLayout.Workspace()
+	require.True(t, ok)
+	require.Equal(t, "workspace", workspace.Workspace.Name)
 	require.True(t, work.Visibility.Public)
 }
 
@@ -180,13 +166,12 @@ func TestDefinitionAppliesSuppliedConfigurationWithoutInterpretingPurpose(t *tes
 	for _, purpose := range []string{"work", "project_manager", "caller-defined"} {
 		t.Run(purpose, func(t *testing.T) {
 			agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"},
-				Purpose:     purpose,
-				UsageScope:  domain.UsageScope{Kind: "employee", Reference: "employee"},
-				HomeBinding: domain.HomeBinding{OwnerID: "employee", Namespace: "personal"},
+				Purpose:    purpose,
+				UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"},
 			})
 			require.NoError(t, err)
 			for _, model := range []domain.WorkModelSelection{{ConfigurationID: "default"}, {ConfigurationID: "selected"}} {
-				created, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: model, WorkspaceReference: "workspace", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}, domain.WorkCreationFacts{})
+				created, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: model, Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}, domain.WorkCreationFacts{})
 				require.NoError(t, err)
 				require.Equal(t, model, created.WorkModel)
 			}
@@ -198,11 +183,11 @@ func TestDefinitionAppliesSuppliedConfigurationWithoutInterpretingPurpose(t *tes
 // non-empty set that never names the Agent itself.
 func TestOnlyAnAgentOwnerStartsItsWorks(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{" b ", "a", "b"}, Purpose: "work",
-		UsageScope: domain.UsageScope{Kind: "employee", Reference: "a"}, HomeBinding: domain.HomeBinding{OwnerID: "a", Namespace: "personal"}})
+		UsageScope: domain.UsageScope{Kind: "employee", Reference: "a"}})
 	require.NoError(t, err)
 	require.Equal(t, []string{"a", "b"}, agent.Owners)
 	_, err = domain.NewAgentDefinition(domain.AgentDefinitionInput{Purpose: "work",
-		UsageScope: domain.UsageScope{Kind: "employee", Reference: "a"}, HomeBinding: domain.HomeBinding{OwnerID: "a", Namespace: "personal"}})
+		UsageScope: domain.UsageScope{Kind: "employee", Reference: "a"}})
 	require.Error(t, err, "an Agent has at least one Owner")
 	_, err = agent.TransferOwners(nil)
 	require.Error(t, err)
@@ -213,7 +198,7 @@ func TestOnlyAnAgentOwnerStartsItsWorks(t *testing.T) {
 	require.False(t, changed, "the same set is no change")
 
 	start := func(startedBy string) error {
-		_, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: startedBy, Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkspaceReference: "workspace",
+		_, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: startedBy, Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project",
 			Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
 			Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
 		return err
@@ -226,11 +211,11 @@ func TestOnlyAnAgentOwnerStartsItsWorks(t *testing.T) {
 // never as the human who owns it.
 func TestWorkPrincipalIsThePersonOrTheDefinitionItself(t *testing.T) {
 	person, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"alice"}, Purpose: "work",
-		UsageScope: domain.UsageScope{Kind: "employee", Reference: "alice"}, HomeBinding: domain.HomeBinding{OwnerID: "alice", Namespace: "personal"}})
+		UsageScope: domain.UsageScope{Kind: "employee", Reference: "alice"}})
 	require.NoError(t, err)
 	require.Equal(t, "alice", person.WorkPrincipal())
 	pm, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"alice"}, Purpose: "project_coordination",
-		UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"}, HomeBinding: domain.HomeBinding{OwnerID: "project/project-a/project_coordination", Namespace: "project_coordination"}})
+		UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"}})
 	require.NoError(t, err)
 	require.Equal(t, pm.ID, pm.WorkPrincipal())
 	require.False(t, pm.IsOwner(pm.WorkPrincipal()), "a project-scoped Agent's Works never act with its Owner's authority")
@@ -240,11 +225,11 @@ func TestWorkPrincipalIsThePersonOrTheDefinitionItself(t *testing.T) {
 // Works, of an Agent that represents no person, run only on a Cloud.
 func TestOnlyAPersonsAgentRunsOnAManagedComputer(t *testing.T) {
 	person, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"alice"}, Purpose: "work",
-		UsageScope: domain.UsageScope{Kind: "employee", Reference: "alice"}, HomeBinding: domain.HomeBinding{OwnerID: "alice", Namespace: "project"}})
+		UsageScope: domain.UsageScope{Kind: "employee", Reference: "alice"}})
 	require.NoError(t, err)
 	require.NoError(t, person.AdmitComputer(true))
 	pm, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"alice"}, Purpose: "project_coordination",
-		UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"}, HomeBinding: domain.HomeBinding{OwnerID: "project/project-a/project_coordination", Namespace: "project_coordination"}})
+		UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"}})
 	require.NoError(t, err)
 	require.NoError(t, pm.AdmitComputer(false))
 	require.ErrorIs(t, pm.AdmitComputer(true), domain.ErrCloudOnlyAgent)

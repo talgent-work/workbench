@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package storage.task.v1;
+
+import "storage/task/v1/directory.proto";
+
+option go_package = "github.com/talgent-work/workbench/gen/storage/task/v1;storagetaskv1";
+
+// RemoveReclaimedContentTaskV1 asks Storage to remove a reclaimed
+// Directory's content once no publication copies from it, retrying until it
+// is removed. The task is keyed by the Directory's owner and name.
+message RemoveReclaimedContentTaskV1 {
+  // The reclaimed Directory.
+  Directory directory = 1;
+}

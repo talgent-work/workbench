@@ -48,6 +48,12 @@ type Environment struct {
 	Deleted                                 []string
 	Delivered, Withdrawn, Prepared          int
 	Launched, Connected, Synced, Reconciled int
+	// Creations are what each specification was handed from other
+	// authorities, Supplies what each delivery was handed, and SyncedInputs
+	// the inputs each sync was handed.
+	Creations    []command.CreationSupply
+	Supplies     []command.CredentialSupply
+	SyncedInputs []command.ManagedInputs
 	// Cleared counts deliveries cleared once their holding check refused.
 	Cleared int
 	// Renewals are the expiries each lease renewal asked for; each is
@@ -70,10 +76,11 @@ func (e *Environment) Observe(_ context.Context, execution *domain.AgentExecutio
 	return e.Observation, nil
 }
 
-func (e *Environment) PrepareCreation(context.Context, *domain.AgentExecution, domain.SandboxMounts) error {
+func (e *Environment) PrepareCreation(_ context.Context, _ *domain.AgentExecution, supply command.CreationSupply) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Specified++
+	e.Creations = append(e.Creations, supply)
 	return nil
 }
 
@@ -98,7 +105,7 @@ func (e *Environment) DeleteEnvironment(_ context.Context, _ *domain.AgentExecut
 	return e.StepErr
 }
 
-func (e *Environment) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
+func (e *Environment) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, supply command.CredentialSupply, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
 	if err := holding(ctx); err != nil {
 		return domain.CredentialDelivery{}, err
 	}
@@ -117,6 +124,7 @@ func (e *Environment) DeliverCredentials(ctx context.Context, _ *domain.AgentExe
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Delivered++
+	e.Supplies = append(e.Supplies, supply)
 	return e.Delivery, e.StepErr
 }
 
@@ -164,13 +172,14 @@ func (e *Environment) Connect(context.Context, *domain.AgentExecution) error {
 	return e.StepErr
 }
 
-func (e *Environment) SyncInputs(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (int64, error) {
+func (e *Environment) SyncInputs(ctx context.Context, execution *domain.AgentExecution, inputs command.ManagedInputs, holding command.EnvironmentHolding) (int64, error) {
 	if err := holding(ctx); err != nil {
 		return 0, err
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Synced++
+	e.SyncedInputs = append(e.SyncedInputs, inputs)
 	return execution.Inputs.Due, e.StepErr
 }
 

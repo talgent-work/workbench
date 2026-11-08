@@ -16,7 +16,7 @@ import (
 )
 
 type turnReader struct {
-	query.RootTurnResultReader
+	query.DispatcherMessageLogPort
 	results []query.RootTurnResult
 	err     error
 }

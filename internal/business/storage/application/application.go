@@ -1,36 +1,37 @@
-// Package application implements Storage's use cases: File Spaces and their
-// files, Reference Spaces, Share and Access Links, Artifact publication, sandbox mounts and
-// workspace reclamation. Storage calls no other context; callers decide
-// business admission before calling.
+// Package application implements Storage's use cases over its one kind of
+// space, the Directory: opening and mounting located Directories, the files
+// Storage writes into them, whole content replacement, Share and Access
+// Links, Artifact publication, Workspace Views, previews and Work
+// reclamation. Storage calls no other context; callers decide business
+// admission before calling.
 package application
 
 import (
 	"log/slog"
 	"time"
 
+	"github.com/go-jimu/components/ddd/message"
 	"github.com/go-jimu/components/taskqueue"
 
+	"github.com/talgent-work/workbench/internal/business/storage/application/query"
 	"github.com/talgent-work/workbench/internal/business/storage/application/task"
-
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
 
 // Application is Storage's use-case entry.
 type Application struct {
-	spaces     domain.FileSpaceRepository
-	persistent PersistentFilesPort
-	working    WorkingFilesPort
-	links      LinkPort
-	mounts     MountLayoutPort
-	references ReferenceSpacesPort
-	previews   PreviewCopiesPort
-	inspector  ContentInspectorPort
-	converter  ConverterPort
-	rendering  RenderingTasksPort
-	enqueuer   taskqueue.Enqueuer
-	// fileChanges publishes committed file changes; nil publishes none.
-	fileChanges FileChangesPort
-	preview     PreviewSettings
+	directories      domain.DirectoryRepository
+	directoryQueries query.DirectoryQueryRepository
+	previewCopies    domain.PreviewCopyRepository
+	previewQueries   query.PreviewCopyQueryRepository
+	backends         DirectoryBackends
+	links            LinkSigningPort
+	inspection       ContentInspectionPort
+	converter        ConverterPort
+	// publisher publishes committed file changes; nil publishes none.
+	publisher message.Publisher
+	tasks     TaskLanes
+	preview   PreviewSettings
 	// workspaceListLimit bounds the entries one workspace directory lists.
 	workspaceListLimit int
 	// sentContentLimit bounds the content a Work without a Session
@@ -42,25 +43,29 @@ type Application struct {
 	logger           *slog.Logger
 }
 
-// Ports are the storage mechanisms Storage's use cases run on.
+// Ports are the mechanisms Storage's use cases run on.
 type Ports struct {
-	Persistent PersistentFilesPort
-	Working    WorkingFilesPort
-	Links      LinkPort
-	Mounts     MountLayoutPort
-	// References keeps every Reference Space.
-	References ReferenceSpacesPort
-	Previews   PreviewCopiesPort
-	// Inspector reads the structure of leading bytes Storage is handed.
-	Inspector ContentInspectorPort
-	// Converter renders Preview Copies.
-	Converter ConverterPort
-	// RenderingTasks tells queued and running renderings.
-	RenderingTasks RenderingTasksPort
-	// Enqueuer queues renderings on Storage's preview lane.
-	Enqueuer taskqueue.Enqueuer
-	// FileChanges publishes committed file changes.
-	FileChanges FileChangesPort
+	DirectoryQueries query.DirectoryQueryRepository
+	PreviewCopies    domain.PreviewCopyRepository
+	PreviewQueries   query.PreviewCopyQueryRepository
+	// Backends keep each Directory on the backend its Backend names.
+	Backends   DirectoryBackends
+	Links      LinkSigningPort
+	Inspection ContentInspectionPort
+	Converter  ConverterPort
+	// Publisher publishes committed file changes.
+	Publisher message.Publisher
+	// Tasks queues renderings and content removals, each on its own lane.
+	Tasks TaskLanes
+}
+
+// TaskLanes are the task queue lanes Storage enqueues on, each through its
+// own client.
+type TaskLanes struct {
+	// Renderings queues Render preview.
+	Renderings taskqueue.Enqueuer
+	// Maintenance queues Remove reclaimed content.
+	Maintenance taskqueue.Enqueuer
 }
 
 // PreviewSettings are Storage's preview configuration: every limit, how long
@@ -125,40 +130,30 @@ type WorkspaceSettings struct {
 // defaultWorkspaceListEntries is a conservative starting point.
 const defaultWorkspaceListEntries = 1000
 
-func (s WorkspaceSettings) listLimit() int {
-	if s.ListEntries <= 0 {
-		return defaultWorkspaceListEntries
-	}
-	return s.ListEntries
-}
-
-func (s WorkspaceSettings) sentContentLimit() int {
-	if s.SentContentBytes <= 0 {
-		return domain.MaxSentContentBytes
-	}
-	return s.SentContentBytes
-}
-
 // SentContentLimit is the most content a Work without a Session Workspace
 // sends to publish an Artifact.
 func (a *Application) SentContentLimit() int { return a.sentContentLimit }
 
-func NewApplication(spaces domain.FileSpaceRepository, ports Ports, lifetimes LinkLifetimes, preview PreviewSettings, workspace WorkspaceSettings, logger *slog.Logger) *Application {
+func NewApplication(directories domain.DirectoryRepository, ports Ports, lifetimes LinkLifetimes, preview PreviewSettings, workspace WorkspaceSettings, logger *slog.Logger) *Application {
 	if lifetimes.Access <= 0 {
 		lifetimes.Access = defaultLinkTTL
 	}
 	if lifetimes.Upload <= 0 {
 		lifetimes.Upload = defaultUploadTTL
 	}
+	if workspace.ListEntries <= 0 {
+		workspace.ListEntries = defaultWorkspaceListEntries
+	}
+	if workspace.SentContentBytes <= 0 {
+		workspace.SentContentBytes = domain.MaxSentContentBytes
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	preview = preview.withDefaults()
 	return &Application{
-		spaces: spaces, persistent: ports.Persistent, working: ports.Working, links: ports.Links, mounts: ports.Mounts, references: ports.References, previews: ports.Previews, inspector: ports.Inspector,
-		converter: ports.Converter, rendering: ports.RenderingTasks, enqueuer: ports.Enqueuer, fileChanges: ports.FileChanges, preview: preview, workspaceListLimit: workspace.listLimit(),
-		sentContentLimit: workspace.sentContentLimit(),
-
+		directories: directories, directoryQueries: ports.DirectoryQueries, previewCopies: ports.PreviewCopies, previewQueries: ports.PreviewQueries,
+		backends: ports.Backends, links: ports.Links, inspection: ports.Inspection, converter: ports.Converter, publisher: ports.Publisher, tasks: ports.Tasks,
+		preview: preview.withDefaults(), workspaceListLimit: workspace.ListEntries, sentContentLimit: workspace.SentContentBytes,
 		linkTTL: lifetimes.Access, uploadTTL: lifetimes.Upload, now: time.Now, logger: logger.With("component", "storage.application"),
 	}
 }

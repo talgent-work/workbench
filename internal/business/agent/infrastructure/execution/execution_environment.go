@@ -121,13 +121,13 @@ func (e *ExecutionEnvironment) reading(ctx context.Context, execution *domain.Ag
 }
 
 // PrepareCreation fixes the execution's environment specification once,
-// before its creation is submitted.
-func (e *ExecutionEnvironment) PrepareCreation(ctx context.Context, execution *domain.AgentExecution, mounts domain.SandboxMounts) error {
+// before its creation is submitted, with what Application supplied.
+func (e *ExecutionEnvironment) PrepareCreation(ctx context.Context, execution *domain.AgentExecution, supply command.CreationSupply) error {
 	record, err := e.record(ctx, execution)
 	if err != nil {
 		return err
 	}
-	return withExecution(e.provisioning.specify(ctx, record, mounts), execution)
+	return withExecution(e.provisioning.specify(ctx, record, supply), execution)
 }
 
 // SubmitCreation submits the specified environment's creation once, waiting
@@ -215,14 +215,14 @@ func (e *ExecutionEnvironment) RenewLease(ctx context.Context, execution *domain
 
 // DeliverCredentials delivers the Work's current credentials into the bound
 // environment, replacing those delivered before.
-func (e *ExecutionEnvironment) DeliverCredentials(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
+func (e *ExecutionEnvironment) DeliverCredentials(ctx context.Context, execution *domain.AgentExecution, supply command.CredentialSupply, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
 		return domain.CredentialDelivery{}, err
 	}
 	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
 	defer cancel()
-	delivery, err := e.connections.deliver(attempt, record, execution.Credentials.Delivered, holding)
+	delivery, err := e.connections.deliver(attempt, record, supply, execution.Credentials.Delivered, holding)
 	if !execution.Credentials.Delivered {
 		err = e.recovering(ctx, record, err)
 	}
@@ -284,10 +284,10 @@ func (e *ExecutionEnvironment) Connect(ctx context.Context, execution *domain.Ag
 	return withExecution(e.recovering(ctx, record, e.connections.connect(attempt, record)), execution)
 }
 
-// SyncInputs hands a Managed Computer the current inputs of the execution's
-// Work and answers the input changes the sync covers: those the execution
-// had marked when it was read.
-func (e *ExecutionEnvironment) SyncInputs(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (int64, error) {
+// SyncInputs hands a Managed Computer the current files of the execution's
+// Work's located inputs and answers the input changes the sync covers: those
+// the execution had marked when it was read.
+func (e *ExecutionEnvironment) SyncInputs(ctx context.Context, execution *domain.AgentExecution, inputs command.ManagedInputs, holding command.EnvironmentHolding) (int64, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
 		return 0, err
@@ -296,7 +296,7 @@ func (e *ExecutionEnvironment) SyncInputs(ctx context.Context, execution *domain
 	if err != nil {
 		return 0, withExecution(err, execution)
 	}
-	inputs, syncs := authority.(inputDelivery)
+	delivery, syncs := authority.(inputDelivery)
 	if !syncs {
 		return 0, nil
 	}
@@ -310,7 +310,7 @@ func (e *ExecutionEnvironment) SyncInputs(ctx context.Context, execution *domain
 		if err != nil {
 			return err
 		}
-		return inputs.syncInputs(attempt, current)
+		return delivery.syncInputs(attempt, current, inputs)
 	})
 	if err != nil {
 		return 0, withExecution(err, execution)

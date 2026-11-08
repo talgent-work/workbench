@@ -65,7 +65,7 @@ func abandonedStart(t *testing.T) *recoveryWorld {
 	t.Helper()
 	agent := uuid.NewString()
 	seated := time.Now().Add(-domain.StartupDeadline - 2*time.Minute)
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "project"}, AgentID: agent, WorkspaceReference: "workspace"},
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent},
 		domain.StartAdmission{AdmittedAt: seated, AgentID: agent, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	var admitted domain.WorkStartAdmitted
@@ -76,7 +76,7 @@ func abandonedStart(t *testing.T) *recoveryWorld {
 	}
 	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: work.LaunchSpecification(), Realization: domain.RealizationCloud})
 	require.NoError(t, err)
-	require.True(t, execution.RecordSubmission())
+	require.True(t, commandtest.Submit(execution))
 	_, err = execution.Reconcile(domain.EnvironmentObservation{}, domain.LeaseTerms{}, time.Now())
 	require.NoError(t, err)
 	for _, report := range execution.Reports() {

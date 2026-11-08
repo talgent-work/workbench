@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -20,7 +21,7 @@ func TestAnEnvironmentActionIsAdmittedOnlyIntoTheBoundEnvironmentOfAWantedRun(t 
 	require.False(t, bound.AdmitEnvironmentAction(""), "no environment is not the bound one")
 
 	unbound := beginOf(t, newSession(t), domain.RealizationCloud)
-	require.True(t, unbound.RecordSubmission())
+	require.True(t, commandtest.Submit(unbound))
 	require.False(t, unbound.AdmitEnvironmentAction(""), "an unbound execution admits nothing")
 	require.False(t, unbound.AdmitEnvironmentAction("env-1"), "an unbound execution admits nothing")
 
@@ -70,16 +71,16 @@ func TestASubmissionNeedsAWantedRun(t *testing.T) {
 	stopped := beginOf(t, work, domain.RealizationCloud)
 	_, err := stopped.RequestExit(domain.WorkStopRequested{WorkID: work.ID, StartAdmittedAt: stopped.StartAdmittedAt, StopRequestID: "stop-1"})
 	require.NoError(t, err)
-	require.False(t, stopped.RecordSubmission(), "a start asked to exit submits nothing")
+	require.False(t, commandtest.Submit(stopped), "a start asked to exit submits nothing")
 
 	retired := beginOf(t, newSession(t), domain.RealizationCloud)
 	_, err = retired.Retire(domain.WorkComputeReleaseRequested{WorkID: retired.WorkID, StartAdmittedAt: retired.StartAdmittedAt, Cause: domain.RetiredWithdrawn}, retired.Desk.SeatedAt)
 	require.NoError(t, err)
-	require.False(t, retired.RecordSubmission(), "a retired start submits nothing")
+	require.False(t, commandtest.Submit(retired), "a retired start submits nothing")
 
 	submitted := beginOf(t, newSession(t), domain.RealizationCloud)
-	require.True(t, submitted.RecordSubmission())
-	require.False(t, submitted.RecordSubmission(), "a creation is submitted once")
+	require.True(t, commandtest.Submit(submitted))
+	require.False(t, commandtest.Submit(submitted), "a creation is submitted once")
 }
 
 // A launch is recorded only for the bound environment the run still wants,

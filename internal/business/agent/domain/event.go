@@ -39,11 +39,13 @@ func (WorkClosingEntered) Kind() EventKind { return EventKindClosing }
 func (e WorkClosingEntered) Key() string   { return e.WorkID }
 
 // WorkClosedEvent is the WorkClosed Domain Event: a Work reached Closed and
-// no Harness process remains, so Storage is asked once to reclaim its Session
-// Workspace. The type is named apart from the WorkClosed state.
+// no Harness process remains, so Storage is asked once to reclaim a Cloud
+// Work's Work Directories (Request Work reclamation). The type is named
+// apart from the WorkClosed state.
 type WorkClosedEvent struct {
-	WorkID             string
-	WorkspaceReference string
+	WorkID string
+	// Cloud reports a Work on a Cloud, which mounted Work Directories.
+	Cloud bool
 }
 
 func (WorkClosedEvent) Kind() EventKind { return EventKindClosed }

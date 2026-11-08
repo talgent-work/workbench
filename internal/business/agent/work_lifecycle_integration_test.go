@@ -91,13 +91,12 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	client, feedback, stop := startModule()
 	created, err := client.CreateAgentDefinition(sessionControlRequest(ctx), &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee-a"}, AgentName: "Fixture Agent",
 		UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "employee-a"}, Purpose: "work",
-		HomeBinding:  &agentprivatev1.HomeBinding{OwnerId: "employee-a", Namespace: "personal"},
 		Capabilities: &agentprivatev1.Capabilities{Prompt: "base prompt", StartupAgent: "custom:base", RequiredPlugins: []string{"custom"}},
 	})
 	require.NoError(t, err)
 	definitionID := created.AgentId
 	creationRequest := func(work, project string) *agentprivatev1.CreateWorkRequest {
-		return &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definitionID, WorkspaceReference: work, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: work}, ProjectId: project, CapabilityDifferences: &agentprivatev1.CapabilityDifferences{Prompt: proto.String("session prompt"), StartupAgent: proto.String("custom:author")}}
+		return &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definitionID, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: work}, ProjectId: project, CapabilityDifferences: &agentprivatev1.CapabilityDifferences{Prompt: proto.String("session prompt"), StartupAgent: proto.String("custom:author")}}
 	}
 	create := func(work, project string) string {
 		t.Helper()
@@ -315,7 +314,8 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	requests := launches(t, observer)
 	require.Len(t, requests, 3, "closure must not begin any new execution")
 	for _, request := range requests {
-		require.Equal(t, domain.HomeBinding{OwnerID: "employee-a", Namespace: "personal"}, request.HomeBinding)
+		require.Equal(t, "employee-a", request.RepresentedPerson)
+		require.Equal(t, requests[0].LocatedLayout, request.LocatedLayout, "every start mounts the layout located at creation")
 		require.Equal(t, "session prompt", request.Capabilities.Prompt)
 		require.Equal(t, "custom:author", request.Capabilities.StartupAgent)
 		require.Equal(t, sessionID, request.WorkID)
@@ -333,6 +333,15 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 	require.Equal(t, "changed base", get(newSession.WorkId).Capabilities.Prompt)
 	require.NotEqual(t, original.ContextReference, get(newSession.WorkId).ContextReference)
 	requests = awaitLaunches(t, observer, 4, "the new Work begins its execution")
-	require.Equal(t, requests[0].HomeBinding, requests[3].HomeBinding, "the employee HOME is shared across projects")
+	harnessState := func(request domain.LaunchSpecification) domain.LocatedDirectory {
+		for _, mount := range request.LocatedLayout.Mounts {
+			if mount.Path == "$HOME/.claude" {
+				return mount.Directory
+			}
+		}
+		return domain.LocatedDirectory{}
+	}
+	require.NotEqual(t, requests[0].LocatedLayout.Mounts[0], requests[3].LocatedLayout.Mounts[0], "each Work has its own HOME")
+	require.Equal(t, harnessState(requests[0]), harnessState(requests[3]), "the definition's Works share its Harness state")
 	require.NotEqual(t, requests[0].HarnessSessionReference, requests[3].HarnessSessionReference)
 }

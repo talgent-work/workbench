@@ -125,6 +125,17 @@ storage-preview-taskqueue:
   retry-delay-min: "2s"
   retry-delay-max: "4s"
   shutdown-timeout: "30s"
+# Storage removes reclaimed Directories' content, retrying while a
+# publication copies from one, and lapses Preview Copies hourly.
+storage-maintenance-taskqueue:
+  redis-addr: "${REDIS_ADDR:127.0.0.1:6379}"
+  redis-password: "${REDIS_PASSWORD:}"
+  redis-db: 0
+  worker-concurrency: 2
+  queue-name: "storage-maintenance"
+  retry-delay-min: "10s"
+  retry-delay-max: "5m"
+  shutdown-timeout: "30s"
 clickhouse:
   dsn: "${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}"
 # Trace runs in this process; native telemetry has its own database.
@@ -175,11 +186,11 @@ storage:
     - "${STORAGE_FILE_SPACE_TOKEN:}"
   reference-space-tokens:
     - "${STORAGE_REFERENCE_SPACE_TOKEN:}"
-  reclaim-interval: "${STORAGE_RECLAIM_INTERVAL:30s}"
+  # Sandboxes mount each Directory from its backend's claim by subPath.
   mounts:
-    working-claim: "${K8S_NAS_PVC_NAME:talgent-nas-root}"
-    inputs-claim: "${K8S_INPUTS_PVC_NAME:talgent-juicefs-inputs}"
-    inputs-root: talgent
+    nas-claim: "${K8S_NAS_PVC_NAME:talgent-nas-root}"
+    juicefs-claim: "${K8S_JUICEFS_PVC_NAME:talgent-juicefs-directories}"
+    juicefs-root: talgent
   # Every preview limit and timing in one place; conservative
   # starting points, not capacity-tested.
   preview:

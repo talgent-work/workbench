@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -25,7 +26,7 @@ func pluginWork(t *testing.T) *domain.AgentWork {
 func boundPluginExecution(t *testing.T) *domain.AgentExecution {
 	t.Helper()
 	execution := beginOf(t, pluginWork(t), domain.RealizationCloud)
-	require.True(t, execution.RecordSubmission())
+	require.True(t, commandtest.Submit(execution))
 	_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-1"})
 	require.NoError(t, err)
 	return execution

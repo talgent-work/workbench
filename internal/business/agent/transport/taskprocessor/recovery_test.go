@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
@@ -51,12 +52,12 @@ func recovery(t *testing.T, environments *observed) (*application.Recovery, stri
 	t.Helper()
 	queued, err := domain.BeginExecution(domain.ExecutionBeginning{
 		Admitted:    domain.WorkStartAdmitted{WorkID: "work-1", StartAdmittedAt: time.Now(), DeskID: "desk-1", Waiting: true},
-		Launch:      domain.LaunchSpecification{WorkID: "work-1", HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "home"}},
+		Launch:      domain.LaunchSpecification{WorkID: "work-1", RepresentedPerson: "owner", AgentHarness: "claude-code"},
 		Realization: domain.RealizationCloud,
 	})
 	require.NoError(t, err)
 	repository := executions{execution: queued}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, repository, environments, nil, unseated{}, nil)
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, repository, environments, nil, unseated{}, nil)
 	return application.NewRecovery(&application.Application{}, nil, repository, nil, reconciliation, nil, nil), queued.ID
 }
 
@@ -127,7 +128,7 @@ func TestAgentRecoversThroughFiveTasks(t *testing.T) {
 			served = append(served, processor.TaskType())
 		}
 	}
-	require.ElementsMatch(t, []taskqueue.TaskType{agenttask.ReconcileExecutionType, agenttask.RunLongExecutionStepType, agenttask.RecoverWorkType, agenttask.RequestWorkspaceReclamationType, agenttask.SweepRecoveryType}, served)
+	require.ElementsMatch(t, []taskqueue.TaskType{agenttask.ReconcileExecutionType, agenttask.RunLongExecutionStepType, agenttask.RecoverWorkType, agenttask.RequestWorkReclamationType, agenttask.SweepRecoveryType}, served)
 }
 
 // A task queued under a type no longer enqueued is dropped without

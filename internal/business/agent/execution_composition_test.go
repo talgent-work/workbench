@@ -12,12 +12,16 @@ import (
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	"github.com/talgent-work/workbench/internal/pkg/opensandbox"
 	"go.uber.org/fx"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestExecutionCompositionReachesHTTP1OpenSandbox(t *testing.T) {
@@ -35,7 +39,7 @@ func TestExecutionCompositionReachesHTTP1OpenSandbox(t *testing.T) {
 	require.NoError(t, os.WriteFile(configurations, []byte("configurations:\n  - {id: pro, name: Pro, template: pro, api-key: sentinel}\n  - {id: flash, name: Flash, template: flash, api-key: sentinel}\n"), 0600))
 	cfg := ExecutionConfig{
 		Environment: map[string]string{"TALGENT_API_ADDRESS": "http://controlplane.talgent.svc.cluster.local"},
-		Models:      execution.ModelCatalogConfig{TemplatesPath: templates, ConfigurationsPath: configurations},
+		Models:      platformcatalog.Config{TemplatesPath: templates, ConfigurationsPath: configurations},
 		OpenSandbox: opensandbox.Config{Address: server.URL + "/v1", APIKey: "test-key"},
 		Native:      execution.NativeLaunchConfig{Binary: "claude"},
 		Dispatcher:  ExecutionClientConfig{Address: "http://dispatcher:8083", Token: "test-control"},
@@ -45,9 +49,9 @@ func TestExecutionCompositionReachesHTTP1OpenSandbox(t *testing.T) {
 	}
 	var sandboxes *execution.Sandboxes
 	var models query.ModelConfigurations
-	app := fx.New(fx.NopLogger, fx.Supply(cfg), fx.Provide(internalpkg.NewH2CClient, newExecutionLifecycle, func(cfg ExecutionConfig) (*execution.ModelCatalog, error) {
-		return execution.LoadModelCatalog(cfg.Models)
-	}, newExecutionSandboxes, newModelConfigurations), fx.Populate(&sandboxes, &models))
+	app := fx.New(fx.NopLogger, fx.Supply(cfg), fx.Provide(internalpkg.NewH2CClient, newExecutionLifecycle, func(cfg ExecutionConfig) (command.PlatformCatalogPort, error) {
+		return platformcatalog.Load(cfg.Models)
+	}, func() kubernetes.Interface { return fake.NewClientset() }, newExecutionSandboxes, newModelConfigurations), fx.Populate(&sandboxes, &models))
 	require.NoError(t, app.Err())
 	provided := models.Provided()
 	require.Len(t, provided, 2)

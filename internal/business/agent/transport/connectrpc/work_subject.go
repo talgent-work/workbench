@@ -17,14 +17,3 @@ func subjectToProto(value domain.WorkSubject) *agentprivatev1.WorkSubject {
 	}
 	return &agentprivatev1.WorkSubject{Kind: string(value.Kind), Id: value.ID}
 }
-
-func readOnlyMountsFromProto(values []*agentprivatev1.ReadOnlyMount) []domain.ReadOnlyMount {
-	if len(values) == 0 {
-		return nil
-	}
-	mounts := make([]domain.ReadOnlyMount, 0, len(values))
-	for _, value := range values {
-		mounts = append(mounts, domain.ReadOnlyMount{Name: value.GetName(), Reference: value.GetReference()})
-	}
-	return mounts
-}

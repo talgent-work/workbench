@@ -16,7 +16,7 @@ import (
 
 // fakeWorkspaces stands in for Storage's Workspace View and file links.
 type fakeWorkspaces struct {
-	application.WorkspacePort
+	application.WorkspaceReadingPort
 	missing error
 }
 

@@ -11,6 +11,8 @@ import (
 
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 )
 
@@ -22,6 +24,7 @@ type liveAgent struct {
 	live      bool
 	subject   *agentprivatev1.WorkSubject
 	projectID string
+	workspace *storageprivatev1.WorkspaceLayout
 	// acting is Agent's verdict on whether the Work acts.
 	acting bool
 	asked  []bool
@@ -40,7 +43,7 @@ func (a *liveAgent) VerifyWorkCredential(ctx context.Context, r *agentprivatev1.
 	if r.GetRequireActing() && !a.acting {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, "")
 	}
-	return &agentprivatev1.VerifyWorkCredentialResponse{WorkId: r.GetWorkId(), SubjectId: "owner", AgentId: "agent", ProjectId: a.projectID, Subject: a.subject, Purpose: "work"}, nil
+	return &agentprivatev1.VerifyWorkCredentialResponse{WorkId: r.GetWorkId(), SubjectId: "owner", AgentId: "agent", ProjectId: a.projectID, Subject: a.subject, Purpose: "work", Workspace: a.workspace}, nil
 }
 
 func liveClient(t *testing.T, agent *liveAgent) *LiveWorkClient {
@@ -70,6 +73,26 @@ func TestLiveWorkResolvesTheWorkOfALiveSandbox(t *testing.T) {
 	require.NoError(t, err, "a Work without a Project or Subject is resolved too")
 	require.Empty(t, personal.ProjectID)
 	require.Empty(t, personal.WorkSubjectKind)
+	require.Nil(t, personal.Workspace, "a Work without a Session Workspace has none")
+}
+
+// A Cloud Work's identity carries its Session Workspace as its sandbox sees
+// it: the Work Directory and each Directory mounted inside it.
+func TestLiveWorkCarriesTheWorkspaceLayout(t *testing.T) {
+	work := &storageprivatev1.DirectoryOwner{Facts: []*storageprivatev1.OwnerFact{{Condition: "work", Value: "w1"}}}
+	subject := &storageprivatev1.DirectoryOwner{Facts: []*storageprivatev1.OwnerFact{{Condition: "subject", Value: "case:1"}}}
+	agent := &liveAgent{live: true, workspace: &storageprivatev1.WorkspaceLayout{
+		Workspace: &storageprivatev1.Directory{Owner: work, Name: "workspace"},
+		Mounts:    []*storageprivatev1.MountedDirectory{{Path: "inputs", Directory: &storageprivatev1.Directory{Owner: subject, Name: "inputs"}}},
+	}}
+	process, err := liveClient(t, agent).VerifyNativeProcess(context.Background(), "w1", "sandbox-credential")
+	require.NoError(t, err)
+	require.Equal(t, &authn.WorkspaceLayout{
+		Workspace: authn.Directory{Owner: []authn.OwnerFact{{Condition: "work", Value: "w1"}}, Name: "workspace"},
+		Mounts: []authn.MountedDirectory{{Path: "inputs", Directory: authn.Directory{
+			Owner: []authn.OwnerFact{{Condition: "subject", Value: "case:1"}}, Name: "inputs",
+		}}},
+	}, process.Workspace)
 }
 
 func TestLiveWorkRejectsRetiredOrForgedCredentials(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/workspacereading"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/workspacefile"
 )
 
@@ -21,7 +22,7 @@ import (
 // Managed Computers, the Work's directory on its machine, whose files are
 // served behind Agent's own links.
 var workspaceReading = fx.Options(
-	fx.Provide(newManagedComputers, newWorkspaceFileSigner, newManagedWorkspaces, newWorkspaces),
+	fx.Provide(newManagedComputers, newWorkspaceFileSigner, newManagedWorkFiles, newWorkspaces),
 	fx.Invoke(registerManagedWorkspaceFiles),
 )
 
@@ -46,22 +47,27 @@ func newWorkspaceFileSigner(machines *execution.ManagedComputers, cfg ComputerCo
 	return application.NewWorkspaceFileSigner(cfg.WorkspaceFileAddress, cfg.Token, time.Now)
 }
 
-// newManagedWorkspaces reads Managed Works' directories through the relay,
-// nil without Managed Computers. Storage judges their previews.
-func newManagedWorkspaces(db *xorm.Engine, machines *execution.ManagedComputers, links *application.WorkspaceFileSigner, previews execution.PreviewJudge) (*execution.ManagedWorkspaces, error) {
+// newManagedWorkFiles reads Managed Works' directories through the relay,
+// nil without Managed Computers.
+func newManagedWorkFiles(db *xorm.Engine, machines *execution.ManagedComputers) (*execution.ManagedWorkFiles, error) {
 	if machines == nil {
 		return nil, nil
 	}
-	return execution.NewManagedWorkspaces(db, machines, links, previews)
+	return execution.NewManagedWorkFiles(db, machines)
 }
 
-func newWorkspaces(storage execution.StorageWorkspaces, managed *execution.ManagedWorkspaces) (application.WorkspacePort, error) {
-	return execution.NewWorkspaces(storage, managed)
+// newWorkspaces reads Cloud Works through Storage, which also judges Managed
+// Works' previews, and Managed Works through their machines when reached.
+func newWorkspaces(storage workspacereading.StorageViews, files *execution.ManagedWorkFiles, links *application.WorkspaceFileSigner) (application.WorkspaceReadingPort, error) {
+	if files == nil {
+		return workspacereading.NewWorkspaces(storage, nil, links)
+	}
+	return workspacereading.NewWorkspaces(storage, files, links)
 }
 
 // registerManagedWorkspaceFiles serves the links to Managed Works' files,
 // which only a deployment that reaches Managed Computers issues.
-func registerManagedWorkspaceFiles(mux *http.ServeMux, links *application.WorkspaceFileSigner, workspaces application.WorkspacePort, works domain.AgentWorkRepository, logger *slog.Logger) error {
+func registerManagedWorkspaceFiles(mux *http.ServeMux, links *application.WorkspaceFileSigner, workspaces application.WorkspaceReadingPort, works domain.AgentWorkRepository, logger *slog.Logger) error {
 	if links == nil {
 		return nil
 	}

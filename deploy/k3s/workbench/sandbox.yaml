@@ -3,10 +3,11 @@
 # OpenSandbox creates there (SANDBOX_NAMESPACE). The platform namespace,
 # talgent, holds trusted services that trust each other.
 #
-# Storage: sandboxes mount claims of the names Storage grants
-# (agent-execution's working-claim and inputs-claim), each bound to a PV of
-# its own over the platform's NAS share or JuiceFS file system; controlplane
-# keeps its claims in talgent. A PV's name and volume handle carry -sandbox.
+# Storage: sandboxes mount one claim per backend, of the names Storage grants
+# (storage.mounts.nas-claim and juicefs-claim), each bound to a PV of its own
+# over the platform's NAS share or JuiceFS file system; every Directory is
+# mounted from its claim by its own subPath. controlplane keeps its claims in
+# talgent. A PV's name and volume handle carry -sandbox.
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -51,15 +52,16 @@ spec:
     matchLabels:
       talgent.io/storage: nas-root-sandbox
 ---
-# Work input sources on the JuiceFS file system. Sandboxes mount it
-# read-only: OpenSandbox requires every mount of one claim to share its
-# read-only policy. A distinct volumeHandle gives it its own CSI mount.
+# Directories on the JuiceFS file system, each mounted by its subPath under
+# talgent/assets/directories/. OpenSandbox requires every mount of one claim
+# to share its read-only policy. A distinct volumeHandle gives it its own CSI
+# mount.
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: talgent-juicefs-inputs-sandbox
+  name: talgent-juicefs-directories-sandbox
   labels:
-    talgent.io/storage: juicefs-inputs-sandbox
+    talgent.io/storage: juicefs-directories-sandbox
 spec:
   capacity:
     storage: 100Gi
@@ -72,7 +74,7 @@ spec:
     - enable-xattr
   csi:
     driver: csi.juicefs.com
-    volumeHandle: talgent-juicefs-inputs-rustfs-sandbox
+    volumeHandle: talgent-juicefs-directories-rustfs-sandbox
     fsType: juicefs
     nodePublishSecretRef:
       name: talgent-juicefs-secret
@@ -81,7 +83,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: talgent-juicefs-inputs
+  name: talgent-juicefs-directories
   namespace: talgent-sandbox
 spec:
   accessModes:
@@ -92,11 +94,12 @@ spec:
       storage: 100Gi
   selector:
     matchLabels:
-      talgent.io/storage: juicefs-inputs-sandbox
+      talgent.io/storage: juicefs-directories-sandbox
 ---
 # controlplane, under its ServiceAccount in talgent, reads the execution
-# quota and observes the OpenSandbox resources that are the environment
-# authority; creation and deletion go through the OpenSandbox API.
+# quota and observes the environment authority, the BatchSandboxes and the
+# Pods that outlive them until they terminate; creation and deletion go
+# through the OpenSandbox API.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -106,6 +109,9 @@ rules:
   - apiGroups: [""]
     resources: ["resourcequotas"]
     verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["sandbox.opensandbox.io"]
     resources: ["batchsandboxes"]
     verbs: ["get", "list", "watch"]

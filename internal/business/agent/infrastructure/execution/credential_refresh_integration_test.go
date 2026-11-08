@@ -14,6 +14,7 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -21,16 +22,16 @@ import (
 	"xorm.io/xorm"
 )
 
-// countingRepositoryCredentials counts how often the Vault refresh asks the
-// Marketplace for repository credentials; each ask queries GitHub live.
+// countingRepositoryCredentials counts how often a delivery asks Marketplace
+// for repository credentials; each ask queries GitHub live.
 type countingRepositoryCredentials struct {
-	fixtureRepositoryCredentials
+	authorizationcatalogtest.NoRepositories
 	resolves atomic.Int32
 }
 
-func (c *countingRepositoryCredentials) Resolve(ctx context.Context, owner, work string) (RepositoryResolution, error) {
+func (c *countingRepositoryCredentials) Resolve(ctx context.Context, owner, work string) (command.RepositoryAccessResult, error) {
 	c.resolves.Add(1)
-	return c.fixtureRepositoryCredentials.Resolve(ctx, owner, work)
+	return c.NoRepositories.Resolve(ctx, owner, work)
 }
 
 func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
@@ -80,6 +81,9 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	connections, err := NewNativeConnections(provisioning, provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
+	counter := &countingRepositoryCredentials{}
+	supplies := command.NewEnvironmentSupplies(counter, authorizationcatalogtest.NoServices{}, directoryMounts{root: t.TempDir()})
+	steps.handler = command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, steps.executions, steps.environment, steps.harness, steps.desks, supplies)
 	// Submission with the first delivery, then preparation with the Harness
 	// start and its connection.
 	for range 2 {
@@ -89,16 +93,13 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, healthy.CredentialsDelivered && healthy.PreparationEnded && healthy.ProcessID != "", "Work reached a healthy native connection")
 
-	counter := &countingRepositoryCredentials{}
-	authorizations := authorizationcatalogtest.NoServices{}
-	connections.credentials.repositories = counter
-	connections.credentials.services = authorizations
+	resolved := counter.resolves.Load()
 	vaultWrites := lifecycle.vault.state.Revision
 	connects := len(receiver.requests)
 	for range 5 {
 		require.NoError(t, steps.pass(ctx, db))
 	}
-	require.Zero(t, counter.resolves.Load(), "a connected Work's reconnects never ask for repository credentials; each ask queries GitHub live")
+	require.Equal(t, resolved, counter.resolves.Load(), "a connected Work's reconnects never ask for repository credentials; each ask queries GitHub live")
 	require.Equal(t, vaultWrites, lifecycle.vault.state.Revision, "a reconnect delivers nothing to the Vault")
 	require.Len(t, receiver.requests, connects+5, "each reconnect only connects")
 }

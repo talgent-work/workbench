@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,12 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
+
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -42,7 +42,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 	require.NoError(t, err)
 	selection := stored.AuthorizationSelection.Clone()
 	supply := &currentServiceSupply{token: "initial-provider-token"}
-	f.provisioning.credentials.services = application.NewServiceAccess(f.works, supply)
+	services := command.NewServiceAccess(f.works, supply)
 	writes := &vaultWrites{next: f.external.vault}
 	endpoint := httptest.NewServer(writes)
 	t.Cleanup(endpoint.Close)
@@ -62,7 +62,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 		{"", "revoked"}, {"", "reconnect_required"}, {"reauthorized-provider-token", ""},
 	} {
 		supply.token, supply.reason = stage.token, stage.reason
-		delivery, err := f.provisioning.credentials.prepare(ctx, record, admitted, spec, stage.token != "initial-provider-token", admitting)
+		delivery, err := f.provisioning.credentials.prepare(ctx, record, admitted, spec, serviceCredentials(t, services, work.ID), stage.token != "initial-provider-token", admitting)
 		statuses, expiry := delivery.Statuses, delivery.ExpiresAt
 		require.NoError(t, err)
 		if stage.token == "" {
@@ -191,7 +191,7 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	first, _ := f.createWithAuthorization(t, ctx, snapshot, shared)
 	second, _ := f.createWithAuthorization(t, ctx, snapshot, shared)
 	supply := &currentServiceSupply{token: "first-provider-token"}
-	f.provisioning.credentials.services = application.NewServiceAccess(f.works, supply)
+	f.services.current = command.NewServiceAccess(f.works, supply)
 	writes := &vaultWrites{next: f.external.vault}
 	endpoint := httptest.NewServer(writes)
 	t.Cleanup(endpoint.Close)
@@ -257,4 +257,30 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	}
 	require.Contains(t, writes.latest(), "reauthorized-provider-token", "a temporary failure never removes a delivered credential")
 	require.Equal(t, before, writes.writesWith("reauthorized-provider-token"))
+}
+
+// serviceCredentials is what Application hands a delivery for the Work's two
+// GitHub targets: the credentials Marketplace supplied now, with the access
+// observed for each.
+func serviceCredentials(t *testing.T, services *command.ServiceAccess, workID string) command.CredentialSupply {
+	t.Helper()
+	targets := []command.ServiceRequirement{{Provider: "github", Service: "github", Target: "github-api"}, {Provider: "github", Service: "github", Target: "github-remote-mcp"}}
+	result, err := services.Resolve(t.Context(), "lifecycle-owner", workID, targets)
+	require.NoError(t, err)
+	supply := command.CredentialSupply{Services: result.Credentials}
+	for _, target := range targets {
+		status := command.ServiceAccessStatus{Service: target.Service, Target: target.Target, Status: "unavailable"}
+		for _, unavailable := range result.Unavailable {
+			if unavailable.Target == target.Target {
+				status.Reason, status.Temporary = unavailable.Reason, unavailable.Temporary
+			}
+		}
+		for _, material := range result.Credentials {
+			if material.Target == target.Target {
+				status.Status, status.Reason = "credential_available", ""
+			}
+		}
+		supply.Access = append(supply.Access, status)
+	}
+	return supply
 }

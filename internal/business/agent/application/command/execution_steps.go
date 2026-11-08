@@ -36,9 +36,14 @@ func (h *ReconcileExecutionHandler) takeShortStep(ctx context.Context, execution
 }
 
 // deliverCredentials delivers or replaces the bound environment's
-// credentials and records what was delivered.
+// credentials, as the authorities supply them now, and records what was
+// delivered.
 func (h *ReconcileExecutionHandler) deliverCredentials(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
-	delivery, err := h.environments.DeliverCredentials(ctx, execution, h.holding(execution))
+	supply, err := h.supplies.credentials(ctx, execution)
+	if err != nil {
+		return false, err
+	}
+	delivery, err := h.environments.DeliverCredentials(ctx, execution, supply, h.holding(execution))
 	if err != nil {
 		return false, err
 	}
@@ -59,10 +64,14 @@ func (h *ReconcileExecutionHandler) renewLease(ctx context.Context, execution *d
 	})
 }
 
-// syncInputs syncs a Managed Computer's input copies and records the changes
-// it covered.
+// syncInputs syncs a Managed Computer's input copies from the current files
+// of its Work's located inputs and records the changes it covered.
 func (h *ReconcileExecutionHandler) syncInputs(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
-	synced, err := h.environments.SyncInputs(ctx, execution, h.holding(execution))
+	inputs, err := h.supplies.inputs(ctx, execution.Launch.LocatedLayout.Inputs)
+	if err != nil {
+		return false, err
+	}
+	synced, err := h.environments.SyncInputs(ctx, execution, inputs, h.holding(execution))
 	if err != nil {
 		return false, err
 	}

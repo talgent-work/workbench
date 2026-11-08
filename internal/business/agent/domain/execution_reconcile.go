@@ -13,6 +13,11 @@ type ObservedEnvironment struct {
 	// LeaseExpiresAt is when the authority deletes it unless renewed; zero
 	// when it was created without an expiry.
 	LeaseExpiresAt time.Time
+	// Ending reports an environment its authority already deleted while part
+	// of it still runs: a sandbox's Pod outliving its BatchSandbox (Ending
+	// environment). It is never bound or deleted again, and keeps a retired
+	// execution from being released.
+	Ending bool
 }
 
 // EnvironmentObservation is what the environment authority and Dispatcher
@@ -21,7 +26,7 @@ type ObservedEnvironment struct {
 // supplied.
 type EnvironmentObservation struct {
 	// Environments carry the execution's ownership; a bound one appears
-	// exactly while it exists.
+	// exactly while any part of it still runs.
 	Environments []ObservedEnvironment
 	// Removed is the authority's confirmation that the Work's Managed
 	// Computer was removed, with every environment on it (Removal is loss);
@@ -116,7 +121,7 @@ func (e *AgentExecution) Reconcile(observation EnvironmentObservation, lease Lea
 
 func (e *AgentExecution) decide(observation EnvironmentObservation, lease LeaseTerms, now time.Time) []ExecutionStep {
 	if e.Retired() {
-		return e.release(observation)
+		return e.release(observation, now)
 	}
 	if observation.Removed {
 		e.lose(observation.LossReason)
@@ -129,7 +134,7 @@ func (e *AgentExecution) decide(observation EnvironmentObservation, lease LeaseT
 		// Its end is reported; its Work retires it.
 		return nil
 	}
-	if !e.Creation.Submitted {
+	if !e.Creation.Submitted() {
 		return e.submit(observation, now)
 	}
 	steps := e.bind(observation)
@@ -170,23 +175,33 @@ func (e *AgentExecution) submit(observation EnvironmentObservation, now time.Tim
 // bind keeps the bound environment and deletes every other one it owns; with
 // none bound, it binds the first observed one, running ones first, whatever
 // its creation's answer (Single creation). A bound environment no longer
-// observed is lost (Environment loss).
+// observed, or already ending, is lost (Environment loss); an ending one is
+// never bound or deleted again (Ending environment).
 func (e *AgentExecution) bind(observation EnvironmentObservation) []ExecutionStep {
 	if e.Environment != "" {
-		if _, found := observation.find(e.Environment); !found {
+		if bound, found := observation.find(e.Environment); !found || bound.Ending {
 			e.lose(observation.LossReason)
 			return nil
 		}
-	} else if len(observation.Environments) > 0 && !e.Outcome.Abandoned {
-		first := observation.Environments[0]
-		if i := slices.IndexFunc(observation.Environments, func(o ObservedEnvironment) bool { return o.Running }); i >= 0 {
-			first = observation.Environments[i]
+	} else if !e.Outcome.Abandoned {
+		live := slices.DeleteFunc(slices.Clone(observation.Environments), func(o ObservedEnvironment) bool { return o.Ending })
+		if len(live) > 0 {
+			first := live[0]
+			if i := slices.IndexFunc(live, func(o ObservedEnvironment) bool { return o.Running }); i >= 0 {
+				first = live[i]
+			}
+			e.Environment = first.ID
 		}
-		e.Environment = first.ID
 	}
+	return deleteOthers(observation, e.Environment)
+}
+
+// deleteOthers deletes every observed environment other than keep that is not
+// already ending.
+func deleteOthers(observation EnvironmentObservation, keep string) []ExecutionStep {
 	var steps []ExecutionStep
 	for _, observed := range observation.Environments {
-		if observed.ID != e.Environment {
+		if observed.ID != keep && !observed.Ending {
 			steps = append(steps, ExecutionStep{Kind: StepDeleteEnvironment, EnvironmentID: observed.ID})
 		}
 	}
@@ -270,16 +285,15 @@ func (e *AgentExecution) inputsDue(observation EnvironmentObservation, now time.
 	return observation.InputsRefresh > 0 && !now.Before(e.Inputs.SyncedAt.Add(observation.InputsRefresh))
 }
 
-// release deletes every environment a retired execution owns and, once none
-// remains, leaves its Desk, so its room returns only after its compute is
-// released (Retired environments, Desk release); a released one deletes an
-// environment that appeared late.
-func (e *AgentExecution) release(observation EnvironmentObservation) []ExecutionStep {
-	var steps []ExecutionStep
-	for _, observed := range observation.Environments {
-		steps = append(steps, ExecutionStep{Kind: StepDeleteEnvironment, EnvironmentID: observed.ID})
-	}
-	if e.State == ExecutionRetired && e.Desk.LeftAt.IsZero() && len(observation.Environments) == 0 {
+// release deletes every environment a retired execution owns that is not
+// already ending and, once none remains, not even an ending one, and no
+// creation is outstanding, leaves its Desk, so its room returns only after
+// its compute is released (Retired environments, Ending environment,
+// Outstanding creation, Desk release); a released one deletes an environment
+// that appeared late.
+func (e *AgentExecution) release(observation EnvironmentObservation, now time.Time) []ExecutionStep {
+	steps := deleteOthers(observation, "")
+	if e.State == ExecutionRetired && e.Desk.LeftAt.IsZero() && e.computeEnded(observation, now) {
 		steps = append(steps, ExecutionStep{Kind: StepLeaveDesk})
 	}
 	return steps

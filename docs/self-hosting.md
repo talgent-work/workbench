@@ -19,7 +19,7 @@ untrusted.
 |---|---|---|
 | Services | `controlplane` (2 replicas), `dispatcher` (2), `streamgateway` (2), `computer-gateway` (1), `workbench-web` (1); `otel-collector` (OTel Collector, writes to ClickHouse), `gotenberg` (renders office previews); the OpenSandbox Server `opensandbox` | Sandbox Pods, which OpenSandbox creates |
 | Configuration | ConfigMap `workbench-environment` (the deployment's environment), one ConfigMap per service, `agent-models` (Model Templates), `opensandbox-workload-template` (the sandbox Pod template) | |
-| Storage | Claims `talgent-juicefs-root`, `talgent-juicefs-originals` (JuiceFS) and `talgent-nas-root` (NFS) | Claims `talgent-nas-root` and `talgent-juicefs-inputs`, bound to their own PersistentVolumes `talgent-nas-root-sandbox` and `talgent-juicefs-inputs-sandbox` over the same NFS export and JuiceFS file system |
+| Storage | Claims `talgent-juicefs-root`, `talgent-juicefs-originals` (JuiceFS) and `talgent-nas-root` (NFS) | Claims `talgent-nas-root` and `talgent-juicefs-directories`, bound to their own PersistentVolumes `talgent-nas-root-sandbox` and `talgent-juicefs-directories-sandbox` over the same NFS export and JuiceFS file system |
 | Entry | HTTPRoutes `workbench-web`, `web-api`, `auth`, `computer`; Envoy Gateway SecurityPolicy `web-auth` and rate limits | |
 | Budget | LimitRange `application-requests` | ResourceQuota `agent-executions`, LimitRange `application-requests` |
 | Permissions | | Roles of controlplane (reads the quota, observes BatchSandboxes) and of the OpenSandbox Server (manages sandboxes), bound to their ServiceAccounts in `talgent` |
@@ -391,7 +391,7 @@ objects that a newer base no longer has; delete them by hand.
 ### Images
 
 A release publishes `ghcr.io/talgent-work/controlplane`, `dispatcher`, `streamgateway`,
-`computer-gateway`, `sandbox`, `execd` and `workbench-web`, all tagged `vX.Y.Z`. The scripts refuse
+`computer-gateway`, `sandbox` and `workbench-web`, all tagged `vX.Y.Z`. The scripts refuse
 to run without `TALGENT_IMAGE_TAG`.
 
 To build your own, from the root of this tree:
@@ -403,8 +403,8 @@ TALGENT_REGISTRY=registry.example.com/talgent TALGENT_IMAGE_TAG=build-$(git rev-
 
 Deploy with the same `TALGENT_REGISTRY` and `TALGENT_IMAGE_TAG`. The sandbox image builds on
 `sandbox-base`, tagged by the hash of its recipe and reused while that is unchanged.
-OpenSandbox runs the execd image pinned by digest in `deploy/opensandbox/server.yaml`, whatever
-the tag; set `TALGENT_EXECD_IMAGE` to a complete tag or digest to use another.
+OpenSandbox runs the official execd image pinned by digest in `deploy/opensandbox/server.yaml`,
+whatever the tag; set `TALGENT_EXECD_IMAGE` to a complete tag or digest to use another.
 
 ## 8. Verify
 

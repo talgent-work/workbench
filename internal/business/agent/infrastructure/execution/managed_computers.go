@@ -156,7 +156,7 @@ func decodeManagedSpecification(record executionRecord) (managedSpecification, e
 // endpoint: Talgent Computer's local proxy sets ANTHROPIC_BASE_URL to itself,
 // and the run's proxy token in place of the key, for each process, and sends
 // the requests on to the endpoint recorded here.
-func managedSpecificationFor(request domain.LaunchSpecification, models *ModelCatalog, token, credential string) (managedSpecification, error) {
+func managedSpecificationFor(request domain.LaunchSpecification, models command.PlatformCatalogPort, token, credential string) (managedSpecification, error) {
 	if strings.TrimSpace(request.ComputerID) == "" || strings.TrimSpace(token) == "" || strings.TrimSpace(credential) == "" {
 		return managedSpecification{}, domain.ErrExecutionRequest
 	}
@@ -171,7 +171,7 @@ func managedSpecificationFor(request domain.LaunchSpecification, models *ModelCa
 	if request.WorkModel.MachineLogin {
 		return spec, nil
 	}
-	model, provided := models.Resolve(request.WorkModel.ConfigurationID)
+	model, provided := models.ProvidedModel(request.WorkModel.ConfigurationID)
 	if !provided {
 		return managedSpecification{}, errModelConfigurationNotProvided
 	}

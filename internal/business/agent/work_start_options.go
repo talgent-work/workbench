@@ -3,19 +3,19 @@ package agent
 import (
 	"slices"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"xorm.io/xorm"
 )
 
 // newModelConfigurations offers the provided Model Configurations in platform
 // order, each presented by its name and its Model Template's vendor and
 // thinking levels. No endpoint or credential leaves the catalog.
-func newModelConfigurations(models *execution.ModelCatalog) (query.ModelConfigurations, error) {
+func newModelConfigurations(models command.PlatformCatalogPort) (query.ModelConfigurations, error) {
 	var options []query.WorkModelOption
-	for _, model := range models.Provided() {
+	for _, model := range models.ProvidedModels() {
 		selection := domain.WorkModelSelection{ConfigurationID: model.Configuration.ID}
 		if err := selection.Validate(); err != nil {
 			return query.ModelConfigurations{}, err

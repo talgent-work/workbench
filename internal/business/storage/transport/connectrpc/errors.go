@@ -1,5 +1,5 @@
 // Package connectrpc serves Storage's private contracts to the contexts that
-// name spaces, each authenticated by its own control token, and its Artifact
+// locate Directories, each authenticated by its own control token, and its Artifact
 // commands to Work Agents.
 package connectrpc
 
@@ -62,22 +62,26 @@ func mapError(err error) error {
 		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_SOURCE, err)
 	case errors.Is(err, application.ErrInvalidWorkspacePath):
 		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_WORKSPACE_PATH, err)
-	case errors.Is(err, domain.ErrInvalidFileName), errors.Is(err, domain.ErrInvalidFileKind), errors.Is(err, domain.ErrInvalidPreviewKey):
+	case errors.Is(err, domain.ErrInvalidFileName), errors.Is(err, domain.ErrInvalidPreviewKey):
 		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_NAME, err)
-	case errors.Is(err, application.ErrInvalidRequest), errors.Is(err, domain.ErrOwnerRequired), errors.Is(err, domain.ErrInvalidOwner),
-		errors.Is(err, domain.ErrSharerRequired), errors.Is(err, domain.ErrFileWriterRequired), errors.Is(err, domain.ErrInvalidHomeOwner),
-		errors.Is(err, domain.ErrInvalidReferencePath), errors.Is(err, domain.ErrInvalidReferenceMount):
+	case errors.Is(err, domain.ErrInvalidLocator):
+		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_LOCATOR, err)
+	case errors.Is(err, application.ErrInvalidRequest), errors.Is(err, domain.ErrSharerRequired), errors.Is(err, domain.ErrFileWriterRequired),
+		errors.Is(err, domain.ErrInvalidContentPath), errors.Is(err, domain.ErrInvalidMountPoint), errors.Is(err, domain.ErrInvalidWorkspaceLayout):
 		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST, err)
-	case errors.Is(err, application.ErrWorkspaceNotCreated):
-		return storageerror.New(connect.CodeNotFound, storageprivatev1.ErrorReason_ERROR_REASON_WORKSPACE_NOT_CREATED, err)
-	case errors.Is(err, application.ErrWorkspaceReclaimed):
-		return storageerror.New(connect.CodeNotFound, storageprivatev1.ErrorReason_ERROR_REASON_WORKSPACE_RECLAIMED, err)
-	case errors.Is(err, domain.ErrSpaceNotOpen):
-		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_SPACE_NOT_OPEN, err)
+	case errors.Is(err, domain.ErrDirectoryNotOpen):
+		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN, err)
+	case errors.Is(err, domain.ErrDirectoryNotAllocated):
+		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED, err)
+	case errors.Is(err, domain.ErrDirectoryReclaimed):
+		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED, err)
+	case errors.Is(err, domain.ErrPermanentDirectory):
+		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_PERMANENT_DIRECTORY, err)
 	case errors.Is(err, domain.ErrConcurrentModification):
 		return connect.NewError(connect.CodeAborted, err.Error()).WithCause(err)
 	default:
-		// Private callers only: the cause stays for the completion log.
-		return connect.NewError(connect.CodeInternal, err.Error()).WithCause(err)
+		// Work Agents call these handlers too, so the message names no cause;
+		// the cause stays for the completion log.
+		return connect.NewError(connect.CodeInternal, "storage: internal error").WithCause(err)
 	}
 }

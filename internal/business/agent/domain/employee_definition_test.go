@@ -13,5 +13,18 @@ import (
 func TestAnEmployeeAgentRepresentsTheEmployee(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.EmployeeDefinitionInput("employee-1"))
 	require.NoError(t, err)
-	require.Equal(t, "employee-1", agent.PersonalAuthorizationOwner())
+	require.Equal(t, "employee-1", agent.RepresentedPerson())
+}
+
+// Only the employee's `work`-purpose definition represents the employee: a
+// definition of the same employee for another purpose represents no person,
+// so its Works neither use the employee's personal authorizations nor roll up
+// to their usage.
+func TestAnEmployeeDefinitionOfAnotherPurposeRepresentsNoPerson(t *testing.T) {
+	input := domain.EmployeeDefinitionInput("employee-1")
+	input.Purpose = "reviewer"
+	agent, err := domain.NewAgentDefinition(input)
+	require.NoError(t, err)
+	require.Empty(t, agent.RepresentedPerson())
+	require.NotContains(t, agent.WorkTraceAttributes(nil), "talgent.user_id")
 }

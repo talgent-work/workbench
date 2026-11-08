@@ -72,9 +72,9 @@ type environmentAuthority interface {
 	// specify fixes the environment's specification from the execution's
 	// LaunchSpecification, its execd access token and its Work credential.
 	specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token, credential string) (environmentSpecification, error)
-	// claim returns what is frozen with the specification: the credential
-	// plan, or nil for none.
-	claim(ctx context.Context, record executionRecord) ([]byte, error)
+	// claim returns what is frozen with the specification from what
+	// Application supplied: the credential plan, or nil for none.
+	claim(record executionRecord, supply command.CreationSupply) ([]byte, error)
 	// create submits the environment once and returns its reference, empty
 	// while unresolved; errCreationRefused when the authority refused it.
 	create(ctx context.Context, record executionRecord) (string, error)
@@ -96,7 +96,7 @@ type credentialDelivery interface {
 	// a redelivery replaces those delivered before.
 	// It asks holding before each write and clears what it wrote once
 	// holding refuses.
-	deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error)
+	deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error)
 	// withdraw clears the delivered credentials.
 	withdraw(ctx context.Context, record executionRecord) error
 	// modelDigest identifies the model key a delivery carries now.
@@ -115,7 +115,7 @@ type leasing interface {
 // access observed, the earliest declared expiry of its material, zero when
 // none expires, and the model key it carried.
 type deliveredCredentials struct {
-	Statuses    []ServiceAccessStatus
+	Statuses    []command.ServiceAccessStatus
 	ExpiresAt   time.Time
 	ModelDigest string
 }

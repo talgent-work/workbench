@@ -34,7 +34,7 @@ type CloudLaunch = execution.CloudLaunch
 func PlatformConnectorLaunch(t testing.TB, dsn, binary, workID, mcpAddress string) CloudLaunch {
 	t.Helper()
 	request := domain.LaunchSpecification{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkID: workID, ContextMode: domain.ContextFresh,
-		HarnessSessionReference: "context", WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"},
+		HarnessSessionReference: "context", RepresentedPerson: "user-home", AgentHarness: "claude-code",
 		Capabilities: domain.CapabilitySnapshot{Prompt: "fixed prompt\n", Connectors: []domain.SelectedConnector{platformConnector(t, dsn, mcpAddress)}}}
 	launch, err := (execution.NativeLaunchConfig{Binary: binary}).CloudLaunch(request, execution.SandboxOwner{WorkID: workID, ID: "01900000-0000-7000-8000-000000000001"})
 	require.NoError(t, err)

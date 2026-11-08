@@ -39,7 +39,7 @@ func liveExecution(t *testing.T, workID string) (*rpcExecutions, string) {
 	executions := &rpcExecutions{now: time.Now}
 	execution, err := domain.BeginExecution(domain.ExecutionBeginning{
 		Admitted:    domain.WorkStartAdmitted{WorkID: workID, StartAdmittedAt: time.Now(), DeskID: "desk-1"},
-		Launch:      domain.LaunchSpecification{WorkID: workID, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "home"}},
+		Launch:      domain.LaunchSpecification{WorkID: workID, RepresentedPerson: "owner", AgentHarness: "claude-code"},
 		Realization: domain.RealizationCloud,
 	})
 	require.NoError(t, err)

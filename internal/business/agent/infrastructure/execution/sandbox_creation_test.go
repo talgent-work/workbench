@@ -11,7 +11,6 @@ import (
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // serveHeldCreate creates the sandbox, then answers only once answer is
@@ -91,21 +90,6 @@ func TestSandboxCreateRefusalIsOnlyADefiniteAnswer(t *testing.T) {
 	}
 }
 
-// A create waits for its answer a little longer than the OpenSandbox
-// server's creation timeout, its default unless configured; the timeout must
-// leave room within the Startup Deadline.
-func TestSandboxCreateWaitsLongerThanTheServerCreationTimeout(t *testing.T) {
-	require.Equal(t, 5*time.Minute+30*time.Second, config().creationWait())
-	configured := config()
-	configured.CreationTimeout = 2 * time.Minute
-	require.Equal(t, 2*time.Minute+30*time.Second, configured.creationWait())
-	require.NoError(t, configured.Validate())
-	for _, invalid := range []time.Duration{-time.Second, domain.StartupDeadline - 30*time.Second} {
-		configured.CreationTimeout = invalid
-		require.Error(t, configured.Validate(), invalid)
-	}
-}
-
 // A create never answered is bounded by its caller and sent once.
 func TestSandboxCreateNeverAnsweredIsSentOnce(t *testing.T) {
 	provider, _, fixture := sandboxClient(t)
@@ -119,4 +103,17 @@ func TestSandboxCreateNeverAnsweredIsSentOnce(t *testing.T) {
 	defer fixture.mu.Unlock()
 	require.Equal(t, 1, fixture.creates)
 	require.NotNil(t, fixture.info, "the sandbox it created remains")
+}
+
+// A recorded submission that reaches the sending with less of its creation
+// wait left than the server's creation timeout is not sent: sent, the
+// creation could still produce a sandbox after its creation deadline.
+func TestACreationTooCloseToItsDeadlineIsNotSent(t *testing.T) {
+	provider, _, fixture := sandboxClient(t)
+	input := request()
+	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "execd-secret", "work-credential-fixture")
+	require.NoError(t, err)
+	_, err = provider.submit(context.Background(), owner(input), spec, time.Now().Add(fixtureCreationTimeout-time.Second))
+	require.ErrorIs(t, err, errCreationTooLate)
+	require.Zero(t, fixture.creates, "nothing is sent")
 }

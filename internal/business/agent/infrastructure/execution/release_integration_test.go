@@ -12,6 +12,7 @@ import (
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -53,7 +54,7 @@ func newRelease(t *testing.T) *releaseFixture {
 	steps := newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
 	run, err := steps.executions.Get(ctx, record.ID)
 	require.NoError(t, err)
-	require.True(t, run.RecordSubmission())
+	require.True(t, commandtest.Submit(run))
 	require.NoError(t, steps.executions.Save(ctx, run))
 	seated := time.Now().Add(-domain.StartupDeadline - 2*time.Minute).UnixMilli()
 	_, err = db.Exec("UPDATE agent_execution SET start_admitted_at = ?, seated_at = ?, created_at = ? WHERE id = ?", seated, seated, seated, record.ID)

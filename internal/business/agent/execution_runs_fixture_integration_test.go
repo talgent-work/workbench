@@ -15,6 +15,7 @@ import (
 	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 )
@@ -50,7 +51,7 @@ func (r realizedEnvironments) Observe(_ context.Context, e *domain.AgentExecutio
 	}
 	return domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: e.Environment, Running: true}}, Attached: e.Process.ID != ""}, nil
 }
-func (realizedEnvironments) PrepareCreation(context.Context, *domain.AgentExecution, domain.SandboxMounts) error {
+func (realizedEnvironments) PrepareCreation(context.Context, *domain.AgentExecution, command.CreationSupply) error {
 	return nil
 }
 func (realizedEnvironments) SubmitCreation(_ context.Context, e *domain.AgentExecution) (domain.CreationAnswer, error) {
@@ -59,7 +60,7 @@ func (realizedEnvironments) SubmitCreation(_ context.Context, e *domain.AgentExe
 func (realizedEnvironments) DeleteEnvironment(context.Context, *domain.AgentExecution, string) error {
 	return nil
 }
-func (realizedEnvironments) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
+func (realizedEnvironments) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, _ command.CredentialSupply, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
 	return domain.CredentialDelivery{}, holding(ctx)
 }
 func (realizedEnvironments) WithdrawCredentials(context.Context, *domain.AgentExecution) error {
@@ -75,7 +76,7 @@ func (realizedEnvironments) Launch(ctx context.Context, _ *domain.AgentExecution
 	return launchedProcess, nil
 }
 func (realizedEnvironments) Connect(context.Context, *domain.AgentExecution) error { return nil }
-func (realizedEnvironments) SyncInputs(ctx context.Context, e *domain.AgentExecution, holding command.EnvironmentHolding) (int64, error) {
+func (realizedEnvironments) SyncInputs(ctx context.Context, e *domain.AgentExecution, _ command.ManagedInputs, holding command.EnvironmentHolding) (int64, error) {
 	return e.Inputs.Due, holding(ctx)
 }
 func (realizedEnvironments) RenewLease(_ context.Context, _ *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
@@ -169,7 +170,7 @@ func (r *moduleRuns) realize(t *testing.T, ctx context.Context, workID string) {
 		if e.Process.ID != "" {
 			return false
 		}
-		e.RecordSubmission()
+		commandtest.Submit(e)
 		if e.Environment == "" {
 			_, err := e.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: e.ID})
 			require.NoError(t, err)

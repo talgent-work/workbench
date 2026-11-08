@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -28,7 +29,7 @@ func boundWorld(t *testing.T) *world {
 	w := newWorld(t, startingSession(t))
 	w.begin(t)
 	w.change(t, func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 		require.True(t, execution.RecordCredentialDelivery(domain.CredentialDelivery{}))
@@ -51,7 +52,7 @@ func TestCreationIsSubmittedOnceByTheLongStepAfterItsSubmissionIsRecorded(t *tes
 
 	require.NoError(t, w.reconciliation().RunLongStep(ctx, execution.ID))
 	require.Equal(t, 1, w.environment.Submitted)
-	require.True(t, w.environment.SubmittedState[0].Creation.Submitted, "the submission is durable before the creation is sent")
+	require.True(t, w.environment.SubmittedState[0].Creation.Submitted(), "the submission is durable before the creation is sent")
 	require.Equal(t, "environment", w.execution(t).Environment, "the answer binds the created environment")
 
 	require.NoError(t, w.reconciliation().RunLongStep(ctx, execution.ID))
@@ -68,7 +69,7 @@ func TestAnUnansweredCreationIsBoundByObservation(t *testing.T) {
 	w := newWorld(t, startingSession(t))
 	execution := w.begin(t)
 	w.environment.Observed = func(execution *domain.AgentExecution) domain.EnvironmentObservation {
-		if execution.Creation.Submitted {
+		if execution.Creation.Submitted() {
 			return running("environment")
 		}
 		return domain.EnvironmentObservation{}
@@ -96,7 +97,7 @@ func TestALostCreationAnswerIsNeverSubmittedAgain(t *testing.T) {
 	execution := w.begin(t)
 	w.environment.SubmitErr = errors.New("the answer was lost")
 	require.Error(t, w.reconciliation().RunLongStep(ctx, execution.ID))
-	require.True(t, w.execution(t).Creation.Submitted)
+	require.True(t, w.execution(t).Creation.Submitted())
 	require.NoError(t, w.reconciliation().RunLongStep(ctx, execution.ID))
 	long, err := w.reconciliation().Reconcile(ctx, execution.ID)
 	require.NoError(t, err)

@@ -3,30 +3,62 @@ package infrastructure
 import (
 	"time"
 
+	"github.com/samber/oops"
+
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
+	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
-func fileSpaceToDO(space *domain.FileSpace) *fileSpaceDO {
-	return &fileSpaceDO{Owner: space.Owner, SpaceToken: space.SpaceToken, Version: space.Version}
+func directoryToDO(directory *domain.Directory) *directoryDO {
+	work, _ := directory.ID.Owner.Work()
+	return &directoryDO{
+		OwnerKey: ownerKey(directory.ID.Owner), Name: directory.ID.Name, Backend: string(directory.Backend), Lifetime: string(directory.Lifetime),
+		State: string(directory.State), SpaceToken: directory.SpaceToken, WorkID: work, Version: directory.Version,
+	}
 }
 
-func shareLinkToDO(owner string, link *domain.ShareLink) *shareLinkDO {
+func shareLinkToDO(id domain.DirectoryID, link *domain.ShareLink) *shareLinkDO {
 	return &shareLinkDO{
-		Token: link.Token, Owner: owner, TargetKind: string(link.Target.Kind), TargetName: link.Target.Name,
+		Token: link.Token, OwnerKey: ownerKey(id.Owner), DirectoryName: id.Name, TargetName: link.Target.Name,
 		CreatedBy: link.CreatedBy, State: string(link.State), CreatedAt: link.CreatedAt.UnixMilli(),
 	}
 }
 
-func fileSpaceFromDO(row *fileSpaceDO, links []shareLinkDO) *domain.FileSpace {
-	space := &domain.FileSpace{Owner: row.Owner, SpaceToken: row.SpaceToken, Version: row.Version}
+// directoryIDFromDO reads a Directory's identity from its stored owner key
+// and name.
+func directoryIDFromDO(key, name string) (domain.DirectoryID, error) {
+	written, err := storagepath.ParseOwner(key)
+	if err != nil {
+		return domain.DirectoryID{}, oops.With("owner_key", key).Wrap(err)
+	}
+	facts := make([]domain.OwnerFact, 0, len(written))
+	for _, fact := range written {
+		facts = append(facts, domain.OwnerFact{Condition: fact.Condition, Value: fact.Value})
+	}
+	owner, err := domain.NewDirectoryOwner(facts)
+	if err != nil {
+		return domain.DirectoryID{}, oops.With("owner_key", key).Wrap(err)
+	}
+	return domain.NewDirectoryID(owner, name)
+}
+
+func directoryFromDO(row *directoryDO, links []shareLinkDO) (*domain.Directory, error) {
+	id, err := directoryIDFromDO(row.OwnerKey, row.Name)
+	if err != nil {
+		return nil, err
+	}
+	directory := &domain.Directory{
+		ID: id, Backend: domain.Backend(row.Backend), Lifetime: domain.Lifetime(row.Lifetime), State: domain.DirectoryState(row.State),
+		SpaceToken: row.SpaceToken, Version: row.Version,
+	}
 	for _, link := range links {
-		space.ShareLinks = append(space.ShareLinks, &domain.ShareLink{
+		directory.ShareLinks = append(directory.ShareLinks, &domain.ShareLink{
 			Token:     link.Token,
-			Target:    domain.FilePosition{Owner: row.Owner, Kind: domain.FileKind(link.TargetKind), Name: link.TargetName},
+			Target:    domain.FilePosition{Directory: id, Name: link.TargetName},
 			CreatedBy: link.CreatedBy,
 			CreatedAt: time.UnixMilli(link.CreatedAt).UTC(),
 			State:     domain.ShareLinkState(link.State),
 		})
 	}
-	return space
+	return directory, nil
 }

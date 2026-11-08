@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -14,9 +15,8 @@ var (
 	ErrFileNotFound = errors.New("storage: file not found")
 	// ErrNameTaken means a Create or Rename found its target position taken.
 	ErrNameTaken = errors.New("storage: file name is taken")
-	// ErrInvalidSource means a publication source is not one file of the
-	// workspace outside inputs/: a directory, a symbolic link, inputs/, the
-	// root or a path leaving the workspace.
+	// ErrInvalidSource means a publication source is not one regular file of
+	// the Session Workspace outside every Directory mounted in it.
 	ErrInvalidSource = domain.ErrInvalidPublicationSource
 	// ErrSourceNotFound means the publication source does not exist.
 	ErrSourceNotFound = errors.New("storage: publication source not found")
@@ -25,15 +25,14 @@ var (
 	// ErrInvalidWorkspacePath means a workspace path leaves the workspace,
 	// crosses a symbolic link, or names no file a reader may open.
 	ErrInvalidWorkspacePath = domain.ErrInvalidWorkspacePath
-	// ErrWorkspaceNotCreated means the Work never had its workspace prepared.
-	ErrWorkspaceNotCreated = errors.New("storage: the workspace has not been created")
-	// ErrWorkspaceReclaimed means the workspace was reclaimed, or is being.
-	ErrWorkspaceReclaimed = errors.New("storage: the workspace was reclaimed")
 	// ErrContentChanged means a preview link's file was replaced after its
 	// preview was decided.
 	ErrContentChanged = errors.New("storage: the file changed since its preview was decided")
 	// ErrInvalidRequest means a required identity is missing.
 	ErrInvalidRequest = errors.New("storage: invalid request")
+	// ErrPublicationInProgress means a publication still copies from a
+	// reclaimed Directory, so its content stays for a later attempt.
+	ErrPublicationInProgress = errors.New("storage: a publication still copies from the Directory")
 )
 
 // FileAttributes are the facts kept with a file besides its name, content
@@ -49,7 +48,11 @@ type FileAttributes struct {
 	ContentDigest string
 }
 
-// StoredFile is a file at its position as persistent storage holds it.
+// Written reports whether Storage wrote the file: every file it writes
+// records its origin, an uploader or a producing Work.
+func (a FileAttributes) Written() bool { return a.UploaderUserID != "" || a.WorkID != "" }
+
+// StoredFile is a file at its position as its backend holds it.
 type StoredFile struct {
 	Position   domain.FilePosition
 	SizeBytes  int64
@@ -63,32 +66,10 @@ type OpenedFile struct {
 	File    StoredFile
 }
 
-// PersistentFilesPort is persistent storage of File Spaces (JuiceFS), each
-// laid out by its owner. New content is staged outside every space's
-// directory and becomes visible by one atomic commit.
-type PersistentFilesPort interface {
-	EnsureSpace(ctx context.Context, owner string) error
-	List(ctx context.Context, owner string) ([]StoredFile, error)
-	Stat(ctx context.Context, owner string, position domain.FilePosition) (StoredFile, error)
-	// Write stages the content completely, then makes it visible at the
-	// position in one atomic step, so no reader sees a partial file. A Create
-	// refuses a taken position with ErrNameTaken; a Replace refuses an absent
-	// one with ErrFileNotFound and keeps the previous content on failure.
-	Write(ctx context.Context, owner string, position domain.FilePosition, content io.Reader, attributes FileAttributes, replace bool) (StoredFile, error)
-	Rename(ctx context.Context, owner string, from domain.FilePosition, to domain.FilePosition) (StoredFile, error)
-	// Remove deletes the file and reports whether this call removed one; an
-	// absent file is already removed.
-	Remove(ctx context.Context, owner string, position domain.FilePosition) (bool, error)
-	Open(ctx context.Context, owner string, position domain.FilePosition) (OpenedFile, error)
-	// Inspect finds the content structure Preview Policy judges, with the
-	// facts of the same content.
-	Inspect(ctx context.Context, owner string, position domain.FilePosition) (StoredFile, domain.ContentStructure, error)
-}
-
-// ContentInspectorPort finds the content structure Preview Policy judges in
-// the leading bytes of a file Storage does not hold.
-type ContentInspectorPort interface {
-	InspectHead(head []byte) domain.ContentStructure
+// ContentFile is one file of a Directory's whole content.
+type ContentFile struct {
+	Path    domain.ContentPath
+	Content []byte
 }
 
 // WorkspaceEntryKind is what a workspace entry is.
@@ -101,14 +82,15 @@ const (
 	WorkspaceLink WorkspaceEntryKind = "link"
 )
 
-// WorkspaceEntry is one entry of a workspace directory. An Attachment under
-// inputs/ carries its File position, so it is read as that Attachment.
+// WorkspaceEntry is one entry of a directory as a sandbox sees it. A file
+// Storage wrote into a Directory carries its File position, so it is read
+// and previewed as that file.
 type WorkspaceEntry struct {
 	Name       string
 	Kind       WorkspaceEntryKind
 	SizeBytes  int64
 	ModifiedAt time.Time
-	Attachment *domain.FilePosition
+	Position   *domain.FilePosition
 }
 
 // WorkspaceListing is one directory's first entries by name and how many it
@@ -118,11 +100,8 @@ type WorkspaceListing struct {
 	Total   int
 }
 
-// Capped says the directory has more entries than listed.
-func (l WorkspaceListing) Capped() bool { return l.Total > len(l.Entries) }
-
-// WorkspaceFileVersion is a workspace file's size and time; the sandbox
-// writes without records, so a change of either is a new content.
+// WorkspaceFileVersion is a workspace file's size and time; a Harness writes
+// without records, so a change of either is a new content.
 type WorkspaceFileVersion struct {
 	SizeBytes  int64
 	ModifiedAt time.Time
@@ -135,58 +114,113 @@ type OpenedWorkspaceFile struct {
 	ModifiedAt time.Time
 }
 
-// WorkingFilesPort is working storage of Session Workspaces and HOMEs (NAS).
-type WorkingFilesPort interface {
-	// PrepareWorkspace returns the existing workspace or creates it with
-	// inputs/ as the mount point of its input source's Attachments and a
-	// mount point for each named Reference Space mount.
-	PrepareWorkspace(ctx context.Context, reference string, mounts []string) (string, error)
-	// PrepareHome returns the existing HOME of the owner key or creates it.
-	PrepareHome(ctx context.Context, ownerKey string) (string, error)
-	// ReadPublicationSource opens one regular workspace file under the
-	// workspace's shared lock, held while read runs, without following
-	// symbolic links.
-	ReadPublicationSource(ctx context.Context, reference string, source domain.WorkspacePath, read func(io.Reader) error) error
-	// List lists the first limit entries of a directory by name, with the
-	// directory's entry count; symbolic links are listed, not followed.
-	List(ctx context.Context, reference string, directory domain.WorkspacePath, limit int) (WorkspaceListing, error)
-	// OpenFile opens one regular file without following symbolic links; what
-	// is read is the content of that inode when opened.
-	OpenFile(ctx context.Context, reference string, file domain.WorkspacePath) (OpenedWorkspaceFile, error)
-	// InspectFile finds the content structure Preview Policy judges in one
-	// regular file, with the file's size and time.
-	InspectFile(ctx context.Context, reference string, file domain.WorkspacePath) (WorkspaceFileVersion, domain.ContentStructure, error)
-	// RequestReclamation durably records a reclamation request.
-	RequestReclamation(ctx context.Context, reference string) error
-	// ReclaimRequested removes every requested workspace whose publications
-	// have finished, leaving the rest for a later attempt.
-	ReclaimRequested(ctx context.Context) error
+// MountLocation is where a Directory lies for a sandbox: a shared claim and
+// the Directory's path in it.
+type MountLocation struct {
+	ClaimName string
+	SubPath   string
+}
+
+// DirectoryBackendPort keeps Directories on one file system, the
+// realization a Directory's Backend selects. It never follows a symbolic
+// link, and new content it writes becomes visible by one atomic commit.
+type DirectoryBackendPort interface {
+	// Allocate creates the Directory's space; an existing space is kept.
+	Allocate(ctx context.Context, directory domain.DirectoryID) error
+	// PrepareMountPoints creates each mount point and every parent inside
+	// the Directory, all owned by the sandbox user.
+	PrepareMountPoints(ctx context.Context, directory domain.DirectoryID, points []domain.MountPoint) error
+	// Locate is the Mount Grant location of the Directory.
+	Locate(directory domain.DirectoryID) MountLocation
+	// List lists the files Storage wrote directly into the Directory.
+	List(ctx context.Context, directory domain.DirectoryID) ([]StoredFile, error)
+	Stat(ctx context.Context, position domain.FilePosition) (StoredFile, error)
+	// Write stages the content completely, then makes it visible at the
+	// position in one atomic step with its origin. A Create refuses a taken
+	// position with ErrNameTaken; a Replace refuses an absent one with
+	// ErrFileNotFound and keeps the previous content on failure.
+	Write(ctx context.Context, position domain.FilePosition, content io.Reader, attributes FileAttributes, replace bool) (StoredFile, error)
+	Rename(ctx context.Context, from, to domain.FilePosition) (StoredFile, error)
+	// Remove deletes the file and reports whether this call removed one; an
+	// absent file is already removed.
+	Remove(ctx context.Context, position domain.FilePosition) (bool, error)
+	Open(ctx context.Context, position domain.FilePosition) (OpenedFile, error)
+	// Inspect finds the content structure Preview Policy judges, with the
+	// facts of the same content.
+	Inspect(ctx context.Context, position domain.FilePosition) (StoredFile, domain.ContentStructure, error)
+	// ReplaceContent stages the files as the Directory's whole new content,
+	// switches it in in one atomic step and removes every earlier content
+	// before returning.
+	ReplaceContent(ctx context.Context, directory domain.DirectoryID, files []ContentFile) error
+	// ReadContent reads the given files of the current content, every file
+	// when none is given; a path the content lacks is left out.
+	ReadContent(ctx context.Context, directory domain.DirectoryID, paths []domain.ContentPath) ([]ContentFile, error)
+	// ListEntries lists the first limit entries of a directory inside the
+	// Directory, "." for its root, as a sandbox mounting it sees them: a
+	// Directory replaced as a whole is read through its current content.
+	ListEntries(ctx context.Context, directory domain.DirectoryID, path string, limit int) (WorkspaceListing, error)
+	// OpenEntry opens one regular file inside the Directory as a sandbox
+	// sees it; what is read is the content of that inode when opened.
+	OpenEntry(ctx context.Context, directory domain.DirectoryID, path string) (OpenedWorkspaceFile, error)
+	// InspectEntry finds the content structure Preview Policy judges in one
+	// regular file inside the Directory, with the file's size and time.
+	InspectEntry(ctx context.Context, directory domain.DirectoryID, path string) (WorkspaceFileVersion, domain.ContentStructure, error)
+	// CopyPublicationSource opens one regular file inside the Directory
+	// under its shared lock, held while read runs.
+	CopyPublicationSource(ctx context.Context, directory domain.DirectoryID, source domain.WorkspacePath, read func(io.Reader) error) error
+	// RemoveReclaimed removes the Directory's content once no publication
+	// copies from it, or returns ErrPublicationInProgress.
+	RemoveReclaimed(ctx context.Context, directory domain.DirectoryID) error
+}
+
+// DirectoryBackends are the realizations by the Backend they keep.
+type DirectoryBackends map[domain.Backend]DirectoryBackendPort
+
+// errNoBackend means a Directory names a backend this Storage keeps none on.
+var errNoBackend = errors.New("storage: no realization of the Directory's backend")
+
+func (b DirectoryBackends) of(directory *domain.Directory) (DirectoryBackendPort, error) {
+	backend, ok := b[directory.Backend]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errNoBackend, directory.Backend)
+	}
+	return backend, nil
+}
+
+// ContentInspectionPort finds the content structure Preview Policy judges in
+// the leading bytes of a file Storage does not hold.
+type ContentInspectionPort interface {
+	InspectHead(head []byte) domain.ContentStructure
+}
+
+// ConverterPort renders office content to PDF.
+type ConverterPort interface {
+	// Render converts content named name. A rendering within pdfLimit comes
+	// back with its PDF, which the caller closes; one over it comes back as
+	// rendered with its size and no PDF.
+	Render(ctx context.Context, name string, content io.Reader, pdfLimit int64) (domain.ConverterResult, io.ReadCloser, error)
 }
 
 // UploadGrant is what an upload link authorizes: one Attachment write.
 type UploadGrant struct {
-	Owner          string
-	Name           string
+	Position       domain.FilePosition
 	Replace        bool
 	UploaderUserID string
 	ContentType    string
 }
 
 // AccessGrant is what an Access Link authorizes: one read of one file of a
-// File Space, or, with Workspace set, of a Session Workspace.
+// Directory, by its position, or, with Workspace set, by its path as a
+// sandbox sees it.
 type AccessGrant struct {
-	// Workspace names a Session Workspace; WorkspacePath the file in it.
-	Workspace     string
-	WorkspacePath domain.WorkspacePath
-	// ReferenceOwner, set for a file under a Reference Space mount, reads
-	// ReferenceEntry from that space's current content, as the Work's
-	// sandbox sees it.
-	ReferenceOwner, ReferenceEntry string
-	// WorkspaceVersion, when set, binds a preview read to the file's size
-	// and time when its preview was decided.
+	Directory domain.DirectoryID
+	// Path is the file inside Directory: a file name for a position, or a
+	// relative path for a workspace file.
+	Path      string
+	Workspace bool
+	// WorkspaceVersion, when set, binds a preview read of a workspace file
+	// to its size and time when its preview was decided.
 	WorkspaceVersion *WorkspaceFileVersion
-	Owner            string
-	Position         domain.FilePosition
 	Download         bool
 	// ContentDigest, when set, binds the read to the content a preview was
 	// admitted for: a file replaced since then is not served through it.
@@ -202,28 +236,12 @@ type AccessLink struct {
 	URL, Path string
 }
 
-// LinkPort signs and verifies upload links and Access Links, and names the
-// URL of a Share Link.
-type LinkPort interface {
+// LinkSigningPort signs and verifies upload links and Access Links, and
+// names the URL of a Share Link.
+type LinkSigningPort interface {
 	UploadURL(grant UploadGrant, expiresAt time.Time) string
 	VerifyUpload(token string, now time.Time) (UploadGrant, error)
 	AccessLink(grant AccessGrant, expiresAt time.Time) AccessLink
 	VerifyAccess(token string, now time.Time) (AccessGrant, error)
 	ShareURL(token string) string
-}
-
-// MountGrant is the opaque location and access mode of a space for a sandbox.
-type MountGrant struct {
-	ClaimName string
-	SubPath   string
-	ReadOnly  bool
-}
-
-// MountLayoutPort maps prepared spaces to grants of the shared volume claims.
-type MountLayoutPort interface {
-	// Working grants a prepared workspace or HOME directory read-write.
-	Working(directory string) MountGrant
-	Attachments(owner string) MountGrant
-	// Reference grants a Reference Space read-only.
-	Reference(owner string) MountGrant
 }

@@ -51,8 +51,6 @@ type Queries struct {
 }
 
 type Application struct {
-	Services       *ServiceAccess
-	Repositories   *RepositoryAccess
 	WorkPrincipals access.WorkAuthorizer
 	Harness        command.DispatcherPort
 	Catalog        command.MarketplacePort
@@ -61,7 +59,7 @@ type Application struct {
 	WorkQueries      query.WorkQueryRepository
 	ExecutionQueries query.ExecutionQueryRepository
 	// Workspaces serves workspace browsing; Storage owns a Cloud Work's view.
-	Workspaces        WorkspacePort
+	Workspaces        WorkspaceReadingPort
 	Models            query.ModelConfigurations
 	Definitions       domain.AgentDefinitionRepository
 	DefinitionQueries query.AgentDefinitionQueryRepository
@@ -71,15 +69,13 @@ type Application struct {
 }
 
 func NewApplication(
-	repositories *RepositoryAccess,
-	services *ServiceAccess,
 	workPrincipals access.WorkAuthorizer,
 	harness command.DispatcherPort,
 	executionQueries query.ExecutionQueryRepository,
 	catalog command.MarketplacePort,
 	workQueries query.WorkQueryRepository,
 	sessions domain.AgentWorkRepository,
-	workspaces WorkspacePort,
+	workspaces WorkspaceReadingPort,
 	models query.ModelConfigurations,
 	definitions domain.AgentDefinitionRepository,
 	definitionQueries query.AgentDefinitionQueryRepository,
@@ -118,7 +114,7 @@ func NewApplication(
 	reconcileDesks *command.ReconcileDesksHandler,
 	coordination *command.ExecutionCoordination,
 ) *Application {
-	return &Application{Repositories: repositories, Services: services, WorkPrincipals: workPrincipals,
+	return &Application{WorkPrincipals: workPrincipals,
 		Harness:           harness,
 		ExecutionQueries:  executionQueries,
 		Catalog:           catalog,

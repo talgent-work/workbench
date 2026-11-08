@@ -83,7 +83,6 @@ type AgentDefinitionInput struct {
 	AgentName    string
 	Purpose      string
 	UsageScope   UsageScope
-	HomeBinding  HomeBinding
 	Visibility   VisibilityRule
 	Capabilities CapabilityConfiguration
 }
@@ -108,15 +107,20 @@ type WorkCreationRequest struct {
 	WorkModel          WorkModelSelection
 	// ComputerManaged reports that the Work starts on a Managed Computer.
 	ComputerManaged bool
-	// Harness is its starter's choice, admitted only on a Managed Computer.
-	Harness            HarnessChoice
-	Subject            WorkSubject
-	ProjectID          string
-	WorkspaceReference string
-	InputSource        WorkInputSource
-	ReadOnlyMounts     []ReadOnlyMount
-	Capabilities       CapabilitySnapshot
-	TraceAttributes    map[string]string
+	// HarnessChoice is how its starter runs the Harness, its permission mode
+	// and sandbox, admitted only on a Managed Computer; it does not select
+	// which Agent Harness runs, which AgentHarnessID names.
+	HarnessChoice HarnessChoice
+	// StartingUser is the person starting the Work; empty for an automated
+	// start.
+	StartingUser string
+	// AgentHarnessID names which Agent Harness, the native agent program,
+	// the new Work runs; empty chooses the default (Harness choice).
+	AgentHarnessID  string
+	Subject         WorkSubject
+	ProjectID       string
+	Capabilities    CapabilitySnapshot
+	TraceAttributes map[string]string
 	// WorkID, when supplied, is the identity application coordination
 	// allocated beforehand, such as the owner of a Personal Work's File
 	// Space; otherwise the Work gets a new one.
@@ -150,13 +154,16 @@ func (a *AgentDefinition) WorkPrincipal() string {
 	return a.Owners[0]
 }
 
-// PersonalAuthorizationOwner identifies the represented human, never a caller
-// or a project-owned automated Agent's triggering user.
-func (a *AgentDefinition) PersonalAuthorizationOwner() string {
-	if a.Purpose == "work" && a.UsageScope.Kind == "employee" && a.UsageScope.Reference == a.HomeBinding.OwnerID {
-		return a.UsageScope.Reference
+// RepresentedPerson is the person this definition's Agent represents: the
+// employee of an employee scope's `work`-purpose definition, whose personal
+// authorizations its Works use. Every other definition, such as a
+// project-scoped one or an employee's definition of another purpose,
+// represents no person, never a caller or a triggering user.
+func (a *AgentDefinition) RepresentedPerson() string {
+	if !a.RepresentsHuman() || a.Purpose != EmployeeWorkPurpose {
+		return ""
 	}
-	return ""
+	return a.UsageScope.Reference
 }
 
 // WorkTraceAttributes is what a new Work's telemetry carries from its
@@ -171,7 +178,7 @@ func (a *AgentDefinition) WorkTraceAttributes(supplied map[string]string) map[st
 	}
 	attributes["talgent.runtime_purpose"] = a.Purpose
 	delete(attributes, "talgent.user_id")
-	if person := a.PersonalAuthorizationOwner(); person != "" {
+	if person := a.RepresentedPerson(); person != "" {
 		attributes["talgent.user_id"] = person
 	}
 	return attributes
@@ -180,12 +187,13 @@ func (a *AgentDefinition) WorkTraceAttributes(supplied map[string]string) map[st
 type AgentDefinition struct {
 	// Owners are the Agent Owners of every Work of this definition, a set
 	// (one person today); no Work records its own.
-	Owners       []string
-	AgentName    string `validate:"max=512"`
-	Icon         AgentIcon
-	Purpose      string `validate:"required,max=64"`
-	UsageScope   UsageScope
-	HomeBinding  HomeBinding
+	Owners     []string
+	AgentName  string `validate:"max=512"`
+	Icon       AgentIcon
+	Purpose    string `validate:"required,max=64"`
+	UsageScope UsageScope
+	// WorkLayout is the tree of mounts its Works locate at creation.
+	WorkLayout   WorkLayout
 	Visibility   VisibilityRule
 	ID           string `validate:"required,uuid"`
 	Capabilities CapabilityConfiguration
@@ -196,7 +204,7 @@ type AgentDefinition struct {
 }
 
 func NewAgentDefinition(input AgentDefinitionInput) (*AgentDefinition, error) {
-	agent := &AgentDefinition{Owners: normalizeOwners(input.Owners), AgentName: strings.TrimSpace(input.AgentName), Icon: DefaultAgentIcon, Purpose: strings.TrimSpace(input.Purpose), ID: uuid.Must(uuid.NewV7()).String(), UsageScope: input.UsageScope, HomeBinding: input.HomeBinding, Visibility: input.Visibility, Capabilities: input.Capabilities.Clone()}
+	agent := &AgentDefinition{Owners: normalizeOwners(input.Owners), AgentName: strings.TrimSpace(input.AgentName), Icon: DefaultAgentIcon, Purpose: strings.TrimSpace(input.Purpose), ID: uuid.Must(uuid.NewV7()).String(), UsageScope: input.UsageScope, WorkLayout: DefaultWorkLayout(), Visibility: input.Visibility, Capabilities: input.Capabilities.Clone()}
 	if err := agent.Validate(); err != nil {
 		return nil, err
 	}
@@ -207,7 +215,7 @@ func (a *AgentDefinition) Validate() error {
 	if err := a.UsageScope.Validate(); err != nil {
 		return err
 	}
-	if err := a.HomeBinding.Validate(); err != nil {
+	if err := a.WorkLayout.Validate(); err != nil {
 		return err
 	}
 	if err := validation.Struct(a); err != nil {
@@ -323,10 +331,10 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 			return nil, false, fmt.Errorf("%w: missing required plugin %s", ErrInvalidCapabilities, slug)
 		}
 	}
-	if owner := request.AuthorizationInput.OwnerUserID; owner != "" && (a.Purpose != "work" || a.UsageScope.Kind != "employee" || a.UsageScope.Reference != owner) {
+	if owner := request.AuthorizationInput.OwnerUserID; owner != "" && owner != a.RepresentedPerson() {
 		return nil, false, fmt.Errorf("%w: personal authorization requires a represented human", ErrInvalidWork)
 	}
-	if owner := request.RepositoryInput.OwnerUserID; owner != "" && owner != a.PersonalAuthorizationOwner() {
+	if owner := request.RepositoryInput.OwnerUserID; owner != "" && owner != a.RepresentedPerson() {
 		return nil, false, fmt.Errorf("%w: personal repositories require a represented human", ErrInvalidWork)
 	}
 	if err := AdmitAgentOwner(a.Owners, request.StartedBy); err != nil {
@@ -349,8 +357,9 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 		AuthorizationInput: request.AuthorizationInput,
 		ThinkingLevel:      request.ThinkingLevel,
 		ID:                 workID, AgentID: a.ID, Subject: request.Subject, ProjectID: request.ProjectID, DisplayTitle: request.DisplayTitle,
-		WorkModel: request.WorkModel, Capabilities: request.Capabilities, HomeBinding: a.HomeBinding, WorkspaceReference: request.WorkspaceReference, InputSource: request.InputSource, ReadOnlyMounts: request.ReadOnlyMounts, TraceAttributes: request.TraceAttributes,
-		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, Harness: request.Harness, InitialTaskInput: request.InitialTaskInput,
+		WorkModel: request.WorkModel, Capabilities: request.Capabilities, RepresentedPerson: a.RepresentedPerson(), StartingUser: request.StartingUser,
+		WorkLayout: a.WorkLayout, AgentHarnessID: request.AgentHarnessID, TraceAttributes: request.TraceAttributes,
+		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, HarnessChoice: request.HarnessChoice, InitialTaskInput: request.InitialTaskInput,
 	}, request.Admission)
 	if err != nil {
 		return nil, false, err

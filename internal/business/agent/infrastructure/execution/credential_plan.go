@@ -12,21 +12,17 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
+// RepositoryAuthorization is one entry of the credential plan an execution
+// freezes with its specification: a repository the Work selected and where
+// it is reached.
 type RepositoryAuthorization struct {
 	AccessID           string `json:"grantId"`
 	RepositoryID       string `json:"repositoryId"`
 	RepositoryHTTPSURL string `json:"repositoryHttpsUrl"`
-}
-
-// RepositoryCredential contains material from Marketplace's current authorization
-// authority. It is transient and must never be persisted by Agent infrastructure.
-type RepositoryCredential struct {
-	AccessID, RepositoryID, RepositoryHTTPSURL, Username, Password string
-	ExpiresAt                                                      time.Time
 }
 
 func credentialURL(raw string) (*url.URL, error) {
@@ -71,9 +67,9 @@ func (c *SandboxCredentials) modelDigest(record executionRecord) (string, error)
 // renewalCredential is the model credential a running sandbox receives on its
 // created endpoint: the configuration's current key while it still belongs to
 // that endpoint, otherwise none, keeping what was delivered.
-func renewalCredential(models *ModelCatalog, selection domain.WorkModelSelection, endpoint string) modelCredential {
+func renewalCredential(models command.PlatformCatalogPort, selection domain.WorkModelSelection, endpoint string) modelCredential {
 	model := modelCredential{Endpoint: endpoint}
-	if provided, ok := models.Resolve(selection.ConfigurationID); ok && provided.Template.BaseURL == endpoint {
+	if provided, ok := models.ProvidedModel(selection.ConfigurationID); ok && provided.Template.BaseURL == endpoint {
 		model.Key = provided.Configuration.APIKey
 	}
 	return model
@@ -84,7 +80,7 @@ var modelVaultEntries = []string{"model", "model-messages"}
 
 // credentialPlan supplies only the Work's Model Configuration key, bound to the
 // sandbox's model endpoint, beside the Work's repository and service access.
-func credentialPlan(model modelCredential, repositories []RepositoryCredential, services []application.ServiceAccessMaterial, now time.Time) (sdk.CredentialVaultCreateRequest, error) {
+func credentialPlan(model modelCredential, repositories []command.RepositoryAccessMaterial, services []command.ServiceAccessMaterial, now time.Time) (sdk.CredentialVaultCreateRequest, error) {
 	u, err := credentialURL(model.Endpoint)
 	if err != nil {
 		return sdk.CredentialVaultCreateRequest{}, err
@@ -100,7 +96,7 @@ func credentialPlan(model modelCredential, repositories []RepositoryCredential, 
 	}
 	seen := map[string]bool{}
 	for _, r := range repositories {
-		u, err := credentialURL(r.RepositoryHTTPSURL)
+		u, err := credentialURL(r.CloneURL)
 		if err != nil {
 			return sdk.CredentialVaultCreateRequest{}, err
 		}

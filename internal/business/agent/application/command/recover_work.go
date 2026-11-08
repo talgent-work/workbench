@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -18,10 +17,10 @@ type RecoverWorkHandler struct {
 	sessions    domain.AgentWorkRepository
 	buffer      DispatcherPort
 	inputs      WorkInputs
-	settlements integrationmessage.Publisher
+	settlements AgentPublisherPort
 }
 
-func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, buffer DispatcherPort, inputs WorkInputs, settlements integrationmessage.Publisher, reach *ComputerReachHandler) *RecoverWorkHandler {
+func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, buffer DispatcherPort, inputs WorkInputs, settlements AgentPublisherPort, reach *ComputerReachHandler) *RecoverWorkHandler {
 	return &RecoverWorkHandler{reach: reach, now: now, sessions: sessions, buffer: buffer, inputs: inputs, settlements: settlements}
 }
 

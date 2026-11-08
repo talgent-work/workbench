@@ -89,15 +89,15 @@ type StartPersonalWork struct {
 	Harness domain.HarnessChoice
 }
 
-// personalWorkSpace derives a Personal Work's identity, and with it its File
-// Space's owner, from the person and the request identity: a repeated
-// request opens the same space and names the same Work.
+// personalWorkSpace derives a Personal Work's identity, and with it the owner
+// of its File Spaces, from the person and the request identity: a repeated
+// request names the same Work.
 var personalWorkSpace = uuid.MustParse("6f5c1c8e-9a0b-4c7e-8a51-3d2f0b9e4a17")
 
-// Start opens the Work's File Space under the identity Agent allocates for
-// it, then creates the Work with that space as its input source and admits
-// its first input. The Work has no Subject, no Project and no read-only
-// mount; only its creation request identity deduplicates it.
+// Start creates the Work under the identity Agent allocates for it and admits
+// its first input. The Work has no Subject and no Project, so its layout
+// locates its own inputs and publication target; only its creation request
+// identity deduplicates it.
 func (p *PersonalWorks) Start(ctx context.Context, input StartPersonalWork) (string, error) {
 	if input.Person.UserID == "" {
 		return "", access.ErrAccessDenied
@@ -110,10 +110,6 @@ func (p *PersonalWorks) Start(ctx context.Context, input StartPersonalWork) (str
 		return "", err
 	}
 	workID := uuid.NewSHA1(personalWorkSpace, []byte(input.Person.UserID+"/"+input.RequestID)).String()
-	source, err := p.files.OpenFileSpace(ctx, workID)
-	if err != nil {
-		return "", err
-	}
 	initial := command.PrepareWorkExecution{
 		SubjectID: input.Person.UserID, RequestID: input.RequestID, ThinkingLevel: input.ThinkingLevel,
 		WorkBranch: "talgent/" + workID[:8], Input: command.ExecutionInput{ID: input.RequestID, Text: input.InitialMessage}, Selections: input.Selections,
@@ -121,7 +117,6 @@ func (p *PersonalWorks) Start(ctx context.Context, input StartPersonalWork) (str
 	return p.app.Commands.CreateWork.Handle(ctx, command.CreateWork{
 		StartingUserID: input.Person.UserID, SubjectID: input.Person.UserID, RequestID: input.RequestID, AgentID: definition.AgentID,
 		WorkID: workID, DisplayTitle: domain.DisplayTitleFrom(input.InitialMessage),
-		WorkspaceReference: uuid.NewSHA1(personalWorkSpace, []byte(workID+"/workspace")).String(), InputSource: source,
 		WorkModel: input.WorkModel, CapabilityDifferences: input.Capabilities, InitialExecution: &initial, ComputerID: input.ComputerID, Harness: input.Harness,
 	})
 }

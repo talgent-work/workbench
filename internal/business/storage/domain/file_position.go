@@ -1,61 +1,35 @@
-// Package domain holds Storage's File Space and the File positions its Share
-// Links point at, the rules of Reference Space content and of workspace
-// paths, and Preview Policy. The files themselves are facts of persistent
-// storage.
 package domain
 
 import (
+	"errors"
+	"path"
 	"strings"
 	"unicode/utf8"
 )
 
-// FileKind tells an Attachment from an Artifact.
-type FileKind string
-
-const (
-	FileKindAttachment FileKind = "attachment"
-	FileKindArtifact   FileKind = "artifact"
-)
-
-// Valid reports whether the kind is one Storage keeps.
-func (k FileKind) Valid() bool { return k == FileKindAttachment || k == FileKindArtifact }
-
 // maxFileNameBytes bounds a name to what one directory entry holds.
 const maxFileNameBytes = 255
 
-// FilePosition is a file's identity: its File Space's owner, its kind and
-// its name.
+// FilePosition is a file's identity: its Directory and its name, one path
+// element directly in the Directory. It compares by value.
 type FilePosition struct {
-	Owner string
-	Kind  FileKind
-	Name  string
+	Directory DirectoryID
+	Name      string
 }
 
 // NewFilePosition validates a position. A name is one directory entry: it is
 // never a path, never "." or "..", and holds no control character, so a
-// position can never point outside its space's directory of that kind.
-func NewFilePosition(owner string, kind FileKind, name string) (FilePosition, error) {
-	position := FilePosition{Owner: strings.TrimSpace(owner), Kind: kind, Name: name}
-	if err := position.Validate(); err != nil {
+// position can never point outside its Directory.
+func NewFilePosition(directory DirectoryID, name string) (FilePosition, error) {
+	if err := ValidateFileName(name); err != nil {
 		return FilePosition{}, err
 	}
-	return position, nil
+	return FilePosition{Directory: directory, Name: name}, nil
 }
 
-// Validate checks the position's identity rules.
-func (p FilePosition) Validate() error {
-	if _, err := ParseOwner(p.Owner); err != nil {
-		return err
-	}
-	if !p.Kind.Valid() {
-		return ErrInvalidFileKind
-	}
-	return ValidateFileName(p.Name)
-}
-
-// Renamed is the position of the same space and kind under another name.
+// Renamed is the position of the same Directory under another name.
 func (p FilePosition) Renamed(name string) (FilePosition, error) {
-	return NewFilePosition(p.Owner, p.Kind, name)
+	return NewFilePosition(p.Directory, name)
 }
 
 // ValidateFileName checks that a name is a single, displayable directory entry.
@@ -74,17 +48,38 @@ func ValidateFileName(name string) error {
 	return nil
 }
 
-// ParseOwner admits an owner identity a caller names a File Space or a
-// Reference Space by. Storage never interprets it; it only keeps it one
-// visible directory entry, so a space laid out by its owner stays one
-// directory of its own.
-func ParseOwner(raw string) (string, error) {
-	owner := strings.TrimSpace(raw)
-	if owner == "" {
-		return "", ErrOwnerRequired
+// ErrInvalidContentPath means a path is not a clean relative path within a
+// Directory's whole content.
+var ErrInvalidContentPath = errors.New("storage: invalid content file path")
+
+// ContentPath is a clean relative path of a file within a Directory's whole
+// content, such as "pages/payments.md".
+type ContentPath string
+
+// ParseContentPath admits a clean relative path, so a file never escapes its
+// content. A path whose first element is hidden is kept for the writer and
+// left out of a mounted listing.
+func ParseContentPath(raw string) (ContentPath, error) {
+	if !cleanRelative(raw) {
+		return "", ErrInvalidContentPath
 	}
-	if strings.HasPrefix(owner, ".") || ValidateFileName(owner) != nil {
-		return "", ErrInvalidOwner
+	return ContentPath(raw), nil
+}
+
+// MountPoint is a clean relative path inside a Directory where its caller
+// mounts another Directory.
+type MountPoint string
+
+// ParseMountPoint admits a clean relative path below the Directory's root.
+func ParseMountPoint(raw string) (MountPoint, error) {
+	if !cleanRelative(raw) {
+		return "", ErrInvalidMountPoint
 	}
-	return owner, nil
+	return MountPoint(raw), nil
+}
+
+// cleanRelative reports whether raw is a clean path strictly below a root.
+func cleanRelative(raw string) bool {
+	return raw != "" && !strings.ContainsAny(raw, "\\\x00") && !path.IsAbs(raw) && path.Clean(raw) == raw &&
+		raw != "." && raw != ".." && !strings.HasPrefix(raw, "../")
 }

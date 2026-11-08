@@ -95,24 +95,23 @@ Sign-in with GitHub and the session tokens the gateway validates.
 
 ### storage
 
-File Spaces on JuiceFS, workspaces and HOMEs on the NAS, links and previews.
+Directories on JuiceFS and the NAS, links and previews.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `persistent-root` | `${STORAGE_PERSISTENT_ROOT:/mnt/talgent}` | Required. controlplane's mount of the JuiceFS volume |
-| `working-root` | `${STORAGE_WORKING_ROOT:/mnt/nas}` | Required. controlplane's mount of the NAS export, holding `workspaces/`, `homes/` and `.reclaim/` |
-| `sandbox-uid` | 1000 | Owner of every new workspace and HOME; negative keeps controlplane's own user |
+| `working-root` | `${STORAGE_WORKING_ROOT:/mnt/nas}` | Required. controlplane's mount of the NAS export, holding `directories/` and Storage's own `storage/` |
+| `sandbox-uid` | 1000 | Owner of every NAS Directory and every mount point Storage prepares; negative keeps controlplane's own user |
 | `public-base-url` | `${STORAGE_PUBLIC_BASE_URL:/api}` | Prefix of every link Storage issues |
 | `link-secret` | `${STORAGE_LINK_SECRET:}` | Required. Signs upload links and Access Links |
 | `link-ttl` | `${STORAGE_LINK_TTL:15m}` | Lifetime of an Access Link |
 | `upload-link-ttl` | `2m` | An upload must start within it |
 | `max-upload-bytes` | 1073741824 (1 GiB) | Largest upload |
 | `agent-token` | `${STORAGE_AGENT_TOKEN:}` | Required. Admits Agent to Storage's private contracts |
-| `file-space-tokens`, `reference-space-tokens` | `${STORAGE_FILE_SPACE_TOKEN:}`, `${STORAGE_REFERENCE_SPACE_TOKEN:}` | Admit further callers of the File Space and Reference Space contracts; an empty token admits no one |
-| `reclaim-interval` | `${STORAGE_RECLAIM_INTERVAL:30s}` | How often accepted reclamations run |
-| `mounts.working-claim` | `${K8S_NAS_PVC_NAME:talgent-nas-root}` | Required. The NAS claim sandboxes mount, in their namespace (`SANDBOX_NAMESPACE`) |
-| `mounts.inputs-claim` | `${K8S_INPUTS_PVC_NAME:talgent-juicefs-inputs}` | Required. The JuiceFS claim sandboxes mount read-only, in their namespace |
-| `mounts.inputs-root` | `talgent` | Where `persistent-root` lies within the inputs claim |
+| `file-space-tokens`, `reference-space-tokens` | `${STORAGE_FILE_SPACE_TOKEN:}`, `${STORAGE_REFERENCE_SPACE_TOKEN:}` | Admit further callers: the whole Directory contract, or only opening, whole-content replacement and reading, and the Directory file query; an empty token admits no one |
+| `mounts.nas-claim` | `${K8S_NAS_PVC_NAME:talgent-nas-root}` | Required. The NAS claim sandboxes mount each NAS Directory from by subPath, in their namespace (`SANDBOX_NAMESPACE`) |
+| `mounts.juicefs-claim` | `${K8S_JUICEFS_PVC_NAME:talgent-juicefs-directories}` | Required. The JuiceFS claim sandboxes mount each JuiceFS Directory from by subPath, in their namespace |
+| `mounts.juicefs-root` | `talgent` | Where `persistent-root` lies within the JuiceFS claim |
 | `preview.gotenberg-address` | `${GOTENBERG_ADDRESS:http://gotenberg:3000}` | The converter |
 | `preview.client-timeout`, `task-deadline`, `retention` | `65s`, `90s`, `720h` | One conversion request; one rendering with its retries; how long a preview is kept |
 | `preview.office-source-bytes`, `rendered-pdf-bytes`, `native-pdf-bytes`, `image-bytes`, `text-bytes`, `markup-bytes` | 20 MiB, 50 MiB, 50 MiB, 20 MiB, 1 MiB, 1 MiB | Size limits per kind; Gotenberg's own limit in `gotenberg.yaml` follows the office limit |
@@ -183,6 +182,7 @@ How Agent reaches Computer and Managed Computers.
 | `agent-taskqueue` | queue `agent-recovery`, concurrency 16, retry `1s`–`60s` | Recovery tasks |
 | `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 8, retry `1s`–`60s` | Each execution's long step holds a worker while it runs |
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
+| `storage-maintenance-taskqueue` | queue `storage-maintenance`, concurrency 2, retry `10s`–`5m` | Removal of reclaimed Directories' content, retried until removed; hourly lapse of Preview Copies |
 | `native-api.addr` | `${NATIVE_API_ADDR::8081}` | The API Agents call with their Work credential |
 | `native-api.gateway-token` | none | When set, only a platform Connector presenting it reaches the native API; empty, any caller with a current Work credential does. The base gives controlplane `GATEWAY_TOKEN` (Secret `native-execution-control`) for a profile to name |
 | `native-authentication.agent-address`, `agent-control-token` | `${AGENT_INTERNAL_ADDRESS:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent, which verifies each Work credential |

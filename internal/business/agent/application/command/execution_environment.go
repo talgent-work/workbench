@@ -31,9 +31,9 @@ type ExecutionEnvironmentPort interface {
 	// process there, and the model key a delivery would carry now.
 	Observe(ctx context.Context, execution *domain.AgentExecution) (domain.EnvironmentObservation, error)
 	// PrepareCreation fixes the environment's specification from the
-	// execution and its Mount Grants and what its submission freezes. It is
-	// repeatable and creates nothing.
-	PrepareCreation(ctx context.Context, execution *domain.AgentExecution, mounts domain.SandboxMounts) error
+	// execution and what Application supplied from other authorities, which
+	// its submission freezes. It is repeatable and creates nothing.
+	PrepareCreation(ctx context.Context, execution *domain.AgentExecution, supply CreationSupply) error
 	// SubmitCreation submits the environment's creation once and waits for
 	// its answer, longer than the authority takes to create it. An error
 	// means the answer is lost; a definite answer binds, or refuses after a
@@ -42,11 +42,12 @@ type ExecutionEnvironmentPort interface {
 	// DeleteEnvironment deletes one environment carrying the execution's
 	// ownership, clearing its Vault first; a gone one is deleted already.
 	DeleteEnvironment(ctx context.Context, execution *domain.AgentExecution, environmentID string) error
-	// DeliverCredentials delivers the Work's current credentials into the
-	// bound environment, replacing earlier ones, and reports what it
-	// delivered. It asks holding before each write, and clears what it wrote
-	// once holding refuses.
-	DeliverCredentials(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (domain.CredentialDelivery, error)
+	// DeliverCredentials delivers the Work's current credentials, with what
+	// Application supplied from other authorities, into the bound
+	// environment, replacing earlier ones, and reports what it delivered. It
+	// asks holding before each write, and clears what it wrote once holding
+	// refuses.
+	DeliverCredentials(ctx context.Context, execution *domain.AgentExecution, supply CredentialSupply, holding EnvironmentHolding) (domain.CredentialDelivery, error)
 	// WithdrawCredentials clears the bound environment's credentials and
 	// discards an unfinished preparation.
 	WithdrawCredentials(ctx context.Context, execution *domain.AgentExecution) error
@@ -63,14 +64,56 @@ type ExecutionEnvironmentPort interface {
 	// RenewLease renews the bound environment's lease to expiresAt and
 	// reports the expiry the authority returned.
 	RenewLease(ctx context.Context, execution *domain.AgentExecution, expiresAt time.Time) (time.Time, error)
-	// SyncInputs hands a Managed Computer the current inputs of its Work and
-	// reports how many due changes it covered. It asks holding before the
-	// sync, whose downloads authenticate with the delivered credentials.
-	SyncInputs(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (int64, error)
+	// SyncInputs hands a Managed Computer the current files of its Work's
+	// located inputs and reports how many due changes it covered. It asks
+	// holding before the sync, whose downloads authenticate with the
+	// delivered credentials.
+	SyncInputs(ctx context.Context, execution *domain.AgentExecution, inputs ManagedInputs, holding EnvironmentHolding) (int64, error)
 	// ReconcileComputer reconciles a Managed Computer that is reachable again:
 	// it ends the processes of Works no longer running there and removes the
 	// files of Works gone from it before anything new starts on it (Computer
 	// model: Reconciliation). It does nothing where no Managed Computer is
 	// reached.
 	ReconcileComputer(ctx context.Context, computerID string) error
+}
+
+// CreationSupply is what fixing an environment's specification takes from
+// other authorities, obtained by Application. On a Cloud it is the Mount
+// Grants Storage issued for exactly the Work's located layout, and the access
+// each repository the Work selected takes, which the specification freezes
+// so later deliveries supply credentials for those repositories only. A
+// Managed Computer's directory takes none of it.
+type CreationSupply struct {
+	Mounts       domain.SandboxMounts
+	Repositories []RepositoryAccessReference
+}
+
+// CredentialSupply is what a delivery hands the bound environment from
+// other authorities, obtained by Application: the Space Token of the Work's
+// publication target, with which its Agent publishes (Space Token in
+// sandbox), and, on a Cloud, the current credentials Marketplace supplied
+// for the repositories and service targets the run may reach, with the
+// access observed for each. A Managed Computer uses the machine's own.
+type CredentialSupply struct {
+	SpaceToken   string
+	Repositories []RepositoryAccessMaterial
+	Services     []ServiceAccessMaterial
+	Access       []ServiceAccessStatus
+}
+
+// ManagedInputs are the current files of a Managed Work's located inputs,
+// each with a fresh download Access Link; Located is false for a Work whose
+// layout located no inputs, which has none to copy.
+type ManagedInputs struct {
+	Located bool
+	Files   []InputFile
+}
+
+// InputFile is one file of a Work's located inputs and the path of its Access
+// Link, as Storage issues it for the platform's public address.
+type InputFile struct {
+	Name       string
+	SizeBytes  int64
+	UpdatedAt  time.Time
+	AccessPath string
 }

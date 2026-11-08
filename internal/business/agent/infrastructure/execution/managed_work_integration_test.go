@@ -236,12 +236,11 @@ type managedWork struct {
 	relayURL     string
 	place        *managedPlace
 	provisioning *Provisioning
-	mounts       *countingMounts
+	storage      *managedStorage
 	receiver     *nativeConnectionReceiver
 	connections  *NativeConnections
 	steps        *executionSteps
 	owners       *readingProcess
-	inputs       *inputFiles
 	// works are the Works as Agent records them for the machine's
 	// reconciliation.
 	works *workSource
@@ -283,7 +282,7 @@ func newManagedWork(t *testing.T) *managedWork {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, _, lifecycle := sandboxClient(t)
-	f := &managedWork{db: db, relay: &machineRelay{computerID: managedComputerID}, place: &managedPlace{}, mounts: &countingMounts{}, inputs: &inputFiles{}, owners: &readingProcess{},
+	f := &managedWork{db: db, relay: &machineRelay{computerID: managedComputerID}, place: &managedPlace{}, storage: &managedStorage{}, owners: &readingProcess{},
 		works: &workSource{repo: infrastructure.NewAgentWorkRepository(db, time.Now)}}
 	relayServer := httptest.NewServer(f.relay)
 	t.Cleanup(relayServer.Close)
@@ -292,7 +291,7 @@ func newManagedWork(t *testing.T) *managedWork {
 	require.NoError(t, err)
 	f.provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, f.provisioning, lifecycle)
-	f.provisioning.managed, err = NewManagedEnvironment(db, machines, fixtureModels(), f.works, f.inputs, managedInputsRefresh)
+	f.provisioning.managed, err = NewManagedEnvironment(db, machines, fixtureModels(), f.works, managedInputsRefresh)
 	require.NoError(t, err)
 
 	f.receiver = &nativeConnectionReceiver{provisioning: f.provisioning}
@@ -302,7 +301,7 @@ func newManagedWork(t *testing.T) *managedWork {
 	t.Cleanup(dispatcher.Close)
 	f.connections, err = NewNativeConnections(f.provisioning, f.provisioning.credentials, dispatcher.Client(), dispatcher.URL, "dispatcher-secret")
 	require.NoError(t, err)
-	f.steps = newExecutionStepsWith(t, f.provisioning, f.connections, f.owners, f.provisioning.managed, time.Now, f.mounts)
+	f.steps = newExecutionStepsWith(t, f.provisioning, f.connections, f.owners, f.provisioning.managed, time.Now, f.storage)
 	return f
 }
 
@@ -365,12 +364,12 @@ func (f *managedWork) decided(t *testing.T, id string) []domain.ExecutionStepKin
 	return kinds
 }
 
-// markInputsChanged marks the inputs of every execution reading owner's File
-// Space due, as Storage's change report does.
-func (f *managedWork) markInputsChanged(t *testing.T, owner string) []string {
+// markInputsChanged marks the inputs of every execution reading directory
+// due, as Storage's change report does.
+func (f *managedWork) markInputsChanged(t *testing.T, directory domain.Directory) []string {
 	t.Helper()
 	ctx := context.Background()
-	ids, err := infrastructure.NewExecutionQueryRepository(f.db).ListExecutionsReadingInputs(ctx, owner)
+	ids, err := infrastructure.NewExecutionQueryRepository(f.db).ListExecutionsReadingInputs(ctx, directory)
 	require.NoError(t, err)
 	marked, err := f.steps.handler.MarkInputsChanged(ctx, ids)
 	require.NoError(t, err)
@@ -418,7 +417,7 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	require.Equal(t, "[]", string(begun.AuthorizationIDs), "no Provider credential is redelivered to a Managed Work")
 
 	record := f.launch(t, begun.ID)
-	require.Zero(t, f.mounts.calls, "a Work on a Managed Computer acquires no mounts")
+	require.Zero(t, f.storage.mounts, "a Work on a Managed Computer acquires no mounts")
 	require.NotContains(t, string(record.SpecificationJSON), "HOME")
 	require.True(t, record.CredentialsDelivered)
 	require.True(t, record.PreparationEnded)
@@ -430,8 +429,8 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	require.False(t, relay.modelProxy, "the machine's own Claude login needs no model proxy")
 	var spec managedSpecification
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
-	require.JSONEq(t, `{"gateway":{"url":"`+managedGatewayAddress+`","work_id":"`+input.WorkID+`","work_credential":"`+spec.WorkCredential+`"},"api":{"url":"`+managedAPIAddress+`"}}`, string(relay.credentials),
-		"the machine's own Claude login gets the platform's credentials only: the Gateway's, and where the native API answers")
+	require.JSONEq(t, `{"gateway":{"url":"`+managedGatewayAddress+`","work_id":"`+input.WorkID+`","work_credential":"`+spec.WorkCredential+`","space_token":"space-token"},"api":{"url":"`+managedAPIAddress+`"}}`, string(relay.credentials),
+		"the machine's own Claude login gets the platform's credentials only: the Gateway's with its publication target's Space Token, and where the native API answers")
 	require.Zero(t, record.CredentialsExpireAt)
 	require.Empty(t, record.ModelCredentialDigest)
 	require.Len(t, relay.created, 2)
@@ -477,7 +476,7 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	resumed, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, next.ID, resumed.ID)
-	require.Contains(t, resumed.LaunchCommand, "'--resume' '"+record.NativeSessionID+"'")
+	require.Contains(t, resumed.LaunchCommand, "--resume '"+record.NativeSessionID+"'")
 	require.Equal(t, realizationManaged, resumed.Realization)
 	resumedSpec, err := decodeManagedSpecification(resumed)
 	require.NoError(t, err)

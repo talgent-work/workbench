@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -106,7 +107,7 @@ func (r *rpcExecutions) Save(ctx context.Context, execution *domain.AgentExecuti
 			}
 		}
 		r.order = append(r.order, execution.ID)
-		if !stored.Queued() && stored.RecordSubmission() {
+		if !stored.Queued() && commandtest.Submit(&stored) {
 			if _, err := stored.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment-" + stored.ID}); err != nil {
 				r.mu.Unlock()
 				return err

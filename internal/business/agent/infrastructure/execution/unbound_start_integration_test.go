@@ -63,7 +63,7 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *cloudStart {
 	require.True(t, f.reconcile(t), "the creation's submission is a long step")
 	require.Error(t, f.steps.handler.RunLongStep(context.Background(), f.allocation(t).ID), "the create's answer is lost")
 	record := f.allocation(t)
-	require.True(t, record.Submitted)
+	require.True(t, record.submitted())
 	require.Empty(t, record.SandboxID, "the sandbox's identity is never recorded")
 	require.Equal(t, 1, f.creates())
 	return f
@@ -92,7 +92,7 @@ func newCloudStart(t *testing.T) *cloudStart {
 	f.recovery = command.NewRecoverWorkHandler(f.now, works, f.steps.harness, command.NewInputAcceptance(works, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil)
 
 	definitions := infrastructure.NewAgentDefinitionRepository(db, f.now)
-	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Fixture Agent", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
+	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Fixture Agent", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}})
 	require.NoError(t, err)
 	require.NoError(t, definitions.Save(ctx, definition))
 	definition, err = definitions.Get(ctx, definition.ID)
@@ -100,7 +100,7 @@ func newCloudStart(t *testing.T) *cloudStart {
 	f.admission = domain.StartAdmission{AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 	admission := f.admission
 	admission.AdmittedAt = f.now()
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"}}, admission)
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(), Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"}}, admission)
 	require.NoError(t, err)
 	work.DefinitionVersion = definition.Version
 	require.NoError(t, works.Save(ctx, work))

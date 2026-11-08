@@ -16,6 +16,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
@@ -88,7 +89,7 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	defer server.Close()
 	client, err := shared.NewLifecycleClient(server.Client(), shared.Config{Address: server.URL + "/v1", APIKey: "fixture"})
 	require.NoError(t, err)
-	provider, err := NewSandboxes(client, config())
+	provider, err := NewSandboxes(client, fixturePods(), config())
 	require.NoError(t, err)
 	newWorker := func() *executionSteps {
 		p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
@@ -103,7 +104,7 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	executions := NewAgentExecutionRepository(db, time.Now)
 	run, err := executions.Get(ctx, record.ID)
 	require.NoError(t, err)
-	require.True(t, run.RecordSubmission())
+	require.True(t, commandtest.Submit(run))
 	require.NoError(t, executions.Save(ctx, run))
 	var spec sdk.CreateSandboxRequest
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))

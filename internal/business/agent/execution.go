@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -10,12 +9,11 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
-	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/telemetryingest"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
@@ -23,6 +21,7 @@ import (
 	"go.uber.org/fx"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/client-go/kubernetes"
 	"xorm.io/xorm"
 )
 
@@ -34,7 +33,7 @@ type ExecutionClientConfig struct {
 type ExecutionConfig struct {
 	NetworkAllow []string `json:"network-allow" yaml:"network-allow" toml:"network-allow"`
 	// Models names the mounted Model Template and Model Configuration files.
-	Models              execution.ModelCatalogConfig `json:"models" yaml:"models" toml:"models"`
+	Models              platformcatalog.Config       `json:"models" yaml:"models" toml:"models"`
 	NetworkDeny         []string                     `json:"network-deny" yaml:"network-deny" toml:"network-deny"`
 	CredentialTransport string                       `json:"credential-transport" yaml:"credential-transport" toml:"credential-transport"`
 	OpenSandbox         opensandbox.Config           `json:"opensandbox" yaml:"opensandbox" toml:"opensandbox"`
@@ -82,7 +81,41 @@ func (c ExecutionLeaseConfig) terms() domain.LeaseTerms {
 	return terms
 }
 
+// defaultServerCreationTimeout is the sandbox creation timeout the deployed
+// OpenSandbox server is configured with (deploy/opensandbox/server.yaml).
+const defaultServerCreationTimeout = 5 * time.Minute
+
+// creationAnswerMargin is how much longer than the server's creation timeout
+// a create waits for its answer, so the server's own failure answer, sent
+// once it deleted the sandbox, still arrives.
+const creationAnswerMargin = 30 * time.Second
+
+// managedCreationWait is how long a Managed Computer's opening of a Work's
+// directory can still take effect after its submission: one relayed command,
+// bounded at a few seconds, with a margin.
+const managedCreationWait = domain.CreationWait(30 * time.Second)
+
+// creationTimeout is the server's sandbox creation timeout, its default
+// unless configured.
+func (cfg ExecutionConfig) creationTimeout() time.Duration {
+	if timeout := cfg.SandboxCreationTimeout.Duration(); timeout != 0 {
+		return timeout
+	}
+	return defaultServerCreationTimeout
+}
+
+// creationWait is how long after its submission a creation can still produce
+// a sandbox: a little longer than the server's creation timeout, so the
+// server's own failure answer still arrives.
+func (cfg ExecutionConfig) creationWait() domain.CreationWait {
+	return domain.CreationWait(cfg.creationTimeout() + creationAnswerMargin)
+}
+
 func (cfg ExecutionConfig) Validate() error {
+	// A create's answer only matters within the Startup Deadline.
+	if cfg.SandboxCreationTimeout.Duration() < 0 || cfg.creationWait().Validate() != nil {
+		return errors.New("agent: the sandbox creation timeout must not be negative and must leave room within the Startup Deadline")
+	}
 	if err := cfg.Native.Validate(); err != nil {
 		return err
 	}
@@ -95,8 +128,12 @@ func (cfg ExecutionConfig) Validate() error {
 	return cfg.OpenSandbox.Validate()
 }
 
-func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, models *execution.ModelCatalog) (*execution.Sandboxes, error) {
+func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, cluster kubernetes.Interface, models command.PlatformCatalogPort) (*execution.Sandboxes, error) {
 	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	pods, err := execution.NewSandboxPods(cluster, cfg.SandboxNamespace)
+	if err != nil {
 		return nil, err
 	}
 	resources := corev1.ResourceRequirements{Requests: corev1.ResourceList{}, Limits: corev1.ResourceList{}}
@@ -114,23 +151,30 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, mod
 		}
 		resources.Limits[corev1.ResourceName(name)] = quantity
 	}
-	return execution.NewSandboxes(client, execution.SandboxConfig{CreationTimeout: cfg.SandboxCreationTimeout.Duration(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
+	return execution.NewSandboxes(client, pods, execution.SandboxConfig{CreationTimeout: cfg.creationTimeout(), CreationWait: cfg.creationWait(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
 }
 
 var ExecutionModule = fx.Module("agent.execution-integration",
 	pkgmysql.Bind("execution"),
 	fx.Provide(
-		func(cfg ExecutionConfig) (*execution.ModelCatalog, error) {
-			return execution.LoadModelCatalog(cfg.Models)
-		},
+		// Model Templates and Model Configurations are platform data read
+		// from the deployment's configuration.
+		fx.Annotate(func(cfg ExecutionConfig) (*platformcatalog.Catalog, error) {
+			return platformcatalog.Load(cfg.Models)
+		}, fx.As(new(command.PlatformCatalogPort))),
 		newModelConfigurations,
 		// Every sandbox is created to expire under these terms, and each
 		// execution decides its renewals under them.
 		func(cfg ExecutionConfig) domain.LeaseTerms { return cfg.Lease.terms() },
+		// Each creation's deadline is counted under its realization's wait;
+		// a Cloud create is waited for under the same wait.
+		func(cfg ExecutionConfig) domain.CreationWaits {
+			return domain.CreationWaits{Cloud: cfg.creationWait(), Managed: managedCreationWait}
+		},
 		newExecutionSandboxes,
 		newExecutionLifecycle,
-		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
-			return execution.NewSandboxCredentials(db, client, models, workRepositoryCredentials{app: repositories}, services, http.DefaultClient, cfg.CredentialTransport)
+		func(db *xorm.Engine, client *sdk.LifecycleClient, models command.PlatformCatalogPort, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
+			return execution.NewSandboxCredentials(db, client, models, http.DefaultClient, cfg.CredentialTransport)
 		},
 		pkgkubernetes.NewClientset,
 		newManagedEnvironment,
@@ -180,21 +224,17 @@ func relayClient() *http.Client {
 }
 
 // newManagedEnvironment is the Managed realization, nil without Managed
-// Computers. Its Works' inputs are read through Storage's File Space
-// Contract and synced again by the recovery sweep at its refresh interval.
-func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, client *http.Client, storage StorageConfig, recovery RecoveryConfig) (*execution.ManagedEnvironment, error) {
+// Computers. Its Works' located inputs, which Application reads from
+// Storage, are synced again by the recovery sweep at its refresh interval.
+func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository, recovery RecoveryConfig) (*execution.ManagedEnvironment, error) {
 	if machines == nil {
 		return nil, nil
-	}
-	inputs, err := agentstorage.NewWorkInputs(client, storage)
-	if err != nil {
-		return nil, err
 	}
 	refresh, err := recovery.inputsRefreshInterval()
 	if err != nil {
 		return nil, err
 	}
-	return execution.NewManagedEnvironment(db, machines, models, sessions, inputs, refresh)
+	return execution.NewManagedEnvironment(db, machines, models, sessions, refresh)
 }
 
 // registerManagedTelemetry takes the telemetry of Works on Managed Computers,
@@ -210,36 +250,6 @@ func registerManagedTelemetry(mux *http.ServeMux, attributions query.ExecutionQu
 	}
 	telemetryingest.Register(mux, attributions, collector, logger)
 	return nil
-}
-
-// The adapter maps trusted Application results into native Vault bindings.
-type workRepositoryCredentials struct{ app *application.RepositoryAccess }
-
-func (s workRepositoryCredentials) Plan(ctx context.Context, owner, work string) ([]execution.RepositoryAuthorization, error) {
-	refs, err := s.app.Plan(ctx, owner, work)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]execution.RepositoryAuthorization, 0, len(refs))
-	for _, ref := range refs {
-		result = append(result, execution.RepositoryAuthorization{AccessID: ref.AccessID, RepositoryID: ref.RepositoryID, RepositoryHTTPSURL: ref.CloneURL})
-	}
-	return result, nil
-}
-func (s workRepositoryCredentials) Resolve(ctx context.Context, owner, work string) (execution.RepositoryResolution, error) {
-	values, err := s.app.Resolve(ctx, owner, work)
-	if err != nil {
-		return execution.RepositoryResolution{}, err
-	}
-	result := execution.RepositoryResolution{}
-	for _, v := range values.Credentials {
-		result.Credentials = append(result.Credentials, execution.RepositoryCredential{AccessID: v.AccessID, RepositoryID: v.RepositoryID, RepositoryHTTPSURL: v.CloneURL, Username: v.Username, Password: v.Password, ExpiresAt: v.ExpiresAt})
-		result.Statuses = append(result.Statuses, execution.ServiceAccessStatus{Service: "github", Target: "repository:" + v.RepositoryID, Status: "credential_available"})
-	}
-	for _, unavailable := range values.Unavailable {
-		result.Statuses = append(result.Statuses, execution.ServiceAccessStatus{Service: "github", Target: "repository:" + unavailable.RepositoryID, Status: "unavailable", Reason: unavailable.Reason, Temporary: unavailable.Temporary})
-	}
-	return result, nil
 }
 
 func newExecutionLifecycle(cfg ExecutionConfig) (*sdk.LifecycleClient, error) {

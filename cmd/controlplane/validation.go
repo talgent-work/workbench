@@ -14,6 +14,7 @@ func validateOption(opt Option) error {
 		{name: "agent-taskqueue", validate: opt.AgentTaskQueue.Validate},
 		{name: "agent-preparation-taskqueue", validate: opt.AgentPreparationTaskQueue.Validate},
 		{name: "storage-preview-taskqueue", validate: opt.StoragePreviewTaskQueue.Validate},
+		{name: "storage-maintenance-taskqueue", validate: opt.StorageMaintenanceTaskQueue.Validate},
 		{name: "marketplace", validate: opt.Marketplace.Validate},
 		{name: "agent-marketplace", validate: opt.AgentMarketplace.Validate},
 		{name: "account", validate: opt.Account.Validate},

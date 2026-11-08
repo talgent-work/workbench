@@ -28,7 +28,7 @@ func (f *cloudStart) submitting(t *testing.T, ctx context.Context, answer chan s
 	done := make(chan error, 1)
 	go func() { done <- f.steps.handler.RunLongStep(ctx, id) }()
 	require.Eventually(t, func() bool { return f.creates() == 1 }, 5*time.Second, 10*time.Millisecond)
-	require.True(t, f.allocation(t).Submitted, "the submission is recorded before the create is sent")
+	require.True(t, f.allocation(t).submitted(), "the submission is recorded before the create is sent")
 	return done
 }
 

@@ -18,11 +18,15 @@ import (
 // committedWorks decorates persistence at composition, after the transaction.
 // A live frame is best effort. Its failure cannot undo a committed Session; reads
 // and reconnect continue using the same authoritative work projection. The
-// Work's Domain Events are dispatched once its change is committed.
+// Work's Domain Events are dispatched once its change is committed, except
+// that a closure's Work Reclamation Request is queued before it commits.
 type committedWorks struct {
 	*infrastructure.AgentWorkRepository
 	*workStateUpdates
 	events domainevent.Dispatcher
+	// reclamations is wired by RecoveryModule, whose queue delivers each
+	// Work Reclamation Request; without it no request is made.
+	reclamations *eventhandler.WorkReclamations
 }
 
 type workStateUpdates struct {
@@ -52,19 +56,35 @@ func (r *committedWorks) committed(ctx context.Context, work *domain.AgentWork) 
 	if work.Events == nil || work.Events.Len() == 0 {
 		return
 	}
-	// A lost event is made up by recovery, which reads the retained facts,
-	// except WorkClosed: no fact retains its reclamation request, so a lost
-	// one leaves the workspace in place, an accepted leak.
+	// A lost event is made up by recovery, which reads the retained facts;
+	// WorkClosed's reclamation request was queued before the commit.
 	if err := r.events.DispatchAll(ctx, work.Events.Drain()); err != nil {
 		r.logger.WarnContext(ctx, "dispatch Work events failed", slog.String("agent_work_id", work.ID), slog.Any("error", err))
 	}
 }
 func (r *committedWorks) Save(ctx context.Context, session *domain.AgentWork) error {
+	if err := r.requestReclamation(ctx, session); err != nil {
+		return err
+	}
 	if err := r.AgentWorkRepository.Save(ctx, session); err != nil {
 		return err
 	}
 	r.committed(ctx, session)
 	return nil
+}
+
+// requestReclamation queues the Work Reclamation Request of a closure the
+// change records before the change commits; the pending events stay with the
+// Work for their dispatch after the commit.
+func (r *committedWorks) requestReclamation(ctx context.Context, work *domain.AgentWork) error {
+	if r.reclamations == nil || work.Events == nil || work.Events.Len() == 0 {
+		return nil
+	}
+	pending := work.Events.Drain()
+	for _, event := range pending {
+		work.Events.Add(event)
+	}
+	return r.reclamations.Request(ctx, pending)
 }
 
 // workCommitted follows a committed Work change: its live frame, and the

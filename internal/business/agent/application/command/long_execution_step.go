@@ -51,27 +51,27 @@ func (h *ReconcileExecutionHandler) RunLongStep(ctx context.Context, executionID
 	return nil
 }
 
-// submit fixes the environment's specification with the Mount Grants
-// Storage issues on a Cloud, records the submission, and only then submits
-// the creation once, waiting for its answer (Single creation). Its answer is
+// submit fixes the environment's specification with what Application
+// obtained from other authorities, on a Cloud the Mount Grants Storage issues
+// for exactly the Work's located layout and the access of the Work's selected
+// repositories, records the submission, and only then submits the creation
+// once, waiting for its answer (Single creation). Its answer is
 // recorded: a created environment is bound unless one is already, and a
 // definite refusal or failure rejects a start that bound nothing (Creation
 // refusal). A lost answer is returned and the creation is never sent again;
 // observation and the Startup Deadline decide the start (Lost creation
 // answer).
 func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domain.AgentExecution) error {
-	var mounts domain.SandboxMounts
-	if execution.Realization == domain.RealizationCloud {
-		var err error
-		if mounts, err = h.mounts.AcquireMounts(ctx, execution.Launch.MountRequest()); err != nil {
-			return err
-		}
-	}
-	if err := h.environments.PrepareCreation(ctx, execution, mounts); err != nil {
+	supply, err := h.supplies.creation(ctx, execution)
+	if err != nil {
 		return err
 	}
-	if !execution.RecordSubmission() {
-		return nil
+	if err := h.environments.PrepareCreation(ctx, execution, supply); err != nil {
+		return err
+	}
+	submitting, err := execution.RecordSubmission(h.now(), h.creationWaits)
+	if err != nil || !submitting {
+		return err
 	}
 	if err := h.executions.Save(ctx, execution); err != nil {
 		return err

@@ -16,8 +16,9 @@ type RootTurnResult struct {
 	OccurredAt time.Time
 }
 
-// RootTurnResultReader reads a Work's durable message log.
-type RootTurnResultReader interface {
+// DispatcherMessageLogPort reads Dispatcher's durable message log of a
+// Work: its root turn results in order, and where one call returned.
+type DispatcherMessageLogPort interface {
 	// ListRootTurnResults reads the root stream's turn results in stream
 	// order. Results of subagents are not part of the root stream.
 	ListRootTurnResults(ctx context.Context, workID string) ([]RootTurnResult, error)
@@ -38,10 +39,10 @@ type WorkTurnResult struct {
 
 // WorkTurnResults answers the Work Turn Result Query Contract.
 type WorkTurnResults struct {
-	reader RootTurnResultReader
+	reader DispatcherMessageLogPort
 }
 
-func NewWorkTurnResults(reader RootTurnResultReader) *WorkTurnResults {
+func NewWorkTurnResults(reader DispatcherMessageLogPort) *WorkTurnResults {
 	return &WorkTurnResults{reader: reader}
 }
 

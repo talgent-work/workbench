@@ -35,9 +35,36 @@ type NativeProcess struct {
 	WorkSubjectID   string
 	// Purpose is the purpose of the Work's AgentDefinition.
 	Purpose string
-	// WorkspaceReference names the Work's Session Workspace; empty for a Work
-	// without one, such as a Work on a Managed Computer.
-	WorkspaceReference string
+	// Workspace is the Work's Session Workspace as its sandbox sees it; nil
+	// for a Work without one, such as a Work on a Managed Computer.
+	Workspace *WorkspaceLayout
+}
+
+// WorkspaceLayout is a Work Directory as the Work's sandbox sees it: the
+// Directory and the Directories mounted inside it, each at its own path.
+type WorkspaceLayout struct {
+	Workspace Directory
+	Mounts    []MountedDirectory
+}
+
+// Directory names a Directory by its owner, the locating caller's facts in
+// condition order, and its name.
+type Directory struct {
+	Owner []OwnerFact
+	Name  string
+}
+
+// OwnerFact is one condition of a Directory owner with its value.
+type OwnerFact struct {
+	Condition string
+	Value     string
+}
+
+// MountedDirectory is a Directory mounted at Path, relative to the Work
+// Directory.
+type MountedDirectory struct {
+	Path      string
+	Directory Directory
 }
 type nativeProcessKey struct{}
 

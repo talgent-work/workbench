@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package storage.task.v1;
 
+import "storage/task/v1/directory.proto";
+
 option go_package = "github.com/talgent-work/workbench/gen/storage/task/v1;storagetaskv1";
 
 // RenderPreviewTaskV1 asks Storage to render the Preview Copy of one content, as
@@ -9,13 +11,13 @@ option go_package = "github.com/talgent-work/workbench/gen/storage/task/v1;stora
 // by the content digest, so one content renders once however many readers
 // open it.
 message RenderPreviewTaskV1 {
-  // Owner of the File Space.
-  string owner = 1;
-  // "attachment" or "artifact".
-  string kind = 2;
+  reserved 1, 2;
+  reserved "owner", "kind";
   // File name at the position.
   string name = 3;
   // SHA-256 of the content to render; the file is skipped once it holds
   // other content.
   string digest = 4;
+  // Directory of the position.
+  Directory directory = 5;
 }

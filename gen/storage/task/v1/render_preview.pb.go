@@ -27,15 +27,13 @@ const (
 // open it.
 type RenderPreviewTaskV1 struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Owner of the File Space.
-	Owner string `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
-	// "attachment" or "artifact".
-	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	// File name at the position.
 	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	// SHA-256 of the content to render; the file is skipped once it holds
 	// other content.
-	Digest        string `protobuf:"bytes,4,opt,name=digest,proto3" json:"digest,omitempty"`
+	Digest string `protobuf:"bytes,4,opt,name=digest,proto3" json:"digest,omitempty"`
+	// Directory of the position.
+	Directory     *Directory `protobuf:"bytes,5,opt,name=directory,proto3" json:"directory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -70,20 +68,6 @@ func (*RenderPreviewTaskV1) Descriptor() ([]byte, []int) {
 	return file_storage_task_v1_render_preview_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *RenderPreviewTaskV1) GetOwner() string {
-	if x != nil {
-		return x.Owner
-	}
-	return ""
-}
-
-func (x *RenderPreviewTaskV1) GetKind() string {
-	if x != nil {
-		return x.Kind
-	}
-	return ""
-}
-
 func (x *RenderPreviewTaskV1) GetName() string {
 	if x != nil {
 		return x.Name
@@ -98,16 +82,22 @@ func (x *RenderPreviewTaskV1) GetDigest() string {
 	return ""
 }
 
+func (x *RenderPreviewTaskV1) GetDirectory() *Directory {
+	if x != nil {
+		return x.Directory
+	}
+	return nil
+}
+
 var File_storage_task_v1_render_preview_proto protoreflect.FileDescriptor
 
 const file_storage_task_v1_render_preview_proto_rawDesc = "" +
 	"\n" +
-	"$storage/task/v1/render_preview.proto\x12\x0fstorage.task.v1\"k\n" +
-	"\x13RenderPreviewTaskV1\x12\x14\n" +
-	"\x05owner\x18\x01 \x01(\tR\x05owner\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
+	"$storage/task/v1/render_preview.proto\x12\x0fstorage.task.v1\x1a\x1fstorage/task/v1/directory.proto\"\x94\x01\n" +
+	"\x13RenderPreviewTaskV1\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x16\n" +
-	"\x06digest\x18\x04 \x01(\tR\x06digestBEZCgithub.com/talgent-work/workbench/gen/storage/task/v1;storagetaskv1b\x06proto3"
+	"\x06digest\x18\x04 \x01(\tR\x06digest\x128\n" +
+	"\tdirectory\x18\x05 \x01(\v2\x1a.storage.task.v1.DirectoryR\tdirectoryJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05ownerR\x04kindBEZCgithub.com/talgent-work/workbench/gen/storage/task/v1;storagetaskv1b\x06proto3"
 
 var (
 	file_storage_task_v1_render_preview_proto_rawDescOnce sync.Once
@@ -124,13 +114,15 @@ func file_storage_task_v1_render_preview_proto_rawDescGZIP() []byte {
 var file_storage_task_v1_render_preview_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_storage_task_v1_render_preview_proto_goTypes = []any{
 	(*RenderPreviewTaskV1)(nil), // 0: storage.task.v1.RenderPreviewTaskV1
+	(*Directory)(nil),           // 1: storage.task.v1.Directory
 }
 var file_storage_task_v1_render_preview_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: storage.task.v1.RenderPreviewTaskV1.directory:type_name -> storage.task.v1.Directory
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_storage_task_v1_render_preview_proto_init() }
@@ -138,6 +130,7 @@ func file_storage_task_v1_render_preview_proto_init() {
 	if File_storage_task_v1_render_preview_proto != nil {
 		return
 	}
+	file_storage_task_v1_directory_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

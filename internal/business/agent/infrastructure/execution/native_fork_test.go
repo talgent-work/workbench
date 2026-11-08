@@ -38,7 +38,7 @@ func launchArgs(t *testing.T, input domain.LaunchSpecification, mode string, env
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", "-c", launch.Command)
-	cmd.Env = append(os.Environ(), "ARGV_FILE="+output, "CLAUDE_CONFIG_DIR="+config, "CLAUDE_CODE_PROJECT_DIR_NAME=namespace")
+	cmd.Env = append(os.Environ(), "ARGV_FILE="+output, "CLAUDE_CONFIG_DIR="+config)
 	cmd.Env = append(cmd.Env, env...)
 	if err := cmd.Run(); err != nil {
 		return nil, launch
@@ -86,8 +86,10 @@ func TestWorkForksItsStartingContextFromTheSourceConversation(t *testing.T) {
 	require.Equal(t, []string{"--resume", launch.SessionID}, contextArgs(args), "a recovered start resumes its own conversation once it exists")
 
 	input.ContextMode = domain.ContextContinue
-	args, _ = launchArgs(t, input, "")
+	args, _ = launchArgs(t, input, "--resume")
 	require.Equal(t, []string{"--resume", launch.SessionID}, contextArgs(args))
+	args, _ = launchArgs(t, input, "--session-id")
+	require.Equal(t, []string{"--resume", source, "--fork-session", "--session-id", launch.SessionID, "--resume-session-at", "5f1c2b0e-0000-4000-8000-000000000001"}, contextArgs(args), "a Work resumed before its first turn forks as its fresh start would")
 
 	input.StartingContext = nil
 	input.ContextMode = domain.ContextRecover

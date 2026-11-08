@@ -54,8 +54,8 @@ func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *agentp
 		workID, err = h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{
 			StartingUserID: creation.GetStartingUserId(),
 			SubjectID:      input.SubjectID, InitialExecution: &input, WorkModel: workModelFromProto(creation.GetModel()),
-			AgentID: creation.GetAgentId(), WorkspaceReference: creation.GetWorkspaceReference(), InputSource: domain.WorkInputSource{Reference: creation.GetInputSource(), SpaceToken: creation.GetInputSpaceToken()},
-			Subject: subjectFromProto(creation.GetSubject()), ProjectID: creation.GetProjectId(), ReadOnlyMounts: readOnlyMountsFromProto(creation.GetReadOnlyMounts()), TraceAttributes: maps.Clone(creation.GetTraceAttributes()),
+			AgentID: creation.GetAgentId(), AgentHarness: strings.TrimSpace(creation.GetAgentHarness()),
+			Subject: subjectFromProto(creation.GetSubject()), ProjectID: creation.GetProjectId(), TraceAttributes: maps.Clone(creation.GetTraceAttributes()),
 			CapabilityDifferences: capabilityDifferencesFromProto(creation.GetCapabilityDifferences()),
 			StartingContext:       startingContextFromProto(creation.GetStartingContext()),
 			ComputerID:            strings.TrimSpace(creation.GetComputerId()),
@@ -74,7 +74,7 @@ func (h *AgentHandler) CreateAgentDefinition(ctx context.Context, req *agentpriv
 	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	id, err := h.application.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: req.GetOwners(), AgentName: req.GetAgentName(), Purpose: req.GetPurpose(), UsageScope: domain.UsageScope{Kind: req.GetUsageScope().GetKind(), Reference: req.GetUsageScope().GetReference()}, HomeBinding: domain.HomeBinding{OwnerID: req.GetHomeBinding().GetOwnerId(), Namespace: req.GetHomeBinding().GetNamespace()}, Visibility: visibilityRuleFromProto(req.GetVisibilityRule()), Capabilities: capabilitiesFromProto(req.GetCapabilities())})
+	id, err := h.application.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: req.GetOwners(), AgentName: req.GetAgentName(), Purpose: req.GetPurpose(), UsageScope: domain.UsageScope{Kind: req.GetUsageScope().GetKind(), Reference: req.GetUsageScope().GetReference()}, Visibility: visibilityRuleFromProto(req.GetVisibilityRule()), Capabilities: capabilitiesFromProto(req.GetCapabilities())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -87,7 +87,7 @@ func (h *AgentHandler) CreateWork(ctx context.Context, req *agentprivatev1.Creat
 	if err := h.application.AdmitCallerCreation(subjectFromProto(req.GetSubject()), req.GetProjectId()); err != nil {
 		return nil, mapAgentError(err)
 	}
-	id, err := h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: req.GetStartingUserId(), RequestID: req.GetRequestId(), WorkModel: workModelFromProto(req.GetModel()), Subject: subjectFromProto(req.GetSubject()), ProjectID: req.GetProjectId(), CapabilityDifferences: capabilityDifferencesFromProto(req.GetCapabilityDifferences()), StartingContext: startingContextFromProto(req.GetStartingContext()), SubjectID: req.GetSubjectId(), AgentID: req.GetAgentId(), WorkspaceReference: req.GetWorkspaceReference(), InputSource: domain.WorkInputSource{Reference: req.GetInputSource(), SpaceToken: req.GetInputSpaceToken()}, ReadOnlyMounts: readOnlyMountsFromProto(req.GetReadOnlyMounts()), TraceAttributes: maps.Clone(req.GetTraceAttributes()), ComputerID: strings.TrimSpace(req.GetComputerId()), Harness: harnessChoiceFromProto(req.GetHarness())})
+	id, err := h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: req.GetStartingUserId(), RequestID: req.GetRequestId(), WorkModel: workModelFromProto(req.GetModel()), Subject: subjectFromProto(req.GetSubject()), ProjectID: req.GetProjectId(), CapabilityDifferences: capabilityDifferencesFromProto(req.GetCapabilityDifferences()), StartingContext: startingContextFromProto(req.GetStartingContext()), SubjectID: req.GetSubjectId(), AgentID: req.GetAgentId(), AgentHarness: strings.TrimSpace(req.GetAgentHarness()), TraceAttributes: maps.Clone(req.GetTraceAttributes()), ComputerID: strings.TrimSpace(req.GetComputerId()), Harness: harnessChoiceFromProto(req.GetHarness())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -182,7 +182,7 @@ func (h *AgentHandler) GetWork(ctx context.Context, req *agentprivatev1.GetWorkR
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return &agentprivatev1.GetWorkResponse{WorkProgress: workProgressToProto(session.Progress), AgentName: session.AgentName, WorkspaceReference: session.WorkspaceReference, Version: int64(session.Version), StopRequestId: session.StopRequestID, StopReason: string(session.StopReason), Waiting: session.Waiting, WorkId: session.ID, AgentId: session.AgentID, State: state, Capabilities: capabilities, ContextReference: session.HarnessSessionReference, RequiredResponse: session.RequiredResponse, FailureReason: session.FailureReason}, nil
+	return &agentprivatev1.GetWorkResponse{WorkProgress: workProgressToProto(session.Progress), AgentName: session.AgentName, Version: int64(session.Version), StopRequestId: session.StopRequestID, StopReason: string(session.StopReason), Waiting: session.Waiting, WorkId: session.ID, AgentId: session.AgentID, State: state, Capabilities: capabilities, ContextReference: session.HarnessSessionReference, RequiredResponse: session.RequiredResponse, FailureReason: session.FailureReason}, nil
 }
 
 func authenticateCaller(token, authorization, subject string) error {
@@ -291,7 +291,7 @@ func (h *AgentHandler) GetAgentDefinition(ctx context.Context, req *agentprivate
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return &agentprivatev1.GetAgentDefinitionResponse{Owners: agent.Owners, AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: &agentprivatev1.UsageScope{Kind: agent.UsageScope.Kind, Reference: agent.UsageScope.Reference}, HomeBinding: &agentprivatev1.HomeBinding{OwnerId: agent.HomeBinding.OwnerID, Namespace: agent.HomeBinding.Namespace}, VisibilityRule: &agentprivatev1.VisibilityRule{Public: agent.Visibility.Public}, AgentId: agent.ID, Capabilities: capabilitiesToProto(agent.Capabilities)}, nil
+	return &agentprivatev1.GetAgentDefinitionResponse{Owners: agent.Owners, AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: &agentprivatev1.UsageScope{Kind: agent.UsageScope.Kind, Reference: agent.UsageScope.Reference}, VisibilityRule: &agentprivatev1.VisibilityRule{Public: agent.Visibility.Public}, AgentId: agent.ID, Capabilities: capabilitiesToProto(agent.Capabilities)}, nil
 }
 
 func (h *AgentHandler) RespondToInteraction(ctx context.Context, req *agentprivatev1.RespondToInteractionRequest) (*agentprivatev1.RespondToInteractionResponse, error) {
@@ -316,7 +316,7 @@ func (h *AgentHandler) VerifyWorkCredential(ctx context.Context, req *agentpriva
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	response := &agentprivatev1.VerifyWorkCredentialResponse{AgentName: identity.AgentName, WorkId: identity.WorkID, AgentId: identity.AgentID, SubjectId: identity.SubjectID, WorkspaceReference: identity.WorkspaceReference,
+	response := &agentprivatev1.VerifyWorkCredentialResponse{AgentName: identity.AgentName, WorkId: identity.WorkID, AgentId: identity.AgentID, SubjectId: identity.SubjectID, Workspace: workspaceLayoutToProto(identity.Workspace),
 		ProjectId: identity.ProjectID, Subject: subjectToProto(identity.Subject), Purpose: identity.Purpose}
 	return response, nil
 }
@@ -415,7 +415,6 @@ func (h *AgentHandler) EnsureAgentDefinition(ctx context.Context, req *agentpriv
 	}
 	result, err := h.application.Commands.EnsureAgentDefinition.Handle(ctx, command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: req.GetOwners(), UsageScope: domain.UsageScope{Kind: req.GetUsageScope().GetKind(), Reference: req.GetUsageScope().GetReference()},
 		Purpose: req.GetPurpose(), AgentName: req.GetAgentName(),
-		HomeBinding:  domain.HomeBinding{OwnerID: req.GetHomeBinding().GetOwnerId(), Namespace: req.GetHomeBinding().GetNamespace()},
 		Visibility:   visibilityRuleFromProto(req.GetVisibilityRule()),
 		Capabilities: capabilitiesFromProto(req.GetCapabilities()),
 	}, EmployeeDisplayName: req.GetEmployeeDisplayName()})

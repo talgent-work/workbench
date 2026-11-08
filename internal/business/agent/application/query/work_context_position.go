@@ -21,10 +21,10 @@ type WorkContextPosition struct {
 // position is after the call's result, never inside an unfinished call.
 type ResolveWorkContextPositionHandler struct {
 	origins   WorkQueryRepository
-	positions RootTurnResultReader
+	positions DispatcherMessageLogPort
 }
 
-func NewResolveWorkContextPositionHandler(origins WorkQueryRepository, positions RootTurnResultReader) *ResolveWorkContextPositionHandler {
+func NewResolveWorkContextPositionHandler(origins WorkQueryRepository, positions DispatcherMessageLogPort) *ResolveWorkContextPositionHandler {
 	return &ResolveWorkContextPositionHandler{origins: origins, positions: positions}
 }
 

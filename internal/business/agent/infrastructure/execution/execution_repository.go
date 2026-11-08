@@ -8,6 +8,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"xorm.io/xorm"
 )
 
@@ -27,7 +28,7 @@ func NewAgentExecutionRepository(db *xorm.Engine, now func() time.Time) *AgentEx
 }
 
 // factColumns are the columns holding an execution's facts.
-var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted", "start_rejected", "sandbox_id", "lease_expires_at", "credentials_delivered", "preparation_ended", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "inputs_due", "inputs_synced_at", "start_failure", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "checkout_results", "request_json", "version", "updated_at"}
+var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted_at", "creation_deadline", "creation_answered", "start_rejected", "sandbox_id", "lease_expires_at", "credentials_delivered", "preparation_ended", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "inputs_due", "inputs_synced_at", "start_failure", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "checkout_results", "request_json", "version", "updated_at"}
 
 func (r *AgentExecutionRepository) Get(ctx context.Context, id string) (*domain.AgentExecution, error) {
 	record, found, err := r.get(ctx, id)
@@ -137,11 +138,15 @@ func recordFromExecution(e *domain.AgentExecution) (executionRecord, error) {
 	if err != nil {
 		return executionRecord{}, err
 	}
+	inputs := ""
+	if located := e.Launch.LocatedLayout.Inputs; located != nil && e.Realization == domain.RealizationManaged {
+		inputs = infrastructure.DirectoryKey(located.Directory)
+	}
 	return executionRecord{
-		CheckoutResults: checkouts,
-		ID:              e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch,
+		CheckoutResults: checkouts, InputsDirectory: inputs,
+		ID: e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch,
 		State: string(e.State), StartAdmittedAt: millis(e.StartAdmittedAt), DeskID: e.Desk.ID, SeatedAt: millis(e.Desk.SeatedAt), DeskLeftAt: millis(e.Desk.LeftAt),
-		Submitted: e.Creation.Submitted, StartRejected: e.Outcome.Rejected, SandboxID: e.Environment, LeaseExpiresAt: millis(e.Lease),
+		SubmittedAt: millis(e.Creation.SubmittedAt), CreationDeadline: millis(e.Creation.Deadline), CreationAnswered: e.Creation.Answered, StartRejected: e.Outcome.Rejected, SandboxID: e.Environment, LeaseExpiresAt: millis(e.Lease),
 		CredentialsDelivered: e.Credentials.Delivered, PreparationEnded: e.Process.PreparationEnded,
 		ProcessID: e.Process.ID, ProcessPrepared: e.Process.Prepared, ProcessStarted: e.Process.Started, ProcessExited: e.Process.Exited, ExitCode: e.Process.Exit.ExitCode, ExitReason: e.Process.Exit.Reason,
 		ExitRequestID: e.ExitRequest.StopRequestID, ExitCancels: e.ExitRequest.CancelWaitingTurn,
@@ -166,7 +171,7 @@ func executionFromRecord(r executionRecord) (*domain.AgentExecution, error) {
 		ID:              r.ID, WorkID: r.SessionID, StartAdmittedAt: fromMillis(r.StartAdmittedAt), Realization: domain.ExecutionRealization(r.Realization),
 		Desk:        domain.ExecutionDesk{ID: r.DeskID, SeatedAt: fromMillis(r.SeatedAt), LeftAt: fromMillis(r.DeskLeftAt)},
 		Launch:      launch,
-		Creation:    domain.CreationSubmission{Submitted: r.Submitted},
+		Creation:    domain.CreationSubmission{SubmittedAt: fromMillis(r.SubmittedAt), Deadline: fromMillis(r.CreationDeadline), Answered: r.CreationAnswered},
 		Environment: r.SandboxID,
 		Lease:       fromMillis(r.LeaseExpiresAt),
 		Process: domain.LaunchedProcess{ID: r.ProcessID, PreparationEnded: r.PreparationEnded, Prepared: r.ProcessPrepared, Started: r.ProcessStarted, Exited: r.ProcessExited,

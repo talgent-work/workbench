@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -21,7 +22,7 @@ func TestBeginExecutionSeatsOrQueuesItsStart(t *testing.T) {
 	require.Equal(t, execution.StartAdmittedAt, execution.Desk.SeatedAt, "a seated start counts its deadline from its admission")
 	require.Equal(t, "desk-test", execution.Desk.ID)
 	require.Equal(t, execution.Desk.SeatedAt.Add(domain.StartupDeadline-2*time.Minute), execution.Launch.PreparationBound)
-	require.False(t, execution.Creation.Submitted)
+	require.False(t, execution.Creation.Submitted())
 	require.NoError(t, execution.Validate())
 
 	queued, _ := queuedWork(t, time.Now())
@@ -48,8 +49,8 @@ func TestBeginExecutionSeatsOrQueuesItsStart(t *testing.T) {
 // An answer naming neither an environment nor a refusal is invalid.
 func TestASuccessfulCreationAnswerBindsOnlyWhileNothingIsBound(t *testing.T) {
 	execution := beginOf(t, newSession(t), domain.RealizationCloud)
-	require.True(t, execution.RecordSubmission())
-	require.False(t, execution.RecordSubmission(), "a creation is submitted once")
+	require.True(t, commandtest.Submit(execution))
+	require.False(t, commandtest.Submit(execution), "a creation is submitted once")
 	_, err := execution.RecordCreationAnswer(domain.CreationAnswer{})
 	require.ErrorIs(t, err, domain.ErrInvalidExecution)
 	_, err = execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-1", Refused: true})
@@ -73,7 +74,7 @@ func TestASuccessfulCreationAnswerBindsOnlyWhileNothingIsBound(t *testing.T) {
 func TestADefiniteCreationFailureBeforeBindingRejectsTheStart(t *testing.T) {
 	work := newSession(t)
 	execution := beginOf(t, work, domain.RealizationCloud)
-	require.True(t, execution.RecordSubmission())
+	require.True(t, commandtest.Submit(execution))
 	changed, err := execution.RecordCreationAnswer(domain.CreationAnswer{Refused: true})
 	require.NoError(t, err)
 	require.True(t, changed)
@@ -86,18 +87,20 @@ func TestADefiniteCreationFailureBeforeBindingRejectsTheStart(t *testing.T) {
 	require.Empty(t, execution.Environment)
 }
 
-// A definite failure after the environment was bound changes nothing: the
-// bound environment's disappearance is observed as its loss instead.
+// A definite failure after the environment was bound changes nothing but the
+// answer itself: the bound environment's disappearance is observed as its
+// loss instead.
 func TestADefiniteCreationFailureAfterBindingIsObservedAsLoss(t *testing.T) {
 	work := newSession(t)
 	execution := beginOf(t, work, domain.RealizationCloud)
-	require.True(t, execution.RecordSubmission())
+	require.True(t, commandtest.Submit(execution))
 	decide(t, execution, domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "env-1"}}}, execution.Desk.SeatedAt)
 	require.Equal(t, "env-1", execution.Environment, "the observed environment is bound before any answer")
 
 	changed, err := execution.RecordCreationAnswer(domain.CreationAnswer{Refused: true})
 	require.NoError(t, err)
-	require.False(t, changed)
+	require.True(t, changed, "the creation is answered")
+	require.Equal(t, "env-1", execution.Environment)
 	require.False(t, execution.Outcome.Rejected)
 	require.Empty(t, executionEvents(execution))
 
@@ -111,14 +114,14 @@ func TestADefiniteCreationFailureAfterBindingIsObservedAsLoss(t *testing.T) {
 // produced nothing fails at its deadline and is then abandoned.
 func TestALostCreationAnswerLeavesObservationAndTheDeadlineToDecide(t *testing.T) {
 	observed := beginOf(t, newSession(t), domain.RealizationCloud)
-	require.True(t, observed.RecordSubmission())
+	require.True(t, commandtest.Submit(observed))
 	require.Empty(t, decide(t, observed, domain.EnvironmentObservation{}, observed.Desk.SeatedAt).Steps, "an unanswered creation submits nothing again")
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, kinds(decide(t, observed, runningEnvironment("env-1"), observed.Desk.SeatedAt)))
 	require.Equal(t, "env-1", observed.Environment)
 
 	work := newSession(t)
 	absent := beginOf(t, work, domain.RealizationCloud)
-	require.True(t, absent.RecordSubmission())
+	require.True(t, commandtest.Submit(absent))
 	deadline := absent.StartupDeadlineAt()
 	require.False(t, decide(t, absent, domain.EnvironmentObservation{}, deadline.Add(-time.Second)).Changed)
 	require.True(t, decide(t, absent, domain.EnvironmentObservation{}, deadline.Add(time.Hour)).Changed)
@@ -265,7 +268,7 @@ func TestReleaseIsConfirmedOnlyWithoutEnvironmentsAndAfterTheDeskLeft(t *testing
 func TestARetiredExecutionWithoutEnvironmentsIsReleasedOnceItsDeskLeft(t *testing.T) {
 	work := newSession(t)
 	execution := beginOf(t, work, domain.RealizationCloud)
-	require.True(t, execution.RecordSubmission())
+	require.True(t, commandtest.Submit(execution))
 	_, err := execution.RecordCreationAnswer(domain.CreationAnswer{Refused: true})
 	require.NoError(t, err)
 	for _, r := range execution.Reports() {

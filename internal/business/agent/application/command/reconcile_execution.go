@@ -16,16 +16,22 @@ type ReconcileExecutionHandler struct {
 	now func() time.Time
 	// lease is how the platform is configured to lease Cloud environments,
 	// supplied to each decision.
-	lease        domain.LeaseTerms
-	executions   domain.AgentExecutionRepository
-	environments ExecutionEnvironmentPort
-	harness      DispatcherPort
-	computers    ComputerPort
-	mounts       StoragePort
+	lease domain.LeaseTerms
+	// creationWaits are how long a submitted creation can still produce an
+	// environment on each realization, fixing each submission's creation
+	// deadline.
+	creationWaits domain.CreationWaits
+	executions    domain.AgentExecutionRepository
+	environments  ExecutionEnvironmentPort
+	harness       DispatcherPort
+	computers     ComputerPort
+	// supplies obtains what the environment steps hand the environment from
+	// Storage and Marketplace.
+	supplies *EnvironmentSupplies
 }
 
-func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, mounts StoragePort) *ReconcileExecutionHandler {
-	return &ReconcileExecutionHandler{now: now, lease: lease, executions: executions, environments: environments, harness: harness, computers: computers, mounts: mounts}
+func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, creationWaits domain.CreationWaits, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, supplies *EnvironmentSupplies) *ReconcileExecutionHandler {
+	return &ReconcileExecutionHandler{now: now, lease: lease, creationWaits: creationWaits, executions: executions, environments: environments, harness: harness, computers: computers, supplies: supplies}
 }
 
 // reconcileRounds bounds the decisions one reconciliation makes: after a step

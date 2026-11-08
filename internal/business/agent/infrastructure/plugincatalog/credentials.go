@@ -5,7 +5,6 @@ import (
 	"time"
 
 	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 )
 
@@ -13,7 +12,7 @@ var _ command.MarketplacePort = (*Client)(nil)
 
 func (c *Client) SupplyRepositoryCredential(ctx context.Context, input command.RepositoryCredentialRequest) (command.RepositoryCredentialMaterial, error) {
 	if c.credentialToken == "" {
-		return command.RepositoryCredentialMaterial{}, application.ErrRepositoryAuthorizationUnavailable
+		return command.RepositoryCredentialMaterial{}, command.ErrRepositoryAuthorizationUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

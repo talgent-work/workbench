@@ -41,10 +41,10 @@ func NewRecovery(app *Application, enqueuer taskqueue.Enqueuer, executions domai
 	return &Recovery{app: app, enqueuer: enqueuer, executions: executions, lookups: lookups, reconciliation: reconciliation, storage: storage, reconnection: reconnection}
 }
 
-// SendWorkspaceReclamation delivers a queued Workspace Reclamation Request
-// through Storage's contract.
-func (r *Recovery) SendWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error {
-	return r.storage.RequestWorkspaceReclamation(ctx, workID, workspaceReference)
+// SendWorkReclamation delivers a queued Work Reclamation Request through
+// Storage's contract, naming only the Work.
+func (r *Recovery) SendWorkReclamation(ctx context.Context, workID string) error {
+	return r.storage.RequestWorkReclamation(ctx, workID)
 }
 
 const preparationAttemptTimeout = domain.StartupDeadline + time.Minute
@@ -163,16 +163,17 @@ func (r *Recovery) CredentialChanged(ctx context.Context, authorizationID string
 	return errors.Join(failures...)
 }
 
-// InputsChanged follows Storage's fact that a file in owner's File Space
-// changed: every Work on a Managed Computer whose input source is that space
-// receives its current inputs from its execution's reconciliation, which this
-// wakes. A Cloud Work mounts its inputs and needs nothing. Repeated or
-// reordered facts lead to the same sync of the current files.
-func (r *Recovery) InputsChanged(ctx context.Context, owner string) error {
-	if strings.TrimSpace(owner) == "" {
+// InputsChanged follows Storage's fact that a file in a Directory changed
+// (Sync changed inputs): every Work on a Managed Computer whose located inputs
+// are that Directory receives its current inputs from its execution's
+// reconciliation, which this wakes. A Cloud Work mounts its inputs and needs
+// nothing. Repeated or reordered facts lead to the same sync of the current
+// files.
+func (r *Recovery) InputsChanged(ctx context.Context, directory domain.Directory) error {
+	if !directory.Present() {
 		return domain.ErrInvalidWork
 	}
-	ids, err := r.lookups.ListExecutionsReadingInputs(ctx, owner)
+	ids, err := r.lookups.ListExecutionsReadingInputs(ctx, directory)
 	if err != nil {
 		return err
 	}

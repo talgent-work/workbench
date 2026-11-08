@@ -27,7 +27,7 @@ func TestManagedSubmissionWaitsForTheMachine(t *testing.T) {
 	require.ErrorIs(t, f.steps.handler.RunLongStep(ctx, begun.ID), errCreationUnresolved, "the machine away answers nothing yet")
 	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
-	require.True(t, record.Submitted)
+	require.True(t, record.submitted())
 	require.Empty(t, record.SandboxID, "an unreachable machine opened nothing")
 	require.False(t, record.PreparationRecovering, "a machine away is waited for, not a failure")
 

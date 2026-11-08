@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 )
 
 // A Managed Work on a Model Configuration gets its key and its Gateway
@@ -23,8 +26,6 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
 	input.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
-	input.InputSource = domain.WorkInputSource{Reference: "file-space/case-1", SpaceToken: "space-token"}
-	f.inputs.owners = map[string]string{"file-space/case-1": "case-credentials"}
 	record := f.launch(t, f.begin(t, input).ID)
 	require.True(t, record.CredentialsDelivered)
 	require.Equal(t, "harness-handle", record.ProcessID)
@@ -60,7 +61,7 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	require.True(t, strings.Contains(record.LaunchCommand, "${TALGENT_PROXY_URL}/mcp"), "the Talgent Connector goes through the local proxy")
 
 	// A rotated key reaches the running Work.
-	rotated, err := NewModelCatalog([]ModelTemplate{fixtureModels().Provided()[0].Template}, []ModelConfiguration{{ID: "default", Name: "default", Template: "fixture-template", APIKey: "rotated-key"}})
+	rotated, err := platformcatalog.NewCatalog([]command.ModelTemplate{fixtureModels().ProvidedModels()[0].Template}, []command.ModelConfiguration{{ID: "default", Name: "default", Template: "fixture-template", APIKey: "rotated-key"}})
 	require.NoError(t, err)
 	f.provisioning.managed.models = rotated
 	authority, err := f.provisioning.authority(record)
@@ -109,8 +110,8 @@ func TestManagedFirstDeliveryNeedsTheModelConfigurationsKey(t *testing.T) {
 	// The environment is created, as the reconciliation's submission does,
 	// while the Model Configuration is still provided.
 	run := current(t, f.steps, begun.ID)
-	require.NoError(t, f.steps.environment.PrepareCreation(ctx, run, domain.SandboxMounts{}))
-	require.True(t, run.RecordSubmission())
+	require.NoError(t, f.steps.environment.PrepareCreation(ctx, run, command.CreationSupply{}))
+	require.True(t, commandtest.Submit(run))
 	require.NoError(t, f.steps.executions.Save(ctx, run))
 	run = current(t, f.steps, begun.ID)
 	answer, err := f.steps.environment.SubmitCreation(ctx, run)
@@ -118,7 +119,7 @@ func TestManagedFirstDeliveryNeedsTheModelConfigurationsKey(t *testing.T) {
 	_, err = run.RecordCreationAnswer(answer)
 	require.NoError(t, err)
 	require.NoError(t, f.steps.executions.Save(ctx, run))
-	withdrawn, err := NewModelCatalog([]ModelTemplate{fixtureModels().Provided()[0].Template}, []ModelConfiguration{{ID: "other", Name: "other", Template: "fixture-template", APIKey: "other-key"}})
+	withdrawn, err := platformcatalog.NewCatalog([]command.ModelTemplate{fixtureModels().ProvidedModels()[0].Template}, []command.ModelConfiguration{{ID: "other", Name: "other", Template: "fixture-template", APIKey: "other-key"}})
 	require.NoError(t, err)
 	f.provisioning.managed.models = withdrawn
 	long, err := f.steps.handler.Reconcile(ctx, begun.ID)

@@ -74,8 +74,8 @@ func (l executionLookups) ListExecutionsUsingAuthorization(_ context.Context, au
 	return l.using[authorizationID], nil
 }
 
-func (l executionLookups) ListExecutionsReadingInputs(_ context.Context, owner string) ([]string, error) {
-	return l.inputs[owner], nil
+func (l executionLookups) ListExecutionsReadingInputs(_ context.Context, directory domain.Directory) ([]string, error) {
+	return l.inputs[directory.Name], nil
 }
 
 // recoveryFixture is a Recovery over in-memory executions, their environment
@@ -89,7 +89,7 @@ type recoveryFixture struct {
 
 func newRecoveryFixture(app *application.Application, lookups executionLookups, storage command.StoragePort) *recoveryFixture {
 	f := &recoveryFixture{executions: &commandtest.Executions{}, environment: &commandtest.Environment{}, enqueuer: &recordingEnqueuer{}}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, nil)
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, commandtest.Supplies(&commandtest.Storage{}))
 	f.recovery = application.NewRecovery(app, f.enqueuer, f.executions, lookups, reconciliation, storage, nil)
 	return f
 }
@@ -99,7 +99,7 @@ func newRecoveryFixture(app *application.Application, lookups executionLookups, 
 func (f *recoveryFixture) execution(t *testing.T, workID string, realization domain.ExecutionRealization, advance func(*domain.AgentExecution)) string {
 	t.Helper()
 	admitted := domain.WorkStartAdmitted{WorkID: workID, StartAdmittedAt: time.Now().Add(-time.Minute), DeskID: "desk-" + workID}
-	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: domain.LaunchSpecification{WorkID: workID, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}}, Realization: realization})
+	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: domain.LaunchSpecification{WorkID: workID, RepresentedPerson: "owner", AgentHarness: "claude-code"}, Realization: realization})
 	require.NoError(t, err)
 	if advance != nil {
 		advance(execution)
@@ -112,7 +112,7 @@ func (f *recoveryFixture) execution(t *testing.T, workID string, realization dom
 // credentials delivered.
 func bound(t *testing.T) func(*domain.AgentExecution) {
 	return func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 		require.True(t, execution.RecordCredentialDelivery(domain.CredentialDelivery{}))
@@ -273,7 +273,7 @@ func TestALongStepHoldsBackNoShortStep(t *testing.T) {
 	}
 	managed := f.execution(t, "work-1", domain.RealizationManaged, bound(t))
 	other := f.execution(t, "work-2", domain.RealizationCloud, func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 	})
@@ -360,15 +360,15 @@ func TestCredentialChangeReachesTheReconciliationOfItsWorks(t *testing.T) {
 // every Managed Work reading it, which syncs its inputs.
 func TestInputChangeReachesTheReconciliationOfItsManagedWorks(t *testing.T) {
 	inputs := map[string][]string{}
-	f := newRecoveryFixture(&application.Application{}, executionLookups{inputs: inputs}, nil)
+	f := newRecoveryFixture(&application.Application{}, executionLookups{inputs: inputs}, &commandtest.Storage{})
 	managed := f.execution(t, "work-1", domain.RealizationManaged, bound(t))
 	cloud := f.execution(t, "work-2", domain.RealizationCloud, bound(t))
 	inputs["owner-1"] = []string{managed, cloud}
-	require.NoError(t, f.recovery.InputsChanged(context.Background(), "owner-1"))
+	require.NoError(t, f.recovery.InputsChanged(context.Background(), domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "w"}}, Name: "owner-1"}))
 	require.Equal(t, []string{managed}, f.enqueuer.reconciliations(t))
-	require.NoError(t, f.recovery.InputsChanged(context.Background(), "owner-unread"))
+	require.NoError(t, f.recovery.InputsChanged(context.Background(), domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "w"}}, Name: "owner-unread"}))
 	require.Len(t, f.enqueuer.keys, 1)
-	require.Error(t, f.recovery.InputsChanged(context.Background(), " "))
+	require.Error(t, f.recovery.InputsChanged(context.Background(), domain.Directory{}))
 
 	f.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}}}
 	require.NoError(t, f.recovery.ReconcileExecution(context.Background(), managed))
@@ -376,21 +376,11 @@ func TestInputChangeReachesTheReconciliationOfItsManagedWorks(t *testing.T) {
 	require.Zero(t, f.environment.Delivered, "an input change delivers no credentials")
 }
 
-type reclamationRecorder struct {
-	command.StoragePort
-	sent []string
-}
-
-func (r *reclamationRecorder) RequestWorkspaceReclamation(_ context.Context, workID, reference string) error {
-	r.sent = append(r.sent, workID+"/"+reference)
-	return nil
-}
-
 // Delivering a queued reclamation task sends exactly its request through
-// Storage's contract.
-func TestQueuedWorkspaceReclamationIsSentToStorage(t *testing.T) {
-	storage := &reclamationRecorder{}
+// Storage's contract, naming only the Work.
+func TestQueuedWorkReclamationIsSentToStorage(t *testing.T) {
+	storage := &commandtest.Storage{}
 	f := newRecoveryFixture(&application.Application{}, executionLookups{}, storage)
-	require.NoError(t, f.recovery.SendWorkspaceReclamation(context.Background(), "work-1", "workspace-1"))
-	require.Equal(t, []string{"work-1/workspace-1"}, storage.sent)
+	require.NoError(t, f.recovery.SendWorkReclamation(context.Background(), "work-1"))
+	require.Equal(t, []string{"work-1"}, storage.Reclaimed)
 }

@@ -1,0 +1,76 @@
+package taskprocessor
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	"github.com/go-jimu/components/taskqueue"
+
+	"github.com/talgent-work/workbench/internal/business/storage/application"
+	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"
+	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
+)
+
+// ContentRemoval is the use case the removal task delegates to.
+type ContentRemoval interface {
+	RemoveReclaimedContent(ctx context.Context, removal applicationtask.RemoveReclaimedContent) error
+}
+
+// RemoveReclaimedContentProcessor removes one reclaimed Directory's content.
+// A publication still copying from it retries the removal after the lane's
+// retry delay without counting as a failure; any other failure retries too,
+// until the content is removed.
+type RemoveReclaimedContentProcessor struct {
+	app    ContentRemoval
+	logger *slog.Logger
+}
+
+var _ taskqueue.Processor = (*RemoveReclaimedContentProcessor)(nil)
+
+func NewRemoveReclaimedContentProcessor(app ContentRemoval, logger *slog.Logger) *RemoveReclaimedContentProcessor {
+	return &RemoveReclaimedContentProcessor{app: app, logger: logger}
+}
+
+func (*RemoveReclaimedContentProcessor) TaskType() taskqueue.TaskType {
+	return applicationtask.RemoveReclaimedContentType
+}
+
+func (p *RemoveReclaimedContentProcessor) Process(ctx context.Context, queued taskqueue.Task) error {
+	removal, err := applicationtask.ParseRemoveReclaimedContent(queued.Payload())
+	if err != nil {
+		p.logger.ErrorContext(ctx, "content removal task is unreadable", slog.Any("error", err))
+		return taskqueue.ErrSkipRetry
+	}
+	err = p.app.RemoveReclaimedContent(ctx, removal)
+	if errors.Is(err, application.ErrPublicationInProgress) {
+		return fmt.Errorf("%w: %w", pkgtaskqueue.ErrRetryLater, err)
+	}
+	return err
+}
+
+// PreviewLapse is the use case the lapse task delegates to.
+type PreviewLapse interface {
+	LapsePreviewCopies(ctx context.Context) error
+}
+
+// LapsePreviewCopiesProcessor removes lapsed Preview Copies; a failed run is
+// replaced by the next hour's.
+type LapsePreviewCopiesProcessor struct {
+	app PreviewLapse
+}
+
+var _ taskqueue.Processor = (*LapsePreviewCopiesProcessor)(nil)
+
+func NewLapsePreviewCopiesProcessor(app PreviewLapse) *LapsePreviewCopiesProcessor {
+	return &LapsePreviewCopiesProcessor{app: app}
+}
+
+func (*LapsePreviewCopiesProcessor) TaskType() taskqueue.TaskType {
+	return applicationtask.LapsePreviewCopiesType
+}
+
+func (p *LapsePreviewCopiesProcessor) Process(ctx context.Context, _ taskqueue.Task) error {
+	return p.app.LapsePreviewCopies(ctx)
+}

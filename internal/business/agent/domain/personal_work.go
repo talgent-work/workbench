@@ -2,7 +2,6 @@ package domain
 
 import (
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -55,15 +54,6 @@ func DisplayTitleFrom(input string) string {
 	return line
 }
 
-// validatePersonalWork keeps what a Personal Work has: no read-only mount,
-// since no caller supplies one, and a display title only on it.
-func (s *AgentWork) validatePersonalWork() error {
-	if s.Personal() && len(s.ReadOnlyMounts) > 0 {
-		return fmt.Errorf("%w: a Personal Work has no read-only mount", ErrInvalidWork)
-	}
-	return validateDisplayTitle(s.DisplayTitle, s.Personal())
-}
-
 func validateDisplayTitle(title string, personal bool) error {
 	if title == "" {
 		return nil
@@ -100,8 +90,8 @@ func (s *AgentWork) ChangeDisplayTitle(definition *AgentDefinition, requester, t
 	return true, nil
 }
 
-// AdmitFileChange admits a change to a Personal Work's files, whose File
-// Space Agent opened: only its owner, and only until the Work is Closed.
+// AdmitFileChange admits a change to a Personal Work's files: only its owner,
+// and only until the Work is Closed.
 func (s *AgentWork) AdmitFileChange(definition *AgentDefinition, requester string) error {
 	if err := s.admitOwnFiles(definition, requester); err != nil {
 		return err
@@ -123,17 +113,33 @@ func (s *AgentWork) admitOwnFiles(definition *AgentDefinition, requester string)
 	if definition == nil || definition.ID != s.AgentID || !definition.IsOwner(requester) {
 		return ErrWorkFileNotAdmitted
 	}
-	if !s.Personal() || !s.InputSource.Present() {
-		return ErrWorkFilesUnavailable
+	if _, err := s.PersonalFileSpaces(); err != nil {
+		return err
 	}
 	return nil
 }
 
+// PersonalFiles are a Personal Work's own permanent File Spaces (Personal
+// File Space): its inputs, `{Work}, inputs`, and its publication target,
+// `{Work}, artifacts`.
+type PersonalFiles struct {
+	Inputs, Artifacts LocatedDirectory
+}
+
+// PersonalFileSpaces names a Personal Work's File Spaces; another Work's
+// files are its caller's.
+func (s *AgentWork) PersonalFileSpaces() (PersonalFiles, error) {
+	if !s.Personal() || s.LocatedLayout.Inputs == nil {
+		return PersonalFiles{}, ErrWorkFilesUnavailable
+	}
+	return PersonalFiles{Inputs: s.LocatedLayout.Inputs.clone(), Artifacts: s.LocatedLayout.PublicationTarget.clone()}, nil
+}
+
 // ReadableWorkFile tells whether a reader admitted to a Work reads one file of
-// the File Space in its input source. A Personal Work's space is its own, so
-// every file is readable; another Work's space is its caller's and may hold
-// that caller's other Works' files, so only the Artifacts the Work published
-// itself are readable here.
+// its File Spaces. A Personal Work's spaces are its own, so every file is
+// readable; another Work publishes into its Subject's File Space, which may
+// hold that Subject's other Works' files, so only the Artifacts the Work
+// published itself are readable here.
 func ReadableWorkFile(workID string, personal, artifact bool, publishedBy string) bool {
 	return personal || (artifact && publishedBy == workID)
 }
@@ -142,14 +148,7 @@ func ReadableWorkFile(workID string, personal, artifact bool, publishedBy string
 // definition or a Work Share holder, who reads the files ReadableWorkFile
 // allows.
 func (s *AgentWork) AdmitFileReader(definition *AgentDefinition, reader string) (ReadBasis, error) {
-	basis, err := s.fileReadBasis(definition, reader)
-	if err != nil {
-		return "", err
-	}
-	if !s.InputSource.Present() {
-		return "", ErrWorkFilesUnavailable
-	}
-	return basis, nil
+	return s.fileReadBasis(definition, reader)
 }
 
 func (s *AgentWork) fileReadBasis(definition *AgentDefinition, reader string) (ReadBasis, error) {

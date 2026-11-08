@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
@@ -76,17 +77,13 @@ func (cloudEnvironment) ownership(record executionRecord) (SandboxOwner, sdk.Cre
 	return owner, spec, nil
 }
 
-// claim freezes the Work's repository authorization with the specification,
-// before the creation is submitted.
-func (c cloudEnvironment) claim(ctx context.Context, record executionRecord) ([]byte, error) {
+// claim freezes the Work's repository authorization, as Application
+// supplied it, with the specification, before the creation is submitted.
+func (c cloudEnvironment) claim(record executionRecord, supply command.CreationSupply) ([]byte, error) {
 	if _, _, err := c.sandboxSpec(record); err != nil {
 		return nil, err
 	}
-	request, err := decodeStartRequest(record.RequestJSON)
-	if err != nil {
-		return nil, err
-	}
-	return c.credentials.plan(ctx, request.HomeBinding.OwnerID, record.SessionID)
+	return claim(supply)
 }
 
 func (c cloudEnvironment) create(ctx context.Context, record executionRecord) (string, error) {
@@ -94,12 +91,15 @@ func (c cloudEnvironment) create(ctx context.Context, record executionRecord) (s
 	if err != nil {
 		return "", err
 	}
-	return c.sandboxes.submit(ctx, owner, spec)
+	return c.sandboxes.submit(ctx, owner, spec, fromMillis(record.CreationDeadline))
 }
 
 // observe lists the sandboxes the server shows with the execution's
 // ownership. The list may not show a sandbox yet, so the bound one is
-// confirmed by its own identity: present exactly while a GET finds it.
+// confirmed by its own identity: present exactly while a GET finds it. A Pod
+// carrying the execution's ownership whose sandbox a GET no longer finds is an
+// ending environment: deleted, yet still running (Ending environment); one
+// whose sandbox the list merely did not show yet is that sandbox.
 func (c cloudEnvironment) observe(ctx context.Context, record executionRecord, _ bool) (environmentView, error) {
 	owner, spec, err := c.ownership(record)
 	if err != nil {
@@ -115,18 +115,31 @@ func (c cloudEnvironment) observe(ctx context.Context, record executionRecord, _
 			view.environments = append(view.environments, domain.ObservedEnvironment{ID: info.ID, Running: info.Status.State == sdk.StateRunning, LeaseExpiresAt: leaseExpiry(&info)})
 		}
 	}
-	if record.SandboxID == "" {
-		return view, nil
+	if record.SandboxID != "" {
+		bound, err := c.sandboxes.inspect(ctx, owner, record.SandboxID)
+		switch {
+		case errors.Is(err, errSandboxAbsent):
+		case err != nil:
+			return environmentView{}, err
+		default:
+			view.environments = append([]domain.ObservedEnvironment{{ID: record.SandboxID, Running: bound.running, LeaseExpiresAt: bound.expiresAt}}, view.environments...)
+			view.endpoint = bound.endpoint
+		}
 	}
-	bound, err := c.sandboxes.inspect(ctx, owner, record.SandboxID)
-	if errors.Is(err, errSandboxAbsent) {
-		return view, nil
-	}
+	running, err := c.sandboxes.pods.runningSandboxes(ctx, owner)
 	if err != nil {
 		return environmentView{}, err
 	}
-	view.environments = append([]domain.ObservedEnvironment{{ID: record.SandboxID, Running: bound.running, LeaseExpiresAt: bound.expiresAt}}, view.environments...)
-	view.endpoint = bound.endpoint
+	for _, id := range running {
+		if slices.ContainsFunc(view.environments, func(e domain.ObservedEnvironment) bool { return e.ID == id }) {
+			continue
+		}
+		observed, err := c.sandboxes.podSandbox(ctx, owner, id)
+		if err != nil {
+			return environmentView{}, err
+		}
+		view.environments = append(view.environments, observed)
+	}
 	return view, nil
 }
 
@@ -174,7 +187,7 @@ func (cloudEnvironment) workCredential(record executionRecord) (string, error) {
 	return spec.Env[workCredentialEnv], nil
 }
 
-func (c cloudEnvironment) deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
+func (c cloudEnvironment) deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
 	admitted, err := decodeStartRequest(record.RequestJSON)
 	if err != nil {
 		return deliveredCredentials{}, oops.With("operation", "decode_native_request").Wrap(err)
@@ -183,7 +196,7 @@ func (c cloudEnvironment) deliver(ctx context.Context, record executionRecord, r
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
 		return deliveredCredentials{}, oops.With("operation", "decode_native_spec").Wrap(err)
 	}
-	return c.credentials.prepare(ctx, record, admitted, spec, redelivery, holding)
+	return c.credentials.prepare(ctx, record, admitted, spec, supply, redelivery, holding)
 }
 
 func (c cloudEnvironment) withdraw(ctx context.Context, record executionRecord) error {

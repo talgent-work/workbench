@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	shared "github.com/talgent-work/workbench/internal/pkg/opensandbox"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -61,7 +63,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		input.ThinkingLevel = "high"
 		stored, err := register(ctx, p, input, testMounts)
 		require.NoError(t, err)
-		require.NoError(t, p.specify(ctx, stored, testMounts), "a repeated specification keeps the admitted launch")
+		require.NoError(t, p.specify(ctx, stored, command.CreationSupply{Mounts: testMounts}), "a repeated specification keeps the admitted launch")
 		again, _, err := p.live(ctx, input.WorkID)
 		require.NoError(t, err)
 		require.Equal(t, stored.LaunchCommand, again.LaunchCommand)
@@ -108,7 +110,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		after, found, err := latestAllocation(ctx, db, input.WorkID)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.True(t, after.Submitted, "an unanswered create does not authorize another")
+		require.True(t, after.submitted(), "an unanswered create does not authorize another")
 		require.Empty(t, after.SandboxID)
 		require.Greater(t, after.UpdatedAt, before.UpdatedAt)
 	})
@@ -198,7 +200,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.NoError(t, err)
 		changed := config()
 		changed.Image = "new-image:after-restart"
-		nextProvider, err := NewSandboxes(provider.client, changed)
+		nextProvider, err := NewSandboxes(provider.client, provider.pods, changed)
 		require.NoError(t, err)
 		provisioning = newProvisioning(nextProvider, time.Now)
 		steps := reconcilerOf(t, db, provisioning)
@@ -210,7 +212,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.NoError(t, err)
 		require.True(t, found)
 		require.Equal(t, sandboxID, after.SandboxID)
-		require.True(t, after.Submitted)
+		require.True(t, after.submitted())
 		require.NoError(t, reconcile(steps, before.ID))
 		require.Equal(t, 1, fixture.creates)
 		require.ErrorIs(t, steps.executions.Save(ctx, stale), domain.ErrConcurrentModification, "a stale execution cannot overwrite the binding")
@@ -231,7 +233,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		record, found, err := latestAllocation(ctx, db, input.WorkID)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.True(t, record.Submitted)
+		require.True(t, record.submitted())
 		require.Empty(t, record.SandboxID)
 		require.NotNil(t, fixture.info, "external allocation survived failed response")
 		provisioning = newProvisioning(provider, time.Now)
@@ -256,7 +258,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		record, found, err := latestAllocation(ctx, db, input.WorkID)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.True(t, record.Submitted)
+		require.True(t, record.submitted())
 		require.True(t, record.StartRejected, "a refused create proves no compute exists")
 		rejected := current(t, steps, begun.ID)
 		require.True(t, reported(rejected, domain.ExecutionStartRejected{WorkID: input.WorkID, StartAdmittedAt: rejected.StartAdmittedAt}))
@@ -334,7 +336,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		// indistinguishable from an external request still in flight; absence
 		// is not definitive failure.
 		run := current(t, steps, begun.ID)
-		require.True(t, run.RecordSubmission())
+		require.True(t, commandtest.Submit(run))
 		require.NoError(t, steps.executions.Save(ctx, run))
 		claimed, _, err := latestAllocation(ctx, db, input.WorkID)
 		require.NoError(t, err)
@@ -344,7 +346,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		record, _, err := latestAllocation(ctx, db, input.WorkID)
 		require.NoError(t, err)
 		require.Empty(t, record.SandboxID)
-		require.True(t, record.Submitted)
+		require.True(t, record.submitted())
 		require.Equal(t, claimed.UpdatedAt, record.UpdatedAt, "empty lookup must not rewrite the execution's record")
 		require.Equal(t, claimed.Version, record.Version)
 		// A late external observation still discharges the same create.

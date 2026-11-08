@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package storage.task.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/storage/task/v1;storagetaskv1";
+
+// LapsePreviewCopiesTaskV1 asks Storage to remove every Preview Copy and
+// recorded failure older than the retention period. It runs every hour.
+message LapsePreviewCopiesTaskV1 {}

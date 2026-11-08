@@ -31,6 +31,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/userdirectory"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/workspacereading"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
@@ -82,15 +83,24 @@ var Module = fx.Module("domain.agent",
 	fx.Provide(eventhandler.NewBeginExecution, eventhandler.NewRequestProcessExit, eventhandler.NewRetireExecution, eventhandler.NewApplyExecutionReport, eventhandler.NewRecordCheckouts, eventhandler.NewConfirmComputeRelease),
 	// Storage owns every space a Work uses; the workspace reader reads a
 	// Cloud Work's Session Workspace through the same client.
-	fx.Provide(fx.Annotate(newStorageClient, fx.As(new(command.StoragePort)), fx.As(new(execution.StorageWorkspaces)), fx.As(new(execution.PreviewJudge)))),
+	fx.Provide(fx.Annotate(newStorageClient, fx.As(new(command.StoragePort)), fx.As(new(workspacereading.StorageViews)))),
+	// Application obtains what an execution's environment takes from the
+	// authorities Agent does not own and hands it to the environment.
+	fx.Provide(
+		fx.Annotate(command.NewRepositoryAccess, fx.As(fx.Self()), fx.As(new(command.RepositorySupply))),
+		fx.Annotate(command.NewServiceAccess, fx.As(fx.Self()), fx.As(new(command.ServiceSupply))),
+		command.NewEnvironmentSupplies,
+	),
 	workspaceReading,
 	fx.Invoke(subscribeEventHandlers),
 	fx.Provide(application.NewRequiredResponseReader),
 	fx.Provide(fx.Annotate(command.NewInputAcceptance, fx.As(new(command.WorkInputs)))),
+	// Agent's Published Facts go out through the deployment's publisher.
+	fx.Provide(fx.Annotate(infrastructure.NewAgentPublisher, fx.As(new(command.AgentPublisherPort))), fx.Private),
 	fx.Provide(fx.Annotate(infrastructure.NewAgentDefinitionQueryRepository, fx.As(new(query.AgentDefinitionQueryRepository)))),
 	fx.Provide(func() func() time.Time { return time.Now }, fx.Private),
 	fx.Provide(fx.Annotate(infrastructure.NewAgentDefinitionRepository, fx.As(new(domain.AgentDefinitionRepository)))),
-	fx.Provide(fx.Annotate(newCommittedWorks, fx.As(new(domain.AgentWorkRepository)))),
+	fx.Provide(fx.Annotate(newCommittedWorks, fx.As(fx.Self()), fx.As(new(domain.AgentWorkRepository)))),
 	fx.Provide(newWorkAuthorizer),
 	fx.Provide(fx.Annotate(command.NewCatalogPluginUpgrades, fx.As(new(command.PluginUpgrades)))),
 	fx.Provide(newWorkQueryRepository),
@@ -130,8 +140,6 @@ var Module = fx.Module("domain.agent",
 		query.NewGetWorkHandler,
 		query.NewVerifyWorkCredentialHandler,
 		application.NewApplication,
-		application.NewRepositoryAccess,
-		application.NewServiceAccess,
 	),
 	fx.Provide(func() func(*domain.AgentDefinition) query.AgentDefinition { return application.AssembleAgentDefinition }, fx.Private),
 	fx.Provide(func() func(*domain.AgentWork, *domain.AgentDefinition) query.AgentWork {
@@ -183,9 +191,7 @@ func RegisterPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.Person
 	connectserver.Mount(mux, server)
 }
 
-// eventSubscriptions are the handlers of Agent's domain events. Workspace
-// reclamation requests go through the recovery queues, so a composition
-// without RecoveryModule requests none.
+// eventSubscriptions are the handlers of Agent's domain events.
 type eventSubscriptions struct {
 	fx.In
 	Dispatcher  *domainevent.InMemoryDispatcher
@@ -197,10 +203,7 @@ type eventSubscriptions struct {
 	Reports     *eventhandler.ApplyExecutionReport
 	Checkouts   *eventhandler.RecordCheckouts
 	Releases    *eventhandler.ConfirmComputeRelease
-	// Reclamations is present where the recovery queue delivers each
-	// Workspace Reclamation Request.
-	Reclamations *eventhandler.WorkspaceReclamations `optional:"true"`
-	Logger       *slog.Logger
+	Logger      *slog.Logger
 }
 
 func subscribeEventHandlers(in eventSubscriptions) {
@@ -208,9 +211,6 @@ func subscribeEventHandlers(in eventSubscriptions) {
 	in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Closures))
 	for _, policy := range []domainevent.Handler{in.Begin, in.Exit, in.Retire, in.Reports, in.Checkouts, in.Releases} {
 		in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, policy))
-	}
-	if in.Reclamations != nil {
-		in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Reclamations))
 	}
 }
 

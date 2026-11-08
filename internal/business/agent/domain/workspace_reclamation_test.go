@@ -33,8 +33,7 @@ func TestReachingClosedRecordsWorkClosedOnce(t *testing.T) {
 
 	require.NoError(t, s.Close("archive", domain.ClosureFacts{}))
 	require.Equal(t, domain.WorkClosed, s.State)
-	require.Equal(t, []domain.WorkClosedEvent{{WorkID: s.ID, WorkspaceReference: "workspace-a"}}, closedEvents(s.Events.Drain()))
-	require.Equal(t, "user-home", s.HomeBinding.OwnerID)
+	require.Equal(t, []domain.WorkClosedEvent{{WorkID: s.ID, Cloud: true}}, closedEvents(s.Events.Drain()))
 	s.Events = domain.NewEventCollection()
 
 	require.NoError(t, s.Close("repeat-close", domain.ClosureFacts{}))

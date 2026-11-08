@@ -23,8 +23,8 @@ func validateStartRequest(request domain.LaunchSpecification) error {
 	if err := request.Capabilities.Validate(); err != nil {
 		return err
 	}
-	if err := request.HomeBinding.Validate(); err != nil {
-		return errors.Join(domain.ErrExecutionRequest, err)
+	if _, err := domain.AgentHarnessByID(request.AgentHarness); err != nil || request.AgentHarness == "" {
+		return errors.Join(domain.ErrExecutionRequest, domain.ErrUnknownAgentHarness)
 	}
 	if strings.TrimSpace(request.HarnessSessionReference) == "" ||
 		(request.ContextMode != domain.ContextFresh && request.ContextMode != domain.ContextContinue && request.ContextMode != domain.ContextRecover) {

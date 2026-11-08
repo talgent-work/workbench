@@ -43,11 +43,11 @@ func newWorkDefinitionFixture(t *testing.T, subjectID string) workCreationFixtur
 	t.Cleanup(func() { _ = db.Close() })
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{subjectID}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: subjectID}, HomeBinding: domain.HomeBinding{OwnerID: subjectID, Namespace: "personal"}})
+	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{subjectID}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: subjectID}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(context.Background(), definition))
 	initial := command.PrepareWorkExecution{SubjectID: subjectID, RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-342", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "保留原始工作目标"}, Selections: []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "release"}}}
-	request := command.CreateWork{StartingUserID: subjectID, RequestID: initial.RequestID, AgentID: definition.ID, SubjectID: subjectID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), InitialExecution: &initial}
+	request := command.CreateWork{StartingUserID: subjectID, RequestID: initial.RequestID, AgentID: definition.ID, SubjectID: subjectID, Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), InitialExecution: &initial}
 	return workCreationFixture{db: db, dsn: dsn, agents: agents, sessions: sessions, request: request}
 }
 
@@ -98,7 +98,7 @@ func TestARepeatedCreationReturnsTheWorkItsIdentityDerives(t *testing.T) {
 	require.True(t, held)
 	require.Equal(t, f.request.InitialExecution.Input.Text, pending.Text)
 
-	other, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Other Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
+	other, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Other Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}})
 	require.NoError(t, err)
 	require.NoError(t, f.agents.Save(ctx, other))
 	foreign := f.request
@@ -108,17 +108,16 @@ func TestARepeatedCreationReturnsTheWorkItsIdentityDerives(t *testing.T) {
 }
 
 // Works without a Subject are created one per request identity: a repeated
-// request returns its Work, another request creates another, and each keeps
-// its read-only mounts. A Work's creation is pending only until its own
+// request returns its Work, another request creates another, and each
+// locates its own inputs. A Work's creation is pending only until its own
 // initial task input is handed off.
 func TestWorksWithoutSubjectAreCreatedPerRequest(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	create := f.creation(nil, computertest.Checked(startupAuthority{}))
-	mounts := []domain.ReadOnlyMount{{Name: "reference", Reference: "space-1"}}
 	personal := func() command.CreateWork {
 		initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), Input: command.ExecutionInput{ID: uuid.NewString(), Text: "my own work"}}
-		return command.CreateWork{StartingUserID: "owner", RequestID: initial.RequestID, AgentID: f.request.AgentID, SubjectID: "owner", ProjectID: "project-1", WorkspaceReference: uuid.NewString(), ReadOnlyMounts: mounts, InitialExecution: &initial}
+		return command.CreateWork{StartingUserID: "owner", RequestID: initial.RequestID, AgentID: f.request.AgentID, SubjectID: "owner", ProjectID: "project-1", InitialExecution: &initial}
 	}
 	first, second := personal(), personal()
 	firstID, err := create.Handle(ctx, first)
@@ -133,7 +132,7 @@ func TestWorksWithoutSubjectAreCreatedPerRequest(t *testing.T) {
 	work, err := f.sessions.Get(ctx, firstID)
 	require.NoError(t, err)
 	require.False(t, work.Subject.Present())
-	require.Equal(t, mounts, work.ReadOnlyMounts)
+	require.Equal(t, []domain.OwnerFact{{Condition: domain.ConditionWork, Value: firstID}}, work.LocatedLayout.Inputs.Directory.Owner, "a Work without a Subject reads its own inputs")
 
 	holds := func(id string) bool {
 		work, err := f.sessions.Get(ctx, id)
@@ -172,7 +171,7 @@ func TestAConcurrentRepeatWithoutSubjectReturnsTheWinnersWork(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), Input: command.ExecutionInput{ID: uuid.NewString(), Text: "my own work"}}
-	request := command.CreateWork{StartingUserID: "owner", RequestID: initial.RequestID, AgentID: f.request.AgentID, SubjectID: "owner", WorkID: uuid.NewString(), WorkspaceReference: uuid.NewString(), InitialExecution: &initial}
+	request := command.CreateWork{StartingUserID: "owner", RequestID: initial.RequestID, AgentID: f.request.AgentID, SubjectID: "owner", WorkID: uuid.NewString(), InitialExecution: &initial}
 
 	var winner string
 	var err error

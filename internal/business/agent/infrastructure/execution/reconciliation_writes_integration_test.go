@@ -44,7 +44,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 		history[i].RequestJSON, err = encodeLaunch(closed)
 		require.NoError(t, err)
 		history[i].OwnershipLabel = storageKey(history[i].ID)[:48] // MySQL must derive the same label
-		history[i].Submitted = true
+		history[i].SubmittedAt = 1
 		history[i].State, history[i].Retirement = "released", "exited"
 		history[i].DeletedAt = 1
 		history[i].ReleasedAt = 2

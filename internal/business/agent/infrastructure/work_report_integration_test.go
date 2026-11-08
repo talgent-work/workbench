@@ -95,12 +95,12 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	create := command.NewCreateWorkHandler(time.Now, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
 	insertStartingWorks(t, f.db, f.request.AgentID, "owner", 104, observed.UnixMilli(), func() string { return project })
 	// Another project's Work and same-project coordinator must not enter totals.
-	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: f.request.AgentID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), WorkspaceReference: uuid.NewString()})
+	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: f.request.AgentID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString()})
 	require.NoError(t, err)
-	coordinator, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Coordinator", Purpose: "case_coordinator", UsageScope: domain.UsageScope{Kind: "project", Reference: project}, HomeBinding: domain.HomeBinding{OwnerID: project, Namespace: "project"}})
+	coordinator, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Coordinator", Purpose: "case_coordinator", UsageScope: domain.UsageScope{Kind: "project", Reference: project}})
 	require.NoError(t, err)
 	require.NoError(t, f.agents.Save(ctx, coordinator))
-	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: coordinator.ID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: project, WorkspaceReference: uuid.NewString()})
+	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: coordinator.ID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: project})
 	require.NoError(t, err)
 	observed = end
 	response, err = client.GetWorkReport(controlRequest(ctx), request)

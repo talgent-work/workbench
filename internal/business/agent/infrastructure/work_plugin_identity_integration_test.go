@@ -32,7 +32,7 @@ func TestCreationRetainsPersonalOwner(t *testing.T) {
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
-	require.Equal(t, "owner", work.HomeBinding.OwnerID)
+	require.Equal(t, "owner", work.RepresentedPerson)
 	require.Len(t, work.CapabilitySnapshot.Connectors, 1)
 	require.Equal(t, "talgent", work.CapabilitySnapshot.Connectors[0].Name)
 	require.Equal(t, "work_identity", work.CapabilitySnapshot.Connectors[0].Authentication)
@@ -53,9 +53,9 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 	require.NoError(t, err)
 	selectedID, otherID := uuid.NewString(), uuid.NewString()
 	input := domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
-		Admission:          domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
-		WorkModel:          domain.WorkModelSelection{ConfigurationID: "fixture"},
-		WorkspaceReference: "workspace", Subject: f.request.Subject, ProjectID: f.request.ProjectID,
+		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
+		WorkModel: domain.WorkModelSelection{ConfigurationID: "fixture"},
+		Subject:   f.request.Subject, ProjectID: f.request.ProjectID,
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner", Available: []domain.PersonalAuthorization{
 			{OwnerUserID: "owner", AuthorizationID: selectedID, Provider: "github", Service: "github"},
 			{OwnerUserID: "owner", AuthorizationID: otherID, Provider: "other", Service: "other"},

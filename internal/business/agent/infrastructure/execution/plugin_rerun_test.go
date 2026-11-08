@@ -30,7 +30,7 @@ func TestPreparationRerunOfTheSameAllocationDoesNotInstallAgain(t *testing.T) {
 		launch, err := config.prepare(sandboxLayout, input, SandboxOwner{WorkID: input.WorkID, ID: allocation}, "")
 		require.NoError(t, err)
 		process := exec.Command("sh", "-c", launch.PreparationCommand)
-		process.Dir, process.Env = workspace, append(os.Environ(), "HOME="+filepath.Join(dir, "home"))
+		process.Dir, process.Env = workspace, append(os.Environ(), "HOME="+filepath.Join(dir, "home"), "CLAUDE_CONFIG_DIR="+filepath.Join(dir, "home", ".claude"))
 		output, err := process.Output()
 		require.NoError(t, err)
 		recorded, _ := os.ReadFile(calls)

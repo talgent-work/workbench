@@ -52,10 +52,25 @@ type ExecutionDesk struct {
 	LeftAt   time.Time
 }
 
-// CreationSubmission is whether the environment's creation was submitted; a
-// definite refusal is the start's rejection (ExecutionOutcome.Rejected).
+// CreationSubmission is when its environment's creation was submitted, its
+// creation deadline, and whether a definite answer arrived; a definite refusal
+// is the start's rejection (ExecutionOutcome.Rejected).
 type CreationSubmission struct {
-	Submitted bool
+	SubmittedAt time.Time
+	// Deadline is the submission time plus the configured creation wait, after
+	// which an unanswered creation can no longer produce an environment
+	// (Creation deadline).
+	Deadline time.Time
+	Answered bool
+}
+
+// Submitted reports whether its creation was submitted.
+func (c CreationSubmission) Submitted() bool { return !c.SubmittedAt.IsZero() }
+
+// Outstanding reports a submitted creation without an answer whose deadline
+// has not passed (Outstanding creation).
+func (c CreationSubmission) Outstanding(now time.Time) bool {
+	return c.Submitted() && !c.Answered && now.Before(c.Deadline)
 }
 
 // LaunchedProcess is the Harness process launched into the bound environment:
@@ -351,20 +366,27 @@ func (e *AgentExecution) RecordDeskLeft(now time.Time) bool {
 	return true
 }
 
-// ConfirmRelease confirms that it owns no environment, as observed now, and
-// left its Desk, transitioning from Retired to Released without a recorded
-// environment identity (Release confirmation); its Work's compute release is
-// then confirmed (Released compute).
+// ConfirmRelease confirms that it owns no environment, as observed now, not
+// even one still ending (Ending environment), left its Desk and has no
+// outstanding creation (Outstanding creation), transitioning from Retired to
+// Released without a recorded environment identity (Release confirmation);
+// its Work's compute release is then confirmed (Released compute).
 func (e *AgentExecution) ConfirmRelease(observation EnvironmentObservation, now time.Time) (bool, error) {
 	if now.IsZero() {
 		return false, ErrInvalidExecution
 	}
-	if e.State != ExecutionRetired || e.Desk.LeftAt.IsZero() || len(observation.Environments) > 0 {
+	if e.State != ExecutionRetired || e.Desk.LeftAt.IsZero() || !e.computeEnded(observation, now) {
 		return false, nil
 	}
 	e.State, e.ReleasedAt = ExecutionReleased, now.UTC()
 	e.record(ExecutionReleasedEvent{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt})
 	return true, nil
+}
+
+// computeEnded reports that it owns no environment as observed now, not even
+// one still ending, and no creation of its is outstanding.
+func (e *AgentExecution) computeEnded(observation EnvironmentObservation, now time.Time) bool {
+	return len(observation.Environments) == 0 && !e.Creation.Outstanding(now)
 }
 
 func (e *AgentExecution) record(event Event) {

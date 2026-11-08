@@ -61,10 +61,10 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	newCreation := func(requestID string) command.CreateWork {
-		agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.Must(uuid.NewV7()).String()}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Run"}})
+		agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.Must(uuid.NewV7()).String()}, Capabilities: domain.CapabilityConfiguration{Prompt: "Run"}})
 		require.NoError(t, err)
 		require.NoError(t, agents.Save(ctx, agent))
-		return command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: requestID, SubjectID: "owner", AgentID: agent.ID, WorkspaceReference: "workspace"}
+		return command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: requestID, SubjectID: "owner", AgentID: agent.ID}
 	}
 	requestID := uuid.Must(uuid.NewV7()).String()
 	creations := []command.CreateWork{newCreation(requestID), newCreation(requestID)}
@@ -118,7 +118,6 @@ func TestConcurrentIndependentDefinitionsAdmitTheirFirstWorks(t *testing.T) {
 	db, definitions, works, first := startingCreationDatabase(t)
 	second, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"second-owner"},
 		Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "second-owner"},
-		HomeBinding: domain.HomeBinding{OwnerID: "second-owner", Namespace: "personal"},
 	})
 	require.NoError(t, err)
 	require.NoError(t, definitions.Save(t.Context(), second))
@@ -135,8 +134,8 @@ func TestConcurrentIndependentDefinitionsAdmitTheirFirstWorks(t *testing.T) {
 	for _, definition := range []*domain.AgentDefinition{first, second} {
 		go func() {
 			request := creationInput(definition.ID, "first")
-			request.StartingUserID = definition.HomeBinding.OwnerID
-			request.SubjectID = definition.HomeBinding.OwnerID
+			request.StartingUserID = definition.RepresentedPerson()
+			request.SubjectID = definition.RepresentedPerson()
 			id, err := create.Handle(ctx, request)
 			results <- result{id, err}
 		}()

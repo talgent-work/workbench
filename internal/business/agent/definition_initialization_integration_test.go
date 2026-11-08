@@ -78,7 +78,6 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 			Owners:         []string{owner},
 			UsageScope:     &agentprivatev1.UsageScope{Kind: "project", Reference: projectID},
 			Purpose:        purpose,
-			HomeBinding:    &agentprivatev1.HomeBinding{OwnerId: "project/" + projectID + "/" + purpose, Namespace: purpose},
 			Capabilities:   &agentprivatev1.Capabilities{RequiredPlugins: []string{"talgent-runtime", "caller-plugin"}, StartupAgent: "caller-plugin:coordinator"},
 			VisibilityRule: &agentprivatev1.VisibilityRule{Public: true},
 		})
@@ -110,15 +109,13 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 		{UsageScope: &agentprivatev1.UsageScope{Kind: "project", Reference: "project-a"}, Purpose: "caller-defined"},
 	}
 	ids := make([]string, len(selections))
-	homes := make([]*agentprivatev1.HomeBinding, len(selections))
 	for i, selection := range selections {
-		homes[i] = &agentprivatev1.HomeBinding{OwnerId: selection.UsageScope.Reference + "/" + selection.Purpose, Namespace: "context"}
 		// A person owns its own Agent; the Project's Owner owns the others.
 		owners := []string{"owner"}
 		if selection.UsageScope.Kind == "employee" {
 			owners = []string{selection.UsageScope.Reference}
 		}
-		input := &agentprivatev1.CreateAgentDefinitionRequest{Owners: owners, AgentName: "Fixture Agent", UsageScope: selection.UsageScope, Purpose: selection.Purpose, HomeBinding: homes[i],
+		input := &agentprivatev1.CreateAgentDefinitionRequest{Owners: owners, AgentName: "Fixture Agent", UsageScope: selection.UsageScope, Purpose: selection.Purpose,
 			Capabilities: &agentprivatev1.Capabilities{Prompt: "Follow the authorized task."},
 		}
 		_, err = client.CreateAgentDefinition(ctx, input)
@@ -156,7 +153,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 			require.Equal(t, "张三 Jack's Agent", names[i])
 		}
 	}
-	createSession := &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), AgentId: ids[0], SubjectId: "alice", WorkspaceReference: "employee-workspace", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case-a"}, ProjectId: "project-a"}
+	createSession := &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), AgentId: ids[0], SubjectId: "alice", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case-a"}, ProjectId: "project-a"}
 	createSessionCtx, createSessionInfo := connect.NewClientContext(ctx)
 	createSessionInfo.RequestHeader().Set("Authorization", "Bearer control")
 	createdSession, err := client.CreateWork(createSessionCtx, createSession)
@@ -275,7 +272,6 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 		require.Equal(t, selection.Purpose, definition.Purpose)
 		require.Equal(t, names[i], definition.AgentName)
 		require.True(t, proto.Equal(selection.UsageScope, definition.UsageScope))
-		require.True(t, proto.Equal(homes[i], definition.HomeBinding))
 		require.Equal(t, "Follow the authorized task.", definition.Capabilities.Prompt)
 	}
 	rows, err := observer.QueryString("SELECT COUNT(*) AS total FROM agent_definition WHERE scope_kind='project' AND scope_ref='fresh-project'")

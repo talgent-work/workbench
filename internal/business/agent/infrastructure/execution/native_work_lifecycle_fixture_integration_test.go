@@ -28,13 +28,18 @@ import (
 // Dispatcher is a server that fails the case on any call instead of a running
 // replica holding the shared Redis.
 type nativeWorkLifecycleFixture struct {
-	db           *xorm.Engine
-	works        *infrastructure.AgentWorkRepository
-	definitions  *infrastructure.AgentDefinitionRepository
+	db          *xorm.Engine
+	works       *infrastructure.AgentWorkRepository
+	definitions *infrastructure.AgentDefinitionRepository
+	// agentID is the lifecycle owner's own definition, which every Work here
+	// is of, once the first was created.
+	agentID      string
 	provisioning *Provisioning
 	connections  *NativeConnections
 	executions   *AgentExecutionRepository
 	reconcile    *command.ReconcileExecutionHandler
+	// services supplies every delivery's service credentials.
+	services     *swappableServices
 	coordination *command.ExecutionCoordination
 	external     *lifecycleFixture
 	// readings are the processes Dispatcher reads, by Work.
@@ -76,7 +81,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	}))
 	t.Cleanup(dispatchServer.Close)
 	provider, _, external := sandboxClient(t)
-	credentials, err := NewSandboxCredentials(db, provider.client, provider.config.Models, fixtureRepositoryCredentials{}, authorizationcatalogtest.NoServices{}, http.DefaultClient, "encrypted-network")
+	credentials, err := NewSandboxCredentials(db, provider.client, provider.config.Models, http.DefaultClient, "encrypted-network")
 	require.NoError(t, err)
 	policy, err := provider.networkPolicy(ctx)
 	require.NoError(t, err)
@@ -90,9 +95,11 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	executions := NewAgentExecutionRepository(db, time.Now)
 	harness := commandtest.NewHarness()
 	computers := &cloudDesks{}
+	services := &swappableServices{current: authorizationcatalogtest.NoServices{}}
+	supplies := command.NewEnvironmentSupplies(authorizationcatalogtest.NoRepositories{}, services, directoryMounts{root: t.TempDir()})
 	return &nativeWorkLifecycleFixture{
-		db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, external: external, executions: executions, readings: readings,
-		reconcile:    command.NewReconcileExecutionHandler(time.Now, fixtureLease, executions, environment, harness, computers, directoryMounts{root: t.TempDir()}),
+		db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, external: external, executions: executions, readings: readings, services: services,
+		reconcile:    command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, executions, environment, harness, computers, supplies),
 		coordination: command.NewExecutionCoordination(time.Now, works, executions, computers, harness),
 	}
 }
@@ -131,12 +138,15 @@ func (c *cloudDesks) departures() []string {
 func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx context.Context, snapshot domain.CapabilitySnapshot, authorization domain.WorkAuthorizationInput) (*domain.AgentWork, string) {
 	t.Helper()
 	snapshot.Connectors = request().Capabilities.Connectors
-	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Native lifecycle", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "lifecycle-owner", Namespace: "personal"}})
+	if f.agentID == "" {
+		created, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", AgentName: "Native lifecycle", UsageScope: domain.UsageScope{Kind: "employee", Reference: "lifecycle-owner"}})
+		require.NoError(t, err)
+		require.NoError(t, f.definitions.Save(ctx, created))
+		f.agentID = created.ID
+	}
+	definition, err := f.definitions.Get(ctx, f.agentID)
 	require.NoError(t, err)
-	require.NoError(t, f.definitions.Save(ctx, definition))
-	definition, err = f.definitions.Get(ctx, definition.ID)
-	require.NoError(t, err)
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: uuid.NewString(), HomeBinding: definition.HomeBinding, Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-" + uuid.NewString()}, ModelConfigurationProvided: true})
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: definition.RepresentedPerson(), WorkLayout: domain.DefaultWorkLayout(), Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-" + uuid.NewString()}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	startID := uuid.NewString()
 	work.DefinitionVersion = definition.Version
@@ -169,4 +179,12 @@ func (f *nativeWorkLifecycleFixture) run(t *testing.T, ctx context.Context, work
 	run, err = f.executions.Get(ctx, run.ID)
 	require.NoError(t, err)
 	return run
+}
+
+// swappableServices is the service credential supply a scenario replaces,
+// which every delivery of the fixture asks.
+type swappableServices struct{ current command.ServiceSupply }
+
+func (s *swappableServices) Resolve(ctx context.Context, owner, workID string, requirements []command.ServiceRequirement) (command.ServiceAccessResult, error) {
+	return s.current.Resolve(ctx, owner, workID, requirements)
 }

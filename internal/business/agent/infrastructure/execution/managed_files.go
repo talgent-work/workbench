@@ -17,12 +17,12 @@ import (
 // relative to the Work root, which is laid out as a Cloud Work's /workspace.
 
 var (
-	// errWorkFileNotFound means the machine has no such directory or file
+	// ErrWorkFileNotFound means the machine has no such directory or file
 	// under the Work root, or the path leaves it.
-	errWorkFileNotFound = errors.New("agent: no such file in the Work's directory")
-	// errWorkFileNotRegular means a directory was read as a file, or a file
+	ErrWorkFileNotFound = errors.New("agent: no such file in the Work's directory")
+	// ErrWorkFileNotRegular means a directory was read as a file, or a file
 	// listed as a directory.
-	errWorkFileNotRegular = errors.New("agent: the path is not of the kind read")
+	ErrWorkFileNotRegular = errors.New("agent: the path is not of the kind read")
 )
 
 // machineFileKind is what an entry of the Work root is, as the machine names
@@ -141,9 +141,9 @@ func (m *ManagedComputers) readFiles(ctx context.Context, spec managedSpecificat
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
 	switch response.StatusCode {
 	case http.StatusNotFound:
-		return nil, errWorkFileNotFound
+		return nil, ErrWorkFileNotFound
 	case http.StatusBadRequest:
-		return nil, errWorkFileNotRegular
+		return nil, ErrWorkFileNotRegular
 	case http.StatusServiceUnavailable:
 		return nil, errMachineUnreachable
 	}

@@ -10,24 +10,29 @@ import (
 )
 
 // A Cloud Work's files are read from its Session Workspace in Storage, with
-// what its sandbox mounts inside it.
+// the Directories its sandbox mounts inside it at their paths relative to it.
 func TestACloudWorkIsLocatedInItsSessionWorkspace(t *testing.T) {
 	work := newSession(t)
-	work.ReadOnlyMounts = []domain.ReadOnlyMount{{Name: "guides", Reference: "space-1"}}
 
 	location, err := work.LocateWorkspace()
 	require.NoError(t, err)
 	require.False(t, location.ThroughComputer())
 	require.Equal(t, work.ID, location.WorkID)
-	require.Equal(t, "workspace-a", location.SessionWorkspace)
-	require.Equal(t, []domain.ReadOnlyMount{{Name: "guides", Reference: "space-1"}}, location.ReadOnlyMounts)
+	byWork := []domain.OwnerFact{{Condition: domain.ConditionWork, Value: work.ID}}
+	require.Equal(t, domain.WorkspaceLayout{
+		Workspace: domain.Directory{Owner: byWork, Name: "workspace"},
+		Mounts: []domain.MountedDirectory{
+			{Path: "inputs", Directory: domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:case"}}, Name: "inputs"}},
+			{Path: "knowledge", Directory: domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionProject, Value: "project"}}, Name: "knowledge"}},
+		},
+	}, location.SessionWorkspace)
 }
 
-// A Cloud Work without a Session Workspace, such as a project-scoped
-// definition's, has nothing to read.
+// A Cloud Work whose located layout mounts no Session Workspace has nothing
+// to read.
 func TestACloudWorkWithoutASessionWorkspaceHasNoWorkspace(t *testing.T) {
 	work := newSession(t)
-	work.WorkspaceReference = ""
+	work.LocatedLayout.Mounts = work.LocatedLayout.Mounts[:1]
 
 	_, err := work.LocateWorkspace()
 	require.ErrorIs(t, err, domain.ErrWorkspaceNotCreated)

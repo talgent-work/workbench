@@ -12,54 +12,45 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
-// OpenFileSpace opens the File Space Agent names by a Personal Work's
-// identity; other Works' spaces Agent knows only by their input sources.
-func (c *Client) OpenFileSpace(ctx context.Context, owner string) (domain.WorkInputSource, error) {
-	response, err := c.files.OpenFileSpace(authorized(ctx, c.token), &storageprivatev1.OpenFileSpaceRequest{Owner: owner})
+// OpenDirectory opens a located Directory for its Space Token.
+func (c *Client) OpenDirectory(ctx context.Context, directory domain.LocatedDirectory) (string, error) {
+	located, err := locatedToProto(directory)
 	if err != nil {
-		return domain.WorkInputSource{}, oops.With("operation", "storage.open_file_space").Wrap(err)
+		return "", err
 	}
-	return domain.WorkInputSource{Reference: response.GetInputSource(), SpaceToken: response.GetSpaceToken()}, nil
+	response, err := c.files.OpenDirectory(authorized(ctx, c.token), &storageprivatev1.OpenDirectoryRequest{Directory: located})
+	if err != nil {
+		return "", oops.With("operation", "storage.open_directory").Wrap(err)
+	}
+	return response.GetSpaceToken(), nil
 }
 
-func (c *Client) ResolveOwners(ctx context.Context, inputSources []string) ([]string, error) {
-	response, err := c.files.ResolveInputSources(authorized(ctx, c.token), &storageprivatev1.ResolveInputSourcesRequest{InputSources: inputSources})
-	if err != nil {
-		return nil, oops.With("operation", "storage.resolve_input_sources").Wrap(err)
-	}
-	resolved := response.GetInputSources()
-	if len(resolved) != len(inputSources) {
-		return nil, oops.With("operation", "storage.resolve_input_sources").Errorf("storage answered %d of %d input sources", len(resolved), len(inputSources))
-	}
-	owners := make([]string, len(resolved))
-	for i, source := range resolved {
-		owners[i] = source.GetOwner()
-	}
-	return owners, nil
-}
-
-func (c *Client) ListFiles(ctx context.Context, owner string) ([]command.SpaceFile, error) {
-	response, err := c.files.ListFiles(authorized(ctx, c.token), &storageprivatev1.ListFilesRequest{Owner: owner})
+func (c *Client) ListFiles(ctx context.Context, directory domain.Directory) ([]command.SpaceFile, error) {
+	response, err := c.files.ListFiles(authorized(ctx, c.token), &storageprivatev1.ListFilesRequest{Directory: directoryToProto(directory)})
 	if err != nil {
 		return nil, fileError("storage.list_files", err)
 	}
 	return filesFromProto(response.GetFiles()), nil
 }
 
-func (c *Client) ListOwnerFiles(ctx context.Context, owners []string) ([]command.SpaceFile, error) {
-	if len(owners) == 0 {
+func (c *Client) ListDirectoryFiles(ctx context.Context, directories []domain.Directory) ([]command.SpaceFile, error) {
+	if len(directories) == 0 {
 		return nil, nil
 	}
-	response, err := c.files.ListOwnerFiles(authorized(ctx, c.token), &storageprivatev1.ListOwnerFilesRequest{Owners: owners})
+	request := &storageprivatev1.ListDirectoryFilesRequest{}
+	for _, directory := range directories {
+		request.Directories = append(request.Directories, directoryToProto(directory))
+	}
+	response, err := c.files.ListDirectoryFiles(authorized(ctx, c.token), request)
 	if err != nil {
-		return nil, fileError("storage.list_owner_files", err)
+		return nil, fileError("storage.list_directory_files", err)
 	}
 	return filesFromProto(response.GetFiles()), nil
 }
 
-func (c *Client) IssueAttachmentUpload(ctx context.Context, space domain.WorkInputSource, owner, name string, replace bool, contentType, uploader string) (command.FileLink, error) {
-	response, err := c.files.IssueAttachmentUpload(authorized(ctx, c.token), &storageprivatev1.IssueAttachmentUploadRequest{
-		Owner: owner, SpaceToken: space.SpaceToken, Name: name, Replace: replace, UploaderUserId: uploader, ContentType: contentType,
+func (c *Client) IssueUpload(ctx context.Context, position command.FilePosition, spaceToken string, replace bool, contentType, uploader string) (command.FileLink, error) {
+	response, err := c.files.IssueUpload(authorized(ctx, c.token), &storageprivatev1.IssueUploadRequest{
+		Position: positionToProto(position.Directory, position.Name), SpaceToken: spaceToken, Replace: replace, UploaderUserId: uploader, ContentType: contentType,
 	})
 	if err != nil {
 		return command.FileLink{}, fileError("storage.upload", err)
@@ -67,51 +58,51 @@ func (c *Client) IssueAttachmentUpload(ctx context.Context, space domain.WorkInp
 	return command.FileLink{URL: response.GetUploadUrl(), ExpiresAt: response.GetExpiresAt().AsTime()}, nil
 }
 
-func (c *Client) RenameAttachment(ctx context.Context, space domain.WorkInputSource, owner, name, newName, actor string) error {
-	_, err := c.files.RenameAttachment(authorized(ctx, c.token), &storageprivatev1.RenameAttachmentRequest{Owner: owner, SpaceToken: space.SpaceToken, Name: name, NewName: newName, ActorUserId: actor})
+func (c *Client) RenameFile(ctx context.Context, position command.FilePosition, spaceToken, newName, actor string) error {
+	_, err := c.files.RenameFile(authorized(ctx, c.token), &storageprivatev1.RenameFileRequest{Position: positionToProto(position.Directory, position.Name), SpaceToken: spaceToken, NewName: newName, ActorUserId: actor})
 	return fileError("storage.rename", err)
 }
 
-func (c *Client) DeleteFile(ctx context.Context, space domain.WorkInputSource, owner string, kind command.FileKind, name, actor string) error {
-	_, err := c.files.DeleteFile(authorized(ctx, c.token), &storageprivatev1.DeleteFileRequest{Owner: owner, SpaceToken: space.SpaceToken, Kind: fileKindToProto(kind), Name: name, ActorUserId: actor})
+func (c *Client) DeleteFile(ctx context.Context, position command.FilePosition, spaceToken, actor string) error {
+	_, err := c.files.DeleteFile(authorized(ctx, c.token), &storageprivatev1.DeleteFileRequest{Position: positionToProto(position.Directory, position.Name), SpaceToken: spaceToken, ActorUserId: actor})
 	return fileError("storage.delete", err)
 }
 
-func (c *Client) IssueAccessLink(ctx context.Context, owner string, kind command.FileKind, name string, inline bool) (command.FileLink, error) {
+func (c *Client) IssueAccessLink(ctx context.Context, position command.FilePosition, inline bool) (command.FileLink, error) {
 	disposition := storageprivatev1.AccessDisposition_ACCESS_DISPOSITION_DOWNLOAD
 	if inline {
 		disposition = storageprivatev1.AccessDisposition_ACCESS_DISPOSITION_PREVIEW
 	}
-	response, err := c.files.IssueAccessLink(authorized(ctx, c.token), &storageprivatev1.IssueAccessLinkRequest{Owner: owner, Kind: fileKindToProto(kind), Name: name, Disposition: disposition})
+	response, err := c.files.IssueAccessLink(authorized(ctx, c.token), &storageprivatev1.IssueAccessLinkRequest{Position: positionToProto(position.Directory, position.Name), Disposition: disposition})
 	if err != nil {
 		return command.FileLink{}, fileError("storage.access", err)
 	}
 	return command.FileLink{URL: response.GetAccessUrl(), Path: response.GetAccessPath(), ExpiresAt: response.GetExpiresAt().AsTime()}, nil
 }
 
-func (c *Client) CreateShareLink(ctx context.Context, owner string, kind command.FileKind, name, actor string) (command.ShareLink, error) {
-	response, err := c.files.CreateShareLink(authorized(ctx, c.token), &storageprivatev1.CreateShareLinkRequest{Owner: owner, Kind: fileKindToProto(kind), Name: name, CreatedByUserId: actor})
+func (c *Client) CreateShareLink(ctx context.Context, position command.FilePosition, actor string) (command.ShareLink, error) {
+	response, err := c.files.CreateShareLink(authorized(ctx, c.token), &storageprivatev1.CreateShareLinkRequest{Position: positionToProto(position.Directory, position.Name), CreatedByUserId: actor})
 	if err != nil {
 		return command.ShareLink{}, fileError("storage.share", err)
 	}
 	return shareLinkFromProto(response.GetShareLink()), nil
 }
 
-func (c *Client) RevokeShareLinks(ctx context.Context, owner string, kind command.FileKind, name, actor string) error {
-	_, err := c.files.RevokeShareLinks(authorized(ctx, c.token), &storageprivatev1.RevokeShareLinksRequest{Owner: owner, Kind: fileKindToProto(kind), Name: name, CreatedByUserId: actor})
+func (c *Client) RevokeShareLinks(ctx context.Context, position command.FilePosition, actor string) error {
+	_, err := c.files.RevokeShareLinks(authorized(ctx, c.token), &storageprivatev1.RevokeShareLinksRequest{Position: positionToProto(position.Directory, position.Name), CreatedByUserId: actor})
 	return fileError("storage.revoke_shares", err)
 }
 
-func (c *Client) FilePreview(ctx context.Context, owner string, kind command.FileKind, name string, render bool) (command.FilePreview, error) {
+func (c *Client) FilePreview(ctx context.Context, position command.FilePosition, render bool) (command.FilePreview, error) {
 	var preview *storageprivatev1.FilePreview
 	if render {
-		response, err := c.files.RequestFilePreview(authorized(ctx, c.token), &storageprivatev1.RequestFilePreviewRequest{Owner: owner, Kind: fileKindToProto(kind), Name: name})
+		response, err := c.files.RequestFilePreview(authorized(ctx, c.token), &storageprivatev1.RequestFilePreviewRequest{Position: positionToProto(position.Directory, position.Name)})
 		if err != nil {
 			return command.FilePreview{}, fileError("storage.request_preview", err)
 		}
 		preview = response.GetPreview()
 	} else {
-		response, err := c.files.GetFilePreview(authorized(ctx, c.token), &storageprivatev1.GetFilePreviewRequest{Owner: owner, Kind: fileKindToProto(kind), Name: name})
+		response, err := c.files.GetFilePreview(authorized(ctx, c.token), &storageprivatev1.GetFilePreviewRequest{Position: positionToProto(position.Directory, position.Name)})
 		if err != nil {
 			return command.FilePreview{}, fileError("storage.preview", err)
 		}
@@ -140,26 +131,17 @@ func fileError(operation string, err error) error {
 	return oops.With("operation", operation).Wrap(err)
 }
 
-func fileKindToProto(kind command.FileKind) storageprivatev1.FileKind {
-	switch kind {
-	case command.FileKindAttachment:
-		return storageprivatev1.FileKind_FILE_KIND_ATTACHMENT
-	case command.FileKindArtifact:
-		return storageprivatev1.FileKind_FILE_KIND_ARTIFACT
-	default:
-		return storageprivatev1.FileKind_FILE_KIND_UNSPECIFIED
-	}
-}
-
+// filesFromProto maps Storage's files; an Artifact names the Work that
+// published it, an Attachment its uploader.
 func filesFromProto(files []*storageprivatev1.File) []command.SpaceFile {
 	out := make([]command.SpaceFile, 0, len(files))
 	for _, file := range files {
 		kind := command.FileKindAttachment
-		if file.GetKind() == storageprivatev1.FileKind_FILE_KIND_ARTIFACT {
+		if file.GetWorkId() != "" {
 			kind = command.FileKindArtifact
 		}
 		mapped := command.SpaceFile{
-			Owner: file.GetOwner(), Kind: kind, Name: file.GetName(), SizeBytes: file.GetSizeBytes(), ContentType: file.GetContentType(),
+			Directory: directoryFromProto(file.GetPosition().GetDirectory()), Kind: kind, Name: file.GetPosition().GetName(), SizeBytes: file.GetSizeBytes(), ContentType: file.GetContentType(),
 			UpdatedAt: file.GetUpdatedAt().AsTime(), UploaderUserID: file.GetUploaderUserId(), WorkID: file.GetWorkId(),
 		}
 		for _, link := range file.GetShareLinks() {

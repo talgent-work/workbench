@@ -4,23 +4,22 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"mime"
-	"path"
-	"strings"
 
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
 
 // ArtifactSource is the publishing Work, the Space Token of the File Space
-// its Work was given, and what it publishes: a file of its Session Workspace,
+// it publishes into, and what it publishes: a file of its Session Workspace,
 // or, for a Work without one, the content it sent. Exactly one of Path and
 // Content is set; an empty file sent is a non-nil empty Content. A Work with
 // a Session Workspace publishes only from it.
 type ArtifactSource struct {
-	SpaceToken         string
-	WorkID             string
-	WorkspaceReference string
-	// Path is relative to /workspace.
+	SpaceToken string
+	WorkID     string
+	// Workspace is the Work's Session Workspace as its sandbox sees it, nil
+	// for a Work without one.
+	Workspace *Layout
+	// Path is relative to the Work Directory.
 	Path    string
 	Content []byte
 }
@@ -32,52 +31,60 @@ func (s ArtifactSource) sent() bool { return s.Content != nil }
 // as a new Artifact, or over an existing one when replace is set, within the
 // request. A retry meets the command's own semantics: a new Artifact refuses
 // a taken name, and a replacement writes again.
-func (a *Application) PublishArtifact(ctx context.Context, source ArtifactSource, name string, replace bool) (SpaceFile, error) {
+func (a *Application) PublishArtifact(ctx context.Context, source ArtifactSource, name string, replace bool) (DirectoryFile, error) {
 	writer, err := domain.WorkWriter(source.WorkID)
-	if err != nil || source.sent() && source.Path != "" || !source.sent() && strings.TrimSpace(source.WorkspaceReference) == "" {
-		return SpaceFile{}, ErrInvalidRequest
+	if err != nil || source.sent() && source.Path != "" || !source.sent() && source.Workspace == nil {
+		return DirectoryFile{}, ErrInvalidRequest
 	}
-	if source.sent() && strings.TrimSpace(source.WorkspaceReference) != "" {
-		return SpaceFile{}, domain.ErrSentContentWithWorkspace
+	if source.sent() && source.Workspace != nil {
+		return DirectoryFile{}, domain.ErrSentContentWithWorkspace
 	}
 	if len(source.Content) > a.sentContentLimit {
-		return SpaceFile{}, domain.ErrInvalidPublicationSource
+		return DirectoryFile{}, domain.ErrInvalidPublicationSource
 	}
-	space, err := a.tokenSpace(ctx, source.SpaceToken, writer)
+	directory, backend, err := a.tokenDirectory(ctx, source.SpaceToken, writer)
 	if err != nil {
-		return SpaceFile{}, err
+		return DirectoryFile{}, err
 	}
-	position, err := domain.NewFilePosition(space.Owner, domain.FileKindArtifact, name)
+	position, err := domain.NewFilePosition(directory.ID, name)
 	if err != nil {
-		return SpaceFile{}, err
+		return DirectoryFile{}, err
 	}
-	location := space.Owner
 	var stored StoredFile
 	write := func(content io.Reader) error {
 		var writeErr error
-		stored, writeErr = a.writeFile(ctx, location, position, content, FileAttributes{WorkID: source.WorkID}, replace)
+		stored, writeErr = a.writeFile(ctx, backend, position, content, FileAttributes{WorkID: writer.WorkID()}, replace)
 		return writeErr
 	}
 	if source.sent() {
 		err = write(bytes.NewReader(source.Content))
 	} else {
-		err = a.publishWorkspaceFile(ctx, source, write)
+		err = a.copyWorkspaceFile(ctx, *source.Workspace, source.Path, write)
 	}
 	if err != nil {
-		return SpaceFile{}, err
+		return DirectoryFile{}, err
 	}
-	a.fileChanged(ctx, location, FileChange{Kind: domain.FileKindArtifact, Name: position.Name, Operation: writtenOperation(replace), Writer: writer})
-	return a.spaceFile(space, stored), nil
+	a.fileChanged(ctx, FileChange{Directory: directory.ID, Name: position.Name, Operation: writtenOperation(replace), Writer: writer})
+	return a.directoryFile(directory, stored), nil
 }
 
-// publishWorkspaceFile hands write the Session Workspace file the source
-// names.
-func (a *Application) publishWorkspaceFile(ctx context.Context, source ArtifactSource, write func(io.Reader) error) error {
-	sourcePath, err := domain.ParsePublicationSource(source.Path)
+// copyWorkspaceFile hands write the Session Workspace file the source names:
+// one regular file of the Work Directory outside every Directory mounted in
+// it, copied under the Work Directory's shared lock so its reclamation waits.
+func (a *Application) copyWorkspaceFile(ctx context.Context, workspace Layout, raw string, write func(io.Reader) error) error {
+	layout, err := workspace.layout()
 	if err != nil {
 		return err
 	}
-	return a.working.ReadPublicationSource(ctx, source.WorkspaceReference, sourcePath, write)
+	source, err := layout.PublicationSource(raw)
+	if err != nil {
+		return err
+	}
+	_, backend, err := a.readable(ctx, layout.Workspace)
+	if err != nil {
+		return err
+	}
+	return backend.CopyPublicationSource(ctx, layout.Workspace, source, write)
 }
 
 // DeleteArtifact deletes an Artifact for the Work whose Agent holds the Space
@@ -88,37 +95,30 @@ func (a *Application) DeleteArtifact(ctx context.Context, token, name, workID st
 	if err != nil {
 		return err
 	}
-	space, err := a.tokenSpace(ctx, token, writer)
+	directory, backend, err := a.tokenDirectory(ctx, token, writer)
 	if err != nil {
 		return err
 	}
-	return a.deleteFile(ctx, space, domain.FileKindArtifact, name, writer)
-}
-
-// ContentType is the declared media type, or the one of the name's
-// extension, or a generic binary type.
-func (f StoredFile) ContentType() string {
-	if f.Attributes.ContentType != "" {
-		return f.Attributes.ContentType
-	}
-	if byName := mime.TypeByExtension(path.Ext(f.Position.Name)); byName != "" {
-		return byName
-	}
-	return "application/octet-stream"
-}
-
-// tokenSpace finds the File Space a Work Agent's Space Token was issued for
-// and admits a write by writer on it.
-func (a *Application) tokenSpace(ctx context.Context, token string, writer domain.FileWriter) (*domain.FileSpace, error) {
-	if token == "" {
-		return nil, domain.ErrSpaceTokenRejected
-	}
-	space, err := a.spaces.GetBySpaceToken(ctx, token)
+	position, err := domain.NewFilePosition(directory.ID, name)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := space.AdmitFileWrite(token, writer); err != nil {
-		return nil, err
+	return a.deleteFile(ctx, backend, position, writer)
+}
+
+// tokenDirectory finds the File Space a Work Agent's Space Token was issued
+// for and admits a write by writer on it.
+func (a *Application) tokenDirectory(ctx context.Context, token string, writer domain.FileWriter) (*domain.Directory, DirectoryBackendPort, error) {
+	if token == "" {
+		return nil, nil, domain.ErrSpaceTokenRejected
 	}
-	return space, nil
+	directory, err := a.directories.GetBySpaceToken(ctx, token)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := directory.AdmitFileWrite(token, writer); err != nil {
+		return nil, nil, err
+	}
+	backend, err := a.backends.of(directory)
+	return directory, backend, err
 }

@@ -43,7 +43,7 @@ func registerAs(ctx context.Context, p *Provisioning, launch domain.LaunchSpecif
 	if err != nil {
 		return record, err
 	}
-	if err := p.specify(ctx, record, mounts); err != nil {
+	if err := p.specify(ctx, record, command.CreationSupply{Mounts: mounts}); err != nil {
 		return record, err
 	}
 	record, _, err = p.get(ctx, run.ID)
@@ -72,7 +72,7 @@ func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeCon
 	require.NoError(t, err)
 	executions := NewAgentExecutionRepository(p.db, now)
 	steps := &executionSteps{environment: environment, executions: executions, desks: &cloudDesks{}, harness: commandtest.NewHarness()}
-	steps.handler = command.NewReconcileExecutionHandler(now, fixtureLease, executions, environment, steps.harness, steps.desks, mounts)
+	steps.handler = command.NewReconcileExecutionHandler(now, fixtureLease, fixtureCreationWaits, executions, environment, steps.harness, steps.desks, commandtest.Supplies(mounts))
 	return steps
 }
 
@@ -111,7 +111,7 @@ func (s *executionSteps) submitted(ctx context.Context, id string) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	return execution.Creation.Submitted, nil
+	return execution.Creation.Submitted(), nil
 }
 
 // shortSteps reconciles one execution, taking only its short steps, as its

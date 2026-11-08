@@ -56,12 +56,12 @@ func (l *deskLedger) ReleaseUnusedDesk(_ context.Context, deskID string) {
 
 func creationFixture(t *testing.T, computer command.ComputerPort) (*sessionStore, *command.CreateWorkHandler, command.CreateWork) {
 	t.Helper()
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"caller"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "home", Namespace: "personal"}})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"caller"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}})
 	require.NoError(t, err)
 	store := &sessionStore{}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})
 	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computer, store.preparation(models))
-	request := command.CreateWork{AgentID: agent.ID, SubjectID: "caller", WorkspaceReference: "workspace",
+	request := command.CreateWork{AgentID: agent.ID, SubjectID: "caller",
 		InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/work", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Do the work"}}}
 	return store, handler, request
 }

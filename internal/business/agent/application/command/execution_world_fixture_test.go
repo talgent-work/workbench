@@ -25,6 +25,7 @@ type world struct {
 	harness      *commandtest.Harness
 	computers    *commandtest.Computers
 	environment  *commandtest.Environment
+	storage      *commandtest.Storage
 	settlements  *commandtest.InputSettlements
 	coordination *command.ExecutionCoordination
 	// lease is the platform's configured lease terms; zero leases nothing.
@@ -35,7 +36,7 @@ type world struct {
 func newWorld(t *testing.T, work *domain.AgentWork) *world {
 	t.Helper()
 	w := &world{works: &feedbackSessionStore{session: work}, executions: &commandtest.Executions{}, harness: commandtest.NewHarness(),
-		computers: &commandtest.Computers{}, environment: &commandtest.Environment{}, settlements: &commandtest.InputSettlements{}, at: time.Now()}
+		computers: &commandtest.Computers{}, environment: &commandtest.Environment{}, storage: &commandtest.Storage{}, settlements: &commandtest.InputSettlements{}, at: time.Now()}
 	w.coordination = command.NewExecutionCoordination(w.now, w.works, w.executions, w.computers, w.harness)
 	return w
 }
@@ -61,7 +62,7 @@ func (w *world) feedback() *command.ApplyExecutionFeedbackHandler {
 }
 
 func (w *world) reconciliation() *command.ReconcileExecutionHandler {
-	return command.NewReconcileExecutionHandler(w.now, w.lease, w.executions, w.environment, w.harness, w.computers, noMounts{})
+	return command.NewReconcileExecutionHandler(w.now, w.lease, commandtest.CreationWaits, w.executions, w.environment, w.harness, w.computers, commandtest.Supplies(w.storage))
 }
 
 // execution is the Work's most recently begun execution.
@@ -93,7 +94,7 @@ func (w *world) launch(t *testing.T, processID string) {
 	t.Helper()
 	w.begin(t)
 	w.change(t, func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 		require.True(t, execution.RecordCredentialDelivery(domain.CredentialDelivery{}))
@@ -146,16 +147,9 @@ func (w *world) release(t *testing.T) {
 	require.NoError(t, w.coordination.ApplyExecutionReports(context.Background(), w.work().ID))
 }
 
-// noMounts grants no mounts.
-type noMounts struct{ command.StoragePort }
-
-func (noMounts) AcquireMounts(context.Context, domain.SandboxMountRequest) (domain.SandboxMounts, error) {
-	return domain.SandboxMounts{}, nil
-}
-
 func definitionFixture(t *testing.T) *domain.AgentDefinition {
 	t.Helper()
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{}})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{}})
 	require.NoError(t, err)
 	return agent
 }
@@ -190,7 +184,7 @@ func admittedSession(t *testing.T, waiting bool) *domain.AgentWork {
 	agent := definitionFixture(t)
 	admission := fixtureAdmission(agent.ID)
 	admission.Seat.Waiting = waiting
-	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, AgentID: agent.ID, WorkspaceReference: "workspace"}, admission)
+	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID}, admission)
 	require.NoError(t, err)
 	return settled(session)
 }

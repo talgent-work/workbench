@@ -70,7 +70,7 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 			runs.option(),
 		}
 		if recover {
-			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.Supply(domain.LeaseTerms{}))
+			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.Supply(domain.LeaseTerms{}, commandtest.CreationWaits))
 		}
 		runtime := fx.New(options...)
 		require.NoError(t, runtime.Err())
@@ -90,9 +90,9 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 		return registry, agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), stop
 	}
 	registry, _, stop := start(false)
-	definitionID, err := registry.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
+	definitionID, err := registry.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}})
 	require.NoError(t, err)
-	id, err := registry.Commands.CreateWork.Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definitionID, WorkspaceReference: "workspace"})
+	id, err := registry.Commands.CreateWork.Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definitionID})
 	require.NoError(t, err)
 	ref := id
 	runs.realize(t, ctx, id)

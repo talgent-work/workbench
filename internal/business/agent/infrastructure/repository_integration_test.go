@@ -40,7 +40,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	t.Cleanup(func() { _ = db.Close() })
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Original instructions", StartupAgent: "review:architect", RequiredPlugins: []string{"review"}}})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Original instructions", StartupAgent: "review:architect", RequiredPlugins: []string{"review"}}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
 	require.Zero(t, agent.Version, "Save must not change the loaded version")
@@ -58,7 +58,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.NoError(t, err)
 	require.Equal(t, "Original instructions", agent.Capabilities.Prompt)
 	require.Equal(t, domain.UsageScope{Kind: "employee", Reference: "employee"}, agent.UsageScope)
-	require.Equal(t, domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, agent.HomeBinding)
+	require.Equal(t, domain.DefaultWorkLayout(), agent.WorkLayout, "a definition keeps its Work Layout")
 	_, err = agent.ChangeSoul("owner", "Answer with the conclusion first.")
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
@@ -67,7 +67,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "Answer with the conclusion first.", agent.Soul)
 
 	traceAttributes := map[string]string{"talgent.project_id": "project-1", "talgent.owner_id": "case"}
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, WorkspaceReference: "workspace-a", TraceAttributes: traceAttributes})
+	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, TraceAttributes: traceAttributes})
 	require.NoError(t, err)
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -76,6 +76,8 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	}
 	require.Equal(t, "Answer with the conclusion first.", session.HarnessProcess.Soul, "the first start took up the Soul, retained with its process")
 	originalCapabilities := session.CapabilitySnapshot.Clone()
+	located := session.LocatedLayout
+	require.Equal(t, "claude-code", session.AgentHarnessReference)
 
 	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	require.NoError(t, authorizer.AuthorizeWork(ctx, "owner", session.ID))
@@ -127,7 +129,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, contextRef, session.HarnessSessionReference)
 	require.True(t, session.HarnessProcess.Exited)
 	require.True(t, session.HarnessProcess.ComputeReclaimed)
-	require.Equal(t, domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, session.HomeBinding)
+	require.Equal(t, "employee", session.RepresentedPerson, "the Work represents its definition's employee")
 	require.Equal(t, originalCapabilities, session.CapabilitySnapshot, "reconnection retains exact releases, declarations and effective typed values")
 	require.Equal(t, "strict", session.CapabilitySnapshot.Plugins[0].Configuration["mode"])
 	require.NoError(t, session.Resume(admission))
@@ -139,7 +141,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.False(t, session.HarnessProcess.Exited, "the resumed process replaces the exited process facts")
 	require.Equal(t, "Original instructions", session.CapabilitySnapshot.Prompt)
 	require.Equal(t, "review:architect", session.CapabilitySnapshot.StartupAgent)
-	require.Equal(t, "workspace-a", session.WorkspaceReference)
+	require.Equal(t, located, session.LocatedLayout, "Resume mounts the layout located at creation")
 }
 
 // creationRaceLookup holds every creation at its Subject lookup until all
@@ -179,13 +181,13 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	defer cancel()
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, HomeBinding: domain.HomeBinding{OwnerID: "employee-home", Namespace: "personal"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Base", StartupAgent: "base:member", RequiredPlugins: []string{"base"}}})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Base", StartupAgent: "base:member", RequiredPlugins: []string{"base"}}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
 	const workers = 8
 	lookup := &creationRaceLookup{AgentWorkRepository: sessions, workers: workers, arrived: make(chan struct{}, workers), release: make(chan struct{})}
 	handler := command.NewCreateWorkHandler(time.Now, agents, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
-	request := command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "Work-A"}, ProjectID: "project-a", WorkspaceReference: "work-one", TraceAttributes: map[string]string{"talgent.project_id": "project-a"}}
+	request := command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "Work-A"}, ProjectID: "project-a", TraceAttributes: map[string]string{"talgent.project_id": "project-a"}}
 	type result struct {
 		id  string
 		err error
@@ -226,8 +228,8 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	require.Len(t, rows, 1, "concurrent requests must not leave extra conversations")
 	original, err := sessions.Get(ctx, originalID)
 	require.NoError(t, err)
-	require.Equal(t, domain.HomeBinding{OwnerID: "employee-home", Namespace: "personal"}, original.HomeBinding)
-	require.NotContains(t, original.TraceAttributes, "talgent.user_id", "a delegated technical principal is not automatically a human employee")
+	require.Equal(t, "owner", original.RepresentedPerson)
+	require.Equal(t, "owner", original.TraceAttributes["talgent.user_id"], "the Work's usage rolls up to the person its Agent represents, whoever created it")
 	require.Len(t, original.CapabilitySnapshot.Plugins, 2)
 	var winning int
 	_, err = fmt.Sscanf(original.CapabilitySnapshot.Prompt, "Prompt-%d", &winning)
@@ -240,7 +242,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	require.NoError(t, err)
 	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
 	handler = command.NewCreateWorkHandler(time.Now, infrastructure.NewAgentDefinitionRepository(db, time.Now), sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
-	request.WorkspaceReference = "another-authorized-workspace"
+	request.AgentHarness = "claude-code"
 	request.CapabilityDifferences = domain.CapabilityDifferences{Plugins: []domain.PluginChoice{{Slug: "duplicate", Include: true}, {Slug: "duplicate", Include: true}}}
 	id, err := handler.Handle(ctx, request)
 	require.NoError(t, err, "the existing Work of the Subject wins without comparing new capability parameters")
@@ -249,7 +251,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, original.CapabilitySnapshot, retained.CapabilitySnapshot)
 	require.Equal(t, original.HarnessSessionReference, retained.HarnessSessionReference)
-	require.Equal(t, "work-one", retained.WorkspaceReference)
+	require.Equal(t, original.LocatedLayout, retained.LocatedLayout)
 	intruder := request
 	intruder.SubjectID, intruder.RequestID = "intruder", uuid.NewString()
 	_, err = handler.Handle(ctx, intruder)
@@ -276,7 +278,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	other, err := sessions.Get(ctx, otherID)
 	require.NoError(t, err)
 	require.Equal(t, "Changed", other.CapabilitySnapshot.Prompt)
-	require.Equal(t, original.HomeBinding, other.HomeBinding)
+	require.Equal(t, original.RepresentedPerson, other.RepresentedPerson)
 	require.NotEqual(t, original.HarnessSessionReference, other.HarnessSessionReference)
 }
 

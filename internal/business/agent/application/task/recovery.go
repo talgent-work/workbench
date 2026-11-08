@@ -39,9 +39,12 @@ const (
 	RunLongExecutionStepType taskqueue.TaskType = "agent.execution.run-long-step.v1"
 	RecoverWorkType          taskqueue.TaskType = "agent.work.recover.v1"
 	SweepRecoveryType        taskqueue.TaskType = "agent.recovery.sweep.v1"
-	// RequestWorkspaceReclamationType delivers a Closed Work's one request to
-	// Storage; it is a delivery, not a recovery obligation of the Work.
-	RequestWorkspaceReclamationType taskqueue.TaskType = "agent.workspace.request-reclamation.v1"
+	// RequestWorkReclamationType delivers a Closed Work's one request to
+	// Storage; it is a delivery, not a recovery obligation of the Work. Its
+	// wire name, its payload message (RequestWorkspaceReclamationTaskV1) and
+	// its task key keep their earlier "workspace" spelling: tasks already
+	// queued under them must still be decoded and deduplicated.
+	RequestWorkReclamationType taskqueue.TaskType = "agent.workspace.request-reclamation.v1"
 )
 
 // NewReconcileExecution wakes the execution's short steps.
@@ -59,11 +62,14 @@ func NewRecoverWork(workID string) (taskqueue.Task, error) {
 	return keyed(RecoverWorkType, RecoveryQueue, "work", workID, &agenttaskv1.RecoverWorkTaskV1{WorkId: workID})
 }
 
-func NewRequestWorkspaceReclamation(workID, workspaceReference string) (taskqueue.Task, error) {
-	if strings.TrimSpace(workspaceReference) == "" {
+// NewRequestWorkReclamation queues a Closed Work's Work Reclamation Request,
+// keyed by the Work. A request naming no Work is refused: Storage would have
+// nothing to reclaim.
+func NewRequestWorkReclamation(workID string) (taskqueue.Task, error) {
+	if strings.TrimSpace(workID) == "" {
 		return taskqueue.Task{}, taskqueue.ErrNilPayload
 	}
-	return keyed(RequestWorkspaceReclamationType, RecoveryQueue, "workspace-reclamation", workID, &agenttaskv1.RequestWorkspaceReclamationTaskV1{WorkId: workID, WorkspaceReference: workspaceReference})
+	return keyed(RequestWorkReclamationType, RecoveryQueue, "workspace-reclamation", workID, &agenttaskv1.RequestWorkspaceReclamationTaskV1{WorkId: workID})
 }
 
 // NewSweepRecovery is the static envelope fired by the periodic sweep. It has

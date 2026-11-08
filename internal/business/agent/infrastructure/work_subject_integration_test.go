@@ -29,7 +29,7 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work",
-		UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, HomeBinding: domain.HomeBinding{OwnerID: "employee-home", Namespace: "personal"},
+		UsageScope:   domain.UsageScope{Kind: "employee", Reference: "owner"},
 		Capabilities: domain.CapabilityConfiguration{Prompt: "Original", StartupAgent: "employees:member", RequiredPlugins: []string{"employees"}},
 	})
 	require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	capabilities, err := command.ResolveStartupCapabilities(ctx, commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), "owner", domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: agent.Capabilities.RequiredPlugins, DefaultStartupAgent: agent.Capabilities.StartupAgent})
 	require.NoError(t, err)
 	subject := domain.WorkSubject{Kind: "case", ID: "Work-A"}
-	creation, isNew, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-a"}, subjectWork(t, sessions, agent.ID, subject))
+	creation, isNew, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a"}, subjectWork(t, sessions, agent.ID, subject))
 	require.NoError(t, err)
 	require.True(t, isNew)
 	require.NoError(t, sessions.Save(ctx, creation))
@@ -67,7 +67,7 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 		require.NoError(t, lookupErr)
 		require.Nil(t, located, "another kind or identity is another Subject")
 	}
-	other, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "other"}, HomeBinding: domain.HomeBinding{OwnerID: "other-home", Namespace: "personal"}, Capabilities: agent.Capabilities})
+	other, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "other"}, Capabilities: agent.Capabilities})
 	require.NoError(t, err)
 	located, err := sessions.FindBySubject(ctx, other.ID, subject)
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	closed, err := sessions.FindBySubject(ctx, agent.ID, subject)
 	require.NoError(t, err)
 	require.Equal(t, originalID, closed.ID, "a closed Work still holds its Subject")
-	duplicate, isNew, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-b"}, domain.WorkCreationFacts{})
+	duplicate, isNew, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a"}, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	require.True(t, isNew)
 	require.ErrorIs(t, sessions.Save(ctx, duplicate), domain.ErrConcurrentModification, "storage keeps one Work per definition and Subject")

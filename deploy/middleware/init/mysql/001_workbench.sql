@@ -29,8 +29,7 @@ CREATE TABLE IF NOT EXISTS `agent_definition` (
   `owners` json NOT NULL DEFAULT (json_array()) COMMENT 'Agent Owners of every Work of the definition',
   `scope_kind` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Business-authorized usage scope kind',
   `scope_ref` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Business-authorized usage scope reference',
-  `home_owner_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Definition-authorized persistent HOME owner',
-  `home_namespace` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Definition HOME namespace',
+  `work_layout` json NOT NULL COMMENT 'Work Layout its Works locate at creation: mounts, each a path, an access mode and Directory Locators, the first that locates winning',
   `visibility_public` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'New Works start public within their Project',
   `capabilities` json NOT NULL COMMENT 'Reusable prompt, plugin configuration and startup Agent',
   `soul` text NULL COMMENT 'Persona and working style its Owners write; each Work takes it up at its next start',
@@ -43,7 +42,7 @@ CREATE TABLE IF NOT EXISTS `agent_definition` (
   `icon_color` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Preset icon color',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_agent_definition_scope_purpose` (`scope_kind`,`scope_ref`,`purpose`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentDefinition capability, appearance and HOME authority';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentDefinition capability, appearance and Work Layout authority';
 
 CREATE TABLE IF NOT EXISTS `agent_session` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'AgentSession UUIDv7 identity',
@@ -65,15 +64,12 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `thinking_level` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Retained Work thinking effort; empty uses Harness default',
   `permission_mode` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'A Managed Work''s Harness permission mode, the one its Harness last reported; empty for a Cloud Work, which bypasses permission prompts',
   `context_ref` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Harness Session reference kept across process restarts',
-  `workspace_ref` varchar(512) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Session Workspace reference; empty for a Work without one',
-  `input_source` varchar(512) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Opaque read-only Work input source fixed at creation; empty means none',
-  `input_space_token` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Space Token issued with the input source, handed to the sandbox Credential Vault for publication',
-  `read_only_mounts` json NOT NULL DEFAULT (json_array()) COMMENT 'Caller-supplied read-only mounts fixed at creation: opaque space references and the names they appear under',
+  `agent_harness` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Agent Harness chosen at creation, kept for the Work''s life',
+  `located_layout` json NOT NULL COMMENT 'Directories its definition''s Work Layout located at creation, each with its path and access mode, its located inputs and its publication target; no mounts on a Managed Computer',
   `display_title` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'A Personal Work''s display title, changed by its owner; empty for any other Work',
   `starting_context` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'JSON of the Work this one started from and the context position; empty when it started afresh',
-  `home_owner_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Caller-authorized persistent home owner',
+  `represented_person` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Person the Work''s Agent represents, fixed at creation; empty when it represents none',
   `trace_attributes` json NOT NULL COMMENT 'Immutable caller telemetry attribution',
-  `home_namespace` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Caller-selected namespace within persistent home',
   `harness_process` json NOT NULL COMMENT 'Observed facts of the current Harness process; null before the first start',
   `holds_process` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The Work holds a Harness process until its exit or environment loss is confirmed',
   `stop_reason` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Admitted stop or normal completion reason',
@@ -98,7 +94,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   KEY `idx_state_close_request_deleted_at` (`state`,`close_request`,`deleted_at`) COMMENT 'Recovery finds stopped or failed Works with a kept close',
   KEY `idx_agent_id_holds_process_deleted_at` (`agent_id`,`holds_process`,`deleted_at`),
   KEY `idx_project_ref_deleted_at_created_at_id` (`project_ref`,`deleted_at`,`created_at`,`id`),
-  KEY `idx_home_owner_id_deleted_at_created_at_id` (`home_owner_id`,`deleted_at`,`created_at`,`id`),
+  KEY `idx_represented_person_deleted_at_created_at_id` (`represented_person`,`deleted_at`,`created_at`,`id`),
   KEY `idx_started_by_deleted_at_updated_at_created_at_id` (`started_by`,`deleted_at`,`updated_at`,`created_at`,`id`),
   KEY `idx_computer_id_state_deleted_at_id` (`computer_id`,`state`,`deleted_at`,`id`) COMMENT 'Presence changes find the Works running on a Computer'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentWork conversation and Harness process lifecycle authority';
@@ -202,9 +198,11 @@ CREATE TABLE IF NOT EXISTS `agent_execution` (
   `credentials_expire_at` bigint NOT NULL DEFAULT '0' COMMENT 'Earliest declared expiry of the credentials last delivered to the Vault in Unix milliseconds; zero when none expires',
   `model_credential_digest` varchar(32) NOT NULL DEFAULT '' COMMENT 'Identifies, without revealing it, the model key last delivered to the Vault',
   `inputs_due` int unsigned NOT NULL DEFAULT '0' COMMENT 'Input changes a Managed execution''s machine has not been synced with; zero when it holds the current inputs',
-  `input_owner` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'File Space owner of a Managed Work''s input source, recorded by its inputs sync; finds the executions a file change concerns',
+  `inputs_directory` char(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'SHA-256 key of a Managed Work''s located inputs Directory, recorded when the execution begins; finds the executions a file change concerns',
   `inputs_synced_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds of a Managed execution''s last successful inputs sync; zero before the first. The recovery sweep syncs again once it is older than the refresh interval, before the copies'' Access Links expire',
-  `submitted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'External submission may have happened; never blindly resubmit',
+  `submitted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the environment creation was recorded as submitted, before it was sent; zero while unsubmitted; never blindly resubmit',
+  `creation_deadline` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds after which an unanswered creation can no longer produce an environment: submission plus the configured creation wait',
+  `creation_answered` boolean NOT NULL DEFAULT false COMMENT 'A definite answer to the creation arrived; an unanswered one holds release until its deadline',
   `sandbox_id` varchar(36) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Observed external sandbox identity',
   `lease_expires_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the bound sandbox expires unless renewed, as OpenSandbox last returned it; zero while none is known',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic persistence version',
@@ -242,7 +240,7 @@ CREATE TABLE IF NOT EXISTS `agent_execution` (
   KEY `idx_sandbox_id_deleted_at_updated_at_id` (`sandbox_id`, `deleted_at`, `updated_at`, `id`),
   UNIQUE KEY `uniq_live_session_id` (`live_session_id`),
   KEY `idx_ownership_label` (`ownership_label`),
-  KEY `idx_input_owner_deleted_at` (`input_owner`, `deleted_at`),
+  KEY `idx_inputs_directory_deleted_at` (`inputs_directory`, `deleted_at`),
   KEY `idx_session_id_created_at_id` (`session_id`, `created_at`, `id`),
   KEY `idx_authorization_ids` ((CAST(`authorization_ids` AS CHAR(36) ARRAY)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentExecution aggregate: one run of a Work and its execution environment';
@@ -435,22 +433,28 @@ CREATE TABLE IF NOT EXISTS `signing_key` (
   UNIQUE KEY `uniq_generation` (`generation`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Identity Token signing keys shared by every controlplane replica';
 
-CREATE TABLE IF NOT EXISTS `storage_file_space` (
-  `owner` varchar(255) COLLATE utf8mb4_bin NOT NULL COMMENT 'Owner identity the caller named the space by; opaque to Storage',
-  `space_token` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Credential every file write presents',
-  `version` int unsigned NOT NULL DEFAULT '0' COMMENT 'Optimistic lock version serializing the space changes',
+CREATE TABLE IF NOT EXISTS `storage_directory` (
+  `owner_key` varchar(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Directory owner as one path element of the published layout: condition=value facts in condition order, percent-encoded',
+  `name` varchar(255) COLLATE utf8mb4_bin NOT NULL COMMENT 'Directory name within its owner',
+  `backend` varchar(16) NOT NULL DEFAULT '' COMMENT 'Backend fixed at first allocation: nas|juicefs',
+  `lifetime` varchar(16) NOT NULL DEFAULT '' COMMENT 'Lifetime fixed at first allocation: work|permanent',
+  `state` varchar(16) NOT NULL DEFAULT '' COMMENT 'Lifecycle: allocating|allocated|reclaimed',
+  `space_token` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Credential every file command and content replacement presents',
+  `work_id` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Value of the owner''s work fact, empty when it names no Work; selects a Work''s Directories for reclamation',
+  `version` int unsigned NOT NULL DEFAULT '0' COMMENT 'Optimistic lock version serializing the Directory changes',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Opening timestamp (ms)',
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update timestamp (ms)',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft delete timestamp (ms), 0 = not deleted',
-  PRIMARY KEY (`owner`),
-  UNIQUE KEY `uniq_space_token` (`space_token`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Storage File Space: the Aggregate of one owner space';
+  PRIMARY KEY (`owner_key`, `name`),
+  UNIQUE KEY `uniq_space_token` (`space_token`),
+  KEY `idx_work_id_lifetime_deleted_at` (`work_id`, `lifetime`, `deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Storage Directory: the Aggregate of one owner''s space under a name';
 
 CREATE TABLE IF NOT EXISTS `storage_share_link` (
   `token` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Unguessable Share Link token',
-  `owner` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Owner of the File Space holding the link',
-  `target_kind` varchar(16) NOT NULL DEFAULT '' COMMENT 'Target File position kind: attachment|artifact',
-  `target_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Target File position name',
+  `owner_key` varchar(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Owner of the Directory holding the link',
+  `directory_name` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Name of the Directory holding the link',
+  `target_name` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Target File position name',
   `created_by` varchar(64) NOT NULL DEFAULT '' COMMENT 'Person who created the link',
   `state` varchar(16) NOT NULL DEFAULT '' COMMENT 'Lifecycle: active|revoked',
   `version` int unsigned NOT NULL DEFAULT '0' COMMENT 'Row version',
@@ -458,8 +462,8 @@ CREATE TABLE IF NOT EXISTS `storage_share_link` (
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update timestamp (ms)',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft delete timestamp (ms), 0 = not deleted',
   PRIMARY KEY (`token`),
-  KEY `idx_owner_deleted_at_created_at` (`owner`, `deleted_at`, `created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Share Links of Storage File Spaces';
+  KEY `idx_directory_deleted_at_created_at` (`owner_key`, `directory_name`, `deleted_at`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Share Links of Storage Directories';
 
 CREATE TABLE IF NOT EXISTS `marketplace_sync_run` (
   `id` varchar(36) NOT NULL COMMENT 'UUIDv7 operation identity',

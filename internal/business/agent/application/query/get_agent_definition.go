@@ -11,7 +11,7 @@ type AgentDefinition struct {
 	AgentName    string
 	Purpose      string
 	UsageScope   domain.UsageScope
-	HomeBinding  domain.HomeBinding
+	WorkLayout   domain.WorkLayout
 	Visibility   domain.VisibilityRule
 	ID           string
 	Capabilities domain.CapabilityConfiguration
