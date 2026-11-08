@@ -13,9 +13,9 @@ type UnchangedPlugins struct{}
 
 var _ command.PluginUpgrades = UnchangedPlugins{}
 
-func (UnchangedPlugins) CurrentReleases(_ context.Context, _ string, selected []domain.SelectedPlugin) ([]domain.PluginRelease, error) {
-	releases := make([]domain.PluginRelease, 0, len(selected))
-	for _, plugin := range selected {
+func (UnchangedPlugins) CurrentReleases(_ context.Context, _ string, capabilities domain.CapabilitySnapshot) ([]domain.PluginRelease, error) {
+	releases := make([]domain.PluginRelease, 0, len(capabilities.Plugins))
+	for _, plugin := range capabilities.Plugins {
 		releases = append(releases, plugin.Release.Clone())
 	}
 	return releases, nil

@@ -72,12 +72,31 @@ func (c resolvingCatalog) ResolvePlugin(_ context.Context, _, slug string) (doma
 	return release, nil
 }
 
+// A current release that no longer declares the Work's startup Agent is left
+// out, with a warning for operators, so the Work keeps its retained release.
+func TestCatalogPluginUpgradesDegradeAReleaseThatDroppedTheStartupAgent(t *testing.T) {
+	var logs bytes.Buffer
+	upgrades := command.NewCatalogPluginUpgrades(resolvingCatalog{releases: map[string]domain.PluginRelease{
+		"runtime": {Slug: "runtime", Version: "2", Agents: []domain.AgentComponent{{Name: "runtime:executor"}}},
+		"review":  {Slug: "review", Version: "2"},
+	}}, slog.New(slog.NewTextHandler(&logs, nil)))
+	capabilities := domain.CapabilitySnapshot{StartupAgent: "runtime:coordinator", Plugins: []domain.SelectedPlugin{
+		{Release: domain.PluginRelease{Slug: "runtime", Version: "1", Agents: []domain.AgentComponent{{Name: "runtime:coordinator"}}}},
+		{Release: domain.PluginRelease{Slug: "review", Version: "1"}},
+	}}
+	current, err := upgrades.CurrentReleases(t.Context(), "alice", capabilities)
+	require.NoError(t, err)
+	require.Equal(t, []domain.PluginRelease{{Slug: "review", Version: "2"}}, current)
+	require.Contains(t, logs.String(), "runtime:coordinator")
+	require.Contains(t, logs.String(), "current_version=2")
+}
+
 // Current releases come from the catalog; a Plugin it cannot resolve is left
 // out, with a warning, so the Work keeps its retained release.
 func TestCatalogPluginUpgradesDegradeAnUnresolvedPlugin(t *testing.T) {
 	var logs bytes.Buffer
 	upgrades := command.NewCatalogPluginUpgrades(resolvingCatalog{releases: map[string]domain.PluginRelease{"review": {Slug: "review", Version: "2"}}}, slog.New(slog.NewTextHandler(&logs, nil)))
-	selected := []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "review", Version: "1"}}, {Release: domain.PluginRelease{Slug: "gone", Version: "1"}}}
+	selected := domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "review", Version: "1"}}, {Release: domain.PluginRelease{Slug: "gone", Version: "1"}}}}
 	current, err := upgrades.CurrentReleases(t.Context(), "alice", selected)
 	require.NoError(t, err)
 	require.Equal(t, []domain.PluginRelease{{Slug: "review", Version: "2"}}, current)

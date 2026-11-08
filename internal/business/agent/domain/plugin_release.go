@@ -33,6 +33,11 @@ type MCPComponent struct {
 	Definition   []byte
 }
 
+// declaresAgent reports whether the release declares the named Agent.
+func (r PluginRelease) declaresAgent(name string) bool {
+	return name != "" && slices.ContainsFunc(r.Agents, func(agent AgentComponent) bool { return agent.Name == name })
+}
+
 func (r PluginRelease) Validate() error {
 	if !pluginconfig.ValidPluginName(r.Slug) {
 		return fmt.Errorf("%w: invalid plugin slug", ErrInvalidCapabilities)
