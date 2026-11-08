@@ -30,7 +30,7 @@ require (
 	github.com/richardlehane/mscfb v1.0.8
 	github.com/samber/oops v1.23.0
 	github.com/stretchr/testify v1.11.1
-	github.com/talgent-work/contracts v0.3.1
+	github.com/talgent-work/contracts v0.4.0
 	github.com/twmb/franz-go v1.22.2
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.45.0
@@ -158,7 +158,3 @@ require (
 )
 
 tool google.golang.org/protobuf/cmd/protoc-gen-go
-
-// Temporary for the persistent directories integration branch: replaced by the
-// released contracts version before merge.
-replace github.com/talgent-work/contracts => ../contracts
