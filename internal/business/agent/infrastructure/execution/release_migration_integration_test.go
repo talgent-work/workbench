@@ -30,6 +30,7 @@ func TestReleaseMigrationBackfillsReleaseTimeFromCompletedRemovals(t *testing.T)
 	t.Cleanup(func() { _ = conn.Close() })
 	var current string
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&current))
+	previous := mysqltest.SchemaFrom(t, db, previousExecutionSchema)
 	// A scratch database in the shape before the script, so the shared schema
 	// the other tests borrow is never altered.
 	scratch := "talgent_migration_" + uuid.NewString()[:8]
@@ -38,7 +39,7 @@ func TestReleaseMigrationBackfillsReleaseTimeFromCompletedRemovals(t *testing.T)
 	t.Cleanup(func() { _, _ = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", scratch)) })
 	_, err = conn.ExecContext(ctx, fmt.Sprintf("USE `%s`", scratch))
 	require.NoError(t, err)
-	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE execution_allocation LIKE `%s`.execution_allocation", current))
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE execution_allocation LIKE `%s`.execution_allocation", previous))
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, `ALTER TABLE execution_allocation DROP KEY idx_retired_released_at_id, DROP COLUMN released_at;
 CREATE TABLE execution_removal (
@@ -100,6 +101,6 @@ CREATE TABLE execution_removal (
 	require.NoError(t, err)
 	var shape, want string
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT GROUP_CONCAT(COLUMN_NAME, ' ', COLUMN_TYPE, ' ', IS_NULLABLE, ' ', COALESCE(COLUMN_DEFAULT, '') ORDER BY COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'execution_allocation'").Scan(&shape))
-	require.NoError(t, conn.QueryRowContext(ctx, "SELECT GROUP_CONCAT(COLUMN_NAME, ' ', COLUMN_TYPE, ' ', IS_NULLABLE, ' ', COALESCE(COLUMN_DEFAULT, '') ORDER BY COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'execution_allocation'", current).Scan(&want))
+	require.NoError(t, conn.QueryRowContext(ctx, "SELECT GROUP_CONCAT(COLUMN_NAME, ' ', COLUMN_TYPE, ' ', IS_NULLABLE, ' ', COALESCE(COLUMN_DEFAULT, '') ORDER BY COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'execution_allocation'", previous).Scan(&want))
 	require.Equal(t, want, shape, "the migrated table has the current schema's columns")
 }

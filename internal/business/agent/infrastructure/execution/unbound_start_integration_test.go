@@ -115,7 +115,7 @@ func createdThenDeleted(l *lifecycleFixture) { l.createFailure = true }
 // The server creates the sandbox; its answer is what is lost.
 func createdUnanswered(l *lifecycleFixture) { l.loseCreateResponse = true }
 
-func (f *cloudStart) allocation(t *testing.T) allocationRecord {
+func (f *cloudStart) allocation(t *testing.T) executionRecord {
 	t.Helper()
 	record, found, err := latestAllocation(context.Background(), f.db, f.workID)
 	require.NoError(t, err)
@@ -242,7 +242,7 @@ func TestALostCreateAnswerBindsTheSandboxAndAFailedStartReleasesIt(t *testing.T)
 
 	require.True(t, f.reconcile(t), "onboarding continues to the preparation")
 	require.Equal(t, sandboxID, f.allocation(t).SandboxID, "the found sandbox is bound")
-	require.True(t, f.allocation(t).SandboxReady, "the found sandbox receives its credentials")
+	require.True(t, f.allocation(t).CredentialsDelivered, "the found sandbox receives its credentials")
 	require.Equal(t, 1, f.creates())
 	f.retire(t, domain.RetiredByExit)
 	require.Zero(t, f.allocation(t).DeletedAt, "a request without an acknowledged exit retires nothing")

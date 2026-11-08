@@ -56,7 +56,7 @@ func NewExecutionEnvironment(provisioning *Provisioning, connections *NativeConn
 var errCreationUnresolved = errors.New("agent: the environment creation's answer is not known yet")
 
 // record reads the execution's record.
-func (e *ExecutionEnvironment) record(ctx context.Context, execution *domain.AgentExecution) (allocationRecord, error) {
+func (e *ExecutionEnvironment) record(ctx context.Context, execution *domain.AgentExecution) (executionRecord, error) {
 	record, found, err := e.provisioning.get(ctx, execution.ID)
 	if err != nil {
 		return record, withExecution(err, execution)
@@ -162,7 +162,7 @@ func (e *ExecutionEnvironment) SubmitCreation(ctx context.Context, execution *do
 // created, so the start is rejected; an environment the authority still shows
 // was created regardless and is answered instead, so no compute is ever
 // judged absent while it exists.
-func (e *ExecutionEnvironment) settleRefusal(ctx context.Context, execution *domain.AgentExecution, authority environmentAuthority, record allocationRecord, refusal error) (domain.CreationAnswer, error) {
+func (e *ExecutionEnvironment) settleRefusal(ctx context.Context, execution *domain.AgentExecution, authority environmentAuthority, record executionRecord, refusal error) (domain.CreationAnswer, error) {
 	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
 	defer cancel()
 	view, err := authority.observe(attempt, record, false)
@@ -330,7 +330,7 @@ func (e *ExecutionEnvironment) ReconcileComputer(ctx context.Context, computerID
 // recovering records whether a startup step's latest attempt left the start
 // recovering, which its startup progress shows. A conflict, or the execution
 // no longer admitting the step, says nothing about recovery.
-func (e *ExecutionEnvironment) recovering(ctx context.Context, record allocationRecord, err error) error {
+func (e *ExecutionEnvironment) recovering(ctx context.Context, record executionRecord, err error) error {
 	if errors.Is(err, errEnvironmentConflict) || errors.Is(err, command.ErrEnvironmentActionRefused) {
 		return err
 	}

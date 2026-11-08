@@ -55,9 +55,9 @@ func (r *ServiceAccessResults) ReadServiceAccess(ctx context.Context, workID str
 	var row struct {
 		Observations []byte `xorm:"service_access_json"`
 	}
-	// Deliberately include retired allocations: a stopped Work retains its last
-	// observations. A newer allocation's empty projection supersedes old results.
-	found, err := r.db.Context(ctx).Table("execution_allocation").Cols("service_access_json").Where("session_id = ?", workID).Desc("created_at").Desc("id").Get(&row)
+	// Deliberately include retired executions: a stopped Work retains its last
+	// observations. A newer execution's empty projection supersedes old results.
+	found, err := r.db.Context(ctx).Table("agent_execution").Cols("service_access_json").Where("session_id = ?", workID).Desc("created_at").Desc("id").Get(&row)
 	if err != nil {
 		return nil, oops.With("operation", "read_work_service_access").Wrap(err)
 	}

@@ -13,7 +13,7 @@ import (
 )
 
 // An execution's realization is fixed when it begins and recorded with it
-// (execution_allocation.realization): which environment authority holds its
+// (agent_execution.realization): which environment authority holds its
 // environment for its whole life.
 const (
 	// realizationCloud is a sandbox on the cluster's Cloud.
@@ -71,24 +71,24 @@ type environmentAuthority interface {
 	launchLayout() launchLayout
 	// specify fixes the environment's specification from the execution's
 	// LaunchSpecification, its execd access token and its Work credential.
-	specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner Allocation, token, credential string) (environmentSpecification, error)
+	specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token, credential string) (environmentSpecification, error)
 	// claim returns what is frozen with the specification: the credential
 	// plan, or nil for none.
-	claim(ctx context.Context, record allocationRecord) ([]byte, error)
+	claim(ctx context.Context, record executionRecord) ([]byte, error)
 	// create submits the environment once and returns its reference, empty
 	// while unresolved; errCreationRefused when the authority refused it.
-	create(ctx context.Context, record allocationRecord) (string, error)
+	create(ctx context.Context, record executionRecord) (string, error)
 	// observe lists the environments carrying the execution's ownership; the
 	// bound one is confirmed by its own identity.
-	observe(ctx context.Context, record allocationRecord, retired bool) (environmentView, error)
+	observe(ctx context.Context, record executionRecord, retired bool) (environmentView, error)
 	// remove deletes one environment carrying the execution's ownership.
-	remove(ctx context.Context, record allocationRecord, id string) error
+	remove(ctx context.Context, record executionRecord, id string) error
 	// resolve finds the bound environment running, reaching it with client
 	// unless the authority keeps its own. environmentLost is its
 	// authoritative loss.
-	resolve(ctx context.Context, record allocationRecord, client *http.Client) (environment, environmentState, error)
+	resolve(ctx context.Context, record executionRecord, client *http.Client) (environment, environmentState, error)
 	// workCredential is the Work credential issued to the environment.
-	workCredential(record allocationRecord) (string, error)
+	workCredential(record executionRecord) (string, error)
 }
 
 // credentialDelivery is an authority that delivers the Work's credentials
@@ -98,11 +98,11 @@ type credentialDelivery interface {
 	// a redelivery replaces those delivered before.
 	// It asks holding before each write and clears what it wrote once
 	// holding refuses.
-	deliver(ctx context.Context, record allocationRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error)
+	deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error)
 	// withdraw clears the delivered credentials.
-	withdraw(ctx context.Context, record allocationRecord) error
+	withdraw(ctx context.Context, record executionRecord) error
 	// modelDigest identifies the model key a delivery carries now.
-	modelDigest(record allocationRecord) (string, error)
+	modelDigest(record executionRecord) (string, error)
 }
 
 // leasing is an authority whose environments expire unless renewed. One
@@ -110,7 +110,7 @@ type credentialDelivery interface {
 type leasing interface {
 	// renew moves the bound environment's expiry to expiresAt and returns
 	// the expiry the authority answered.
-	renew(ctx context.Context, record allocationRecord, expiresAt time.Time) (time.Time, error)
+	renew(ctx context.Context, record executionRecord, expiresAt time.Time) (time.Time, error)
 }
 
 // deliveredCredentials is what a delivery handed the environment: the service
@@ -123,7 +123,7 @@ type deliveredCredentials struct {
 }
 
 // authority is the environment authority of an execution.
-func (p *Provisioning) authority(record allocationRecord) (environmentAuthority, error) {
+func (p *Provisioning) authority(record executionRecord) (environmentAuthority, error) {
 	return p.authorityOf(record.Realization)
 }
 

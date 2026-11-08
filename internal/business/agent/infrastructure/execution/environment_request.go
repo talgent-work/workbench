@@ -11,7 +11,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-var errEnvironmentConflict = errors.New("agent: execution environment conflicts with its recorded allocation")
+var errEnvironmentConflict = errors.New("agent: execution environment conflicts with its recorded execution")
 
 func validateStartRequest(request domain.LaunchSpecification) error {
 	if err := request.WorkModel.Validate(); err != nil {

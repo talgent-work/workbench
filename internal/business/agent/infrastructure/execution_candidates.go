@@ -17,9 +17,9 @@ import (
 func (r *ExecutionQueryRepository) ListOutstandingExecutions(ctx context.Context, afterID string, limit int) ([]string, error) {
 	var ids []string
 	err := r.db.Context(ctx).SQL(`SELECT id FROM (
- SELECT id FROM execution_allocation WHERE deleted_at = 0 AND id > ?
+ SELECT id FROM agent_execution WHERE deleted_at = 0 AND id > ?
  UNION
- SELECT id FROM execution_allocation WHERE retired = 1 AND released_at = 0 AND id > ?
+ SELECT id FROM agent_execution WHERE retired = 1 AND released_at = 0 AND id > ?
 ) AS outstanding ORDER BY id LIMIT ?`, afterID, afterID, limit).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "list_outstanding_executions").Wrap(err)
@@ -34,7 +34,7 @@ func (r *ExecutionQueryRepository) ListExecutionsUsingAuthorization(ctx context.
 		return nil, nil
 	}
 	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT id FROM execution_allocation
+	err := r.db.Context(ctx).SQL(`SELECT id FROM agent_execution
  WHERE ? MEMBER OF(authorization_ids) AND deleted_at = 0`, authorizationID).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "list_executions_using_authorization").Wrap(err)
@@ -50,7 +50,7 @@ func (r *ExecutionQueryRepository) ListExecutionsReadingInputs(ctx context.Conte
 		return nil, nil
 	}
 	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT id FROM execution_allocation
+	err := r.db.Context(ctx).SQL(`SELECT id FROM agent_execution
  WHERE input_owner = ? AND deleted_at = 0 AND realization = ?`, owner, string(domain.RealizationManaged)).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "list_executions_reading_inputs").Wrap(err)

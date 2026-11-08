@@ -26,7 +26,7 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	input.InputSource = domain.WorkInputSource{Reference: "file-space/case-1", SpaceToken: "space-token"}
 	f.inputs.owners = map[string]string{"file-space/case-1": "case-credentials"}
 	record := f.launch(t, f.begin(t, input).ID)
-	require.True(t, record.SandboxReady)
+	require.True(t, record.CredentialsDelivered)
 	require.Equal(t, "harness-handle", record.ProcessID)
 	spec, err := decodeManagedSpecification(record)
 	require.NoError(t, err)
@@ -126,7 +126,7 @@ func TestManagedFirstDeliveryNeedsTheModelConfigurationsKey(t *testing.T) {
 	require.False(t, long, "nothing is prepared before the first delivery")
 	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
 	require.NoError(t, err)
-	require.False(t, record.SandboxReady)
+	require.False(t, record.CredentialsDelivered)
 	f.relay.mu.Lock()
 	defer f.relay.mu.Unlock()
 	require.Zero(t, f.relay.deliveries)

@@ -229,7 +229,7 @@ func (r *moduleRuns) release(t *testing.T, ctx context.Context, workID string) {
 func launches(t *testing.T, db *xorm.Engine) []domain.LaunchSpecification {
 	t.Helper()
 	var ids []string
-	require.NoError(t, db.Table("execution_allocation").Cols("id").OrderBy("created_at, id").Find(&ids))
+	require.NoError(t, db.Table("agent_execution").Cols("id").OrderBy("created_at, id").Find(&ids))
 	repository := execution.NewAgentExecutionRepository(db, time.Now)
 	result := make([]domain.LaunchSpecification, 0, len(ids))
 	for _, id := range ids {

@@ -87,7 +87,7 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	}
 	healthy, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
-	require.True(t, healthy.SandboxReady && healthy.EnvironmentPrepared && healthy.ProcessID != "", "Work reached a healthy native connection")
+	require.True(t, healthy.CredentialsDelivered && healthy.PreparationEnded && healthy.ProcessID != "", "Work reached a healthy native connection")
 
 	counter := &countingRepositoryCredentials{}
 	authorizations := authorizationcatalogtest.NoServices{}

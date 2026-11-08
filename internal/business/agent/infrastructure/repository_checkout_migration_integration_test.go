@@ -19,6 +19,10 @@ import (
 // environment ran it.
 const repositoryCheckoutMigration = "../../../../deploy/middleware/migrations/20261108-work-repository-checkouts.sql"
 
+// previousExecutionSchema is the execution tables' schema before the
+// AgentExecution persistence names, which this script ran against.
+const previousExecutionSchema = "execution/testdata/previous_execution_schema.sql"
+
 // previousTables are the first-start and continuation tables as the schema
 // file before the script defined them.
 const previousTables = `CREATE TABLE IF NOT EXISTS agent_initial_execution_request (
@@ -67,6 +71,7 @@ func TestRepositoryCheckoutMigrationCarriesOutcomesOntoTheWork(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	var current string
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&current))
+	previous := mysqltest.SchemaFrom(t, db, previousExecutionSchema)
 	// A scratch database in the shape before the script, so the shared schema
 	// the other tests borrow is never altered.
 	scratch := "talgent_migration_" + uuid.NewString()[:8]
@@ -75,8 +80,8 @@ func TestRepositoryCheckoutMigrationCarriesOutcomesOntoTheWork(t *testing.T) {
 	t.Cleanup(func() { _, _ = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", scratch)) })
 	_, err = conn.ExecContext(ctx, fmt.Sprintf("USE `%s`", scratch))
 	require.NoError(t, err)
-	for _, table := range []string{"agent_session", "execution_allocation"} {
-		_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s LIKE `%s`.%s", table, current, table))
+	for table, database := range map[string]string{"agent_session": current, "execution_allocation": previous} {
+		_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s LIKE `%s`.%s", table, database, table))
 		require.NoError(t, err)
 	}
 	_, err = conn.ExecContext(ctx, `ALTER TABLE agent_session DROP COLUMN repository_checkouts;
@@ -145,10 +150,11 @@ ALTER TABLE execution_allocation DROP COLUMN checkout_results;
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_session' AND COLUMN_NAME = 'task_execution_begun'").Scan(&begun))
 	require.Zero(t, begun, "whether a Work's task execution began no longer decides how it restarts")
 	for table, column := range map[string]string{"agent_session": "repository_checkouts", "execution_allocation": "checkout_results"} {
+		reference := map[string]string{"agent_session": current, "execution_allocation": previous}[table]
 		shape := "SELECT CONCAT_WS(' ', COLUMN_TYPE, IS_NULLABLE, COALESCE(COLUMN_DEFAULT, ''), COALESCE(CHARACTER_SET_NAME, ''), COALESCE(COLLATION_NAME, ''), COLUMN_COMMENT, ORDINAL_POSITION) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?"
 		var migrated, want string
 		require.NoError(t, conn.QueryRowContext(ctx, shape, scratch, table, column).Scan(&migrated))
-		require.NoError(t, conn.QueryRowContext(ctx, shape, current, table, column).Scan(&want))
+		require.NoError(t, conn.QueryRowContext(ctx, shape, reference, table, column).Scan(&want))
 		require.Equal(t, want, migrated, table+"."+column+" has the current schema's shape")
 	}
 }

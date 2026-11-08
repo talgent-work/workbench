@@ -28,7 +28,7 @@ type preparingAllocation struct {
 	steps    *executionSteps
 	receiver *nativeConnectionReceiver
 	db       *xorm.Engine
-	record   allocationRecord
+	record   executionRecord
 	exited   chan time.Time
 	// beforeExit runs while the preparation is attached, before it exits.
 	beforeExit atomic.Pointer[func()]
@@ -86,7 +86,7 @@ func newPreparingAllocation(t *testing.T) *preparingAllocation {
 	require.True(t, long, "the preparation follows the first delivery")
 	f.record, _, err = latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
-	require.True(t, f.record.SandboxReady)
+	require.True(t, f.record.CredentialsDelivered)
 	require.Empty(t, f.record.PreparationProcessID, "the first delivery precedes preparation")
 	return f
 }
@@ -100,7 +100,7 @@ func TestPreparationExitStartsAndConnectsTheHarnessAtOnce(t *testing.T) {
 	exit := <-f.exited
 	connected, _, err := latestAllocation(ctx, f.db, f.record.SessionID)
 	require.NoError(t, err)
-	require.True(t, connected.EnvironmentPrepared)
+	require.True(t, connected.PreparationEnded)
 	require.Equal(t, "harness-handle", connected.ProcessID)
 	require.Len(t, f.receiver.requests, 1)
 	require.Equal(t, "harness-handle", f.receiver.requests[0].GetProcessId())

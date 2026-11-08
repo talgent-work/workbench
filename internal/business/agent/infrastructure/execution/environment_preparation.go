@@ -20,8 +20,8 @@ type pluginInstallationResult struct {
 // once the Work asked its process to exit. This does not establish Harness
 // exit or successful plugin preparation. If the record is lost, the next
 // withdrawal repeats deletion of the same handle before clearing it.
-func (n *NativeConnections) discardPluginPreparation(ctx context.Context, record *allocationRecord, client *execd.Client) error {
-	if record.PreparationProcessID == "" || record.EnvironmentPrepared {
+func (n *NativeConnections) discardPluginPreparation(ctx context.Context, record *executionRecord, client *execd.Client) error {
+	if record.PreparationProcessID == "" || record.PreparationEnded {
 		return nil
 	}
 	// Native installation uses child process groups. Let the preparation
@@ -39,7 +39,7 @@ func (n *NativeConnections) discardPluginPreparation(ctx context.Context, record
 // startPreparation creates the preparation process with the start's checkout
 // plan: the repositories its LaunchSpecification leaves to it, fixed when the
 // process is created.
-func (n *NativeConnections) startPreparation(ctx context.Context, record *allocationRecord, client *execd.Client, launch domain.LaunchSpecification) error {
+func (n *NativeConnections) startPreparation(ctx context.Context, record *executionRecord, client *execd.Client, launch domain.LaunchSpecification) error {
 	if record.PreparationCommand == "" {
 		return domain.ErrExecutionRequest
 	}
@@ -65,9 +65,9 @@ func (n *NativeConnections) startPreparation(ctx context.Context, record *alloca
 // offset zero. It reports each selected Plugin's installation and each
 // planned repository's checkout, which the execution records with the end
 // of its preparation, so a ready Harness always follows recorded outcomes.
-func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *allocationRecord, client *execd.Client, launch domain.LaunchSpecification) (domain.PreparationReport, error) {
+func (n *NativeConnections) prepareEnvironment(ctx context.Context, record *executionRecord, client *execd.Client, launch domain.LaunchSpecification) (domain.PreparationReport, error) {
 	var none domain.PreparationReport
-	if record.EnvironmentPrepared {
+	if record.PreparationEnded {
 		return none, nil
 	}
 	if record.PreparationProcessID == "" {

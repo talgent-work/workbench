@@ -33,7 +33,7 @@ var (
 
 func (cloudEnvironment) launchLayout() launchLayout { return sandboxLayout }
 
-func (c cloudEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner Allocation, token, credential string) (environmentSpecification, error) {
+func (c cloudEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token, credential string) (environmentSpecification, error) {
 	spec, err := c.sandboxes.specification(ctx, request, mounts, owner, token, credential)
 	if err != nil {
 		return environmentSpecification{}, err
@@ -47,7 +47,7 @@ func (c cloudEnvironment) specify(ctx context.Context, request domain.LaunchSpec
 }
 
 // sandboxSpec is the execution's validated sandbox specification.
-func (c cloudEnvironment) sandboxSpec(record allocationRecord) (Allocation, sdk.CreateSandboxRequest, error) {
+func (c cloudEnvironment) sandboxSpec(record executionRecord) (SandboxOwner, sdk.CreateSandboxRequest, error) {
 	owner, spec, err := c.ownership(record)
 	if err != nil {
 		return owner, spec, err
@@ -64,11 +64,11 @@ func (c cloudEnvironment) sandboxSpec(record allocationRecord) (Allocation, sdk.
 // ownership is what the execution's sandboxes carry: its owner and the
 // specification fixed before its submission, whose metadata the server lists
 // by.
-func (cloudEnvironment) ownership(record allocationRecord) (Allocation, sdk.CreateSandboxRequest, error) {
-	owner := Allocation{WorkID: record.SessionID, ID: record.ID}
+func (cloudEnvironment) ownership(record executionRecord) (SandboxOwner, sdk.CreateSandboxRequest, error) {
+	owner := SandboxOwner{WorkID: record.SessionID, ID: record.ID}
 	var spec sdk.CreateSandboxRequest
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
-		return owner, spec, oops.With("operation", "decode_allocation_spec").Wrap(err)
+		return owner, spec, oops.With("operation", "decode_execution_spec").Wrap(err)
 	}
 	if spec.Metadata[sandboxSpecLabel] == "" {
 		return owner, spec, domain.ErrExecutionRequest
@@ -78,7 +78,7 @@ func (cloudEnvironment) ownership(record allocationRecord) (Allocation, sdk.Crea
 
 // claim freezes the Work's repository authorization with the specification,
 // before the creation is submitted.
-func (c cloudEnvironment) claim(ctx context.Context, record allocationRecord) ([]byte, error) {
+func (c cloudEnvironment) claim(ctx context.Context, record executionRecord) ([]byte, error) {
 	if _, _, err := c.sandboxSpec(record); err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (c cloudEnvironment) claim(ctx context.Context, record allocationRecord) ([
 	return c.credentials.plan(ctx, request.HomeBinding.OwnerID, record.SessionID)
 }
 
-func (c cloudEnvironment) create(ctx context.Context, record allocationRecord) (string, error) {
+func (c cloudEnvironment) create(ctx context.Context, record executionRecord) (string, error) {
 	owner, spec, err := c.sandboxSpec(record)
 	if err != nil {
 		return "", err
@@ -100,7 +100,7 @@ func (c cloudEnvironment) create(ctx context.Context, record allocationRecord) (
 // observe lists the sandboxes the server shows with the execution's
 // ownership. The list may not show a sandbox yet, so the bound one is
 // confirmed by its own identity: present exactly while a GET finds it.
-func (c cloudEnvironment) observe(ctx context.Context, record allocationRecord, _ bool) (environmentView, error) {
+func (c cloudEnvironment) observe(ctx context.Context, record executionRecord, _ bool) (environmentView, error) {
 	owner, spec, err := c.ownership(record)
 	if err != nil {
 		return environmentView{}, err
@@ -131,12 +131,12 @@ func (c cloudEnvironment) observe(ctx context.Context, record allocationRecord, 
 }
 
 // renew extends the bound sandbox's lease to expiresAt.
-func (c cloudEnvironment) renew(ctx context.Context, record allocationRecord, expiresAt time.Time) (time.Time, error) {
-	return c.sandboxes.renew(ctx, Allocation{WorkID: record.SessionID, ID: record.ID}, record.SandboxID, expiresAt)
+func (c cloudEnvironment) renew(ctx context.Context, record executionRecord, expiresAt time.Time) (time.Time, error) {
+	return c.sandboxes.renew(ctx, SandboxOwner{WorkID: record.SessionID, ID: record.ID}, record.SandboxID, expiresAt)
 }
 
 // remove deletes one sandbox once its exact ownership is confirmed again.
-func (c cloudEnvironment) remove(ctx context.Context, record allocationRecord, id string) error {
+func (c cloudEnvironment) remove(ctx context.Context, record executionRecord, id string) error {
 	owner, spec, err := c.ownership(record)
 	if err != nil {
 		return err
@@ -145,8 +145,8 @@ func (c cloudEnvironment) remove(ctx context.Context, record allocationRecord, i
 	return err
 }
 
-func (c cloudEnvironment) resolve(ctx context.Context, record allocationRecord, client *http.Client) (environment, environmentState, error) {
-	owner := Allocation{WorkID: record.SessionID, ID: record.ID}
+func (c cloudEnvironment) resolve(ctx context.Context, record executionRecord, client *http.Client) (environment, environmentState, error) {
+	owner := SandboxOwner{WorkID: record.SessionID, ID: record.ID}
 	bound, err := c.sandboxes.inspect(ctx, owner, record.SandboxID)
 	if errors.Is(err, errSandboxAbsent) {
 		return environment{}, environmentLost, nil
@@ -166,15 +166,15 @@ func (c cloudEnvironment) resolve(ctx context.Context, record allocationRecord, 
 	return environment{endpoint: endpoint, token: spec.Env["EXECD_ACCESS_TOKEN"], client: execdClient}, environmentRunning, nil
 }
 
-func (cloudEnvironment) workCredential(record allocationRecord) (string, error) {
+func (cloudEnvironment) workCredential(record executionRecord) (string, error) {
 	var spec sdk.CreateSandboxRequest
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
-		return "", oops.With("operation", "decode_allocation_spec").Wrap(err)
+		return "", oops.With("operation", "decode_execution_spec").Wrap(err)
 	}
 	return spec.Env[workCredentialEnv], nil
 }
 
-func (c cloudEnvironment) deliver(ctx context.Context, record allocationRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
+func (c cloudEnvironment) deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
 	admitted, err := decodeStartRequest(record.RequestJSON)
 	if err != nil {
 		return deliveredCredentials{}, oops.With("operation", "decode_native_request").Wrap(err)
@@ -186,10 +186,10 @@ func (c cloudEnvironment) deliver(ctx context.Context, record allocationRecord, 
 	return c.credentials.prepare(ctx, record, admitted, spec, redelivery, holding)
 }
 
-func (c cloudEnvironment) withdraw(ctx context.Context, record allocationRecord) error {
+func (c cloudEnvironment) withdraw(ctx context.Context, record executionRecord) error {
 	return c.credentials.clear(ctx, record.SandboxID)
 }
 
-func (c cloudEnvironment) modelDigest(record allocationRecord) (string, error) {
+func (c cloudEnvironment) modelDigest(record executionRecord) (string, error) {
 	return c.credentials.modelDigest(record)
 }

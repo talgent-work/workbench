@@ -27,7 +27,7 @@ func TestPreparationRerunOfTheSameAllocationDoesNotInstallAgain(t *testing.T) {
 	input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "fixed", Source: "fixture", Version: "1", RetrievalRef: "archive:fixed", NativeEntry: []byte(`{"name":"fixed","version":"1"}`)}}}
 	config := NativeLaunchConfig{Binary: claude}
 	run := func(allocation string) (string, int) {
-		launch, err := config.prepare(sandboxLayout, input, Allocation{WorkID: input.WorkID, ID: allocation}, "")
+		launch, err := config.prepare(sandboxLayout, input, SandboxOwner{WorkID: input.WorkID, ID: allocation}, "")
 		require.NoError(t, err)
 		process := exec.Command("sh", "-c", launch.PreparationCommand)
 		process.Dir, process.Env = workspace, append(os.Environ(), "HOME="+filepath.Join(dir, "home"))

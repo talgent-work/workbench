@@ -72,7 +72,7 @@ func (ManagedEnvironment) launchLayout() launchLayout { return machineLayout }
 // specify holds no mounts and no Provider credentials, so the execution uses
 // no authorization the platform would redeliver. It issues the run's own
 // telemetry token (managed_telemetry.go).
-func (m ManagedEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, _ domain.SandboxMounts, _ Allocation, token, credential string) (environmentSpecification, error) {
+func (m ManagedEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, _ domain.SandboxMounts, _ SandboxOwner, token, credential string) (environmentSpecification, error) {
 	spec, err := managedSpecificationFor(request, m.models, token, credential)
 	if err != nil {
 		return environmentSpecification{}, err
@@ -89,7 +89,7 @@ func (m ManagedEnvironment) specify(ctx context.Context, request domain.LaunchSp
 }
 
 // claim freezes nothing: the machine's own git credentials serve the Work.
-func (ManagedEnvironment) claim(_ context.Context, record allocationRecord) ([]byte, error) {
+func (ManagedEnvironment) claim(_ context.Context, record executionRecord) ([]byte, error) {
 	_, err := decodeManagedSpecification(record)
 	return nil, err
 }
@@ -99,7 +99,7 @@ func (ManagedEnvironment) claim(_ context.Context, record allocationRecord) ([]b
 // up. The execution's own identity stands for the environment it opened. A
 // machine the relay does not reach now leaves it unresolved; one still
 // installing Claude Code does too, and says so.
-func (m ManagedEnvironment) create(ctx context.Context, record allocationRecord) (string, error) {
+func (m ManagedEnvironment) create(ctx context.Context, record executionRecord) (string, error) {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return "", err
@@ -118,7 +118,7 @@ func (m ManagedEnvironment) create(ctx context.Context, record allocationRecord)
 
 // resolve reaches the environment through the relay with the relay's own
 // client, which never follows a redirect with the Work's token.
-func (m ManagedEnvironment) resolve(ctx context.Context, record allocationRecord, _ *http.Client) (environment, environmentState, error) {
+func (m ManagedEnvironment) resolve(ctx context.Context, record executionRecord, _ *http.Client) (environment, environmentState, error) {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return environment{}, environmentPending, err
@@ -163,7 +163,7 @@ func (m ManagedEnvironment) resolveMachine(ctx context.Context, spec managedSpec
 // of the Work or its Computer was removed. A retired execution's environment
 // is gone once its run's process handles were deleted: the Work's directory
 // is the Work's, not the run's.
-func (m ManagedEnvironment) observe(ctx context.Context, record allocationRecord, retired bool) (environmentView, error) {
+func (m ManagedEnvironment) observe(ctx context.Context, record executionRecord, retired bool) (environmentView, error) {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return environmentView{}, err
@@ -197,7 +197,7 @@ func (m ManagedEnvironment) observe(ctx context.Context, record allocationRecord
 // remove deletes the run's process handles on the machine and records it;
 // the Work's directory stays. A machine not reachable now keeps the
 // environment present until it is reachable again.
-func (m ManagedEnvironment) remove(ctx context.Context, record allocationRecord, id string) error {
+func (m ManagedEnvironment) remove(ctx context.Context, record executionRecord, id string) error {
 	if id != record.ID {
 		return errEnvironmentConflict
 	}
@@ -209,7 +209,7 @@ func (m ManagedEnvironment) remove(ctx context.Context, record allocationRecord,
 	if err != nil || !released {
 		return err
 	}
-	if _, err := m.records.db.Context(ctx).Exec("UPDATE execution_allocation SET handles_released = 1 WHERE id = ?", record.ID); err != nil {
+	if _, err := m.records.db.Context(ctx).Exec("UPDATE agent_execution SET handles_released = 1 WHERE id = ?", record.ID); err != nil {
 		return oops.With("operation", "record_released_handles").Wrap(err)
 	}
 	return nil
@@ -217,7 +217,7 @@ func (m ManagedEnvironment) remove(ctx context.Context, record allocationRecord,
 
 // workCredential is the one the Work's credentials deliver to the machine's
 // local proxy.
-func (ManagedEnvironment) workCredential(record allocationRecord) (string, error) {
+func (ManagedEnvironment) workCredential(record executionRecord) (string, error) {
 	spec, err := decodeManagedSpecification(record)
 	return spec.WorkCredential, err
 }

@@ -60,7 +60,7 @@ func TestServiceAccessResultsThroughAuthenticatedPublicAPI(t *testing.T) {
 	require.Empty(t, response.Observations, "no observation must not claim authentication success")
 	allocation, _, err := latestAllocation(t.Context(), f.db, work.ID)
 	require.NoError(t, err)
-	_, err = f.db.Exec("UPDATE execution_allocation SET service_access_json = ? WHERE id = ?", `[{"service":"github","target":"github-remote-mcp","plugin":"tools","mcp":"github","status":"unavailable","reason":"reconnect_required"}]`, allocation.ID)
+	_, err = f.db.Exec("UPDATE agent_execution SET service_access_json = ? WHERE id = ?", `[{"service":"github","target":"github-remote-mcp","plugin":"tools","mcp":"github","status":"unavailable","reason":"reconnect_required"}]`, allocation.ID)
 	require.NoError(t, err)
 	response, err = read("e5968ce5-e1db-58d9-b31d-39cc8a1935cf", work.ID)
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestServiceAccessResultsThroughAuthenticatedPublicAPI(t *testing.T) {
 
 	// History remains readable after retirement, but a new allocation without
 	// observations must not inherit a previous allocation's authentication result.
-	_, err = f.db.Exec("UPDATE execution_allocation SET deleted_at = updated_at WHERE id = ?", allocation.ID)
+	_, err = f.db.Exec("UPDATE agent_execution SET deleted_at = updated_at WHERE id = ?", allocation.ID)
 	require.NoError(t, err)
 	response, err = read("e5968ce5-e1db-58d9-b31d-39cc8a1935cf", work.ID)
 	require.NoError(t, err)

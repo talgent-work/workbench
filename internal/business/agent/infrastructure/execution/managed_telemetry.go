@@ -15,13 +15,13 @@ import (
 // (telemetryEnvironment), straight to the platform's public telemetry
 // endpoint. It
 // authenticates with a telemetry token of its own, issued with the run's
-// allocation and revoked with it, which writes only that run's telemetry:
+// execution and revoked with it, which writes only that run's telemetry:
 // never the Work credential or a model key, which no process of the Work
 // holds. The endpoint replaces the resource attribution of everything sent
 // with the one recorded here, so a machine cannot attribute telemetry to
 // another Work, person or Computer.
 
-// managedTelemetry is a Managed allocation's telemetry, recorded in its
+// managedTelemetry is a Managed execution's telemetry, recorded in its
 // specification. Endpoint and Token reach the machine in the environment
 // PUT, never Environment; Attributes stay with the platform.
 type managedTelemetry struct {
@@ -57,7 +57,7 @@ func (s managedSpecification) machineTelemetry() machineTelemetry {
 }
 
 // TelemetryAttributions authenticates a Managed run's telemetry by its
-// token, against the Work's current live allocation.
+// token, against the Work's current live execution.
 type TelemetryAttributions struct{ provisioning *Provisioning }
 
 var _ query.RunTelemetryAttributions = (*TelemetryAttributions)(nil)

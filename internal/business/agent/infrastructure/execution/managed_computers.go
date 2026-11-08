@@ -19,9 +19,9 @@ import (
 
 // ManagedComputers reaches the Managed realization's machines: the Work's
 // Talgent Computer through Computer Gateway's relay, and Computer for whether
-// the machine was removed. Where a Cloud allocation has a sandbox, a Managed
-// allocation has the Work's one directory on the machine, opened by the relay's
-// environment PUT and kept for the Work's life; the allocation itself, and its
+// the machine was removed. Where a Cloud execution has a sandbox, a Managed
+// execution has the Work's one directory on the machine, opened by the relay's
+// environment PUT and kept for the Work's life; the execution itself, and its
 // compute, is the run's processes only. The Work's credentials reach the
 // machine's local proxy, never its processes, through the relay's credentials
 // PUT; the proxy carries the Work credential to the platform Connector at its
@@ -102,7 +102,7 @@ func onOrigin(origin *url.URL, address string) (string, bool) {
 	return strings.TrimRight(parsed.String(), "/"), true
 }
 
-// managedSpecification is the recorded environment of a Managed allocation,
+// managedSpecification is the recorded environment of a Managed execution,
 // held in specification_json in place of a Cloud's sandbox specification.
 type managedSpecification struct {
 	ComputerID string `json:"managedComputerId"`
@@ -126,9 +126,9 @@ type managedSpecification struct {
 	Telemetry   managedTelemetry  `json:"telemetry"`
 }
 
-// decodeManagedSpecification reads a Managed allocation's recorded
+// decodeManagedSpecification reads a Managed execution's recorded
 // environment.
-func decodeManagedSpecification(record allocationRecord) (managedSpecification, error) {
+func decodeManagedSpecification(record executionRecord) (managedSpecification, error) {
 	var spec managedSpecification
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
 		return spec, oops.With("operation", "decode_managed_spec").Wrap(err)

@@ -55,8 +55,8 @@ func request() domain.LaunchSpecification {
 
 const fixtureAllocationID = "01900000-0000-7000-8000-000000000001"
 
-func owner(r domain.LaunchSpecification) Allocation {
-	return Allocation{WorkID: r.WorkID, ID: fixtureAllocationID}
+func owner(r domain.LaunchSpecification) SandboxOwner {
+	return SandboxOwner{WorkID: r.WorkID, ID: fixtureAllocationID}
 }
 
 // submit allocates the fixture sandbox for the request's live allocation.
@@ -372,7 +372,7 @@ func TestSandboxDeletionRechecksImmutableOwnershipBeforeDelete(t *testing.T) {
 	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "execd-secret", "work-credential-fixture")
 	require.NoError(t, err)
 	fixture.pages = [][]sdk.SandboxInfo{{{ID: sandboxID, Metadata: spec.Metadata}}}
-	other := Allocation{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
+	other := SandboxOwner{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
 	fixture.info = &sdk.SandboxInfo{ID: sandboxID, Metadata: correlation(other)}
 	_, err = provider.Delete(context.Background(), owner(input), spec, sandboxID, fixtureSandboxCredentials(nil, provider))
 	require.ErrorIs(t, err, errEnvironmentConflict)
@@ -421,7 +421,7 @@ func TestSandboxEndpointRequiresCurrentIdentityAndResolvesAgain(t *testing.T) {
 	bound, err = provider.inspect(context.Background(), owner(input), sandboxID)
 	require.NoError(t, err)
 	require.False(t, bound.running)
-	other := Allocation{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
+	other := SandboxOwner{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}
 	_, err = provider.inspect(context.Background(), other, sandboxID)
 	require.ErrorIs(t, err, errEnvironmentConflict)
 }

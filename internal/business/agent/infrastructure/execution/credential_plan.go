@@ -52,11 +52,11 @@ func (m modelCredential) digest() string {
 	return hex.EncodeToString(sum[:16])
 }
 
-// modelDigest identifies the model key a delivery to the allocation carries
+// modelDigest identifies the model key a delivery to the execution carries
 // now under the current Model Configurations, empty when it carries none. A
 // configuration's key is rotated by redeploying it, so a recorded digest that
 // differs marks a delivery due.
-func (c *SandboxCredentials) modelDigest(record allocationRecord) (string, error) {
+func (c *SandboxCredentials) modelDigest(record executionRecord) (string, error) {
 	admitted, err := decodeStartRequest(record.RequestJSON)
 	if err != nil {
 		return "", err

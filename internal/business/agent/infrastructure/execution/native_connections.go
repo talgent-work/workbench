@@ -42,7 +42,7 @@ func NewNativeConnections(provisioning *Provisioning, credentials *SandboxCreden
 // resolve finds the execution's bound environment running through its
 // authority; an environment not running now is an error of the step, whose
 // loss the execution's observation decides.
-func (n *NativeConnections) resolve(ctx context.Context, record allocationRecord) (environment, error) {
+func (n *NativeConnections) resolve(ctx context.Context, record executionRecord) (environment, error) {
 	authority, err := n.provisioning.authority(record)
 	if err != nil {
 		return environment{}, err
@@ -65,7 +65,7 @@ var errEnvironmentNotRunning = errors.New("agent: the bound execution environmen
 // environment, or replaces those delivered before, and reports what it
 // delivered. A first delivery that fails clears whatever it wrote. An
 // authority that delivers none uses the machine's own.
-func (n *NativeConnections) deliver(ctx context.Context, record allocationRecord, redelivery bool, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
+func (n *NativeConnections) deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
 	authority, err := n.provisioning.authority(record)
 	if err != nil {
 		return domain.CredentialDelivery{}, err
@@ -97,7 +97,7 @@ func (n *NativeConnections) deliver(ctx context.Context, record allocationRecord
 	return domain.CredentialDelivery{Digest: delivered.ModelDigest, ExpiresAt: delivered.ExpiresAt}, nil
 }
 
-func (n *NativeConnections) recordServiceAccess(ctx context.Context, record allocationRecord, statuses []ServiceAccessStatus) error {
+func (n *NativeConnections) recordServiceAccess(ctx context.Context, record executionRecord, statuses []ServiceAccessStatus) error {
 	encoded, err := json.Marshal(statuses)
 	if err != nil {
 		return err
@@ -123,7 +123,7 @@ func (n *NativeConnections) recordServiceAccess(ctx context.Context, record allo
 // the connection to report its exit. An environment that is gone holds no
 // credentials to clear; only its authoritative absence, not a failed
 // endpoint lookup, says so.
-func (n *NativeConnections) withdraw(ctx context.Context, record allocationRecord) error {
+func (n *NativeConnections) withdraw(ctx context.Context, record executionRecord) error {
 	authority, err := n.provisioning.authority(record)
 	if err != nil {
 		return err
@@ -141,7 +141,7 @@ func (n *NativeConnections) withdraw(ctx context.Context, record allocationRecor
 				return err
 			}
 		}
-		if current.PreparationProcessID == "" || current.EnvironmentPrepared {
+		if current.PreparationProcessID == "" || current.PreparationEnded {
 			return nil
 		}
 		box, state, err := authority.resolve(ctx, current, n.http)
@@ -156,7 +156,7 @@ func (n *NativeConnections) withdraw(ctx context.Context, record allocationRecor
 // and reports each selected Plugin's installation and each planned
 // repository's checkout. Re-attaching after an interrupted attempt replays
 // the preparation from its start.
-func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord, holding command.EnvironmentHolding) (domain.PreparationReport, error) {
+func (n *NativeConnections) prepare(ctx context.Context, record executionRecord, holding command.EnvironmentHolding) (domain.PreparationReport, error) {
 	var none domain.PreparationReport
 	box, err := n.resolve(ctx, record)
 	if err != nil {
@@ -188,7 +188,7 @@ func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord
 // launch starts the Harness in the bound environment and returns its
 // process. The execution records it before it is connected; an uncertain
 // record leaves the process to the environment's deletion.
-func (n *NativeConnections) launch(ctx context.Context, record allocationRecord, holding command.EnvironmentHolding) (string, error) {
+func (n *NativeConnections) launch(ctx context.Context, record executionRecord, holding command.EnvironmentHolding) (string, error) {
 	box, err := n.resolve(ctx, record)
 	if err != nil {
 		return "", err
@@ -215,7 +215,7 @@ func (n *NativeConnections) launch(ctx context.Context, record allocationRecord,
 
 // connect hands the launched process to Dispatcher. It resolves the
 // environment only: no preparation, delivery or cleanup.
-func (n *NativeConnections) connect(ctx context.Context, record allocationRecord) error {
+func (n *NativeConnections) connect(ctx context.Context, record executionRecord) error {
 	box, err := n.resolve(ctx, record)
 	if err != nil {
 		return err

@@ -30,6 +30,7 @@ func TestPluginResultMigrationMovesOutcomesToExecutions(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	var current string
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&current))
+	previous := mysqltest.SchemaFrom(t, db, previousExecutionSchema)
 	// A scratch database in the shape before the script, so the shared schema
 	// the other tests borrow is never altered.
 	scratch := "talgent_migration_" + uuid.NewString()[:8]
@@ -40,7 +41,7 @@ func TestPluginResultMigrationMovesOutcomesToExecutions(t *testing.T) {
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, "CREATE TABLE agent_plugin_result (id varchar(36) NOT NULL, work_id varchar(36) NOT NULL, slug varchar(128) NOT NULL, installed tinyint(1) NOT NULL DEFAULT '0', PRIMARY KEY (id), UNIQUE KEY uniq_work_slug (work_id, slug))")
 	require.NoError(t, err)
-	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE execution_allocation LIKE `%s`.execution_allocation", current))
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE execution_allocation LIKE `%s`.execution_allocation", previous))
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, "ALTER TABLE execution_allocation DROP KEY idx_session_id_created_at_id")
 	require.NoError(t, err)
@@ -62,8 +63,8 @@ func TestPluginResultMigrationMovesOutcomesToExecutions(t *testing.T) {
 		require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf("SHOW CREATE TABLE `%s`.%s", database, table)).Scan(&name, &statement))
 		return statement
 	}
-	require.Equal(t, definition(current, "execution_plugin_result"), definition(scratch, "execution_plugin_result"), "the script creates the table the schema defines")
-	require.Equal(t, definition(current, "execution_allocation"), definition(scratch, "execution_allocation"), "the script indexes each Work's executions as the schema does")
+	require.Equal(t, definition(previous, "execution_plugin_result"), definition(scratch, "execution_plugin_result"), "the script creates the table the schema defines")
+	require.Equal(t, definition(previous, "execution_allocation"), definition(scratch, "execution_allocation"), "the script indexes each Work's executions as the schema does")
 	var rows int
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM execution_plugin_result").Scan(&rows))
 	require.Zero(t, rows, "no outcome is carried over")

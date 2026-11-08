@@ -34,7 +34,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	input := request()
 	live, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
-	history := make([]allocationRecord, 105)
+	history := make([]executionRecord, 105)
 	for i := range history {
 		history[i] = live
 		history[i].ID = fmt.Sprintf("01900000-0000-7000-8000-%012d", i)
@@ -43,8 +43,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 		closed.WorkID = history[i].SessionID
 		history[i].RequestJSON, err = encodeLaunch(closed)
 		require.NoError(t, err)
-		history[i].RequestHash = storageKey(string(history[i].RequestJSON))
-		history[i].AllocationLabel = storageKey(history[i].ID)[:48] // MySQL must derive the same label
+		history[i].OwnershipLabel = storageKey(history[i].ID)[:48] // MySQL must derive the same label
 		history[i].Submitted = true
 		history[i].State, history[i].Retirement = "released", "exited"
 		history[i].DeletedAt = 1
@@ -62,7 +61,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 		mu.Lock()
 		defer mu.Unlock()
 		filter, _ := url.ParseQuery(r.URL.Query().Get("metadata"))
-		lists[filter.Get(sandboxAllocationLabel)]++
+		lists[filter.Get(sandboxOwnershipLabel)]++
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"items":[]}`))
 	}))
@@ -78,7 +77,7 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	require.Equal(t, []string{live.ID}, outstanding, "only the live execution has unfinished obligations")
 
 	late := history[42]
-	found, ok, err := p.forSandbox(ctx, late.AllocationLabel)
+	found, ok, err := p.forSandbox(ctx, late.OwnershipLabel)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, late.ID, found)
@@ -86,9 +85,9 @@ func TestRetiredHistoryIsNotOutstandingAndObservingItWritesNothing(t *testing.T)
 	_, err = steps.handler.Reconcile(ctx, late.ID)
 	require.NoError(t, err)
 	mu.Lock()
-	require.Equal(t, map[string]int{late.AllocationLabel: 1}, lists, "only the observed allocation is checked")
+	require.Equal(t, map[string]int{late.OwnershipLabel: 1}, lists, "only the observed allocation is checked")
 	mu.Unlock()
-	var actual []allocationRecord
+	var actual []executionRecord
 	require.NoError(t, db.Where("retired = 1").Asc("id").Find(&actual))
 	require.Equal(t, history, actual, "observation must not emit full-row binlog updates")
 }

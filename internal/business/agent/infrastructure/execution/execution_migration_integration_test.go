@@ -43,6 +43,7 @@ func TestExecutionMigrationBackfillsExecutionFacts(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	var current string
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&current))
+	previous := mysqltest.SchemaFrom(t, db, previousExecutionSchema)
 	// A scratch database in the shape before the script, so the shared schema
 	// the other tests borrow is never altered.
 	scratch := "talgent_migration_" + uuid.NewString()[:8]
@@ -51,8 +52,8 @@ func TestExecutionMigrationBackfillsExecutionFacts(t *testing.T) {
 	t.Cleanup(func() { _, _ = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", scratch)) })
 	_, err = conn.ExecContext(ctx, fmt.Sprintf("USE `%s`", scratch))
 	require.NoError(t, err)
-	for _, table := range []string{"execution_allocation", "agent_session"} {
-		_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s LIKE `%s`.%s", table, current, table))
+	for table, database := range map[string]string{"execution_allocation": previous, "agent_session": current} {
+		_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s LIKE `%s`.%s", table, database, table))
 		require.NoError(t, err)
 	}
 	drop := "ALTER TABLE execution_allocation"
@@ -154,16 +155,16 @@ func TestExecutionMigrationBackfillsExecutionFacts(t *testing.T) {
 	require.NoError(t, err)
 	var shape, want string
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT GROUP_CONCAT(COLUMN_NAME, ' ', COLUMN_TYPE, ' ', IS_NULLABLE, ' ', COALESCE(COLUMN_DEFAULT, '') ORDER BY COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'execution_allocation'").Scan(&shape))
-	require.NoError(t, conn.QueryRowContext(ctx, "SELECT GROUP_CONCAT(COLUMN_NAME, ' ', COLUMN_TYPE, ' ', IS_NULLABLE, ' ', COALESCE(COLUMN_DEFAULT, '') ORDER BY COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'execution_allocation'", current).Scan(&want))
+	require.NoError(t, conn.QueryRowContext(ctx, "SELECT GROUP_CONCAT(COLUMN_NAME, ' ', COLUMN_TYPE, ' ', IS_NULLABLE, ' ', COALESCE(COLUMN_DEFAULT, '') ORDER BY COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'execution_allocation'", previous).Scan(&want))
 	require.Equal(t, want, shape, "the migrated table has the current schema's columns")
 	var indexes, wantIndexes string
 	indexQuery := "SELECT GROUP_CONCAT(DISTINCT INDEX_NAME ORDER BY INDEX_NAME) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'execution_allocation'"
 	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(indexQuery, "DATABASE()")).Scan(&indexes))
-	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(indexQuery, "?"), current).Scan(&wantIndexes))
+	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(indexQuery, "?"), previous).Scan(&wantIndexes))
 	require.Equal(t, wantIndexes, indexes, "the migrated table has the current schema's indexes")
 	var comment, wantComment string
 	commentQuery := "SELECT COLUMN_COMMENT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'execution_allocation' AND COLUMN_NAME = 'retired'"
 	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(commentQuery, "DATABASE()")).Scan(&comment))
-	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(commentQuery, "?"), current).Scan(&wantComment))
+	require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf(commentQuery, "?"), previous).Scan(&wantComment))
 	require.Equal(t, wantComment, comment, "the retirement predicate no longer describes the late-result watch")
 }
