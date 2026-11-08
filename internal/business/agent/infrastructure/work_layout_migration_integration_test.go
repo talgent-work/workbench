@@ -78,7 +78,7 @@ func TestWorkLayoutMigrationLocatesEveryExistingWork(t *testing.T) {
 	require.NoError(t, err)
 	const execution = "00000000-0000-4000-8000-000000000031"
 	_, err = conn.ExecContext(ctx, `INSERT INTO agent_execution (id, session_id, request_json, credential_plan_json, specification_json, preparation_command, launch_command, native_session_id, authorization_ids, input_owner)
- VALUES (?, ?, '{}', '{}', '{}', '', '', ?, '[]', 'case-1')`, execution, managedWork, uuid.NewString())
+ VALUES (?, ?, ?, '{}', '{}', '', '', ?, '[]', 'case-1')`, execution, managedWork, `{"WorkID":"`+managedWork+`"}`, uuid.NewString())
 	require.NoError(t, err)
 
 	script, err := os.ReadFile(workLayoutMigration)
@@ -172,6 +172,9 @@ func TestWorkLayoutMigrationLocatesEveryExistingWork(t *testing.T) {
 		require.NoError(t, conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN ("+columns+")", scratch, table).Scan(&left))
 		require.Zero(t, left, table+"'s replaced columns are dropped")
 	}
+	var harness string
+	require.NoError(t, conn.QueryRowContext(ctx, "SELECT JSON_UNQUOTE(JSON_EXTRACT(request_json, '$.AgentHarness')) FROM agent_execution WHERE id = ?", execution).Scan(&harness))
+	require.Equal(t, "claude-code", harness, "a recorded execution's launch names its Work's Agent Harness")
 	for table, index := range map[string]string{"agent_session": "idx_represented_person_deleted_at_created_at_id", "agent_execution": "idx_inputs_directory_deleted_at"} {
 		var columns, want string
 		indexed := "SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ?"

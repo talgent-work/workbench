@@ -129,10 +129,9 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	args := []string{c.Binary, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages", "--permission-prompt-tool", "stdio"}
 	args = append(args, permissionArguments(request.PermissionMode)...)
 	args = append(args, "--system-prompt", request.Capabilities.Prompt)
-	switch request.ContextMode {
-	case domain.ContextContinue:
-		args = append(args, "--resume", sessionID)
-	case domain.ContextFresh:
+	// A continued or recovered start resumes the Work's conversation only
+	// once its transcript exists (see recovered below).
+	if request.ContextMode == domain.ContextFresh {
 		args = append(args, freshContext(request.StartingContext, sessionID)...)
 	}
 	// The Soul follows the startup Agent's prompt and never replaces it. The
@@ -210,9 +209,10 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	// CLI; the Work's chosen main model is passed as the CLI flag that outranks it.
 	model := "if test -n \"${ANTHROPIC_MODEL-}\"; then set -- \"$@\" --model \"$ANTHROPIC_MODEL\"; fi; "
 	recovered := ""
-	if request.ContextMode == domain.ContextRecover {
-		// A recovered start resumes the Work's own conversation once it
-		// exists; until then it starts it as a fresh start would.
+	if request.ContextMode == domain.ContextContinue || request.ContextMode == domain.ContextRecover {
+		// A resumed or recovered start continues the Work's own conversation
+		// once it exists; a Work stopped before its first turn has none, and
+		// starts it as a fresh start would.
 		recovered = layout.recovered(harness, sessionID, freshContext(request.StartingContext, sessionID))
 	}
 	command := layout.prefix + "exec 2>>" + diagnostic + "; talgent_effort=" + effort + "; unset CLAUDE_CODE_EFFORT_LEVEL; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""

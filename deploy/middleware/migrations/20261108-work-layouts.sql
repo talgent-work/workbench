@@ -145,3 +145,10 @@ SET @statement = IF(@old,
 PREPARE step FROM @statement;
 EXECUTE step;
 DEALLOCATE PREPARE step;
+
+-- Each recorded execution's launch names its Work's Agent Harness, which
+-- every read of an execution validates; an execution recorded before Agent
+-- Harnesses existed takes its Work's.
+UPDATE agent_execution e JOIN agent_session s ON s.id = JSON_UNQUOTE(JSON_EXTRACT(e.request_json, '$.WorkID'))
+  SET e.request_json = JSON_SET(e.request_json, '$.AgentHarness', s.agent_harness)
+  WHERE JSON_EXTRACT(e.request_json, '$.AgentHarness') IS NULL;

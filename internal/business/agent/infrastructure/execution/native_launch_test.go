@@ -120,7 +120,7 @@ func TestResumeAppliesTheCurrentSoul(t *testing.T) {
 	input.Soul = "Answer in haiku."
 	resumed, err := config.prepare(sandboxLayout, input, owner(input), "")
 	require.NoError(t, err)
-	require.Contains(t, resumed.Command, "'--resume' '"+resumed.SessionID+"'")
+	require.Contains(t, resumed.Command, "--resume '"+resumed.SessionID+"'")
 	require.Contains(t, resumed.Command, "'--append-system-prompt' 'Answer in haiku.'")
 	require.Contains(t, resumed.Command, "'--system-prompt-snapshot' 'off'")
 }
@@ -135,8 +135,7 @@ func TestEveryRunOfAWorkContinuesItsHarnessSession(t *testing.T) {
 	resumed, err := config.prepare(sandboxLayout, input, owner(input), "")
 	require.NoError(t, err)
 	require.Equal(t, fresh.SessionID, resumed.SessionID)
-	require.Contains(t, resumed.Command, "'--resume' '"+fresh.SessionID+"'")
-	require.NotContains(t, resumed.Command, "'--session-id'")
+	require.Contains(t, resumed.Command, "\"${CLAUDE_CONFIG_DIR:?}\"/projects/*/'"+fresh.SessionID+".jsonl'", "a resume continues the conversation whose transcript exists")
 	input.ContextMode = domain.ContextRecover
 	restarted, err := config.prepare(sandboxLayout, input, owner(input), "")
 	require.NoError(t, err)

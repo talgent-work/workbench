@@ -86,8 +86,10 @@ func TestWorkForksItsStartingContextFromTheSourceConversation(t *testing.T) {
 	require.Equal(t, []string{"--resume", launch.SessionID}, contextArgs(args), "a recovered start resumes its own conversation once it exists")
 
 	input.ContextMode = domain.ContextContinue
-	args, _ = launchArgs(t, input, "")
+	args, _ = launchArgs(t, input, "--resume")
 	require.Equal(t, []string{"--resume", launch.SessionID}, contextArgs(args))
+	args, _ = launchArgs(t, input, "--session-id")
+	require.Equal(t, []string{"--resume", source, "--fork-session", "--session-id", launch.SessionID, "--resume-session-at", "5f1c2b0e-0000-4000-8000-000000000001"}, contextArgs(args), "a Work resumed before its first turn forks as its fresh start would")
 
 	input.StartingContext = nil
 	input.ContextMode = domain.ContextRecover
