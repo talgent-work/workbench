@@ -26,7 +26,7 @@ func TestQueuedExecutionWaitsAndASeatedOneSubmitsItsCreation(t *testing.T) {
 	require.Equal(t, seatedAt.Add(domain.StartupDeadline), execution.StartupDeadlineAt())
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepSubmitCreation}, kinds(decide(t, execution, domain.EnvironmentObservation{}, seatedAt)))
 
-	_, err = execution.Reconcile(domain.EnvironmentObservation{}, time.Time{})
+	_, err = execution.Reconcile(domain.EnvironmentObservation{}, leaseTerms, time.Time{})
 	require.ErrorIs(t, err, domain.ErrInvalidExecution)
 }
 
@@ -142,6 +142,10 @@ func TestARunningRunConnectsAndKeepsItsCredentialsAndInputsCurrent(t *testing.T)
 	require.True(t, expiring.RecordCredentialDelivery(domain.CredentialDelivery{ExpiresAt: expiry}))
 	require.True(t, recordPreparation(t, expiring))
 	_, err = expiring.RecordLaunch("process-1")
+	require.NoError(t, err)
+	// A ready run outlives its Startup Deadline; a failed start would
+	// replace nothing.
+	_, err = expiring.ConfirmReady(domain.ReadinessReport{Prepared: true, Started: true}, expiring.Desk.SeatedAt)
 	require.NoError(t, err)
 	current := runningEnvironment("env-1")
 	current.Attached = true

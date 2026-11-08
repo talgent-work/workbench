@@ -9,6 +9,7 @@ import (
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/samber/oops"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
@@ -129,8 +130,6 @@ func (c cloudEnvironment) observe(ctx context.Context, record allocationRecord, 
 	return view, nil
 }
 
-func (c cloudEnvironment) leaseTerms() domain.LeaseTerms { return c.sandboxes.lease() }
-
 // renew extends the bound sandbox's lease to expiresAt.
 func (c cloudEnvironment) renew(ctx context.Context, record allocationRecord, expiresAt time.Time) (time.Time, error) {
 	return c.sandboxes.renew(ctx, Allocation{WorkID: record.SessionID, ID: record.ID}, record.SandboxID, expiresAt)
@@ -175,7 +174,7 @@ func (cloudEnvironment) workCredential(record allocationRecord) (string, error) 
 	return spec.Env[workCredentialEnv], nil
 }
 
-func (c cloudEnvironment) deliver(ctx context.Context, record allocationRecord, redelivery bool) (deliveredCredentials, error) {
+func (c cloudEnvironment) deliver(ctx context.Context, record allocationRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
 	admitted, err := decodeStartRequest(record.RequestJSON)
 	if err != nil {
 		return deliveredCredentials{}, oops.With("operation", "decode_native_request").Wrap(err)
@@ -184,7 +183,7 @@ func (c cloudEnvironment) deliver(ctx context.Context, record allocationRecord, 
 	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
 		return deliveredCredentials{}, oops.With("operation", "decode_native_spec").Wrap(err)
 	}
-	return c.credentials.prepare(ctx, record, admitted, spec, redelivery)
+	return c.credentials.prepare(ctx, record, admitted, spec, redelivery, holding)
 }
 
 func (c cloudEnvironment) withdraw(ctx context.Context, record allocationRecord) error {

@@ -125,6 +125,9 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 			return execution.LoadModelCatalog(cfg.Models)
 		},
 		newModelConfigurations,
+		// Every sandbox is created to expire under these terms, and each
+		// execution decides its renewals under them.
+		func(cfg ExecutionConfig) domain.LeaseTerms { return cfg.Lease.terms() },
 		newExecutionSandboxes,
 		newExecutionLifecycle,
 		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {

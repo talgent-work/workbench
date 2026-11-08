@@ -70,7 +70,7 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 			runs.option(),
 		}
 		if recover {
-			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }))
+			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.Supply(domain.LeaseTerms{}))
 		}
 		runtime := fx.New(options...)
 		require.NoError(t, runtime.Err())

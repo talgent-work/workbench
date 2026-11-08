@@ -14,6 +14,7 @@ import (
 	"github.com/samber/oops"
 	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -64,7 +65,7 @@ var errEnvironmentNotRunning = errors.New("agent: the bound execution environmen
 // environment, or replaces those delivered before, and reports what it
 // delivered. A first delivery that fails clears whatever it wrote. An
 // authority that delivers none uses the machine's own.
-func (n *NativeConnections) deliver(ctx context.Context, record allocationRecord, redelivery bool) (domain.CredentialDelivery, error) {
+func (n *NativeConnections) deliver(ctx context.Context, record allocationRecord, redelivery bool, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
 	authority, err := n.provisioning.authority(record)
 	if err != nil {
 		return domain.CredentialDelivery{}, err
@@ -75,11 +76,11 @@ func (n *NativeConnections) deliver(ctx context.Context, record allocationRecord
 	}
 	var delivered deliveredCredentials
 	err = n.credentials.withLock(ctx, record.SandboxID, func() error {
-		current, err := n.holding(ctx, record)
+		current, err := n.provisioning.current(ctx, record)
 		if err != nil {
 			return err
 		}
-		delivered, err = delivery.deliver(ctx, current, redelivery)
+		delivered, err = delivery.deliver(ctx, current, redelivery, holding)
 		if err != nil {
 			if redelivery {
 				return err
@@ -128,12 +129,9 @@ func (n *NativeConnections) withdraw(ctx context.Context, record allocationRecor
 		return err
 	}
 	return n.credentials.withLock(ctx, record.SandboxID, func() error {
-		current, found, err := n.provisioning.get(ctx, record.ID)
+		current, err := n.provisioning.current(ctx, record)
 		if err != nil {
 			return err
-		}
-		if !found || current.SandboxID != record.SandboxID {
-			return errEnvironmentConflict
 		}
 		if delivery, delivers := authority.(credentialDelivery); delivers {
 			if err := delivery.withdraw(ctx, current); err != nil {
@@ -158,7 +156,7 @@ func (n *NativeConnections) withdraw(ctx context.Context, record allocationRecor
 // and reports each selected Plugin's installation and each planned
 // repository's checkout. Re-attaching after an interrupted attempt replays
 // the preparation from its start.
-func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord) (domain.PreparationReport, error) {
+func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord, holding command.EnvironmentHolding) (domain.PreparationReport, error) {
 	var none domain.PreparationReport
 	box, err := n.resolve(ctx, record)
 	if err != nil {
@@ -170,7 +168,10 @@ func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord
 	}
 	if record.PreparationProcessID == "" {
 		err := n.credentials.withLock(ctx, record.SandboxID, func() error {
-			current, err := n.holding(ctx, record)
+			if err := holding(ctx); err != nil {
+				return err
+			}
+			current, err := n.provisioning.current(ctx, record)
 			if err == nil && current.PreparationProcessID == "" {
 				err = n.startPreparation(ctx, &current, box.client, admitted)
 			}
@@ -187,15 +188,19 @@ func (n *NativeConnections) prepare(ctx context.Context, record allocationRecord
 // launch starts the Harness in the bound environment and returns its
 // process. The execution records it before it is connected; an uncertain
 // record leaves the process to the environment's deletion.
-func (n *NativeConnections) launch(ctx context.Context, record allocationRecord) (string, error) {
+func (n *NativeConnections) launch(ctx context.Context, record allocationRecord, holding command.EnvironmentHolding) (string, error) {
 	box, err := n.resolve(ctx, record)
 	if err != nil {
 		return "", err
 	}
 	var id string
 	err = n.credentials.withLock(ctx, record.SandboxID, func() error {
-		// An exit asked while preparation ran must not start the Harness.
-		current, err := n.holding(ctx, record)
+		// An exit asked while preparation ran must not start the Harness
+		// (Exit request ends delivery).
+		if err := holding(ctx); err != nil {
+			return err
+		}
+		current, err := n.provisioning.current(ctx, record)
 		if err != nil {
 			return err
 		}
@@ -228,8 +233,4 @@ func (n *NativeConnections) connect(ctx context.Context, record allocationRecord
 		return oops.With("operation", "connect_native_execution").Wrap(err)
 	}
 	return nil
-}
-
-func (n *NativeConnections) holding(ctx context.Context, record allocationRecord) (allocationRecord, error) {
-	return n.provisioning.holding(ctx, record)
 }

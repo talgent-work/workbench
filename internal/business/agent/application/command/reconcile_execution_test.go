@@ -335,9 +335,9 @@ func TestALongStepNoLongerDecidedIsNotTaken(t *testing.T) {
 // the authority returned is recorded, so the next reconciliation leaves it.
 func TestALeaseNearExpiryIsRenewedAndItsExpiryRecorded(t *testing.T) {
 	w := runningWorld(t)
-	terms := domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}
+	w.lease = domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}
 	expiry := w.at.Add(30 * time.Minute)
-	w.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true, LeaseExpiresAt: expiry}}, Attached: true, Lease: terms}
+	w.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true, LeaseExpiresAt: expiry}}, Attached: true}
 	_, err := w.reconciliation().Reconcile(context.Background(), w.execution(t).ID)
 	require.NoError(t, err)
 	renewed := w.at.Add(2 * time.Hour).UTC()

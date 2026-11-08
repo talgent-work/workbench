@@ -13,10 +13,9 @@ import (
 // leases renewed once less than an hour remains.
 var leaseTerms = domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}
 
-// leasedEnvironment observes env running with its lease expiring at expiry,
-// under leaseTerms.
+// leasedEnvironment observes env running with its lease expiring at expiry.
 func leasedEnvironment(env string, expiry time.Time) domain.EnvironmentObservation {
-	return domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: env, Running: true, LeaseExpiresAt: expiry}}, Lease: leaseTerms}
+	return domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: env, Running: true, LeaseExpiresAt: expiry}}}
 }
 
 // runningExecution is a launched execution whose run was confirmed ready,
@@ -94,7 +93,7 @@ func TestALeaseIsRenewedOnlyForABoundUnretiredExecution(t *testing.T) {
 	unbound := beginOf(t, newSession(t), domain.RealizationCloud)
 	require.True(t, unbound.RecordSubmission())
 	require.False(t, unbound.RecordLease(time.Now().Add(time.Hour)), "an unbound execution has no lease to record")
-	require.Empty(t, renewals(decide(t, unbound, domain.EnvironmentObservation{Lease: leaseTerms}, unbound.Desk.SeatedAt)))
+	require.Empty(t, renewals(decide(t, unbound, domain.EnvironmentObservation{}, unbound.Desk.SeatedAt)))
 
 	work, retired := runningExecution(t)
 	now := retired.Desk.SeatedAt
@@ -110,9 +109,9 @@ func TestALeaseIsRenewedOnlyForABoundUnretiredExecution(t *testing.T) {
 
 	_, unleased := runningExecution(t)
 	at := unleased.Desk.SeatedAt
-	observation := leasedEnvironment("env-1", at.Add(time.Minute))
-	observation.Lease = domain.LeaseTerms{}
-	require.Empty(t, renewals(decide(t, unleased, observation, at)))
+	decision, err = unleased.Reconcile(leasedEnvironment("env-1", at.Add(time.Minute)), domain.LeaseTerms{}, at)
+	require.NoError(t, err)
+	require.Empty(t, renewals(decision))
 }
 
 // A run whose Work asked it to exit still wants its environment until it

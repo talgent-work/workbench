@@ -5,6 +5,8 @@ import (
 
 	"github.com/samber/oops"
 	"xorm.io/xorm"
+
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // allocationRecord is the persistence model of an AgentExecution
@@ -173,22 +175,16 @@ func (r records) forSandbox(ctx context.Context, label string) (string, bool, er
 	return ids[0], true, nil
 }
 
-// holding confirms, from the execution's current record, that it still wants
-// its run in the recorded environment: unretired, bound to it, with no exit
-// asked by its Work and no end of its start recorded. Every credential
-// delivery and Harness start checks it, also between its own calls, so a
-// Work's exit request admitted meanwhile delivers and starts nothing more.
-// It returns the current record.
-func (r records) holding(ctx context.Context, record allocationRecord) (allocationRecord, error) {
+// current rereads the execution's record, so a step continues with the
+// technical columns another step wrote meanwhile. Whether the execution still
+// admits the step is the holding check's answer, never the record's.
+func (r records) current(ctx context.Context, record allocationRecord) (allocationRecord, error) {
 	current, found, err := r.get(ctx, record.ID)
 	if err != nil {
 		return allocationRecord{}, err
 	}
-	if !found || current.DeletedAt != 0 || current.SandboxID != record.SandboxID || current.SessionID != record.SessionID {
-		return allocationRecord{}, errEnvironmentConflict
-	}
-	if current.ExitRequestID != "" || current.ProcessExited || current.StartFailure != "" || current.Abandoned || current.EnvironmentLost {
-		return allocationRecord{}, errAllocationNotHeld
+	if !found {
+		return allocationRecord{}, domain.ErrExecutionNotFound
 	}
 	return current, nil
 }

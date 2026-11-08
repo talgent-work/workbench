@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
 )
@@ -95,7 +96,9 @@ type environmentAuthority interface {
 type credentialDelivery interface {
 	// deliver fetches the Work's current credentials into the environment;
 	// a redelivery replaces those delivered before.
-	deliver(ctx context.Context, record allocationRecord, redelivery bool) (deliveredCredentials, error)
+	// It asks holding before each write and clears what it wrote once
+	// holding refuses.
+	deliver(ctx context.Context, record allocationRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error)
 	// withdraw clears the delivered credentials.
 	withdraw(ctx context.Context, record allocationRecord) error
 	// modelDigest identifies the model key a delivery carries now.
@@ -105,8 +108,6 @@ type credentialDelivery interface {
 // leasing is an authority whose environments expire unless renewed. One
 // without it leases nothing.
 type leasing interface {
-	// leaseTerms is how its environments are leased.
-	leaseTerms() domain.LeaseTerms
 	// renew moves the bound environment's expiry to expiresAt and returns
 	// the expiry the authority answered.
 	renew(ctx context.Context, record allocationRecord, expiresAt time.Time) (time.Time, error)
