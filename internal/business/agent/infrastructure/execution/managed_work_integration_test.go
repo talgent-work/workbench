@@ -476,7 +476,7 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	resumed, _, err := latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, next.ID, resumed.ID)
-	require.Contains(t, resumed.LaunchCommand, "'--resume' '"+record.NativeSessionID+"'")
+	require.Contains(t, resumed.LaunchCommand, "--resume '"+record.NativeSessionID+"'")
 	require.Equal(t, realizationManaged, resumed.Realization)
 	resumedSpec, err := decodeManagedSpecification(resumed)
 	require.NoError(t, err)
