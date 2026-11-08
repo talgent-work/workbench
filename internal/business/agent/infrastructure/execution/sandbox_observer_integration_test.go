@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"xorm.io/xorm"
 )
 
@@ -130,4 +131,56 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 	require.NoError(t, err)
 	go func() { _ = observer.Run(ctx) }()
 	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return attempts == 2 }, 10*time.Second, 20*time.Millisecond)
+}
+
+// Only talgent.io/execution marks a sandbox's ownership: the observer selects
+// sandboxes by it, and a sandbox without it wakes nothing, even when it
+// carries the session label and another label naming the execution.
+func TestSandboxObserverSelectsByTheOwnershipLabel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	provider, _, _ := sandboxClient(t)
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	input := request()
+	execution, err := register(ctx, p, input, testMounts)
+	require.NoError(t, err)
+	owned := correlation(SandboxOwner{WorkID: input.WorkID, ID: execution.ID})
+	unlabelled := map[string]string{sandboxSessionLabel: owned[sandboxSessionLabel], "talgent.io/allocation": owned["talgent.io/execution"]}
+
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{BatchSandboxes: "BatchSandboxList"})
+	var mu sync.Mutex
+	var selectors []string
+	client.PrependReactor("list", "batchsandboxes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		selectors = append(selectors, action.(k8stesting.ListAction).GetListRestrictions().Labels.String())
+		return false, nil, nil
+	})
+	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("unlabelled", unlabelled), metav1.CreateOptions{})
+	require.NoError(t, err)
+	var woken []string
+	wake := func(_ context.Context, id string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		woken = append(woken, id)
+		return nil
+	}
+	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.Default())
+	require.NoError(t, err)
+	go func() { _ = observer.Run(ctx) }()
+
+	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(selectors) > 0 }, 5*time.Second, 10*time.Millisecond)
+	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("late-unlabelled", unlabelled), metav1.CreateOptions{})
+	require.NoError(t, err)
+	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("owned", owned), metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(woken) > 0 }, 5*time.Second, 10*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{execution.ID}, woken, "only the sandbox carrying talgent.io/execution wakes its execution")
+	require.Equal(t, "talgent.io/execution", selectors[0], "the observer selects by the ownership label")
 }

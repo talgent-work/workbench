@@ -26,18 +26,6 @@ const sandboxSpecLabel = "talgent.io/spec"
 // a sandbox belongs to.
 const sandboxOwnershipLabel = "talgent.io/execution"
 
-// formerOwnershipLabel is the ownership label of sandboxes created before the
-// AgentExecution names, with the same value. The environment observer and
-// release still recognize it so those sandboxes are owned and released.
-// Remove it once every environment applied
-// deploy/middleware/migrations/20261109-agent-execution-names.sql and no
-// sandbox created before it remains.
-const formerOwnershipLabel = "talgent.io/allocation"
-
-// ownershipLabels are the labels that name a sandbox's execution, current
-// first.
-var ownershipLabels = []string{sandboxOwnershipLabel, formerOwnershipLabel}
-
 // workCredentialEnv names, in the recorded sandbox specification, the native
 // process credential issued to one sandbox. It authorizes only while that
 // sandbox is its Work's live sandbox. It is kept out of the sandbox itself:
@@ -115,7 +103,7 @@ func withoutWorkCredential(spec sdk.CreateSandboxRequest) sdk.CreateSandboxReque
 // once. A listed sandbox that does not is not the execution's, so it is left
 // in place without holding back the others.
 func (s *Sandboxes) owned(ctx context.Context, owner SandboxOwner, spec sdk.CreateSandboxRequest) ([]sdk.SandboxInfo, error) {
-	items, err := s.listCorrelated(ctx, owner, spec)
+	items, err := s.listCorrelated(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -130,16 +118,10 @@ func (s *Sandboxes) owned(ctx context.Context, owner SandboxOwner, spec sdk.Crea
 	return owned, nil
 }
 
-// listCorrelated pages every sandbox the server lists with the owner
-// metadata the execution's recorded specification gave its sandboxes, which
-// carry the former ownership label when created before the AgentExecution
-// names.
-func (s *Sandboxes) listCorrelated(ctx context.Context, owner SandboxOwner, spec sdk.CreateSandboxRequest) ([]sdk.SandboxInfo, error) {
+// listCorrelated pages every sandbox the server lists with the execution's
+// owner metadata.
+func (s *Sandboxes) listCorrelated(ctx context.Context, owner SandboxOwner) ([]sdk.SandboxInfo, error) {
 	filter := correlation(owner)
-	if label := ownershipLabelOf(spec.Metadata); label != sandboxOwnershipLabel {
-		filter[label] = filter[sandboxOwnershipLabel]
-		delete(filter, sandboxOwnershipLabel)
-	}
 	var items []sdk.SandboxInfo
 	for page := 1; ; page++ {
 		result, err := s.client.ListSandboxes(ctx, sdk.ListOptions{Metadata: filter, Page: page, PageSize: 100})
@@ -385,29 +367,13 @@ func correlation(owner SandboxOwner) map[string]string {
 	return map[string]string{sandboxSessionLabel: storageKey(owner.WorkID)[:48], sandboxOwnershipLabel: storageKey(owner.ID)[:48]}
 }
 
-// matchesSandbox reports a sandbox carrying the execution's owner metadata,
-// under either ownership label.
+// matchesSandbox reports a sandbox carrying the execution's owner metadata.
 func matchesSandbox(info *sdk.SandboxInfo, owner SandboxOwner) bool {
 	if info == nil {
 		return false
 	}
 	wanted := correlation(owner)
-	if info.Metadata[sandboxSessionLabel] != wanted[sandboxSessionLabel] {
-		return false
-	}
-	label := ownershipLabelOf(info.Metadata)
-	return info.Metadata[label] == wanted[sandboxOwnershipLabel]
-}
-
-// ownershipLabelOf is the ownership label metadata carries: the current one
-// unless only the former one is present.
-func ownershipLabelOf(metadata map[string]string) string {
-	for _, label := range ownershipLabels {
-		if _, found := metadata[label]; found {
-			return label
-		}
-	}
-	return sandboxOwnershipLabel
+	return info.Metadata[sandboxSessionLabel] == wanted[sandboxSessionLabel] && info.Metadata[sandboxOwnershipLabel] == wanted[sandboxOwnershipLabel]
 }
 
 // carriesOwnership reports a sandbox carrying the execution's owner metadata
