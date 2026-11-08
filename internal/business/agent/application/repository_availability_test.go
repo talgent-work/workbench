@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -27,7 +28,7 @@ func TestRepositoryAccessUnavailableCredentialsDoNotFailWork(t *testing.T) {
 				f.expiresAt = time.Now().Add(-time.Minute)
 			case "revoked", "reconnect_required":
 				reason = scenario
-				f.supplyError = &application.ServiceCredentialUnavailable{Reason: reason}
+				f.supplyError = &command.ServiceCredentialUnavailable{Reason: reason}
 			case "provider failure":
 				f.supplyError = errors.New("provider error with sensitive details")
 			}

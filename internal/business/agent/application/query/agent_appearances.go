@@ -25,20 +25,13 @@ type ResolvedAgent struct {
 	AgentAppearanceView
 }
 
-// AgentAppearanceReader reads current appearances at once; an employee
-// without a definition for the purpose, or an unknown Work, is absent.
-type AgentAppearanceReader interface {
-	ListEmployeeAgents(ctx context.Context, purpose string, employeeIDs []string) (map[string]AgentAppearanceView, error)
-	ListWorkAgents(ctx context.Context, workIDs []string) (map[string]AgentAppearanceView, error)
-}
-
 // ResolveAgentsHandler answers in one read so a caller showing many Agents
 // does not ask one by one.
 type ResolveAgentsHandler struct {
-	agents AgentAppearanceReader
+	agents AgentDefinitionQueryRepository
 }
 
-func NewResolveAgentsHandler(agents AgentAppearanceReader) *ResolveAgentsHandler {
+func NewResolveAgentsHandler(agents AgentDefinitionQueryRepository) *ResolveAgentsHandler {
 	return &ResolveAgentsHandler{agents: agents}
 }
 

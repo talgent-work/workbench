@@ -48,9 +48,21 @@ type oneRoomCloud struct {
 	db       *xorm.Engine
 	quota    *corev1.ResourceQuota
 	kube     *fake.Clientset
+	// server is the base URL of the mounted APIs.
+	server string
 }
 
 func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
+	t.Helper()
+	deleting := &atomic.Bool{}
+	c := startOneRoomCloudWith(t, ctx, realizedEnvironments{pendingDeletion: deleting})
+	c.deleting = deleting
+	return c
+}
+
+// startOneRoomCloudWith starts the one-room Cloud whose execution environments
+// environments realizes.
+func startOneRoomCloudWith(t *testing.T, ctx context.Context, environments command.ExecutionEnvironmentPort) *oneRoomCloud {
 	t.Helper()
 	dsn := mysqltest.Database(t)
 	db, err := xorm.NewEngine("mysql", dsn)
@@ -61,18 +73,17 @@ func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
 	kube := fake.NewClientset(quota.DeepCopy())
 	port := &sessionCommandRecorder{}
 	runs := &moduleRuns{}
-	deleting := &atomic.Bool{}
 	var recovery *application.Recovery
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
-		agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{pendingDeletion: deleting} }), runs.option(),
+		agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return environments }), fx.Supply(domain.LeaseTerms{}), runs.option(),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("1", "4Gi", "64")),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(func() kubernetes.Interface { return kube }),
-		fx.Provide(func() command.RunningHarnessPort { return port }),
+		fx.Provide(func() command.DispatcherPort { return port }),
 		fx.Populate(&recovery),
 	)
 	require.NoError(t, app.Err())
@@ -81,7 +92,7 @@ func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
 	return &oneRoomCloud{recovery: recovery,
 		client:   agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
 		feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
-		runs:     runs, deleting: deleting, db: db, quota: quota, kube: kube,
+		runs:     runs, db: db, quota: quota, kube: kube, server: server.URL,
 	}
 }
 

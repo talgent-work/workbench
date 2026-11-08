@@ -24,17 +24,12 @@ type PreparedCheckout struct {
 	BaseBranch, WorkBranch, TargetPath, AccessID                string
 }
 
-type WorkPreparationReader interface {
-	GetWorkPreparation(context.Context, string) (WorkPreparation, bool, error)
-	ListSubmittedPreparations(context.Context, string, int) ([]WorkPreparation, error)
-}
-
 type GetWorkPreparationHandler struct {
-	reader WorkPreparationReader
+	reader WorkQueryRepository
 	access access.WorkAuthorizer
 }
 
-func NewGetWorkPreparationHandler(reader WorkPreparationReader, authorization access.WorkAuthorizer) *GetWorkPreparationHandler {
+func NewGetWorkPreparationHandler(reader WorkQueryRepository, authorization access.WorkAuthorizer) *GetWorkPreparationHandler {
 	return &GetWorkPreparationHandler{reader: reader, access: authorization}
 }
 func (h *GetWorkPreparationHandler) Handle(ctx context.Context, input GetWork) (WorkPreparation, bool, error) {
@@ -44,9 +39,9 @@ func (h *GetWorkPreparationHandler) Handle(ctx context.Context, input GetWork) (
 	return h.reader.GetWorkPreparation(ctx, input.WorkID)
 }
 
-type ListSubmittedPreparationsHandler struct{ reader WorkPreparationReader }
+type ListSubmittedPreparationsHandler struct{ reader WorkQueryRepository }
 
-func NewListSubmittedPreparationsHandler(reader WorkPreparationReader) *ListSubmittedPreparationsHandler {
+func NewListSubmittedPreparationsHandler(reader WorkQueryRepository) *ListSubmittedPreparationsHandler {
 	return &ListSubmittedPreparationsHandler{reader: reader}
 }
 func (h *ListSubmittedPreparationsHandler) Handle(ctx context.Context, after string) ([]WorkPreparation, error) {

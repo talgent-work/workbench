@@ -11,7 +11,10 @@ import (
 )
 
 // Environment stands in for the execution environment port: it answers a
-// test's observation and creation answer, and records every step taken.
+// test's observation and creation answer, and records every step taken. Like
+// the port's realizations, it asks an operation's holding check before each
+// remote call and takes nothing it refuses; a delivery refused once written
+// is cleared.
 type Environment struct {
 	mu sync.Mutex
 	// Observation is what Observe shows; Observed lets it depend on the
@@ -34,7 +37,10 @@ type Environment struct {
 	// ProcessID is the process Launch starts, "process" unless named.
 	ProcessID string
 	Delivery  domain.CredentialDelivery
-	StepErr   error
+	// DuringDelivery runs after a delivery wrote, before it asks its holding
+	// check again.
+	DuringDelivery func(ctx context.Context)
+	StepErr        error
 
 	Observations, Specified, Submitted int
 	// SubmittedState is the execution each submission was sent for.
@@ -42,6 +48,8 @@ type Environment struct {
 	Deleted                                 []string
 	Delivered, Withdrawn, Prepared          int
 	Launched, Connected, Synced, Reconciled int
+	// Cleared counts deliveries cleared once their holding check refused.
+	Cleared int
 	// Renewals are the expiries each lease renewal asked for; each is
 	// granted.
 	Renewals []time.Time
@@ -90,7 +98,22 @@ func (e *Environment) DeleteEnvironment(_ context.Context, _ *domain.AgentExecut
 	return e.StepErr
 }
 
-func (e *Environment) DeliverCredentials(context.Context, *domain.AgentExecution) (domain.CredentialDelivery, error) {
+func (e *Environment) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
+	if err := holding(ctx); err != nil {
+		return domain.CredentialDelivery{}, err
+	}
+	e.mu.Lock()
+	during := e.DuringDelivery
+	e.mu.Unlock()
+	if during != nil {
+		during(ctx)
+	}
+	if err := holding(ctx); err != nil {
+		e.mu.Lock()
+		e.Cleared++
+		e.mu.Unlock()
+		return domain.CredentialDelivery{}, err
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Delivered++
@@ -104,7 +127,10 @@ func (e *Environment) WithdrawCredentials(context.Context, *domain.AgentExecutio
 	return e.StepErr
 }
 
-func (e *Environment) Prepare(ctx context.Context, _ *domain.AgentExecution) (domain.PreparationReport, error) {
+func (e *Environment) Prepare(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.PreparationReport, error) {
+	if err := holding(ctx); err != nil {
+		return domain.PreparationReport{}, err
+	}
 	e.mu.Lock()
 	e.Prepared++
 	prepare := e.PrepareFunc
@@ -118,7 +144,10 @@ func (e *Environment) Prepare(ctx context.Context, _ *domain.AgentExecution) (do
 	return report, nil
 }
 
-func (e *Environment) Launch(context.Context, *domain.AgentExecution) (string, error) {
+func (e *Environment) Launch(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (string, error) {
+	if err := holding(ctx); err != nil {
+		return "", err
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Launched++
@@ -135,7 +164,10 @@ func (e *Environment) Connect(context.Context, *domain.AgentExecution) error {
 	return e.StepErr
 }
 
-func (e *Environment) SyncInputs(_ context.Context, execution *domain.AgentExecution) (int64, error) {
+func (e *Environment) SyncInputs(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (int64, error) {
+	if err := holding(ctx); err != nil {
+		return 0, err
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Synced++

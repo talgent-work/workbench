@@ -9,33 +9,13 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// StartCatalogPort reaches what Marketplace offers a Work's start, under its
-// trusted owner scope: the Connector catalog and personal selection, Plugin
-// release resolution, Provider Authorizations and the repositories reachable
-// under them. Startup never changes personal installations, and the catalog
-// never supplies credentials or grants continuing access.
-type StartCatalogPort interface {
-	ReadConnectorSelection(context.Context, string) (ConnectorSelection, error)
-	ListPersonalPlugins(context.Context, string) ([]domain.PersonalPlugin, error)
-	ResolvePlugin(context.Context, string, string) (domain.PluginRelease, error)
-	ListPersonalAuthorizations(context.Context, string) ([]domain.PersonalAuthorization, error)
-	ListAccessibleRepositories(context.Context, string) ([]domain.AccessibleRepository, error)
-}
-
-// ConnectorSelection is Marketplace's catalog with the delegated user's enabled
-// installation identities.
-type ConnectorSelection struct {
-	Catalog           []domain.CatalogConnector
-	EnabledConnectors []string
-}
-
 // ResolveStartupCapabilities is only for creation after caller authorization and
 // binding-reuse lookup. Existing Works use their retained snapshot instead.
-func ResolveStartupCapabilities(ctx context.Context, catalog StartCatalogPort, startingUser string, input domain.StartupCapabilityInput) (domain.CapabilitySnapshot, error) {
+func ResolveStartupCapabilities(ctx context.Context, catalog MarketplacePort, startingUser string, input domain.StartupCapabilityInput) (domain.CapabilitySnapshot, error) {
 	return resolveStartupCapabilities(ctx, catalog, startingUser, startingUser, input)
 }
 
-func resolveStartupCapabilities(ctx context.Context, catalog StartCatalogPort, catalogUser, startingUser string, input domain.StartupCapabilityInput) (domain.CapabilitySnapshot, error) {
+func resolveStartupCapabilities(ctx context.Context, catalog MarketplacePort, catalogUser, startingUser string, input domain.StartupCapabilityInput) (domain.CapabilitySnapshot, error) {
 	if strings.TrimSpace(catalogUser) == "" {
 		return domain.CapabilitySnapshot{}, access.ErrAccessDenied
 	}
@@ -87,11 +67,11 @@ type PluginUpgrades interface {
 // as the requesting Owner sees it. An unavailable catalog or a withdrawn
 // Plugin degrades to the retained release instead of blocking the start.
 type CatalogPluginUpgrades struct {
-	catalog StartCatalogPort
+	catalog MarketplacePort
 	logger  *slog.Logger
 }
 
-func NewCatalogPluginUpgrades(catalog StartCatalogPort, logger *slog.Logger) *CatalogPluginUpgrades {
+func NewCatalogPluginUpgrades(catalog MarketplacePort, logger *slog.Logger) *CatalogPluginUpgrades {
 	return &CatalogPluginUpgrades{catalog: catalog, logger: logger}
 }
 

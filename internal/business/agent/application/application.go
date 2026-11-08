@@ -36,7 +36,6 @@ type Queries struct {
 	ListWorks                    *query.ListWorksHandler
 	GetWorkView                  *query.GetWorkViewHandler
 	ListWorkLifecycleEvents      *query.ListWorkLifecycleEventsHandler
-	GetWorkStartup               *query.GetWorkStartupHandler
 	GetWorkOrigin                *query.GetWorkOriginHandler
 	ResolveWorkContextPosition   *query.ResolveWorkContextPositionHandler
 	ResolveWorkStarts            *query.ResolveWorkStartsHandler
@@ -46,48 +45,44 @@ type Queries struct {
 	LocateWork                   *query.LocateWorkHandler
 	VerifyWorkCredential         *query.VerifyWorkCredentialHandler
 	GetAgentDefinitionForPurpose *query.GetAgentDefinitionForPurposeHandler
-	GetStartAdmission            *query.GetStartAdmissionHandler
 	ListRecoveryWorks            *query.ListRecoveryWorksHandler
 	GetAgentDefinition           *query.GetAgentDefinitionHandler
 	GetWork                      *query.GetWorkHandler
 }
 
 type Application struct {
-	RecentRepositories   query.RecentRepositoryReader
-	Services             *ServiceAccess
-	Repositories         *RepositoryAccess
-	WorkPrincipals       access.WorkAuthorizer
-	Harness              command.RunningHarnessPort
-	PluginResults        query.PluginResultReader
-	ServiceAccessResults query.ServiceAccessReader
-	Catalog              command.StartCatalogPort
-	Works                command.AgentWorkRepository
+	Services       *ServiceAccess
+	Repositories   *RepositoryAccess
+	WorkPrincipals access.WorkAuthorizer
+	Harness        command.DispatcherPort
+	Catalog        command.MarketplacePort
+	Works          domain.AgentWorkRepository
+	// WorkQueries presents each Work view with its current model option.
+	WorkQueries      query.WorkQueryRepository
+	ExecutionQueries query.ExecutionQueryRepository
 	// Workspaces serves workspace browsing; Storage owns a Cloud Work's view.
-	Workspaces       WorkspacePort
-	Models           query.ModelConfigurations
-	Definitions      domain.AgentDefinitionRepository
-	DefinitionLookup query.AgentDefinitionLookup
-	WorkViews        query.WorkViewReader
-	Logger           *slog.Logger
-	Commands         Commands
-	Queries          Queries
+	Workspaces        WorkspacePort
+	Models            query.ModelConfigurations
+	Definitions       domain.AgentDefinitionRepository
+	DefinitionQueries query.AgentDefinitionQueryRepository
+	Logger            *slog.Logger
+	Commands          Commands
+	Queries           Queries
 }
 
 func NewApplication(
 	repositories *RepositoryAccess,
 	services *ServiceAccess,
 	workPrincipals access.WorkAuthorizer,
-	harness command.RunningHarnessPort,
-	pluginResults query.PluginResultReader,
-	serviceAccessResults query.ServiceAccessReader,
-	catalog command.StartCatalogPort,
-	recentRepositories query.RecentRepositoryReader,
-	sessions command.AgentWorkRepository,
+	harness command.DispatcherPort,
+	executionQueries query.ExecutionQueryRepository,
+	catalog command.MarketplacePort,
+	workQueries query.WorkQueryRepository,
+	sessions domain.AgentWorkRepository,
 	workspaces WorkspacePort,
 	models query.ModelConfigurations,
 	definitions domain.AgentDefinitionRepository,
-	definitionLookup query.AgentDefinitionLookup,
-	sessionViews query.WorkViewReader,
+	definitionQueries query.AgentDefinitionQueryRepository,
 	logger *slog.Logger,
 	workReport *query.GetWorkReportHandler,
 	ensure *command.EnsureAgentDefinitionHandler,
@@ -113,7 +108,6 @@ func NewApplication(
 	interaction *command.RespondWorkInteractionHandler,
 	recovery *command.RecoverWorkHandler,
 	recoverySessions *query.ListRecoveryWorksHandler,
-	admission *query.GetStartAdmissionHandler,
 	definition *query.GetAgentDefinitionForPurposeHandler,
 	identity *query.VerifyWorkCredentialHandler,
 	locate *query.LocateWorkHandler,
@@ -121,23 +115,20 @@ func NewApplication(
 	prepare *command.PrepareWorkExecutionHandler,
 	preparation *query.GetWorkPreparationHandler,
 	submitted *query.ListSubmittedPreparationsHandler,
-	startup *query.GetWorkStartupHandler,
 	reconcileDesks *command.ReconcileDesksHandler,
 	coordination *command.ExecutionCoordination,
 ) *Application {
 	return &Application{Repositories: repositories, Services: services, WorkPrincipals: workPrincipals,
-		Harness:              harness,
-		PluginResults:        pluginResults,
-		ServiceAccessResults: serviceAccessResults,
-		Catalog:              catalog,
-		RecentRepositories:   recentRepositories,
-		Works:                sessions,
-		Workspaces:           workspaces,
-		Models:               models,
-		Definitions:          definitions,
-		DefinitionLookup:     definitionLookup,
-		WorkViews:            sessionViews,
-		Logger:               logger,
+		Harness:           harness,
+		ExecutionQueries:  executionQueries,
+		Catalog:           catalog,
+		WorkQueries:       workQueries,
+		Works:             sessions,
+		Workspaces:        workspaces,
+		Models:            models,
+		Definitions:       definitions,
+		DefinitionQueries: definitionQueries,
+		Logger:            logger,
 		Commands: Commands{
 			EnsureAgentDefinition:  ensure,
 			ChangeAgentAppearance:  appearance,
@@ -164,7 +155,6 @@ func NewApplication(
 			ListWorks:                    listWorks,
 			GetWorkView:                  workView,
 			ListWorkLifecycleEvents:      lifecycle,
-			GetWorkStartup:               startup,
 			GetWorkOrigin:                origin,
 			ResolveWorkContextPosition:   resolvePositions,
 			ResolveWorkStarts:            resolveStarts,
@@ -174,7 +164,6 @@ func NewApplication(
 			LocateWork:                   locate,
 			VerifyWorkCredential:         identity,
 			GetAgentDefinitionForPurpose: definition,
-			GetStartAdmission:            admission,
 			ListRecoveryWorks:            recoverySessions,
 			GetAgentDefinition:           getAgent,
 			GetWork:                      getSession,

@@ -84,8 +84,8 @@ func decodeCapabilities(body string) (domain.CapabilityConfiguration, error) {
 }
 
 func encodeCapabilitySnapshot(value domain.CapabilitySnapshot) (string, error) {
-	// Preserve nil versus empty collections: the execution allocation fingerprints
-	// the retained request, so a storage round trip must not change its encoding.
+	// Preserve nil versus empty collections, so a storage round trip leaves
+	// the retained capabilities exactly as they were admitted.
 	record := snapshotRecord{Prompt: value.Prompt, StartupAgent: value.StartupAgent, Sandbox: value.Sandbox}
 	if value.Connectors != nil {
 		record.Connectors = make([]connectorRecord, 0, len(value.Connectors))

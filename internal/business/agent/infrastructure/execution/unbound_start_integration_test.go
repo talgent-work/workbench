@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -98,12 +97,13 @@ func newCloudStart(t *testing.T) *cloudStart {
 	require.NoError(t, definitions.Save(ctx, definition))
 	definition, err = definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
-	f.admission = domain.StartAdmission{AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	f.admission = domain.StartAdmission{AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 	admission := f.admission
 	admission.AdmittedAt = f.now()
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"}}, admission)
 	require.NoError(t, err)
-	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}}))
+	work.DefinitionVersion = definition.Version
+	require.NoError(t, works.Save(ctx, work))
 	f.workID = work.ID
 	require.NoError(t, f.coordination.BeginExecution(ctx, work.ID))
 	return f
@@ -115,7 +115,7 @@ func createdThenDeleted(l *lifecycleFixture) { l.createFailure = true }
 // The server creates the sandbox; its answer is what is lost.
 func createdUnanswered(l *lifecycleFixture) { l.loseCreateResponse = true }
 
-func (f *cloudStart) allocation(t *testing.T) allocationRecord {
+func (f *cloudStart) allocation(t *testing.T) executionRecord {
 	t.Helper()
 	record, found, err := latestAllocation(context.Background(), f.db, f.workID)
 	require.NoError(t, err)
@@ -206,6 +206,7 @@ func (f *cloudStart) requireRestartable(t *testing.T) {
 	session := work.HarnessSessionReference
 	admission := f.admission
 	admission.AdmittedAt = f.now()
+	admission.Seat.DeskID = "desk-restart" // a Restart request derives its own Desk
 	require.NoError(t, work.Restart(admission))
 	require.Equal(t, domain.ContextRecover, work.HarnessProcess.ContextMode)
 	require.Equal(t, session, work.HarnessSessionReference, "Restart continues the Harness Session")
@@ -241,7 +242,7 @@ func TestALostCreateAnswerBindsTheSandboxAndAFailedStartReleasesIt(t *testing.T)
 
 	require.True(t, f.reconcile(t), "onboarding continues to the preparation")
 	require.Equal(t, sandboxID, f.allocation(t).SandboxID, "the found sandbox is bound")
-	require.True(t, f.allocation(t).SandboxReady, "the found sandbox receives its credentials")
+	require.True(t, f.allocation(t).CredentialsDelivered, "the found sandbox receives its credentials")
 	require.Equal(t, 1, f.creates())
 	f.retire(t, domain.RetiredByExit)
 	require.Zero(t, f.allocation(t).DeletedAt, "a request without an acknowledged exit retires nothing")

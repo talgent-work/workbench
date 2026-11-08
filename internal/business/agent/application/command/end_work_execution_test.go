@@ -11,7 +11,6 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -22,7 +21,6 @@ func continueWork(t *testing.T, agents *startupAgentStore, sessions *feedbackSes
 	t.Helper()
 	requestID := uuid.NewString()
 	if sessions.session.State == domain.WorkStarting {
-		sessions.requests = map[string]query.StartRequest{requestID: {ID: requestID, WorkID: sessions.session.ID, Kind: query.StartKindStart}}
 		return requestID
 	}
 	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(context.Background(), command.StartWork{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: requestID}))
@@ -68,33 +66,12 @@ func TestEndStartingExecutionRetainsStopUntilReadyAndPreservesConversation(t *te
 	require.Equal(t, domain.ContextContinue, sessions.session.HarnessProcess.ContextMode)
 }
 
-// Ending a start request that was not admitted prevents its
-// later admission; a subsequent explicit start request is admitted normally.
-
-func TestEndingPendingStartPreventsItsAdmission(t *testing.T) {
-	ctx := context.Background()
-	agents, sessions := failedStartupStores(t)
-	pending := uuid.NewString()
-	end := command.NewEndWorkExecutionHandler(sessions, sessionAccess{})
-	require.NoError(t, end.Handle(ctx, command.EndWorkExecution{SubjectID: "owner", WorkID: sessions.session.ID, StartRequestID: pending, RequestID: "end-pending"}))
-	require.Zero(t, sessions.saves, "canceling a pending start does not touch the conversation")
-	start := command.NewRestartWorkHandler(time.Now, sessions, agents, sessionAccess{}, capacityCheck{}, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
-	admitted, err := start.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: pending})
-	require.ErrorIs(t, err, command.ErrStartRequestCanceled)
-	require.False(t, admitted)
-	require.Empty(t, sessions.admittedStarts())
-	admitted, err = start.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString()})
-	require.NoError(t, err)
-	require.True(t, admitted)
-	require.Len(t, sessions.admittedStarts(), 1)
-}
-
 func TestEndExecutionRequiresAuthorizationAndAStartRequest(t *testing.T) {
 	denied := errors.New("denied")
 	require.ErrorIs(t, command.NewEndWorkExecutionHandler(nil, sessionAccess{err: denied}).Handle(context.Background(), command.EndWorkExecution{}), denied)
 	sessions := &feedbackSessionStore{session: stoppingSession(t)}
 	err := command.NewEndWorkExecutionHandler(sessions, sessionAccess{}).Handle(context.Background(), command.EndWorkExecution{WorkID: sessions.session.ID, StartRequestID: "not-a-uuid", RequestID: "end"})
-	require.ErrorIs(t, err, query.ErrInvalidStartRequest)
+	require.ErrorIs(t, err, command.ErrInvalidStartRequest)
 	require.Zero(t, sessions.saves)
 }
 

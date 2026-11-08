@@ -38,7 +38,7 @@ func runningInputSession(t *testing.T) (workCreationFixture, string) {
 	t.Helper()
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
-	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
+	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	newRuns(t, f.db, f.sessions).ready(ctx, ref)
 	return f, ref
@@ -51,7 +51,7 @@ func TestInputAcceptanceAndPermanentCloseShareOneOrder(t *testing.T) {
 	buffer := closingBuffer{InputBuffer: &commandtest.InputBuffer{}}
 	// The close read the buffer before the input was appended, so it saw
 	// nothing pending, and its stop commits after the append.
-	closeSession := command.NewCloseWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), executionsOf(f.db), &commandtest.InputBuffer{})
+	closeSession := command.NewCloseWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), executionsOf(f.db), &commandtest.InputBuffer{})
 	buffer.during = func() {
 		require.NoError(t, closeSession.Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: ref, RequestID: uuid.NewString()}))
 	}

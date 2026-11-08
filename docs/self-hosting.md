@@ -454,7 +454,7 @@ controlplane's log).
   UNTIL=$(date -u -d '+30 days' +%Y-%m-%dT%H:%M:%SZ)
   for page in $(seq 1 100); do
     body=$(curl -fsS -H "OPEN-SANDBOX-API-KEY: $KEY" "http://127.0.0.1:18080/v1/sandboxes?page=$page&pageSize=100")
-    echo "$body" | jq -r '.items[] | select(.metadata["talgent.io/allocation"] and .expiresAt) | .id' |
+    echo "$body" | jq -r '.items[] | select((.metadata["talgent.io/execution"] or .metadata["talgent.io/allocation"]) and .expiresAt) | .id' |
       while read -r id; do
         curl -fsS -X POST -H "OPEN-SANDBOX-API-KEY: $KEY" -H 'Content-Type: application/json' \
           -d "{\"expiresAt\":\"$UNTIL\"}" "http://127.0.0.1:18080/v1/sandboxes/$id/renew-expiration" >/dev/null

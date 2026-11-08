@@ -37,9 +37,6 @@ type EnvironmentObservation struct {
 	// InputsRefresh is how long a Managed Computer's synced input copies stay
 	// current (Input copy sync).
 	InputsRefresh time.Duration
-	// Lease is how the authority leases its environments; zero when it
-	// leases none.
-	Lease LeaseTerms
 }
 
 func (o EnvironmentObservation) find(id string) (ObservedEnvironment, bool) {
@@ -99,7 +96,8 @@ type ExecutionDecision struct {
 }
 
 // Reconcile decides its next steps from its own facts, the environments
-// carrying its ownership as observed now and the current time. It binds the
+// carrying its ownership as observed now, the lease terms the platform is
+// configured with and the current time. It binds the
 // first observed environment while none is bound and deletes every other
 // (Bound environment), deletes everything once retired (Retired
 // environments), submits its creation once (Single creation), and records,
@@ -107,16 +105,16 @@ type ExecutionDecision struct {
 // abandoned start (Abandoned start) or a lost environment (Environment loss).
 // It renews its bound environment's lease before it runs out (Environment
 // lease).
-func (e *AgentExecution) Reconcile(observation EnvironmentObservation, now time.Time) (ExecutionDecision, error) {
+func (e *AgentExecution) Reconcile(observation EnvironmentObservation, lease LeaseTerms, now time.Time) (ExecutionDecision, error) {
 	if now.IsZero() {
 		return ExecutionDecision{}, ErrInvalidExecution
 	}
 	before := e.facts()
-	steps := e.decide(observation, now)
+	steps := e.decide(observation, lease, now)
 	return ExecutionDecision{Steps: steps, Changed: e.facts() != before}, nil
 }
 
-func (e *AgentExecution) decide(observation EnvironmentObservation, now time.Time) []ExecutionStep {
+func (e *AgentExecution) decide(observation EnvironmentObservation, lease LeaseTerms, now time.Time) []ExecutionStep {
 	if e.Retired() {
 		return e.release(observation)
 	}
@@ -143,7 +141,7 @@ func (e *AgentExecution) decide(observation EnvironmentObservation, now time.Tim
 		return steps
 	}
 	bound, _ := observation.find(e.Environment)
-	steps = append(steps, e.leaseSteps(bound, observation.Lease, now)...)
+	steps = append(steps, e.leaseSteps(bound, lease, now)...)
 	if e.Outcome.Abandoned || !bound.Running {
 		return steps
 	}
@@ -244,7 +242,7 @@ func (e *AgentExecution) runSteps(observation EnvironmentObservation, now time.T
 	case e.Process.Exited:
 	case !observation.Attached:
 		steps = append(steps, ExecutionStep{Kind: StepConnect})
-	case e.credentialsDue(observation, now):
+	case e.credentialsDue(observation, now) && e.wantsRun():
 		steps = append(steps, ExecutionStep{Kind: StepDeliverCredentials})
 	}
 	return steps

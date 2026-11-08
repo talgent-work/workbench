@@ -64,7 +64,10 @@ func nativeDefaultsRepositoryRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "../../../../.."))
 }
 
-type nativeDefaultDefinition struct{ value *domain.AgentDefinition }
+type nativeDefaultDefinition struct {
+	query.AgentDefinitionQueryRepository
+	value *domain.AgentDefinition
+}
 
 func (r *nativeDefaultDefinition) Get(context.Context, string) (*domain.AgentDefinition, error) {
 	return r.value, nil

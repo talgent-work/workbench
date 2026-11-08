@@ -6,7 +6,9 @@
 package task
 
 import (
+	"math"
 	"strings"
+	"time"
 
 	"github.com/go-jimu/components/taskqueue"
 	agenttaskv1 "github.com/talgent-work/workbench/gen/agent/task/v1"
@@ -20,6 +22,17 @@ const (
 	// execution's long step.
 	PreparationQueue = "agent-preparation"
 )
+
+// RecoveryAttemptTimeout bounds one attempt of a task on the recovery queue.
+const RecoveryAttemptTimeout = 2 * time.Minute
+
+// Persistent is the policy of a task that is never abandoned: a recovery
+// obligation, or a request whose delivery Agent took on. The worker's retry
+// delay bounds how often a failing task is retried; timeout bounds one
+// attempt.
+func Persistent(timeout time.Duration) []taskqueue.EnqueueOption {
+	return []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(math.MaxInt32), taskqueue.WithTimeout(timeout)}
+}
 
 const (
 	ReconcileExecutionType   taskqueue.TaskType = "agent.execution.reconcile.v1"

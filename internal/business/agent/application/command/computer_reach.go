@@ -7,19 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
-
-// ComputerWorks lists a Computer's Works in identity order after afterID.
-type ComputerWorks interface {
-	// ListRunningWorkIDs lists those whose run may still be in an execution
-	// environment on it: Starting past its Desk, Working, Stopping, or
-	// Closing before its compute release.
-	ListRunningWorkIDs(ctx context.Context, computerID, afterID string, limit int) ([]string, error)
-	// ListHeldWorkIDs lists those whose run's compute is not released, a
-	// start waiting in its line and a Failed Work included.
-	ListHeldWorkIDs(ctx context.Context, computerID, afterID string, limit int) ([]string, error)
-}
 
 // computerWorksPage bounds one page of a Computer's running Works.
 const computerWorksPage = 100
@@ -35,15 +25,15 @@ type ComputerReachHandler struct {
 	now          func() time.Time
 	sessions     domain.AgentWorkRepository
 	computers    ComputerPort
-	works        ComputerWorks
+	works        query.ExecutionQueryRepository
 	executions   domain.AgentExecutionRepository
 	coordination *ExecutionCoordination
-	buffer       RunningHarnessPort
+	buffer       DispatcherPort
 	places       presenceReads
 	logger       *slog.Logger
 }
 
-func NewComputerReachHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerPort, works ComputerWorks, executions domain.AgentExecutionRepository, coordination *ExecutionCoordination, buffer RunningHarnessPort, logger *slog.Logger) *ComputerReachHandler {
+func NewComputerReachHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerPort, works query.ExecutionQueryRepository, executions domain.AgentExecutionRepository, coordination *ExecutionCoordination, buffer DispatcherPort, logger *slog.Logger) *ComputerReachHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}

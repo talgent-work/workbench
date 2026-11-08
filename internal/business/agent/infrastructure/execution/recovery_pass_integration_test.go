@@ -23,21 +23,21 @@ import (
 // Cloud, and fixes its environment specification with mounts, as its first
 // reconciliation does before submitting the creation. It returns the
 // execution's record.
-func register(ctx context.Context, p *Provisioning, launch domain.LaunchSpecification, mounts domain.SandboxMounts) (allocationRecord, error) {
+func register(ctx context.Context, p *Provisioning, launch domain.LaunchSpecification, mounts domain.SandboxMounts) (executionRecord, error) {
 	return registerAs(ctx, p, launch, mounts, domain.RealizationCloud)
 }
 
 // registerAs is register on a Computer of realization.
-func registerAs(ctx context.Context, p *Provisioning, launch domain.LaunchSpecification, mounts domain.SandboxMounts, realization domain.ExecutionRealization) (allocationRecord, error) {
+func registerAs(ctx context.Context, p *Provisioning, launch domain.LaunchSpecification, mounts domain.SandboxMounts, realization domain.ExecutionRealization) (executionRecord, error) {
 	run, err := domain.BeginExecution(domain.ExecutionBeginning{
 		Admitted: domain.WorkStartAdmitted{WorkID: launch.WorkID, StartAdmittedAt: p.now(), DeskID: "desk-" + uuid.NewString()},
 		Launch:   launch, Realization: realization,
 	})
 	if err != nil {
-		return allocationRecord{}, err
+		return executionRecord{}, err
 	}
 	if err := NewAgentExecutionRepository(p.db, p.now).Save(ctx, run); err != nil {
-		return allocationRecord{}, err
+		return executionRecord{}, err
 	}
 	record, _, err := p.get(ctx, run.ID)
 	if err != nil {
@@ -66,13 +66,13 @@ func newExecutionSteps(t testing.TB, p *Provisioning, connections *NativeConnect
 }
 
 // newExecutionStepsWith acquires a Cloud start's mounts from mounts.
-func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeConnections, owners StreamOwners, managed *ManagedEnvironment, now func() time.Time, mounts command.SandboxMountPort) *executionSteps {
+func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeConnections, owners StreamOwners, managed *ManagedEnvironment, now func() time.Time, mounts command.StoragePort) *executionSteps {
 	t.Helper()
 	environment, err := NewExecutionEnvironment(p, connections, owners, managed)
 	require.NoError(t, err)
 	executions := NewAgentExecutionRepository(p.db, now)
 	steps := &executionSteps{environment: environment, executions: executions, desks: &cloudDesks{}, harness: commandtest.NewHarness()}
-	steps.handler = command.NewReconcileExecutionHandler(now, executions, environment, steps.harness, steps.desks, mounts)
+	steps.handler = command.NewReconcileExecutionHandler(now, fixtureLease, executions, environment, steps.harness, steps.desks, mounts)
 	return steps
 }
 
@@ -161,8 +161,8 @@ func (unread) Reading(context.Context, string) (StreamReading, bool, error) {
 }
 
 // unreleased lists retired executions whose release is not confirmed yet.
-func unreleased(ctx context.Context, db *xorm.Engine) ([]allocationRecord, error) {
-	var records []allocationRecord
+func unreleased(ctx context.Context, db *xorm.Engine) ([]executionRecord, error) {
+	var records []executionRecord
 	err := db.Context(ctx).Where("deleted_at <> 0 AND released_at = 0").Asc("id").Find(&records)
 	return records, err
 }

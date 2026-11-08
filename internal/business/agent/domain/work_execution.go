@@ -1,23 +1,50 @@
 package domain
 
 import (
+	"errors"
 	"maps"
 	"slices"
 	"time"
 )
 
+// ErrStartRequestSpent refuses a start request whose Desk the Work's ended
+// start took: one request identity admits at most one start (Unique start
+// request).
+var ErrStartRequestSpent = errors.New("agent: the start request already admitted a start")
+
+// Resume admits a continuation under its Computer's admission answer. A
+// repeated request, whose Desk the current start holds, returns that same
+// admission and changes nothing (Unique start request).
 func (s *AgentWork) Resume(admission StartAdmission) error {
+	if s.StartHoldsDesk(admission.Seat.DeskID) {
+		return nil
+	}
 	if err := s.AdmitResume(); err != nil {
 		return err
 	}
 	return s.begin(admission, ContextContinue)
 }
 
+// Restart admits an explicit retry the same way, a repeated request included.
 func (s *AgentWork) Restart(admission StartAdmission) error {
+	if s.StartHoldsDesk(admission.Seat.DeskID) {
+		return nil
+	}
 	if err := s.AdmitRestart(); err != nil {
 		return err
 	}
 	return s.begin(admission, ContextRecover)
+}
+
+// StartHoldsDesk reports whether the Work's current start holds the Desk: it
+// took that Desk, and its compute, with which the Desk leaves, is not yet
+// reclaimed. A start request derives its Desk from its identity, so a request
+// whose Desk the current start holds is a repeat of the admitted one. A late
+// repeat, whose Desk already left, is not recognized; its Computer refuses
+// the Desk that left, so it starts nothing.
+func (s *AgentWork) StartHoldsDesk(deskID string) bool {
+	p := s.HarnessProcess
+	return deskID != "" && p != nil && p.DeskID == deskID && !p.ComputeReclaimed
 }
 
 // AdmitResume reports whether a Resume may begin now, so its Computer is
@@ -47,6 +74,9 @@ func (s *AgentWork) admitNewRun() error {
 func (s *AgentWork) begin(admission StartAdmission, mode ContextMode) error {
 	if err := validateStartAdmission(s.AgentID, s.WorkModel, admission); err != nil {
 		return err
+	}
+	if p := s.HarnessProcess; p != nil && admission.Seat.DeskID != "" && p.DeskID == admission.Seat.DeskID {
+		return ErrStartRequestSpent
 	}
 	// A Work stays on its Computer: every run is admitted there.
 	if admission.Seat.ComputerID != s.ComputerID {

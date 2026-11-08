@@ -21,10 +21,9 @@ var ErrExecutionUnobserved = errors.New("agent: the Work's execution environment
 // instead.
 const DisconnectionTimeout = 5 * time.Minute
 
-// OnManagedComputer reports whether the Work runs on a Managed Computer:
-// only such a Work has a Harness permission mode, fixed from its first start
-// (Managed permission mode).
-func (s *AgentWork) OnManagedComputer() bool { return s.PermissionMode != "" }
+// OnManagedComputer reports whether the Work runs on a Managed Computer, as
+// its ComputerReference records from its first start.
+func (s *AgentWork) OnManagedComputer() bool { return s.ComputerKind == ComputerManaged }
 
 // Disconnected reports whether the platform has lost observation of the
 // Work's execution environment.

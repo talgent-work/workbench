@@ -20,8 +20,23 @@ import (
 )
 
 const sandboxSessionLabel = "talgent.io/session"
-const sandboxAllocationLabel = "talgent.io/allocation"
 const sandboxSpecLabel = "talgent.io/spec"
+
+// sandboxOwnershipLabel names, by a digest of its identity, the AgentExecution
+// a sandbox belongs to.
+const sandboxOwnershipLabel = "talgent.io/execution"
+
+// formerOwnershipLabel is the ownership label of sandboxes created before the
+// AgentExecution names, with the same value. The environment observer and
+// release still recognize it so those sandboxes are owned and released.
+// Remove it once every environment applied
+// deploy/middleware/migrations/20261109-agent-execution-names.sql and no
+// sandbox created before it remains.
+const formerOwnershipLabel = "talgent.io/allocation"
+
+// ownershipLabels are the labels that name a sandbox's execution, current
+// first.
+var ownershipLabels = []string{sandboxOwnershipLabel, formerOwnershipLabel}
 
 // workCredentialEnv names, in the recorded sandbox specification, the native
 // process credential issued to one sandbox. It authorizes only while that
@@ -29,15 +44,15 @@ const sandboxSpecLabel = "talgent.io/spec"
 // the Credential Proxy injects it into the requests to the platform.
 const workCredentialEnv = "TALGENT_WORK_CREDENTIAL"
 
-// Allocation identifies one sandbox allocation for a Work. It is an
-// infrastructure identity for provider correlation only; a Work has at most one
-// live allocation, and no allocation identity leaves execution infrastructure.
-type Allocation struct {
+// SandboxOwner identifies the execution of a Work whose sandboxes carry its
+// ownership. It is an infrastructure identity for provider correlation only;
+// a Work has at most one live execution.
+type SandboxOwner struct {
 	WorkID string
 	ID     string
 }
 
-func (a Allocation) validate() error {
+func (a SandboxOwner) validate() error {
 	if strings.TrimSpace(a.WorkID) == "" || uuid.Validate(a.ID) != nil {
 		return domain.ErrExecutionRequest
 	}
@@ -71,7 +86,7 @@ func NewSandboxes(client *sdk.LifecycleClient, config SandboxConfig) (*Sandboxes
 // gives once the sandbox is ready or has definitely failed, a little longer
 // than the server's own creation timeout. A wait that ends first loses the
 // answer.
-func (s *Sandboxes) submit(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) (string, error) {
+func (s *Sandboxes) submit(ctx context.Context, owner SandboxOwner, spec sdk.CreateSandboxRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.config.creationWait())
 	defer cancel()
 	result, err := s.client.CreateSandbox(ctx, withoutWorkCredential(spec))
@@ -99,8 +114,8 @@ func withoutWorkCredential(spec sdk.CreateSandboxRequest) sdk.CreateSandboxReque
 // owned lists the sandboxes carrying the execution's exact ownership, each
 // once. A listed sandbox that does not is not the execution's, so it is left
 // in place without holding back the others.
-func (s *Sandboxes) owned(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest) ([]sdk.SandboxInfo, error) {
-	items, err := s.listCorrelated(ctx, owner)
+func (s *Sandboxes) owned(ctx context.Context, owner SandboxOwner, spec sdk.CreateSandboxRequest) ([]sdk.SandboxInfo, error) {
+	items, err := s.listCorrelated(ctx, owner, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -115,12 +130,19 @@ func (s *Sandboxes) owned(ctx context.Context, owner Allocation, spec sdk.Create
 	return owned, nil
 }
 
-// listCorrelated pages every sandbox the server lists with the allocation's
-// owner metadata.
-func (s *Sandboxes) listCorrelated(ctx context.Context, owner Allocation) ([]sdk.SandboxInfo, error) {
+// listCorrelated pages every sandbox the server lists with the owner
+// metadata the execution's recorded specification gave its sandboxes, which
+// carry the former ownership label when created before the AgentExecution
+// names.
+func (s *Sandboxes) listCorrelated(ctx context.Context, owner SandboxOwner, spec sdk.CreateSandboxRequest) ([]sdk.SandboxInfo, error) {
+	filter := correlation(owner)
+	if label := ownershipLabelOf(spec.Metadata); label != sandboxOwnershipLabel {
+		filter[label] = filter[sandboxOwnershipLabel]
+		delete(filter, sandboxOwnershipLabel)
+	}
 	var items []sdk.SandboxInfo
 	for page := 1; ; page++ {
-		result, err := s.client.ListSandboxes(ctx, sdk.ListOptions{Metadata: correlation(owner), Page: page, PageSize: 100})
+		result, err := s.client.ListSandboxes(ctx, sdk.ListOptions{Metadata: filter, Page: page, PageSize: 100})
 		if err != nil {
 			return nil, sandboxError(ctx, "lookup", err)
 		}
@@ -150,7 +172,7 @@ type boundSandbox struct {
 // inspect shows only a matching sandbox, resolving direct execd access while
 // it runs. Gateway credentials are deliberately not interpreted as execd
 // tokens.
-func (s *Sandboxes) inspect(ctx context.Context, owner Allocation, id string) (boundSandbox, error) {
+func (s *Sandboxes) inspect(ctx context.Context, owner SandboxOwner, id string) (boundSandbox, error) {
 	if err := validateSandboxOwner(owner, id); err != nil {
 		return boundSandbox{}, err
 	}
@@ -204,14 +226,11 @@ func recordedExpiry(expiresAt time.Time) time.Time {
 	return expiresAt.Truncate(time.Millisecond).UTC()
 }
 
-// lease is how every sandbox is leased.
-func (s *Sandboxes) lease() domain.LeaseTerms { return s.config.Lease }
-
 // renew moves the bound sandbox's expiry to expiresAt and returns the expiry
 // OpenSandbox answered. OpenSandbox accepts any future time, a shorter one
 // included, so the caller asks only for later ones; it refuses a sandbox
 // created without an expiry.
-func (s *Sandboxes) renew(ctx context.Context, owner Allocation, id string, expiresAt time.Time) (time.Time, error) {
+func (s *Sandboxes) renew(ctx context.Context, owner SandboxOwner, id string, expiresAt time.Time) (time.Time, error) {
 	if err := validateSandboxOwner(owner, id); err != nil {
 		return time.Time{}, err
 	}
@@ -229,7 +248,7 @@ func (s *Sandboxes) renew(ctx context.Context, owner Allocation, id string, expi
 // reports whether it is already absent; only OpenSandbox's observation
 // establishes that. Underlying Pod termination belongs to Kubernetes. No PVCs
 // or contents are deleted here.
-func (s *Sandboxes) Delete(ctx context.Context, owner Allocation, spec sdk.CreateSandboxRequest, id string, credentials *SandboxCredentials) (bool, error) {
+func (s *Sandboxes) Delete(ctx context.Context, owner SandboxOwner, spec sdk.CreateSandboxRequest, id string, credentials *SandboxCredentials) (bool, error) {
 	if err := validateSandboxOwner(owner, id); err != nil {
 		return false, err
 	}
@@ -255,7 +274,7 @@ func (s *Sandboxes) Delete(ctx context.Context, owner Allocation, spec sdk.Creat
 	return absent, err
 }
 
-func (s *Sandboxes) deleteLocked(ctx context.Context, owner Allocation, id string, credentials *SandboxCredentials) (bool, error) {
+func (s *Sandboxes) deleteLocked(ctx context.Context, owner SandboxOwner, id string, credentials *SandboxCredentials) (bool, error) {
 	if err := validateSandboxOwner(owner, id); err != nil {
 		return false, err
 	}
@@ -280,7 +299,7 @@ func (s *Sandboxes) deleteLocked(ctx context.Context, owner Allocation, id strin
 	return false, clearErr
 }
 
-func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner Allocation, token, credential string) (sdk.CreateSandboxRequest, error) {
+func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token, credential string) (sdk.CreateSandboxRequest, error) {
 	if err := validateStartRequest(request); err != nil {
 		return sdk.CreateSandboxRequest{}, err
 	}
@@ -351,9 +370,9 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpec
 		spec.ResourceRequests[string(name)], spec.ResourceLimits[string(name)] = request.String(), limit.String()
 	}
 	encoded, err := json.Marshal(struct {
-		Request    domain.LaunchSpecification
-		Allocation Allocation
-		Spec       sdk.CreateSandboxRequest
+		Request      domain.LaunchSpecification
+		SandboxOwner SandboxOwner
+		Spec         sdk.CreateSandboxRequest
 	}{request, owner, spec})
 	if err != nil {
 		return sdk.CreateSandboxRequest{}, oops.Wrap(err)
@@ -362,25 +381,38 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpec
 	return spec, nil
 }
 
-func correlation(owner Allocation) map[string]string {
-	return map[string]string{sandboxSessionLabel: storageKey(owner.WorkID)[:48], sandboxAllocationLabel: storageKey(owner.ID)[:48]}
+func correlation(owner SandboxOwner) map[string]string {
+	return map[string]string{sandboxSessionLabel: storageKey(owner.WorkID)[:48], sandboxOwnershipLabel: storageKey(owner.ID)[:48]}
 }
 
-func matchesSandbox(info *sdk.SandboxInfo, owner Allocation) bool {
+// matchesSandbox reports a sandbox carrying the execution's owner metadata,
+// under either ownership label.
+func matchesSandbox(info *sdk.SandboxInfo, owner SandboxOwner) bool {
 	if info == nil {
 		return false
 	}
-	for key, value := range correlation(owner) {
-		if info.Metadata[key] != value {
-			return false
-		}
+	wanted := correlation(owner)
+	if info.Metadata[sandboxSessionLabel] != wanted[sandboxSessionLabel] {
+		return false
 	}
-	return true
+	label := ownershipLabelOf(info.Metadata)
+	return info.Metadata[label] == wanted[sandboxOwnershipLabel]
 }
 
-// carriesOwnership reports a sandbox carrying the allocation's owner metadata
+// ownershipLabelOf is the ownership label metadata carries: the current one
+// unless only the former one is present.
+func ownershipLabelOf(metadata map[string]string) string {
+	for _, label := range ownershipLabels {
+		if _, found := metadata[label]; found {
+			return label
+		}
+	}
+	return sandboxOwnershipLabel
+}
+
+// carriesOwnership reports a sandbox carrying the execution's owner metadata
 // and its immutable specification.
-func carriesOwnership(info *sdk.SandboxInfo, owner Allocation, spec sdk.CreateSandboxRequest) bool {
+func carriesOwnership(info *sdk.SandboxInfo, owner SandboxOwner, spec sdk.CreateSandboxRequest) bool {
 	return matchesSandbox(info, owner) && info.Metadata[sandboxSpecLabel] == spec.Metadata[sandboxSpecLabel]
 }
 
@@ -388,7 +420,7 @@ func validSandboxID(id string) bool {
 	parsed, err := uuid.Parse(id)
 	return err == nil && parsed.String() == id
 }
-func validateSandboxOwner(owner Allocation, id string) error {
+func validateSandboxOwner(owner SandboxOwner, id string) error {
 	if err := owner.validate(); err != nil {
 		return err
 	}
@@ -399,7 +431,7 @@ func validateSandboxOwner(owner Allocation, id string) error {
 }
 
 // errCreationRefused marks a create the provider definitely refused or
-// failed. Nothing it created for it remains, so its allocation can never
+// failed. Nothing it created for it remains, so its execution can never
 // hold compute.
 var errCreationRefused = errors.New("agent: sandbox creation refused")
 

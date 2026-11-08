@@ -46,9 +46,9 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	const owner = "123456789012345680"
 	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
-	principal := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	principal := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	reader := infrastructure.NewWorkQueryRepository(f.db)
-	app := &application.Application{WorkViews: reader, Queries: application.Queries{ListWorks: query.NewListWorksHandler(reader)}}
+	app := &application.Application{WorkQueries: reader, Queries: application.Queries{ListWorks: query.NewListWorksHandler(reader)}}
 	api := connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterWorkFactsServiceHandler(s, transport.NewWorkFactsHandler(app, "control"))
 	})

@@ -14,7 +14,7 @@ import (
 )
 
 type thinkingStore struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	work    domain.AgentWork
 	saveErr error
 	saves   int
@@ -50,7 +50,7 @@ func (a *thinkingAccess) AuthorizeWork(_ context.Context, subject, _ string) err
 }
 
 type thinkingHarness struct {
-	command.RunningHarnessPort
+	command.DispatcherPort
 	calls []string
 	err   error
 }

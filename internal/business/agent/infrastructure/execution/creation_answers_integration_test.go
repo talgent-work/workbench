@@ -44,7 +44,7 @@ func TestASuccessfulCreateAnswerBindsTheSandbox(t *testing.T) {
 	require.Equal(t, sandboxID, f.allocation(t).SandboxID, "the answer binds the created sandbox")
 
 	require.True(t, f.reconcile(t), "onboarding continues to the preparation")
-	require.True(t, f.allocation(t).SandboxReady, "the bound sandbox receives its credentials")
+	require.True(t, f.allocation(t).CredentialsDelivered, "the bound sandbox receives its credentials")
 	require.Equal(t, 1, f.creates(), "the create is never sent twice")
 }
 
@@ -112,7 +112,7 @@ func TestALostCreateAnswerFallsBackToObservation(t *testing.T) {
 	done := f.submitting(t, waiting, make(chan struct{}), 0, "")
 	require.True(t, f.reconcile(t), "onboarding continues to the preparation")
 	require.Equal(t, sandboxID, f.allocation(t).SandboxID, "the observed sandbox is bound without an answer")
-	require.True(t, f.allocation(t).SandboxReady, "the bound sandbox receives its credentials")
+	require.True(t, f.allocation(t).CredentialsDelivered, "the bound sandbox receives its credentials")
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled, "the answer is lost")
 	require.Equal(t, sandboxID, f.allocation(t).SandboxID, "a lost answer leaves the binding")

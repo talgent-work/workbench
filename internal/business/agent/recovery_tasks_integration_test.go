@@ -27,7 +27,7 @@ import (
 // failingOnceLookups fails the first listing of outstanding executions and
 // lists one execution afterwards.
 type failingOnceLookups struct {
-	agentquery.ExecutionRecoveryReader
+	agentquery.ExecutionQueryRepository
 	mu     sync.Mutex
 	listed int
 }
@@ -78,7 +78,8 @@ func TestFailedSweepDoesNotSuppressLaterSweeps(t *testing.T) {
 	port := &sessionCommandRecorder{}
 	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.NopLogger,
 		fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }),
-		fx.Decorate(func(agentquery.ExecutionRecoveryReader) agentquery.ExecutionRecoveryReader { return lookups }),
+		fx.Supply(domain.LeaseTerms{}),
+		fx.Decorate(func(agentquery.ExecutionQueryRepository) agentquery.ExecutionQueryRepository { return lookups }),
 		fx.Decorate(func(repository domain.AgentExecutionRepository) domain.AgentExecutionRepository {
 			executions.AgentExecutionRepository = repository
 			return executions
@@ -87,7 +88,7 @@ func TestFailedSweepDoesNotSuppressLaterSweeps(t *testing.T) {
 		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
-		fx.Provide(func() command.RunningHarnessPort { return port }),
+		fx.Provide(func() command.DispatcherPort { return port }),
 	)
 	require.NoError(t, app.Err())
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

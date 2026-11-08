@@ -60,8 +60,10 @@ func TestWorkModelDefaultAndSelectionApplyToEveryPurpose(t *testing.T) {
 				}
 				require.Equal(t, wantLevel, store.session.ThinkingLevel)
 				input.WorkModel = domain.WorkModelSelection{ConfigurationID: "changed"}
-				_, err = handler.Handle(t.Context(), input)
-				require.ErrorIs(t, err, command.ErrWorkCreationConflict, "a repeated request identity carries its original content")
+				repeated, err := handler.Handle(t.Context(), input)
+				require.NoError(t, err)
+				require.Equal(t, id, repeated, "a repeated request identity returns the Work it created")
+				require.Equal(t, want, store.session.WorkModel, "a repeat changes nothing of its Work")
 				input.RequestID = uuid.NewString()
 				reused, err := handler.Handle(t.Context(), input)
 				require.NoError(t, err)
@@ -92,24 +94,25 @@ func (s *sessionStore) preparation(models agentquery.ModelConfigurations) *comma
 	return command.NewPrepareWorkExecutionHandler(s, s, models)
 }
 
-func (s *sessionStore) Get(context.Context, string) (*domain.AgentWork, error) {
-	return s.session, nil
-}
-func (s *sessionStore) Save(_ context.Context, session *domain.AgentWork) error {
-	s.session = session
-	return nil
+func (s *sessionStore) Get(_ context.Context, id string) (*domain.AgentWork, error) {
+	return s.LocateWork(context.Background(), id)
 }
 
-func (s *sessionStore) RegisterWork(ctx context.Context, session *domain.AgentWork, registration command.WorkRegistration) error {
+// Save registers a new Work for its starter, or updates the held one.
+func (s *sessionStore) Save(_ context.Context, session *domain.AgentWork) error {
 	if err := s.failCommit(); err != nil {
 		return err
 	}
-	if err := command.AnswerRetained(s.record(registration.Request), registration.Request); err != nil {
-		return err
+	if session.Version == 0 {
+		if s.session != nil && s.session.ID == session.ID {
+			return domain.ErrConcurrentModification
+		}
+		s.subject = session.StartedBy
+		s.registrations++
+		session.Version = 1
 	}
-	s.subject = registration.SubjectID
-	s.registrations++
-	return s.Save(ctx, session)
+	s.session = session
+	return s.loseAnswer()
 }
 
 func (s *sessionStore) LocateWork(_ context.Context, workID string) (*domain.AgentWork, error) {
@@ -170,7 +173,8 @@ func TestInitialThinkingLevelUsesRetainedWorkModel(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
 	require.Nil(t, store.session)
 	_, err = handler.Handle(t.Context(), input)
-	require.ErrorIs(t, err, command.ErrWorkCreationCanceled, "a definitive refusal settles its request identity")
+	require.ErrorIs(t, err, domain.ErrInvalidWork, "a repeat of a refused request is refused again")
+	require.Nil(t, store.session, "and creates nothing")
 	input.InitialExecution.RequestID = uuid.NewString()
 	input.InitialExecution.ThinkingLevel = "low"
 	id, err := handler.Handle(t.Context(), input)
@@ -189,7 +193,7 @@ func TestInitialThinkingLevelUsesRetainedWorkModel(t *testing.T) {
 	require.Equal(t, configured, store.session.WorkModel)
 }
 
-type emptyPluginCatalog struct{ command.StartCatalogPort }
+type emptyPluginCatalog struct{ command.MarketplacePort }
 
 func (emptyPluginCatalog) ListPersonalPlugins(context.Context, string) ([]domain.PersonalPlugin, error) {
 	return nil, nil
@@ -284,14 +288,14 @@ func TestWorkDerivesCommonTraceAttributionForEverySubject(t *testing.T) {
 				require.NoError(t, work.Stop("stop-1", false))
 				report(t, work, exitedReport)
 				report(t, work, releasedReport)
-				require.NoError(t, work.Resume(fixtureAdmission(agent.ID)))
+				require.NoError(t, work.Resume(nextAdmission(agent.ID)))
 				require.Equal(t, want, work.LaunchSpecification().TraceAttributes)
 				report(t, work, func(workID string, start time.Time) domain.Event {
 					return domain.ExecutionExited{WorkID: workID, StartAdmittedAt: start, Exit: domain.HarnessExit{ExitCode: 1, Reason: "startup failed"}}
 				})
 				report(t, work, releasedReport)
 				require.Equal(t, domain.WorkFailed, work.State)
-				require.NoError(t, work.Restart(fixtureAdmission(agent.ID)))
+				require.NoError(t, work.Restart(nextAdmission(agent.ID)))
 				require.Equal(t, want, work.LaunchSpecification().TraceAttributes)
 			})
 		}

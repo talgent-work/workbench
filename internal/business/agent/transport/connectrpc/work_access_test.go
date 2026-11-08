@@ -62,9 +62,9 @@ func newAccessFixtureWith(t *testing.T, views application.WorkspacePort) *access
 	f.digitalWork = accessWork(t, sessions, coordinator, "owner")
 
 	dispatcher.Subscribe(eventhandler.NewWorkAccessWithdrawals(f.withdrawals, slog.Default()))
-	app := &application.Application{Definitions: agents, Works: sessions, WorkPrincipals: ownerAuthorization{sessions}, WorkViews: sessionViews{sessions}, Logger: slog.Default(),
+	app := &application.Application{Definitions: agents, Works: sessions, WorkPrincipals: ownerAuthorization{sessions}, WorkQueries: sessionViews{sessions: sessions}, Logger: slog.Default(),
 		Commands:   application.Commands{CreateWork: command.NewCreateWorkHandler(time.Now, agents, sessions, ownerAuthorization{sessions}, query.NewModelConfigurations(), nil, nil, nil)},
-		Queries:    application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions})},
+		Queries:    application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions: sessions})},
 		Workspaces: views,
 	}
 	mux := http.NewServeMux()
@@ -90,7 +90,7 @@ func accessWork(t *testing.T, sessions *rpcSessions, definition *domain.AgentDef
 	t.Helper()
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project-a", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: owner, ID: uuid.NewString(), AgentID: definition.ID, Visibility: definition.Visibility,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding,
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	sessions.items[work.ID] = work
 	return work.ID
@@ -229,28 +229,6 @@ func TestOwnerOperationsRefuseOtherReaders(t *testing.T) {
 	require.Equal(t, []string{"reader"}, owned.GetWork().GetShareReaderIds())
 }
 
-func TestCancelledCreationRequestIdentityNeverCreatesAWork(t *testing.T) {
-	ctx := context.Background()
-	f := newAccessFixture(t)
-	requestID := uuid.NewString()
-	outcome, err := f.agent.GetWorkCreation(authenticated(ctx, "control"), &agentprivatev1.GetWorkCreationRequest{RequestId: requestID})
-	require.NoError(t, err)
-	require.Equal(t, agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_UNKNOWN, outcome.GetOutcome())
-
-	cancelled, err := f.agent.CancelWorkCreation(authenticated(ctx, "control"), &agentprivatev1.CancelWorkCreationRequest{RequestId: requestID})
-	require.NoError(t, err)
-	require.Empty(t, cancelled.GetWorkId())
-	outcome, err = f.agent.GetWorkCreation(authenticated(ctx, "control"), &agentprivatev1.GetWorkCreationRequest{RequestId: requestID})
-	require.NoError(t, err)
-	require.Equal(t, agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_CANCELLED, outcome.GetOutcome())
-
-	works := len(f.sessions.items)
-	_, err = f.agent.PrepareWorkExecution(authenticated(ctx, "control"), &agentprivatev1.PrepareWorkExecutionRequest{SubjectId: "owner", RequestId: requestID, WorkBranch: "talgent/" + "TAL-1", InputId: uuid.NewString(), Input: "Start",
-		Creation: &agentprivatev1.CreateWorkRequest{SubjectId: "owner", AgentId: uuid.NewString(), WorkspaceReference: "workspace", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project-a"}})
-	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a delayed request carrying a cancelled identity is refused")
-	require.Len(t, f.sessions.items, works, "and creates nothing")
-}
-
 type recordedWithdrawals struct {
 	eventhandler.LiveStreamPort
 	mu    sync.Mutex
@@ -280,7 +258,10 @@ func (a ownerAuthorization) AuthorizeWork(_ context.Context, subject, id string)
 	return nil
 }
 
-type sessionViews struct{ sessions *rpcSessions }
+type sessionViews struct {
+	query.WorkQueryRepository
+	sessions *rpcSessions
+}
 
 func (v sessionViews) GetWorkView(_ context.Context, id string) (query.WorkView, error) {
 	work, ok := v.sessions.items[id]

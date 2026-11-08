@@ -35,7 +35,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
@@ -56,7 +56,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.NoError(t, err)
 	agents = infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth = access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	auth = access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	reader := infrastructure.NewWorkQueryRepository(db)
 	submitted, err := reader.ListSubmittedPreparations(ctx, "", 100)
 	require.NoError(t, err)
@@ -66,7 +66,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.Equal(t, domain.WorkStarting, session.State)
 	require.True(t, session.HoldsProcess())
 	require.NoError(t, auth.AuthorizeWork(ctx, "owner", session.ID))
-	require.Equal(t, input.RequestID, submitted[0].RequestID)
+	require.Equal(t, session.ID, submitted[0].RequestID, "the first start is named by the Work its creation request derived")
 	require.Equal(t, input.Input.ID, submitted[0].InputID)
 	require.Equal(t, input.Input.Text, submitted[0].Input)
 	require.Equal(t, input.WorkBranch, submitted[0].WorkBranch)
@@ -74,7 +74,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.True(t, submitted[0].Submitted, "first admission is committed with the original input")
 	require.Equal(t, []string{"123"}, session.LaunchSpecification().RemainingRepositories)
 	requireStartRequested(t, sessions, session.ID)
-	observed, err := infrastructure.NewServiceAccessResults(db).ReadRepositoryPreparation(ctx, session.ID)
+	observed, err := infrastructure.NewExecutionQueryRepository(db).ReadRepositoryPreparation(ctx, session.ID)
 	require.NoError(t, err)
 	require.Empty(t, observed, "no repository has a checkout outcome yet")
 
@@ -96,14 +96,14 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.True(t, prepared.InputPrepared)
 	require.True(t, prepared.InputBuffered)
 	require.Len(t, prepared.Checkouts, 1)
-	observed, err = infrastructure.NewServiceAccessResults(db).ReadRepositoryPreparation(ctx, ref)
+	observed, err = infrastructure.NewExecutionQueryRepository(db).ReadRepositoryPreparation(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, []agentquery.RepositoryPreparation{{RepositoryID: "123", TargetPath: prepared.Checkouts[0].TargetPath, Reason: string(domain.CheckoutUnavailable)}}, observed)
 	continued, err := sessions.Get(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkWorking, continued.State)
 	require.False(t, continued.RecordRepositoryCheckouts(domain.ExecutionCheckoutsEnded{WorkID: ref, Checkouts: []domain.RepositoryCheckout{{RepositoryID: "123", CheckedOut: true}}}), "a later report never replays the degraded checkout")
-	unchanged, err := infrastructure.NewServiceAccessResults(db).ReadRepositoryPreparation(ctx, ref)
+	unchanged, err := infrastructure.NewExecutionQueryRepository(db).ReadRepositoryPreparation(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, observed, unchanged)
 	// A repeat with new transport IDs locates the original Work and input;
@@ -113,31 +113,34 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	repeated, err := prepareNew(ctx, creation, repeat)
 	require.NoError(t, err)
 	require.Equal(t, ref, repeated)
-	// Repeating that request identity with other content is a conflict; a new
-	// request with other repository choices returns the original Work, whose
-	// retained choices it never replaces.
+	// Repeating that request identity with other content returns the same
+	// Work; a new request with other repository choices returns the original
+	// Work too, whose retained choices it never replaces.
 	repeat.Input.Text = "different task"
-	_, err = prepareNew(ctx, creation, repeat)
-	require.ErrorIs(t, err, command.ErrWorkCreationConflict)
+	repeated, err = prepareNew(ctx, creation, repeat)
+	require.NoError(t, err)
+	require.Equal(t, ref, repeated)
 	repeat.RequestID, repeat.Input.ID = uuid.NewString(), uuid.NewString()
 	repeat.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "main"}}
 	reused, err := prepareNew(ctx, creation, repeat)
 	require.NoError(t, err)
 	require.Equal(t, ref, reused)
-	retained, err := infrastructure.NewServiceAccessResults(db).ReadRepositoryPreparation(ctx, ref)
+	retained, err := infrastructure.NewExecutionQueryRepository(db).ReadRepositoryPreparation(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, observed, retained, "the reuse keeps the original selection and outcomes")
 	requireStartRequested(t, sessions, ref)
 	require.Len(t, buffer.Inputs, 1)
 }
 
+// registrationLostAcknowledgement registers a new Work and loses the answer.
 type registrationLostAcknowledgement struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	err error
 }
 
-func (r registrationLostAcknowledgement) RegisterWork(ctx context.Context, s *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := r.AgentWorkRepository.RegisterWork(ctx, s, registration); err != nil {
+func (r registrationLostAcknowledgement) Save(ctx context.Context, s *domain.AgentWork) error {
+	registration := s.Version == 0
+	if err := r.AgentWorkRepository.Save(ctx, s); err != nil || !registration {
 		return err
 	}
 	return r.err

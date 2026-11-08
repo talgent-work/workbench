@@ -61,6 +61,7 @@ func (e *recordingEnqueuer) reconciliations(t *testing.T) []string {
 // ones, those using each authorization, and the Managed ones reading each
 // owner's File Space.
 type executionLookups struct {
+	query.ExecutionQueryRepository
 	outstanding   []string
 	using, inputs map[string][]string
 }
@@ -86,10 +87,10 @@ type recoveryFixture struct {
 	recovery    *application.Recovery
 }
 
-func newRecoveryFixture(app *application.Application, lookups executionLookups, workspaces application.WorkspacePort) *recoveryFixture {
+func newRecoveryFixture(app *application.Application, lookups executionLookups, storage command.StoragePort) *recoveryFixture {
 	f := &recoveryFixture{executions: &commandtest.Executions{}, environment: &commandtest.Environment{}, enqueuer: &recordingEnqueuer{}}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, nil)
-	f.recovery = application.NewRecovery(app, f.enqueuer, f.executions, lookups, reconciliation, workspaces, nil)
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, nil)
+	f.recovery = application.NewRecovery(app, f.enqueuer, f.executions, lookups, reconciliation, storage, nil)
 	return f
 }
 
@@ -150,10 +151,13 @@ func page(ids []string, after string, limit int) []string {
 	return result
 }
 
-type idList []string
+type recoveryWorks struct {
+	query.ExecutionQueryRepository
+	ids []string
+}
 
-func (l idList) ListWorkIDs(_ context.Context, after string, limit int) ([]string, error) {
-	return page(l, after, limit), nil
+func (l recoveryWorks) ListWorkIDs(_ context.Context, after string, limit int) ([]string, error) {
+	return page(l.ids, after, limit), nil
 }
 
 func TestWakingAWorkAlsoWakesItsUnreleasedExecution(t *testing.T) {
@@ -289,11 +293,11 @@ func TestALongStepHoldsBackNoShortStep(t *testing.T) {
 }
 
 func TestSweepWakesEveryUnfinishedObligationAcrossPages(t *testing.T) {
-	var executions idList
+	var executions []string
 	for n := range 250 {
 		executions = append(executions, fmt.Sprintf("execution-%03d", n))
 	}
-	works := idList{"work-1", "work-2"}
+	works := recoveryWorks{ids: []string{"work-1", "work-2"}}
 	app := &application.Application{Queries: application.Queries{
 		ListRecoveryWorks: query.NewListRecoveryWorksHandler(works),
 	}}
@@ -373,7 +377,7 @@ func TestInputChangeReachesTheReconciliationOfItsManagedWorks(t *testing.T) {
 }
 
 type reclamationRecorder struct {
-	application.WorkspacePort
+	command.StoragePort
 	sent []string
 }
 
@@ -382,18 +386,11 @@ func (r *reclamationRecorder) RequestWorkspaceReclamation(_ context.Context, wor
 	return nil
 }
 
-// A Closed Work's one reclamation request is queued per Work and retried
-// until Storage accepts it; delivering it sends exactly that request.
-func TestWorkspaceReclamationIsQueuedThenSent(t *testing.T) {
+// Delivering a queued reclamation task sends exactly its request through
+// Storage's contract.
+func TestQueuedWorkspaceReclamationIsSentToStorage(t *testing.T) {
 	storage := &reclamationRecorder{}
 	f := newRecoveryFixture(&application.Application{}, executionLookups{}, storage)
-	enqueuer, recovery := f.enqueuer, f.recovery
-	require.NoError(t, recovery.RequestWorkspaceReclamation(context.Background(), "work-1", "workspace-1"))
-	require.Equal(t, []string{"agent:workspace-reclamation:work-1"}, enqueuer.keys)
-	retries, set := enqueuer.options[0].MaxRetry()
-	require.True(t, set)
-	require.Greater(t, retries, 1_000_000, "a queued request is delivered however long Storage is away")
-	require.Error(t, recovery.RequestWorkspaceReclamation(context.Background(), "work-2", " "), "a request names its workspace")
-	require.NoError(t, recovery.SendWorkspaceReclamation(context.Background(), "work-1", "workspace-1"))
+	require.NoError(t, f.recovery.SendWorkspaceReclamation(context.Background(), "work-1", "workspace-1"))
 	require.Equal(t, []string{"work-1/workspace-1"}, storage.sent)
 }

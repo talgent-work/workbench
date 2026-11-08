@@ -38,7 +38,7 @@ type Client struct {
 	directory accountprivatev1connect.UserDirectoryServiceClient
 }
 
-var _ personalwork.UserDirectoryPort = (*Client)(nil)
+var _ personalwork.AccountPort = (*Client)(nil)
 
 func NewClient(httpClient *http.Client, cfg Config) (*Client, error) {
 	if err := cfg.Validate(); err != nil {

@@ -27,7 +27,9 @@ type world struct {
 	environment  *commandtest.Environment
 	settlements  *commandtest.InputSettlements
 	coordination *command.ExecutionCoordination
-	at           time.Time
+	// lease is the platform's configured lease terms; zero leases nothing.
+	lease domain.LeaseTerms
+	at    time.Time
 }
 
 func newWorld(t *testing.T, work *domain.AgentWork) *world {
@@ -59,7 +61,7 @@ func (w *world) feedback() *command.ApplyExecutionFeedbackHandler {
 }
 
 func (w *world) reconciliation() *command.ReconcileExecutionHandler {
-	return command.NewReconcileExecutionHandler(w.now, w.executions, w.environment, w.harness, w.computers, noMounts{})
+	return command.NewReconcileExecutionHandler(w.now, w.lease, w.executions, w.environment, w.harness, w.computers, noMounts{})
 }
 
 // execution is the Work's most recently begun execution.
@@ -145,7 +147,7 @@ func (w *world) release(t *testing.T) {
 }
 
 // noMounts grants no mounts.
-type noMounts struct{ command.SandboxMountPort }
+type noMounts struct{ command.StoragePort }
 
 func (noMounts) AcquireMounts(context.Context, domain.SandboxMountRequest) (domain.SandboxMounts, error) {
 	return domain.SandboxMounts{}, nil
@@ -164,7 +166,15 @@ func definitionFixture(t *testing.T) *domain.AgentDefinition {
 // precision, as persisted, so a later start a test admits now never shares
 // its admission time.
 func fixtureAdmission(agentID string) domain.StartAdmission {
-	return domain.StartAdmission{AdmittedAt: time.Now().Add(-time.Minute), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureComputer, DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	return domain.StartAdmission{AdmittedAt: time.Now().Add(-time.Minute), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureComputer, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
+}
+
+// nextAdmission admits a later start of the Work under a new request, which
+// derives a Desk of its own.
+func nextAdmission(agentID string) domain.StartAdmission {
+	admission := fixtureAdmission(agentID)
+	admission.Seat.DeskID = uuid.NewString()
+	return admission
 }
 
 // startingSession is a new Work whose first start is admitted and seated.

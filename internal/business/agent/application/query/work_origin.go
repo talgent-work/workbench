@@ -19,13 +19,9 @@ type WorkOrigin struct {
 	StartedAt time.Time
 }
 
-type WorkOriginQueryRepository interface {
-	GetWorkOrigin(context.Context, string) (WorkOrigin, error)
-}
+type GetWorkOriginHandler struct{ repository WorkQueryRepository }
 
-type GetWorkOriginHandler struct{ repository WorkOriginQueryRepository }
-
-func NewGetWorkOriginHandler(repository WorkOriginQueryRepository) *GetWorkOriginHandler {
+func NewGetWorkOriginHandler(repository WorkQueryRepository) *GetWorkOriginHandler {
 	return &GetWorkOriginHandler{repository: repository}
 }
 

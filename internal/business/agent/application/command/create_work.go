@@ -9,19 +9,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
-)
-
-var (
-	// ErrWorkCreationConflict refuses a repeated creation request identity
-	// that carries other content than its original request.
-	ErrWorkCreationConflict = fmt.Errorf("%w: Work creation request has different immutable content", ErrStartRequestConflict)
-	// ErrWorkCreationCanceled answers a creation request identity its caller
-	// cancelled, or that a definitive refusal settled: it creates nothing.
-	ErrWorkCreationCanceled = fmt.Errorf("%w: Work creation request was cancelled", ErrStartRequestCanceled)
 )
 
 type CreateWork struct {
@@ -61,36 +52,23 @@ type CreateWork struct {
 	Harness domain.HarnessChoice
 }
 
-// WorkRegistration is the creation request a new Work is registered with:
-// its request record, its creation correlation and the definition revision
-// used for its creation.
-type WorkRegistration struct {
-	SubjectID string
-	Request   query.StartRequest
-	// WorkspaceReference is the one the creating caller named, part of its
-	// creation correlation even for a Work that keeps no Session Workspace.
-	WorkspaceReference string
-	DefinitionVersion  int
-}
-
-// CreateWorkHandler creates at most one Work per caller request identity: it
-// derives the Work and its first Desk from that identity, asks the Computer
-// for admission, and commits the Work with its request record in one
-// transaction. A repeat returns the original outcome, a definitive refusal
-// settles the record, and a request its caller cancelled creates nothing.
-// The caller owns the identity, its admission and its recovery.
+// CreateWorkHandler creates at most one Work per caller request identity: the
+// identity derives the new Work's identity and its first Desk, so a repeat
+// after a lost answer, or after a commit whose outcome it never learned,
+// reaches the same Work and Desk. The caller owns the identity, its admission
+// and its recovery; no request record is kept.
 type CreateWorkHandler struct {
 	now           func() time.Time
-	catalog       StartCatalogPort
+	catalog       MarketplacePort
 	computers     ComputerPort
 	models        query.ModelConfigurations
 	agents        domain.AgentDefinitionRepository
-	sessions      AgentWorkRepository
+	sessions      domain.AgentWorkRepository
 	authorization access.WorkAuthorizer
 	prepare       *PrepareWorkExecutionHandler
 }
 
-func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog StartCatalogPort, computers ComputerPort, prepare *PrepareWorkExecutionHandler) *CreateWorkHandler {
+func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog MarketplacePort, computers ComputerPort, prepare *PrepareWorkExecutionHandler) *CreateWorkHandler {
 	return &CreateWorkHandler{now: now, catalog: catalog, computers: computers, agents: agents, sessions: sessions, authorization: authorization, models: models, prepare: prepare}
 }
 
@@ -103,68 +81,52 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 	if err != nil {
 		return "", err
 	}
-	fingerprint, err := requestFingerprint(request)
-	if err != nil {
-		return "", err
-	}
 	for range creationAttempts {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
 		// Read on every attempt: a competing creation of the same request
 		// identity that committed first is found here.
-		record, found, err := h.sessions.FindStartRequest(ctx, request.RequestID)
+		existing, err := h.requestedWork(ctx, request)
 		if err != nil {
 			return "", err
 		}
-		if found {
-			workID, err := repeatedCreation(record, fingerprint)
-			if err != nil {
-				return "", err
-			}
-			return h.created(ctx, request, workID)
+		if existing != nil {
+			return h.created(ctx, request, existing.ID)
 		}
-		workID, err := h.create(ctx, request, fingerprint)
+		workID, err := h.create(ctx, request)
 		if errors.Is(err, domain.ErrConcurrentModification) {
 			continue
-		}
-		if err != nil && definitiveCreationFailure(err) {
-			return h.settle(ctx, request, fingerprint, err)
 		}
 		return workID, err
 	}
 	return "", domain.ErrConcurrentModification
 }
 
-// Cancel settles an unanswered request identity for its caller: it returns the
-// Work the request already created, or fences the identity so a delayed
-// repeat creates nothing.
-func (h *CreateWorkHandler) Cancel(ctx context.Context, requestID string) (string, error) {
-	if uuid.Validate(requestID) != nil {
-		return "", query.ErrInvalidStartRequest
+// requestedWork is the Work the request identity names, nil before it exists.
+// An identity naming a Work of another definition belongs to another
+// operation.
+func (h *CreateWorkHandler) requestedWork(ctx context.Context, request CreateWork) (*domain.AgentWork, error) {
+	work, err := h.sessions.Get(ctx, request.workID())
+	if errors.Is(err, domain.ErrWorkNotFound) {
+		return nil, nil
 	}
-	record, err := h.sessions.RecordCreation(ctx, query.StartRequest{ID: requestID, Kind: query.StartKindStart, Canceled: true})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if !record.OfCreation() {
-		return "", ErrStartRequestConflict
+	if work.AgentID != request.AgentID {
+		return nil, ErrStartRequestConflict
 	}
-	return record.WorkID, nil
+	return work, nil
 }
 
-// Outcome reports a creation request identity's record without advancing it:
-// its Work or its definitive cancellation. found is false for an identity
-// Agent has not recorded, or one that names another operation.
-func (h *CreateWorkHandler) Outcome(ctx context.Context, requestID string) (query.StartRequest, bool, error) {
-	if uuid.Validate(requestID) != nil {
-		return query.StartRequest{}, false, query.ErrInvalidStartRequest
+// workID is the identity of the Work the request establishes: the one its
+// caller allocated, or else the one its request identity derives.
+func (request CreateWork) workID() string {
+	if request.WorkID != "" {
+		return request.WorkID
 	}
-	record, found, err := h.sessions.FindStartRequest(ctx, requestID)
-	if err != nil || !found || !record.OfCreation() {
-		return query.StartRequest{}, false, err
-	}
-	return record, true, nil
+	return requestedWorkID(request.RequestID)
 }
 
 // normalizeCreation validates a creation request and completes its initial
@@ -188,17 +150,9 @@ func normalizeCreation(request CreateWork) (CreateWork, error) {
 		request.RequestID, request.InitialExecution = initial.RequestID, &completed
 	}
 	if uuid.Validate(request.RequestID) != nil {
-		return request, query.ErrInvalidStartRequest
+		return request, ErrInvalidStartRequest
 	}
 	return request, nil
-}
-
-// repeatedCreation answers a creation request identity already recorded.
-func repeatedCreation(record query.StartRequest, fingerprint string) (string, error) {
-	if err := AnswerRetained(record, query.StartRequest{ID: record.ID, Kind: query.StartKindStart, Fingerprint: fingerprint}); err != nil {
-		return "", err
-	}
-	return record.WorkID, nil
 }
 
 // created answers the Work this request created or reused: an authorized
@@ -214,42 +168,6 @@ func (h *CreateWorkHandler) created(ctx context.Context, request CreateWork, wor
 	initial := *request.InitialExecution
 	initial.WorkID = workID
 	return h.prepare.Handle(ctx, initial)
-}
-
-// reused answers a request whose Subject's Work already existed and records
-// that outcome on its request identity, so a repeat, the creation outcome
-// query and a late cancellation all find the Work it answered.
-func (h *CreateWorkHandler) reused(ctx context.Context, request CreateWork, fingerprint, workID string) (string, error) {
-	id, err := h.created(ctx, request, workID)
-	if err != nil {
-		return "", err
-	}
-	outcome := query.StartRequest{ID: request.RequestID, Kind: query.StartKindStart, WorkID: workID, Fingerprint: fingerprint}
-	record, err := h.sessions.RecordCreation(ctx, outcome)
-	if err != nil {
-		return "", err
-	}
-	if err := AnswerRetained(record, outcome); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
-// settle records a definitive refusal on the request identity, so a repeat
-// answers cancelled rather than retrying, unless a Work already won it.
-func (h *CreateWorkHandler) settle(ctx context.Context, request CreateWork, fingerprint string, cause error) (string, error) {
-	record, err := h.sessions.RecordCreation(ctx, query.StartRequest{ID: request.RequestID, Kind: query.StartKindStart, Fingerprint: fingerprint, Canceled: true})
-	if err != nil {
-		return "", errors.Join(cause, err)
-	}
-	if record.Admitted() && record.Kind == query.StartKindStart {
-		return h.created(ctx, request, record.WorkID)
-	}
-	return "", errors.Join(cause, ErrWorkCreationCanceled)
-}
-
-func definitiveCreationFailure(err error) bool {
-	return errors.Is(err, domain.ErrCapacityUnavailable) || domain.RefusedByComputer(err) || errors.Is(err, ErrDeskUnavailable) || errors.Is(err, domain.ErrModelConfigurationWithdrawn) || errors.Is(err, pluginconfig.ErrInvalidConfiguration) || errors.Is(err, access.ErrAccessDenied) || errors.Is(err, domain.ErrAgentDefinitionNotFound) || errors.Is(err, domain.ErrInvalidWork) || errors.Is(err, domain.ErrInvalidWorkSubject) || errors.Is(err, domain.ErrInvalidCapabilities)
 }
 
 // workModel is the model a new Work retains: the requested one, or, with none

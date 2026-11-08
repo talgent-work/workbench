@@ -69,7 +69,7 @@ type ExecutionFeedback struct {
 }
 
 type ApplyExecutionFeedbackHandler struct {
-	buffer      RunningHarnessPort
+	buffer      DispatcherPort
 	settlements integrationmessage.Publisher
 	sessions    domain.AgentWorkRepository
 	executions  domain.AgentExecutionRepository
@@ -77,7 +77,7 @@ type ApplyExecutionFeedbackHandler struct {
 	now         func() time.Time
 }
 
-func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, executions domain.AgentExecutionRepository, reports *ExecutionCoordination, buffer RunningHarnessPort, settlements integrationmessage.Publisher) *ApplyExecutionFeedbackHandler {
+func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, executions domain.AgentExecutionRepository, reports *ExecutionCoordination, buffer DispatcherPort, settlements integrationmessage.Publisher) *ApplyExecutionFeedbackHandler {
 	return &ApplyExecutionFeedbackHandler{now: now, sessions: sessions, executions: executions, reports: reports, buffer: buffer, settlements: settlements}
 }
 
@@ -184,15 +184,30 @@ func launched(execution *domain.AgentExecution, processID string) bool {
 // recordExit acknowledges an exit fact on the execution whose launched
 // process it names; its report reaches the Work once saved. A fact naming
 // another process changes nothing (Foreign exit), and either way it is
-// acknowledged, so Dispatcher stops redelivering it.
+// acknowledged, so Dispatcher stops redelivering it. That execution changed
+// concurrently, such as by a stop's exit request, is read again and the fact
+// recorded on it as it is now, a bounded number of times; a later execution
+// begun meanwhile is never the one it is recorded on.
 func (h *ApplyExecutionFeedbackHandler) recordExit(ctx context.Context, execution *domain.AgentExecution, feedback ExecutionFeedback) error {
 	if !launched(execution, feedback.ProcessID) {
 		return nil
 	}
-	if _, changed := execution.RecordExit(feedback.ProcessID, domain.HarnessExit{ExitCode: feedback.ExitCode, Reason: feedback.ExitReason}); !changed {
-		return nil
+	exit := domain.HarnessExit{ExitCode: feedback.ExitCode, Reason: feedback.ExitReason}
+	var err error
+	for attempt := range coordinationAttempts {
+		if attempt > 0 {
+			if execution, err = h.executions.Get(ctx, execution.ID); err != nil {
+				return err
+			}
+		}
+		if _, changed := execution.RecordExit(feedback.ProcessID, exit); !changed {
+			return nil
+		}
+		if err = h.executions.Save(ctx, execution); !errors.Is(err, domain.ErrConcurrentModification) {
+			break
+		}
 	}
-	if err := h.executions.Save(ctx, execution); err != nil {
+	if err != nil {
 		return err
 	}
 	return h.reports.ApplyExecutionReports(ctx, feedback.WorkID)

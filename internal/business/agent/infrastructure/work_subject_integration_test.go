@@ -4,14 +4,12 @@ package infrastructure_test
 
 import (
 	"context"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"testing"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -38,14 +36,14 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	require.NoError(t, agents.Save(ctx, agent))
 	agent, err = agents.Get(ctx, agent.ID)
 	require.NoError(t, err)
-	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 	capabilities, err := command.ResolveStartupCapabilities(ctx, commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), "owner", domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: agent.Capabilities.RequiredPlugins, DefaultStartupAgent: agent.Capabilities.StartupAgent})
 	require.NoError(t, err)
 	subject := domain.WorkSubject{Kind: "case", ID: "Work-A"}
 	creation, isNew, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-a"}, subjectWork(t, sessions, agent.ID, subject))
 	require.NoError(t, err)
 	require.True(t, isNew)
-	require.NoError(t, sessions.RegisterWork(ctx, creation, command.WorkRegistration{SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: creation.ID}, DefinitionVersion: agent.Version}))
+	require.NoError(t, sessions.Save(ctx, creation))
 	originalID, originalContext := creation.ID, creation.HarnessSessionReference
 	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "Changed", StartupAgent: "employees:architect", RequiredPlugins: []string{"employees"}}))
 	require.NoError(t, agents.Save(ctx, agent))
@@ -83,5 +81,5 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	duplicate, isNew, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-b"}, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	require.True(t, isNew)
-	require.ErrorIs(t, sessions.RegisterWork(ctx, duplicate, command.WorkRegistration{SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: duplicate.ID}, DefinitionVersion: agent.Version}), domain.ErrConcurrentModification, "storage keeps one Work per definition and Subject")
+	require.ErrorIs(t, sessions.Save(ctx, duplicate), domain.ErrConcurrentModification, "storage keeps one Work per definition and Subject")
 }

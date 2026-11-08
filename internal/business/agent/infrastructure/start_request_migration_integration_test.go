@@ -39,10 +39,12 @@ func TestStartRequestMigrationRetiresTheCreationTable(t *testing.T) {
 	t.Cleanup(func() { _, _ = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", scratch)) })
 	_, err = conn.ExecContext(ctx, fmt.Sprintf("USE `%s`", scratch))
 	require.NoError(t, err)
-	for _, table := range []string{"agent_session", "agent_start_request"} {
-		_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s LIKE `%s`.%s", table, current, table))
-		require.NoError(t, err)
-	}
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE agent_session LIKE `%s`.agent_session", current))
+	require.NoError(t, err)
+	// The start request table is no longer in the current schema
+	// (20261108-start-request-removal.sql drops it).
+	_, err = conn.ExecContext(ctx, previousStartRequestTable)
+	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, `ALTER TABLE agent_session DROP COLUMN initial_task_input;
 ALTER TABLE agent_start_request DROP COLUMN fingerprint;
 CREATE TABLE agent_session_creation_request (
@@ -76,7 +78,7 @@ CREATE TABLE agent_session_creation_request (
 	var tables int
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_session_creation_request'").Scan(&tables))
 	require.Zero(t, tables, "the creation table is dropped")
-	for table, column := range map[string]string{"agent_session": "initial_task_input", "agent_start_request": "fingerprint"} {
+	for table, column := range map[string]string{"agent_session": "initial_task_input"} {
 		shape := "SELECT CONCAT_WS(' ', COLUMN_TYPE, IS_NULLABLE, COALESCE(COLUMN_DEFAULT, ''), COALESCE(CHARACTER_SET_NAME, ''), COALESCE(COLLATION_NAME, '')) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?"
 		var migrated, want string
 		require.NoError(t, conn.QueryRowContext(ctx, shape, scratch, table, column).Scan(&migrated))

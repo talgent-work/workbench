@@ -30,7 +30,7 @@ type releaseFixture struct {
 	steps        *executionSteps
 	lookups      *infrastructure.ExecutionQueryRepository
 	lifecycle    *lifecycleFixture
-	record       allocationRecord
+	record       executionRecord
 	// metadata is what the execution's sandboxes carry.
 	metadata map[string]string
 }
@@ -56,7 +56,7 @@ func newRelease(t *testing.T) *releaseFixture {
 	require.True(t, run.RecordSubmission())
 	require.NoError(t, steps.executions.Save(ctx, run))
 	seated := time.Now().Add(-domain.StartupDeadline - 2*time.Minute).UnixMilli()
-	_, err = db.Exec("UPDATE execution_allocation SET start_admitted_at = ?, seated_at = ?, created_at = ? WHERE id = ?", seated, seated, seated, record.ID)
+	_, err = db.Exec("UPDATE agent_execution SET start_admitted_at = ?, seated_at = ?, created_at = ? WHERE id = ?", seated, seated, seated, record.ID)
 	require.NoError(t, err)
 	var spec sdk.CreateSandboxRequest
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
@@ -155,7 +155,7 @@ func TestARetiredAllocationWithoutASandboxIdentityReleasesEverySandboxItOwns(t *
 	f.abandon(t)
 	f.sandbox(sandboxID, f.metadata)
 	f.sandbox(surplusSandboxID, f.metadata)
-	stranger := correlation(Allocation{WorkID: f.record.SessionID, ID: "01900000-0000-7000-8000-0000000000ff"})
+	stranger := correlation(SandboxOwner{WorkID: f.record.SessionID, ID: "01900000-0000-7000-8000-0000000000ff"})
 	stranger[sandboxSpecLabel] = f.metadata[sandboxSpecLabel]
 	f.sandbox(foreignSandboxID, stranger)
 
@@ -225,7 +225,7 @@ func TestABoundSandboxIsConfirmedAbsentByItsIdentityBeforeRelease(t *testing.T) 
 func TestAListedStrangerHoldsBackNoRelease(t *testing.T) {
 	f := newRelease(t)
 	f.abandon(t)
-	stranger := correlation(Allocation{WorkID: f.record.SessionID, ID: "01900000-0000-7000-8000-0000000000ff"})
+	stranger := correlation(SandboxOwner{WorkID: f.record.SessionID, ID: "01900000-0000-7000-8000-0000000000ff"})
 	f.sandbox(foreignSandboxID, stranger)
 	f.sandbox(sandboxID, f.metadata)
 	f.lifecycle.pages = [][]sdk.SandboxInfo{{f.lifecycle.others[foreignSandboxID], *f.lifecycle.info}} // A list that disregards its filter.

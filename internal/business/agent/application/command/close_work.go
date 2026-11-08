@@ -12,10 +12,10 @@ import (
 // request applies once it has stopped, through ApplyKeptClose.
 type CloseWorkHandler struct {
 	control sessionControl
-	buffer  RunningHarnessPort
+	buffer  DispatcherPort
 }
 
-func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, executions domain.AgentExecutionRepository, buffer RunningHarnessPort) *CloseWorkHandler {
+func NewCloseWorkHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, executions domain.AgentExecutionRepository, buffer DispatcherPort) *CloseWorkHandler {
 	return &CloseWorkHandler{control: sessionControl{sessions: sessions, access: authorization, executions: executions}, buffer: buffer}
 }
 

@@ -24,7 +24,7 @@ type DispatcherControl struct {
 	token  string
 }
 
-var _ command.RunningHarnessPort = (*DispatcherControl)(nil)
+var _ command.DispatcherPort = (*DispatcherControl)(nil)
 
 func NewDispatcherControl(client connecthttp.HTTPClient, address, token string) *DispatcherControl {
 	return &DispatcherControl{client: dispatcherprivatev1connect.NewExecutionServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0)))), token: token}

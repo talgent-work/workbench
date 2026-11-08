@@ -2,10 +2,23 @@ package command
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
+
+// ErrEnvironmentActionRefused means the AgentExecution no longer admits the
+// launch or credential delivery an environment operation was taking: its Work
+// asked its process to exit, or it no longer wants its run in the bound
+// environment (Admit environment action).
+var ErrEnvironmentActionRefused = errors.New("agent: the execution no longer admits the environment action")
+
+// EnvironmentHolding asks, between the remote calls of an environment
+// operation, whether the AgentExecution still admits the action the operation
+// takes; it answers ErrEnvironmentActionRefused once it does not. The
+// operation stops there, and clears what it delivered meanwhile.
+type EnvironmentHolding func(ctx context.Context) error
 
 // ExecutionEnvironmentPort reaches the execution environments of the Works'
 // runs: OpenSandbox sandboxes on a Cloud and the Work's directory on a Managed
@@ -31,26 +44,29 @@ type ExecutionEnvironmentPort interface {
 	DeleteEnvironment(ctx context.Context, execution *domain.AgentExecution, environmentID string) error
 	// DeliverCredentials delivers the Work's current credentials into the
 	// bound environment, replacing earlier ones, and reports what it
-	// delivered.
-	DeliverCredentials(ctx context.Context, execution *domain.AgentExecution) (domain.CredentialDelivery, error)
+	// delivered. It asks holding before each write, and clears what it wrote
+	// once holding refuses.
+	DeliverCredentials(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (domain.CredentialDelivery, error)
 	// WithdrawCredentials clears the bound environment's credentials and
 	// discards an unfinished preparation.
 	WithdrawCredentials(ctx context.Context, execution *domain.AgentExecution) error
 	// Prepare sees the in-environment preparation through to its exit,
 	// bounded by the caller, and reports each selected Plugin's installation
-	// and each remaining repository's checkout.
-	Prepare(ctx context.Context, execution *domain.AgentExecution) (domain.PreparationReport, error)
+	// and each remaining repository's checkout. It asks holding before it
+	// starts the preparation process.
+	Prepare(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (domain.PreparationReport, error)
 	// Launch starts the Harness in the bound environment and returns its
-	// process.
-	Launch(ctx context.Context, execution *domain.AgentExecution) (string, error)
+	// process. It asks holding right before the start.
+	Launch(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (string, error)
 	// Connect hands the launched process to Dispatcher.
 	Connect(ctx context.Context, execution *domain.AgentExecution) error
 	// RenewLease renews the bound environment's lease to expiresAt and
 	// reports the expiry the authority returned.
 	RenewLease(ctx context.Context, execution *domain.AgentExecution, expiresAt time.Time) (time.Time, error)
 	// SyncInputs hands a Managed Computer the current inputs of its Work and
-	// reports how many due changes it covered.
-	SyncInputs(ctx context.Context, execution *domain.AgentExecution) (int64, error)
+	// reports how many due changes it covered. It asks holding before the
+	// sync, whose downloads authenticate with the delivered credentials.
+	SyncInputs(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (int64, error)
 	// ReconcileComputer reconciles a Managed Computer that is reachable again:
 	// it ends the processes of Works no longer running there and removes the
 	// files of Works gone from it before anything new starts on it (Computer

@@ -34,7 +34,7 @@ func TestAManagedRunReportsTelemetryLikeACloudRun(t *testing.T) {
 
 	specified, err := environment.specify(ctx, input, testMounts, owner(input), "execd-token", "work-credential")
 	require.NoError(t, err)
-	spec, err := decodeManagedSpecification(allocationRecord{SpecificationJSON: specified.document})
+	spec, err := decodeManagedSpecification(executionRecord{SpecificationJSON: specified.document})
 	require.NoError(t, err)
 	require.NotEmpty(t, spec.Telemetry.Token)
 	require.NoError(t, machines.open(ctx, spec, "session"))
@@ -59,7 +59,7 @@ func TestAManagedRunReportsTelemetryLikeACloudRun(t *testing.T) {
 
 	again, err := environment.specify(ctx, input, testMounts, owner(input), "execd-token", "work-credential")
 	require.NoError(t, err)
-	next, err := decodeManagedSpecification(allocationRecord{SpecificationJSON: again.document})
+	next, err := decodeManagedSpecification(executionRecord{SpecificationJSON: again.document})
 	require.NoError(t, err)
 	require.NotEqual(t, spec.Telemetry.Token, next.Telemetry.Token, "each run is issued its own token")
 }

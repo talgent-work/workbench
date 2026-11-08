@@ -17,7 +17,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/telemetryingest"
-	"github.com/talgent-work/workbench/internal/business/agent/transport/workspacefile"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 	"github.com/talgent-work/workbench/internal/pkg/opensandbox"
@@ -125,27 +124,26 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 			return execution.LoadModelCatalog(cfg.Models)
 		},
 		newModelConfigurations,
+		// Every sandbox is created to expire under these terms, and each
+		// execution decides its renewals under them.
+		func(cfg ExecutionConfig) domain.LeaseTerms { return cfg.Lease.terms() },
 		newExecutionSandboxes,
 		newExecutionLifecycle,
 		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
 			return execution.NewSandboxCredentials(db, client, models, workRepositoryCredentials{app: repositories}, services, http.DefaultClient, cfg.CredentialTransport)
 		},
 		pkgkubernetes.NewClientset,
-		newManagedComputers,
 		newManagedEnvironment,
-		newManagedWorkspaces,
 		func(db *xorm.Engine, s *execution.Sandboxes, credentials *execution.SandboxCredentials, cfg ExecutionConfig, updates *workStateUpdates, managed *execution.ManagedEnvironment) *execution.Provisioning {
 			p := execution.NewProvisioning(db, s, credentials, cfg.Native, time.Now, managed)
 			p.ProgressCommitted = updates.publish
 			return p
 		},
-		fx.Annotate(execution.NewWorkCredentials, fx.As(new(query.WorkCredentialVerifier))),
 		func(p *execution.Provisioning, credentials *execution.SandboxCredentials, cfg ExecutionConfig) (*execution.NativeConnections, error) {
 			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token)
 		},
-		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.RunningHarnessPort))),
+		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.DispatcherPort))),
 	),
-	fx.Invoke(registerManagedWorkspaceFiles),
 	fx.Invoke(registerManagedTelemetry),
 	environmentRecoveryOptions,
 	RecoveryModule,
@@ -167,17 +165,6 @@ func newDispatcherControl(client *http.Client, cfg ExecutionConfig) (*execution.
 		return nil, err
 	}
 	return execution.NewDispatcherControl(client, cfg.Dispatcher.Address, cfg.Dispatcher.Token), nil
-}
-
-// newManagedComputers reaches Managed Computers through Computer Gateway's
-// relay and gives them the platform Connector's public address. Without a
-// relay address it is nil, and Provisioning fails every step of a Managed
-// execution rather than run it anywhere else.
-func newManagedComputers(cfg ComputerConfig, computers command.ComputerPort) (*execution.ManagedComputers, error) {
-	if strings.TrimSpace(cfg.RelayAddress) == "" {
-		return nil, nil
-	}
-	return execution.NewManagedComputers(relayClient(), cfg.RelayAddress, execution.ManagedAddresses{Gateway: cfg.MCPAddress, Content: cfg.ContentAddress, API: cfg.APIAddress, Telemetry: cfg.TelemetryAddress}, cfg.Token, computers)
 }
 
 // relayResponseTimeout bounds the wait for the relay's response headers; a
@@ -210,45 +197,12 @@ func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers
 	return execution.NewManagedEnvironment(db, machines, models, sessions, inputs, refresh)
 }
 
-// newManagedWorkspaces reads Managed Works' directories through the relay,
-// nil without Managed Computers. Storage judges their previews. Its links are
-// signed with a key derived from the control token only Agent and Computer's
-// services hold.
-func newManagedWorkspaces(db *xorm.Engine, machines *execution.ManagedComputers, cfg ComputerConfig, storage *agentstorage.Client) (*execution.ManagedWorkspaces, error) {
-	if machines == nil {
-		return nil, nil
-	}
-	links, err := execution.NewWorkspaceFileLinks(cfg.WorkspaceFileAddress, cfg.Token, time.Now)
-	if err != nil {
-		return nil, err
-	}
-	return execution.NewManagedWorkspaces(db, machines, links, storage)
-}
-
-// registerManagedWorkspaceFiles serves the links to Managed Works' files,
-// which only a deployment that reaches Managed Computers issues.
-func registerManagedWorkspaceFiles(mux *http.ServeMux, managed *execution.ManagedWorkspaces, workspaces application.WorkspacePort, works domain.AgentWorkRepository, logger *slog.Logger) error {
-	if managed == nil {
-		return nil
-	}
-	links, err := application.NewWorkspaceFileLinks(works, workspaces)
-	if err != nil {
-		return err
-	}
-	workspacefile.Register(mux, links, logger)
-	return nil
-}
-
 // registerManagedTelemetry takes the telemetry of Works on Managed Computers,
 // attributes it to each run and forwards it to the OTel Collector; nothing
 // without Managed Computers.
-func registerManagedTelemetry(mux *http.ServeMux, provisioning *execution.Provisioning, managed *execution.ManagedEnvironment, cfg ComputerConfig, logger *slog.Logger) error {
+func registerManagedTelemetry(mux *http.ServeMux, attributions query.ExecutionQueryRepository, managed *execution.ManagedEnvironment, cfg ComputerConfig, logger *slog.Logger) error {
 	if managed == nil {
 		return nil
-	}
-	attributions, err := execution.NewTelemetryAttributions(provisioning)
-	if err != nil {
-		return err
 	}
 	collector, err := telemetryingest.NewCollector(http.DefaultClient, cfg.TelemetryCollectorAddress)
 	if err != nil {

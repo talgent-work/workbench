@@ -33,8 +33,6 @@ type workViewRow struct {
 	Capabilities         string `xorm:"capabilities"`
 	Version              int    `xorm:"version"`
 	EndRequest           string `xorm:"end_request"`
-	// CreationRequestID is the request identity that created the Work.
-	CreationRequestID string `xorm:"creation_request_id"`
 	// InitialTaskInput is the Work's initial task input not handed off yet.
 	InitialTaskInput    string  `xorm:"initial_task_input"`
 	ThinkingLevel       string  `xorm:"thinking_level"`
@@ -48,7 +46,6 @@ type workViewRow struct {
 	StartedBy           string  `xorm:"started_by"`
 	State               uint8   `xorm:"state"`
 	HarnessProcess      string  `xorm:"harness_process"`
-	StartRequestID      string  `xorm:"start_request_id"`
 	StopReason          string  `xorm:"stop_reason"`
 	DisconnectedSince   int64   `xorm:"disconnected_since"`
 	StopRequest         string  `xorm:"stop_request"`
@@ -62,7 +59,7 @@ type workViewRow struct {
 	ExecutionState string `xorm:"execution_state"`
 }
 
-// GetWorkView reads the Work's lifecycle, its start requests and its current
+// GetWorkView reads the Work's lifecycle, its current start and its current
 // execution in one transaction, so the view never combines facts of different
 // starts.
 func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query.WorkView, error) {
@@ -74,16 +71,12 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
 		return query.WorkView{}, oops.Wrap(err)
 	}
 	defer tx.Rollback()
-	// The latest admitted start request identifies which request started the
-	// Work's current Harness process; it is correlation, not a process identity.
 	found, err := tx.SQL(`SELECT s.id,s.model_configuration_id,s.model_machine_login,s.permission_mode,s.computer_id,s.capabilities,s.subject_kind,s.subject_id,s.project_ref,
  `+agentOwnerColumn+` AS agent_owner,s.started_by,s.state,s.harness_process,s.work_progress,
  s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at,s.version,s.end_request,
  s.visibility_public,s.reach_resume_due,s.initial_task_input,s.thinking_level,s.repository_selection,s.repository_checkouts,
- COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at DESC, r.id DESC LIMIT 1),'') AS start_request_id,
- COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.kind=? AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at, r.id LIMIT 1),'') AS creation_request_id,
- COALESCE((SELECT e.state FROM execution_allocation e WHERE e.session_id=s.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1),'') AS execution_state
- FROM agent_session s WHERE s.id=? AND s.deleted_at=0`, string(query.StartKindStart), id).Get(&row)
+ COALESCE((SELECT e.state FROM agent_execution e WHERE e.session_id=s.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1),'') AS execution_state
+ FROM agent_session s WHERE s.id=? AND s.deleted_at=0`, id).Get(&row)
 	if err != nil {
 		return query.WorkView{}, oops.With("operation", "agent.work_session").Wrap(err)
 	}
@@ -104,17 +97,17 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
 	if result.WorkShares, err = workShares(tx, id); err != nil {
 		return result, err
 	}
-	var allocation struct {
+	var execution struct {
 		Ready, Recovering bool
 		UpdatedAt         int64
 	}
 	if row.HarnessProcess != "" && row.HarnessProcess != "null" {
-		_, err = tx.SQL("SELECT sandbox_ready AS ready,preparation_recovering AS recovering,updated_at FROM execution_allocation WHERE session_id=? AND deleted_at=0 ORDER BY created_at DESC, id DESC LIMIT 1", id).Get(&allocation)
+		_, err = tx.SQL("SELECT credentials_delivered AS ready,preparation_recovering AS recovering,updated_at FROM agent_execution WHERE session_id=? AND deleted_at=0 ORDER BY created_at DESC, id DESC LIMIT 1", id).Get(&execution)
 		if err != nil {
 			return result, oops.Wrap(err)
 		}
 	}
-	result.StartupProgress, err = startupFromRows(row, allocation.Ready, allocation.Recovering, allocation.UpdatedAt)
+	result.StartupProgress, err = startupFromRows(row, execution.Ready, execution.Recovering, execution.UpdatedAt)
 	if err != nil {
 		return result, err
 	}
@@ -161,7 +154,7 @@ func workViewFromRow(row workViewRow) (query.WorkView, error) {
 		queued := row.ExecutionState == "" || row.ExecutionState == string(domain.ExecutionQueued)
 		result.DeskWaiting = state == domain.WorkStarting && process.DeskWaiting && queued
 		// A Resume or Restart admitted as the current start awaits readiness.
-		result.ResumePending = state == domain.WorkStarting && !result.DeskWaiting && row.StartRequestID != "" && row.StartRequestID != row.CreationRequestID
+		result.ResumePending = state == domain.WorkStarting && !result.DeskWaiting && !process.initial()
 	}
 	switch state {
 	case domain.WorkFailed:
@@ -178,11 +171,9 @@ func workViewFromRow(row workViewRow) (query.WorkView, error) {
 // startupRequestFromRow projects the start the Work was created with: its
 // initial task input while the Work still holds it, its thinking level,
 // capability identities and each selected repository with its checkout
-// outcome once recorded. A Work without a creation request has none.
+// outcome once recorded. Its identity is the Work's, which the creation
+// request identity derives.
 func startupRequestFromRow(row workViewRow) (*query.WorkStartupRequest, error) {
-	if row.CreationRequestID == "" {
-		return nil, nil
-	}
 	initial, err := decodeInitialTaskInput(row.InitialTaskInput)
 	if err != nil {
 		return nil, err
@@ -199,7 +190,7 @@ func startupRequestFromRow(row workViewRow) (*query.WorkStartupRequest, error) {
 	if err != nil {
 		return nil, err
 	}
-	request := &query.WorkStartupRequest{RequestID: row.CreationRequestID, InitialThinkingLevel: row.ThinkingLevel, StartupAgent: capabilities.StartupAgent}
+	request := &query.WorkStartupRequest{RequestID: row.ID, InitialThinkingLevel: row.ThinkingLevel, StartupAgent: capabilities.StartupAgent}
 	if initial != nil {
 		request.InitialMessage = initial.Text
 	}
@@ -235,19 +226,18 @@ func startupFromRows(row workViewRow, sandboxReady, recovering bool, executionUp
 	if err != nil {
 		return nil, err
 	}
-	created := row.CreationRequestID != ""
 	// The initial task input is buffered once the Work no longer holds it.
-	inputBuffered := created && row.InitialTaskInput == ""
-	f := query.StartupFacts{RequestID: row.CreationRequestID, Initial: created, State: string(sessionStates[row.State]),
+	inputBuffered := row.InitialTaskInput == ""
+	f := query.StartupFacts{RequestID: row.ID, Initial: true, State: string(sessionStates[row.State]),
 		InputPrepared: len(checkouts) >= len(selection.Repositories), InputBuffered: inputBuffered, EndRequested: row.EndRequest != ""}
-	f.InputPending = created && !inputBuffered
+	f.InputPending = !inputBuffered
 	if process != nil {
-		f.RequestID = row.StartRequestID
+		f.RequestID = process.startIdentity(row.ID)
 		f.Admitted = true
 		f.AgentReady = process.Ready
 		// Native readiness necessarily followed environment and credential readiness.
 		f.SandboxReady = sandboxReady || f.AgentReady
-		f.Initial = created && row.StartRequestID == row.CreationRequestID
+		f.Initial = process.initial()
 		f.Reason = row.Failure
 	}
 	if f.Admitted && !f.AgentReady {

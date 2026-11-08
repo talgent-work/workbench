@@ -64,13 +64,13 @@ func TestModuleRestartAdmitsNoResumeWithoutCaller(t *testing.T) {
 			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(func() kubernetes.Interface { return kube }),
-			fx.Provide(func() command.RunningHarnessPort { return port }),
+			fx.Provide(func() command.DispatcherPort { return port }),
 			runs.option(),
 		}
 		if recover {
 			// Use the production recovery registration, query and handlers. Only
 			// execution environments are controlled; native transport has its own tests.
-			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }))
+			options = append(options, agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.Supply(domain.LeaseTerms{}))
 		}
 		app := fx.New(options...)
 		require.NoError(t, app.Err())
@@ -141,13 +141,14 @@ func TestModuleRestartAdmitsNoResumeWithoutCaller(t *testing.T) {
 // lostCreationAnswer commits a creation and loses its answer, so nothing
 // continues the new Work but recovery.
 type lostCreationAnswer struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 }
 
 var errCreationAnswerLost = errors.New("creation answer lost after the commit")
 
-func (r lostCreationAnswer) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := r.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
+func (r lostCreationAnswer) Save(ctx context.Context, work *domain.AgentWork) error {
+	registration := work.Version == 0
+	if err := r.AgentWorkRepository.Save(ctx, work); err != nil || !registration {
 		return err
 	}
 	return errCreationAnswerLost
@@ -172,26 +173,26 @@ func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 	request := command.CreateWork{RequestID: initial.RequestID, SubjectID: "employee", AgentID: definition.ID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), InitialExecution: &initial}
 	port := &sessionCommandRecorder{}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	prepare := command.NewPrepareWorkExecutionHandler(sessions, auth, models)
 	_, err = command.NewCreateWorkHandler(time.Now, agents, lostCreationAnswer{sessions}, auth, models, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{}), prepare).Handle(ctx, request)
 	require.ErrorIs(t, err, errCreationAnswerLost)
-	record, found, err := sessions.FindStartRequest(ctx, request.RequestID)
+	committed, err := sessions.FindBySubject(ctx, definition.ID, request.Subject)
 	require.NoError(t, err)
-	require.True(t, found)
-	id := record.WorkID
+	require.NotNil(t, committed, "the creation committed")
+	id := committed.ID
 	require.Empty(t, launches(t, db), "nothing continued the creation before recovery")
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
-	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.NopLogger,
+	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.Supply(domain.LeaseTerms{}), fx.NopLogger,
 		storageStub(),
 		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota) }),
-		fx.Provide(func() command.RunningHarnessPort { return port }),
+		fx.Provide(func() command.DispatcherPort { return port }),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(ctx))

@@ -125,16 +125,15 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	}
 	works := startedWorks{AgentWorkRepository: infrastructure.NewAgentWorkRepository(db, time.Now), onStart: cfg.OnStart}
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	lookup := infrastructure.NewAgentDefinitionLookup(db)
-	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
-	queries := infrastructure.NewWorkQueryRepository(db)
+	lookup := infrastructure.NewAgentDefinitionQueryRepository(db)
+	queries := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(db), models)
+	authorizer := access.NewWorkAuthorizer(queries.WorkOwners)
 	start := startCatalog{catalog: catalog, connections: repositories}
 	prepare := command.NewPrepareWorkExecutionHandler(works, authorizer, models)
 	create := command.NewCreateWorkHandler(time.Now, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
-	views := query.NewModelOptionViews(queries, models)
 	app := &application.Application{
-		RecentRepositories: queries, Catalog: start, Definitions: definitions, DefinitionLookup: lookup,
-		Works: works, WorkPrincipals: authorizer, WorkViews: views, Models: models,
+		WorkQueries: queries, Catalog: start, Definitions: definitions, DefinitionQueries: lookup,
+		Works: works, WorkPrincipals: authorizer, Models: models,
 		Commands: application.Commands{
 			EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup),
 			CreateWork:            create,
@@ -142,7 +141,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 		Queries: application.Queries{
 			GetWorkPreparation: query.NewGetWorkPreparationHandler(queries, authorizer),
 			GetWork:            query.NewGetWorkHandler(definitions, works, authorizer, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
-			GetWorkView:        query.NewGetWorkViewHandler(authorizer, views),
+			GetWorkView:        query.NewGetWorkViewHandler(authorizer, queries),
 			GetWorkOrigin:      query.NewGetWorkOriginHandler(queries),
 			GetAgentDefinition: query.NewGetAgentDefinitionHandler(definitions, application.AssembleAgentDefinition),
 			ListWorks:          query.NewListWorksHandler(queries),
@@ -198,7 +197,7 @@ var ErrNoDefinition = errors.New("agenttest: the person has no Agent Definition"
 
 // EmployeeDefinition reads a person's own Agent Definition.
 func (a *Agent) EmployeeDefinition(ctx context.Context, user string) (Definition, error) {
-	id, err := infrastructure.NewAgentDefinitionLookup(a.DB).FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: "employee", ScopeReference: user, Purpose: "work"})
+	id, err := infrastructure.NewAgentDefinitionQueryRepository(a.DB).FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: "employee", ScopeReference: user, Purpose: "work"})
 	if errors.Is(err, domain.ErrAgentDefinitionNotFound) {
 		return Definition{}, ErrNoDefinition
 	}
@@ -240,22 +239,6 @@ type startedWorks struct {
 
 func (w startedWorks) Save(ctx context.Context, work *domain.AgentWork) error {
 	if err := w.AgentWorkRepository.Save(ctx, work); err != nil {
-		return err
-	}
-	w.started(work)
-	return nil
-}
-
-func (w startedWorks) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := w.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
-		return err
-	}
-	w.started(work)
-	return nil
-}
-
-func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, start query.StartRequest) error {
-	if err := w.AgentWorkRepository.CommitStart(ctx, work, start); err != nil {
 		return err
 	}
 	w.started(work)

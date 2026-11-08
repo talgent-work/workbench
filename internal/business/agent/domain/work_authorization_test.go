@@ -24,7 +24,7 @@ func TestWorkRetainsSelectedAuthorizationAcrossResumeAndRestart(t *testing.T) {
 						{OwnerUserID: "owner", AuthorizationID: otherID, Provider: "other", Service: "other"},
 					}},
 			}
-			admit := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
+			admit := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 			work, err := domain.NewAgentWork(input, admit)
 			port := follow(work)
 			require.NoError(t, err)
@@ -43,6 +43,7 @@ func TestWorkRetainsSelectedAuthorizationAcrossResumeAndRestart(t *testing.T) {
 				exited(t, work, domain.HarnessExit{})
 			}
 			released(t, work)
+			admit.Seat.DeskID = "desk-next"
 			if restart {
 				require.NoError(t, work.Restart(admit))
 			} else {
@@ -65,7 +66,7 @@ func TestWorkRejectsAuthorizationFactsForAnotherHuman(t *testing.T) {
 			ID: uuid.NewString(), AgentID: id, WorkspaceReference: "workspace",
 			WorkModel:   domain.WorkModelSelection{ConfigurationID: "default"},
 			HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}, AuthorizationInput: input,
-		}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: id, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+		}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: id, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 		port := follow(work)
 		require.ErrorIs(t, err, domain.ErrInvalidWork)
 		require.Nil(t, work)

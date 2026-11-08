@@ -1,0 +1,21 @@
+-- Drops agent_start_request: a caller's request identity derives the new
+-- Work's identity and each start's Desk, and Computer admits each Desk once,
+-- so Agent keeps no record of creation, Resume or Restart requests.
+--
+-- When: after deploying the release whose Agent no longer reads
+-- agent_start_request; the previous Agent still writes it, so running the
+-- script before the rollout fails its creations and starts. Requests in
+-- flight are not lost: a repeat reaches the same Work and Desk. A creation or
+-- start cancelled before the upgrade is no longer fenced; a delayed repeat of
+-- it is admitted like any request. The earlier
+-- 20261108-work-start-requests.sql leaves the table alone once it is gone, so
+-- the two scripts may run in either order.
+-- Repeatable: yes. The table is dropped only when it exists.
+-- Rollback: roll back the Agent image and recreate agent_start_request from
+-- the previous schema file (empty); requests made meanwhile have no record,
+-- so their repeats are admitted as new requests.
+-- Removal: delete this script, and the integration test that runs it
+-- (internal/business/agent/infrastructure/start_request_removal_migration_integration_test.go),
+-- once every environment has applied it.
+
+DROP TABLE IF EXISTS agent_start_request;

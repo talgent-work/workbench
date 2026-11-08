@@ -16,8 +16,6 @@ import (
 	"golang.org/x/net/websocket"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
@@ -62,11 +60,11 @@ func preparationServer(t *testing.T, report string, exit int) (*execd.Client, *s
 
 // preparedRecord inserts the live execution record of a start launched with
 // launch.
-func preparedRecord(t *testing.T, db *xorm.Engine, launch domain.LaunchSpecification) allocationRecord {
+func preparedRecord(t *testing.T, db *xorm.Engine, launch domain.LaunchSpecification) executionRecord {
 	t.Helper()
 	encoded, err := json.Marshal(launch)
 	require.NoError(t, err)
-	record := allocationRecord{ID: uuid.NewString(), SessionID: launch.WorkID, SandboxID: "sandbox", Version: 1, PreparationCommand: "prepare", RequestJSON: encoded, SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
+	record := executionRecord{ID: uuid.NewString(), SessionID: launch.WorkID, SandboxID: "sandbox", Version: 1, PreparationCommand: "prepare", RequestJSON: encoded, SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
 	_, err = db.Insert(&record)
 	require.NoError(t, err)
 	return record
@@ -101,7 +99,7 @@ func TestPreparationReportsAnOutcomeForEveryPlannedRepository(t *testing.T) {
 		{RepositoryID: "github:1", CheckedOut: true},
 		{RepositoryID: "github:2", Reason: domain.CheckoutIncomplete},
 	}, report.Checkouts)
-	require.False(t, record.EnvironmentPrepared, "the execution records its preparation ended, after the outcomes")
+	require.False(t, record.PreparationEnded, "the execution records its preparation ended, after the outcomes")
 	stored, found, err := latestAllocation(ctx, db, launch.WorkID)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -146,10 +144,11 @@ func TestNextStartChecksOutOnlyWhatTheFirstStartLeft(t *testing.T) {
 	definition, err = definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
 	works := infrastructure.NewAgentWorkRepository(db, time.Now)
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	work.RepositorySelection = checkoutSelection()
-	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: query.StartRequest{ID: uuid.NewString(), Kind: query.StartKindStart, WorkID: work.ID}}))
+	work.DefinitionVersion = definition.Version
+	require.NoError(t, works.Save(ctx, work))
 	work, err = works.Get(ctx, work.ID)
 	require.NoError(t, err)
 	require.Equal(t, []string{"github:1", "github:2"}, work.LaunchSpecification().RemainingRepositories, "the first start checks out every selected repository")

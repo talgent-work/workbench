@@ -22,7 +22,6 @@ import (
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -41,7 +40,7 @@ func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return nil }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
-		fx.Provide(func() command.RunningHarnessPort { return unusedExecutionPort{} }),
+		fx.Provide(func() command.DispatcherPort { return unusedExecutionPort{} }),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(context.Background()))
@@ -100,21 +99,18 @@ func (unusedExecutionPort) StopExecution(context.Context, string, string) error 
 	panic("unauthenticated stop")
 }
 
-// storageStub stands in for Storage's Sandbox Mount Contract: it grants each
-// space by business identity and accepts every reclamation request. Storage's
-// own behavior is verified in the Storage module.
+// storageStub stands in for Storage's contract: it grants each space by
+// business identity and accepts every reclamation request. Storage's own
+// behavior is verified in the Storage module.
 func storageStub() fx.Option {
 	return fx.Options(
 		fx.Supply(agent.StorageConfig{Address: "http://storage.invalid", Token: "storage-test"}),
 		fx.Supply(agent.UserDirectoryConfig{Address: "http://account.invalid"}),
-		fx.Decorate(func(command.SandboxMountPort) command.SandboxMountPort { return stubStorage{} }),
-		fx.Decorate(func(eventhandler.WorkspaceReclamationQueue) eventhandler.WorkspaceReclamationQueue {
-			return stubStorage{}
-		}),
+		fx.Decorate(func(command.StoragePort) command.StoragePort { return stubStorage{} }),
 	)
 }
 
-type stubStorage struct{}
+type stubStorage struct{ command.StoragePort }
 
 func (stubStorage) AcquireMounts(_ context.Context, request domain.SandboxMountRequest) (domain.SandboxMounts, error) {
 	mounts := domain.SandboxMounts{Workspace: &domain.MountGrant{ClaimName: "nas", SubPath: "workspaces/" + request.WorkspaceReference}, Home: domain.MountGrant{ClaimName: "nas", SubPath: "homes/" + request.HomeOwner}}
@@ -137,7 +133,7 @@ func (stubStorage) RequestWorkspaceReclamation(context.Context, string, string) 
 func sessionStateTransport(t *testing.T) fx.Option {
 	t.Helper()
 	serverURL := middlewaretest.Environment(t, "TALGENT_TEST_NATS_URL")
-	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() query.WorkCredentialVerifier { return unusedExecutionPort{} }, func() query.CallPositionReader { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }),
+	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() query.RootTurnResultReader { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }),
 		// The Library reads' native callers are verified by the native API in
 		// front; no test here reaches it.
 		fx.Provide(func() (*nativeauth.LiveWorkClient, error) {
@@ -177,8 +173,8 @@ func (unusedExecutionPort) ObserveProcess(context.Context, string, string) (comm
 	panic("unexpected process observation")
 }
 
-func (unusedExecutionPort) VerifyWorkCredential(context.Context, string, string) error {
-	panic("unexpected Work credential verification")
+func (unusedExecutionPort) ListRootTurnResults(context.Context, string) ([]query.RootTurnResult, error) {
+	panic("unexpected turn result query")
 }
 
 func (unusedExecutionPort) GetWorkCapabilities(context.Context, string) (command.WorkCapabilities, error) {

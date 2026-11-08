@@ -82,7 +82,7 @@ func TestARepeatedCreationReturnsItsOriginalWork(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, id, repeated)
 	require.Equal(t, 1, store.registrations, "one request identity creates one Work")
-	require.Len(t, computer.asked, 1, "a recorded creation asks its Computer nothing")
+	require.Len(t, computer.asked, 1, "a repeat finds its Work and asks its Computer nothing")
 	require.Empty(t, computer.released)
 }
 
@@ -107,9 +107,26 @@ func TestACreationWhoseCommitFailedSucceedsOnItsRepeat(t *testing.T) {
 	require.Equal(t, computer.asked[0], store.session.HarnessProcess.DeskID)
 }
 
+// A creation whose commit landed but whose answer was lost converges on its
+// repeat: the same Work, without a second Desk.
+func TestACreationWhoseAnswerWasLostConvergesOnItsRepeat(t *testing.T) {
+	computer := &deskLedger{}
+	store, handler, request := creationFixture(t, computer)
+	lost := errors.New("connection lost after the commit")
+	store.answerErr = lost
+	_, err := handler.Handle(t.Context(), request)
+	require.ErrorIs(t, err, lost)
+
+	id, err := handler.Handle(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, store.session.ID, id)
+	require.Equal(t, 1, store.registrations)
+	require.Len(t, computer.asked, 1, "the repeat finds the Work its identity derives")
+}
+
 // A repeat whose Desk already left without a committed Work can no longer
-// create one: the identity is settled as cancelled.
-func TestACreationWhoseDeskLeftIsSettled(t *testing.T) {
+// create one.
+func TestACreationWhoseDeskLeftCreatesNothing(t *testing.T) {
 	computer := &deskLedger{}
 	store, handler, request := creationFixture(t, computer)
 	store.commitErr = errors.New("connection lost during the commit")
@@ -119,71 +136,23 @@ func TestACreationWhoseDeskLeftIsSettled(t *testing.T) {
 
 	_, err = handler.Handle(t.Context(), request)
 	require.ErrorIs(t, err, command.ErrDeskUnavailable)
-	require.ErrorIs(t, err, command.ErrWorkCreationCanceled)
 	require.Nil(t, store.session)
 }
 
-// A repeat carrying other content is a conflict, whatever the first outcome.
-func TestARepeatedCreationWithOtherContentIsAConflict(t *testing.T) {
-	_, handler, request := creationFixture(t, &deskLedger{})
-	_, err := handler.Handle(t.Context(), request)
-	require.NoError(t, err)
-	changed := request
-	initial := *request.InitialExecution
-	initial.Input.Text = "Do other work"
-	changed.InitialExecution = &initial
-	_, err = handler.Handle(t.Context(), changed)
-	require.ErrorIs(t, err, command.ErrWorkCreationConflict)
-}
-
-// A definitive refusal settles the request identity: a repeat answers the
-// cancellation without asking its Computer again.
-func TestADefinitiveCreationRefusalSettlesItsRequest(t *testing.T) {
+// A refused creation keeps nothing of its request: no record settles it, so
+// its caller's repeat is admitted afresh once its Computer has room.
+func TestARefusedCreationKeepsNothingOfItsRequest(t *testing.T) {
 	computer := &deskLedger{capacityCheck: capacityCheck{err: domain.ErrCapacityUnavailable}}
 	store, handler, request := creationFixture(t, computer)
 	_, err := handler.Handle(t.Context(), request)
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
-	require.ErrorIs(t, err, command.ErrWorkCreationCanceled)
+	require.Nil(t, store.session)
 
 	computer.err = nil
-	_, err = handler.Handle(t.Context(), request)
-	require.ErrorIs(t, err, command.ErrWorkCreationCanceled)
-	require.Len(t, computer.asked, 1, "a settled request is not retried")
-	require.Nil(t, store.session)
-	outcome, found, err := handler.Outcome(t.Context(), request.InitialExecution.RequestID)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.True(t, outcome.Canceled)
-}
-
-// A creation its caller cancelled before Agent received it stays cancelled:
-// a delayed request carrying the identity creates nothing.
-func TestACancelledCreationStaysCancelled(t *testing.T) {
-	computer := &deskLedger{}
-	store, handler, request := creationFixture(t, computer)
-	workID, err := handler.Cancel(t.Context(), request.InitialExecution.RequestID)
-	require.NoError(t, err)
-	require.Empty(t, workID)
-
-	_, err = handler.Handle(t.Context(), request)
-	require.ErrorIs(t, err, command.ErrWorkCreationCanceled)
-	require.Empty(t, computer.asked)
-	require.Nil(t, store.session)
-}
-
-// Cancelling a creation that already committed returns its Work.
-func TestCancellingACommittedCreationReturnsItsWork(t *testing.T) {
-	_, handler, request := creationFixture(t, &deskLedger{})
 	id, err := handler.Handle(t.Context(), request)
 	require.NoError(t, err)
-	workID, err := handler.Cancel(t.Context(), request.InitialExecution.RequestID)
-	require.NoError(t, err)
-	require.Equal(t, id, workID)
-	outcome, found, err := handler.Outcome(t.Context(), request.InitialExecution.RequestID)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, id, outcome.WorkID)
-	require.False(t, outcome.Canceled)
+	require.Equal(t, store.session.ID, id)
+	require.Equal(t, computer.asked[0], computer.asked[1], "the repeat asks for the same Desk")
 }
 
 // A repeated Restart after a lost answer returns its original outcome without
@@ -211,14 +180,9 @@ func TestARepeatedRestartAsksForTheSameDesk(t *testing.T) {
 
 	admitted, err = restart.Handle(t.Context(), request)
 	require.NoError(t, err)
-	require.True(t, admitted, "a repeat returns the original outcome")
-	require.Len(t, computer.asked, 2, "an admitted request asks its Computer nothing")
+	require.True(t, admitted, "a repeat returns the original admission")
+	require.Len(t, computer.asked, 2, "a repeat whose Desk the current start holds asks its Computer nothing")
 	require.Len(t, sessions.admittedStarts(), 1, "one start reaches execution")
-
-	changed := request
-	changed.ThinkingLevel = "high"
-	_, err = restart.Handle(t.Context(), changed)
-	require.ErrorIs(t, err, command.ErrStartRequestConflict, "a repeat with other content is a conflict")
 }
 
 // A Resume whose Desk left without a committed start can no longer start.
@@ -233,14 +197,47 @@ func TestAResumeWhoseDeskLeftCannotStart(t *testing.T) {
 	require.ErrorIs(t, resume.Handle(t.Context(), request), lost)
 	computer.ReleaseUnusedDesk(t.Context(), computer.asked[0])
 
-	require.ErrorIs(t, resume.Handle(t.Context(), request), command.ErrStartRequestCanceled)
+	require.ErrorIs(t, resume.Handle(t.Context(), request), command.ErrDeskUnavailable)
 	require.Equal(t, domain.WorkStopped, sessions.session.State)
 }
 
-// A request answered with its Subject's existing Work records that outcome:
-// its repeat, the creation outcome query and a late cancellation all find
-// that Work.
-func TestAReusedWorkIsTheRecordedOutcomeOfItsRequest(t *testing.T) {
+// A late repeat of a Resume whose start already ended starts nothing: its
+// Desk left with the start's compute, and Computer refuses it.
+func TestALateRepeatOfAnEndedResumeStartsNothing(t *testing.T) {
+	agents, sessions := startupStores(t)
+	stopWork(t, sessions)
+	computer := &deskLedger{}
+	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	request := command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID}
+	require.NoError(t, resume.Handle(t.Context(), request))
+	stopWork(t, sessions)
+	computer.ReleaseUnusedDesk(t.Context(), computer.asked[0])
+
+	require.ErrorIs(t, resume.Handle(t.Context(), request), command.ErrDeskUnavailable)
+	require.Equal(t, domain.WorkStopped, sessions.session.State)
+	require.Empty(t, sessions.admittedStarts())
+}
+
+// A Resume whose commit landed but whose answer was lost converges on its
+// repeat to the same admission.
+func TestAResumeWhoseAnswerWasLostConvergesOnItsRepeat(t *testing.T) {
+	agents, sessions := startupStores(t)
+	stopWork(t, sessions)
+	computer := &deskLedger{}
+	resume := command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, computer, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	request := command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID}
+	lost := errors.New("connection lost after the commit")
+	sessions.answerErr = lost
+	require.ErrorIs(t, resume.Handle(t.Context(), request), lost)
+
+	require.NoError(t, resume.Handle(t.Context(), request))
+	require.Len(t, computer.asked, 1)
+	require.Len(t, sessions.admittedStarts(), 1)
+}
+
+// A request answered with its Subject's existing Work returns that Work on
+// every repeat, and never asks its Computer.
+func TestAReusedWorkAnswersEveryRepeatOfItsRequest(t *testing.T) {
 	computer := &deskLedger{}
 	_, handler, request := creationFixture(t, computer)
 	request.Subject = domain.WorkSubject{Kind: "case", ID: "case-1"}
@@ -254,21 +251,14 @@ func TestAReusedWorkIsTheRecordedOutcomeOfItsRequest(t *testing.T) {
 	reused, err := handler.Handle(t.Context(), reuse)
 	require.NoError(t, err)
 	require.Equal(t, id, reused)
-	outcome, found, err := handler.Outcome(t.Context(), reuse.RequestID)
-	require.NoError(t, err)
-	require.True(t, found, "the reuse is recorded on its request identity")
-	require.Equal(t, id, outcome.WorkID)
-	workID, err := handler.Cancel(t.Context(), reuse.RequestID)
-	require.NoError(t, err)
-	require.Equal(t, id, workID, "cancelling an answered reuse returns its Work")
 	repeated, err := handler.Handle(t.Context(), reuse)
 	require.NoError(t, err)
 	require.Equal(t, id, repeated)
 	require.Len(t, computer.asked, 1, "reusing a Work asks its Computer nothing")
 }
 
-// A repeated Resume after a lost answer returns its original outcome without
-// a second start or Desk; a repeat with other content is a conflict.
+// A repeated Resume after a lost answer returns its original admission
+// without a second start or Desk, whatever else it carries.
 func TestARepeatedResumeReturnsItsOriginalOutcome(t *testing.T) {
 	agents, sessions := startupStores(t)
 	stopWork(t, sessions)
@@ -278,12 +268,12 @@ func TestARepeatedResumeReturnsItsOriginalOutcome(t *testing.T) {
 	require.NoError(t, resume.Handle(t.Context(), request))
 	require.Equal(t, domain.WorkStarting, sessions.session.State)
 
-	require.NoError(t, resume.Handle(t.Context(), request), "a repeat returns the original outcome")
-	require.Len(t, computer.asked, 1, "an admitted request asks its Computer nothing")
-	require.Len(t, sessions.admittedStarts(), 1, "one start reaches execution")
+	require.NoError(t, resume.Handle(t.Context(), request), "a repeat returns the original admission")
 	changed := request
 	changed.ThinkingLevel = "high"
-	require.ErrorIs(t, resume.Handle(t.Context(), changed), command.ErrStartRequestConflict)
+	require.NoError(t, resume.Handle(t.Context(), changed))
+	require.Len(t, computer.asked, 1, "a repeat whose Desk the current start holds asks its Computer nothing")
+	require.Len(t, sessions.admittedStarts(), 1, "one start reaches execution")
 }
 
 // stopWork runs the Work's start to readiness, stops it and releases its

@@ -5,13 +5,14 @@ import (
 	"errors"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // WorkFile names one file of a Work.
 type WorkFile struct {
 	WorkID string
-	Kind   FileKind
+	Kind   command.FileKind
 	Name   string
 }
 
@@ -33,7 +34,7 @@ func (p *PersonalWorks) loadWork(ctx context.Context, person Person, workID stri
 
 // ListFiles lists a Personal Work's files to its owner and Work Share
 // holders; only the owner sees Share Links.
-func (p *PersonalWorks) ListFiles(ctx context.Context, person Person, workID string) ([]SpaceFile, error) {
+func (p *PersonalWorks) ListFiles(ctx context.Context, person Person, workID string) ([]command.SpaceFile, error) {
 	owned, err := p.loadWork(ctx, person, workID)
 	if err != nil {
 		return nil, err
@@ -73,10 +74,10 @@ func (p *PersonalWorks) changeableWork(ctx context.Context, person Person, workI
 
 // IssueAttachmentUpload issues the link through which the owner creates or
 // replaces one Attachment.
-func (p *PersonalWorks) IssueAttachmentUpload(ctx context.Context, person Person, workID, name string, replace bool, contentType string) (FileLink, error) {
+func (p *PersonalWorks) IssueAttachmentUpload(ctx context.Context, person Person, workID, name string, replace bool, contentType string) (command.FileLink, error) {
 	work, err := p.changeableWork(ctx, person, workID)
 	if err != nil {
-		return FileLink{}, err
+		return command.FileLink{}, err
 	}
 	return p.files.IssueAttachmentUpload(ctx, work.InputSource, work.ID, name, replace, contentType, person.UserID)
 }
@@ -101,10 +102,10 @@ func (p *PersonalWorks) DeleteFile(ctx context.Context, person Person, file Work
 
 // CreateShareLink lets the owner share one file of a Personal Work by link,
 // Closed or not.
-func (p *PersonalWorks) CreateShareLink(ctx context.Context, person Person, file WorkFile) (ShareLink, error) {
+func (p *PersonalWorks) CreateShareLink(ctx context.Context, person Person, file WorkFile) (command.ShareLink, error) {
 	owner, err := p.sharingOwner(ctx, person, file.WorkID)
 	if err != nil {
-		return ShareLink{}, err
+		return command.ShareLink{}, err
 	}
 	return p.files.CreateShareLink(ctx, owner, file.Kind, file.Name, person.UserID)
 }
@@ -136,20 +137,20 @@ func (p *PersonalWorks) sharingOwner(ctx context.Context, person Person, workID 
 
 // IssueAccessLink issues a short-lived link to read one file the person may
 // read.
-func (p *PersonalWorks) IssueAccessLink(ctx context.Context, person Person, file WorkFile, inline bool) (FileLink, error) {
+func (p *PersonalWorks) IssueAccessLink(ctx context.Context, person Person, file WorkFile, inline bool) (command.FileLink, error) {
 	owner, err := p.readableOwner(ctx, person, file)
 	if err != nil {
-		return FileLink{}, err
+		return command.FileLink{}, err
 	}
 	return p.files.IssueAccessLink(ctx, owner, file.Kind, file.Name, inline)
 }
 
 // FilePreview tells how one readable file is shown; render first asks for
 // its Preview Copy.
-func (p *PersonalWorks) FilePreview(ctx context.Context, person Person, file WorkFile, render bool) (FilePreview, error) {
+func (p *PersonalWorks) FilePreview(ctx context.Context, person Person, file WorkFile, render bool) (command.FilePreview, error) {
 	owner, err := p.readableOwner(ctx, person, file)
 	if err != nil {
-		return FilePreview{}, err
+		return command.FilePreview{}, err
 	}
 	return p.files.FilePreview(ctx, owner, file.Kind, file.Name, render)
 }
@@ -159,8 +160,8 @@ func (p *PersonalWorks) FilePreview(ctx context.Context, person Person, file Wor
 // input source resolves to. An Agent reads its owner's Library, which holds
 // Artifacts only.
 func (p *PersonalWorks) readableOwner(ctx context.Context, person Person, file WorkFile) (string, error) {
-	if person.Agent != nil && file.Kind != FileKindArtifact {
-		return "", ErrFileNotFound
+	if person.Agent != nil && file.Kind != command.FileKindArtifact {
+		return "", command.ErrFileNotFound
 	}
 	owned, err := p.loadWork(ctx, person, file.WorkID)
 	if err != nil {
@@ -172,8 +173,8 @@ func (p *PersonalWorks) readableOwner(ctx context.Context, person Person, file W
 	if owned.work.Personal() {
 		return owned.work.ID, nil
 	}
-	if file.Kind != FileKindArtifact {
-		return "", ErrFileNotFound
+	if file.Kind != command.FileKindArtifact {
+		return "", command.ErrFileNotFound
 	}
 	owners, err := p.files.ResolveOwners(ctx, []string{owned.work.InputSource.Reference})
 	if err != nil {
@@ -191,7 +192,7 @@ func (p *PersonalWorks) readableOwner(ctx context.Context, person Person, file W
 			return owners[0], nil
 		}
 	}
-	return "", ErrFileNotFound
+	return "", command.ErrFileNotFound
 }
 
 // denied reports a refused file access as an access denial.

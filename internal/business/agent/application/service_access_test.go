@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -42,7 +43,7 @@ func TestServiceAccessDegradesAndRecoversExistingAuthorization(t *testing.T) {
 	f, supplier := serviceFixture(t, true)
 	app := application.NewServiceAccess(repositoryWorkStore{f: f}, supplier)
 	for _, reason := range []string{"revoked", "reconnect_required", "unavailable"} {
-		supplier.err = &application.ServiceCredentialUnavailable{Reason: reason}
+		supplier.err = &command.ServiceCredentialUnavailable{Reason: reason}
 		result, err := app.Resolve(t.Context(), "owner", f.work.ID, githubRequirements)
 		require.NoError(t, err, "ordinary external unavailability does not fail the Work")
 		require.Empty(t, result.Credentials)
@@ -93,26 +94,26 @@ func serviceFixture(t *testing.T, selected bool) (*repositoryAccessFixture, *ser
 	if selected {
 		input.AuthorizationInput.Available = []domain.PersonalAuthorization{{OwnerUserID: "owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}
 	}
-	work, err := domain.NewAgentWork(input, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	work, err := domain.NewAgentWork(input, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	return &repositoryAccessFixture{work: work}, &serviceSupplier{token: "current-token"}
 }
 
 type serviceSupplier struct {
-	application.CredentialSupplyPort
+	command.MarketplacePort
 	token        string
 	err          error
-	requests     []application.ServiceCredentialRequest
+	requests     []command.ServiceCredentialRequest
 	duringSupply func()
 }
 
-func (s *serviceSupplier) SupplyServiceCredential(_ context.Context, input application.ServiceCredentialRequest) (application.ServiceCredentialMaterial, error) {
+func (s *serviceSupplier) SupplyServiceCredential(_ context.Context, input command.ServiceCredentialRequest) (command.ServiceCredentialMaterial, error) {
 	s.requests = append(s.requests, input)
 	if s.duringSupply != nil {
 		s.duringSupply()
 	}
 	if s.err != nil {
-		return application.ServiceCredentialMaterial{}, s.err
+		return command.ServiceCredentialMaterial{}, s.err
 	}
-	return application.ServiceCredentialMaterial{Token: s.token, ExpiresAt: time.Now().Add(time.Hour)}, nil
+	return command.ServiceCredentialMaterial{Token: s.token, ExpiresAt: time.Now().Add(time.Hour)}, nil
 }

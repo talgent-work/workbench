@@ -73,8 +73,9 @@ func (c RecoveryConfig) sweepInterval() (time.Duration, error) {
 // RecoveryModule wakes and performs Agent's recovery obligations as keyed tasks:
 // sandbox observations, Work commits, connection reports and a periodic sweep
 // of unfinished obligations wake one object each; completed history is never
-// scanned. It requires a command.ExecutionEnvironmentPort, supplied by
-// ExecutionModule, and the two named task queues.
+// scanned. It requires a command.ExecutionEnvironmentPort and the platform's
+// domain.LeaseTerms, supplied by ExecutionModule, and the two named task
+// queues.
 var RecoveryModule = fx.Module("agent.recovery",
 	pkgtaskqueue.Bind(RecoveryQueue),
 	// Module's clock is private to it; reconciliation reads its own.
@@ -84,6 +85,9 @@ var RecoveryModule = fx.Module("agent.recovery",
 		// and for the recovery of each Work owed a Resume.
 		fx.Annotate(command.NewComputerReconnectionHandler, fx.As(fx.Self()), fx.As(new(application.OwedResumes))),
 		application.NewRecovery,
+		// A Closed Work's Workspace Reclamation Request is queued on the
+		// recovery queue, which delivers it to Storage.
+		eventhandler.NewWorkspaceReclamations,
 		command.NewReconcileExecutionHandler,
 		fx.Annotate(taskprocessor.RecoveryProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(RecoveryQueue))),
 		fx.Annotate(taskprocessor.PreparationProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(PreparationQueue))),

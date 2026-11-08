@@ -20,7 +20,7 @@ func personalWork(t *testing.T) visibleWork {
 	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, DisplayTitle: "Draft the plan",
 		WorkspaceReference: "workspace-a", InputSource: domain.WorkInputSource{Reference: "file-space/a", SpaceToken: "token"}, HomeBinding: definition.HomeBinding, Visibility: definition.Visibility,
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	require.True(t, work.Personal())
 	return visibleWork{AgentWork: work, definition: definition}
@@ -107,7 +107,7 @@ func TestAnEmployeeDefinitionRepresentsItsPersonPrivately(t *testing.T) {
 func TestAPersonalWorkStartsOnlyFromAnotherPersonalWork(t *testing.T) {
 	definition := newDefinition(t, "employee", domain.VisibilityRule{})
 	request := func(subject domain.WorkSubject, project string, source *domain.StartingContextSource) domain.WorkCreationRequest {
-		return domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true},
+		return domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
 			WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, Subject: subject, ProjectID: project, StartingContext: source,
 			Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}}
 	}

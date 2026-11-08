@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"math"
 	"strings"
 	"time"
 
@@ -21,10 +20,11 @@ type Recovery struct {
 	app        *Application
 	enqueuer   taskqueue.Enqueuer
 	executions domain.AgentExecutionRepository
-	lookups    query.ExecutionRecoveryReader
+	lookups    query.ExecutionQueryRepository
 	// reconciliation fulfils the steps each execution decides.
 	reconciliation *command.ReconcileExecutionHandler
-	workspaces     WorkspacePort
+	// storage receives each queued Workspace Reclamation Request.
+	storage command.StoragePort
 	// reconnection retries the Resume a marked Work is owed while its
 	// Managed Computer is reachable; nil where no Managed Computer is
 	// reached.
@@ -37,36 +37,23 @@ type OwedResumes interface {
 	RetryOwedResume(ctx context.Context, workID string) error
 }
 
-func NewRecovery(app *Application, enqueuer taskqueue.Enqueuer, executions domain.AgentExecutionRepository, lookups query.ExecutionRecoveryReader, reconciliation *command.ReconcileExecutionHandler, workspaces WorkspacePort, reconnection OwedResumes) *Recovery {
-	return &Recovery{app: app, enqueuer: enqueuer, executions: executions, lookups: lookups, reconciliation: reconciliation, workspaces: workspaces, reconnection: reconnection}
+func NewRecovery(app *Application, enqueuer taskqueue.Enqueuer, executions domain.AgentExecutionRepository, lookups query.ExecutionQueryRepository, reconciliation *command.ReconcileExecutionHandler, storage command.StoragePort, reconnection OwedResumes) *Recovery {
+	return &Recovery{app: app, enqueuer: enqueuer, executions: executions, lookups: lookups, reconciliation: reconciliation, storage: storage, reconnection: reconnection}
 }
 
-// RequestWorkspaceReclamation queues the Closed Work's one reclamation
-// request, so it reaches Storage even across restarts and outages. Agent
-// keeps no reclamation obligation: the queue only delivers the request.
-func (r *Recovery) RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRequestWorkspaceReclamation(workID, workspaceReference))
-}
-
-// SendWorkspaceReclamation delivers a queued request to Storage.
+// SendWorkspaceReclamation delivers a queued Workspace Reclamation Request
+// through Storage's contract.
 func (r *Recovery) SendWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error {
-	return r.workspaces.RequestWorkspaceReclamation(ctx, workID, workspaceReference)
+	return r.storage.RequestWorkspaceReclamation(ctx, workID, workspaceReference)
 }
 
-// Recovery never gives up: a removal or closure obligation cannot be abandoned.
-// The worker's retry delay bounds how often a failing object is retried.
-const unlimitedRetries = math.MaxInt32
-
-const (
-	recoveryAttemptTimeout    = 2 * time.Minute
-	preparationAttemptTimeout = domain.StartupDeadline + time.Minute
-)
+const preparationAttemptTimeout = domain.StartupDeadline + time.Minute
 
 // WakeExecution wakes the execution's reconciliation, as after a commit, the
 // environment authority's report of a change to one of its sandboxes, or a
 // change fact that marked it.
 func (r *Recovery) WakeExecution(ctx context.Context, executionID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID))
+	return r.enqueue(ctx, agenttask.RecoveryAttemptTimeout)(agenttask.NewReconcileExecution(executionID))
 }
 
 // wakeLongStep wakes the execution's long step, whose attempt may last until
@@ -78,7 +65,7 @@ func (r *Recovery) wakeLongStep(ctx context.Context, executionID string) error {
 // WakeWork wakes the Work's own obligations and those of its current
 // execution, whose execution requests follow the Work's lifecycle.
 func (r *Recovery) WakeWork(ctx context.Context, workID string) error {
-	err := r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
+	err := r.enqueue(ctx, agenttask.RecoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
 	execution, lookupErr := r.executions.Latest(ctx, workID)
 	if errors.Is(lookupErr, domain.ErrExecutionNotFound) || (lookupErr == nil && execution.State == domain.ExecutionReleased) {
 		return err
@@ -129,7 +116,9 @@ func (r *Recovery) enqueue(ctx context.Context, timeout time.Duration) func(task
 		if err != nil {
 			return err
 		}
-		options := []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(unlimitedRetries), taskqueue.WithTimeout(timeout)}
+		// Recovery never gives up: a removal or closure obligation cannot be
+		// abandoned.
+		options := agenttask.Persistent(timeout)
 		if err := taskqueue.NewEnqueueOptions(options...).Validate(); err != nil {
 			return err
 		}
@@ -238,7 +227,7 @@ func (r *Recovery) Sweep(ctx context.Context) error {
 
 // The sweep wakes executions on their own, so a Work wake needs no lookup.
 func (r *Recovery) wakeWorkOnly(ctx context.Context, workID string) error {
-	return r.enqueue(ctx, recoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
+	return r.enqueue(ctx, agenttask.RecoveryAttemptTimeout)(agenttask.NewRecoverWork(workID))
 }
 
 func pageOf(list func(context.Context, string) ([]string, error)) func(context.Context, string, int) ([]string, error) {

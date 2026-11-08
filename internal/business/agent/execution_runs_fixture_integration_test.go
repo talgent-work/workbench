@@ -28,7 +28,8 @@ const launchedProcess = "process"
 // identity, which fits the recorded environment column, and runs at once, its Harness
 // launches as launchedProcess, Dispatcher reads it, and a retired execution
 // owns nothing once its environment's deletion completes. The executions' own
-// reconciliation takes every step.
+// reconciliation takes every step; like the realizations, a delivery, a
+// preparation, a launch or an input sync asks its holding check first.
 type realizedEnvironments struct {
 	// pendingDeletion, when set and true, keeps a retired execution's
 	// environment observed: its deletion has not completed.
@@ -58,21 +59,24 @@ func (realizedEnvironments) SubmitCreation(_ context.Context, e *domain.AgentExe
 func (realizedEnvironments) DeleteEnvironment(context.Context, *domain.AgentExecution, string) error {
 	return nil
 }
-func (realizedEnvironments) DeliverCredentials(context.Context, *domain.AgentExecution) (domain.CredentialDelivery, error) {
-	return domain.CredentialDelivery{}, nil
+func (realizedEnvironments) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
+	return domain.CredentialDelivery{}, holding(ctx)
 }
 func (realizedEnvironments) WithdrawCredentials(context.Context, *domain.AgentExecution) error {
 	return nil
 }
-func (realizedEnvironments) Prepare(context.Context, *domain.AgentExecution) (domain.PreparationReport, error) {
-	return domain.PreparationReport{}, nil
+func (realizedEnvironments) Prepare(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.PreparationReport, error) {
+	return domain.PreparationReport{}, holding(ctx)
 }
-func (realizedEnvironments) Launch(context.Context, *domain.AgentExecution) (string, error) {
+func (realizedEnvironments) Launch(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (string, error) {
+	if err := holding(ctx); err != nil {
+		return "", err
+	}
 	return launchedProcess, nil
 }
 func (realizedEnvironments) Connect(context.Context, *domain.AgentExecution) error { return nil }
-func (realizedEnvironments) SyncInputs(_ context.Context, e *domain.AgentExecution) (int64, error) {
-	return e.Inputs.Due, nil
+func (realizedEnvironments) SyncInputs(ctx context.Context, e *domain.AgentExecution, holding command.EnvironmentHolding) (int64, error) {
+	return e.Inputs.Due, holding(ctx)
 }
 func (realizedEnvironments) RenewLease(_ context.Context, _ *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
 	return expiresAt, nil
@@ -225,7 +229,7 @@ func (r *moduleRuns) release(t *testing.T, ctx context.Context, workID string) {
 func launches(t *testing.T, db *xorm.Engine) []domain.LaunchSpecification {
 	t.Helper()
 	var ids []string
-	require.NoError(t, db.Table("execution_allocation").Cols("id").OrderBy("created_at, id").Find(&ids))
+	require.NoError(t, db.Table("agent_execution").Cols("id").OrderBy("created_at, id").Find(&ids))
 	repository := execution.NewAgentExecutionRepository(db, time.Now)
 	result := make([]domain.LaunchSpecification, 0, len(ids))
 	for _, id := range ids {

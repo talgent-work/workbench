@@ -59,7 +59,7 @@ func TestSandboxObserverWakesTheOwningAllocation(t *testing.T) {
 	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
 
-	owned := correlation(Allocation{WorkID: input.WorkID, ID: allocation.ID})
+	owned := correlation(SandboxOwner{WorkID: input.WorkID, ID: allocation.ID})
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{BatchSandboxes: "BatchSandboxList"})
 	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("existing", owned), metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestSandboxObserverWakesTheOwningAllocation(t *testing.T) {
 	require.NoError(t, client.Resource(BatchSandboxes).Namespace("talgent").Delete(ctx, "existing", metav1.DeleteOptions{}))
 	require.Eventually(t, func() bool { return len(wakes()) == 3 }, 5*time.Second, 10*time.Millisecond, "a disappeared sandbox wakes its allocation")
 
-	orphan := batchSandbox("orphan", map[string]string{sandboxAllocationLabel: storageKey("unknown-allocation")[:48]})
+	orphan := batchSandbox("orphan", map[string]string{sandboxSessionLabel: storageKey(input.WorkID)[:48], sandboxOwnershipLabel: storageKey("unknown-execution")[:48]})
 	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, orphan, metav1.CreateOptions{})
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return bytes.Contains([]byte(logs.String()), []byte("sandbox ownership unknown")) }, 5*time.Second, 10*time.Millisecond)
@@ -113,7 +113,7 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{BatchSandboxes: "BatchSandboxList"})
-	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("late", correlation(Allocation{WorkID: input.WorkID, ID: allocation.ID})), metav1.CreateOptions{})
+	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("late", correlation(SandboxOwner{WorkID: input.WorkID, ID: allocation.ID})), metav1.CreateOptions{})
 	require.NoError(t, err)
 	var mu sync.Mutex
 	attempts := 0

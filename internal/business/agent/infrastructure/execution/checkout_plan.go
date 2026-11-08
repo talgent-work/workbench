@@ -23,7 +23,7 @@ func checkoutPlan(launch domain.LaunchSpecification) []repositoryCheckout {
 	return plan
 }
 
-func (r allocationRecord) checkoutPlan() ([]repositoryCheckout, error) {
+func (r executionRecord) checkoutPlan() ([]repositoryCheckout, error) {
 	if len(r.CheckoutPlan) == 0 {
 		return nil, nil
 	}

@@ -163,7 +163,7 @@ func TestDuplicateAndLateEnvironmentsRetainDurablePrimaryAndAllocationIsolation(
 	require.Empty(t, objects)
 	late := uuid.NewString()
 	objects[late] = sdk.SandboxInfo{ID: late, Metadata: spec.Metadata}
-	next := Allocation{WorkID: input.WorkID, ID: uuid.NewString()}
+	next := SandboxOwner{WorkID: input.WorkID, ID: uuid.NewString()}
 	nextID := uuid.NewString()
 	objects[nextID] = sdk.SandboxInfo{ID: nextID, Metadata: correlation(next)}
 	mu.Unlock()

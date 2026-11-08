@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"xorm.io/xorm"
@@ -45,10 +44,11 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			require.NoError(t, definitions.Save(ctx, definition))
 			definition, err = definitions.Get(ctx, definition.ID)
 			require.NoError(t, err)
-			work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, HomeBinding: definition.HomeBinding, WorkspaceReference: uuid.NewString()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, DeskID: "desk-test"}, ModelConfigurationProvided: true})
+			work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, HomeBinding: definition.HomeBinding, WorkspaceReference: uuid.NewString()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 			require.NoError(t, err)
 			works := infrastructure.NewAgentWorkRepository(db, time.Now)
-			require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}, DefinitionVersion: definition.Version}))
+			work.DefinitionVersion = definition.Version
+			require.NoError(t, works.Save(ctx, work))
 			require.NoError(t, command.NewExecutionCoordination(time.Now, works, executions, &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID))
 			begun, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)

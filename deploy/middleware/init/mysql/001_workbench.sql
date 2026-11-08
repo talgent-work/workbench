@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `agent_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Referenced AgentDefinition aggregate identity',
   `started_by` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Who started the Work, a fact; its Agent Owners are its definition''s owners',
   `computer_id` varchar(36) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Computer chosen at the Work''s first start, fixed for its life',
+  `computer_kind` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'cloud or managed: what the Work''s Computer is, as its admission answered at the first start',
   `subject_kind` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Kind of the object the Work is about, as its caller defines it; NULL when the Work has no Subject',
   `subject_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Identity of the Work Subject; one Work per definition and Subject for good; NULL when none',
   `project_ref` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'The Work''s optional Project, for visibility and authorization; empty when none',
@@ -129,21 +130,6 @@ CREATE TABLE IF NOT EXISTS `agent_work_share` (
   KEY `idx_reader_id_work_id` (`reader_id`,`work_id`) COMMENT 'A reader finds the Works shared with them'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Work Shares of an AgentWork, owned by agent_session';
 
-CREATE TABLE IF NOT EXISTS `agent_start_request` (
-  `id` varchar(36) NOT NULL COMMENT 'Caller-selected start request UUID',
-  `session_id` varchar(36) NOT NULL COMMENT 'Target Work; empty for a creation cancelled or refused before it created one',
-  `kind` varchar(16) NOT NULL DEFAULT '' COMMENT 'Start (creation), resume or restart; empty when a start was canceled before its operation was known',
-  `fingerprint` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'SHA-256 digest of the request content; a repeat with other content is a conflict; empty for an identity cancelled before receipt',
-  `creation_scope` varchar(64) NOT NULL DEFAULT '' COMMENT 'Original scope digest for cancellation before Work registration',
-  `canceled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'True when the request was canceled before admission',
-  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Immutable receipt version',
-  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; zero is retained',
-  PRIMARY KEY (`id`),
-  KEY `idx_session_id_canceled_deleted_at_created_at` (`session_id`, `canceled`, `deleted_at`, `created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='The single record of caller request identities for Work creation, Resume and Restart; not a process run';
-
 CREATE TABLE IF NOT EXISTS `computer` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Computer UUIDv7 identity; a Cloud''s is fixed by its cluster''s configuration',
   `kind` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'cloud or managed',
@@ -195,30 +181,29 @@ CREATE TABLE IF NOT EXISTS `computer_desk` (
   KEY `idx_computer_id_state` (`computer_id`,`state`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Desk: one run of one Work holding or waiting for room on its Computer';
 
-CREATE TABLE IF NOT EXISTS `execution_allocation` (
-  `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Sandbox allocation identity',
+CREATE TABLE IF NOT EXISTS `agent_execution` (
+  `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'AgentExecution identity',
   `session_id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'AgentWork identity',
-  `request_hash` char(64) COLLATE utf8mb4_bin NOT NULL COMMENT 'Immutable admitted request fingerprint',
   `request_json` json NOT NULL COMMENT 'Admitted Session environment inputs',
   `start_rejected` boolean NOT NULL DEFAULT false COMMENT 'Preparation rejected before external creation was submitted',
   `service_access_json` json NOT NULL DEFAULT (JSON_ARRAY()) COMMENT 'Current service supply observations without credentials',
   `credential_plan_json` json NOT NULL COMMENT 'Non-sensitive retained Work repository access references',
-  `authorization_ids` json NOT NULL DEFAULT (JSON_ARRAY()) COMMENT 'Provider Authorizations the Work selected; finds the allocations a credential change concerns',
+  `authorization_ids` json NOT NULL DEFAULT (JSON_ARRAY()) COMMENT 'Provider Authorizations the Work selected; finds the executions a credential change concerns',
   `specification_json` json NOT NULL COMMENT 'Fixed provider specification including private execd credential',
   `realization` varchar(16) COLLATE utf8mb4_bin NOT NULL DEFAULT 'cloud' COMMENT 'Environment authority fixed at registration: cloud (a sandbox) or managed (the Work''s directory on its Managed Computer)',
   `preparation_command` mediumtext NOT NULL COMMENT 'Retained in-sandbox preparation command: Plugin installation, then repository checkout',
   `preparation_process_id` varchar(128) NOT NULL DEFAULT '' COMMENT 'Reserved finite execd process handle',
   `checkout_plan` json DEFAULT NULL COMMENT 'Repositories this start checks out inside the sandbox; SQL NULL or JSON null checks out nothing',
-  `plugins_prepared` boolean NOT NULL DEFAULT false COMMENT 'Preparation process has exited and its Plugin and checkout outcomes are recorded',
+  `preparation_ended` boolean NOT NULL DEFAULT false COMMENT 'Preparation process has exited and its Plugin and checkout outcomes are recorded',
   `launch_command` text NOT NULL COMMENT 'Fixed native command; never emitted in public logs',
   `native_session_id` char(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Native conversation identity derived from Session context',
   `process_id` varchar(128) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Execd reserved process handle, persisted before attachment',
-  `process_exited` boolean NOT NULL DEFAULT false COMMENT 'Agent acknowledged the exit fact of this allocation''s process',
+  `process_exited` boolean NOT NULL DEFAULT false COMMENT 'Agent acknowledged the exit fact of this execution''s process',
   `credentials_expire_at` bigint NOT NULL DEFAULT '0' COMMENT 'Earliest declared expiry of the credentials last delivered to the Vault in Unix milliseconds; zero when none expires',
   `model_credential_digest` varchar(32) NOT NULL DEFAULT '' COMMENT 'Identifies, without revealing it, the model key last delivered to the Vault',
-  `inputs_due` int unsigned NOT NULL DEFAULT '0' COMMENT 'Input changes a Managed allocation''s machine has not been synced with; zero when it holds the current inputs',
-  `input_owner` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'File Space owner of a Managed Work''s input source, recorded by its inputs sync; finds the allocations a file change concerns',
-  `inputs_synced_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds of a Managed allocation''s last successful inputs sync; zero before the first. The recovery sweep syncs again once it is older than the refresh interval, before the copies'' Access Links expire',
+  `inputs_due` int unsigned NOT NULL DEFAULT '0' COMMENT 'Input changes a Managed execution''s machine has not been synced with; zero when it holds the current inputs',
+  `input_owner` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'File Space owner of a Managed Work''s input source, recorded by its inputs sync; finds the executions a file change concerns',
+  `inputs_synced_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds of a Managed execution''s last successful inputs sync; zero before the first. The recovery sweep syncs again once it is older than the refresh interval, before the copies'' Access Links expire',
   `submitted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'External submission may have happened; never blindly resubmit',
   `sandbox_id` varchar(36) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Observed external sandbox identity',
   `lease_expires_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the bound sandbox expires unless renewed, as OpenSandbox last returned it; zero while none is known',
@@ -226,7 +211,7 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last reconciliation time in Unix milliseconds',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft deletion time; zero means retained',
-  `released_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the retired allocation''s compute release was confirmed; zero while its release is outstanding',
+  `released_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the retired execution''s compute release was confirmed; zero while its release is outstanding',
   `checkout_results` json DEFAULT NULL COMMENT 'Checkout outcome of each repository this run checked out; SQL NULL or JSON null until its checkout ended',
   `state` varchar(16) COLLATE utf8mb4_bin NOT NULL DEFAULT 'starting' COMMENT 'AgentExecution lifecycle state: queued, starting, running, retired or released',
   `start_admitted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the Work admitted the start this execution serves',
@@ -247,16 +232,16 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
   `retirement` varchar(16) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Why the execution retired; empty while unretired',
   `handles_released` boolean NOT NULL DEFAULT false COMMENT 'A Managed execution''s process handles were deleted on its machine',
   `retired` tinyint unsigned GENERATED ALWAYS AS (`deleted_at` <> 0) VIRTUAL COMMENT 'Indexed retirement predicate for finding retired executions whose compute release is outstanding',
-  `live_session_id` varchar(36) COLLATE utf8mb4_bin GENERATED ALWAYS AS (IF(`deleted_at` = 0, `session_id`, NULL)) STORED COMMENT 'Work of a live allocation; unique per Work',
-  `allocation_label` char(48) COLLATE utf8mb4_bin GENERATED ALWAYS AS (LEFT(SHA2(`id`, 256), 48)) STORED COMMENT 'Sandbox allocation label; finds the allocation an observed sandbox belongs to',
-    sandbox_ready tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Environment and required credentials were ready before native launch',
-    preparation_recovering tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Latest environment preparation attempt had a recoverable error',
+  `live_session_id` varchar(36) COLLATE utf8mb4_bin GENERATED ALWAYS AS (IF(`deleted_at` = 0, `session_id`, NULL)) STORED COMMENT 'Work of a live execution; unique per Work',
+  `ownership_label` char(48) COLLATE utf8mb4_bin GENERATED ALWAYS AS (LEFT(SHA2(`id`, 256), 48)) STORED COMMENT 'Value of the ownership label its sandboxes carry; finds the execution an observed sandbox belongs to',
+  `credentials_delivered` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Credentials were delivered into the bound environment, before the native launch',
+  `preparation_recovering` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Latest environment preparation attempt had a recoverable error',
   PRIMARY KEY (`id`),
   KEY `idx_deleted_at_updated_at_id` (`deleted_at`, `updated_at`, `id`),
   KEY `idx_retired_released_at_id` (`retired`, `released_at`, `id`),
   KEY `idx_sandbox_id_deleted_at_updated_at_id` (`sandbox_id`, `deleted_at`, `updated_at`, `id`),
   UNIQUE KEY `uniq_live_session_id` (`live_session_id`),
-  KEY `idx_allocation_label` (`allocation_label`),
+  KEY `idx_ownership_label` (`ownership_label`),
   KEY `idx_input_owner_deleted_at` (`input_owner`, `deleted_at`),
   KEY `idx_session_id_created_at_id` (`session_id`, `created_at`, `id`),
   KEY `idx_authorization_ids` ((CAST(`authorization_ids` AS CHAR(36) ARRAY)))
@@ -264,7 +249,7 @@ CREATE TABLE IF NOT EXISTS `execution_allocation` (
 
 CREATE TABLE IF NOT EXISTS `execution_plugin_result` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'UUIDv7 row identity',
-  `execution_id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'AgentExecution (execution_allocation) whose run the outcome describes',
+  `execution_id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'AgentExecution (agent_execution) whose run the outcome describes',
   `slug` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Slug of a Plugin the run selected',
   `installation_reported` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The run''s preparation reported the Plugin''s installation',
   `installed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The installation succeeded, not proof of Harness loading',

@@ -39,8 +39,6 @@ func retainWorkState(tx *xorm.Session, session *domain.AgentWork, row *agentWork
 	return oops.With("operation", "agent_session.retain_state").Wrap(err)
 }
 
-var _ query.WorkLifecycleReader = (*WorkQueryRepository)(nil)
-
 // ListWorkLifecycleEvents folds the retained state history into lifecycle
 // transitions; waiting and startup flag changes within one state are omitted.
 func (r *WorkQueryRepository) ListWorkLifecycleEvents(ctx context.Context, workID string) ([]query.WorkLifecycleEvent, error) {

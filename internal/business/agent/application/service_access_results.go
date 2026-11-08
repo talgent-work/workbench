@@ -19,11 +19,11 @@ func (a *Application) GetWorkServiceAccess(ctx context.Context, input ControlWor
 	if err != nil {
 		return query.WorkServiceAccess{}, err
 	}
-	observations, err := a.ServiceAccessResults.ReadServiceAccess(ctx, work.ID)
+	observations, err := a.ExecutionQueries.ReadServiceAccess(ctx, work.ID)
 	if err != nil {
 		return query.WorkServiceAccess{}, err
 	}
-	repositories, err := a.ServiceAccessResults.ReadRepositoryPreparation(ctx, work.ID)
+	repositories, err := a.ExecutionQueries.ReadRepositoryPreparation(ctx, work.ID)
 	if err != nil {
 		return query.WorkServiceAccess{}, err
 	}

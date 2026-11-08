@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"path"
@@ -11,14 +12,15 @@ import (
 	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // ManagedWorkspaces reads Managed Works' directories through the relay and
 // serves their files behind Agent's own links.
 type ManagedWorkspaces struct {
-	db       *xorm.Engine
+	tokens   workAccessTokens
 	machines *ManagedComputers
-	links    *WorkspaceFileLinks
+	links    *application.WorkspaceFileSigner
 	previews PreviewJudge
 }
 
@@ -32,11 +34,11 @@ type PreviewJudge interface {
 // previewHeadBytes is how much of a file Storage judges, its text probe.
 const previewHeadBytes = 8 << 10
 
-func NewManagedWorkspaces(db *xorm.Engine, machines *ManagedComputers, links *WorkspaceFileLinks, previews PreviewJudge) (*ManagedWorkspaces, error) {
+func NewManagedWorkspaces(db *xorm.Engine, machines *ManagedComputers, links *application.WorkspaceFileSigner, previews PreviewJudge) (*ManagedWorkspaces, error) {
 	if db == nil || machines == nil || links == nil || previews == nil {
-		return nil, errors.New("agent: allocations, Managed Computers, file links and Storage's preview judgement are required for Managed workspaces")
+		return nil, errors.New("agent: executions, Managed Computers, a link signer and Storage's preview judgement are required for Managed workspaces")
 	}
-	return &ManagedWorkspaces{db: db, machines: machines, links: links, previews: previews}, nil
+	return &ManagedWorkspaces{tokens: recordedAccessTokens{db: db}, machines: machines, links: links, previews: previews}, nil
 }
 
 // maxWorkspaceListEntries bounds one directory's listing, as Storage's
@@ -46,34 +48,63 @@ const maxWorkspaceListEntries = 1000
 // inputsDirectory is where a Work's Attachments are, in either realization.
 const inputsDirectory = "inputs"
 
-// opened finds the environment the Managed realization last opened for the
-// Work: the machine holds the token of the latest one, retired or not, for
-// the Work's life. A Work never opened there is not Managed here.
-func (w *ManagedWorkspaces) opened(ctx context.Context, workID string) (managedSpecification, bool, error) {
-	var record allocationRecord
-	found, err := w.db.Context(ctx).Where("session_id = ? AND realization = ? AND sandbox_id <> ''", workID, realizationManaged).
-		Desc("created_at").Desc("id").Cols("id", "specification_json").Get(&record)
-	if err != nil {
-		return managedSpecification{}, false, oops.With("operation", "find_managed_workspace").Wrap(err)
-	}
-	if !found {
-		return managedSpecification{}, false, nil
-	}
-	spec, err := decodeManagedSpecification(record)
-	return spec, err == nil, err
+// workAccessTokens finds the execd token of the environment a machine last
+// opened for a Work, which it keeps for the Work's life; empty for a Work
+// whose environment was never opened.
+type workAccessTokens interface {
+	accessToken(ctx context.Context, workID string) (string, error)
 }
 
-// view lists one directory of the Work's directory. An entry under inputs/
-// is the input source's Attachment of its name, read as that Attachment.
-func (w *ManagedWorkspaces) view(ctx context.Context, spec managedSpecification, workID, dir string) (application.WorkspaceListing, error) {
+// recordedAccessTokens reads the token from the Work's latest execution that
+// opened an environment.
+type recordedAccessTokens struct{ db *xorm.Engine }
+
+func (r recordedAccessTokens) accessToken(ctx context.Context, workID string) (string, error) {
+	var record executionRecord
+	found, err := r.db.Context(ctx).Where("session_id = ? AND sandbox_id <> ''", workID).
+		Desc("created_at").Desc("id").Cols("specification_json").Get(&record)
+	if err != nil {
+		return "", oops.With("operation", "find_work_access_token").Wrap(err)
+	}
+	if !found {
+		return "", nil
+	}
+	var opened struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if err := json.Unmarshal(record.SpecificationJSON, &opened); err != nil {
+		return "", oops.With("operation", "find_work_access_token").Wrap(err)
+	}
+	return opened.AccessToken, nil
+}
+
+// reach is how the Work's directory is reached: through the Computer its
+// location names, with its execd token. A Work without one is asked for all
+// the same, and its machine answers that it does not know the Work.
+func (w *ManagedWorkspaces) reach(ctx context.Context, location domain.WorkspaceLocation) (managedSpecification, error) {
+	token, err := w.tokens.accessToken(ctx, location.WorkID)
+	if err != nil {
+		return managedSpecification{}, err
+	}
+	return managedSpecification{ComputerID: location.ComputerID, AccessToken: token}, nil
+}
+
+// WorkspaceView lists one directory of the Work's directory. An entry under
+// inputs/ is the input source's Attachment of its name, read as that
+// Attachment.
+func (w *ManagedWorkspaces) WorkspaceView(ctx context.Context, location domain.WorkspaceLocation, dir string) (application.WorkspaceListing, error) {
 	clean, err := workspaceDirectory(dir)
 	if err != nil {
 		return application.WorkspaceListing{}, err
 	}
-	entries, err := w.machines.listFiles(ctx, spec, workID, clean)
+	spec, err := w.reach(ctx, location)
+	if err != nil {
+		return application.WorkspaceListing{}, err
+	}
+	entries, err := w.machines.listFiles(ctx, spec, location.WorkID, clean)
 	if clean == "" && errors.Is(err, errWorkFileNotFound) {
 		// The machine does not know the Work: it never opened its directory.
-		return application.WorkspaceListing{}, application.ErrWorkspaceNotCreated
+		return application.WorkspaceListing{}, domain.ErrWorkspaceNotCreated
 	}
 	if err != nil {
 		return application.WorkspaceListing{}, workspaceReadError(err)
@@ -93,15 +124,15 @@ func (w *ManagedWorkspaces) view(ctx context.Context, spec managedSpecification,
 	return listing, nil
 }
 
-// preview has Storage judge one file as it judges a Cloud Work's, from its
-// size and the start of its content, and links a readable one for inline
-// reads of at most the bytes Storage allows.
-func (w *ManagedWorkspaces) preview(ctx context.Context, spec managedSpecification, workID, file string) (application.WorkspaceFilePreview, error) {
-	clean, entry, err := w.file(ctx, spec, workID, file)
+// PreviewWorkspaceFile has Storage judge one file as it judges a Cloud
+// Work's, from its size and the start of its content, and links a readable
+// one for inline reads of at most the bytes Storage allows.
+func (w *ManagedWorkspaces) PreviewWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, file string) (application.WorkspaceFilePreview, error) {
+	spec, clean, entry, err := w.file(ctx, location, file)
 	if err != nil {
 		return application.WorkspaceFilePreview{}, err
 	}
-	content, err := w.machines.openFile(ctx, spec, workID, clean)
+	content, err := w.machines.openFile(ctx, spec, location.WorkID, clean)
 	if err != nil {
 		return application.WorkspaceFilePreview{}, workspaceReadError(err)
 	}
@@ -115,60 +146,50 @@ func (w *ManagedWorkspaces) preview(ctx context.Context, spec managedSpecificati
 		return application.WorkspaceFilePreview{}, err
 	}
 	if served > 0 {
-		url, expiresAt := w.links.issue(workspaceFileGrant{WorkID: workID, Path: clean, Limit: served})
-		preview.Link = &application.WorkspaceFileLink{URL: url, ExpiresAt: expiresAt}
+		link := w.links.Issue(application.WorkspaceFileGrant{WorkID: location.WorkID, Path: clean, Limit: served})
+		preview.Link = &link
 	}
 	return preview, nil
 }
 
-// downloadLink links one existing file for download under its name.
-func (w *ManagedWorkspaces) downloadLink(ctx context.Context, spec managedSpecification, workID, file string) (application.WorkspaceFileLink, error) {
-	clean, _, err := w.file(ctx, spec, workID, file)
+// WorkspaceFileLink links one existing file for download under its name.
+func (w *ManagedWorkspaces) WorkspaceFileLink(ctx context.Context, location domain.WorkspaceLocation, file string) (application.WorkspaceFileLink, error) {
+	_, clean, _, err := w.file(ctx, location, file)
 	if err != nil {
 		return application.WorkspaceFileLink{}, err
 	}
-	url, expiresAt := w.links.issue(workspaceFileGrant{WorkID: workID, Path: clean, Download: true})
-	return application.WorkspaceFileLink{URL: url, ExpiresAt: expiresAt}, nil
+	return w.links.Issue(application.WorkspaceFileGrant{WorkID: location.WorkID, Path: clean, Download: true}), nil
 }
 
 // file describes a file a reader opens outside inputs/, whose Attachments
 // are read as themselves.
-func (w *ManagedWorkspaces) file(ctx context.Context, spec managedSpecification, workID, file string) (string, machineFileEntry, error) {
+func (w *ManagedWorkspaces) file(ctx context.Context, location domain.WorkspaceLocation, file string) (managedSpecification, string, machineFileEntry, error) {
 	clean, err := workspaceFile(file)
 	if err != nil {
-		return "", machineFileEntry{}, err
+		return managedSpecification{}, "", machineFileEntry{}, err
 	}
-	entry, err := w.machines.statFile(ctx, spec, workID, clean)
+	spec, err := w.reach(ctx, location)
 	if err != nil {
-		return "", machineFileEntry{}, workspaceReadError(err)
+		return managedSpecification{}, "", machineFileEntry{}, err
+	}
+	entry, err := w.machines.statFile(ctx, spec, location.WorkID, clean)
+	if err != nil {
+		return managedSpecification{}, "", machineFileEntry{}, workspaceReadError(err)
 	}
 	if entry.Kind != machineFile {
-		return "", machineFileEntry{}, application.ErrInvalidWorkspacePath
+		return managedSpecification{}, "", machineFileEntry{}, application.ErrInvalidWorkspacePath
 	}
-	return clean, entry, nil
+	return spec, clean, entry, nil
 }
 
-// LinkedWork is the Work a link grants a read of.
-func (w *ManagedWorkspaces) LinkedWork(token string) (string, error) {
-	grant, err := w.links.verify(token)
-	return grant.WorkID, err
-}
-
-// OpenLink opens the file a link grants. ErrWorkspaceUnavailable means the
-// machine is not reachable now.
-func (w *ManagedWorkspaces) OpenLink(ctx context.Context, token string) (application.OpenedWorkspaceFile, error) {
-	grant, err := w.links.verify(token)
+// OpenWorkspaceFile opens the file a verified link grants.
+// domain.ErrWorkspaceUnavailable means the machine is not reachable now.
+func (w *ManagedWorkspaces) OpenWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, grant application.WorkspaceFileGrant) (application.OpenedWorkspaceFile, error) {
+	spec, err := w.reach(ctx, location)
 	if err != nil {
 		return application.OpenedWorkspaceFile{}, err
 	}
-	spec, found, err := w.opened(ctx, grant.WorkID)
-	if err != nil {
-		return application.OpenedWorkspaceFile{}, err
-	}
-	if !found {
-		return application.OpenedWorkspaceFile{}, application.ErrWorkspacePathNotFound
-	}
-	content, err := w.machines.openFile(ctx, spec, grant.WorkID, grant.Path)
+	content, err := w.machines.openFile(ctx, spec, location.WorkID, grant.Path)
 	if err != nil {
 		return application.OpenedWorkspaceFile{}, workspaceReadError(err)
 	}
@@ -180,7 +201,7 @@ func (w *ManagedWorkspaces) OpenLink(ctx context.Context, token string) (applica
 func workspaceReadError(err error) error {
 	switch {
 	case errors.Is(err, errMachineUnreachable):
-		return application.ErrWorkspaceUnavailable
+		return domain.ErrWorkspaceUnavailable
 	case errors.Is(err, errWorkFileNotFound):
 		return application.ErrWorkspacePathNotFound
 	case errors.Is(err, errWorkFileNotRegular):

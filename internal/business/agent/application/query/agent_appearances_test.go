@@ -11,6 +11,7 @@ import (
 )
 
 type appearanceStub struct {
+	AgentDefinitionQueryRepository
 	purpose string
 	views   map[string]AgentAppearanceView
 	err     error

@@ -50,7 +50,7 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 	require.NoError(t, err)
 	lookup := &definitionSessionLookup{}
 	subject := domain.WorkSubject{Kind: "case", ID: "case-a"}
-	request := domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-a", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: "Specific"}}
+	request := domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-a", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: "Specific"}}
 	unresolved := request
 	unresolved.WorkModel = domain.WorkModelSelection{}
 	session, isNew, err := createWork(agent, request, lookup)
@@ -126,7 +126,7 @@ func TestWorkWithoutSubjectIsNeverReused(t *testing.T) {
 	require.NoError(t, err)
 	existing := &domain.AgentWork{ID: "existing"}
 	lookup := &definitionSessionLookup{session: existing}
-	request := domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true},
+	request := domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, WorkspaceReference: "workspace-a",
 		TraceAttributes: map[string]string{"talgent.case_id": "supplied"},
 		Capabilities:    domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}}
@@ -170,7 +170,7 @@ func TestWorkWithoutSessionWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	work, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Subject: domain.WorkSubject{Kind: "project", ID: "project-a"}, ProjectID: "project-a",
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
-		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
+		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	require.Empty(t, work.WorkspaceReference)
 	require.True(t, work.Visibility.Public)
@@ -186,7 +186,7 @@ func TestDefinitionAppliesSuppliedConfigurationWithoutInterpretingPurpose(t *tes
 			})
 			require.NoError(t, err)
 			for _, model := range []domain.WorkModelSelection{{ConfigurationID: "default"}, {ConfigurationID: "selected"}} {
-				created, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: model, WorkspaceReference: "workspace", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}, domain.WorkCreationFacts{})
+				created, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: model, WorkspaceReference: "workspace", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}, domain.WorkCreationFacts{})
 				require.NoError(t, err)
 				require.Equal(t, model, created.WorkModel)
 			}
@@ -215,7 +215,7 @@ func TestOnlyAnAgentOwnerStartsItsWorks(t *testing.T) {
 	start := func(startedBy string) error {
 		_, _, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: startedBy, Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkspaceReference: "workspace",
 			Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
-			Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
+			Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
 		return err
 	}
 	require.ErrorIs(t, start("stranger"), domain.ErrControlRequesterNotOwner)
@@ -250,6 +250,6 @@ func TestOnlyAPersonsAgentRunsOnAManagedComputer(t *testing.T) {
 	require.ErrorIs(t, pm.AdmitComputer(true), domain.ErrCloudOnlyAgent)
 	_, _, err = pm.CreateWork(domain.WorkCreationRequest{StartedBy: "alice", Subject: domain.WorkSubject{Kind: "project", ID: "project-a"}, ProjectID: "project-a", ComputerManaged: true,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
-		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: pm.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
+		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: pm.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}}, domain.WorkCreationFacts{})
 	require.ErrorIs(t, err, domain.ErrComputerNotUsable, "the definition refuses a Managed Work itself")
 }

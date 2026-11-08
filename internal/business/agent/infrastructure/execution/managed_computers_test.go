@@ -117,12 +117,12 @@ func TestManagedEnvironmentHoldsNoMountsVaultHomeOrPlatformCredentials(t *testin
 	require.NoError(t, spec.attachTelemetry(context.Background(), managedRequest(), managedTelemetryAddress, "telemetry-token-fixture"))
 	encoded, err := json.Marshal(spec)
 	require.NoError(t, err)
-	decoded, err := decodeManagedSpecification(allocationRecord{SpecificationJSON: encoded})
+	decoded, err := decodeManagedSpecification(executionRecord{SpecificationJSON: encoded})
 	require.NoError(t, err)
 	require.Equal(t, spec, decoded)
 	cloud, err := json.Marshal(map[string]any{"env": map[string]string{"EXECD_ACCESS_TOKEN": "x"}})
 	require.NoError(t, err)
-	_, err = decodeManagedSpecification(allocationRecord{SpecificationJSON: cloud})
+	_, err = decodeManagedSpecification(executionRecord{SpecificationJSON: cloud})
 	require.ErrorIs(t, err, domain.ErrExecutionRequest, "a Cloud sandbox specification is no Managed environment")
 	_, err = managedSpecificationFor(request(), fixtureModels(), "execd-token", "work-credential")
 	require.ErrorIs(t, err, domain.ErrExecutionRequest, "a Managed start names its Computer")
@@ -336,13 +336,13 @@ func TestPreparationChecksOutIntoTheWorkRoot(t *testing.T) {
 // unrecorded realization is never taken for either.
 func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 	cloudOnly := NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, nil)
-	authority, err := cloudOnly.authority(allocationRecord{Realization: realizationCloud})
+	authority, err := cloudOnly.authority(executionRecord{Realization: realizationCloud})
 	require.NoError(t, err)
 	require.IsType(t, cloudEnvironment{}, authority)
-	_, err = cloudOnly.authority(allocationRecord{Realization: realizationManaged})
+	_, err = cloudOnly.authority(executionRecord{Realization: realizationManaged})
 	require.ErrorIs(t, err, errManagedNotConfigured)
-	require.ErrorIs(t, cloudOnly.specify(context.Background(), allocationRecord{Realization: realizationManaged, SpecificationJSON: []byte("null")}, domain.SandboxMounts{}), errManagedNotConfigured, "a Managed execution's creation is refused before anything is specified")
-	_, err = cloudOnly.authority(allocationRecord{Realization: "kubernetes"})
+	require.ErrorIs(t, cloudOnly.specify(context.Background(), executionRecord{Realization: realizationManaged, SpecificationJSON: []byte("null")}, domain.SandboxMounts{}), errManagedNotConfigured, "a Managed execution's creation is refused before anything is specified")
+	_, err = cloudOnly.authority(executionRecord{Realization: "kubernetes"})
 	require.Error(t, err)
 
 	machines, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
@@ -355,7 +355,7 @@ func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 	require.Error(t, err, "inputs are refreshed at a positive interval")
 	managed, err := NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, &inputFiles{}, time.Minute)
 	require.NoError(t, err)
-	authority, err = NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, managed).authority(allocationRecord{Realization: realizationManaged})
+	authority, err = NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, managed).authority(executionRecord{Realization: realizationManaged})
 	require.NoError(t, err)
 	require.IsType(t, ManagedEnvironment{}, authority)
 }
@@ -392,7 +392,7 @@ func TestManagedComputersDeliverAndForgetTheWorksCredentials(t *testing.T) {
 	// with it: withdrawing them is done.
 	document, err := json.Marshal(spec)
 	require.NoError(t, err)
-	gone := allocationRecord{SessionID: "closed-work", SpecificationJSON: document}
+	gone := executionRecord{SessionID: "closed-work", SpecificationJSON: document}
 	require.NoError(t, ManagedEnvironment{machines: managed}.withdraw(ctx, gone))
 
 	relay.unreachable = true
@@ -422,7 +422,7 @@ func TestManagedWorksGetTheNativeAPIOnlyWhereItIsServed(t *testing.T) {
 		input := managedRequest()
 		specified, err := ManagedEnvironment{machines: machines, models: fixtureModels()}.specify(ctx, input, testMounts, owner(input), "execd-token", "work-credential")
 		require.NoError(t, err)
-		spec, err := decodeManagedSpecification(allocationRecord{SpecificationJSON: specified.document})
+		spec, err := decodeManagedSpecification(executionRecord{SpecificationJSON: specified.document})
 		require.NoError(t, err)
 		return spec
 	}
@@ -450,7 +450,7 @@ func TestManagedWorksGetTheNativeAPIOnlyWhereItIsServed(t *testing.T) {
 // The model digest follows the Model Configuration's current key on the
 // endpoint the start was realized with; the machine login carries none.
 func TestManagedModelDigestFollowsTheCurrentKey(t *testing.T) {
-	record := func(model domain.WorkModelSelection) allocationRecord {
+	record := func(model domain.WorkModelSelection) executionRecord {
 		input := managedRequest()
 		input.WorkModel = model
 		spec, err := startedSpecification(input)
@@ -459,7 +459,7 @@ func TestManagedModelDigestFollowsTheCurrentKey(t *testing.T) {
 		require.NoError(t, err)
 		request, err := encodeLaunch(input)
 		require.NoError(t, err)
-		return allocationRecord{SpecificationJSON: document, RequestJSON: request}
+		return executionRecord{SpecificationJSON: document, RequestJSON: request}
 	}
 	authority := ManagedEnvironment{models: fixtureModels()}
 	digest, err := authority.modelDigest(record(domain.WorkModelSelection{ConfigurationID: "default"}))

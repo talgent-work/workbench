@@ -15,6 +15,7 @@ import (
 // currentRunOutcomes stands in for the execution query repository's read of
 // the current run's Plugin outcomes.
 type currentRunOutcomes struct {
+	query.ExecutionQueryRepository
 	outcomes []query.PluginResult
 	workID   string
 	err      error
@@ -39,7 +40,7 @@ func TestPluginResultsListTheSelectionWithTheCurrentRunsOutcomes(t *testing.T) {
 		{Slug: "tools", InstallationReported: true, Installed: true, LoadingReported: true, LoadingReason: "version_mismatch"},
 		{Slug: "unselected", Loaded: true},
 	}}
-	app.PluginResults = outcomes
+	app.ExecutionQueries = outcomes
 	results, err := app.GetWorkPluginResults(t.Context(), application.ControlWork{ActorUserID: "reader", WorkID: "work"})
 	require.NoError(t, err)
 	require.Equal(t, "reader", auth.subject)
@@ -58,13 +59,13 @@ func TestPluginResultsEnforceAccessAndPropagateStorageFailure(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
 	auth.err = access.ErrAccessDenied
 	outcomes := &currentRunOutcomes{}
-	app.PluginResults = outcomes
+	app.ExecutionQueries = outcomes
 	_, err = app.GetWorkPluginResults(t.Context(), application.ControlWork{ActorUserID: "outsider", WorkID: "work"})
 	require.ErrorIs(t, err, access.ErrAccessDenied, "authorization precedes reading Plugin outcomes")
 	require.Empty(t, outcomes.workID)
 	auth.err = nil
 	unavailable := errors.New("execution query storage unavailable")
-	app.PluginResults = &currentRunOutcomes{err: unavailable}
+	app.ExecutionQueries = &currentRunOutcomes{err: unavailable}
 	_, err = app.GetWorkPluginResults(t.Context(), application.ControlWork{ActorUserID: "reader", WorkID: "work"})
 	require.ErrorIs(t, err, unavailable)
 }

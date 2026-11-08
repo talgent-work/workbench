@@ -1,6 +1,10 @@
 package infrastructure
 
-import "time"
+import (
+	"time"
+
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+)
 
 type workStateHistoryDO struct {
 	ID            string `xorm:"id pk"`
@@ -62,6 +66,7 @@ type agentWorkDO struct {
 	ProjectRef      string  `xorm:"project_ref varchar(255)"`
 	StartedBy       string  `xorm:"started_by varchar(255)"`
 	ComputerID      string  `xorm:"computer_id varchar(36)"`
+	ComputerKind    string  `xorm:"computer_kind varchar(16)"`
 	ID              string  `xorm:"id pk varchar(36)"`
 	AgentID         string  `xorm:"agent_id varchar(36)"`
 	State           uint8   `xorm:"state tinyint"`
@@ -138,6 +143,22 @@ type harnessProcessRecord struct {
 // waiting reports a stored Work whose user owes an answer; closure clears it.
 func (r *harnessProcessRecord) waiting() bool { return !r.WaitingSince.IsZero() }
 
+// initial reports whether the process is the Work's first start, which its
+// creation admitted.
+func (r *harnessProcessRecord) initial() bool {
+	return r.ContextMode == string(domain.ContextFresh)
+}
+
+// startIdentity is the identity a view gives the start: a creation request
+// derives the Work, so the first start is named by the Work, and a Resume or
+// Restart request derives its Desk, which names that start.
+func (r *harnessProcessRecord) startIdentity(workID string) string {
+	if r.initial() || r.DeskID == "" {
+		return workID
+	}
+	return r.DeskID
+}
+
 type subAgentRecord struct {
 	ID     string `json:"id"`
 	Type   string `json:"type,omitempty"`
@@ -150,24 +171,6 @@ type turnObservationRecord struct {
 	Active    bool  `json:"active"`
 	Completed bool  `json:"completed"`
 }
-
-// startRequestDO is the record of one caller request identity for a Work
-// creation, Resume or Restart: admitted, refused or cancelled, never a
-// process run.
-type startRequestDO struct {
-	CreationScope string `xorm:"creation_scope varchar(64)"`
-	ID            string `xorm:"id pk varchar(36)"`
-	SessionID     string `xorm:"session_id varchar(36)"`
-	Kind          string `xorm:"kind varchar(16)"`
-	Fingerprint   string `xorm:"fingerprint varchar(64)"`
-	Canceled      bool   `xorm:"canceled"`
-	Version       int    `xorm:"'version'"`
-	CreatedAt     int64  `xorm:"created_at"`
-	UpdatedAt     int64  `xorm:"updated_at"`
-	DeletedAt     int64  `xorm:"deleted_at"`
-}
-
-func (startRequestDO) TableName() string { return "agent_start_request" }
 
 type workProgressRecord struct {
 	Items     []workProgressItemRecord `json:"items"`

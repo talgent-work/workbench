@@ -2,17 +2,11 @@ package query
 
 import "context"
 
-// RecoveryWorkQueryRepository lists conversations holding execution grants,
-// including completed Sessions whose grant release was interrupted.
-type RecoveryWorkQueryRepository interface {
-	ListWorkIDs(context.Context, string, int) ([]string, error)
-}
-
 type ListRecoveryWorksHandler struct {
-	repository RecoveryWorkQueryRepository
+	repository ExecutionQueryRepository
 }
 
-func NewListRecoveryWorksHandler(repository RecoveryWorkQueryRepository) *ListRecoveryWorksHandler {
+func NewListRecoveryWorksHandler(repository ExecutionQueryRepository) *ListRecoveryWorksHandler {
 	return &ListRecoveryWorksHandler{repository: repository}
 }
 

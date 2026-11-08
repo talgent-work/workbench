@@ -7,6 +7,7 @@ import (
 
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
 )
 
@@ -141,47 +142,47 @@ func workFile(workID string, kind agentpublicv1.WorkFileKind, name string) (pers
 	file := personalwork.WorkFile{WorkID: workID, Name: name}
 	switch kind {
 	case agentpublicv1.WorkFileKind_WORK_FILE_KIND_ATTACHMENT:
-		file.Kind = personalwork.FileKindAttachment
+		file.Kind = command.FileKindAttachment
 	case agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT:
-		file.Kind = personalwork.FileKindArtifact
+		file.Kind = command.FileKindArtifact
 	default:
 		return personalwork.WorkFile{}, personalwork.ErrInvalidRequest
 	}
 	return file, nil
 }
 
-func workFileKindToProto(kind personalwork.FileKind) agentpublicv1.WorkFileKind {
+func workFileKindToProto(kind command.FileKind) agentpublicv1.WorkFileKind {
 	switch kind {
-	case personalwork.FileKindAttachment:
+	case command.FileKindAttachment:
 		return agentpublicv1.WorkFileKind_WORK_FILE_KIND_ATTACHMENT
-	case personalwork.FileKindArtifact:
+	case command.FileKindArtifact:
 		return agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT
 	default:
 		return agentpublicv1.WorkFileKind_WORK_FILE_KIND_UNSPECIFIED
 	}
 }
 
-func shareLinkToProto(link personalwork.ShareLink) *agentpublicv1.WorkFileShareLink {
+func shareLinkToProto(link command.ShareLink) *agentpublicv1.WorkFileShareLink {
 	return &agentpublicv1.WorkFileShareLink{Token: link.Token, Url: link.URL, CreatedByUserId: link.CreatedByUserID, CreatedAt: timestamppb.New(link.CreatedAt)}
 }
 
-var previewModesToProto = map[personalwork.PreviewMode]agentpublicv1.WorkFilePreviewMode{
-	personalwork.PreviewRefused: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_REFUSED, personalwork.PreviewCopy: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_PREVIEW_COPY,
-	personalwork.PreviewRender: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_RENDER, personalwork.PreviewDirect: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_DIRECT,
-	personalwork.PreviewTruncated: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_TRUNCATED,
+var previewModesToProto = map[command.PreviewMode]agentpublicv1.WorkFilePreviewMode{
+	command.PreviewRefused: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_REFUSED, command.PreviewCopy: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_PREVIEW_COPY,
+	command.PreviewRender: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_RENDER, command.PreviewDirect: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_DIRECT,
+	command.PreviewTruncated: agentpublicv1.WorkFilePreviewMode_WORK_FILE_PREVIEW_MODE_TRUNCATED,
 }
 
-var previewDisplaysToProto = map[personalwork.PreviewDisplay]agentpublicv1.WorkFilePreviewDisplay{
-	personalwork.PreviewText: agentpublicv1.WorkFilePreviewDisplay_WORK_FILE_PREVIEW_DISPLAY_TEXT, personalwork.PreviewPDF: agentpublicv1.WorkFilePreviewDisplay_WORK_FILE_PREVIEW_DISPLAY_PDF,
-	personalwork.PreviewImage: agentpublicv1.WorkFilePreviewDisplay_WORK_FILE_PREVIEW_DISPLAY_IMAGE,
+var previewDisplaysToProto = map[command.PreviewDisplay]agentpublicv1.WorkFilePreviewDisplay{
+	command.PreviewText: agentpublicv1.WorkFilePreviewDisplay_WORK_FILE_PREVIEW_DISPLAY_TEXT, command.PreviewPDF: agentpublicv1.WorkFilePreviewDisplay_WORK_FILE_PREVIEW_DISPLAY_PDF,
+	command.PreviewImage: agentpublicv1.WorkFilePreviewDisplay_WORK_FILE_PREVIEW_DISPLAY_IMAGE,
 }
 
-var previewRefusalsToProto = map[personalwork.PreviewRefusal]agentpublicv1.WorkFilePreviewRefusal{
-	personalwork.PreviewUnsupported:       agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_UNSUPPORTED,
-	personalwork.PreviewStructureMismatch: agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_STRUCTURE_MISMATCH,
-	personalwork.PreviewEncrypted:         agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_ENCRYPTED,
-	personalwork.PreviewTooLarge:          agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_TOO_LARGE,
-	personalwork.PreviewCorrupt:           agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_CORRUPT,
-	personalwork.PreviewConverterRefused:  agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_CONVERTER_REFUSED,
-	personalwork.PreviewRenderingTooLarge: agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_RENDERING_TOO_LARGE,
+var previewRefusalsToProto = map[command.PreviewRefusal]agentpublicv1.WorkFilePreviewRefusal{
+	command.PreviewUnsupported:       agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_UNSUPPORTED,
+	command.PreviewStructureMismatch: agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_STRUCTURE_MISMATCH,
+	command.PreviewEncrypted:         agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_ENCRYPTED,
+	command.PreviewTooLarge:          agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_TOO_LARGE,
+	command.PreviewCorrupt:           agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_CORRUPT,
+	command.PreviewConverterRefused:  agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_CONVERTER_REFUSED,
+	command.PreviewRenderingTooLarge: agentpublicv1.WorkFilePreviewRefusal_WORK_FILE_PREVIEW_REFUSAL_RENDERING_TOO_LARGE,
 }

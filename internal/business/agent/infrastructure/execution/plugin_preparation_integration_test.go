@@ -26,7 +26,7 @@ func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	record := allocationRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
+	record := executionRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
 	_, err = db.Insert(&record)
 	require.NoError(t, err)
 	var reservations, attachments atomic.Int32
@@ -72,7 +72,7 @@ func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, "prepare-1", <-attachedHandle, "the handle is durable before observation stops")
 	require.Equal(t, "prepare-1", record.PreparationProcessID)
-	require.False(t, record.EnvironmentPrepared)
+	require.False(t, record.PreparationEnded)
 	require.Empty(t, record.ProcessID)
 	retained, found, err := latestAllocation(t.Context(), db, record.SessionID)
 	require.NoError(t, err)
@@ -83,9 +83,9 @@ func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.
 	require.NoError(t, err, "installation failure is a reported degradation, not a preparation retry")
 	require.Equal(t, domain.PreparationReport{Installations: []domain.PluginInstallation{{Slug: "runtime", Reason: "installation_failed"}}, Checkouts: []domain.RepositoryCheckout{}}, report)
 	require.EqualValues(t, 1, reservations.Load())
-	require.False(t, retained.EnvironmentPrepared, "the execution records its preparation ended with the reported outcomes")
+	require.False(t, retained.PreparationEnded, "the execution records its preparation ended with the reported outcomes")
 	// The execution records its preparation ended once the step returned.
-	_, err = db.Exec("UPDATE execution_allocation SET plugins_prepared = 1 WHERE id = ?", record.ID)
+	_, err = db.Exec("UPDATE agent_execution SET preparation_ended = 1 WHERE id = ?", record.ID)
 	require.NoError(t, err)
 	retained, _, err = latestAllocation(t.Context(), db, record.SessionID)
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestPluginPreparationDeletionRecoversAfterLostRetirement(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	p := &Provisioning{records: records{db: db}, now: time.Now}
 	n := &NativeConnections{provisioning: p}
-	record := allocationRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationProcessID: "preparing", PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
+	record := executionRecord{ID: uuid.NewString(), SessionID: uuid.NewString(), SandboxID: "sandbox", Version: 1, PreparationProcessID: "preparing", PreparationCommand: "native plugin preparation", RequestJSON: []byte(`{}`), SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
 	_, err = db.Insert(&record)
 	require.NoError(t, err)
 	var unavailable, deleted atomic.Bool
@@ -157,7 +157,7 @@ func TestPluginPreparationDeletionRecoversAfterLostRetirement(t *testing.T) {
 	require.True(t, found)
 	require.Empty(t, after.PreparationProcessID)
 	require.Empty(t, after.ProcessID, "preparation cleanup does not invent a Harness process or exit")
-	require.False(t, after.EnvironmentPrepared, "cancellation is not successful preparation")
+	require.False(t, after.PreparationEnded, "cancellation is not successful preparation")
 	require.Zero(t, after.DeletedAt, "compute removal remains with its existing lifecycle")
 	before := calls.Load()
 	require.NoError(t, recovered.discardPluginPreparation(t.Context(), &after, client))

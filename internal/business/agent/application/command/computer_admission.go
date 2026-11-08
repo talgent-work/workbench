@@ -31,10 +31,11 @@ const (
 	ComputerRejected ComputerAnswerKind = "rejected"
 )
 
-// ComputerAnswer is a Computer's answer to one run; a rejection carries its
-// reason as a domain error.
+// ComputerAnswer is a Computer's answer to one run, naming what the Computer
+// is; a rejection carries its reason as a domain error.
 type ComputerAnswer struct {
 	Kind      ComputerAnswerKind
+	Computer  domain.ComputerKind
 	Rejection error
 }
 
@@ -103,6 +104,10 @@ func workComputer(ctx context.Context, computers ComputerPort, personID, chosen 
 // so the request can no longer start.
 var ErrDeskUnavailable = errors.New("agent: the request's Desk already left")
 
+// ErrStartRequestConflict reports that the Desk a request identity derives
+// belongs to another run: the identity names another start than its first.
+var ErrStartRequestConflict = errors.New("agent: start request identity belongs to another operation")
+
 // admitRun asks the Work's Computer to admit one run under the Desk its
 // request names: it is seated, or waits in the Computer's line when the
 // Computer queues a run while full. A repeated Desk identity is answered with
@@ -114,7 +119,7 @@ func admitRun(ctx context.Context, computers ComputerPort, run RunAdmission) (do
 	}
 	switch answer.Kind {
 	case ComputerSeated, ComputerWaiting:
-		return domain.ComputerSeat{ComputerID: run.ComputerID, DeskID: run.DeskID, Waiting: answer.Kind == ComputerWaiting}, nil
+		return domain.ComputerSeat{ComputerID: run.ComputerID, Kind: answer.Computer, DeskID: run.DeskID, Waiting: answer.Kind == ComputerWaiting}, nil
 	default:
 		if answer.Rejection != nil {
 			return domain.ComputerSeat{}, answer.Rejection

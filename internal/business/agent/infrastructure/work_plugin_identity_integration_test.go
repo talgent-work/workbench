@@ -4,7 +4,6 @@ package infrastructure_test
 
 import (
 	"context"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"testing"
 	"time"
 
@@ -28,7 +27,7 @@ func TestCreationRetainsPersonalOwner(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = otherDB.Close() })
 	works := infrastructure.NewAgentWorkRepository(otherDB, time.Now)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(otherDB)), deploymentModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(otherDB, deploymentModels()))
+	handler := command.NewCreateWorkHandler(time.Now, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(otherDB).WorkOwners), deploymentModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(otherDB, deploymentModels()))
 	id, err := handler.Handle(t.Context(), f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)
@@ -54,7 +53,7 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 	require.NoError(t, err)
 	selectedID, otherID := uuid.NewString(), uuid.NewString()
 	input := domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
-		Admission:          domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true},
+		Admission:          domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
 		WorkModel:          domain.WorkModelSelection{ConfigurationID: "fixture"},
 		WorkspaceReference: "workspace", Subject: f.request.Subject, ProjectID: f.request.ProjectID,
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner", Available: []domain.PersonalAuthorization{
@@ -65,9 +64,7 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 	work, created, err := agent.CreateWork(input, subjectWork(t, f.sessions, agent.ID, input.Subject))
 	require.NoError(t, err)
 	require.True(t, created)
-	require.NoError(t, f.sessions.RegisterWork(t.Context(), work, command.WorkRegistration{
-		SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}, DefinitionVersion: agent.Version,
-	}))
+	require.NoError(t, f.sessions.Save(t.Context(), work))
 	retained, err := f.sessions.Get(t.Context(), work.ID)
 	require.NoError(t, err)
 	want := domain.WorkAuthorizationSelection{OwnerUserID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: selectedID, Provider: "github", Service: "github"}, {AuthorizationID: otherID, Provider: "other", Service: "other"}}}

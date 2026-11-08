@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -61,7 +62,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 		{"", "revoked"}, {"", "reconnect_required"}, {"reauthorized-provider-token", ""},
 	} {
 		supply.token, supply.reason = stage.token, stage.reason
-		delivery, err := f.provisioning.credentials.prepare(ctx, record, admitted, spec, stage.token != "initial-provider-token")
+		delivery, err := f.provisioning.credentials.prepare(ctx, record, admitted, spec, stage.token != "initial-provider-token", admitting)
 		statuses, expiry := delivery.Statuses, delivery.ExpiresAt
 		require.NoError(t, err)
 		if stage.token == "" {
@@ -114,17 +115,17 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 }
 
 type currentServiceSupply struct {
-	application.CredentialSupplyPort
+	command.MarketplacePort
 	token, reason string
-	received      []application.ServiceCredentialRequest
+	received      []command.ServiceCredentialRequest
 }
 
-func (s *currentServiceSupply) SupplyServiceCredential(_ context.Context, request application.ServiceCredentialRequest) (application.ServiceCredentialMaterial, error) {
+func (s *currentServiceSupply) SupplyServiceCredential(_ context.Context, request command.ServiceCredentialRequest) (command.ServiceCredentialMaterial, error) {
 	s.received = append(s.received, request)
 	if s.reason != "" {
-		return application.ServiceCredentialMaterial{}, &application.ServiceCredentialUnavailable{Reason: s.reason, Temporary: s.reason == "unavailable"}
+		return command.ServiceCredentialMaterial{}, &command.ServiceCredentialUnavailable{Reason: s.reason, Temporary: s.reason == "unavailable"}
 	}
-	return application.ServiceCredentialMaterial{Token: s.token, ExpiresAt: time.Now().Add(time.Hour)}, nil
+	return command.ServiceCredentialMaterial{Token: s.token, ExpiresAt: time.Now().Add(time.Hour)}, nil
 }
 
 // Marketplace reports revoked and reconnect-required authorizations as inactive.

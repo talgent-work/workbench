@@ -15,6 +15,7 @@ import (
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"xorm.io/xorm"
 )
@@ -115,14 +116,14 @@ var staleDelivery = time.UnixMilli(1)
 // it has and reports itself stale. It reports the service access observed and
 // the earliest declared expiry of what it delivered, zero when nothing
 // delivered expires.
-func (c *SandboxCredentials) prepare(ctx context.Context, record allocationRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool) (deliveredCredentials, error) {
-	statuses, expiry, digest, err := c.write(ctx, record, admitted, spec, redelivery)
+func (c *SandboxCredentials) prepare(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
+	statuses, expiry, digest, err := c.write(ctx, record, admitted, spec, redelivery, holding)
 	return deliveredCredentials{Statuses: statuses, ExpiresAt: expiry, ModelDigest: digest}, err
 }
 
-func (c *SandboxCredentials) write(ctx context.Context, record allocationRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool) ([]ServiceAccessStatus, time.Time, string, error) {
+func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool, holding command.EnvironmentHolding) ([]ServiceAccessStatus, time.Time, string, error) {
 	var none time.Time
-	if _, err := c.records.holding(ctx, record); err != nil {
+	if err := holding(ctx); err != nil {
 		return nil, none, "", err
 	}
 	if spec.CredentialProxy == nil || !spec.CredentialProxy.Enabled || spec.NetworkPolicy == nil || spec.NetworkPolicy.DefaultAction != "allow" {
@@ -187,7 +188,7 @@ func (c *SandboxCredentials) write(ctx context.Context, record allocationRecord,
 	if policy.EnforcementMode != "dns+nft" || policy.Policy == nil || !reflect.DeepEqual(policy.Policy, spec.NetworkPolicy) {
 		return nil, none, "", errors.New("agent: credential network policy not ready")
 	}
-	if _, err := c.records.holding(ctx, record); err != nil {
+	if err := holding(ctx); err != nil {
 		return nil, none, "", err
 	}
 	before, err := client.GetCredentialVault(ctx)
@@ -218,7 +219,9 @@ func (c *SandboxCredentials) write(ctx context.Context, record allocationRecord,
 		}
 		return nil, none, "", errors.New("agent: credential write not confirmed")
 	}
-	if _, err := c.records.holding(ctx, record); err != nil {
+	// An exit request admitted while writing must not leave the credentials
+	// behind (Credential withdrawal).
+	if err := holding(ctx); err != nil {
 		if clearErr := c.clear(ctx, record.SandboxID); clearErr != nil {
 			return nil, none, "", clearErr
 		}

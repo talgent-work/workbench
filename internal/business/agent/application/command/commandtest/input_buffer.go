@@ -15,7 +15,7 @@ import (
 // stands in for no other part of the running Harness: a test that reaches one
 // fails loudly on the nil port it embeds.
 type InputBuffer struct {
-	command.RunningHarnessPort
+	command.DispatcherPort
 	mu      sync.Mutex
 	Inputs  []command.ExecutionInput
 	Replies []command.InteractionResponse
@@ -24,7 +24,7 @@ type InputBuffer struct {
 	settled map[identity]bool
 }
 
-var _ command.RunningHarnessPort = (*InputBuffer)(nil)
+var _ command.DispatcherPort = (*InputBuffer)(nil)
 
 // identity names a buffer entry: an input, or the interaction a reply answered.
 type identity struct {

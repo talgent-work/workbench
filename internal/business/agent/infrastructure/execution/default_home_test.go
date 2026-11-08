@@ -37,7 +37,7 @@ func TestSuppliedHomesReachNativeSandboxWithBusinessOwnership(t *testing.T) {
 		snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.Capabilities.RequiredPlugins}, []domain.PluginRelease{{Slug: "talgent-runtime", Source: "fixture", Version: "1", RetrievalRef: "fixture:runtime", NativeEntry: []byte(`{"name":"talgent-runtime","version":"1"}`)}})
 		require.NoError(t, err)
 		created, isNew, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: "owner",
-			Capabilities: snapshot, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true},
+			Capabilities: snapshot, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
 			WorkModel:          domain.WorkModelSelection{ConfigurationID: "deployment-default"},
 			Subject:            domain.WorkSubject{Kind: "case", ID: subject + "/" + uuid.NewString()},
 			ProjectID:          project,
@@ -119,7 +119,10 @@ func (s *defaultHomeSubmission) StartExecution(ctx context.Context, input domain
 // directoryMounts stands in for Storage: it prepares each space as a
 // directory of root, the one workspace per reference, HOME per owner and the
 // caller's read-only mounts.
-type directoryMounts struct{ root string }
+type directoryMounts struct {
+	command.StoragePort
+	root string
+}
 
 func (m directoryMounts) AcquireMounts(_ context.Context, request domain.SandboxMountRequest) (domain.SandboxMounts, error) {
 	workspace, home := filepath.Join("workspaces", request.WorkspaceReference), filepath.Join("homes", request.HomeOwner)

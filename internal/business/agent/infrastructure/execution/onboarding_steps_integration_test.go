@@ -28,7 +28,7 @@ type onboardingFixture struct {
 	lifecycle *lifecycleFixture
 	owners    *readingProcess
 	db        *xorm.Engine
-	record    allocationRecord
+	record    executionRecord
 }
 
 // newOnboarding begins one Work's execution, submits its creation and binds
@@ -61,14 +61,14 @@ func newOnboarding(t *testing.T) *onboardingFixture {
 	record, _, err = latestAllocation(ctx, db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, sandboxID, record.SandboxID)
-	require.False(t, record.SandboxReady)
+	require.False(t, record.CredentialsDelivered)
 	return &onboardingFixture{steps: steps, lifecycle: lifecycle, owners: owners, db: db, record: record}
 }
 
 // at moves the execution to an onboarding stage directly.
 func (f *onboardingFixture) at(t *testing.T, assignment string) {
 	t.Helper()
-	_, err := f.db.Exec("UPDATE execution_allocation SET "+assignment+", version = version + 1 WHERE id = ?", f.record.ID)
+	_, err := f.db.Exec("UPDATE agent_execution SET "+assignment+", version = version + 1 WHERE id = ?", f.record.ID)
 	require.NoError(t, err)
 }
 
@@ -80,7 +80,7 @@ func (f *onboardingFixture) delivered(t *testing.T) {
 	digest, err := f.steps.environment.connections.credentials.modelDigest(record)
 	require.NoError(t, err)
 	require.NotEmpty(t, digest, "the fixture's Work has a model key")
-	_, err = f.db.Exec("UPDATE execution_allocation SET model_credential_digest = ? WHERE id = ?", digest, f.record.ID)
+	_, err = f.db.Exec("UPDATE agent_execution SET model_credential_digest = ? WHERE id = ?", digest, f.record.ID)
 	require.NoError(t, err)
 }
 
@@ -102,7 +102,7 @@ func (f *onboardingFixture) step(t *testing.T) []domain.ExecutionStepKind {
 	run := f.execution(t)
 	observation, err := f.steps.environment.Observe(context.Background(), run)
 	require.NoError(t, err)
-	decision, err := run.Reconcile(observation, time.Now())
+	decision, err := run.Reconcile(observation, fixtureLease, time.Now())
 	require.NoError(t, err)
 	kinds := []domain.ExecutionStepKind{}
 	for _, step := range decision.Steps {
@@ -127,9 +127,9 @@ func stepKinds(kinds ...domain.ExecutionStepKind) []domain.ExecutionStepKind {
 func TestSweepNamesOnlyTheMissingOnboardingStep(t *testing.T) {
 	f := newOnboarding(t)
 	require.Equal(t, stepKinds(domain.StepDeliverCredentials), f.step(t), "a sandbox not yet delivered")
-	f.at(t, "sandbox_ready = 1")
+	f.at(t, "credentials_delivered = 1")
 	require.Equal(t, stepKinds(domain.StepPrepare), f.step(t), "a delivered sandbox not yet prepared")
-	f.at(t, "plugins_prepared = 1, process_id = 'process-1'")
+	f.at(t, "preparation_ended = 1, process_id = 'process-1'")
 	f.delivered(t)
 	require.Equal(t, stepKinds(domain.StepConnect), f.step(t), "a running process whose stream nobody reads")
 	f.owners.reading = StreamReading{ProcessID: "process-0"}
@@ -157,7 +157,7 @@ func TestSweepNamesOnlyTheMissingOnboardingStep(t *testing.T) {
 func TestObservedSandboxDeletionLosesTheEnvironment(t *testing.T) {
 	ctx := context.Background()
 	f := newOnboarding(t)
-	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
+	f.at(t, "credentials_delivered = 1, preparation_ended = 1, process_id = 'process-1'")
 	f.delivered(t)
 	f.owners.reading = StreamReading{ProcessID: "process-1", Endpoint: "http://192.0.2.8:44772"}
 	require.Equal(t, stepKinds(), f.step(t), "a running sandbox at the read endpoint needs nothing")
@@ -193,7 +193,7 @@ func (f *onboardingFixture) requestExit(t *testing.T) {
 // its execution or deletes its sandbox.
 func TestSweepWakesTheDrainOfAStoppedWork(t *testing.T) {
 	f := newOnboarding(t)
-	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
+	f.at(t, "credentials_delivered = 1, preparation_ended = 1, process_id = 'process-1'")
 	f.owners.reading = StreamReading{ProcessID: "process-1"}
 	f.requestExit(t)
 	require.Equal(t, stepKinds(domain.StepWithdrawCredentials, domain.StepSignalExit), f.step(t))
@@ -217,7 +217,7 @@ func TestSweepWakesTheDrainOfAStoppedWork(t *testing.T) {
 func TestDrainOfAGoneSandboxLearnsTheLoss(t *testing.T) {
 	ctx := context.Background()
 	f := newOnboarding(t)
-	f.at(t, "sandbox_ready = 1, plugins_prepared = 1, process_id = 'process-1'")
+	f.at(t, "credentials_delivered = 1, preparation_ended = 1, process_id = 'process-1'")
 	f.requestExit(t)
 	f.lifecycle.mu.Lock()
 	f.lifecycle.info = nil
@@ -237,7 +237,7 @@ func TestDrainOfAGoneSandboxLearnsTheLoss(t *testing.T) {
 // none.
 func TestStaleAllocationReportsNoLoss(t *testing.T) {
 	f := newOnboarding(t)
-	f.at(t, "sandbox_ready = 1, process_id = 'process-1', process_exited = 1, state = 'retired', retirement = 'exited', deleted_at = 1")
+	f.at(t, "credentials_delivered = 1, process_id = 'process-1', process_exited = 1, state = 'retired', retirement = 'exited', deleted_at = 1")
 	f.lifecycle.mu.Lock()
 	f.lifecycle.info = nil
 	f.lifecycle.mu.Unlock()
@@ -252,7 +252,7 @@ func TestStaleAllocationReportsNoLoss(t *testing.T) {
 // execution records the failed start and nothing is attempted.
 func TestPreparationPastTheStartupDeadlineAttemptsNothing(t *testing.T) {
 	f := newOnboarding(t)
-	f.at(t, fmt.Sprintf("sandbox_ready = 1, seated_at = %d", time.Now().Add(-domain.StartupDeadline-time.Minute).UnixMilli()))
+	f.at(t, fmt.Sprintf("credentials_delivered = 1, seated_at = %d", time.Now().Add(-domain.StartupDeadline-time.Minute).UnixMilli()))
 	require.NoError(t, f.steps.handler.RunLongStep(context.Background(), f.record.ID))
 	record, _, err := f.steps.environment.provisioning.get(context.Background(), f.record.ID)
 	require.NoError(t, err)

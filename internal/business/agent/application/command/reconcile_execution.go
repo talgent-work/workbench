@@ -13,16 +13,19 @@ import (
 // the execution decide, and takes each decided step through the port that
 // reaches it, recording the outcome on the execution.
 type ReconcileExecutionHandler struct {
-	now          func() time.Time
+	now func() time.Time
+	// lease is how the platform is configured to lease Cloud environments,
+	// supplied to each decision.
+	lease        domain.LeaseTerms
 	executions   domain.AgentExecutionRepository
 	environments ExecutionEnvironmentPort
-	harness      RunningHarnessPort
+	harness      DispatcherPort
 	computers    ComputerPort
-	mounts       SandboxMountPort
+	mounts       StoragePort
 }
 
-func NewReconcileExecutionHandler(now func() time.Time, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness RunningHarnessPort, computers ComputerPort, mounts SandboxMountPort) *ReconcileExecutionHandler {
-	return &ReconcileExecutionHandler{now: now, executions: executions, environments: environments, harness: harness, computers: computers, mounts: mounts}
+func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, mounts StoragePort) *ReconcileExecutionHandler {
+	return &ReconcileExecutionHandler{now: now, lease: lease, executions: executions, environments: environments, harness: harness, computers: computers, mounts: mounts}
 }
 
 // reconcileRounds bounds the decisions one reconciliation makes: after a step
@@ -122,7 +125,7 @@ func (h *ReconcileExecutionHandler) decide(ctx context.Context, executionID stri
 	if observation, err = h.environments.Observe(ctx, execution); err != nil {
 		return nil, none, observation, err
 	}
-	decision, err := execution.Reconcile(observation, h.now())
+	decision, err := execution.Reconcile(observation, h.lease, h.now())
 	if err != nil {
 		return nil, none, observation, err
 	}
@@ -151,6 +154,27 @@ func (h *ReconcileExecutionHandler) seat(ctx context.Context, execution *domain.
 		seatedAt = h.now()
 	}
 	return execution.Seat(seatedAt)
+}
+
+// holding is the check an environment operation asks between its remote
+// calls: it reloads the execution and asks whether it still admits an action
+// in the environment the operation acts in (Admit environment action), so an
+// exit request admitted meanwhile stops what follows.
+func (h *ReconcileExecutionHandler) holding(execution *domain.AgentExecution) EnvironmentHolding {
+	executionID, environmentID := execution.ID, execution.Environment
+	return func(ctx context.Context) error {
+		current, err := h.executions.Get(ctx, executionID)
+		if errors.Is(err, domain.ErrExecutionNotFound) {
+			return ErrEnvironmentActionRefused
+		}
+		if err != nil {
+			return err
+		}
+		if !current.AdmitEnvironmentAction(environmentID) {
+			return ErrEnvironmentActionRefused
+		}
+		return nil
+	}
 }
 
 // confirmRelease confirms a retired execution's release once it left its

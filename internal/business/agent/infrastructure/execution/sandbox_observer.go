@@ -24,8 +24,8 @@ var BatchSandboxes = schema.GroupVersionResource{Group: "sandbox.opensandbox.io"
 // observationTimeout bounds one event's ownership lookup and wake.
 const observationTimeout = 5 * time.Second
 
-// SandboxObserver watches Talgent's sandboxes and wakes the allocation each one
-// belongs to. It never decides or deletes: the allocation's reconciliation
+// SandboxObserver watches Talgent's sandboxes and wakes the execution each one
+// belongs to. It never decides or deletes: the execution's reconciliation
 // re-reads the sandbox and its exact ownership before acting. Watch
 // interruptions and expired resource versions are recovered by relisting, which
 // re-observes every current sandbox.
@@ -45,12 +45,14 @@ func NewSandboxObserver(client dynamic.Interface, namespace string, db *xorm.Eng
 }
 
 // Run observes sandboxes until ctx ends. Each observation is queued by the
-// allocation label it carries; a failed lookup or wake is retried with backoff,
-// because a retired allocation's late sandbox is woken by nothing else.
+// value of the ownership label it carries; a failed lookup or wake is retried
+// with backoff, because a retired execution's late sandbox is woken by
+// nothing else. A selector cannot match either of two ownership labels, so
+// it selects the session label every Agent sandbox carries beside either.
 func (o *SandboxObserver) Run(ctx context.Context) error {
 	labels := workqueue.NewTypedRateLimitingQueue(workqueue.NewTypedItemExponentialFailureRateLimiter[string](time.Second, time.Minute))
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(o.client, 0, o.namespace, func(options *metav1.ListOptions) {
-		options.LabelSelector = sandboxAllocationLabel
+		options.LabelSelector = sandboxSessionLabel
 	})
 	informer := factory.ForResource(BatchSandboxes).Informer()
 	observe := func(object any) {
@@ -84,7 +86,7 @@ func (o *SandboxObserver) Run(ctx context.Context) error {
 	return nil
 }
 
-// next wakes the allocation one queued label names.
+// next wakes the execution one queued label names.
 func (o *SandboxObserver) next(ctx context.Context, labels workqueue.TypedRateLimitingInterface[string]) bool {
 	label, shutdown := labels.Get()
 	if shutdown {
@@ -93,17 +95,17 @@ func (o *SandboxObserver) next(ctx context.Context, labels workqueue.TypedRateLi
 	defer labels.Done(label)
 	attempt, cancel := context.WithTimeout(ctx, observationTimeout)
 	defer cancel()
-	allocation, found, err := o.records.forSandbox(attempt, label)
+	execution, found, err := o.records.forSandbox(attempt, label)
 	if err == nil && found {
-		err = o.wake(attempt, allocation)
+		err = o.wake(attempt, execution)
 	}
 	switch {
 	case err != nil:
-		o.logger.WarnContext(attempt, "sandbox observation will be retried", slog.String("allocation_label", label), slog.Any("error", err))
+		o.logger.WarnContext(attempt, "sandbox observation will be retried", slog.String("ownership_label", label), slog.Any("error", err))
 		labels.AddRateLimited(label)
 		return true
 	case !found:
-		o.logger.WarnContext(attempt, "sandbox ownership unknown; left in place", slog.String("namespace", o.namespace), slog.String("allocation_label", label))
+		o.logger.WarnContext(attempt, "sandbox ownership unknown; left in place", slog.String("namespace", o.namespace), slog.String("ownership_label", label))
 	}
 	labels.Forget(label)
 	return true
@@ -114,7 +116,8 @@ func sandboxLabel(object any) string {
 		object = tombstone.Obj
 	}
 	if sandbox, ok := object.(*unstructured.Unstructured); ok {
-		return sandbox.GetLabels()[sandboxAllocationLabel]
+		labels := sandbox.GetLabels()
+		return labels[ownershipLabelOf(labels)]
 	}
 	return ""
 }

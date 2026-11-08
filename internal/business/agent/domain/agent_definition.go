@@ -355,5 +355,6 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 	if err != nil {
 		return nil, false, err
 	}
+	session.DefinitionVersion = a.Version
 	return session, true, nil
 }

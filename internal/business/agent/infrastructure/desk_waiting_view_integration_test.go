@@ -22,7 +22,7 @@ import (
 type waitingComputer struct{ command.ComputerPort }
 
 func (waitingComputer) AdmitRun(context.Context, command.RunAdmission) (command.ComputerAnswer, error) {
-	return command.ComputerAnswer{Kind: command.ComputerWaiting}, nil
+	return command.ComputerAnswer{Kind: command.ComputerWaiting, Computer: domain.ComputerCloud}, nil
 }
 
 // A start admitted waiting shows its Desk waiting while its execution is not
@@ -30,7 +30,7 @@ func (waitingComputer) AdmitRun(context.Context, command.RunAdmission) (command.
 func TestWorkViewShowsDeskWaitingUntilTheExecutionIsSeated(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}, creationPreparation(f.db, creationModels())).Handle(ctx, f.request)
 	require.NoError(t, err)
 	views := infrastructure.NewWorkQueryRepository(f.db)
@@ -61,7 +61,7 @@ func TestWorkViewShowsDeskWaitingUntilTheExecutionIsSeated(t *testing.T) {
 func TestRecoveryListsAWithdrawnStartUntilItsExecutionRetires(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	id, err := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), waitingComputer{computertest.Checked(startupAuthority{})}, creationPreparation(f.db, creationModels())).Handle(ctx, f.request)
 	require.NoError(t, err)
 	run := newRuns(t, f.db, f.sessions)

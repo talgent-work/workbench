@@ -12,14 +12,14 @@ type CloudLaunch struct {
 	Diagnostic string
 }
 
-// CloudLaunch renders the Harness launch of request in allocation as a Cloud
+// CloudLaunch renders the Harness launch of request for owner as a Cloud
 // sandbox runs it, for a caller that runs the Harness outside one: the
 // integration tests of a module that cannot reach this package's internals
 // (internal/testsupport/agenttest). Production starts go through Sandboxes.
-func (c NativeLaunchConfig) CloudLaunch(request domain.LaunchSpecification, allocation Allocation) (CloudLaunch, error) {
-	launch, err := c.prepare(sandboxLayout, request, allocation, "")
+func (c NativeLaunchConfig) CloudLaunch(request domain.LaunchSpecification, owner SandboxOwner) (CloudLaunch, error) {
+	launch, err := c.prepare(sandboxLayout, request, owner, "")
 	if err != nil {
 		return CloudLaunch{}, err
 	}
-	return CloudLaunch{Command: launch.Command, SessionID: launch.SessionID, Diagnostic: sandboxDiagnostics + diagnosticName(allocation)}, nil
+	return CloudLaunch{Command: launch.Command, SessionID: launch.SessionID, Diagnostic: sandboxDiagnostics + diagnosticName(owner)}, nil
 }

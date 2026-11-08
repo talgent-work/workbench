@@ -1,4 +1,4 @@
-// Package storage is Agent's client of Storage's Sandbox Mount Contract.
+// Package storage is Agent's client of Storage's contract.
 package storage
 
 import (
@@ -25,14 +25,16 @@ type Config struct {
 	Token   string `json:"token" yaml:"token" toml:"token"`
 }
 
-// Client names a Work's spaces by business identity; it never sees a location.
+// Client is Agent's one client of Storage's contract. It names a Work's
+// spaces by business identity; it never sees a location.
 type Client struct {
 	mounts storageprivatev1connect.SandboxMountServiceClient
+	files  storageprivatev1connect.FileSpaceServiceClient
 	token  string
 }
 
 var (
-	_ command.SandboxMountPort    = (*Client)(nil)
+	_ command.StoragePort         = (*Client)(nil)
 	_ execution.StorageWorkspaces = (*Client)(nil)
 )
 
@@ -40,7 +42,12 @@ func NewClient(httpClient connecthttp.HTTPClient, config Config) (*Client, error
 	if strings.TrimSpace(config.Address) == "" || strings.TrimSpace(config.Token) == "" {
 		return nil, errors.New("agent: Storage address and control token are required")
 	}
-	return &Client{mounts: storageprivatev1connect.NewSandboxMountServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, config.Address, connecthttp.WithReadMaxBytes(0)))), token: config.Token}, nil
+	transport := connect.NewClient(connecthttp.NewTransport(httpClient, config.Address, connecthttp.WithReadMaxBytes(0)))
+	return &Client{
+		mounts: storageprivatev1connect.NewSandboxMountServiceClient(transport),
+		files:  storageprivatev1connect.NewFileSpaceServiceClient(transport),
+		token:  config.Token,
+	}, nil
 }
 
 // authorized is the context of a call under the control token.
@@ -92,8 +99,8 @@ func (c *Client) RequestWorkspaceReclamation(ctx context.Context, workID, worksp
 	return nil
 }
 
-func (c *Client) WorkspaceView(ctx context.Context, workspace application.ViewedWorkspace, path string) (application.WorkspaceListing, error) {
-	response, err := c.mounts.GetWorkspaceView(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceViewRequest{WorkspaceReference: workspace.Reference, InputSource: workspace.InputSource.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
+func (c *Client) WorkspaceView(ctx context.Context, workspace domain.WorkspaceLocation, path string) (application.WorkspaceListing, error) {
+	response, err := c.mounts.GetWorkspaceView(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceViewRequest{WorkspaceReference: workspace.SessionWorkspace, InputSource: workspace.InputSource.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
 	if err != nil {
 		return application.WorkspaceListing{}, workspaceError("storage.workspace_view", err)
 	}
@@ -107,8 +114,8 @@ func (c *Client) WorkspaceView(ctx context.Context, workspace application.Viewed
 	return listing, nil
 }
 
-func (c *Client) PreviewWorkspaceFile(ctx context.Context, workspace application.ViewedWorkspace, path string) (application.WorkspaceFilePreview, error) {
-	response, err := c.mounts.GetWorkspaceFilePreview(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceFilePreviewRequest{WorkspaceReference: workspace.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
+func (c *Client) PreviewWorkspaceFile(ctx context.Context, workspace domain.WorkspaceLocation, path string) (application.WorkspaceFilePreview, error) {
+	response, err := c.mounts.GetWorkspaceFilePreview(authorized(ctx, c.token), &storageprivatev1.GetWorkspaceFilePreviewRequest{WorkspaceReference: workspace.SessionWorkspace, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
 	if err != nil {
 		return application.WorkspaceFilePreview{}, workspaceError("storage.workspace_file_preview", err)
 	}
@@ -146,8 +153,8 @@ func workspacePreviewFromProto(preview *storageprivatev1.FilePreview) applicatio
 	return result
 }
 
-func (c *Client) WorkspaceFileLink(ctx context.Context, workspace application.ViewedWorkspace, path string) (application.WorkspaceFileLink, error) {
-	response, err := c.mounts.IssueWorkspaceFileLink(authorized(ctx, c.token), &storageprivatev1.IssueWorkspaceFileLinkRequest{WorkspaceReference: workspace.Reference, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
+func (c *Client) WorkspaceFileLink(ctx context.Context, workspace domain.WorkspaceLocation, path string) (application.WorkspaceFileLink, error) {
+	response, err := c.mounts.IssueWorkspaceFileLink(authorized(ctx, c.token), &storageprivatev1.IssueWorkspaceFileLinkRequest{WorkspaceReference: workspace.SessionWorkspace, ReferenceMounts: referenceMounts(workspace.ReadOnlyMounts), Path: path})
 	if err != nil {
 		return application.WorkspaceFileLink{}, workspaceError("storage.workspace_file_link", err)
 	}
@@ -158,7 +165,7 @@ func (c *Client) WorkspaceFileLink(ctx context.Context, workspace application.Vi
 func workspaceError(operation string, err error) error {
 	switch storageerror.ReasonOf(err) {
 	case storageprivatev1.ErrorReason_ERROR_REASON_WORKSPACE_NOT_CREATED:
-		return application.ErrWorkspaceNotCreated
+		return domain.ErrWorkspaceNotCreated
 	case storageprivatev1.ErrorReason_ERROR_REASON_WORKSPACE_RECLAIMED:
 		return application.ErrWorkspaceReclaimed
 	case storageprivatev1.ErrorReason_ERROR_REASON_INVALID_WORKSPACE_PATH:

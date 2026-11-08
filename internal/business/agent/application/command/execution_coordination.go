@@ -21,10 +21,10 @@ type ExecutionCoordination struct {
 	works      domain.AgentWorkRepository
 	executions domain.AgentExecutionRepository
 	computers  ComputerPort
-	buffer     RunningHarnessPort
+	buffer     DispatcherPort
 }
 
-func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkRepository, executions domain.AgentExecutionRepository, computers ComputerPort, buffer RunningHarnessPort) *ExecutionCoordination {
+func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkRepository, executions domain.AgentExecutionRepository, computers ComputerPort, buffer DispatcherPort) *ExecutionCoordination {
 	return &ExecutionCoordination{now: now, works: works, executions: executions, computers: computers, buffer: buffer}
 }
 
@@ -90,7 +90,7 @@ func (c *ExecutionCoordination) begin(ctx context.Context, work *domain.AgentWor
 	launch := work.LaunchSpecification()
 	launch.ComputerName = place.Name
 	realization := domain.RealizationCloud
-	if place.Managed {
+	if work.OnManagedComputer() {
 		realization = domain.RealizationManaged
 	}
 	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: launch, Realization: realization})

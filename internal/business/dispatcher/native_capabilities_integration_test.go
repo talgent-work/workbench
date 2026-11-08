@@ -91,7 +91,7 @@ func TestWorkCapabilityAPITracksNativeUpdatesAcrossDispatcherRecovery(t *testing
 		privateServer := httptest.NewServer(handler)
 		t.Cleanup(privateServer.Close)
 		control := agentexecution.NewDispatcherControl(privateServer.Client(), privateServer.URL, "control")
-		agent := &agentapp.Application{Harness: control, WorkPrincipals: permissions, WorkViews: permissions}
+		agent := &agentapp.Application{Harness: control, WorkPrincipals: permissions, WorkQueries: permissions}
 		handler = connecttest.Handler(func(s *connect.Server) {
 			agentpublicv1connect.RegisterAgentWorkServiceHandler(s, agenttransport.NewWorkHandler(agent))
 		}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
@@ -168,7 +168,10 @@ func TestWorkCapabilityAPITracksNativeUpdatesAcrossDispatcherRecovery(t *testing
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 }
 
-type capabilityWorkAuthority struct{ state atomic.Value }
+type capabilityWorkAuthority struct {
+	query.WorkQueryRepository
+	state atomic.Value
+}
 
 // AuthorizeWork admits only the Work owner, as the gateway authenticated it.
 func (*capabilityWorkAuthority) AuthorizeWork(_ context.Context, actor, workID string) error {

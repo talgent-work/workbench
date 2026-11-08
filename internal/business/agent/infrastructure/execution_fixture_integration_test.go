@@ -13,7 +13,6 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -27,28 +26,12 @@ func (startupAuthority) AdmitRoom(context.Context) error                     { r
 // startedWorks reports each start a committed Work admitted, in place of
 // beginning its execution.
 type startedWorks struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	onStart func(domain.LaunchSpecification)
 }
 
 func (w startedWorks) Save(ctx context.Context, work *domain.AgentWork) error {
 	if err := w.AgentWorkRepository.Save(ctx, work); err != nil {
-		return err
-	}
-	w.started(work)
-	return nil
-}
-
-func (w startedWorks) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := w.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
-		return err
-	}
-	w.started(work)
-	return nil
-}
-
-func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
-	if err := w.AgentWorkRepository.CommitStart(ctx, work, request); err != nil {
 		return err
 	}
 	w.started(work)
@@ -88,7 +71,7 @@ func newRunsAt(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, 
 
 // newRunsWith reads the Work's input buffer and its process's observation
 // from buffer.
-func newRunsWith(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, now func() time.Time, buffer command.RunningHarnessPort) *runs {
+func newRunsWith(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, now func() time.Time, buffer command.DispatcherPort) *runs {
 	executions := execution.NewAgentExecutionRepository(db, now)
 	coordination := command.NewExecutionCoordination(now, works, executions, computertest.Checked(startupAuthority{}), buffer)
 	return &runs{t: t, now: now, executions: executions, coordination: coordination,
@@ -157,7 +140,7 @@ func (r *runs) lose(ctx context.Context, workID string) {
 	r.t.Helper()
 	run, err := r.executions.Latest(ctx, workID)
 	require.NoError(r.t, err)
-	_, err = run.Reconcile(domain.EnvironmentObservation{}, r.now())
+	_, err = run.Reconcile(domain.EnvironmentObservation{}, domain.LeaseTerms{}, r.now())
 	require.NoError(r.t, err)
 	require.True(r.t, run.Outcome.Lost)
 	require.NoError(r.t, r.executions.Save(ctx, run))

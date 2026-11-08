@@ -38,7 +38,7 @@ func (h *ReconcileExecutionHandler) takeShortStep(ctx context.Context, execution
 // deliverCredentials delivers or replaces the bound environment's
 // credentials and records what was delivered.
 func (h *ReconcileExecutionHandler) deliverCredentials(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
-	delivery, err := h.environments.DeliverCredentials(ctx, execution)
+	delivery, err := h.environments.DeliverCredentials(ctx, execution, h.holding(execution))
 	if err != nil {
 		return false, err
 	}
@@ -62,7 +62,7 @@ func (h *ReconcileExecutionHandler) renewLease(ctx context.Context, execution *d
 // syncInputs syncs a Managed Computer's input copies and records the changes
 // it covered.
 func (h *ReconcileExecutionHandler) syncInputs(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
-	synced, err := h.environments.SyncInputs(ctx, execution)
+	synced, err := h.environments.SyncInputs(ctx, execution, h.holding(execution))
 	if err != nil {
 		return false, err
 	}
@@ -138,7 +138,7 @@ func (h *ReconcileExecutionHandler) markEach(ctx context.Context, ids []string, 
 // cancelRunningTurn ends the Turn the Harness is running, if one is; asking
 // again while its cancellation is pending, or after it ended, changes
 // nothing.
-func cancelRunningTurn(ctx context.Context, harness RunningHarnessPort, workID string) error {
+func cancelRunningTurn(ctx context.Context, harness DispatcherPort, workID string) error {
 	turn, err := harness.GetCurrentTurn(ctx, workID)
 	if err != nil || !turn.Active || turn.ID == "" || turn.CancelRequested {
 		return err

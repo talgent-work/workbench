@@ -6,8 +6,6 @@ import (
 
 	clickhousego "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/samber/oops"
-
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 )
 
 // stepWindow bounds the root messages read from the call's result onwards;
@@ -31,8 +29,6 @@ const (
 	assistantKind   = "UNIFIED_MESSAGE_KIND_ASSISTANT"
 	resultKind      = "UNIFIED_MESSAGE_KIND_RESULT"
 )
-
-var _ query.CallPositionReader = (*Reader)(nil)
 
 // FindCallPosition names where the step holding the call returned in the
 // Work's root stream: the last result of that step's calls. The model calls

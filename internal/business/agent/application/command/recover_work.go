@@ -16,12 +16,12 @@ type RecoverWorkHandler struct {
 	reach       *ComputerReachHandler
 	now         func() time.Time
 	sessions    domain.AgentWorkRepository
-	buffer      RunningHarnessPort
+	buffer      DispatcherPort
 	inputs      WorkInputs
 	settlements integrationmessage.Publisher
 }
 
-func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, buffer RunningHarnessPort, inputs WorkInputs, settlements integrationmessage.Publisher, reach *ComputerReachHandler) *RecoverWorkHandler {
+func NewRecoverWorkHandler(now func() time.Time, sessions domain.AgentWorkRepository, buffer DispatcherPort, inputs WorkInputs, settlements integrationmessage.Publisher, reach *ComputerReachHandler) *RecoverWorkHandler {
 	return &RecoverWorkHandler{reach: reach, now: now, sessions: sessions, buffer: buffer, inputs: inputs, settlements: settlements}
 }
 

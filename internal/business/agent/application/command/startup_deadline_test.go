@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -94,7 +93,6 @@ func TestRestartCountsItsOwnStartupDeadline(t *testing.T) {
 	w.exit(t, 0)
 	w.release(t)
 
-	sessions.requests = map[string]query.StartRequest{}
 	_, err := restartHandler(sessions, agents, capacityCheck{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: sessions.session.ID})
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, sessions.session.State)

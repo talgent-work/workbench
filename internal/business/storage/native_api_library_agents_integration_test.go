@@ -54,10 +54,10 @@ func newLibraryAgents(t *testing.T, f *fixture) *libraryAgents {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	definitions := agentinfrastructure.NewAgentDefinitionRepository(db, time.Now)
-	lookup := agentinfrastructure.NewAgentDefinitionLookup(db)
+	lookup := agentinfrastructure.NewAgentDefinitionQueryRepository(db)
 	works := agentinfrastructure.NewAgentWorkRepository(db, time.Now)
 	app := &agentapplication.Application{
-		Definitions: definitions, DefinitionLookup: lookup, Works: works, WorkViews: agentinfrastructure.NewWorkQueryRepository(db),
+		Definitions: definitions, DefinitionQueries: lookup, Works: works, WorkQueries: agentinfrastructure.NewWorkQueryRepository(db),
 		Commands: agentapplication.Commands{EnsureAgentDefinition: agentcommand.NewEnsureAgentDefinitionHandler(definitions, lookup)},
 		Queries: agentapplication.Queries{VerifyWorkCredential: agentquery.NewVerifyWorkCredentialHandler(definitions, works, identityCredentials{},
 			agentapplication.AssembleWorkIdentity, func(context.Context, string) (bool, error) { return false, nil })},
@@ -80,12 +80,11 @@ func (a *libraryAgents) start(person, workspace, projectID string) libraryWork {
 		StartedBy: person, ID: work.id, AgentID: definition.ID, ProjectID: projectID, WorkModel: agentdomain.WorkModelSelection{ConfigurationID: "default"},
 		WorkspaceReference: workspace, HomeBinding: definition.HomeBinding,
 		InputSource: agentdomain.WorkInputSource{Reference: "file-space/" + work.id, SpaceToken: work.space.SpaceToken},
-	}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), DeskID: "desk"}})
+	}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), Kind: agentdomain.ComputerCloud, DeskID: "desk"}})
 	require.NoError(a.t, err)
 	require.Empty(a.t, started.CapabilitySnapshot.Connectors, "the Work starts without a platform Connector")
-	require.NoError(a.t, a.works.RegisterWork(ctx, started, agentcommand.WorkRegistration{
-		SubjectID: person, Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: started.ID}, WorkspaceReference: workspace, DefinitionVersion: definition.Version,
-	}))
+	started.DefinitionVersion = definition.Version
+	require.NoError(a.t, a.works.Save(ctx, started))
 	return work
 }
 
@@ -99,7 +98,7 @@ func (a *libraryAgents) personalWorks() *personalwork.PersonalWorks {
 	}))
 	server := httptest.NewServer(mux)
 	a.t.Cleanup(server.Close)
-	spaces, err := agentstorage.NewFileSpaces(server.Client(), agentstorage.Config{Address: server.URL, Token: libraryAgentToken})
+	spaces, err := agentstorage.NewClient(server.Client(), agentstorage.Config{Address: server.URL, Token: libraryAgentToken})
 	require.NoError(a.t, err)
 	return personalwork.New(a.app, agentinfrastructure.NewWorkQueryRepository(a.db), spaces, nil)
 }

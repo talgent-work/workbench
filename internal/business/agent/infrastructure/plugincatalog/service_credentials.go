@@ -7,29 +7,29 @@ import (
 
 	"connectrpc.com/connect/v2"
 	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 )
 
 // credentialStatusHeader is the metadata in which Marketplace states why it
 // refused a credential.
 const credentialStatusHeader = "X-Talgent-Credential-Status"
 
-func (c *Client) SupplyServiceCredential(ctx context.Context, input application.ServiceCredentialRequest) (application.ServiceCredentialMaterial, error) {
+func (c *Client) SupplyServiceCredential(ctx context.Context, input command.ServiceCredentialRequest) (command.ServiceCredentialMaterial, error) {
 	if c.credentialToken == "" {
-		return application.ServiceCredentialMaterial{}, &application.ServiceCredentialUnavailable{Reason: "unavailable", Temporary: true}
+		return command.ServiceCredentialMaterial{}, &command.ServiceCredentialUnavailable{Reason: "unavailable", Temporary: true}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	ctx, info, err := delegated(ctx, input.OwnerUserID)
 	if err != nil {
-		return application.ServiceCredentialMaterial{}, err
+		return command.ServiceCredentialMaterial{}, err
 	}
 	info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
 	response, err := c.credentials.SupplyServiceCredential(ctx, &marketplaceprivatev1.SupplyServiceCredentialRequest{OwnerUserId: input.OwnerUserID, AuthorizationId: input.AuthorizationID, Target: input.Target})
 	if err != nil {
-		return application.ServiceCredentialMaterial{}, credentialUnavailable(err, info)
+		return command.ServiceCredentialMaterial{}, credentialUnavailable(err, info)
 	}
-	return application.ServiceCredentialMaterial{Token: response.GetToken(), ExpiresAt: declaredExpiry(response.GetExpiresAtUnixMs())}, nil
+	return command.ServiceCredentialMaterial{Token: response.GetToken(), ExpiresAt: declaredExpiry(response.GetExpiresAtUnixMs())}, nil
 }
 
 // credentialUnavailable reads Marketplace's refusal of a call, whose status
@@ -52,5 +52,5 @@ func credentialUnavailable(err error, info *connect.CallInfo) error {
 	}
 	// Only a reason Marketplace confirmed says anything about the
 	// authorization; anything else may succeed on retry.
-	return &application.ServiceCredentialUnavailable{Reason: reason, Temporary: reason == "unavailable"}
+	return &command.ServiceCredentialUnavailable{Reason: reason, Temporary: reason == "unavailable"}
 }

@@ -34,9 +34,9 @@ import (
 func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T) {
 	db, definitions, works, definition := startingCreationDatabase(t)
 	catalog := &optionsCatalog{version: "1"}
-	access := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	access := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	app := &application.Application{
-		Definitions: definitions, DefinitionLookup: infrastructure.NewAgentDefinitionLookup(db),
+		Definitions: definitions, DefinitionQueries: infrastructure.NewAgentDefinitionQueryRepository(db),
 		Catalog: commandtest.StartCatalog(catalog, creationConnections{}), Models: creationModels(),
 		Queries: application.Queries{GetWork: query.NewGetWorkHandler(definitions, works, access, application.AssembleAgentWorkEntity, nil)},
 	}
@@ -101,7 +101,7 @@ func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T)
 }
 
 type optionsCatalog struct {
-	command.StartCatalogPort
+	command.MarketplacePort
 	version     string
 	unavailable bool
 }

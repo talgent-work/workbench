@@ -11,6 +11,7 @@ import (
 )
 
 type reportSource struct {
+	WorkQueryRepository
 	works  []WorkHistory
 	scope  WorkReportScope
 	called bool

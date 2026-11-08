@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -49,7 +48,7 @@ func (c *workCapacity) AdmitRoom(context.Context) error {
 func TestRestartStartupRetriesRetainedInitialInput(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	id := f.committedCreation(t)
 	capacity := &workCapacity{available: true}
 	ref := id
@@ -100,11 +99,11 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	id := f.committedCreation(t)
 	capacity := &workCapacity{available: true}
 	clientFor := func(db *xorm.Engine) agentpublicv1connect.AgentWorkServiceClient {
-		principal := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+		principal := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 		sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 		definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 		reader := infrastructure.NewWorkQueryRepository(db)
-		app := &application.Application{WorkPrincipals: principal, WorkViews: reader, Commands: application.Commands{
+		app := &application.Application{WorkPrincipals: principal, WorkQueries: reader, Commands: application.Commands{
 			StopWork:    command.NewStopWorkHandler(sessions, principal, executionsOf(db)),
 			ResumeWork:  command.NewResumeWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
 			RestartWork: command.NewRestartWorkHandler(time.Now, sessions, definitions, principal, computertest.Checked(capacity), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}),
@@ -317,27 +316,4 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	_, err = client.ResumeWork(workMessageRequest(ctx, owner), &agentpublicv1.ResumeWorkRequest{WorkId: id})
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	read("closed")
-	// A one-row table may legitimately be cheaper to scan. Populate unrelated
-	// start requests before checking the point-lookup plan at useful scale.
-	values := make([]string, 256)
-	args := make([]any, 0, 512)
-	for i := range values {
-		values[i] = "(?,?, 'resume', 0, 1, 1, 1, 0)"
-		args = append(args, uuid.Must(uuid.NewV7()).String(), uuid.Must(uuid.NewV7()).String())
-	}
-	_, err = f.db.Exec(append([]any{"INSERT INTO agent_start_request (id,session_id,kind,canceled,version,created_at,updated_at,deleted_at) VALUES " + strings.Join(values, ",")}, args...)...)
-	require.NoError(t, err)
-	rows, err := f.db.QueryString(`EXPLAIN SELECT s.id,s.state,s.harness_process,s.initial_task_input,s.repository_selection,s.repository_checkouts,
- COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at DESC, r.id DESC LIMIT 1),'') AS start_request_id,
- COALESCE((SELECT r.id FROM agent_start_request r WHERE r.session_id=s.id AND r.kind='start' AND r.canceled=0 AND r.deleted_at=0 ORDER BY r.created_at, r.id LIMIT 1),'') AS creation_request_id
- FROM agent_session s WHERE s.id=? AND s.deleted_at=0`, id)
-	require.NoError(t, err)
-	t.Logf("work Session query plan: %+v", rows)
-	for _, row := range rows {
-		want := "PRIMARY"
-		if row["table"] == "r" {
-			want = "idx_session_id_canceled_deleted_at_created_at"
-		}
-		require.Equal(t, want, row["key"], "the Work uses primary-key access and its start requests their Work's index")
-	}
 }

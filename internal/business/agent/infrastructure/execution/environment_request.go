@@ -11,11 +11,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-var errEnvironmentConflict = errors.New("agent: execution environment conflicts with its recorded allocation")
-
-// errAllocationNotHeld means the allocation no longer backs a Work process that
-// holds its sandbox; its credential and native connection grant nothing.
-var errAllocationNotHeld = errors.New("agent: allocation no longer backs the Work's Harness process")
+var errEnvironmentConflict = errors.New("agent: execution environment conflicts with its recorded execution")
 
 func validateStartRequest(request domain.LaunchSpecification) error {
 	if err := request.WorkModel.Validate(); err != nil {

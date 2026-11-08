@@ -43,7 +43,7 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 	planned := preparation.Checkouts[0]
 	require.NotEmpty(t, planned.TargetPath)
 	require.NotEmpty(t, planned.AccessID)
-	require.Equal(t, agentquery.WorkPreparation{WorkID: id, RequestID: f.request.RequestID, SubjectID: "owner", ThinkingLevel: initial.ThinkingLevel,
+	require.Equal(t, agentquery.WorkPreparation{WorkID: id, RequestID: id, SubjectID: "owner", ThinkingLevel: initial.ThinkingLevel,
 		WorkBranch: "talgent/TAL-342", InputID: initial.Input.ID, Input: initial.Input.Text, Submitted: true,
 		Checkouts: []agentquery.PreparedCheckout{{Provider: "github", RepoID: "123", RepoName: "example/project", CloneURL: "https://github.com/example/project.git",
 			WebURL: "https://github.com/example/project", DefaultBranch: "main", BaseBranch: "release", WorkBranch: "talgent/TAL-342", TargetPath: planned.TargetPath, AccessID: planned.AccessID}},
@@ -54,7 +54,7 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 
 	// A repeat outside creation is answered from the Work: whatever
 	// repository choices it names, it returns the original Work unchanged.
-	prepare := command.NewPrepareWorkExecutionHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels())
+	prepare := command.NewPrepareWorkExecutionHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels())
 	repeat := *initial
 	repeat.WorkID, repeat.RequestID, repeat.Input.ID, repeat.Input.Text = id, uuid.NewString(), uuid.NewString(), "another task"
 	confirmed, err := prepare.Handle(ctx, repeat)
@@ -73,7 +73,7 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 	reportExit(t, work, domain.HarnessExit{ExitCode: 1})
 	reportReleased(t, work)
 	require.NoError(t, f.sessions.Save(ctx, work))
-	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	_, err = restart.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()})
 	require.NoError(t, err)
 	restarted, _, err := reader.GetWorkPreparation(ctx, id)
@@ -97,7 +97,7 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 	require.True(t, submitted[0].InputBuffered)
 	require.Empty(t, submitted[0].InputID, "a handed-off input is part of the conversation")
 	require.Empty(t, submitted[0].Input)
-	require.Equal(t, f.request.RequestID, submitted[0].RequestID)
+	require.Equal(t, id, submitted[0].RequestID)
 	require.Equal(t, preparation.Checkouts, submitted[0].Checkouts)
 	handedOff, found, err := reader.GetWorkPreparation(ctx, id)
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ func TestClosedWorkKeepsItsFirstStart(t *testing.T) {
 func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
 	ctx := t.Context()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
 	type result struct {
 		workID string
 		err    error
@@ -185,16 +185,12 @@ func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	preparation, found, err := infrastructure.NewWorkQueryRepository(f.db).GetWorkPreparation(ctx, id)
 	require.NoError(t, err)
 	require.True(t, found)
-	expected, found := inputs[preparation.RequestID]
-	require.True(t, found)
+	var expected command.PrepareWorkExecution
+	for _, input := range inputs {
+		if input.Input.ID == preparation.InputID {
+			expected = input
+		}
+	}
 	require.Equal(t, expected.Input.ID, preparation.InputID, "concurrent callers cannot mix input identity and body")
 	require.Equal(t, expected.Input.Text, preparation.Input)
-	admissions, err := f.db.QueryString("SELECT id, session_id FROM agent_start_request WHERE deleted_at=0")
-	require.NoError(t, err)
-	require.Len(t, admissions, len(inputs), "each request identity is recorded once")
-	for _, admission := range admissions {
-		_, known := inputs[admission["id"]]
-		require.True(t, known)
-		require.Equal(t, id, admission["session_id"], "every request is answered with the one Work")
-	}
 }
