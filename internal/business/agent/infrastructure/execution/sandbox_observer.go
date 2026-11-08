@@ -47,12 +47,11 @@ func NewSandboxObserver(client dynamic.Interface, namespace string, db *xorm.Eng
 // Run observes sandboxes until ctx ends. Each observation is queued by the
 // value of the ownership label it carries; a failed lookup or wake is retried
 // with backoff, because a retired execution's late sandbox is woken by
-// nothing else. A selector cannot match either of two ownership labels, so
-// it selects the session label every Agent sandbox carries beside either.
+// nothing else.
 func (o *SandboxObserver) Run(ctx context.Context) error {
 	labels := workqueue.NewTypedRateLimitingQueue(workqueue.NewTypedItemExponentialFailureRateLimiter[string](time.Second, time.Minute))
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(o.client, 0, o.namespace, func(options *metav1.ListOptions) {
-		options.LabelSelector = sandboxSessionLabel
+		options.LabelSelector = sandboxOwnershipLabel
 	})
 	informer := factory.ForResource(BatchSandboxes).Informer()
 	observe := func(object any) {
@@ -116,8 +115,7 @@ func sandboxLabel(object any) string {
 		object = tombstone.Obj
 	}
 	if sandbox, ok := object.(*unstructured.Unstructured); ok {
-		labels := sandbox.GetLabels()
-		return labels[ownershipLabelOf(labels)]
+		return sandbox.GetLabels()[sandboxOwnershipLabel]
 	}
 	return ""
 }
