@@ -33,8 +33,10 @@ func (b *executionSaveBarrier) Save(ctx context.Context, execution *domain.Agent
 	return b.AgentExecutionRepository.Save(ctx, execution)
 }
 
-// An exit fact acknowledged for the previous process cannot
-// be committed against a Work resumed while it was being applied.
+// An exit fact acknowledged for the previous process cannot be committed
+// against a Work resumed while it was being applied: its retry rereads the
+// execution it was read against, which already recorded the exit, and leaves
+// the resumed one alone.
 func TestProcessObservationCannotReclaimConcurrentResume(t *testing.T) {
 	f, id := runningInputSession(t)
 	ctx := t.Context()
@@ -50,7 +52,7 @@ func TestProcessObservationCannotReclaimConcurrentResume(t *testing.T) {
 		require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: id, Kind: command.AgentStarted}))
 	}}
 	stale := command.NewApplyExecutionFeedbackHandler(time.Now, f.sessions, barrier, feedback.coordination, &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
-	require.ErrorIs(t, stale.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: id, Kind: command.ExecutionExited}), domain.ErrConcurrentModification)
+	require.NoError(t, stale.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", WorkID: id, Kind: command.ExecutionExited}), "the exit is already recorded on its own execution")
 	resumed, err := feedback.executions.Latest(ctx, id)
 	require.NoError(t, err)
 	require.NotEqual(t, previous.ID, resumed.ID)

@@ -1,11 +1,13 @@
--- Makes agent_start_request the single record of caller request identities
--- for Work creation, Resume and Restart, keeps a new Work's initial task input
--- on the Work itself, and drops the separate agent_session_creation_request
--- table.
+-- Keeps a new Work's initial task input on the Work itself and drops the
+-- separate agent_session_creation_request table. It also adds
+-- agent_start_request.fingerprint for the transitional releases that still
+-- record request identities there; the current Agent no longer reads
+-- agent_start_request, and 20261108-start-request-removal.sql drops it, after
+-- which this script leaves it alone, so the two run in either order.
 --
 -- When: before deploying the release whose Agent reads
--- agent_session.initial_task_input and agent_start_request.fingerprint. The
--- table is dropped without carrying over creations in flight at deployment:
+-- agent_session.initial_task_input. The creation request table is dropped
+-- without carrying over creations in flight at deployment:
 -- a caller's repeat of a creation that had no Work creates it, a creation
 -- cancelled before any Work is no longer fenced, and a Work whose initial
 -- task input had not reached its input buffer does not receive it. Recover
