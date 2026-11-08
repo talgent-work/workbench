@@ -42,7 +42,7 @@ func (h *nativeConnectionReceiver) Connect(ctx context.Context, r *dispatcherpri
 	if err != nil {
 		return nil, err
 	}
-	if !record.SandboxReady || !record.EnvironmentPrepared {
+	if !record.CredentialsDelivered || !record.PreparationEnded {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, "environment readiness was not committed before native connect")
 	}
 	if !found || record.ProcessID != r.ProcessId || record.NativeSessionID != r.NativeSessionId || record.SessionID != r.WorkId {
@@ -126,7 +126,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	pending, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
 	require.Equal(t, sandboxID, pending.SandboxID)
-	require.False(t, pending.SandboxReady, "allocation acceptance is not environment readiness")
+	require.False(t, pending.CredentialsDelivered, "allocation acceptance is not environment readiness")
 	require.Zero(t, reserved, "pending Sandbox cannot reserve a native process")
 	lifecycle.mu.Lock()
 	lifecycle.info.Status.State = "Running"
@@ -134,7 +134,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.Error(t, pass(), "the first delivery, preparation and the Harness start, then an unavailable Dispatcher")
 	recovering, _, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
-	require.True(t, recovering.SandboxReady)
+	require.True(t, recovering.CredentialsDelivered)
 	require.True(t, recovering.PreparationRecovering)
 	require.Equal(t, 1, reserved)
 	require.Len(t, receiver.requests, 1)
@@ -157,7 +157,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	after, found, err := latestAllocation(ctx, provisioning.db, input.WorkID)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.True(t, after.SandboxReady)
+	require.True(t, after.CredentialsDelivered)
 	require.False(t, after.PreparationRecovering)
 	require.Equal(t, receiver.requests[0].ProcessId, after.ProcessID)
 	require.Equal(t, record.LaunchCommand, after.LaunchCommand)

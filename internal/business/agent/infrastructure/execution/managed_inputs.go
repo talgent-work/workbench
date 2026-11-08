@@ -20,19 +20,19 @@ import (
 //
 // Syncing the inputs is its own step, never a Required Startup Step: the
 // first delivery attempts it once and a failure there is only logged, so a
-// start never waits for or fails on it. The allocation keeps its own due
-// marker (inputs_due): a new Managed allocation starts due, a File Change
+// start never waits for or fails on it. The execution keeps its own due
+// marker (inputs_due): a new Managed execution starts due, a File Change
 // Published Fact for the input source's File Space adds to it, and a sync
 // clears only the marks it read, so a change during a sync stays due. The
-// recovery sweep finds a due allocation and syncs it again. The input
+// recovery sweep finds a due execution and syncs it again. The input
 // source's File Space owner, recorded by the sync before it lists, lets a
-// change find its allocations by an indexed query.
+// change find its executions by an indexed query.
 //
 // A manifest's Access Links expire (storage.link-ttl), and the machine stops
 // retrying a download within that lifetime, so a copy it could not fetch
 // would stay stale without another change. Each successful sync records when
 // it happened (inputs_synced_at), and the recovery sweep marks the inputs of
-// a live allocation with an input source due again once that is older than
+// a live execution with an input source due again once that is older than
 // the refresh interval; the machine skips the files it already holds.
 
 // WorkInputFiles is Storage's File Space Contract as the Managed realization
@@ -60,7 +60,7 @@ type InputAttachment struct {
 type inputDelivery interface {
 	// syncInputs hands the machine the current inputs of the execution's
 	// Work; the execution records the changes it covered.
-	syncInputs(ctx context.Context, record allocationRecord) error
+	syncInputs(ctx context.Context, record executionRecord) error
 	// refresh is how long synced input copies stay current.
 	refresh() time.Duration
 }
@@ -119,7 +119,7 @@ func (m *ManagedComputers) contentLink(accessPath string) (string, error) {
 // hands the machine that space's current Attachments; a Work without an input
 // source has none to copy. The owner is recorded before the listing, so a
 // change after it is either listed or marks the execution due again.
-func (m ManagedEnvironment) syncInputs(ctx context.Context, record allocationRecord) error {
+func (m ManagedEnvironment) syncInputs(ctx context.Context, record executionRecord) error {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return err
@@ -152,11 +152,11 @@ func (m ManagedEnvironment) syncInputs(ctx context.Context, record allocationRec
 
 func (m ManagedEnvironment) refresh() time.Duration { return m.inputsRefresh }
 
-func (m ManagedEnvironment) recordInputOwner(ctx context.Context, record allocationRecord, owner string) error {
+func (m ManagedEnvironment) recordInputOwner(ctx context.Context, record executionRecord, owner string) error {
 	if record.InputOwner == owner {
 		return nil
 	}
-	if _, err := m.records.db.Context(ctx).Exec(`UPDATE execution_allocation SET input_owner = ? WHERE id = ?`, owner, record.ID); err != nil {
+	if _, err := m.records.db.Context(ctx).Exec(`UPDATE agent_execution SET input_owner = ? WHERE id = ?`, owner, record.ID); err != nil {
 		return oops.With("operation", "record_input_owner").Wrap(err)
 	}
 	return nil

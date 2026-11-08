@@ -19,7 +19,7 @@ const deadline = Date.now() + Math.max(0, Number(budget) * 1000 - 5000);
 const remaining = () => Math.max(0, deadline - Date.now());
 const workspace = process.cwd();
 const root = path.join(workspace, '.claude', 'talgent', catalog.name);
-// One report per allocation: a re-run of a finished preparation reports it.
+// One report per execution: a re-run of a finished preparation reports it.
 const reportPath = path.join(root, 'report-' + receipt + '.json');
 const settingsPath = path.join(workspace, '.claude', 'settings.local.json');
 // A Plugin package cache of the Work's own (CLAUDE_CODE_PLUGIN_CACHE_DIR, on a

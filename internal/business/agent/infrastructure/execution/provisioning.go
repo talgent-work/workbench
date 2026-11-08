@@ -45,7 +45,7 @@ func NewProvisioning(db *xorm.Engine, sandboxes *Sandboxes, credentials *Sandbox
 // and the credential plan its submission freezes, from its LaunchSpecification
 // and the Mount Grants of a Cloud start. A specified execution keeps the
 // image, environment and access tokens it was given.
-func (p *Provisioning) specify(ctx context.Context, record allocationRecord, mounts domain.SandboxMounts) error {
+func (p *Provisioning) specify(ctx context.Context, record executionRecord, mounts domain.SandboxMounts) error {
 	if record.specified() {
 		return nil
 	}
@@ -57,7 +57,7 @@ func (p *Provisioning) specify(ctx context.Context, record allocationRecord, mou
 	if err != nil {
 		return oops.With("operation", "decode_execution_launch").Wrap(err)
 	}
-	owner := Allocation{WorkID: record.SessionID, ID: record.ID}
+	owner := SandboxOwner{WorkID: record.SessionID, ID: record.ID}
 	native, err := p.native.prepare(authority.launchLayout(), launch, owner, launch.ThinkingLevel)
 	if err != nil {
 		return err
@@ -74,7 +74,7 @@ func (p *Provisioning) specify(ctx context.Context, record allocationRecord, mou
 	if plan == nil {
 		plan = []byte("null")
 	}
-	_, err = p.db.Context(ctx).Exec(`UPDATE execution_allocation SET specification_json = ?, authorization_ids = ?, launch_command = ?, preparation_command = ?, native_session_id = ?, credential_plan_json = ?, updated_at = ?
+	_, err = p.db.Context(ctx).Exec(`UPDATE agent_execution SET specification_json = ?, authorization_ids = ?, launch_command = ?, preparation_command = ?, native_session_id = ?, credential_plan_json = ?, updated_at = ?
  WHERE id = ? AND JSON_TYPE(specification_json) = 'NULL'`, spec.document, spec.authorizations, native.Command, native.PreparationCommand, native.SessionID, plan, p.now().UnixMilli(), record.ID)
 	if err != nil {
 		return oops.With("operation", "specify_execution").Wrap(err)
@@ -84,8 +84,8 @@ func (p *Provisioning) specify(ctx context.Context, record allocationRecord, mou
 
 // recordRecovery records whether the latest attempt at a step left the start
 // recovering, which its startup progress shows.
-func (p *Provisioning) recordRecovery(ctx context.Context, record allocationRecord, recovering bool) error {
-	result, err := p.db.Context(ctx).Exec("UPDATE execution_allocation SET preparation_recovering = ?, updated_at = ? WHERE id = ? AND preparation_recovering <> ? AND deleted_at = 0", recovering, p.now().UnixMilli(), record.ID, recovering)
+func (p *Provisioning) recordRecovery(ctx context.Context, record executionRecord, recovering bool) error {
+	result, err := p.db.Context(ctx).Exec("UPDATE agent_execution SET preparation_recovering = ?, updated_at = ? WHERE id = ? AND preparation_recovering <> ? AND deleted_at = 0", recovering, p.now().UnixMilli(), record.ID, recovering)
 	if err != nil {
 		return oops.Wrap(err)
 	}
@@ -101,9 +101,9 @@ func (p *Provisioning) recordRecovery(ctx context.Context, record allocationReco
 
 // technical writes adapter-owned columns of a live execution with the
 // recorded environment; the execution's facts and version are untouched.
-func (p *Provisioning) technical(ctx context.Context, record allocationRecord, assignment string, values ...any) error {
+func (p *Provisioning) technical(ctx context.Context, record executionRecord, assignment string, values ...any) error {
 	args := append(values, p.now().UnixMilli(), record.ID, record.SandboxID)
-	if _, err := p.db.Context(ctx).Exec(append([]any{"UPDATE execution_allocation SET " + assignment + ", updated_at = ? WHERE id = ? AND sandbox_id = ? AND deleted_at = 0"}, args...)...); err != nil {
+	if _, err := p.db.Context(ctx).Exec(append([]any{"UPDATE agent_execution SET " + assignment + ", updated_at = ? WHERE id = ? AND sandbox_id = ? AND deleted_at = 0"}, args...)...); err != nil {
 		return oops.With("operation", "record_execution_progress").Wrap(err)
 	}
 	if p.ProgressCommitted != nil {

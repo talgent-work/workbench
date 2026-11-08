@@ -39,7 +39,7 @@ func (r *ExecutionQueryRepository) ListWorkIDs(ctx context.Context, afterID stri
  UNION
  SELECT id AS session_id FROM agent_session WHERE state IN (1, 2, 3, 4, 5) AND initial_task_input <> '' AND deleted_at = 0
  UNION
- SELECT live_session_id AS session_id FROM execution_allocation WHERE live_session_id IS NOT NULL
+ SELECT live_session_id AS session_id FROM agent_execution WHERE live_session_id IS NOT NULL
  ) AS pending WHERE session_id > ? ORDER BY session_id LIMIT ?`, afterID, limit).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "agent.list_recovery_sessions").Wrap(err)
@@ -109,7 +109,7 @@ func (r *ExecutionQueryRepository) ListCurrentPluginResults(ctx context.Context,
  p.loading_reported, p.loaded, p.loading_reason, p.updated_at
  FROM execution_plugin_result p
  WHERE p.deleted_at = 0 AND p.execution_id = (
- SELECT e.id FROM execution_allocation e WHERE e.session_id = ? ORDER BY e.created_at DESC, e.id DESC LIMIT 1)
+ SELECT e.id FROM agent_execution e WHERE e.session_id = ? ORDER BY e.created_at DESC, e.id DESC LIMIT 1)
  ORDER BY p.slug`, workID).Find(&rows)
 	if err != nil {
 		return nil, oops.With("operation", "agent.current_plugin_results", "agent_work_id", workID).Wrap(err)

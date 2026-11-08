@@ -33,7 +33,7 @@ type repositoryCheckout struct {
 // entries reach the native installer. The Work namespace also isolates
 // different retained versions in Claude's HOME-wide package cache.
 // The layout decides how the script runs (see machineLayout).
-func (c NativeLaunchConfig) preparationCommand(layout launchLayout, request domain.LaunchSpecification, owner Allocation) (string, string, error) {
+func (c NativeLaunchConfig) preparationCommand(layout launchLayout, request domain.LaunchSpecification, owner SandboxOwner) (string, string, error) {
 	name := "talgent-work-" + storageKey(request.WorkID)
 	entries := make([]json.RawMessage, 0, len(request.Capabilities.Plugins))
 	for _, plugin := range request.Capabilities.Plugins {
@@ -53,9 +53,9 @@ func (c NativeLaunchConfig) preparationCommand(layout launchLayout, request doma
 	// shares it. Closing an observer does not cancel the process; the sandbox
 	// owns it until it exits or is reclaimed. Node ends its child process
 	// groups before it exits, and timeout waits for Node. The receipt names this
-	// allocation's report. execd starts a finished session again when it is
+	// execution's report. execd starts a finished session again when it is
 	// attached again; the re-run then reports instead of preparing, which the
-	// minimum budget leaves time for. Restart uses a new allocation and
+	// minimum budget leaves time for. Restart uses a new execution and
 	// prepares again.
 	receipt := storageKey(owner.WorkID + ":" + owner.ID)[:32]
 	budget := "remaining=$((" + strconv.FormatInt(request.PreparationBound.Unix(), 10) + " - $(date +%s))); [ \"$remaining\" -ge " + preparationMinimumSeconds + " ] || remaining=" + preparationMinimumSeconds + "; "

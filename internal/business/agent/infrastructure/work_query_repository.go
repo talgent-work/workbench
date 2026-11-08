@@ -75,7 +75,7 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
  `+agentOwnerColumn+` AS agent_owner,s.started_by,s.state,s.harness_process,s.work_progress,
  s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at,s.version,s.end_request,
  s.visibility_public,s.reach_resume_due,s.initial_task_input,s.thinking_level,s.repository_selection,s.repository_checkouts,
- COALESCE((SELECT e.state FROM execution_allocation e WHERE e.session_id=s.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1),'') AS execution_state
+ COALESCE((SELECT e.state FROM agent_execution e WHERE e.session_id=s.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1),'') AS execution_state
  FROM agent_session s WHERE s.id=? AND s.deleted_at=0`, id).Get(&row)
 	if err != nil {
 		return query.WorkView{}, oops.With("operation", "agent.work_session").Wrap(err)
@@ -97,17 +97,17 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
 	if result.WorkShares, err = workShares(tx, id); err != nil {
 		return result, err
 	}
-	var allocation struct {
+	var execution struct {
 		Ready, Recovering bool
 		UpdatedAt         int64
 	}
 	if row.HarnessProcess != "" && row.HarnessProcess != "null" {
-		_, err = tx.SQL("SELECT sandbox_ready AS ready,preparation_recovering AS recovering,updated_at FROM execution_allocation WHERE session_id=? AND deleted_at=0 ORDER BY created_at DESC, id DESC LIMIT 1", id).Get(&allocation)
+		_, err = tx.SQL("SELECT credentials_delivered AS ready,preparation_recovering AS recovering,updated_at FROM agent_execution WHERE session_id=? AND deleted_at=0 ORDER BY created_at DESC, id DESC LIMIT 1", id).Get(&execution)
 		if err != nil {
 			return result, oops.Wrap(err)
 		}
 	}
-	result.StartupProgress, err = startupFromRows(row, allocation.Ready, allocation.Recovering, allocation.UpdatedAt)
+	result.StartupProgress, err = startupFromRows(row, execution.Ready, execution.Recovering, execution.UpdatedAt)
 	if err != nil {
 		return result, err
 	}

@@ -118,7 +118,7 @@ func (q *managedQueue) startedFor(t *testing.T, workID string) int {
 func (q *managedQueue) executionsOf(t *testing.T, workID string) []*domain.AgentExecution {
 	t.Helper()
 	var ids []string
-	require.NoError(t, q.db.Table("execution_allocation").Cols("id").Where("session_id = ?", workID).OrderBy("created_at, id").Find(&ids))
+	require.NoError(t, q.db.Table("agent_execution").Cols("id").Where("session_id = ?", workID).OrderBy("created_at, id").Find(&ids))
 	repository := execution.NewAgentExecutionRepository(q.db, time.Now)
 	var result []*domain.AgentExecution
 	for _, id := range ids {

@@ -48,7 +48,7 @@ func lastManifest(t *testing.T, relay *machineRelay) []manifestFile {
 // the inputs stay due for the next reconciliation.
 // reading is Dispatcher reading the record's launched process at the relay
 // endpoint it was handed.
-func (f *managedWork) reading(t *testing.T, record allocationRecord) StreamReading {
+func (f *managedWork) reading(t *testing.T, record executionRecord) StreamReading {
 	t.Helper()
 	spec, err := decodeManagedSpecification(record)
 	require.NoError(t, err)
@@ -128,7 +128,7 @@ func TestManagedInputsAreRefreshedBeforeTheirLinksExpire(t *testing.T) {
 	require.Empty(t, f.decided(t, synced.ID), "fresh inputs need nothing")
 
 	stale := time.Now().Add(-managedInputsRefresh - time.Minute).UnixMilli()
-	_, err = f.db.Exec(`UPDATE execution_allocation SET inputs_synced_at = ?, version = version + 1 WHERE id = ?`, stale, synced.ID)
+	_, err = f.db.Exec(`UPDATE agent_execution SET inputs_synced_at = ?, version = version + 1 WHERE id = ?`, stale, synced.ID)
 	require.NoError(t, err)
 	f.inputs.attachments[owner][0].AccessPath = "/v1/storage/content?grant=second"
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepSyncInputs}, f.decided(t, synced.ID), "inputs older than the refresh interval are synced")
@@ -149,7 +149,7 @@ func TestAFailingInputsSyncLeavesTheStartReady(t *testing.T) {
 	f.inputs.err = errors.New("storage unavailable")
 	input := withInputs(managedRequest())
 	record := f.launch(t, f.begin(t, input).ID)
-	require.True(t, record.SandboxReady, "the inputs are not a Required Startup Step")
+	require.True(t, record.CredentialsDelivered, "the inputs are not a Required Startup Step")
 	require.Zero(t, record.InputsSyncedAt, "the inputs stay due")
 	require.Empty(t, f.relay.manifests)
 

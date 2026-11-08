@@ -34,7 +34,7 @@ func (c *oneRoomCloud) desksOf(t *testing.T, workID string) int64 {
 // startsOf counts the Work's starts that reached execution.
 func (c *oneRoomCloud) startsOf(t *testing.T, workID string) int64 {
 	t.Helper()
-	count, err := c.db.Table("execution_allocation").Where("session_id = ?", workID).Count()
+	count, err := c.db.Table("agent_execution").Where("session_id = ?", workID).Count()
 	require.NoError(t, err)
 	return count
 }

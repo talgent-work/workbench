@@ -58,7 +58,7 @@ func TestExecutionCompositionReachesHTTP1OpenSandbox(t *testing.T) {
 	require.Equal(t, "pro", defaultModel.Selection.ConfigurationID)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	deleted, err := sandboxes.Delete(ctx, execution.Allocation{WorkID: "session", ID: "01900000-0000-7000-8000-000000000001"}, sdk.CreateSandboxRequest{}, "11111111-1111-4111-8111-111111111111", nil)
+	deleted, err := sandboxes.Delete(ctx, execution.SandboxOwner{WorkID: "session", ID: "01900000-0000-7000-8000-000000000001"}, sdk.CreateSandboxRequest{}, "11111111-1111-4111-8111-111111111111", nil)
 	require.NoError(t, err, "production wiring must use the lifecycle server's HTTP/1.1 protocol")
 	require.True(t, deleted)
 }

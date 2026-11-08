@@ -30,6 +30,7 @@ func TestLeaseMigrationAddsTheLeaseColumn(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	var current string
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&current))
+	previous := mysqltest.SchemaFrom(t, db, previousExecutionSchema)
 	// A scratch database in the shape before the script, so the shared schema
 	// the other tests borrow is never altered.
 	scratch := "talgent_migration_" + uuid.NewString()[:8]
@@ -38,7 +39,7 @@ func TestLeaseMigrationAddsTheLeaseColumn(t *testing.T) {
 	t.Cleanup(func() { _, _ = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", scratch)) })
 	_, err = conn.ExecContext(ctx, fmt.Sprintf("USE `%s`", scratch))
 	require.NoError(t, err)
-	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE execution_allocation LIKE `%s`.execution_allocation", current))
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE execution_allocation LIKE `%s`.execution_allocation", previous))
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, "ALTER TABLE execution_allocation DROP COLUMN lease_expires_at")
 	require.NoError(t, err)
@@ -58,7 +59,7 @@ func TestLeaseMigrationAddsTheLeaseColumn(t *testing.T) {
 		require.NoError(t, conn.QueryRowContext(ctx, fmt.Sprintf("SHOW CREATE TABLE `%s`.execution_allocation", database)).Scan(&name, &statement))
 		return statement
 	}
-	require.Equal(t, definition(current), definition(scratch), "the script adds the column the schema defines")
+	require.Equal(t, definition(previous), definition(scratch), "the script adds the column the schema defines")
 	var lease int64
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT lease_expires_at FROM execution_allocation WHERE id = 'execution'").Scan(&lease))
 	require.Zero(t, lease, "an existing execution has no known lease")

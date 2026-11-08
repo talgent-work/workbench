@@ -166,7 +166,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		young, _, err := latestAllocation(ctx, db, input.WorkID)
 		require.NoError(t, err)
 		require.Zero(t, young.DeletedAt, "within its deadline the start may still prepare, so it stays")
-		_, err = db.Exec("UPDATE execution_allocation SET seated_at = ? WHERE id = ?", time.Now().Add(-domain.StartupDeadline-2*time.Minute).UnixMilli(), begun.ID)
+		_, err = db.Exec("UPDATE agent_execution SET seated_at = ? WHERE id = ?", time.Now().Add(-domain.StartupDeadline-2*time.Minute).UnixMilli(), begun.ID)
 		require.NoError(t, err)
 		require.NoError(t, reconcile(steps, begun.ID))
 		require.True(t, current(t, steps, begun.ID).Outcome.Abandoned)
@@ -177,7 +177,7 @@ func TestProvisioningPersistsSubmissionAndReconcilesUncertainOutcome(t *testing.
 		require.NotZero(t, record.DeletedAt)
 		outstanding, err := unreleased(ctx, db)
 		require.NoError(t, err)
-		require.True(t, slices.ContainsFunc(outstanding, func(o allocationRecord) bool { return o.ID == record.ID && o.SandboxID == sandboxID }))
+		require.True(t, slices.ContainsFunc(outstanding, func(o executionRecord) bool { return o.ID == record.ID && o.SandboxID == sandboxID }))
 	})
 
 	t.Run("restart retains original specification and credential", func(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"xorm.io/xorm"
 )
 
-// AgentExecutionRepository keeps every AgentExecution in execution_allocation
+// AgentExecutionRepository keeps every AgentExecution in agent_execution
 // and its Plugin outcomes in execution_plugin_result. It writes the
 // execution's facts under its optimistic version and leaves the technical
 // columns to the execution environment adapter.
@@ -27,7 +27,7 @@ func NewAgentExecutionRepository(db *xorm.Engine, now func() time.Time) *AgentEx
 }
 
 // factColumns are the columns holding an execution's facts.
-var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted", "start_rejected", "sandbox_id", "lease_expires_at", "sandbox_ready", "plugins_prepared", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "inputs_due", "inputs_synced_at", "start_failure", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "checkout_results", "request_json", "request_hash", "version", "updated_at"}
+var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted", "start_rejected", "sandbox_id", "lease_expires_at", "credentials_delivered", "preparation_ended", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "inputs_due", "inputs_synced_at", "start_failure", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "checkout_results", "request_json", "version", "updated_at"}
 
 func (r *AgentExecutionRepository) Get(ctx context.Context, id string) (*domain.AgentExecution, error) {
 	record, found, err := r.get(ctx, id)
@@ -52,7 +52,7 @@ func (r *AgentExecutionRepository) Latest(ctx context.Context, workID string) (*
 }
 
 // restore rebuilds the execution of a record with its Plugin outcomes.
-func (r *AgentExecutionRepository) restore(ctx context.Context, record allocationRecord) (*domain.AgentExecution, error) {
+func (r *AgentExecutionRepository) restore(ctx context.Context, record executionRecord) (*domain.AgentExecution, error) {
 	execution, err := executionFromRecord(record)
 	if err != nil {
 		return nil, err
@@ -95,7 +95,7 @@ func (r *AgentExecutionRepository) Save(ctx context.Context, execution *domain.A
 }
 
 // updateExecution writes the execution's facts under its loaded version.
-func updateExecution(tx *xorm.Session, record allocationRecord, version int) error {
+func updateExecution(tx *xorm.Session, record executionRecord, version int) error {
 	record.Version = version + 1
 	changed, err := tx.Cols(factColumns...).Where("id = ? AND version = ?", record.ID, version).Update(&record)
 	if err != nil {
@@ -109,7 +109,7 @@ func updateExecution(tx *xorm.Session, record allocationRecord, version int) err
 
 // insertExecution records a new execution with its technical columns empty;
 // the unique unretired execution per Work refuses a second one.
-func insertExecution(tx *xorm.Session, record allocationRecord, selection domain.WorkAuthorizationSelection, now int64) error {
+func insertExecution(tx *xorm.Session, record executionRecord, selection domain.WorkAuthorizationSelection, now int64) error {
 	authorizations, err := usedAuthorizations(selection)
 	if err != nil {
 		return err
@@ -128,21 +128,21 @@ func insertExecution(tx *xorm.Session, record allocationRecord, selection domain
 	return nil
 }
 
-func recordFromExecution(e *domain.AgentExecution) (allocationRecord, error) {
+func recordFromExecution(e *domain.AgentExecution) (executionRecord, error) {
 	launch, err := encodeLaunch(e.Launch)
 	if err != nil {
-		return allocationRecord{}, err
+		return executionRecord{}, err
 	}
 	checkouts, err := encodeCheckoutResults(e.CheckoutResults)
 	if err != nil {
-		return allocationRecord{}, err
+		return executionRecord{}, err
 	}
-	return allocationRecord{
+	return executionRecord{
 		CheckoutResults: checkouts,
-		ID:              e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch, RequestHash: storageKey(string(launch)),
+		ID:              e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch,
 		State: string(e.State), StartAdmittedAt: millis(e.StartAdmittedAt), DeskID: e.Desk.ID, SeatedAt: millis(e.Desk.SeatedAt), DeskLeftAt: millis(e.Desk.LeftAt),
 		Submitted: e.Creation.Submitted, StartRejected: e.Outcome.Rejected, SandboxID: e.Environment, LeaseExpiresAt: millis(e.Lease),
-		SandboxReady: e.Credentials.Delivered, EnvironmentPrepared: e.Process.PreparationEnded,
+		CredentialsDelivered: e.Credentials.Delivered, PreparationEnded: e.Process.PreparationEnded,
 		ProcessID: e.Process.ID, ProcessPrepared: e.Process.Prepared, ProcessStarted: e.Process.Started, ProcessExited: e.Process.Exited, ExitCode: e.Process.Exit.ExitCode, ExitReason: e.Process.Exit.Reason,
 		ExitRequestID: e.ExitRequest.StopRequestID, ExitCancels: e.ExitRequest.CancelWaitingTurn,
 		CredentialsExpireAt: millis(e.Credentials.ExpiresAt), ModelCredentialDigest: e.Credentials.Digest, CredentialsWithdrawn: e.Credentials.Withdrawn,
@@ -152,7 +152,7 @@ func recordFromExecution(e *domain.AgentExecution) (allocationRecord, error) {
 	}, nil
 }
 
-func executionFromRecord(r allocationRecord) (*domain.AgentExecution, error) {
+func executionFromRecord(r executionRecord) (*domain.AgentExecution, error) {
 	launch, err := decodeStartRequest(r.RequestJSON)
 	if err != nil {
 		return nil, oops.With("operation", "decode_execution_launch", "execution_id", r.ID).Wrap(err)
@@ -169,10 +169,10 @@ func executionFromRecord(r allocationRecord) (*domain.AgentExecution, error) {
 		Creation:    domain.CreationSubmission{Submitted: r.Submitted},
 		Environment: r.SandboxID,
 		Lease:       fromMillis(r.LeaseExpiresAt),
-		Process: domain.LaunchedProcess{ID: r.ProcessID, PreparationEnded: r.EnvironmentPrepared, Prepared: r.ProcessPrepared, Started: r.ProcessStarted, Exited: r.ProcessExited,
+		Process: domain.LaunchedProcess{ID: r.ProcessID, PreparationEnded: r.PreparationEnded, Prepared: r.ProcessPrepared, Started: r.ProcessStarted, Exited: r.ProcessExited,
 			Exit: domain.HarnessExit{ExitCode: r.ExitCode, Reason: r.ExitReason}},
 		ExitRequest: domain.ExitRequest{StopRequestID: r.ExitRequestID, CancelWaitingTurn: r.ExitCancels},
-		Credentials: domain.CredentialDelivery{Delivered: r.SandboxReady, Digest: r.ModelCredentialDigest, ExpiresAt: fromMillis(r.CredentialsExpireAt), Withdrawn: r.CredentialsWithdrawn},
+		Credentials: domain.CredentialDelivery{Delivered: r.CredentialsDelivered, Digest: r.ModelCredentialDigest, ExpiresAt: fromMillis(r.CredentialsExpireAt), Withdrawn: r.CredentialsWithdrawn},
 		Inputs:      domain.InputSync{Due: r.InputsDue, SyncedAt: fromMillis(r.InputsSyncedAt)},
 		Outcome:     domain.ExecutionOutcome{StartFailure: r.StartFailure, Rejected: r.StartRejected, Abandoned: r.Abandoned, Lost: r.EnvironmentLost, LossReason: r.LossReason},
 		State:       domain.ExecutionState(r.State), Retirement: domain.RetirementCause(r.Retirement),

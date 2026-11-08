@@ -178,7 +178,7 @@ func TestExecutionQueryRepositoryFindsTheExecutionsAChangeConcerns(t *testing.T)
 	managedRetired := begin(t, repository, "lookup-managed-retired", now, domain.RealizationManaged)
 	retire(t, repository, managedRetired, now, false)
 	for _, id := range []string{live.ID, managed.ID, managedRetired.ID} {
-		_, err := db.Exec("UPDATE execution_allocation SET input_owner = ? WHERE id = ?", "input-owner", id)
+		_, err := db.Exec("UPDATE agent_execution SET input_owner = ? WHERE id = ?", "input-owner", id)
 		require.NoError(t, err)
 	}
 

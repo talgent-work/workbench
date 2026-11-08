@@ -308,7 +308,7 @@ func newManagedWork(t *testing.T) *managedWork {
 
 // begin begins the execution of the start input describes, realized where
 // its Computer is, as the Policies do from the Work's admitted start.
-func (f *managedWork) begin(t *testing.T, input domain.LaunchSpecification) allocationRecord {
+func (f *managedWork) begin(t *testing.T, input domain.LaunchSpecification) executionRecord {
 	t.Helper()
 	ctx := context.Background()
 	place, err := f.place.DescribeComputer(ctx, input.ComputerID)
@@ -332,7 +332,7 @@ func (f *managedWork) begin(t *testing.T, input domain.LaunchSpecification) allo
 // launch reconciles the execution until its Harness process is launched and
 // handed to Dispatcher: its creation, first delivery, input sync,
 // preparation and start.
-func (f *managedWork) launch(t *testing.T, id string) allocationRecord {
+func (f *managedWork) launch(t *testing.T, id string) executionRecord {
 	t.Helper()
 	ctx := context.Background()
 	var failures []error
@@ -346,7 +346,7 @@ func (f *managedWork) launch(t *testing.T, id string) allocationRecord {
 	}
 	require.NoError(t, errors.Join(failures...))
 	require.Fail(t, "the execution launched no Harness process")
-	return allocationRecord{}
+	return executionRecord{}
 }
 
 // decided is what the execution decides from its observation now, without
@@ -379,7 +379,7 @@ func (f *managedWork) markInputsChanged(t *testing.T, owner string) []string {
 
 // startManaged begins and launches a Managed Work's run and answers its
 // execution's record.
-func startManaged(t *testing.T, f *managedWork, workID string) allocationRecord {
+func startManaged(t *testing.T, f *managedWork, workID string) executionRecord {
 	t.Helper()
 	input := managedRequest()
 	input.WorkID = workID
@@ -391,7 +391,7 @@ func startManaged(t *testing.T, f *managedWork, workID string) allocationRecord 
 
 // exit records the launched process's exit and retires the execution as its
 // Work asks.
-func (f *managedWork) exit(t *testing.T, record allocationRecord) {
+func (f *managedWork) exit(t *testing.T, record executionRecord) {
 	t.Helper()
 	ctx := context.Background()
 	run, err := f.steps.executions.Get(ctx, record.ID)
@@ -420,8 +420,8 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	record := f.launch(t, begun.ID)
 	require.Zero(t, f.mounts.calls, "a Work on a Managed Computer acquires no mounts")
 	require.NotContains(t, string(record.SpecificationJSON), "HOME")
-	require.True(t, record.SandboxReady)
-	require.True(t, record.EnvironmentPrepared)
+	require.True(t, record.CredentialsDelivered)
+	require.True(t, record.PreparationEnded)
 	require.Equal(t, "harness-handle", record.ProcessID)
 	require.Equal(t, input.WorkID, relay.environment["TALGENT_WORK_ID"])
 	require.Equal(t, "1", relay.environment["DISABLE_AUTOUPDATER"])

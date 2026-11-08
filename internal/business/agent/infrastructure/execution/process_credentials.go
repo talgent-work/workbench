@@ -83,7 +83,7 @@ func (q *ExecutionQueryRepository) VerifyWorkCredential(ctx context.Context, wor
 
 // issuedWorkCredential reads the Work credential that the execution's
 // realization recorded in its specification.
-func issuedWorkCredential(record allocationRecord) (string, error) {
+func issuedWorkCredential(record executionRecord) (string, error) {
 	switch record.Realization {
 	case realizationCloud:
 		return cloudEnvironment{}.workCredential(record)

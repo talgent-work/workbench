@@ -60,7 +60,7 @@ type workAccessTokens interface {
 type recordedAccessTokens struct{ db *xorm.Engine }
 
 func (r recordedAccessTokens) accessToken(ctx context.Context, workID string) (string, error) {
-	var record allocationRecord
+	var record executionRecord
 	found, err := r.db.Context(ctx).Where("session_id = ? AND sandbox_id <> ''", workID).
 		Desc("created_at").Desc("id").Cols("specification_json").Get(&record)
 	if err != nil {

@@ -81,7 +81,7 @@ func (m *ManagedComputers) forgetCredentials(ctx context.Context, spec managedSp
 // delivered declares an expiry. The Work's inputs, whose downloads
 // authenticate with the Work credential delivered here, are synced as their
 // own step once it is delivered.
-func (m ManagedEnvironment) deliver(ctx context.Context, record allocationRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
+func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return deliveredCredentials{}, err
@@ -129,7 +129,7 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record allocationRecord
 // withdraw makes the machine forget the Work's credentials. A machine not
 // reachable now keeps the withdrawal due; one that holds nothing of the Work
 // any more, its reconciliation having removed it, forgot them with it.
-func (m ManagedEnvironment) withdraw(ctx context.Context, record allocationRecord) error {
+func (m ManagedEnvironment) withdraw(ctx context.Context, record executionRecord) error {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return err
@@ -142,7 +142,7 @@ func (m ManagedEnvironment) withdraw(ctx context.Context, record allocationRecor
 
 // modelDigest identifies the Model Configuration key a delivery carries now,
 // empty on the machine's own Claude login.
-func (m ManagedEnvironment) modelDigest(record allocationRecord) (string, error) {
+func (m ManagedEnvironment) modelDigest(record executionRecord) (string, error) {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return "", err

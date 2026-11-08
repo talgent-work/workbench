@@ -60,11 +60,11 @@ func preparationServer(t *testing.T, report string, exit int) (*execd.Client, *s
 
 // preparedRecord inserts the live execution record of a start launched with
 // launch.
-func preparedRecord(t *testing.T, db *xorm.Engine, launch domain.LaunchSpecification) allocationRecord {
+func preparedRecord(t *testing.T, db *xorm.Engine, launch domain.LaunchSpecification) executionRecord {
 	t.Helper()
 	encoded, err := json.Marshal(launch)
 	require.NoError(t, err)
-	record := allocationRecord{ID: uuid.NewString(), SessionID: launch.WorkID, SandboxID: "sandbox", Version: 1, PreparationCommand: "prepare", RequestJSON: encoded, SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
+	record := executionRecord{ID: uuid.NewString(), SessionID: launch.WorkID, SandboxID: "sandbox", Version: 1, PreparationCommand: "prepare", RequestJSON: encoded, SpecificationJSON: []byte(`{}`), CredentialPlanJSON: []byte(`{}`), ServiceAccessJSON: []byte(`[]`), AuthorizationIDs: []byte(`[]`)}
 	_, err = db.Insert(&record)
 	require.NoError(t, err)
 	return record
@@ -99,7 +99,7 @@ func TestPreparationReportsAnOutcomeForEveryPlannedRepository(t *testing.T) {
 		{RepositoryID: "github:1", CheckedOut: true},
 		{RepositoryID: "github:2", Reason: domain.CheckoutIncomplete},
 	}, report.Checkouts)
-	require.False(t, record.EnvironmentPrepared, "the execution records its preparation ended, after the outcomes")
+	require.False(t, record.PreparationEnded, "the execution records its preparation ended, after the outcomes")
 	stored, found, err := latestAllocation(ctx, db, launch.WorkID)
 	require.NoError(t, err)
 	require.True(t, found)

@@ -116,12 +116,12 @@ var staleDelivery = time.UnixMilli(1)
 // it has and reports itself stale. It reports the service access observed and
 // the earliest declared expiry of what it delivered, zero when nothing
 // delivered expires.
-func (c *SandboxCredentials) prepare(ctx context.Context, record allocationRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
+func (c *SandboxCredentials) prepare(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
 	statuses, expiry, digest, err := c.write(ctx, record, admitted, spec, redelivery, holding)
 	return deliveredCredentials{Statuses: statuses, ExpiresAt: expiry, ModelDigest: digest}, err
 }
 
-func (c *SandboxCredentials) write(ctx context.Context, record allocationRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool, holding command.EnvironmentHolding) ([]ServiceAccessStatus, time.Time, string, error) {
+func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, redelivery bool, holding command.EnvironmentHolding) ([]ServiceAccessStatus, time.Time, string, error) {
 	var none time.Time
 	if err := holding(ctx); err != nil {
 		return nil, none, "", err
