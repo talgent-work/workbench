@@ -14,7 +14,7 @@ func harnessWork(t *testing.T, managed bool, choice domain.HarnessChoice) (*doma
 	if !managed {
 		input.WorkModel = domain.WorkModelSelection{ConfigurationID: "glm-5"}
 	}
-	input.Harness = choice
+	input.HarnessChoice = choice
 	admission := seatedFor(input)
 	admission.ModelConfigurationProvided = true
 	work, err := domain.NewAgentWork(input, admission)

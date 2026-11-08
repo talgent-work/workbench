@@ -31,9 +31,9 @@ type ExecutionEnvironmentPort interface {
 	// process there, and the model key a delivery would carry now.
 	Observe(ctx context.Context, execution *domain.AgentExecution) (domain.EnvironmentObservation, error)
 	// PrepareCreation fixes the environment's specification from the
-	// execution and its Mount Grants and what its submission freezes. It is
-	// repeatable and creates nothing.
-	PrepareCreation(ctx context.Context, execution *domain.AgentExecution, mounts domain.SandboxMounts) error
+	// execution and what Application supplied from other authorities, which
+	// its submission freezes. It is repeatable and creates nothing.
+	PrepareCreation(ctx context.Context, execution *domain.AgentExecution, supply CreationSupply) error
 	// SubmitCreation submits the environment's creation once and waits for
 	// its answer, longer than the authority takes to create it. An error
 	// means the answer is lost; a definite answer binds, or refuses after a
@@ -77,12 +77,28 @@ type ExecutionEnvironmentPort interface {
 	ReconcileComputer(ctx context.Context, computerID string) error
 }
 
+// CreationSupply is what fixing an environment's specification takes from
+// other authorities, obtained by Application. On a Cloud it is the Mount
+// Grants Storage issued for exactly the Work's located layout, and the access
+// each repository the Work selected takes, which the specification freezes
+// so later deliveries supply credentials for those repositories only. A
+// Managed Computer's directory takes none of it.
+type CreationSupply struct {
+	Mounts       domain.SandboxMounts
+	Repositories []RepositoryAccessReference
+}
+
 // CredentialSupply is what a delivery hands the bound environment from
 // other authorities, obtained by Application: the Space Token of the Work's
 // publication target, with which its Agent publishes (Space Token in
-// sandbox).
+// sandbox), and, on a Cloud, the current credentials Marketplace supplied
+// for the repositories and service targets the run may reach, with the
+// access observed for each. A Managed Computer uses the machine's own.
 type CredentialSupply struct {
-	SpaceToken string
+	SpaceToken   string
+	Repositories []RepositoryAccessMaterial
+	Services     []ServiceAccessMaterial
+	Access       []ServiceAccessStatus
 }
 
 // ManagedInputs are the current files of a Managed Work's located inputs,

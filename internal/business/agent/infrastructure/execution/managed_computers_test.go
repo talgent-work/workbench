@@ -147,7 +147,7 @@ func TestManagedLaunchKeepsEverythingInsideTheWorkRoot(t *testing.T) {
 func TestManagedRecoveredStartFindsTheTranscriptInTheMachinesHome(t *testing.T) {
 	home := t.TempDir()
 	run := func() string {
-		script := recoveredManagedContext("session-id", []string{"--session-id", "session-id"}) + `printf '%s ' "$@"`
+		script := recoveredManagedContext(domain.ClaudeCode, "session-id", []string{"--session-id", "session-id"}) + `printf '%s ' "$@"`
 		cmd := exec.Command("sh", "-c", script)
 		cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
 		output, err := cmd.Output()
@@ -317,7 +317,7 @@ func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 	require.IsType(t, cloudEnvironment{}, authority)
 	_, err = cloudOnly.authority(executionRecord{Realization: realizationManaged})
 	require.ErrorIs(t, err, errManagedNotConfigured)
-	require.ErrorIs(t, cloudOnly.specify(context.Background(), executionRecord{Realization: realizationManaged, SpecificationJSON: []byte("null")}, domain.SandboxMounts{}), errManagedNotConfigured, "a Managed execution's creation is refused before anything is specified")
+	require.ErrorIs(t, cloudOnly.specify(context.Background(), executionRecord{Realization: realizationManaged, SpecificationJSON: []byte("null")}, command.CreationSupply{}), errManagedNotConfigured, "a Managed execution's creation is refused before anything is specified")
 	_, err = cloudOnly.authority(executionRecord{Realization: "kubernetes"})
 	require.Error(t, err)
 

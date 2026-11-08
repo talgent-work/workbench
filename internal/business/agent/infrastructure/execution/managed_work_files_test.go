@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	pathpkg "path"
 	"strings"
 	"sync"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -99,30 +97,6 @@ func (m *machineFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// judgedFile is what Agent handed Storage's preview judgement.
-type judgedFile struct {
-	Name string
-	Size int64
-	Head int
-}
-
-// storageJudge stands for Storage's Preview Policy: a .log is truncated to
-// shownLog bytes, a .bin is refused, anything else is shown whole.
-type storageJudge struct{ judged []judgedFile }
-
-const shownLog, wholeLimit = 100, 1000
-
-func (j *storageJudge) JudgeFilePreview(_ context.Context, name string, size int64, head []byte) (application.WorkspaceFilePreview, int64, error) {
-	j.judged = append(j.judged, judgedFile{Name: name, Size: size, Head: len(head)})
-	switch {
-	case strings.HasSuffix(name, ".log"):
-		return application.WorkspaceFilePreview{Mode: application.WorkspacePreviewTruncated, Display: application.WorkspacePreviewText, LimitBytes: shownLog}, shownLog, nil
-	case strings.HasSuffix(name, ".bin"):
-		return application.WorkspaceFilePreview{Mode: application.WorkspacePreviewRefused, Refusal: application.WorkspacePreviewUnsupported}, 0, nil
-	}
-	return application.WorkspaceFilePreview{Mode: application.WorkspacePreviewDirect, Display: application.WorkspacePreviewText}, wholeLimit, nil
-}
-
 // openedToken is the execd token the machine keeps for the Work "session".
 type openedToken string
 
@@ -131,27 +105,23 @@ func (o openedToken) accessToken(context.Context, string) (string, error) { retu
 // sessionDirectory is where the Work "session" has its files.
 var sessionDirectory = domain.WorkspaceLocation{WorkID: "session", ComputerID: managedComputerID}
 
-func newMachineFiles(t *testing.T) (*machineFiles, *ManagedComputers, *ManagedWorkspaces, managedSpecification) {
+func newMachineFiles(t *testing.T) (*machineFiles, *ManagedComputers, *ManagedWorkFiles, managedSpecification) {
 	t.Helper()
 	modified := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
-	big := strings.Repeat("a", previewHeadBytes+10)
 	machine := &machineFiles{
 		dirs: map[string][]machineFileEntry{
-			"":       {{Name: "inputs", Kind: "directory", ModifiedAt: modified}, {Name: "notes.md", Kind: "file", Size: 5, ModifiedAt: modified}, {Name: "out", Kind: "directory", ModifiedAt: modified}},
+			"":       {{Name: "inputs", Kind: "directory", ModifiedAt: modified}, {Name: "notes.md", Kind: "file", Size: 5, ModifiedAt: modified}},
 			"inputs": {{Name: "brief.pdf", Kind: "file", Size: 9, ModifiedAt: modified}},
-			"out":    {{Name: "big.log", Kind: "file", Size: int64(len(big)), ModifiedAt: modified}, {Name: "data.bin", Kind: "file", Size: 3, ModifiedAt: modified}},
 		},
-		files: map[string]string{"notes.md": "# hi\n", "inputs/brief.pdf": "%PDF-1.7\n", "out/big.log": big, "out/data.bin": "\x00\x01\x02"},
+		files: map[string]string{"notes.md": "# hi\n", "inputs/brief.pdf": "%PDF-1.7\n"},
 	}
 	server := httptest.NewServer(machine)
 	t.Cleanup(server.Close)
 	machines, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
-	links, err := application.NewWorkspaceFileSigner("/api/v1/agent/workspace-files", "control", time.Now)
-	require.NoError(t, err)
-	workspaces := &ManagedWorkspaces{tokens: openedToken("execd-token"), machines: machines, links: links, previews: &storageJudge{}}
+	files := &ManagedWorkFiles{tokens: openedToken("execd-token"), machines: machines}
 	spec := managedSpecification{ComputerID: managedComputerID, AccessToken: "execd-token"}
-	return machine, machines, workspaces, spec
+	return machine, machines, files, spec
 }
 
 // The machine downloads each Attachment from the Gateway's content address
@@ -182,93 +152,39 @@ func TestManagedComputersNeedTheContentAddressOnTheGatewaysOrigin(t *testing.T) 
 	}
 }
 
-// A Managed Work's directory is browsed on its machine: Attachments under
-// inputs/ name themselves, a missing path is not found, a machine the relay
-// does not reach is a Disconnection, and a machine that does not know the
-// Work never opened its directory.
-func TestManagedWorkspaceIsBrowsedOnTheMachine(t *testing.T) {
+// A Managed Work's files are read on its machine with the execd token it
+// keeps: a missing path is not found, a directory read as a file is not of
+// the kind read, and a machine the relay does not reach is a Disconnection.
+func TestManagedWorkFilesAreReadThroughTheRelay(t *testing.T) {
 	ctx := context.Background()
-	machine, _, workspaces, _ := newMachineFiles(t)
-	listing, err := workspaces.WorkspaceView(ctx, sessionDirectory, "")
+	machine, _, files, _ := newMachineFiles(t)
+	listed, err := files.List(ctx, sessionDirectory, "")
 	require.NoError(t, err)
-	require.Equal(t, 3, listing.Total)
-	require.Equal(t, application.WorkspaceDirectory, listing.Entries[0].Kind)
-	require.Equal(t, application.WorkspaceFile, listing.Entries[1].Kind)
-	require.Empty(t, listing.Entries[1].AttachmentName)
-	inputs, err := workspaces.WorkspaceView(ctx, sessionDirectory, "inputs")
+	require.Equal(t, []WorkFile{{Name: "inputs", Directory: true, ModifiedAt: machine.dirs[""][0].ModifiedAt}, {Name: "notes.md", Size: 5, ModifiedAt: machine.dirs[""][1].ModifiedAt}}, listed)
+	described, err := files.Stat(ctx, sessionDirectory, "inputs/brief.pdf")
 	require.NoError(t, err)
-	require.Equal(t, "brief.pdf", inputs.Entries[0].AttachmentName, "an input is read as its Attachment")
+	require.Equal(t, int64(9), described.Size)
+	content, err := files.Open(ctx, sessionDirectory, "notes.md")
+	require.NoError(t, err)
+	read, err := io.ReadAll(content)
+	require.NoError(t, content.Close())
+	require.NoError(t, err)
+	require.Equal(t, "# hi\n", string(read))
 
-	_, err = workspaces.WorkspaceView(ctx, sessionDirectory, "missing")
-	require.ErrorIs(t, err, application.ErrWorkspacePathNotFound)
-	_, err = workspaces.WorkspaceView(ctx, sessionDirectory, "../etc")
-	require.ErrorIs(t, err, application.ErrInvalidWorkspacePath)
-	_, err = workspaces.WorkspaceView(ctx, sessionDirectory, "notes.md")
-	require.ErrorIs(t, err, application.ErrInvalidWorkspacePath)
+	_, err = files.List(ctx, sessionDirectory, "missing")
+	require.ErrorIs(t, err, ErrWorkFileNotFound)
+	_, err = files.List(ctx, sessionDirectory, "notes.md")
+	require.ErrorIs(t, err, ErrWorkFileNotRegular)
+	_, err = files.Open(ctx, sessionDirectory, "inputs")
+	require.ErrorIs(t, err, ErrWorkFileNotRegular)
 
-	machine.unknown = true
-	_, err = workspaces.WorkspaceView(ctx, sessionDirectory, "")
-	require.ErrorIs(t, err, domain.ErrWorkspaceNotCreated)
-	machine.unknown, machine.unreachable = false, true
-	_, err = workspaces.WorkspaceView(ctx, sessionDirectory, "")
+	machine.unreachable = true
+	_, err = files.List(ctx, sessionDirectory, "")
 	require.ErrorIs(t, err, domain.ErrWorkspaceUnavailable)
-	_, err = workspaces.PreviewWorkspaceFile(ctx, sessionDirectory, "notes.md")
+	_, err = files.Stat(ctx, sessionDirectory, "notes.md")
 	require.ErrorIs(t, err, domain.ErrWorkspaceUnavailable)
-	_, err = workspaces.WorkspaceFileLink(ctx, sessionDirectory, "notes.md")
+	_, err = files.Open(ctx, sessionDirectory, "notes.md")
 	require.ErrorIs(t, err, domain.ErrWorkspaceUnavailable)
-}
-
-// Storage judges each preview from the file's name, size and at most its
-// text probe of leading bytes; a readable file is linked for at most the
-// bytes Storage allows.
-func TestManagedWorkspacePreviewsAreJudgedByStorage(t *testing.T) {
-	ctx := context.Background()
-	machine, _, workspaces, _ := newMachineFiles(t)
-	preview, err := workspaces.PreviewWorkspaceFile(ctx, sessionDirectory, "notes.md")
-	require.NoError(t, err)
-	require.Equal(t, application.WorkspacePreviewDirect, preview.Mode)
-	require.Equal(t, application.WorkspacePreviewText, preview.Display)
-	require.NotNil(t, preview.Link)
-	grant := linkGrant(t, workspaces.links, preview.Link.URL)
-	require.Equal(t, application.WorkspaceFileGrant{WorkID: "session", Path: "notes.md", Limit: wholeLimit, ExpiresAt: grant.ExpiresAt}, grant)
-
-	preview, err = workspaces.PreviewWorkspaceFile(ctx, sessionDirectory, "out/big.log")
-	require.NoError(t, err)
-	require.Equal(t, application.WorkspacePreviewTruncated, preview.Mode)
-	require.Equal(t, int64(shownLog), preview.LimitBytes)
-	require.Equal(t, int64(shownLog), linkGrant(t, workspaces.links, preview.Link.URL).Limit)
-
-	preview, err = workspaces.PreviewWorkspaceFile(ctx, sessionDirectory, "out/data.bin")
-	require.NoError(t, err)
-	require.Equal(t, application.WorkspaceFilePreview{Mode: application.WorkspacePreviewRefused, Refusal: application.WorkspacePreviewUnsupported}, preview)
-	require.Equal(t, []judgedFile{
-		{Name: "notes.md", Size: 5, Head: 5}, {Name: "big.log", Size: previewHeadBytes + 10, Head: previewHeadBytes}, {Name: "data.bin", Size: 3, Head: 3},
-	}, workspaces.previews.(*storageJudge).judged)
-
-	_, err = workspaces.PreviewWorkspaceFile(ctx, sessionDirectory, "inputs/brief.pdf")
-	require.ErrorIs(t, err, application.ErrInvalidWorkspacePath, "an Attachment is previewed as itself")
-	_, err = workspaces.PreviewWorkspaceFile(ctx, sessionDirectory, "out")
-	require.ErrorIs(t, err, application.ErrInvalidWorkspacePath)
-	_, err = workspaces.PreviewWorkspaceFile(ctx, sessionDirectory, "gone.txt")
-	require.ErrorIs(t, err, application.ErrWorkspacePathNotFound)
-	require.Empty(t, machine.listed, "a file is described on its own, never by listing its directory")
-
-	link, err := workspaces.WorkspaceFileLink(ctx, sessionDirectory, "out/data.bin")
-	require.NoError(t, err)
-	download := linkGrant(t, workspaces.links, link.URL)
-	require.True(t, download.Download)
-	require.Zero(t, download.Limit, "a download is the whole file")
-	require.WithinDuration(t, time.Now().Add(15*time.Minute), link.ExpiresAt, 2*time.Second)
-}
-
-func linkGrant(t *testing.T, links *application.WorkspaceFileSigner, link string) application.WorkspaceFileGrant {
-	t.Helper()
-	parsed, err := url.Parse(link)
-	require.NoError(t, err)
-	require.Equal(t, "/api/v1/agent/workspace-files", parsed.Path)
-	grant, err := links.Verify(parsed.Query().Get("grant"))
-	require.NoError(t, err)
-	return grant
 }
 
 // A file read the relay stops answering fails once it waits past its idle

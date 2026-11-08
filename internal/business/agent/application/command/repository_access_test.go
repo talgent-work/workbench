@@ -1,4 +1,4 @@
-package application_test
+package command_test
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -85,7 +84,7 @@ func TestRepositoryAccessFollowsTheRetainedSelection(t *testing.T) {
 
 	f.duringSupply = func() { f.work.RepositorySelection.Repositories[0].CloneURL = "https://github.com/acme/moved.git" }
 	material, err := f.app.Resolve(t.Context(), "owner", f.work.ID)
-	require.ErrorIs(t, err, application.ErrRepositoryAccessChanged)
+	require.ErrorIs(t, err, command.ErrRepositoryAccessChanged)
 	require.Empty(t, material.Credentials)
 }
 
@@ -109,7 +108,7 @@ func TestRepositoryAccessPlansAWorkStartedForAnotherHome(t *testing.T) {
 
 type repositoryAccessFixture struct {
 	command.MarketplacePort
-	app          *application.RepositoryAccess
+	app          *command.RepositoryAccess
 	work         *domain.AgentWork
 	supplied     []command.RepositoryCredentialRequest
 	token        string
@@ -132,7 +131,7 @@ func newRepositoryAccessFixture(t *testing.T, withoutAuthorization ...bool) *rep
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner", Available: availableAuthorizations(withoutAuthorization...)},
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
-	f.app = application.NewRepositoryAccess(repositoryWorkStore{f: f}, f)
+	f.app = command.NewRepositoryAccess(repositoryWorkStore{f: f}, f)
 	return f
 }
 

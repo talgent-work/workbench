@@ -48,8 +48,10 @@ type Environment struct {
 	Deleted                                 []string
 	Delivered, Withdrawn, Prepared          int
 	Launched, Connected, Synced, Reconciled int
-	// Supplies are what each delivery was handed from other authorities,
-	// and SyncedInputs the inputs each sync was handed.
+	// Creations are what each specification was handed from other
+	// authorities, Supplies what each delivery was handed, and SyncedInputs
+	// the inputs each sync was handed.
+	Creations    []command.CreationSupply
 	Supplies     []command.CredentialSupply
 	SyncedInputs []command.ManagedInputs
 	// Cleared counts deliveries cleared once their holding check refused.
@@ -74,10 +76,11 @@ func (e *Environment) Observe(_ context.Context, execution *domain.AgentExecutio
 	return e.Observation, nil
 }
 
-func (e *Environment) PrepareCreation(context.Context, *domain.AgentExecution, domain.SandboxMounts) error {
+func (e *Environment) PrepareCreation(_ context.Context, _ *domain.AgentExecution, supply command.CreationSupply) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.Specified++
+	e.Creations = append(e.Creations, supply)
 	return nil
 }
 

@@ -38,6 +38,8 @@ type nativeWorkLifecycleFixture struct {
 	connections  *NativeConnections
 	executions   *AgentExecutionRepository
 	reconcile    *command.ReconcileExecutionHandler
+	// services supplies every delivery's service credentials.
+	services     *swappableServices
 	coordination *command.ExecutionCoordination
 	external     *lifecycleFixture
 	// readings are the processes Dispatcher reads, by Work.
@@ -79,7 +81,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	}))
 	t.Cleanup(dispatchServer.Close)
 	provider, _, external := sandboxClient(t)
-	credentials, err := NewSandboxCredentials(db, provider.client, provider.config.Models, fixtureRepositoryCredentials{}, authorizationcatalogtest.NoServices{}, http.DefaultClient, "encrypted-network")
+	credentials, err := NewSandboxCredentials(db, provider.client, provider.config.Models, http.DefaultClient, "encrypted-network")
 	require.NoError(t, err)
 	policy, err := provider.networkPolicy(ctx)
 	require.NoError(t, err)
@@ -93,9 +95,11 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	executions := NewAgentExecutionRepository(db, time.Now)
 	harness := commandtest.NewHarness()
 	computers := &cloudDesks{}
+	services := &swappableServices{current: authorizationcatalogtest.NoServices{}}
+	supplies := command.NewEnvironmentSupplies(authorizationcatalogtest.NoRepositories{}, services, directoryMounts{root: t.TempDir()})
 	return &nativeWorkLifecycleFixture{
-		db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, external: external, executions: executions, readings: readings,
-		reconcile:    command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, executions, environment, harness, computers, directoryMounts{root: t.TempDir()}),
+		db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, external: external, executions: executions, readings: readings, services: services,
+		reconcile:    command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, executions, environment, harness, computers, supplies),
 		coordination: command.NewExecutionCoordination(time.Now, works, executions, computers, harness),
 	}
 }
@@ -175,4 +179,12 @@ func (f *nativeWorkLifecycleFixture) run(t *testing.T, ctx context.Context, work
 	run, err = f.executions.Get(ctx, run.ID)
 	require.NoError(t, err)
 	return run
+}
+
+// swappableServices is the service credential supply a scenario replaces,
+// which every delivery of the fixture asks.
+type swappableServices struct{ current command.ServiceSupply }
+
+func (s *swappableServices) Resolve(ctx context.Context, owner, workID string, requirements []command.ServiceRequirement) (command.ServiceAccessResult, error) {
+	return s.current.Resolve(ctx, owner, workID, requirements)
 }

@@ -1,4 +1,4 @@
-package application
+package command
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -25,7 +24,7 @@ type RepositoryAccessReference struct {
 
 type RepositoryAccessMaterial struct {
 	RepositoryAccessReference
-	command.RepositoryCredentialMaterial
+	RepositoryCredentialMaterial
 }
 
 // RepositoryAccessFailure is a repository no credential was supplied for;
@@ -45,10 +44,10 @@ type RepositoryAccessResult struct {
 // owns no grant lifecycle.
 type RepositoryAccess struct {
 	works  domain.AgentWorkRepository
-	supply command.MarketplacePort
+	supply MarketplacePort
 }
 
-func NewRepositoryAccess(works domain.AgentWorkRepository, supply command.MarketplacePort) *RepositoryAccess {
+func NewRepositoryAccess(works domain.AgentWorkRepository, supply MarketplacePort) *RepositoryAccess {
 	return &RepositoryAccess{works: works, supply: supply}
 }
 
@@ -70,7 +69,7 @@ func (a *RepositoryAccess) Plan(ctx context.Context, owner, workID string) ([]Re
 		return nil, err
 	}
 	var refs []RepositoryAccessReference
-	for _, checkout := range command.PlanCheckouts(work.ID, work.RepositorySelection) {
+	for _, checkout := range PlanCheckouts(work.ID, work.RepositorySelection) {
 		ref, err := work.RepositoryAuthorization(checkout.RepoID)
 		if err != nil && !errors.Is(err, domain.ErrServiceAuthorizationNotSelected) {
 			return nil, errors.Join(ErrRepositoryAuthorizationUnavailable, err)
@@ -92,7 +91,7 @@ func (a *RepositoryAccess) Resolve(ctx context.Context, owner, workID string) (R
 			result.Unavailable = append(result.Unavailable, RepositoryAccessFailure{RepositoryID: ref.RepositoryID, Reason: "not_selected"})
 			continue
 		}
-		material, err := a.supply.SupplyRepositoryCredential(ctx, command.RepositoryCredentialRequest{OwnerUserID: owner, AuthorizationID: ref.AuthorizationID, RepositoryID: ref.RepositoryID, CloneURL: ref.CloneURL})
+		material, err := a.supply.SupplyRepositoryCredential(ctx, RepositoryCredentialRequest{OwnerUserID: owner, AuthorizationID: ref.AuthorizationID, RepositoryID: ref.RepositoryID, CloneURL: ref.CloneURL})
 		if err != nil {
 			if ctx.Err() != nil {
 				return RepositoryAccessResult{}, ctx.Err()
@@ -117,7 +116,7 @@ func (a *RepositoryAccess) Resolve(ctx context.Context, owner, workID string) (R
 	return result, nil
 }
 
-func usableRepositoryCredential(material command.RepositoryCredentialMaterial) bool {
+func usableRepositoryCredential(material RepositoryCredentialMaterial) bool {
 	return material.Username != "" && !strings.Contains(material.Username, ":") && material.Password != "" && !credentialExpired(material.ExpiresAt, time.Now())
 }
 

@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
@@ -34,8 +33,7 @@ type Client struct {
 }
 
 var (
-	_ command.StoragePort         = (*Client)(nil)
-	_ execution.StorageWorkspaces = (*Client)(nil)
+	_ command.StoragePort = (*Client)(nil)
 )
 
 func NewClient(httpClient connecthttp.HTTPClient, config Config) (*Client, error) {
@@ -60,7 +58,11 @@ func authorized(ctx context.Context, token string) context.Context {
 func (c *Client) AcquireMounts(ctx context.Context, workID string, mounts []domain.DirectoryMount) (domain.SandboxMounts, error) {
 	request := &storageprivatev1.AcquireMountsRequest{WorkId: workID}
 	for _, mount := range mounts {
-		request.Mounts = append(request.Mounts, &storageprivatev1.MountRequest{Directory: locatedToProto(mount.Directory), ReadOnly: mount.ReadOnly, MountPoints: mount.MountPoints})
+		directory, err := locatedToProto(mount.Directory)
+		if err != nil {
+			return nil, err
+		}
+		request.Mounts = append(request.Mounts, &storageprivatev1.MountRequest{Directory: directory, ReadOnly: mount.ReadOnly, MountPoints: mount.MountPoints})
 	}
 	response, err := c.mounts.AcquireMounts(authorized(ctx, c.token), request)
 	if err != nil {

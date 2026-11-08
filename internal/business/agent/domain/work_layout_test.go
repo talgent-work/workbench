@@ -200,20 +200,27 @@ func TestTheRepresentedPersonAndTheStarterAreDistinctFacts(t *testing.T) {
 }
 
 // The Agent Harness places its state mount; a layout holding another mount at
-// that path refuses the creation, and an unknown Harness is refused.
+// that path, or nested inside it, refuses the creation, while one beside it
+// does not, and an unknown Harness is refused.
 func TestAHarnessStatePathTakenByAnotherMountRefusesCreation(t *testing.T) {
 	definition := employeeDefinition(t, "jack")
-	layout := domain.DefaultWorkLayout()
-	layout.Mounts = append(layout.Mounts, domain.LayoutMount{Path: "$HOME/.claude", Locators: []domain.DirectoryLocator{{Conditions: []domain.LocatorCondition{domain.ConditionPerson}, Name: "claude", Backend: domain.BackendNAS, Lifetime: domain.LifetimePermanent}}})
-	definition.WorkLayout = layout
-	require.NoError(t, definition.Validate(), "the layout itself has one mount per path")
-	_, _, err := definition.CreateWork(layoutCreation(definition, "jack", false), domain.WorkCreationFacts{})
-	require.ErrorIs(t, err, domain.ErrInvalidWork)
+	for path, refused := range map[string]bool{"$HOME/.claude": true, "$HOME/.claude/projects": true, "$HOME/.claude-other": false} {
+		layout := domain.DefaultWorkLayout()
+		layout.Mounts = append(layout.Mounts, domain.LayoutMount{Path: path, Locators: []domain.DirectoryLocator{{Conditions: []domain.LocatorCondition{domain.ConditionPerson}, Name: "claude", Backend: domain.BackendNAS, Lifetime: domain.LifetimePermanent}}})
+		definition.WorkLayout = layout
+		require.NoError(t, definition.Validate(), "the layout itself has one mount per path")
+		_, _, err := definition.CreateWork(layoutCreation(definition, "jack", false), domain.WorkCreationFacts{})
+		if refused {
+			require.ErrorIs(t, err, domain.ErrInvalidWork, path)
+		} else {
+			require.NoError(t, err, path)
+		}
+	}
 
 	definition.WorkLayout = domain.DefaultWorkLayout()
 	request := layoutCreation(definition, "jack", false)
-	request.AgentHarness = "codex"
-	_, _, err = definition.CreateWork(request, domain.WorkCreationFacts{})
+	request.AgentHarnessID = "codex"
+	_, _, err := definition.CreateWork(request, domain.WorkCreationFacts{})
 	require.ErrorIs(t, err, domain.ErrUnknownAgentHarness)
 }
 

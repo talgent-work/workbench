@@ -121,13 +121,13 @@ func (e *ExecutionEnvironment) reading(ctx context.Context, execution *domain.Ag
 }
 
 // PrepareCreation fixes the execution's environment specification once,
-// before its creation is submitted.
-func (e *ExecutionEnvironment) PrepareCreation(ctx context.Context, execution *domain.AgentExecution, mounts domain.SandboxMounts) error {
+// before its creation is submitted, with what Application supplied.
+func (e *ExecutionEnvironment) PrepareCreation(ctx context.Context, execution *domain.AgentExecution, supply command.CreationSupply) error {
 	record, err := e.record(ctx, execution)
 	if err != nil {
 		return err
 	}
-	return withExecution(e.provisioning.specify(ctx, record, mounts), execution)
+	return withExecution(e.provisioning.specify(ctx, record, supply), execution)
 }
 
 // SubmitCreation submits the specified environment's creation once, waiting

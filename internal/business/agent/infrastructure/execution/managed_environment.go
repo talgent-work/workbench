@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
 	"xorm.io/xorm"
@@ -30,7 +31,7 @@ type ManagedEnvironment struct {
 	records  records
 	machines *ManagedComputers
 	// models are the platform's Model Configurations.
-	models *ModelCatalog
+	models command.PlatformCatalogPort
 	// inputs are the Attachments of the Work's input source, which their
 	// own sync hands the machine (managed_inputs.go).
 	// inputsRefresh is how long synced inputs stay current before the
@@ -48,7 +49,7 @@ var (
 
 // NewManagedEnvironment is the Managed realization of a deployment whose
 // relay reaches Managed Computers.
-func NewManagedEnvironment(db *xorm.Engine, machines *ManagedComputers, models *ModelCatalog, sessions domain.AgentWorkRepository, inputsRefresh time.Duration) (*ManagedEnvironment, error) {
+func NewManagedEnvironment(db *xorm.Engine, machines *ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository, inputsRefresh time.Duration) (*ManagedEnvironment, error) {
 	if db == nil || machines == nil || models == nil || sessions == nil {
 		return nil, errors.New("agent: executions, Managed Computers, Model Configurations and Works are required for the Managed realization")
 	}
@@ -88,7 +89,7 @@ func (m ManagedEnvironment) specify(ctx context.Context, request domain.LaunchSp
 }
 
 // claim freezes nothing: the machine's own git credentials serve the Work.
-func (ManagedEnvironment) claim(_ context.Context, record executionRecord) ([]byte, error) {
+func (ManagedEnvironment) claim(record executionRecord, _ command.CreationSupply) ([]byte, error) {
 	_, err := decodeManagedSpecification(record)
 	return nil, err
 }

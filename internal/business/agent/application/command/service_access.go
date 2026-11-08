@@ -1,4 +1,4 @@
-package application
+package command
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -16,7 +15,7 @@ type ServiceRequirement struct{ Provider, Service, Target string }
 type ServiceAccessMaterial struct {
 	ServiceRequirement
 	AuthorizationID string
-	command.ServiceCredentialMaterial
+	ServiceCredentialMaterial
 }
 
 // UnavailableService is a requirement no credential was supplied for;
@@ -32,10 +31,10 @@ type ServiceAccessResult struct {
 
 type ServiceAccess struct {
 	works  domain.AgentWorkRepository
-	supply command.MarketplacePort
+	supply MarketplacePort
 }
 
-func NewServiceAccess(works domain.AgentWorkRepository, supply command.MarketplacePort) *ServiceAccess {
+func NewServiceAccess(works domain.AgentWorkRepository, supply MarketplacePort) *ServiceAccess {
 	return &ServiceAccess{works: works, supply: supply}
 }
 
@@ -64,7 +63,7 @@ func (a *ServiceAccess) Resolve(ctx context.Context, owner, workID string, requi
 			result.Unavailable = append(result.Unavailable, UnavailableService{Service: requirement.Service, Target: requirement.Target, Reason: "incompatible"})
 			continue
 		}
-		material, err := a.supply.SupplyServiceCredential(ctx, command.ServiceCredentialRequest{OwnerUserID: owner, AuthorizationID: ref.AuthorizationID, Target: requirement.Target})
+		material, err := a.supply.SupplyServiceCredential(ctx, ServiceCredentialRequest{OwnerUserID: owner, AuthorizationID: ref.AuthorizationID, Target: requirement.Target})
 		if err != nil {
 			if ctx.Err() != nil {
 				return ServiceAccessResult{}, ctx.Err()
@@ -98,7 +97,7 @@ func (a *ServiceAccess) Resolve(ctx context.Context, owner, workID string, requi
 // refusal classifies a supply failure; one Marketplace did not explain is
 // temporary.
 func refusal(err error) (string, bool) {
-	var unavailable *command.ServiceCredentialUnavailable
+	var unavailable *ServiceCredentialUnavailable
 	if errors.As(err, &unavailable) {
 		return unavailable.Reason, unavailable.Temporary
 	}

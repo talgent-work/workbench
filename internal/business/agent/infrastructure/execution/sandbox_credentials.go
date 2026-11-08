@@ -14,7 +14,6 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"xorm.io/xorm"
@@ -23,40 +22,24 @@ import (
 // CredentialManagementPort is the upstream egress API port.
 const CredentialManagementPort = 18080
 
-// RepositoryCredentials resolves Marketplace's current authorization, not a snapshot of
-// material that may have expired since an execution was admitted.
-type RepositoryCredentials interface {
-	Plan(context.Context, string, string) ([]RepositoryAuthorization, error)
-	Resolve(context.Context, string, string) (RepositoryResolution, error)
-}
-
-type RepositoryResolution struct {
-	Credentials []RepositoryCredential
-	Statuses    []ServiceAccessStatus
-}
-
-type ServiceCredentials interface {
-	Resolve(context.Context, string, string, []application.ServiceRequirement) (application.ServiceAccessResult, error)
-}
-
 // SandboxCredentials owns native Vault I/O within the existing execution
 // lifecycle. It has no independently persisted lifecycle or user grant API.
+// The repository and service credentials it delivers are those Application
+// supplied from Marketplace with each delivery; it calls no other authority.
 type SandboxCredentials struct {
 	db        *xorm.Engine
 	lifecycle *sdk.LifecycleClient
-	models    *ModelCatalog
+	models    command.PlatformCatalogPort
 	// records checks every delivery against its execution's facts.
-	records      records
-	repositories RepositoryCredentials
-	services     ServiceCredentials
-	http         *http.Client
-	transport    string
-	now          func() time.Time
+	records   records
+	http      *http.Client
+	transport string
+	now       func() time.Time
 }
 
-func NewSandboxCredentials(db *xorm.Engine, lifecycle *sdk.LifecycleClient, models *ModelCatalog, repositories RepositoryCredentials, services ServiceCredentials, client *http.Client, transport string) (*SandboxCredentials, error) {
-	if db == nil || lifecycle == nil || models == nil || repositories == nil || services == nil || client == nil {
-		return nil, errors.New("agent: credential persistence, model catalog, authority and management client required")
+func NewSandboxCredentials(db *xorm.Engine, lifecycle *sdk.LifecycleClient, models command.PlatformCatalogPort, client *http.Client, transport string) (*SandboxCredentials, error) {
+	if db == nil || lifecycle == nil || models == nil || client == nil {
+		return nil, errors.New("agent: credential persistence, platform catalog and management client required")
 	}
 	// encrypted-network is enabled only by deployment that verifies its actual
 	// cross-node encryption. It is not an option to fall back from failed TLS.
@@ -65,7 +48,7 @@ func NewSandboxCredentials(db *xorm.Engine, lifecycle *sdk.LifecycleClient, mode
 	}
 	h := *client
 	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	c := &SandboxCredentials{db: db, lifecycle: lifecycle, models: models, records: records{db: db}, repositories: repositories, services: services, http: &h, transport: transport}
+	c := &SandboxCredentials{db: db, lifecycle: lifecycle, models: models, records: records{db: db}, http: &h, transport: transport}
 	return c, nil
 }
 
@@ -108,10 +91,10 @@ var errSupplyTemporarilyUnavailable = errors.New("agent: credential supply tempo
 // it again.
 var staleDelivery = time.UnixMilli(1)
 
-// prepare delivers the Work's current credentials to the Vault: those
-// Marketplace supplies are written, and the bindings of those it confirms it
-// cannot supply (revoked, reconnection required, refused) are removed while
-// the Work keeps running. A temporary supply failure never removes a delivered
+// prepare delivers the Work's current credentials, as Application supplied
+// them, to the Vault: those Marketplace supplied are written, and the
+// bindings of those it confirmed it cannot supply (revoked, reconnection
+// required, refused) are removed while the Work keeps running. A temporary supply failure never removes a delivered
 // binding: a redelivery fails to be retried, and a first delivery writes what
 // it has and reports itself stale. It reports the service access observed and
 // the earliest declared expiry of what it delivered, zero when nothing
@@ -121,7 +104,7 @@ func (c *SandboxCredentials) prepare(ctx context.Context, record executionRecord
 	return deliveredCredentials{Statuses: statuses, ExpiresAt: expiry, ModelDigest: digest}, err
 }
 
-func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) ([]ServiceAccessStatus, time.Time, string, error) {
+func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, admitted domain.LaunchSpecification, spec sdk.CreateSandboxRequest, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) ([]command.ServiceAccessStatus, time.Time, string, error) {
 	var none time.Time
 	if err := holding(ctx); err != nil {
 		return nil, none, "", err
@@ -135,42 +118,25 @@ func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, 
 	// belongs to this endpoint; otherwise, as when the configuration is
 	// withdrawn, it keeps the credential already delivered.
 	model := renewalCredential(c.models, admitted.WorkModel, spec.Env["ANTHROPIC_BASE_URL"])
-	owner := admitted.RepresentedPerson
-	requirements := serviceRequirements(admitted.Capabilities, admitted.AuthorizationSelection)
-	repositories, err := c.repositories.Resolve(ctx, owner, record.SessionID)
-	if err != nil {
-		return nil, none, "", errors.New("agent: current repository authorization unavailable")
-	}
 	var approved []RepositoryAuthorization
 	if err := json.Unmarshal(record.CredentialPlanJSON, &approved); err != nil {
 		return nil, none, "", errors.New("agent: invalid persisted credential plan")
 	}
-	actual := make([]RepositoryAuthorization, 0, len(repositories.Credentials))
-	for _, m := range repositories.Credentials {
-		actual = append(actual, RepositoryAuthorization{AccessID: m.AccessID, RepositoryID: m.RepositoryID, RepositoryHTTPSURL: m.RepositoryHTTPSURL})
-	}
-	sortAuthorizations(approved)
-	sortAuthorizations(actual)
-	for _, reference := range actual {
+	for _, supplied := range supply.Repositories {
 		// The plan admitted the repository and where it is reached; the
 		// access identity only names its binding, which a delivery replaces.
 		if !slices.ContainsFunc(approved, func(admitted RepositoryAuthorization) bool {
-			return admitted.RepositoryID == reference.RepositoryID && admitted.RepositoryHTTPSURL == reference.RepositoryHTTPSURL
+			return admitted.RepositoryID == supplied.RepositoryID && admitted.RepositoryHTTPSURL == supplied.CloneURL
 		}) {
 			return nil, none, "", errors.New("agent: current repository authorization differs from admitted credential plan")
 		}
 	}
-	services, err := c.services.Resolve(ctx, owner, record.SessionID, requirements.Targets)
-	if err != nil {
-		return nil, none, "", err
-	}
-	statuses := append(requirements.statuses(services), repositories.Statuses...)
-	temporary := slices.ContainsFunc(statuses, func(s ServiceAccessStatus) bool { return s.Temporary })
+	temporary := slices.ContainsFunc(supply.Access, func(s command.ServiceAccessStatus) bool { return s.Temporary })
 	if temporary && redelivery {
 		return nil, none, "", errSupplyTemporarilyUnavailable
 	}
 	now := c.clock()
-	plan, err := credentialPlan(model, repositories.Credentials, services.Credentials, now)
+	plan, err := credentialPlan(model, supply.Repositories, supply.Services, now)
 	if err != nil {
 		return nil, none, "", err
 	}
@@ -228,9 +194,9 @@ func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, 
 		return nil, none, "", err
 	}
 	if temporary {
-		return statuses, staleDelivery, model.digest(), nil
+		return supply.Access, staleDelivery, model.digest(), nil
 	}
-	return statuses, earliestExpiry(repositories.Credentials, services.Credentials), model.digest(), nil
+	return supply.Access, earliestExpiry(supply.Repositories, supply.Services), model.digest(), nil
 }
 
 func (c *SandboxCredentials) client(ctx context.Context, id string, ready bool) (*sdk.EgressClient, error) {
@@ -400,13 +366,13 @@ func sortAuthorizations(values []RepositoryAuthorization) {
 	})
 }
 
-func (c *SandboxCredentials) plan(ctx context.Context, owner, session string) ([]byte, error) {
-	if c == nil || c.repositories == nil {
-		return nil, errors.New("agent: trusted credential planning is required")
-	}
-	approved, err := c.repositories.Plan(ctx, owner, session)
-	if err != nil {
-		return nil, errors.New("agent: credential authorization plan unavailable")
+// claim freezes the access each repository the Work selected takes, as
+// Application supplied it, with the specification: later deliveries supply
+// credentials for these repositories only.
+func claim(supply command.CreationSupply) ([]byte, error) {
+	approved := make([]RepositoryAuthorization, 0, len(supply.Repositories))
+	for _, reference := range supply.Repositories {
+		approved = append(approved, RepositoryAuthorization{AccessID: reference.AccessID, RepositoryID: reference.RepositoryID, RepositoryHTTPSURL: reference.CloneURL})
 	}
 	sortAuthorizations(approved)
 	encoded, err := json.Marshal(approved)
@@ -418,7 +384,7 @@ func (c *SandboxCredentials) plan(ctx context.Context, owner, session string) ([
 
 // earliestExpiry is the soonest declared expiry of delivered material; zero
 // when none of it expires.
-func earliestExpiry(repositories []RepositoryCredential, services []application.ServiceAccessMaterial) time.Time {
+func earliestExpiry(repositories []command.RepositoryAccessMaterial, services []command.ServiceAccessMaterial) time.Time {
 	var earliest time.Time
 	consider := func(expiresAt time.Time) {
 		if !expiresAt.IsZero() && (earliest.IsZero() || expiresAt.Before(earliest)) {

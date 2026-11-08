@@ -97,12 +97,27 @@ func (n *NativeConnections) deliver(ctx context.Context, record executionRecord,
 	return domain.CredentialDelivery{Digest: delivered.ModelDigest, ExpiresAt: delivered.ExpiresAt}, nil
 }
 
-func (n *NativeConnections) recordServiceAccess(ctx context.Context, record executionRecord, statuses []ServiceAccessStatus) error {
-	encoded, err := json.Marshal(statuses)
+// serviceAccessRecord is one observed service access as the execution
+// records it (agent_execution.service_access_json).
+type serviceAccessRecord struct {
+	Service string `json:"service"`
+	Target  string `json:"target"`
+	Plugin  string `json:"plugin,omitempty"`
+	MCP     string `json:"mcp,omitempty"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+func (n *NativeConnections) recordServiceAccess(ctx context.Context, record executionRecord, statuses []command.ServiceAccessStatus) error {
+	observed := make([]serviceAccessRecord, 0, len(statuses))
+	for _, status := range statuses {
+		observed = append(observed, serviceAccessRecord{Service: status.Service, Target: status.Target, Plugin: status.Plugin, MCP: status.MCP, Status: status.Status, Reason: status.Reason})
+	}
+	encoded, err := json.Marshal(observed)
 	if err != nil {
 		return err
 	}
-	var prior []ServiceAccessStatus
+	var prior []serviceAccessRecord
 	if len(record.ServiceAccessJSON) > 0 {
 		if err := json.Unmarshal(record.ServiceAccessJSON, &prior); err != nil {
 			return err

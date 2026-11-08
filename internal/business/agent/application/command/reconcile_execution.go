@@ -25,11 +25,13 @@ type ReconcileExecutionHandler struct {
 	environments  ExecutionEnvironmentPort
 	harness       DispatcherPort
 	computers     ComputerPort
-	storage       StoragePort
+	// supplies obtains what the environment steps hand the environment from
+	// Storage and Marketplace.
+	supplies *EnvironmentSupplies
 }
 
-func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, creationWaits domain.CreationWaits, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, storage StoragePort) *ReconcileExecutionHandler {
-	return &ReconcileExecutionHandler{now: now, lease: lease, creationWaits: creationWaits, executions: executions, environments: environments, harness: harness, computers: computers, storage: storage}
+func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, creationWaits domain.CreationWaits, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, supplies *EnvironmentSupplies) *ReconcileExecutionHandler {
+	return &ReconcileExecutionHandler{now: now, lease: lease, creationWaits: creationWaits, executions: executions, environments: environments, harness: harness, computers: computers, supplies: supplies}
 }
 
 // reconcileRounds bounds the decisions one reconciliation makes: after a step

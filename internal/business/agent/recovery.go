@@ -85,8 +85,9 @@ var RecoveryModule = fx.Module("agent.recovery",
 		// and for the recovery of each Work owed a Resume.
 		fx.Annotate(command.NewComputerReconnectionHandler, fx.As(fx.Self()), fx.As(new(application.OwedResumes))),
 		application.NewRecovery,
-		// A Closed Work's Workspace Reclamation Request is queued on the
-		// recovery queue, which delivers it to Storage.
+		// A Closed Work's Work Reclamation Request is queued on the
+		// recovery queue, which delivers it to Storage, before its closure
+		// commits.
 		eventhandler.NewWorkReclamations,
 		command.NewReconcileExecutionHandler,
 		fx.Annotate(taskprocessor.RecoveryProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(RecoveryQueue))),
@@ -130,7 +131,8 @@ func sweepOnStart(lc fx.Lifecycle, cfg RecoveryConfig, recovery *application.Rec
 }
 
 // wireRecoveryWakes connects commits to recovery.
-func wireRecoveryWakes(recovery *application.Recovery, updates *workStateUpdates, executions *committedExecutions, closures *eventhandler.WorkClosures, logger *slog.Logger) {
+func wireRecoveryWakes(recovery *application.Recovery, updates *workStateUpdates, works *committedWorks, reclamations *eventhandler.WorkReclamations, executions *committedExecutions, closures *eventhandler.WorkClosures, logger *slog.Logger) {
+	works.reclamations = reclamations
 	updates.wakeWork = deferredWake(logger, "work", recovery.WakeWork)
 	executions.wake = deferredWake(logger, "execution", recovery.WakeExecution)
 	closures.Wake = deferredWake(logger, "work_closure", recovery.WakeWork)

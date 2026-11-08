@@ -328,7 +328,7 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpec
 	if strings.TrimSpace(token) == "" || strings.TrimSpace(credential) == "" {
 		return sdk.CreateSandboxRequest{}, domain.ErrExecutionRequest
 	}
-	model, provided := s.config.Models.Resolve(request.WorkModel.ConfigurationID)
+	model, provided := s.config.Models.ProvidedModel(request.WorkModel.ConfigurationID)
 	if !provided {
 		return sdk.CreateSandboxRequest{}, errModelConfigurationNotProvided
 	}

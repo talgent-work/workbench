@@ -1,4 +1,4 @@
-package application_test
+package command_test
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -36,7 +35,7 @@ func TestRepositoryAccessUnavailableCredentialsDoNotFailWork(t *testing.T) {
 			result, err := f.app.Resolve(t.Context(), "owner", f.work.ID)
 			require.NoError(t, err)
 			require.Empty(t, result.Credentials)
-			require.Equal(t, []application.RepositoryAccessFailure{{RepositoryID: "123", Reason: reason, Temporary: reason == "unavailable"}}, result.Unavailable, "only a refusal Marketplace confirmed is not temporary")
+			require.Equal(t, []command.RepositoryAccessFailure{{RepositoryID: "123", Reason: reason, Temporary: reason == "unavailable"}}, result.Unavailable, "only a refusal Marketplace confirmed is not temporary")
 			require.Equal(t, domain.WorkStarting, f.work.State)
 			require.Equal(t, selection, f.work.AuthorizationSelection)
 
@@ -61,7 +60,7 @@ func TestRepositoryAccessWithoutAuthorizationRetainsPlanWithoutSupply(t *testing
 		result, err := f.app.Resolve(t.Context(), "owner", f.work.ID)
 		require.NoError(t, err)
 		require.Empty(t, result.Credentials)
-		require.Equal(t, []application.RepositoryAccessFailure{{RepositoryID: "123", Reason: "not_selected"}}, result.Unavailable)
+		require.Equal(t, []command.RepositoryAccessFailure{{RepositoryID: "123", Reason: "not_selected"}}, result.Unavailable)
 	}
 	require.Empty(t, f.supplied, "an unselected authorization is never supplied")
 	require.Equal(t, domain.WorkStarting, f.work.State)

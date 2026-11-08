@@ -40,7 +40,10 @@ const (
 	RecoverWorkType          taskqueue.TaskType = "agent.work.recover.v1"
 	SweepRecoveryType        taskqueue.TaskType = "agent.recovery.sweep.v1"
 	// RequestWorkReclamationType delivers a Closed Work's one request to
-	// Storage; it is a delivery, not a recovery obligation of the Work.
+	// Storage; it is a delivery, not a recovery obligation of the Work. Its
+	// wire name, its payload message (RequestWorkspaceReclamationTaskV1) and
+	// its task key keep their earlier "workspace" spelling: tasks already
+	// queued under them must still be decoded and deduplicated.
 	RequestWorkReclamationType taskqueue.TaskType = "agent.workspace.request-reclamation.v1"
 )
 
@@ -59,7 +62,13 @@ func NewRecoverWork(workID string) (taskqueue.Task, error) {
 	return keyed(RecoverWorkType, RecoveryQueue, "work", workID, &agenttaskv1.RecoverWorkTaskV1{WorkId: workID})
 }
 
+// NewRequestWorkReclamation queues a Closed Work's Work Reclamation Request,
+// keyed by the Work. A request naming no Work is refused: Storage would have
+// nothing to reclaim.
 func NewRequestWorkReclamation(workID string) (taskqueue.Task, error) {
+	if strings.TrimSpace(workID) == "" {
+		return taskqueue.Task{}, taskqueue.ErrNilPayload
+	}
 	return keyed(RequestWorkReclamationType, RecoveryQueue, "workspace-reclamation", workID, &agenttaskv1.RequestWorkspaceReclamationTaskV1{WorkId: workID})
 }
 

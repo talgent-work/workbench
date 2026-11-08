@@ -19,9 +19,10 @@ func TestRecoveryTasksAreKeyedByTheObjectTheyRecover(t *testing.T) {
 		payload proto.Message
 		id      func(proto.Message) string
 	}{
-		"execution": {agenttask.NewReconcileExecution, agenttask.ReconcileExecutionType, agenttask.RecoveryQueue, "agent:execution:id-1", &agenttaskv1.ReconcileExecutionTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.ReconcileExecutionTaskV1).GetExecutionId() }},
-		"long step": {agenttask.NewRunLongExecutionStep, agenttask.RunLongExecutionStepType, agenttask.PreparationQueue, "agent:execution-long-step:id-1", &agenttaskv1.RunLongExecutionStepTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RunLongExecutionStepTaskV1).GetExecutionId() }},
-		"work":      {agenttask.NewRecoverWork, agenttask.RecoverWorkType, agenttask.RecoveryQueue, "agent:work:id-1", &agenttaskv1.RecoverWorkTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkTaskV1).GetWorkId() }},
+		"execution":   {agenttask.NewReconcileExecution, agenttask.ReconcileExecutionType, agenttask.RecoveryQueue, "agent:execution:id-1", &agenttaskv1.ReconcileExecutionTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.ReconcileExecutionTaskV1).GetExecutionId() }},
+		"long step":   {agenttask.NewRunLongExecutionStep, agenttask.RunLongExecutionStepType, agenttask.PreparationQueue, "agent:execution-long-step:id-1", &agenttaskv1.RunLongExecutionStepTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RunLongExecutionStepTaskV1).GetExecutionId() }},
+		"work":        {agenttask.NewRecoverWork, agenttask.RecoverWorkType, agenttask.RecoveryQueue, "agent:work:id-1", &agenttaskv1.RecoverWorkTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RecoverWorkTaskV1).GetWorkId() }},
+		"reclamation": {agenttask.NewRequestWorkReclamation, agenttask.RequestWorkReclamationType, agenttask.RecoveryQueue, "agent:workspace-reclamation:id-1", &agenttaskv1.RequestWorkspaceReclamationTaskV1{}, func(m proto.Message) string { return m.(*agenttaskv1.RequestWorkspaceReclamationTaskV1).GetWorkId() }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			task, err := tc.build("id-1")

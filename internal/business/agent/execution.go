@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -10,11 +9,11 @@ import (
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/telemetryingest"
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
@@ -34,7 +33,7 @@ type ExecutionClientConfig struct {
 type ExecutionConfig struct {
 	NetworkAllow []string `json:"network-allow" yaml:"network-allow" toml:"network-allow"`
 	// Models names the mounted Model Template and Model Configuration files.
-	Models              execution.ModelCatalogConfig `json:"models" yaml:"models" toml:"models"`
+	Models              platformcatalog.Config       `json:"models" yaml:"models" toml:"models"`
 	NetworkDeny         []string                     `json:"network-deny" yaml:"network-deny" toml:"network-deny"`
 	CredentialTransport string                       `json:"credential-transport" yaml:"credential-transport" toml:"credential-transport"`
 	OpenSandbox         opensandbox.Config           `json:"opensandbox" yaml:"opensandbox" toml:"opensandbox"`
@@ -129,7 +128,7 @@ func (cfg ExecutionConfig) Validate() error {
 	return cfg.OpenSandbox.Validate()
 }
 
-func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, cluster kubernetes.Interface, models *execution.ModelCatalog) (*execution.Sandboxes, error) {
+func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, cluster kubernetes.Interface, models command.PlatformCatalogPort) (*execution.Sandboxes, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -158,9 +157,11 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, clu
 var ExecutionModule = fx.Module("agent.execution-integration",
 	pkgmysql.Bind("execution"),
 	fx.Provide(
-		func(cfg ExecutionConfig) (*execution.ModelCatalog, error) {
-			return execution.LoadModelCatalog(cfg.Models)
-		},
+		// Model Templates and Model Configurations are platform data read
+		// from the deployment's configuration.
+		fx.Annotate(func(cfg ExecutionConfig) (*platformcatalog.Catalog, error) {
+			return platformcatalog.Load(cfg.Models)
+		}, fx.As(new(command.PlatformCatalogPort))),
 		newModelConfigurations,
 		// Every sandbox is created to expire under these terms, and each
 		// execution decides its renewals under them.
@@ -172,8 +173,8 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		},
 		newExecutionSandboxes,
 		newExecutionLifecycle,
-		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
-			return execution.NewSandboxCredentials(db, client, models, workRepositoryCredentials{app: repositories}, services, http.DefaultClient, cfg.CredentialTransport)
+		func(db *xorm.Engine, client *sdk.LifecycleClient, models command.PlatformCatalogPort, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {
+			return execution.NewSandboxCredentials(db, client, models, http.DefaultClient, cfg.CredentialTransport)
 		},
 		pkgkubernetes.NewClientset,
 		newManagedEnvironment,
@@ -225,7 +226,7 @@ func relayClient() *http.Client {
 // newManagedEnvironment is the Managed realization, nil without Managed
 // Computers. Its Works' located inputs, which Application reads from
 // Storage, are synced again by the recovery sweep at its refresh interval.
-func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models *execution.ModelCatalog, sessions domain.AgentWorkRepository, recovery RecoveryConfig) (*execution.ManagedEnvironment, error) {
+func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository, recovery RecoveryConfig) (*execution.ManagedEnvironment, error) {
 	if machines == nil {
 		return nil, nil
 	}
@@ -249,36 +250,6 @@ func registerManagedTelemetry(mux *http.ServeMux, attributions query.ExecutionQu
 	}
 	telemetryingest.Register(mux, attributions, collector, logger)
 	return nil
-}
-
-// The adapter maps trusted Application results into native Vault bindings.
-type workRepositoryCredentials struct{ app *application.RepositoryAccess }
-
-func (s workRepositoryCredentials) Plan(ctx context.Context, owner, work string) ([]execution.RepositoryAuthorization, error) {
-	refs, err := s.app.Plan(ctx, owner, work)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]execution.RepositoryAuthorization, 0, len(refs))
-	for _, ref := range refs {
-		result = append(result, execution.RepositoryAuthorization{AccessID: ref.AccessID, RepositoryID: ref.RepositoryID, RepositoryHTTPSURL: ref.CloneURL})
-	}
-	return result, nil
-}
-func (s workRepositoryCredentials) Resolve(ctx context.Context, owner, work string) (execution.RepositoryResolution, error) {
-	values, err := s.app.Resolve(ctx, owner, work)
-	if err != nil {
-		return execution.RepositoryResolution{}, err
-	}
-	result := execution.RepositoryResolution{}
-	for _, v := range values.Credentials {
-		result.Credentials = append(result.Credentials, execution.RepositoryCredential{AccessID: v.AccessID, RepositoryID: v.RepositoryID, RepositoryHTTPSURL: v.CloneURL, Username: v.Username, Password: v.Password, ExpiresAt: v.ExpiresAt})
-		result.Statuses = append(result.Statuses, execution.ServiceAccessStatus{Service: "github", Target: "repository:" + v.RepositoryID, Status: "credential_available"})
-	}
-	for _, unavailable := range values.Unavailable {
-		result.Statuses = append(result.Statuses, execution.ServiceAccessStatus{Service: "github", Target: "repository:" + unavailable.RepositoryID, Status: "unavailable", Reason: unavailable.Reason, Temporary: unavailable.Temporary})
-	}
-	return result, nil
 }
 
 func newExecutionLifecycle(cfg ExecutionConfig) (*sdk.LifecycleClient, error) {

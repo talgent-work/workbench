@@ -39,11 +39,12 @@ type launchLayout struct {
 	// server declares one of the Work's Connectors to the Harness, or
 	// reports that it is not declared.
 	server func(connector domain.SelectedConnector) (map[string]any, bool)
-	// recovered continues a recovered start's conversation where its
-	// transcript is, or starts it fresh.
-	recovered func(sessionID string, fresh []string) string
-	// preparation runs the preparation script with its budget and arguments.
-	preparation func(budget, arguments string) string
+	// recovered continues a recovered start's conversation where the Agent
+	// Harness keeps its transcript, or starts it fresh.
+	recovered func(harness domain.AgentHarness, sessionID string, fresh []string) string
+	// preparation runs the preparation script with its budget and arguments
+	// for the Agent Harness.
+	preparation func(harness domain.AgentHarness, budget, arguments string) string
 	// harnessChoice admits a start's own permission mode and sandbox, which
 	// only a Managed Computer's Works have; elsewhere the Harness bypasses
 	// permission prompts.
@@ -60,8 +61,8 @@ var sandboxLayout = launchLayout{
 	diagnostic: func(name string) string { return shellWord(sandboxDiagnostics + name) },
 	server:     func(connector domain.SelectedConnector) (map[string]any, bool) { return nativeServer(connector), true },
 	recovered:  recoveredContext,
-	preparation: func(budget, arguments string) string {
-		return "umask 077; " + budget + "mkdir -p \"" + harnessState + "\" && exec timeout -k 5s \"${remaining}s\" node -e" + arguments + " 2>/dev/null"
+	preparation: func(harness domain.AgentHarness, budget, arguments string) string {
+		return "umask 077; " + budget + "mkdir -p \"" + harnessState(harness) + "\" && exec timeout -k 5s \"${remaining}s\" node -e" + arguments + " 2>/dev/null"
 	},
 }
 
@@ -89,7 +90,7 @@ var machineLayout = launchLayout{
 	diagnostic:    func(name string) string { return "\"$talgent_root/.talgent/\"" + shellWord(name) },
 	server:        machineServer,
 	recovered:     recoveredManagedContext,
-	preparation: func(budget, arguments string) string {
+	preparation: func(_ domain.AgentHarness, budget, arguments string) string {
 		return managedRoot + "umask 077; " + budget + "mkdir -p \"$CLAUDE_CODE_PLUGIN_CACHE_DIR\" && exec node -e" + arguments + " machine 2>/dev/null"
 	},
 }
@@ -105,6 +106,12 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	}
 	if err := validateStartRequest(request); err != nil {
 		return nativeLaunch{}, err
+	}
+	// The Work's Agent Harness describes where its state is, which every
+	// rendering below takes from it.
+	harness, err := domain.AgentHarnessByID(request.AgentHarness)
+	if err != nil {
+		return nativeLaunch{}, errors.Join(domain.ErrExecutionRequest, err)
 	}
 	if thinkingLevel != "" && !slices.Contains(domain.ThinkingLevels, thinkingLevel) {
 		return nativeLaunch{}, domain.ErrExecutionRequest
@@ -157,7 +164,7 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 		return nativeLaunch{}, err
 	}
 	args = append(args, "--mcp-config", string(mcp))
-	preparation, marketplace, err := c.preparationCommand(layout, request, owner)
+	preparation, marketplace, err := c.preparationCommand(layout, harness, request, owner)
 	if err != nil {
 		return nativeLaunch{}, err
 	}
@@ -206,7 +213,7 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	if request.ContextMode == domain.ContextRecover {
 		// A recovered start resumes the Work's own conversation once it
 		// exists; until then it starts it as a fresh start would.
-		recovered = layout.recovered(sessionID, freshContext(request.StartingContext, sessionID))
+		recovered = layout.recovered(harness, sessionID, freshContext(request.StartingContext, sessionID))
 	}
 	command := layout.prefix + "exec 2>>" + diagnostic + "; talgent_effort=" + effort + "; unset CLAUDE_CODE_EFFORT_LEVEL; if test -n \"$talgent_effort\"; then set -- --effort \"$talgent_effort\"; else set --; fi; " + model + recovered + "exec " + strings.Join(words, " ") + " \"$@\""
 	return nativeLaunch{Command: command, SessionID: sessionID, PreparationCommand: preparation}, nil
@@ -230,8 +237,10 @@ func permissionArguments(mode domain.PermissionMode) []string {
 }
 
 // harnessState is the Agent Harness's state mount as its variable names it
-// in a Cloud sandbox.
-var harnessState = "${" + domain.ClaudeCode.StateVariable + ":?}"
+// in a Cloud sandbox, which always sets it.
+func harnessState(harness domain.AgentHarness) string {
+	return "${" + harness.StateVariable + ":?}"
+}
 
 // recoveredContext continues the Work's conversation when its transcript
 // exists in the Harness state mount, which the Works of its definition share
@@ -239,17 +248,18 @@ var harnessState = "${" + domain.ClaudeCode.StateVariable + ":?}"
 // starts it as fresh does. The session identity is the Work's own, so any
 // project holding it is the Work's. A transcript the Harness cannot resume
 // fails the start like any other Harness error.
-func recoveredContext(sessionID string, fresh []string) string {
-	return recoveredTranscript(harnessState, sessionID, fresh)
+func recoveredContext(harness domain.AgentHarness, sessionID string, fresh []string) string {
+	return recoveredTranscript(harnessState(harness), sessionID, fresh)
 }
 
 // recoveredManagedContext is recoveredContext on a Managed Computer, where
 // the Harness keeps its transcripts in the machine's own Claude configuration
-// under the project of the Work root, which stays the Work's for its life.
-// The session identity is the Work's own, so any project holding it is the
-// Work's.
-func recoveredManagedContext(sessionID string, fresh []string) string {
-	return recoveredTranscript("${"+domain.ClaudeCode.StateVariable+":-$HOME/"+domain.ClaudeCode.StatePath+"}", sessionID, fresh)
+// under the project of the Work root, which stays the Work's for its life:
+// where the Harness's variable points, else its state path beneath the
+// machine's HOME. The session identity is the Work's own, so any project
+// holding it is the Work's.
+func recoveredManagedContext(harness domain.AgentHarness, sessionID string, fresh []string) string {
+	return recoveredTranscript("${"+harness.StateVariable+":-$HOME/"+harness.StatePath+"}", sessionID, fresh)
 }
 
 // recoveredTranscript resumes the session when a project under the Harness

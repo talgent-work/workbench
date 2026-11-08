@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"github.com/samber/oops"
 	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -31,8 +32,19 @@ func directoryFromProto(directory *storageprivatev1.Directory) domain.Directory 
 	return result
 }
 
-func locatedToProto(directory domain.LocatedDirectory) *storageprivatev1.LocatedDirectory {
-	return &storageprivatev1.LocatedDirectory{Directory: directoryToProto(directory.Directory), Backend: backends[directory.Backend], Lifetime: lifetimes[directory.Lifetime]}
+// locatedToProto names a located Directory with its Backend and Lifetime. A
+// Backend or Lifetime Storage's contract does not know is refused rather
+// than sent as unspecified, which Storage would have to guess at.
+func locatedToProto(directory domain.LocatedDirectory) (*storageprivatev1.LocatedDirectory, error) {
+	backend, known := backends[directory.Backend]
+	if !known {
+		return nil, oops.With("backend", directory.Backend).Errorf("agent: Storage has no Directory Backend %q", directory.Backend)
+	}
+	lifetime, known := lifetimes[directory.Lifetime]
+	if !known {
+		return nil, oops.With("lifetime", directory.Lifetime).Errorf("agent: Storage has no Directory Lifetime %q", directory.Lifetime)
+	}
+	return &storageprivatev1.LocatedDirectory{Directory: directoryToProto(directory.Directory), Backend: backend, Lifetime: lifetime}, nil
 }
 
 func positionToProto(directory domain.Directory, name string) *storageprivatev1.FilePosition {

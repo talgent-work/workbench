@@ -51,7 +51,7 @@ func (r realizedEnvironments) Observe(_ context.Context, e *domain.AgentExecutio
 	}
 	return domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: e.Environment, Running: true}}, Attached: e.Process.ID != ""}, nil
 }
-func (realizedEnvironments) PrepareCreation(context.Context, *domain.AgentExecution, domain.SandboxMounts) error {
+func (realizedEnvironments) PrepareCreation(context.Context, *domain.AgentExecution, command.CreationSupply) error {
 	return nil
 }
 func (realizedEnvironments) SubmitCreation(_ context.Context, e *domain.AgentExecution) (domain.CreationAnswer, error) {

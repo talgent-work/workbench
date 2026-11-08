@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -14,10 +15,12 @@ import (
 // grants Storage issued for the admitted start; conversation identity comes
 // from the admitted Work request.
 type SandboxConfig struct {
-	Image        string
-	Resources    corev1.ResourceRequirements
-	Environment  map[string]string
-	Models       *ModelCatalog
+	Image       string
+	Resources   corev1.ResourceRequirements
+	Environment map[string]string
+	// Models are the platform's Model Configurations, read when a start's
+	// specification is fixed.
+	Models       command.PlatformCatalogPort
 	NetworkDeny  []string
 	NetworkAllow []string
 	// Lease is how every sandbox is leased: created to expire after its
@@ -36,8 +39,8 @@ func (c SandboxConfig) Validate() error {
 	if err := c.CreationWait.Validate(); err != nil || c.CreationTimeout <= 0 || time.Duration(c.CreationWait) <= c.CreationTimeout {
 		return errors.New("agent: the creation wait must be valid and longer than the server's creation timeout")
 	}
-	if c.Models == nil {
-		return errors.New("agent: model catalog is required")
+	if err := validateModelTemplates(c.Models); err != nil {
+		return err
 	}
 	for _, key := range sandboxSecretEnvironment {
 		if _, ok := c.Environment[key]; ok {

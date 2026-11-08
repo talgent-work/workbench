@@ -77,17 +77,13 @@ func (cloudEnvironment) ownership(record executionRecord) (SandboxOwner, sdk.Cre
 	return owner, spec, nil
 }
 
-// claim freezes the Work's repository authorization with the specification,
-// before the creation is submitted.
-func (c cloudEnvironment) claim(ctx context.Context, record executionRecord) ([]byte, error) {
+// claim freezes the Work's repository authorization, as Application
+// supplied it, with the specification, before the creation is submitted.
+func (c cloudEnvironment) claim(record executionRecord, supply command.CreationSupply) ([]byte, error) {
 	if _, _, err := c.sandboxSpec(record); err != nil {
 		return nil, err
 	}
-	request, err := decodeStartRequest(record.RequestJSON)
-	if err != nil {
-		return nil, err
-	}
-	return c.credentials.plan(ctx, request.RepresentedPerson, record.SessionID)
+	return claim(supply)
 }
 
 func (c cloudEnvironment) create(ctx context.Context, record executionRecord) (string, error) {

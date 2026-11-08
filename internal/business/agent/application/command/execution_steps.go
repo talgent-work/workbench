@@ -4,14 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
-
-// storageAttemptTimeout bounds what one short step asks of Storage, so an
-// unresponsive Storage never holds up a reconciliation for long.
-const storageAttemptTimeout = 5 * time.Second
 
 // takeShortStep takes one short step the execution decided and reports
 // whether it changed the execution. A step that changed nothing, such as a
@@ -41,16 +36,14 @@ func (h *ReconcileExecutionHandler) takeShortStep(ctx context.Context, execution
 }
 
 // deliverCredentials delivers or replaces the bound environment's
-// credentials and records what was delivered.
+// credentials, as the authorities supply them now, and records what was
+// delivered.
 func (h *ReconcileExecutionHandler) deliverCredentials(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
-	// The publication target's Space Token is the same on every opening.
-	attempt, cancel := context.WithTimeout(ctx, storageAttemptTimeout)
-	token, err := h.storage.OpenDirectory(attempt, execution.Launch.LocatedLayout.PublicationTarget)
-	cancel()
+	supply, err := h.supplies.credentials(ctx, execution)
 	if err != nil {
 		return false, err
 	}
-	delivery, err := h.environments.DeliverCredentials(ctx, execution, CredentialSupply{SpaceToken: token}, h.holding(execution))
+	delivery, err := h.environments.DeliverCredentials(ctx, execution, supply, h.holding(execution))
 	if err != nil {
 		return false, err
 	}
@@ -74,9 +67,7 @@ func (h *ReconcileExecutionHandler) renewLease(ctx context.Context, execution *d
 // syncInputs syncs a Managed Computer's input copies from the current files
 // of its Work's located inputs and records the changes it covered.
 func (h *ReconcileExecutionHandler) syncInputs(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
-	attempt, cancel := context.WithTimeout(ctx, storageAttemptTimeout)
-	inputs, err := h.managedInputs(attempt, execution.Launch.LocatedLayout.Inputs)
-	cancel()
+	inputs, err := h.supplies.inputs(ctx, execution.Launch.LocatedLayout.Inputs)
 	if err != nil {
 		return false, err
 	}
@@ -87,31 +78,6 @@ func (h *ReconcileExecutionHandler) syncInputs(ctx context.Context, execution *d
 	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
 		return execution.RecordInputSync(synced, h.now()), nil
 	})
-}
-
-// managedInputs lists the located inputs' files, each with a fresh download
-// Access Link; a file deleted since it was listed is left out, and its change
-// fact brings the next sync.
-func (h *ReconcileExecutionHandler) managedInputs(ctx context.Context, located *domain.LocatedDirectory) (ManagedInputs, error) {
-	if located == nil {
-		return ManagedInputs{}, nil
-	}
-	files, err := h.storage.ListFiles(ctx, located.Directory)
-	if err != nil {
-		return ManagedInputs{}, err
-	}
-	inputs := ManagedInputs{Located: true, Files: make([]InputFile, 0, len(files))}
-	for _, file := range files {
-		link, err := h.storage.IssueAccessLink(ctx, FilePosition{Directory: located.Directory, Name: file.Name}, false)
-		if errors.Is(err, ErrFileNotFound) {
-			continue
-		}
-		if err != nil {
-			return ManagedInputs{}, err
-		}
-		inputs.Files = append(inputs.Files, InputFile{Name: file.Name, SizeBytes: file.SizeBytes, UpdatedAt: file.UpdatedAt, AccessPath: link.Path})
-	}
-	return inputs, nil
 }
 
 func (h *ReconcileExecutionHandler) withdraw(ctx context.Context, execution *domain.AgentExecution) (bool, error) {

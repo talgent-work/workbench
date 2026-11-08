@@ -33,7 +33,7 @@ type repositoryCheckout struct {
 // entries reach the native installer. The Work namespace also isolates
 // different retained versions in Claude's HOME-wide package cache.
 // The layout decides how the script runs (see machineLayout).
-func (c NativeLaunchConfig) preparationCommand(layout launchLayout, request domain.LaunchSpecification, owner SandboxOwner) (string, string, error) {
+func (c NativeLaunchConfig) preparationCommand(layout launchLayout, harness domain.AgentHarness, request domain.LaunchSpecification, owner SandboxOwner) (string, string, error) {
 	name := "talgent-work-" + storageKey(request.WorkID)
 	entries := make([]json.RawMessage, 0, len(request.Capabilities.Plugins))
 	for _, plugin := range request.Capabilities.Plugins {
@@ -60,7 +60,7 @@ func (c NativeLaunchConfig) preparationCommand(layout launchLayout, request doma
 	receipt := storageKey(owner.WorkID + ":" + owner.ID)[:32]
 	budget := "remaining=$((" + strconv.FormatInt(request.PreparationBound.Unix(), 10) + " - $(date +%s))); [ \"$remaining\" -ge " + preparationMinimumSeconds + " ] || remaining=" + preparationMinimumSeconds + "; "
 	arguments := " " + shellWord(nativePreparation) + " " + shellWord(c.Binary) + " " + shellWord(string(catalog)) + " " + shellWord(receipt) + " \"${talgent_checkout_plan-}\" \"$remaining\""
-	return layout.preparation(budget, arguments), name, nil
+	return layout.preparation(harness, budget, arguments), name, nil
 }
 
 // withCheckoutPlan gives a preparation command the plan of the start it

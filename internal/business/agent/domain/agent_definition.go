@@ -107,14 +107,16 @@ type WorkCreationRequest struct {
 	WorkModel          WorkModelSelection
 	// ComputerManaged reports that the Work starts on a Managed Computer.
 	ComputerManaged bool
-	// Harness is its starter's choice, admitted only on a Managed Computer.
-	Harness HarnessChoice
+	// HarnessChoice is how its starter runs the Harness, its permission mode
+	// and sandbox, admitted only on a Managed Computer; it does not select
+	// which Agent Harness runs, which AgentHarnessID names.
+	HarnessChoice HarnessChoice
 	// StartingUser is the person starting the Work; empty for an automated
 	// start.
 	StartingUser string
-	// AgentHarness names the Harness the new Work runs; empty chooses the
-	// default (Harness choice).
-	AgentHarness    string
+	// AgentHarnessID names which Agent Harness, the native agent program,
+	// the new Work runs; empty chooses the default (Harness choice).
+	AgentHarnessID  string
 	Subject         WorkSubject
 	ProjectID       string
 	Capabilities    CapabilitySnapshot
@@ -153,22 +155,15 @@ func (a *AgentDefinition) WorkPrincipal() string {
 }
 
 // RepresentedPerson is the person this definition's Agent represents: the
-// person of an employee scope; empty for a definition that represents no
-// person, such as a project-scoped one.
+// employee of an employee scope's `work`-purpose definition, whose personal
+// authorizations its Works use. Every other definition, such as a
+// project-scoped one or an employee's definition of another purpose,
+// represents no person, never a caller or a triggering user.
 func (a *AgentDefinition) RepresentedPerson() string {
-	if !a.RepresentsHuman() {
+	if !a.RepresentsHuman() || a.Purpose != EmployeeWorkPurpose {
 		return ""
 	}
 	return a.UsageScope.Reference
-}
-
-// PersonalAuthorizationOwner identifies the represented human, never a caller
-// or a project-owned automated Agent's triggering user.
-func (a *AgentDefinition) PersonalAuthorizationOwner() string {
-	if a.Purpose == "work" {
-		return a.RepresentedPerson()
-	}
-	return ""
 }
 
 // WorkTraceAttributes is what a new Work's telemetry carries from its
@@ -183,7 +178,7 @@ func (a *AgentDefinition) WorkTraceAttributes(supplied map[string]string) map[st
 	}
 	attributes["talgent.runtime_purpose"] = a.Purpose
 	delete(attributes, "talgent.user_id")
-	if person := a.PersonalAuthorizationOwner(); person != "" {
+	if person := a.RepresentedPerson(); person != "" {
 		attributes["talgent.user_id"] = person
 	}
 	return attributes
@@ -336,10 +331,10 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 			return nil, false, fmt.Errorf("%w: missing required plugin %s", ErrInvalidCapabilities, slug)
 		}
 	}
-	if owner := request.AuthorizationInput.OwnerUserID; owner != "" && (a.Purpose != "work" || a.UsageScope.Kind != "employee" || a.UsageScope.Reference != owner) {
+	if owner := request.AuthorizationInput.OwnerUserID; owner != "" && owner != a.RepresentedPerson() {
 		return nil, false, fmt.Errorf("%w: personal authorization requires a represented human", ErrInvalidWork)
 	}
-	if owner := request.RepositoryInput.OwnerUserID; owner != "" && owner != a.PersonalAuthorizationOwner() {
+	if owner := request.RepositoryInput.OwnerUserID; owner != "" && owner != a.RepresentedPerson() {
 		return nil, false, fmt.Errorf("%w: personal repositories require a represented human", ErrInvalidWork)
 	}
 	if err := AdmitAgentOwner(a.Owners, request.StartedBy); err != nil {
@@ -363,8 +358,8 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 		ThinkingLevel:      request.ThinkingLevel,
 		ID:                 workID, AgentID: a.ID, Subject: request.Subject, ProjectID: request.ProjectID, DisplayTitle: request.DisplayTitle,
 		WorkModel: request.WorkModel, Capabilities: request.Capabilities, RepresentedPerson: a.RepresentedPerson(), StartingUser: request.StartingUser,
-		WorkLayout: a.WorkLayout, AgentHarness: request.AgentHarness, TraceAttributes: request.TraceAttributes,
-		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, Harness: request.Harness, InitialTaskInput: request.InitialTaskInput,
+		WorkLayout: a.WorkLayout, AgentHarnessID: request.AgentHarnessID, TraceAttributes: request.TraceAttributes,
+		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, HarnessChoice: request.HarnessChoice, InitialTaskInput: request.InitialTaskInput,
 	}, request.Admission)
 	if err != nil {
 		return nil, false, err

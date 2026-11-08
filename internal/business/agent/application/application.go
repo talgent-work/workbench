@@ -51,8 +51,6 @@ type Queries struct {
 }
 
 type Application struct {
-	Services       *ServiceAccess
-	Repositories   *RepositoryAccess
 	WorkPrincipals access.WorkAuthorizer
 	Harness        command.DispatcherPort
 	Catalog        command.MarketplacePort
@@ -71,8 +69,6 @@ type Application struct {
 }
 
 func NewApplication(
-	repositories *RepositoryAccess,
-	services *ServiceAccess,
 	workPrincipals access.WorkAuthorizer,
 	harness command.DispatcherPort,
 	executionQueries query.ExecutionQueryRepository,
@@ -118,7 +114,7 @@ func NewApplication(
 	reconcileDesks *command.ReconcileDesksHandler,
 	coordination *command.ExecutionCoordination,
 ) *Application {
-	return &Application{Repositories: repositories, Services: services, WorkPrincipals: workPrincipals,
+	return &Application{WorkPrincipals: workPrincipals,
 		Harness:           harness,
 		ExecutionQueries:  executionQueries,
 		Catalog:           catalog,

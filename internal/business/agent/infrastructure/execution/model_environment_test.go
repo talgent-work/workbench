@@ -4,20 +4,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 )
 
 func TestNativeSandboxExpandsTheWorkModelConfigurationTemplate(t *testing.T) {
 	base, _, fixture := sandboxClient(t)
-	deepseek := ModelTemplate{ID: "deepseek-flash", Vendor: "deepseek", BaseURL: "https://api.deepseek.com/anthropic", OpusModel: "deepseek-flash[1m]", SonnetModel: "deepseek-flash[1m]", HaikuModel: "deepseek-flash", FableModel: "deepseek-flash[1m]", SubagentModel: "deepseek-flash", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "max", Environment: map[string]string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "786432"}}
-	glm := ModelTemplate{ID: "glm-5.3-coding-plan", Vendor: "zhipu", BaseURL: "https://open.bigmodel.cn/api/anthropic", OpusModel: "glm-5.3[1m]", SonnetModel: "glm-5.3-sonnet-tier", HaikuModel: "glm-5.3-flash[1m]", FableModel: "glm-5.3-fable-tier", SubagentModel: "glm-5.3-subagent", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "high", Environment: map[string]string{"API_TIMEOUT_MS": "3000000"}}
-	catalog := func(template string) *ModelCatalog {
-		models, err := NewModelCatalog([]ModelTemplate{deepseek, glm}, []ModelConfiguration{{ID: "deepseek", Name: "DeepSeek", Template: "deepseek-flash", APIKey: "deepseek-key"}, {ID: "glm", Name: "GLM 5.3", Template: template, APIKey: "glm-key"}})
-		require.NoError(t, err)
-		return models
+	deepseek := command.ModelTemplate{ID: "deepseek-flash", Vendor: "deepseek", BaseURL: "https://api.deepseek.com/anthropic", OpusModel: "deepseek-flash[1m]", SonnetModel: "deepseek-flash[1m]", HaikuModel: "deepseek-flash", FableModel: "deepseek-flash[1m]", SubagentModel: "deepseek-flash", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "max", Environment: map[string]string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "786432"}}
+	glm := command.ModelTemplate{ID: "glm-5.3-coding-plan", Vendor: "zhipu", BaseURL: "https://open.bigmodel.cn/api/anthropic", OpusModel: "glm-5.3[1m]", SonnetModel: "glm-5.3-sonnet-tier", HaikuModel: "glm-5.3-flash[1m]", FableModel: "glm-5.3-fable-tier", SubagentModel: "glm-5.3-subagent", ThinkingLevels: []string{"low", "high", "max"}, DefaultThinkingLevel: "high", Environment: map[string]string{"API_TIMEOUT_MS": "3000000"}}
+	models := func(template string) *platformcatalog.Catalog {
+		return catalog([]command.ModelTemplate{deepseek, glm}, command.ModelConfiguration{ID: "deepseek", Name: "DeepSeek", Template: "deepseek-flash", APIKey: "deepseek-key"}, command.ModelConfiguration{ID: "glm", Name: "GLM 5.3", Template: template, APIKey: "glm-key"})
 	}
 	settings := config()
-	settings.Models = catalog("glm-5.3-coding-plan")
+	settings.Models = models("glm-5.3-coding-plan")
 	provider, err := NewSandboxes(base.client, base.pods, settings)
 	require.NoError(t, err)
 	selected := request()
@@ -44,7 +44,7 @@ func TestNativeSandboxExpandsTheWorkModelConfigurationTemplate(t *testing.T) {
 	require.NotContains(t, env, "AGENT_CONTROL_TOKEN")
 
 	// The configuration now names another template: the next start uses it.
-	settings.Models = catalog("deepseek-flash")
+	settings.Models = models("deepseek-flash")
 	provider, err = NewSandboxes(base.client, base.pods, settings)
 	require.NoError(t, err)
 	_, err = provider.submitRequest(t.Context(), selected, "execution-token-fixture")
@@ -54,9 +54,8 @@ func TestNativeSandboxExpandsTheWorkModelConfigurationTemplate(t *testing.T) {
 	require.Equal(t, "deepseek-flash", fixture.create.Env["CLAUDE_CODE_SUBAGENT_MODEL"])
 
 	// A template naming a main model starts the Work on it; the opus tier stays.
-	routed := ModelTemplate{ID: "kimi-k3-token-plan", Vendor: "kimi", BaseURL: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic", MainModel: "auto", OpusModel: "k3", SonnetModel: "k3", HaikuModel: "k3", FableModel: "k3", SubagentModel: "k3"}
-	settings.Models, err = NewModelCatalog([]ModelTemplate{routed}, []ModelConfiguration{{ID: "glm", Name: "Kimi K3", Template: "kimi-k3-token-plan", APIKey: "kimi-key"}})
-	require.NoError(t, err)
+	routed := command.ModelTemplate{ID: "kimi-k3-token-plan", Vendor: "kimi", BaseURL: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic", MainModel: "auto", OpusModel: "k3", SonnetModel: "k3", HaikuModel: "k3", FableModel: "k3", SubagentModel: "k3"}
+	settings.Models = catalog([]command.ModelTemplate{routed}, command.ModelConfiguration{ID: "glm", Name: "Kimi K3", Template: "kimi-k3-token-plan", APIKey: "kimi-key"})
 	provider, err = NewSandboxes(base.client, base.pods, settings)
 	require.NoError(t, err)
 	_, err = provider.submitRequest(t.Context(), selected, "execution-token-fixture")
@@ -73,4 +72,35 @@ func TestNativeSandboxExpandsTheWorkModelConfigurationTemplate(t *testing.T) {
 		shared.Environment = map[string]string{key: "global"}
 		require.Error(t, shared.Validate(), "%s belongs to the Work's model configuration", key)
 	}
+}
+
+// What a Model Template brings into a run's environment is checked when the
+// sandboxes are composed: an endpoint the Vault binds its key to, and
+// settings that neither carry a credential nor override the configuration.
+func TestSandboxesRefuseAModelTemplateThatOverridesItsConfiguration(t *testing.T) {
+	valid := command.ModelTemplate{ID: "glm-5.3-coding-plan", Vendor: "zhipu", BaseURL: "https://open.bigmodel.cn/api/anthropic", OpusModel: "glm-5.3[1m]", SonnetModel: "glm-5.3[1m]", HaikuModel: "glm-5.3-flash[1m]", FableModel: "glm-5.3[1m]", SubagentModel: "glm-5.3-flash[1m]"}
+	configuration := command.ModelConfiguration{ID: "glm", Name: "GLM 5.3", Template: valid.ID, APIKey: "secret-key-value"}
+	for name, change := range map[string]func(*command.ModelTemplate){
+		"plain HTTP endpoint":          func(m *command.ModelTemplate) { m.BaseURL = "http://open.bigmodel.cn/api/anthropic" },
+		"template sets model":          func(m *command.ModelTemplate) { m.Environment = map[string]string{"ANTHROPIC_MODEL": "other"} },
+		"template sets a credential":   func(m *command.ModelTemplate) { m.Environment = map[string]string{"ANTHROPIC_AUTH_TOKEN": "x"} },
+		"template sets effort":         func(m *command.ModelTemplate) { m.Environment = map[string]string{"CLAUDE_CODE_EFFORT_LEVEL": "max"} },
+		"template sets a GitHub token": func(m *command.ModelTemplate) { m.Environment = map[string]string{"GH_TOKEN": "x"} },
+		"template sets a vendor key":   func(m *command.ModelTemplate) { m.Environment = map[string]string{"MOONSHOT_API_KEY": "x"} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			template := valid
+			change(&template)
+			settings := config()
+			settings.Models = catalog([]command.ModelTemplate{template}, configuration)
+			err := settings.Validate()
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "secret-key-value")
+		})
+	}
+	budget := valid
+	budget.Environment = map[string]string{"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "262144"}
+	settings := config()
+	settings.Models = catalog([]command.ModelTemplate{budget}, configuration)
+	require.NoError(t, settings.Validate(), "a token budget is not a credential")
 }

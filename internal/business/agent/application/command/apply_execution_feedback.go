@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -70,14 +69,14 @@ type ExecutionFeedback struct {
 
 type ApplyExecutionFeedbackHandler struct {
 	buffer      DispatcherPort
-	settlements integrationmessage.Publisher
+	settlements AgentPublisherPort
 	sessions    domain.AgentWorkRepository
 	executions  domain.AgentExecutionRepository
 	reports     *ExecutionCoordination
 	now         func() time.Time
 }
 
-func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, executions domain.AgentExecutionRepository, reports *ExecutionCoordination, buffer DispatcherPort, settlements integrationmessage.Publisher) *ApplyExecutionFeedbackHandler {
+func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, executions domain.AgentExecutionRepository, reports *ExecutionCoordination, buffer DispatcherPort, settlements AgentPublisherPort) *ApplyExecutionFeedbackHandler {
 	return &ApplyExecutionFeedbackHandler{now: now, sessions: sessions, executions: executions, reports: reports, buffer: buffer, settlements: settlements}
 }
 

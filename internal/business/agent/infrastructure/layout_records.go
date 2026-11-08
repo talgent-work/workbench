@@ -149,6 +149,8 @@ func (r locatedLayoutRecord) layout() domain.LocatedLayout {
 // DirectoryKey is the fixed-length key a Directory is indexed by: the
 // SHA-256 of its owner facts, in condition order, and its name.
 func DirectoryKey(directory domain.Directory) string {
+	// A struct of strings always encodes, so json.Marshal has no error to
+	// report here.
 	encoded, _ := json.Marshal(struct {
 		Owner []ownerFactRecord `json:"owner"`
 		Name  string            `json:"name"`

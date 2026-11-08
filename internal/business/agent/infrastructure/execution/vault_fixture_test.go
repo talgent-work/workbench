@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
-	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"xorm.io/xorm"
 )
 
@@ -91,16 +90,8 @@ func (f *vaultFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(f.state)
 }
 
-type fixtureRepositoryCredentials struct{}
-
-func (fixtureRepositoryCredentials) Resolve(context.Context, string, string) (RepositoryResolution, error) {
-	return RepositoryResolution{}, nil
-}
-func (fixtureRepositoryCredentials) Plan(context.Context, string, string) ([]RepositoryAuthorization, error) {
-	return []RepositoryAuthorization{}, nil
-}
 func fixtureSandboxCredentials(db *xorm.Engine, s *Sandboxes) *SandboxCredentials {
-	return &SandboxCredentials{db: db, lifecycle: s.client, models: s.config.Models, repositories: fixtureRepositoryCredentials{}, services: authorizationcatalogtest.NoServices{}, http: http.DefaultClient, transport: "encrypted-network"}
+	return &SandboxCredentials{db: db, lifecycle: s.client, models: s.config.Models, records: records{db: db}, http: http.DefaultClient, transport: "encrypted-network"}
 }
 
 // admitting is the holding check of an execution that still admits every

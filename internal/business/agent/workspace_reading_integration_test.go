@@ -31,7 +31,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/workspacereading"
 	"github.com/talgent-work/workbench/internal/business/computer"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
@@ -102,7 +102,7 @@ func (m *workspaceMachine) serve(mux *http.ServeMux) {
 // sessionWorkspaces stands in for Storage: it reads each Session Workspace
 // it holds and judges every file shown as text.
 type sessionWorkspaces struct {
-	execution.StorageWorkspaces
+	workspacereading.StorageViews
 	mu    sync.Mutex
 	reads []string
 }
@@ -163,8 +163,7 @@ func startWorkspaceReading(t *testing.T, ctx context.Context) *workspaceReading 
 		WorkspaceFileAddress: server.URL + "/v1/agent/workspace-files"}
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }),
-		fx.Decorate(func(execution.StorageWorkspaces) execution.StorageWorkspaces { return storage }),
-		fx.Decorate(func(execution.PreviewJudge) execution.PreviewJudge { return storage }),
+		fx.Decorate(func(workspacereading.StorageViews) workspacereading.StorageViews { return storage }),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, computers, testCloud("4", "4Gi", "64")),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),

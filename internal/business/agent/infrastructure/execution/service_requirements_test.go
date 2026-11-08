@@ -7,32 +7,10 @@ import (
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 )
-
-func TestServiceRequirementsConsumeOnlyMarketplaceRelationships(t *testing.T) {
-	authorization := domain.WorkAuthorizationSelection{OwnerUserID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: "retained", Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
-	components := []domain.MCPComponent{
-		{Name: "registered", Definition: []byte(`{"type":"http","url":"https://api.githubcopilot.com/mcp/"}`), Relationship: domain.ConnectorProviderRelationship{ConnectorID: "registered-connector", Provider: "github", Target: "github-remote-mcp", Authentication: "credential_proxy", Status: "supported"}},
-		{Name: "same-url-unregistered", Definition: []byte(`{"type":"http","url":"https://api.githubcopilot.com/mcp/"}`)},
-		{Name: "same-command-unregistered", Definition: []byte(`{"command":"github-mcp-server","args":["stdio"]}`)},
-		{Name: "ambiguous", Relationship: domain.ConnectorProviderRelationship{Status: "unavailable", Reason: "relationship_ambiguous"}},
-	}
-	capabilities := domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "tools", MCPServers: components}}}}
-	requirements := serviceRequirements(capabilities, authorization)
-	require.Equal(t, []application.ServiceRequirement{{Provider: "github", Service: "github", Target: "github-api"}, {Provider: "github", Service: "github", Target: "github-remote-mcp"}}, requirements.Targets)
-	statuses := requirements.statuses(application.ServiceAccessResult{Unavailable: []application.UnavailableService{{Service: "github", Target: "github-api", Reason: "revoked"}, {Service: "github", Target: "github-remote-mcp", Reason: "revoked"}}})
-	require.Equal(t, "revoked", statuses[0].Reason)
-	require.Equal(t, "revoked", statuses[1].Reason)
-	for _, status := range statuses[2:4] {
-		require.Equal(t, "relationship_not_registered", status.Reason)
-		require.Empty(t, status.Service)
-	}
-	require.Equal(t, "relationship_ambiguous", statuses[4].Reason)
-	require.Empty(t, serviceRequirements(domain.CapabilitySnapshot{}, domain.WorkAuthorizationSelection{}).Targets, "no ambient Provider target is inferred")
-}
 
 func TestCredentialPlanConfinesServicesAndKeepsModelWhenUnavailable(t *testing.T) {
 	model := modelCredential{Endpoint: "https://model.example/anthropic", Key: "model-token"}
@@ -40,9 +18,9 @@ func TestCredentialPlanConfinesServicesAndKeepsModelWhenUnavailable(t *testing.T
 	base, err := credentialPlan(model, nil, nil, now)
 	require.NoError(t, err)
 	require.Len(t, base.Credentials, 1)
-	services := []application.ServiceAccessMaterial{
-		{ServiceRequirement: application.ServiceRequirement{Provider: "github", Service: "github", Target: "github-api"}, AuthorizationID: "auth", ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
-		{ServiceRequirement: application.ServiceRequirement{Provider: "github", Service: "github", Target: "github-remote-mcp"}, AuthorizationID: "auth", ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
+	services := []command.ServiceAccessMaterial{
+		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-api"}, AuthorizationID: "auth", ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
+		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-remote-mcp"}, AuthorizationID: "auth", ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
 	}
 	plan, err := credentialPlan(model, nil, services, now)
 	require.NoError(t, err)
@@ -95,10 +73,10 @@ func TestWithdrawnModelConfigurationKeepsTheDeliveredModelCredential(t *testing.
 }
 
 func TestRenewalSuppliesTheCurrentKeyOnlyForTheSandboxEndpoint(t *testing.T) {
-	deepseek := ModelTemplate{ID: "deepseek-flash", Vendor: "deepseek", BaseURL: "https://api.deepseek.com/anthropic", OpusModel: "a", SonnetModel: "a", HaikuModel: "a", FableModel: "a", SubagentModel: "a"}
-	glm := ModelTemplate{ID: "glm", Vendor: "zhipu", BaseURL: "https://open.bigmodel.cn/api/anthropic", OpusModel: "b", SonnetModel: "b", HaikuModel: "b", FableModel: "b", SubagentModel: "b"}
-	catalog := func(template, key string) *ModelCatalog {
-		models, err := NewModelCatalog([]ModelTemplate{deepseek, glm}, []ModelConfiguration{{ID: "work", Name: "Work", Template: template, APIKey: key}})
+	deepseek := command.ModelTemplate{ID: "deepseek-flash", Vendor: "deepseek", BaseURL: "https://api.deepseek.com/anthropic", OpusModel: "a", SonnetModel: "a", HaikuModel: "a", FableModel: "a", SubagentModel: "a"}
+	glm := command.ModelTemplate{ID: "glm", Vendor: "zhipu", BaseURL: "https://open.bigmodel.cn/api/anthropic", OpusModel: "b", SonnetModel: "b", HaikuModel: "b", FableModel: "b", SubagentModel: "b"}
+	catalog := func(template, key string) *platformcatalog.Catalog {
+		models, err := platformcatalog.NewCatalog([]command.ModelTemplate{deepseek, glm}, []command.ModelConfiguration{{ID: "work", Name: "Work", Template: template, APIKey: key}})
 		require.NoError(t, err)
 		return models
 	}

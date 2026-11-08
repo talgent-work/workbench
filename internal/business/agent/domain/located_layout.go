@@ -49,8 +49,8 @@ func (l LocatedLayout) Clone() LocatedLayout {
 // (Layout location): each mount takes the first of its Locators that
 // locates, a mount that locates nothing is left out, and the Harness state
 // mount takes its path and Directory name from the Agent Harness (Harness
-// state placement), refused when another mount holds that path (Located
-// layout validity). The publication target follows the Subject, else the
+// state placement), refused when another mount holds that path or one inside it
+// (Located layout validity). The publication target follows the Subject, else the
 // Work.
 func locateLayout(layout WorkLayout, harness AgentHarness, facts LocatorFacts, managed bool) (LocatedLayout, error) {
 	if err := layout.Validate(); err != nil {
@@ -61,7 +61,7 @@ func locateLayout(layout WorkLayout, harness AgentHarness, facts LocatorFacts, m
 	for _, mount := range layout.Mounts {
 		locators, mountPath := mount.Locators, mount.Path
 		if mount.HarnessState {
-			if slices.ContainsFunc(layout.Mounts, func(other LayoutMount) bool { return other.Path == statePath }) {
+			if slices.ContainsFunc(layout.Mounts, func(other LayoutMount) bool { return !other.HarnessState && collides(statePath, other.Path) }) {
 				return LocatedLayout{}, fmt.Errorf("%w: the Agent Harness's state path %s holds another mount", ErrInvalidWork, statePath)
 			}
 			named := locators[0].clone()
@@ -81,11 +81,25 @@ func locateLayout(layout WorkLayout, harness AgentHarness, facts LocatorFacts, m
 			located.Inputs = &inputs
 		}
 	}
-	located.PublicationTarget, _ = publicationTarget(facts)
+	// Every Work has its own identity, so the target is always located;
+	// refusing otherwise keeps a Work from ever lacking one.
+	target, ok := publicationTarget(facts)
+	if !ok {
+		return LocatedLayout{}, fmt.Errorf("%w: no publication target locates", ErrInvalidWork)
+	}
+	located.PublicationTarget = target
 	if managed {
 		located.Mounts = nil
 	}
 	return located, located.validate()
+}
+
+// collides reports whether a mount at path would take the Harness state
+// path: the same path, or one nested inside it, whose Directory would hide
+// part of the Harness's state.
+func collides(statePath, path string) bool {
+	_, nested := within(statePath, path)
+	return path == statePath || nested
 }
 
 // publicationTarget is `{Subject}, artifacts`, or `{Work}, artifacts` for a

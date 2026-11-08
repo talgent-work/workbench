@@ -20,7 +20,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	if err != nil {
 		return "", err
 	}
-	if owner := agent.PersonalAuthorizationOwner(); request.StartingUserID != "" && owner != request.StartingUserID {
+	if owner := agent.RepresentedPerson(); request.StartingUserID != "" && owner != request.StartingUserID {
 		return "", access.ErrAccessDenied
 	}
 	// Reuse precedes all personal and catalog reads: reusing an existing Work
@@ -46,14 +46,14 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	}
 	// Every authorization usable at creation is selected, independently of
 	// Plugin and Connector choices.
-	authorizationInput := domain.WorkAuthorizationInput{OwnerUserID: agent.PersonalAuthorizationOwner()}
+	authorizationInput := domain.WorkAuthorizationInput{OwnerUserID: agent.RepresentedPerson()}
 	if authorizationInput.OwnerUserID != "" {
 		authorizationInput.Available, err = h.catalog.ListPersonalAuthorizations(ctx, authorizationInput.OwnerUserID)
 		if err != nil {
 			return "", err
 		}
 	}
-	repositories, err := h.repositoryInput(ctx, agent.PersonalAuthorizationOwner(), request.InitialExecution)
+	repositories, err := h.repositoryInput(ctx, agent.RepresentedPerson(), request.InitialExecution)
 	if err != nil {
 		return "", err
 	}
@@ -122,7 +122,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return "", err
 	}
-	work, established, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, Harness: harness, Subject: request.Subject, ProjectID: request.ProjectID, StartingUser: request.StartingUserID, AgentHarness: request.AgentHarness, Capabilities: capabilities, TraceAttributes: agent.WorkTraceAttributes(request.TraceAttributes), ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle, InitialTaskInput: initialInput}, facts)
+	work, established, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, HarnessChoice: harness, Subject: request.Subject, ProjectID: request.ProjectID, StartingUser: request.StartingUserID, AgentHarnessID: request.AgentHarness, Capabilities: capabilities, TraceAttributes: agent.WorkTraceAttributes(request.TraceAttributes), ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle, InitialTaskInput: initialInput}, facts)
 	if err != nil {
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return "", err

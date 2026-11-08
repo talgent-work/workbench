@@ -31,13 +31,13 @@ func (h *FileChangedHandler) Listening() []integrationmessage.Kind {
 }
 
 func (h *FileChangedHandler) Handle(ctx context.Context, msg integrationmessage.Message) error {
-	fact, ok := msg.Payload().(*storageintegrationv1.FileChangedV1)
-	if !ok || fact == nil {
+	changed, ok := msg.Payload().(*storageintegrationv1.FileChangedV1)
+	if !ok || changed == nil {
 		return fmt.Errorf("agent file changed: unexpected payload %T", msg.Payload())
 	}
-	directory := domain.Directory{Name: fact.GetDirectory().GetName()}
-	for _, fact := range fact.GetDirectory().GetOwner() {
-		directory.Owner = append(directory.Owner, domain.OwnerFact{Condition: domain.LocatorCondition(fact.GetCondition()), Value: fact.GetValue()})
+	directory := domain.Directory{Name: changed.GetDirectory().GetName()}
+	for _, owner := range changed.GetDirectory().GetOwner() {
+		directory.Owner = append(directory.Owner, domain.OwnerFact{Condition: domain.LocatorCondition(owner.GetCondition()), Value: owner.GetValue()})
 	}
 	if !directory.Present() || len(directory.Owner) == 0 {
 		return nil

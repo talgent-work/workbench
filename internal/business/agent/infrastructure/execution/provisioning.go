@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"xorm.io/xorm"
 )
@@ -43,9 +44,10 @@ func NewProvisioning(db *xorm.Engine, sandboxes *Sandboxes, credentials *Sandbox
 
 // specify fixes the execution's environment specification, launch commands
 // and the credential plan its submission freezes, from its LaunchSpecification
-// and the Mount Grants of a Cloud start. A specified execution keeps the
-// image, environment and access tokens it was given.
-func (p *Provisioning) specify(ctx context.Context, record executionRecord, mounts domain.SandboxMounts) error {
+// and what Application supplied: the Mount Grants and repository access of a
+// Cloud start. A specified execution keeps the image, environment and access
+// tokens it was given.
+func (p *Provisioning) specify(ctx context.Context, record executionRecord, supply command.CreationSupply) error {
 	if record.specified() {
 		return nil
 	}
@@ -62,12 +64,12 @@ func (p *Provisioning) specify(ctx context.Context, record executionRecord, moun
 	if err != nil {
 		return err
 	}
-	spec, err := authority.specify(ctx, launch, mounts, owner, rand.Text(), rand.Text())
+	spec, err := authority.specify(ctx, launch, supply.Mounts, owner, rand.Text(), rand.Text())
 	if err != nil {
 		return err
 	}
 	record.SpecificationJSON = spec.document
-	plan, err := authority.claim(ctx, record)
+	plan, err := authority.claim(record, supply)
 	if err != nil {
 		return err
 	}

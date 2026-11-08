@@ -6,15 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"net/url"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -166,72 +162,4 @@ func TestAFailingInputsSyncLeavesTheStartReady(t *testing.T) {
 	require.Equal(t, infrastructure.DirectoryKey(inputs), synced.InputsDirectory)
 	require.Zero(t, synced.InputsDue)
 	require.Positive(t, synced.InputsSyncedAt)
-}
-
-// cloudViews stands for Storage's Workspace View of a Cloud Work.
-type cloudViews struct {
-	StorageWorkspaces
-	reads []string
-}
-
-func (c *cloudViews) WorkspaceView(_ context.Context, location domain.WorkspaceLocation, _ string) (application.WorkspaceListing, error) {
-	c.reads = append(c.reads, location.WorkID)
-	return application.WorkspaceListing{}, nil
-}
-
-// A Managed Work's workspace is read on its machine through the relay with
-// the execd token its machine keeps, and its links stream from there; while
-// the machine is away it is unavailable. A Cloud location is Storage's to
-// read, and a link never opens a Cloud Work's file.
-func TestManagedWorkspaceIsReadThroughTheRelay(t *testing.T) {
-	ctx := context.Background()
-	f := newManagedWork(t)
-	f.relay.set(func(m *machineRelay) { m.files = map[string]string{"notes.md": "# notes\n"} })
-	input := managedRequest()
-	f.launch(t, f.begin(t, input).ID)
-
-	links, err := application.NewWorkspaceFileSigner("/api/v1/agent/workspace-files", "computer-control", time.Now)
-	require.NoError(t, err)
-	managed, err := NewManagedWorkspaces(f.db, f.provisioning.managed.machines, links, &storageJudge{})
-	require.NoError(t, err)
-	cloud := &cloudViews{}
-	views, err := NewWorkspaces(cloud, managed)
-	require.NoError(t, err)
-	directory := domain.WorkspaceLocation{WorkID: input.WorkID, ComputerID: managedComputerID}
-
-	listing, err := views.WorkspaceView(ctx, directory, "")
-	require.NoError(t, err)
-	require.Equal(t, 1, listing.Total)
-	require.Equal(t, "notes.md", listing.Entries[0].Name)
-	preview, err := views.PreviewWorkspaceFile(ctx, directory, "notes.md")
-	require.NoError(t, err)
-	require.Equal(t, application.WorkspacePreviewDirect, preview.Mode)
-	link, err := views.WorkspaceFileLink(ctx, directory, "notes.md")
-	require.NoError(t, err)
-	parsed, err := url.Parse(link.URL)
-	require.NoError(t, err)
-	grant, err := links.Verify(parsed.Query().Get("grant"))
-	require.NoError(t, err)
-	opened, err := views.OpenWorkspaceFile(ctx, directory, grant)
-	require.NoError(t, err)
-	content, err := io.ReadAll(opened.Content)
-	opened.Content.Close()
-	require.NoError(t, err)
-	require.Equal(t, "# notes\n", string(content))
-	require.True(t, opened.Download)
-	require.Equal(t, "notes.md", opened.Name)
-
-	f.relay.set(func(m *machineRelay) { m.unreachable = true })
-	_, err = views.WorkspaceView(ctx, directory, "")
-	require.ErrorIs(t, err, domain.ErrWorkspaceUnavailable)
-	_, err = views.OpenWorkspaceFile(ctx, directory, grant)
-	require.ErrorIs(t, err, domain.ErrWorkspaceUnavailable)
-	require.Empty(t, cloud.reads)
-
-	cloudWork := domain.WorkspaceLocation{WorkID: uuid.NewString(), SessionWorkspace: domain.WorkspaceLayout{Workspace: workDirectory("cloud-work", "workspace")}}
-	_, err = views.WorkspaceView(ctx, cloudWork, "")
-	require.NoError(t, err)
-	require.Equal(t, []string{cloudWork.WorkID}, cloud.reads)
-	_, err = views.OpenWorkspaceFile(ctx, cloudWork, grant)
-	require.ErrorIs(t, err, application.ErrInvalidWorkspaceFileLink)
 }

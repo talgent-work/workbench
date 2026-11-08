@@ -13,7 +13,6 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 
-	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
 	"connectrpc.com/connect/v2"
@@ -199,7 +198,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 // management endpoint production preparation requires.
 func attachNativeCredentials(t *testing.T, db *xorm.Engine, p *Provisioning, lifecycle *lifecycleFixture) {
 	t.Helper()
-	credentials, err := NewSandboxCredentials(db, p.sandboxes.client, p.sandboxes.config.Models, fixtureRepositoryCredentials{}, authorizationcatalogtest.NoServices{}, p.credentials.http, "encrypted-network")
+	credentials, err := NewSandboxCredentials(db, p.sandboxes.client, p.sandboxes.config.Models, p.credentials.http, "encrypted-network")
 	require.NoError(t, err)
 	p.credentials = credentials
 	policy, err := p.sandboxes.networkPolicy(context.Background())

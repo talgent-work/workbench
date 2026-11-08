@@ -14,7 +14,11 @@ import (
 
 // OpenDirectory opens a located Directory for its Space Token.
 func (c *Client) OpenDirectory(ctx context.Context, directory domain.LocatedDirectory) (string, error) {
-	response, err := c.files.OpenDirectory(authorized(ctx, c.token), &storageprivatev1.OpenDirectoryRequest{Directory: locatedToProto(directory)})
+	located, err := locatedToProto(directory)
+	if err != nil {
+		return "", err
+	}
+	response, err := c.files.OpenDirectory(authorized(ctx, c.token), &storageprivatev1.OpenDirectoryRequest{Directory: located})
 	if err != nil {
 		return "", oops.With("operation", "storage.open_directory").Wrap(err)
 	}

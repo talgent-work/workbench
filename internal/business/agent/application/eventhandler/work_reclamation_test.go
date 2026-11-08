@@ -3,9 +3,9 @@ package eventhandler
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"testing"
 
+	domainevent "github.com/go-jimu/components/ddd/event"
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 
@@ -29,14 +29,17 @@ func (q *reclamationQueue) Enqueue(_ context.Context, task taskqueue.Task, opts 
 	return nil
 }
 
-// A Cloud Work reaching Closed queues its one Work Reclamation Request task
-// once, riding out a brief queue outage; the task is retried until Storage
-// accepts the request, and Agent keeps nothing to follow up.
-func TestClosedWorkRequestsReclamationOnce(t *testing.T) {
-	queue := &reclamationQueue{failures: 1}
-	handler := NewWorkReclamations(queue, slog.Default())
-	handler.backoff = 0
-	handler.Handle(context.Background(), domain.WorkClosedEvent{WorkID: "work-1", Cloud: true})
+// A Cloud Work reaching Closed queues its one Work Reclamation Request task,
+// retried until Storage accepts the request; a Managed Work mounted no
+// Directory to reclaim, and other events request nothing.
+func TestClosedWorkRequestsReclamation(t *testing.T) {
+	queue := &reclamationQueue{}
+	handler := NewWorkReclamations(queue)
+	require.NoError(t, handler.Request(context.Background(), []domainevent.Event{
+		domain.WorkClosingEntered{WorkID: "work-1"},
+		domain.WorkClosedEvent{WorkID: "work-1", Cloud: true},
+		domain.WorkClosedEvent{WorkID: "work-2"},
+	}))
 	require.Len(t, queue.queued, 1)
 	require.Equal(t, agenttask.RequestWorkReclamationType, queue.queued[0].Type())
 	require.Equal(t, "agent:workspace-reclamation:work-1", queue.queued[0].ID())
@@ -44,7 +47,16 @@ func TestClosedWorkRequestsReclamationOnce(t *testing.T) {
 	require.True(t, set)
 	require.Greater(t, retries, 1_000_000, "a queued request is delivered however long Storage is away")
 	require.Positive(t, queue.options[0].Timeout())
+}
 
-	handler.Handle(context.Background(), domain.WorkClosedEvent{WorkID: "work-2"})
-	require.Len(t, queue.queued, 1, "a Managed Work mounted no Work Directory to reclaim")
+// A request the queue does not take is reported, never dropped, so the
+// closure carrying it does not commit and is confirmed again later.
+func TestAnUnqueuedReclamationRequestIsReported(t *testing.T) {
+	queue := &reclamationQueue{failures: 1}
+	handler := NewWorkReclamations(queue)
+	closed := []domainevent.Event{domain.WorkClosedEvent{WorkID: "work-1", Cloud: true}}
+	require.Error(t, handler.Request(context.Background(), closed))
+	require.Empty(t, queue.queued)
+	require.NoError(t, handler.Request(context.Background(), closed))
+	require.Len(t, queue.queued, 1)
 }

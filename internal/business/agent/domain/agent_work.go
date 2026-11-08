@@ -68,9 +68,9 @@ type WorkInput struct {
 	StartingUser string
 	// WorkLayout is the definition's, which the Work locates once.
 	WorkLayout WorkLayout
-	// AgentHarness names the Harness the Work runs for its life; empty
-	// chooses the default.
-	AgentHarness    string
+	// AgentHarnessID names which Agent Harness, the native agent program,
+	// the Work runs for its life; empty chooses the default.
+	AgentHarnessID  string
 	TraceAttributes map[string]string
 	Visibility      VisibilityRule
 	DisplayTitle    string
@@ -79,8 +79,10 @@ type WorkInput struct {
 	// Managed Computer; it decides which model selections the Work may keep
 	// and that it mounts no Directory.
 	ComputerManaged bool
-	// Harness is its starter's choice, admitted only on a Managed Computer.
-	Harness HarnessChoice
+	// HarnessChoice is how its starter runs the Harness, its permission mode
+	// and sandbox, admitted only on a Managed Computer; it does not select
+	// which Agent Harness runs, which AgentHarnessID names.
+	HarnessChoice HarnessChoice
 	// InitialTaskInput is the creating caller's first task input, when it
 	// supplied one.
 	InitialTaskInput *InitialTaskInput
@@ -289,7 +291,7 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 	if strings.TrimSpace(input.StartedBy) == "" {
 		return nil, fmt.Errorf("%w: who starts the Work is required", ErrInvalidWork)
 	}
-	harness, err := input.Harness.On(input.ComputerManaged)
+	harness, err := input.HarnessChoice.On(input.ComputerManaged)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +311,7 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 		}
 		session.InitialTaskInput = &established
 	}
-	if err := session.locateLayout(input.WorkLayout, input.AgentHarness, input.StartingUser, input.ComputerManaged); err != nil {
+	if err := session.locateLayout(input.WorkLayout, input.AgentHarnessID, input.StartingUser, input.ComputerManaged); err != nil {
 		return nil, err
 	}
 	if err := session.determineAuthorizationSelection(input.AuthorizationInput); err != nil {
