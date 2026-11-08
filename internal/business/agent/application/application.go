@@ -57,10 +57,10 @@ type Application struct {
 	Services             *ServiceAccess
 	Repositories         *RepositoryAccess
 	WorkPrincipals       access.WorkAuthorizer
-	Harness              command.RunningHarnessPort
+	Harness              command.DispatcherPort
 	PluginResults        query.PluginResultReader
 	ServiceAccessResults query.ServiceAccessReader
-	Catalog              command.StartCatalogPort
+	Catalog              command.MarketplacePort
 	Works                command.AgentWorkRepository
 	// Workspaces serves workspace browsing; Storage owns a Cloud Work's view.
 	Workspaces       WorkspacePort
@@ -77,10 +77,10 @@ func NewApplication(
 	repositories *RepositoryAccess,
 	services *ServiceAccess,
 	workPrincipals access.WorkAuthorizer,
-	harness command.RunningHarnessPort,
+	harness command.DispatcherPort,
 	pluginResults query.PluginResultReader,
 	serviceAccessResults query.ServiceAccessReader,
-	catalog command.StartCatalogPort,
+	catalog command.MarketplacePort,
 	recentRepositories query.RecentRepositoryReader,
 	sessions command.AgentWorkRepository,
 	workspaces WorkspacePort,

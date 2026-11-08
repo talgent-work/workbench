@@ -101,7 +101,7 @@ func TestWorkOptionsExposeReleaseMetadataAndKeepRetainedCandidates(t *testing.T)
 }
 
 type optionsCatalog struct {
-	command.StartCatalogPort
+	command.MarketplacePort
 	version     string
 	unavailable bool
 }

@@ -105,7 +105,7 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 }
 
 type workThinking struct {
-	command.RunningHarnessPort
+	command.DispatcherPort
 	ref    string
 	levels []string
 }

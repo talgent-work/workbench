@@ -169,7 +169,7 @@ func startWorkspaceReading(t *testing.T, ctx context.Context) *workspaceReading 
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(func() kubernetes.Interface { return kube }),
-		fx.Provide(func() command.RunningHarnessPort { return &sessionCommandRecorder{} }),
+		fx.Provide(func() command.DispatcherPort { return &sessionCommandRecorder{} }),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(ctx))

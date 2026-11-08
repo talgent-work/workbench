@@ -18,12 +18,12 @@ const acceptanceAttempts = 3
 // the buffer's deduplication gives idempotency.
 type InputAcceptance struct {
 	sessions domain.AgentWorkRepository
-	buffer   RunningHarnessPort
+	buffer   DispatcherPort
 }
 
 var _ WorkInputs = (*InputAcceptance)(nil)
 
-func NewInputAcceptance(sessions domain.AgentWorkRepository, buffer RunningHarnessPort) *InputAcceptance {
+func NewInputAcceptance(sessions domain.AgentWorkRepository, buffer DispatcherPort) *InputAcceptance {
 	return &InputAcceptance{sessions: sessions, buffer: buffer}
 }
 

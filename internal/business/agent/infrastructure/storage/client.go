@@ -1,4 +1,4 @@
-// Package storage is Agent's client of Storage's Sandbox Mount Contract.
+// Package storage is Agent's client of Storage's contract.
 package storage
 
 import (
@@ -25,14 +25,16 @@ type Config struct {
 	Token   string `json:"token" yaml:"token" toml:"token"`
 }
 
-// Client names a Work's spaces by business identity; it never sees a location.
+// Client is Agent's one client of Storage's contract. It names a Work's
+// spaces by business identity; it never sees a location.
 type Client struct {
 	mounts storageprivatev1connect.SandboxMountServiceClient
+	files  storageprivatev1connect.FileSpaceServiceClient
 	token  string
 }
 
 var (
-	_ command.SandboxMountPort    = (*Client)(nil)
+	_ command.StoragePort         = (*Client)(nil)
 	_ execution.StorageWorkspaces = (*Client)(nil)
 )
 
@@ -40,7 +42,12 @@ func NewClient(httpClient connecthttp.HTTPClient, config Config) (*Client, error
 	if strings.TrimSpace(config.Address) == "" || strings.TrimSpace(config.Token) == "" {
 		return nil, errors.New("agent: Storage address and control token are required")
 	}
-	return &Client{mounts: storageprivatev1connect.NewSandboxMountServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, config.Address, connecthttp.WithReadMaxBytes(0)))), token: config.Token}, nil
+	transport := connect.NewClient(connecthttp.NewTransport(httpClient, config.Address, connecthttp.WithReadMaxBytes(0)))
+	return &Client{
+		mounts: storageprivatev1connect.NewSandboxMountServiceClient(transport),
+		files:  storageprivatev1connect.NewFileSpaceServiceClient(transport),
+		token:  config.Token,
+	}, nil
 }
 
 // authorized is the context of a call under the control token.

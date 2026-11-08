@@ -12,7 +12,7 @@ import (
 )
 
 type permissionHarness struct {
-	command.RunningHarnessPort
+	command.DispatcherPort
 	calls []domain.PermissionMode
 	err   error
 }

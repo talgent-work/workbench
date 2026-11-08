@@ -28,7 +28,7 @@ func TestRepositoryAccessUsesRetainedReferenceAndCurrentSupply(t *testing.T) {
 		require.Len(t, resolved.Credentials, 1)
 		require.Equal(t, refs[0], resolved.Credentials[0].RepositoryAccessReference)
 		require.Equal(t, token, resolved.Credentials[0].Password, "each resolution uses the current supply")
-		require.Equal(t, application.RepositoryCredentialRequest{OwnerUserID: "owner", AuthorizationID: "b5f00000-0000-4000-8000-000000000382", RepositoryID: "123", CloneURL: "https://github.com/acme/project.git"}, f.supplied[len(f.supplied)-1])
+		require.Equal(t, command.RepositoryCredentialRequest{OwnerUserID: "owner", AuthorizationID: "b5f00000-0000-4000-8000-000000000382", RepositoryID: "123", CloneURL: "https://github.com/acme/project.git"}, f.supplied[len(f.supplied)-1])
 	}
 }
 
@@ -108,10 +108,10 @@ func TestRepositoryAccessPlansAWorkStartedForAnotherHome(t *testing.T) {
 }
 
 type repositoryAccessFixture struct {
-	application.CredentialSupplyPort
+	command.MarketplacePort
 	app          *application.RepositoryAccess
 	work         *domain.AgentWork
-	supplied     []application.RepositoryCredentialRequest
+	supplied     []command.RepositoryCredentialRequest
 	token        string
 	username     string
 	expiresAt    time.Time
@@ -149,12 +149,12 @@ func (s repositoryWorkStore) Get(_ context.Context, id string) (*domain.AgentWor
 }
 func (repositoryWorkStore) Save(context.Context, *domain.AgentWork) error { panic("unexpected save") }
 
-func (f *repositoryAccessFixture) SupplyRepositoryCredential(_ context.Context, r application.RepositoryCredentialRequest) (application.RepositoryCredentialMaterial, error) {
+func (f *repositoryAccessFixture) SupplyRepositoryCredential(_ context.Context, r command.RepositoryCredentialRequest) (command.RepositoryCredentialMaterial, error) {
 	f.supplied = append(f.supplied, r)
 	if f.duringSupply != nil {
 		f.duringSupply()
 	}
-	return application.RepositoryCredentialMaterial{Username: f.username, Password: f.token, ExpiresAt: f.expiresAt}, f.supplyError
+	return command.RepositoryCredentialMaterial{Username: f.username, Password: f.token, ExpiresAt: f.expiresAt}, f.supplyError
 }
 
 // readyWork applies its execution's readiness report to the Work's start.

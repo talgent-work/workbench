@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -40,8 +41,8 @@ func TestCredentialPlanConfinesServicesAndKeepsModelWhenUnavailable(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, base.Credentials, 1)
 	services := []application.ServiceAccessMaterial{
-		{ServiceRequirement: application.ServiceRequirement{Provider: "github", Service: "github", Target: "github-api"}, AuthorizationID: "auth", ServiceCredentialMaterial: application.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
-		{ServiceRequirement: application.ServiceRequirement{Provider: "github", Service: "github", Target: "github-remote-mcp"}, AuthorizationID: "auth", ServiceCredentialMaterial: application.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
+		{ServiceRequirement: application.ServiceRequirement{Provider: "github", Service: "github", Target: "github-api"}, AuthorizationID: "auth", ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
+		{ServiceRequirement: application.ServiceRequirement{Provider: "github", Service: "github", Target: "github-remote-mcp"}, AuthorizationID: "auth", ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
 	}
 	plan, err := credentialPlan(model, nil, services, now)
 	require.NoError(t, err)

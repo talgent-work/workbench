@@ -24,7 +24,7 @@ type Harness struct {
 	Stops, Cancels, Observed []string
 }
 
-var _ command.RunningHarnessPort = (*Harness)(nil)
+var _ command.DispatcherPort = (*Harness)(nil)
 
 // NewHarness is a Harness over an empty input buffer.
 func NewHarness() *Harness { return &Harness{InputBuffer: &InputBuffer{}} }

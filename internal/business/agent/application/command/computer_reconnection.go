@@ -29,13 +29,13 @@ type ComputerReconnectionHandler struct {
 	sessions     domain.AgentWorkRepository
 	agents       domain.AgentDefinitionRepository
 	works        ReachResumeWorks
-	buffer       RunningHarnessPort
+	buffer       DispatcherPort
 	resume       *ResumeWorkHandler
 	environments ExecutionEnvironmentPort
 	logger       *slog.Logger
 }
 
-func NewComputerReconnectionHandler(computers ComputerPort, sessions domain.AgentWorkRepository, agents domain.AgentDefinitionRepository, works ReachResumeWorks, buffer RunningHarnessPort, resume *ResumeWorkHandler, environments ExecutionEnvironmentPort, logger *slog.Logger) (*ComputerReconnectionHandler, error) {
+func NewComputerReconnectionHandler(computers ComputerPort, sessions domain.AgentWorkRepository, agents domain.AgentDefinitionRepository, works ReachResumeWorks, buffer DispatcherPort, resume *ResumeWorkHandler, environments ExecutionEnvironmentPort, logger *slog.Logger) (*ComputerReconnectionHandler, error) {
 	if computers == nil || sessions == nil || agents == nil || works == nil || buffer == nil || resume == nil || environments == nil {
 		return nil, errors.New("agent: Computer, Works, definitions, input buffer, Resume and execution environments are required to apply a reconnection")
 	}

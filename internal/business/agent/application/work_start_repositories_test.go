@@ -11,7 +11,7 @@ import (
 )
 
 type reachableRepositories struct {
-	command.StartCatalogPort
+	command.MarketplacePort
 	repositories []domain.AccessibleRepository
 	err          error
 }

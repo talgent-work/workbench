@@ -88,7 +88,7 @@ func newRunsAt(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, 
 
 // newRunsWith reads the Work's input buffer and its process's observation
 // from buffer.
-func newRunsWith(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, now func() time.Time, buffer command.RunningHarnessPort) *runs {
+func newRunsWith(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, now func() time.Time, buffer command.DispatcherPort) *runs {
 	executions := execution.NewAgentExecutionRepository(db, now)
 	coordination := command.NewExecutionCoordination(now, works, executions, computertest.Checked(startupAuthority{}), buffer)
 	return &runs{t: t, now: now, executions: executions, coordination: coordination,

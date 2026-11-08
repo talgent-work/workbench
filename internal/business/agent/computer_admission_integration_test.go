@@ -81,7 +81,7 @@ func startOneRoomCloudWith(t *testing.T, ctx context.Context, environments comma
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(func() kubernetes.Interface { return kube }),
-		fx.Provide(func() command.RunningHarnessPort { return port }),
+		fx.Provide(func() command.DispatcherPort { return port }),
 		fx.Populate(&recovery),
 	)
 	require.NoError(t, app.Err())

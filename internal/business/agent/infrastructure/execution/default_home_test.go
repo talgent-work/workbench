@@ -119,7 +119,10 @@ func (s *defaultHomeSubmission) StartExecution(ctx context.Context, input domain
 // directoryMounts stands in for Storage: it prepares each space as a
 // directory of root, the one workspace per reference, HOME per owner and the
 // caller's read-only mounts.
-type directoryMounts struct{ root string }
+type directoryMounts struct {
+	command.StoragePort
+	root string
+}
 
 func (m directoryMounts) AcquireMounts(_ context.Context, request domain.SandboxMountRequest) (domain.SandboxMounts, error) {
 	workspace, home := filepath.Join("workspaces", request.WorkspaceReference), filepath.Join("homes", request.HomeOwner)

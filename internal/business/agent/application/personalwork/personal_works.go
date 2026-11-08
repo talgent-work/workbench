@@ -18,11 +18,11 @@ import (
 type PersonalWorks struct {
 	app       *application.Application
 	works     Works
-	files     FileSpacePort
-	directory UserDirectoryPort
+	files     command.StoragePort
+	directory AccountPort
 }
 
-func New(app *application.Application, works Works, files FileSpacePort, directory UserDirectoryPort) *PersonalWorks {
+func New(app *application.Application, works Works, files command.StoragePort, directory AccountPort) *PersonalWorks {
 	return &PersonalWorks{app: app, works: works, files: files, directory: directory}
 }
 

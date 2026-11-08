@@ -19,12 +19,12 @@ type ReconcileExecutionHandler struct {
 	lease        domain.LeaseTerms
 	executions   domain.AgentExecutionRepository
 	environments ExecutionEnvironmentPort
-	harness      RunningHarnessPort
+	harness      DispatcherPort
 	computers    ComputerPort
-	mounts       SandboxMountPort
+	mounts       StoragePort
 }
 
-func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness RunningHarnessPort, computers ComputerPort, mounts SandboxMountPort) *ReconcileExecutionHandler {
+func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, mounts StoragePort) *ReconcileExecutionHandler {
 	return &ReconcileExecutionHandler{now: now, lease: lease, executions: executions, environments: environments, harness: harness, computers: computers, mounts: mounts}
 }
 

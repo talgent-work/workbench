@@ -27,8 +27,8 @@ import (
 // librarySpaces stands in for Storage's File Space Contract: a space opens
 // under its owner's name and the files are the fixture's.
 type librarySpaces struct {
-	personalwork.FileSpacePort
-	files  []personalwork.SpaceFile
+	command.StoragePort
+	files  []command.SpaceFile
 	issued []string
 }
 
@@ -44,8 +44,8 @@ func (s *librarySpaces) ResolveOwners(_ context.Context, sources []string) ([]st
 	return owners, nil
 }
 
-func (s *librarySpaces) filesOf(owners ...string) []personalwork.SpaceFile {
-	var out []personalwork.SpaceFile
+func (s *librarySpaces) filesOf(owners ...string) []command.SpaceFile {
+	var out []command.SpaceFile
 	for _, owner := range owners {
 		for _, file := range s.files {
 			if file.Owner == owner {
@@ -56,20 +56,20 @@ func (s *librarySpaces) filesOf(owners ...string) []personalwork.SpaceFile {
 	return out
 }
 
-func (s *librarySpaces) ListFiles(_ context.Context, owner string) ([]personalwork.SpaceFile, error) {
+func (s *librarySpaces) ListFiles(_ context.Context, owner string) ([]command.SpaceFile, error) {
 	return s.filesOf(owner), nil
 }
 
-func (s *librarySpaces) ListOwnerFiles(_ context.Context, owners []string) ([]personalwork.SpaceFile, error) {
+func (s *librarySpaces) ListOwnerFiles(_ context.Context, owners []string) ([]command.SpaceFile, error) {
 	return s.filesOf(owners...), nil
 }
 
-func (s *librarySpaces) IssueAccessLink(_ context.Context, owner string, kind personalwork.FileKind, name string, _ bool) (personalwork.FileLink, error) {
+func (s *librarySpaces) IssueAccessLink(_ context.Context, owner string, kind command.FileKind, name string, _ bool) (command.FileLink, error) {
 	s.issued = append(s.issued, owner+"/"+string(kind)+"/"+name)
-	return personalwork.FileLink{URL: "https://files.invalid/" + name}, nil
+	return command.FileLink{URL: "https://files.invalid/" + name}, nil
 }
 
-func (s *librarySpaces) DeleteFile(context.Context, domain.WorkInputSource, string, personalwork.FileKind, string, string) error {
+func (s *librarySpaces) DeleteFile(context.Context, domain.WorkInputSource, string, command.FileKind, string, string) error {
 	return nil
 }
 
@@ -169,13 +169,13 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.NoError(t, app.GrantWorkShare(ctx, application.GrantWorkShare{RequesterID: "owner", WorkID: subjectWork, ReaderID: "reader", Admission: domain.ReaderAdmission{ProjectID: project}}))
 
 	now := time.Now().UTC()
-	spaces.files = []personalwork.SpaceFile{
-		{Owner: first, Kind: personalwork.FileKindAttachment, Name: "brief.md", UpdatedAt: now},
-		{Owner: first, Kind: personalwork.FileKindArtifact, Name: "plan.pdf", WorkID: first, UpdatedAt: now.Add(-time.Hour)},
-		{Owner: second, Kind: personalwork.FileKindArtifact, Name: "notes.md", WorkID: second, UpdatedAt: now},
-		{Owner: "case-x", Kind: personalwork.FileKindArtifact, Name: "design.md", WorkID: subjectWork, UpdatedAt: now.Add(-2 * time.Hour)},
-		{Owner: "case-x", Kind: personalwork.FileKindArtifact, Name: "other.md", WorkID: uuid.NewString(), UpdatedAt: now},
-		{Owner: "case-x", Kind: personalwork.FileKindAttachment, Name: "spec.md", UpdatedAt: now},
+	spaces.files = []command.SpaceFile{
+		{Owner: first, Kind: command.FileKindAttachment, Name: "brief.md", UpdatedAt: now},
+		{Owner: first, Kind: command.FileKindArtifact, Name: "plan.pdf", WorkID: first, UpdatedAt: now.Add(-time.Hour)},
+		{Owner: second, Kind: command.FileKindArtifact, Name: "notes.md", WorkID: second, UpdatedAt: now},
+		{Owner: "case-x", Kind: command.FileKindArtifact, Name: "design.md", WorkID: subjectWork, UpdatedAt: now.Add(-2 * time.Hour)},
+		{Owner: "case-x", Kind: command.FileKindArtifact, Name: "other.md", WorkID: uuid.NewString(), UpdatedAt: now},
+		{Owner: "case-x", Kind: command.FileKindAttachment, Name: "spec.md", UpdatedAt: now},
 	}
 
 	names := func(library personalwork.Library) []string {
@@ -204,24 +204,24 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, none.Files)
 
-	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: first, Kind: personalwork.FileKindAttachment, Name: "brief.md"}, false)
+	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: first, Kind: command.FileKindAttachment, Name: "brief.md"}, false)
 	require.NoError(t, err, "a Work Share holder reads a Personal Work's Attachments")
-	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: subjectWork, Kind: personalwork.FileKindArtifact, Name: "design.md"}, false)
+	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "design.md"}, false)
 	require.NoError(t, err)
 	require.Equal(t, []string{first + "/attachment/brief.md", "case-x/artifact/design.md"}, spaces.issued)
 	for _, refused := range []personalwork.WorkFile{
-		{WorkID: subjectWork, Kind: personalwork.FileKindAttachment, Name: "spec.md"},
-		{WorkID: subjectWork, Kind: personalwork.FileKindArtifact, Name: "other.md"},
+		{WorkID: subjectWork, Kind: command.FileKindAttachment, Name: "spec.md"},
+		{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "other.md"},
 	} {
 		_, err = works.IssueAccessLink(ctx, reader, refused, false)
-		require.ErrorIs(t, err, personalwork.ErrFileNotFound, refused.Name)
+		require.ErrorIs(t, err, command.ErrFileNotFound, refused.Name)
 	}
-	_, err = works.IssueAccessLink(ctx, stranger, personalwork.WorkFile{WorkID: first, Kind: personalwork.FileKindArtifact, Name: "plan.pdf"}, false)
+	_, err = works.IssueAccessLink(ctx, stranger, personalwork.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}, false)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 
-	require.ErrorIs(t, works.DeleteFile(ctx, reader, personalwork.WorkFile{WorkID: first, Kind: personalwork.FileKindAttachment, Name: "brief.md"}), access.ErrAccessDenied)
-	require.NoError(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: first, Kind: personalwork.FileKindAttachment, Name: "brief.md"}))
-	require.ErrorIs(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: subjectWork, Kind: personalwork.FileKindArtifact, Name: "design.md"}), domain.ErrWorkFilesUnavailable)
+	require.ErrorIs(t, works.DeleteFile(ctx, reader, personalwork.WorkFile{WorkID: first, Kind: command.FileKindAttachment, Name: "brief.md"}), access.ErrAccessDenied)
+	require.NoError(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: first, Kind: command.FileKindAttachment, Name: "brief.md"}))
+	require.ErrorIs(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "design.md"}), domain.ErrWorkFilesUnavailable)
 
 	// A Closed Work's Artifacts stay in the Library; a revoked Work Share
 	// takes its Work's files out of the reader's.
@@ -235,9 +235,9 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	shared, err = works.Library(ctx, reader, personalwork.LibraryFilter{})
 	require.NoError(t, err)
 	require.Equal(t, []string{"design.md"}, names(shared))
-	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: first, Kind: personalwork.FileKindArtifact, Name: "plan.pdf"}, false)
+	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}, false)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
-	require.ErrorIs(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: first, Kind: personalwork.FileKindArtifact, Name: "plan.pdf"}), domain.ErrWorkFilesClosed)
+	require.ErrorIs(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}), domain.ErrWorkFilesClosed)
 }
 
 // personalStartupCatalog publishes the core runtime plugin as a fixed release

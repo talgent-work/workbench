@@ -81,7 +81,7 @@ type WorkRegistration struct {
 // The caller owns the identity, its admission and its recovery.
 type CreateWorkHandler struct {
 	now           func() time.Time
-	catalog       StartCatalogPort
+	catalog       MarketplacePort
 	computers     ComputerPort
 	models        query.ModelConfigurations
 	agents        domain.AgentDefinitionRepository
@@ -90,7 +90,7 @@ type CreateWorkHandler struct {
 	prepare       *PrepareWorkExecutionHandler
 }
 
-func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog StartCatalogPort, computers ComputerPort, prepare *PrepareWorkExecutionHandler) *CreateWorkHandler {
+func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog MarketplacePort, computers ComputerPort, prepare *PrepareWorkExecutionHandler) *CreateWorkHandler {
 	return &CreateWorkHandler{now: now, catalog: catalog, computers: computers, agents: agents, sessions: sessions, authorization: authorization, models: models, prepare: prepare}
 }
 

@@ -34,15 +34,11 @@ import (
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
 
-// StorageConfig locates Storage's Sandbox Mount Contract.
+// StorageConfig locates Storage's contract.
 type StorageConfig = agentstorage.Config
 
 func newStorageClient(httpClient *http.Client, config StorageConfig) (*agentstorage.Client, error) {
 	return agentstorage.NewClient(httpClient, config)
-}
-
-func newFileSpaces(httpClient *http.Client, config StorageConfig) (*agentstorage.FileSpaces, error) {
-	return agentstorage.NewFileSpaces(httpClient, config)
 }
 
 // ComputerConfig locates Computer's admission contract.
@@ -70,8 +66,7 @@ var Module = fx.Module("domain.agent",
 	fx.Invoke(registerDomainEventLifecycle),
 	fx.Invoke(fx.Annotate(RegisterRPCHandlers, fx.ParamTags(``, ``, ``, ``, `optional:"true"`))),
 	fx.Invoke(RegisterPersonalWorkHandlers),
-	fx.Provide(fx.Annotate(newFileSpaces, fx.As(new(personalwork.FileSpacePort))), fx.Private),
-	fx.Provide(fx.Annotate(userdirectory.NewClient, fx.As(new(personalwork.UserDirectoryPort))), fx.Private),
+	fx.Provide(fx.Annotate(userdirectory.NewClient, fx.As(new(personalwork.AccountPort))), fx.Private),
 	fx.Provide(personalwork.New, fx.Private),
 	fx.Provide(fx.Annotate(infrastructure.NewServiceAccessResults, fx.As(new(query.ServiceAccessReader)))),
 	fx.Provide(newLiveStreamPublisher, newWorkStateUpdates),
@@ -86,8 +81,9 @@ var Module = fx.Module("domain.agent",
 	fx.Provide(fx.Annotate(newCommittedExecutions, fx.As(fx.Self()), fx.As(new(domain.AgentExecutionRepository)))),
 	fx.Provide(command.NewExecutionCoordination),
 	fx.Provide(eventhandler.NewBeginExecution, eventhandler.NewRequestProcessExit, eventhandler.NewRetireExecution, eventhandler.NewApplyExecutionReport, eventhandler.NewRecordCheckouts, eventhandler.NewConfirmComputeRelease),
-	// Storage owns every space a Work uses.
-	fx.Provide(fx.Annotate(newStorageClient, fx.As(fx.Self()), fx.As(new(command.SandboxMountPort)), fx.As(new(execution.StorageWorkspaces)), fx.As(new(execution.PreviewJudge)))),
+	// Storage owns every space a Work uses; the workspace reader reads a
+	// Cloud Work's Session Workspace through the same client.
+	fx.Provide(fx.Annotate(newStorageClient, fx.As(new(command.StoragePort)), fx.As(new(execution.StorageWorkspaces)), fx.As(new(execution.PreviewJudge)))),
 	workspaceReading,
 	fx.Invoke(subscribeEventHandlers),
 	fx.Provide(application.NewRequiredResponseReader),
@@ -200,8 +196,10 @@ type eventSubscriptions struct {
 	Reports     *eventhandler.ApplyExecutionReport
 	Checkouts   *eventhandler.RecordCheckouts
 	Releases    *eventhandler.ConfirmComputeRelease
-	Recovery    *application.Recovery `optional:"true"`
-	Logger      *slog.Logger
+	// Reclamations is present where the recovery queue delivers each
+	// Workspace Reclamation Request.
+	Reclamations *eventhandler.WorkspaceReclamations `optional:"true"`
+	Logger       *slog.Logger
 }
 
 func subscribeEventHandlers(in eventSubscriptions) {
@@ -210,8 +208,8 @@ func subscribeEventHandlers(in eventSubscriptions) {
 	for _, policy := range []domainevent.Handler{in.Begin, in.Exit, in.Retire, in.Reports, in.Checkouts, in.Releases} {
 		in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, policy))
 	}
-	if in.Recovery != nil {
-		in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, eventhandler.NewWorkspaceReclamations(in.Recovery, in.Logger)))
+	if in.Reclamations != nil {
+		in.Dispatcher.Subscribe(eventlog.Handler(in.Logger, in.Reclamations))
 	}
 }
 

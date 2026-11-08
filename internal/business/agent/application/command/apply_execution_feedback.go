@@ -69,7 +69,7 @@ type ExecutionFeedback struct {
 }
 
 type ApplyExecutionFeedbackHandler struct {
-	buffer      RunningHarnessPort
+	buffer      DispatcherPort
 	settlements integrationmessage.Publisher
 	sessions    domain.AgentWorkRepository
 	executions  domain.AgentExecutionRepository
@@ -77,7 +77,7 @@ type ApplyExecutionFeedbackHandler struct {
 	now         func() time.Time
 }
 
-func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, executions domain.AgentExecutionRepository, reports *ExecutionCoordination, buffer RunningHarnessPort, settlements integrationmessage.Publisher) *ApplyExecutionFeedbackHandler {
+func NewApplyExecutionFeedbackHandler(now func() time.Time, sessions domain.AgentWorkRepository, executions domain.AgentExecutionRepository, reports *ExecutionCoordination, buffer DispatcherPort, settlements integrationmessage.Publisher) *ApplyExecutionFeedbackHandler {
 	return &ApplyExecutionFeedbackHandler{now: now, sessions: sessions, executions: executions, reports: reports, buffer: buffer, settlements: settlements}
 }
 

@@ -21,7 +21,7 @@ func (v disconnectedView) GetWorkView(context.Context, string) (query.WorkView, 
 
 // unreachedTurns fails the test if a control or read reaches Dispatcher.
 type unreachedTurns struct {
-	command.RunningHarnessPort
+	command.DispatcherPort
 	t *testing.T
 }
 

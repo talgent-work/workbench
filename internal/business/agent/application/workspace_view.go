@@ -40,10 +40,6 @@ type WorkspacePort interface {
 	// grant already verified; ErrInvalidWorkspaceFileLink where Agent issues
 	// no such link.
 	OpenWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, grant WorkspaceFileGrant) (OpenedWorkspaceFile, error)
-	// RequestWorkspaceReclamation sends Storage's Workspace Reclamation
-	// Request, an asynchronous request Storage accepts idempotently and
-	// completes on its own schedule.
-	RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error
 }
 
 // WorkspaceEntryKind is what a workspace entry is.

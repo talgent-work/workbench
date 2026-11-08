@@ -68,7 +68,7 @@ func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(func() kubernetes.Interface { return kube }),
-		fx.Provide(func() command.RunningHarnessPort { return port }),
+		fx.Provide(func() command.DispatcherPort { return port }),
 		fx.Invoke(func(handler *command.ReconcileExecutionHandler, executions domain.AgentExecutionRepository) {
 			reconciliation, seating = handler, command.NewSeatExecutionHandler(time.Now, executions)
 		}),

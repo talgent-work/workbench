@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -27,7 +28,10 @@ func TestAManagedWorkOfAProjectReadsReferencesThroughTheConnector(t *testing.T) 
 }
 
 // countingMounts counts mount acquisitions; a Managed start makes none.
-type countingMounts struct{ calls int }
+type countingMounts struct {
+	command.StoragePort
+	calls int
+}
 
 func (m *countingMounts) AcquireMounts(context.Context, domain.SandboxMountRequest) (domain.SandboxMounts, error) {
 	m.calls++

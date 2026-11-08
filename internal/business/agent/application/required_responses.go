@@ -11,7 +11,7 @@ import (
 // a response. Agent matches Dispatcher's pending interactions with the
 // replies its input buffer holds, as it does when applying execution feedback,
 // so the Work's Waiting decision and this answer share one derivation.
-func NewRequiredResponseReader(harness command.RunningHarnessPort) query.RequiredResponseReader {
+func NewRequiredResponseReader(harness command.DispatcherPort) query.RequiredResponseReader {
 	return func(ctx context.Context, workID string) (bool, error) {
 		// The buffer is read first: a reply written and removed in between
 		// leaves its interaction resolved, not unanswered.
