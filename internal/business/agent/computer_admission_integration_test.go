@@ -48,6 +48,8 @@ type oneRoomCloud struct {
 	db       *xorm.Engine
 	quota    *corev1.ResourceQuota
 	kube     *fake.Clientset
+	// server is the base URL of the mounted APIs.
+	server string
 }
 
 func startOneRoomCloud(t *testing.T, ctx context.Context) *oneRoomCloud {
@@ -90,7 +92,7 @@ func startOneRoomCloudWith(t *testing.T, ctx context.Context, environments comma
 	return &oneRoomCloud{recovery: recovery,
 		client:   agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
 		feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))),
-		runs:     runs, db: db, quota: quota, kube: kube,
+		runs:     runs, db: db, quota: quota, kube: kube, server: server.URL,
 	}
 }
 

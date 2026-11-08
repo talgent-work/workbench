@@ -40,7 +40,7 @@ func TestResumeUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 	work.CapabilitySnapshot.Plugins[0].Configuration["paths"] = []string{"docs"}
 	before := work.CapabilitySnapshot.Clone()
 	conversation := work.HarnessSessionReference
-	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true, Soul: "Answer with the conclusion first.", CurrentPlugins: []domain.PluginRelease{reviewV2()}}
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-next"}, ModelConfigurationProvided: true, Soul: "Answer with the conclusion first.", CurrentPlugins: []domain.PluginRelease{reviewV2()}}
 	require.NoError(t, work.Resume(admission))
 
 	snapshot := work.CapabilitySnapshot
@@ -69,7 +69,7 @@ func TestResumeUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 func TestResumeKeepsTheRetainedReleaseOfAPluginWithNoCurrentOne(t *testing.T) {
 	work, _ := stoppedWork(t)
 	before := work.CapabilitySnapshot.Clone()
-	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-next"}, ModelConfigurationProvided: true}
 	require.NoError(t, work.Resume(admission))
 	require.Equal(t, before, work.CapabilitySnapshot)
 	require.Equal(t, domain.WorkStarting, work.State)
@@ -80,7 +80,7 @@ func TestRestartUpgradesPluginsAndTakesUpTheCurrentSoul(t *testing.T) {
 	work, port := startingWork(t)
 	rejected(t, work)
 	released(t, work)
-	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true, Soul: "Be kind.", CurrentPlugins: []domain.PluginRelease{reviewV2()}}
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-next"}, ModelConfigurationProvided: true, Soul: "Be kind.", CurrentPlugins: []domain.PluginRelease{reviewV2()}}
 	require.NoError(t, work.Restart(admission))
 	require.Equal(t, "2", work.CapabilitySnapshot.Plugins[0].Release.Version)
 	restarted := port.launch()

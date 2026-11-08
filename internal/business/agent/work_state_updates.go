@@ -6,7 +6,6 @@ import (
 	"time"
 
 	domainevent "github.com/go-jimu/components/ddd/event"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -62,20 +61,6 @@ func (r *committedWorks) committed(ctx context.Context, work *domain.AgentWork) 
 }
 func (r *committedWorks) Save(ctx context.Context, session *domain.AgentWork) error {
 	if err := r.AgentWorkRepository.Save(ctx, session); err != nil {
-		return err
-	}
-	r.committed(ctx, session)
-	return nil
-}
-func (r *committedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
-	if err := r.AgentWorkRepository.CommitStart(ctx, work, request); err != nil {
-		return err
-	}
-	r.committed(ctx, work)
-	return nil
-}
-func (r *committedWorks) RegisterWork(ctx context.Context, session *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := r.AgentWorkRepository.RegisterWork(ctx, session, registration); err != nil {
 		return err
 	}
 	r.committed(ctx, session)

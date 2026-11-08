@@ -38,8 +38,9 @@ func TestCreationCapturesOwnersRepositoryAndReuseIgnoresLaterBindingChanges(t *t
 	retained.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "changed"}}
 	changed := input
 	changed.InitialExecution = &retained
-	_, err = handler.Handle(t.Context(), changed)
-	require.ErrorIs(t, err, command.ErrWorkCreationConflict, "a repeated request identity carries its original selection")
+	repeated, err := handler.Handle(t.Context(), changed)
+	require.NoError(t, err)
+	require.Equal(t, id, repeated, "a repeated request identity returns its Work, whose selection stays")
 	reused, err := handler.Handle(t.Context(), input)
 	require.NoError(t, err)
 	require.Equal(t, id, reused)

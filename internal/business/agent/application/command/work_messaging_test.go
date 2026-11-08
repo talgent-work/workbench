@@ -12,7 +12,6 @@ import (
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
@@ -120,8 +119,6 @@ func runningMessagingWorld(t *testing.T, purpose string) (*startupAgentStore, *w
 	t.Helper()
 	ctx := context.Background()
 	agents, sessions := startupStoresForPurpose(t, purpose)
-	requestID := uuid.NewString()
-	sessions.requests = map[string]query.StartRequest{requestID: {ID: requestID, WorkID: sessions.session.ID, Kind: query.StartKindStart}}
 	w := worldOver(t, sessions)
 	w.launch(t, "process")
 	for _, kind := range []command.ExecutionFeedbackKind{command.ExecutorPrepared, command.AgentStarted} {

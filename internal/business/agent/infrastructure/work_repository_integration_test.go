@@ -55,13 +55,15 @@ func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	reused, err := handler.Handle(t.Context(), reuse)
 	require.NoError(t, err)
 	require.Equal(t, id, reused)
-	// The original request identity cannot be repeated with another selection.
+	// A repeat of the original request identity with another selection
+	// returns the Work, whose selection stays.
 	changed := *f.request.InitialExecution
 	changed.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "changed"}}
 	repeat := f.request
 	repeat.InitialExecution = &changed
-	_, err = handler.Handle(t.Context(), repeat)
-	require.ErrorIs(t, err, command.ErrWorkCreationConflict)
+	repeated, err := handler.Handle(t.Context(), repeat)
+	require.NoError(t, err)
+	require.Equal(t, id, repeated)
 	work, err = f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, want, work.RepositorySelection)

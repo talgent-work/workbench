@@ -2,6 +2,15 @@ package query
 
 import "context"
 
+// ExecutionQueryRepository reads recovery candidates (the Works and the
+// AgentExecutions with unfinished obligations) and the current run's Plugin
+// outcomes.
+type ExecutionQueryRepository interface {
+	RecoveryWorkQueryRepository
+	ExecutionRecoveryReader
+	PluginResultReader
+}
+
 // RecoveryWorkQueryRepository lists conversations holding execution grants,
 // including completed Sessions whose grant release was interrupted.
 type RecoveryWorkQueryRepository interface {

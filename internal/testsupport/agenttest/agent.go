@@ -246,22 +246,6 @@ func (w startedWorks) Save(ctx context.Context, work *domain.AgentWork) error {
 	return nil
 }
 
-func (w startedWorks) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := w.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
-		return err
-	}
-	w.started(work)
-	return nil
-}
-
-func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, start query.StartRequest) error {
-	if err := w.AgentWorkRepository.CommitStart(ctx, work, start); err != nil {
-		return err
-	}
-	w.started(work)
-	return nil
-}
-
 func (w startedWorks) started(work *domain.AgentWork) {
 	if work.Events == nil {
 		return

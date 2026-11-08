@@ -286,8 +286,9 @@ func newSession(t *testing.T) *domain.AgentWork {
 	return session
 }
 
+// admission seats a new start request: each request derives its own Desk.
 func admission(session *domain.AgentWork) domain.StartAdmission {
-	return domain.StartAdmission{AdmittedAt: time.Now(), AgentID: session.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	return domain.StartAdmission{AdmittedAt: time.Now(), AgentID: session.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: uuid.NewString()}, ModelConfigurationProvided: true}
 }
 
 // Reconcile process: with an admitted stop, a process that ended abnormally

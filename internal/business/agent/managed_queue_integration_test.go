@@ -40,6 +40,9 @@ type managedQueue struct {
 	oneRoomCloud
 	reconciliation *command.ReconcileExecutionHandler
 	seating        *command.SeatExecutionHandler
+	reconnection   *command.ComputerReconnectionHandler
+	// buffer stands in for Dispatcher's input buffer.
+	buffer *sessionCommandRecorder
 }
 
 func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
@@ -62,6 +65,7 @@ func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
 	t.Cleanup(server.Close)
 	var reconciliation *command.ReconcileExecutionHandler
 	var seating *command.SeatExecutionHandler
+	var reconnection *command.ComputerReconnectionHandler
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		agent.RecoveryModule, recoveryQueues(t), fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }), fx.Supply(domain.LeaseTerms{}), runs.option(),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("4", "4Gi", "64")),
@@ -72,13 +76,14 @@ func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
 		fx.Invoke(func(handler *command.ReconcileExecutionHandler, executions domain.AgentExecutionRepository) {
 			reconciliation, seating = handler, command.NewSeatExecutionHandler(time.Now, executions)
 		}),
+		fx.Populate(&reconnection),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(ctx))
 	t.Cleanup(func() { require.NoError(t, app.Stop(context.Background())) })
 	return &managedQueue{
-		oneRoomCloud:   oneRoomCloud{client: agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), runs: runs, db: db, quota: quota, kube: kube},
-		reconciliation: reconciliation, seating: seating,
+		oneRoomCloud:   oneRoomCloud{client: agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), feedback: agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), runs: runs, db: db, quota: quota, kube: kube, server: server.URL},
+		reconciliation: reconciliation, seating: seating, reconnection: reconnection, buffer: port,
 	}
 }
 

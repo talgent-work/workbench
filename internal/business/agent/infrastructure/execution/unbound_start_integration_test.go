@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -103,7 +102,8 @@ func newCloudStart(t *testing.T) *cloudStart {
 	admission.AdmittedAt = f.now()
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"}}, admission)
 	require.NoError(t, err)
-	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}}))
+	work.DefinitionVersion = definition.Version
+	require.NoError(t, works.Save(ctx, work))
 	f.workID = work.ID
 	require.NoError(t, f.coordination.BeginExecution(ctx, work.ID))
 	return f
@@ -206,6 +206,7 @@ func (f *cloudStart) requireRestartable(t *testing.T) {
 	session := work.HarnessSessionReference
 	admission := f.admission
 	admission.AdmittedAt = f.now()
+	admission.Seat.DeskID = "desk-restart" // a Restart request derives its own Desk
 	require.NoError(t, work.Restart(admission))
 	require.Equal(t, domain.ContextRecover, work.HarnessProcess.ContextMode)
 	require.Equal(t, session, work.HarnessSessionReference, "Restart continues the Harness Session")

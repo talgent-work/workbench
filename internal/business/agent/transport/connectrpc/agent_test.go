@@ -47,7 +47,7 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 			DeliverInput:           command.NewDeliverWorkInputHandler(sessions, permissions, port),
 			RespondToInteraction:   command.NewRespondWorkInteractionHandler(sessions, permissions, port),
 			ApplyExecutionFeedback: command.NewApplyExecutionFeedbackHandler(func() time.Time { return observationTime }, sessions, executions, coordination, buffer, &commandtest.InputSettlements{}),
-		}, Queries: application.Queries{LocateWork: query.NewLocateWorkHandler(agents, sessions, permissions), GetStartAdmission: query.NewGetStartAdmissionHandler(sessions, permissions), GetAgentDefinition: query.NewGetAgentDefinitionHandler(agents, application.AssembleAgentDefinition), GetWork: query.NewGetWorkHandler(agents, sessions, permissions, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse)},
+		}, Queries: application.Queries{LocateWork: query.NewLocateWorkHandler(agents, sessions, permissions), GetAgentDefinition: query.NewGetAgentDefinitionHandler(agents, application.AssembleAgentDefinition), GetWork: query.NewGetWorkHandler(agents, sessions, permissions, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse)},
 	}
 	mux := http.NewServeMux()
 	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, slog.Default(), nil)
@@ -74,8 +74,6 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	createSession.Subject = nil
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "a Work with neither a Subject nor a Project is a Personal Work, which no caller creates")
-	// A refused creation settles its request identity; the corrected request
-	// carries a new one.
 	createSession.RequestId = uuid.NewString()
 	createSession.ProjectId, createSession.ReadOnlyMounts = "project-a", []*agentprivatev1.ReadOnlyMount{{Name: "inputs", Reference: "space"}}
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
@@ -87,13 +85,11 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 	require.Empty(t, sessions.items)
-	require.Empty(t, sessions.admitted())
 	require.Empty(t, executions.launches())
 	capacity.SetFull(false)
 	require.Empty(t, executions.launches(), "restored capacity does not execute a rejected creation")
-	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
-	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "the refusal settled its request identity")
-	createSession.RequestId = uuid.NewString()
+	// A refusal keeps nothing of its request: the caller's repeat is admitted
+	// afresh.
 	session, err := client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.NoError(t, err)
 	require.NotEmpty(t, session.GetWorkId())
@@ -169,22 +165,8 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	state(agentprivatev1.WorkState_WORK_STATE_STARTING)
 	startRequest := createSession.RequestId
 	_, err = client.ResumeWork(authenticated(ctx, "control"), &agentprivatev1.ResumeWorkRequest{RequestId: startRequest, SubjectId: "owner", WorkId: id})
-	require.Error(t, err, "the creation's request identity cannot be reused by another operation")
-	require.Len(t, executions.launches(), 3, "the retained creation receipt prevents another admission")
-
-	admissionRequest := &agentprivatev1.GetStartAdmissionRequest{SubjectId: "owner", WorkId: id, RequestId: startRequest}
-	admission, err := client.GetStartAdmission(authenticated(ctx, "control"), admissionRequest)
-	require.NoError(t, err)
-	require.True(t, admission.Accepted)
-	require.Equal(t, agentprivatev1.StartKind_START_KIND_START, admission.Kind)
-	_, err = client.GetStartAdmission(authenticated(ctx, "wrong-token"), admissionRequest)
-	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	_, err = client.GetStartAdmission(authenticated(ctx, "control"), &agentprivatev1.GetStartAdmissionRequest{SubjectId: "intruder", WorkId: id, RequestId: startRequest})
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	missing, err := client.GetStartAdmission(authenticated(ctx, "control"), &agentprivatev1.GetStartAdmissionRequest{SubjectId: "owner", WorkId: id, RequestId: uuid.NewString()})
-	require.NoError(t, err)
-	require.False(t, missing.Accepted)
-	require.Equal(t, agentprivatev1.StartKind_START_KIND_UNSPECIFIED, missing.Kind)
+	require.NoError(t, err, "the creation's start holds the Desk its request identity derives: the repeat answers that admission")
+	require.Len(t, executions.launches(), 3, "and admits no other start")
 	report := func(kind agentprivatev1.FeedbackKind) {
 		_, err := feedback.Report(authenticated(ctx, "feedback"), &agentprivatev1.ReportRequest{WorkId: id, Kind: kind, ProcessId: launchedProcess})
 		require.NoError(t, err)

@@ -16,8 +16,6 @@ import (
 	"golang.org/x/net/websocket"
 	"xorm.io/xorm"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
@@ -149,7 +147,8 @@ func TestNextStartChecksOutOnlyWhatTheFirstStartLeft(t *testing.T) {
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding, Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	work.RepositorySelection = checkoutSelection()
-	require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", DefinitionVersion: definition.Version, Request: query.StartRequest{ID: uuid.NewString(), Kind: query.StartKindStart, WorkID: work.ID}}))
+	work.DefinitionVersion = definition.Version
+	require.NoError(t, works.Save(ctx, work))
 	work, err = works.Get(ctx, work.ID)
 	require.NoError(t, err)
 	require.Equal(t, []string{"github:1", "github:2"}, work.LaunchSpecification().RemainingRepositories, "the first start checks out every selected repository")

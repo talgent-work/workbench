@@ -7,7 +7,6 @@ import (
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
-	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"xorm.io/xorm"
 )
 
@@ -17,33 +16,6 @@ var _ query.ExecutionQueryRepository = (*ExecutionQueryRepository)(nil)
 
 func NewExecutionQueryRepository(db *xorm.Engine) *ExecutionQueryRepository {
 	return &ExecutionQueryRepository{db: db}
-}
-
-// GetWorkStartup derives a Work's start request identities from its facts:
-// its creation request, its latest Resume or Restart request, whether it
-// entered Closing, and whether its creation is pending: whether it still
-// holds its initial task input, not yet handed off to its input buffer.
-func (r *ExecutionQueryRepository) GetWorkStartup(ctx context.Context, sessionID string) (query.WorkStartup, error) {
-	var row struct {
-		SessionID         string `xorm:"session_id"`
-		State             uint8  `xorm:"state"`
-		InitialTaskInput  string `xorm:"initial_task_input"`
-		CreationRequestID string `xorm:"creation_request_id"`
-		ContinuationReqID string `xorm:"continuation_request_id"`
-	}
-	found, err := r.db.Context(ctx).SQL(`SELECT s.id AS session_id, s.state, s.initial_task_input,
- COALESCE((SELECT q.id FROM agent_start_request q WHERE q.session_id=s.id AND q.kind=? AND q.canceled=0 AND q.deleted_at=0 ORDER BY q.created_at, q.id LIMIT 1),'') AS creation_request_id,
- COALESCE((SELECT q.id FROM agent_start_request q WHERE q.session_id=s.id AND q.kind IN (?,?) AND q.canceled=0 AND q.deleted_at=0 ORDER BY q.created_at DESC, q.id DESC LIMIT 1),'') AS continuation_request_id
- FROM agent_session s WHERE s.id=? AND s.deleted_at=0`, string(query.StartKindStart), string(query.StartKindResume), string(query.StartKindRestart), sessionID).Get(&row)
-	if err != nil {
-		return query.WorkStartup{}, oops.With("operation", "agent.session_startup").Wrap(err)
-	}
-	if !found || int(row.State) >= len(sessionStates) {
-		return query.WorkStartup{}, domain.ErrWorkNotFound
-	}
-	state := sessionStates[row.State]
-	return query.WorkStartup{WorkID: row.SessionID, InitialRequestID: row.CreationRequestID, ContinuationRequestID: row.ContinuationReqID,
-		CreationPending: row.InitialTaskInput != "", CleanupConfirmed: state == domain.WorkClosing || state == domain.WorkClosed}, nil
 }
 
 func (r *ExecutionQueryRepository) ListWorkIDs(ctx context.Context, afterID string, limit int) ([]string, error) {

@@ -14,7 +14,7 @@ import (
 )
 
 type thinkingStore struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	work    domain.AgentWork
 	saveErr error
 	saves   int

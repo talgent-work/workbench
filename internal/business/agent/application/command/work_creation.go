@@ -6,17 +6,16 @@ import (
 	"strings"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // create makes one attempt to establish the request's Work: it reuses the
 // definition's Work for the request's Subject, or derives a new Work and its
 // Desk from the request identity, asks the Computer for admission and
-// commits the Work in Starting with its request record. A failed commit
-// leaves the Desk to a repeat, which asks for the same Desk, and otherwise
-// to the open-Desk reconciliation; a known refusal releases it at once.
-func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork, fingerprint string) (string, error) {
+// commits the Work in Starting. A failed commit leaves the Desk to a repeat,
+// which asks for the same Desk, and otherwise to the open-Desk
+// reconciliation; a known refusal releases it at once.
+func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (string, error) {
 	agent, err := h.agents.Get(ctx, request.AgentID)
 	if err != nil {
 		return "", err
@@ -30,7 +29,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork, fing
 		if err != nil {
 			return "", err
 		}
-		return h.reused(ctx, request, fingerprint, existing.ID)
+		return h.created(ctx, request, existing.ID)
 	}
 	// Personal capabilities and authorizations belong to the represented human.
 	catalogUser := request.StartingUserID
@@ -62,18 +61,18 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork, fing
 	// reason, whatever the Computer, before Computer is asked.
 	if named := request.WorkModel; named.ConfigurationID != "" {
 		if _, provided := h.models.Option(named); !provided {
-			return h.reuseAfterRejection(ctx, agent, request, fingerprint, domain.ErrModelConfigurationWithdrawn)
+			return h.reuseAfterRejection(ctx, agent, request, domain.ErrModelConfigurationWithdrawn)
 		}
 	}
 	computer, err := workComputer(ctx, h.computers, request.SubjectID, request.ComputerID)
 	if err != nil {
-		return h.reuseAfterRejection(ctx, agent, request, fingerprint, err)
+		return h.reuseAfterRejection(ctx, agent, request, err)
 	}
 	managed := !computer.Cloud
 	// A Computer the definition's Works may not run on is refused before a
 	// run is seated there.
 	if err := agent.AdmitComputer(managed); err != nil {
-		return h.reuseAfterRejection(ctx, agent, request, fingerprint, err)
+		return h.reuseAfterRejection(ctx, agent, request, err)
 	}
 	model := h.workModel(request.WorkModel, managed)
 	if err := model.Validate(); err != nil {
@@ -110,14 +109,11 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork, fing
 	// Definition and Computer admission are consulted only for an available
 	// model; admission refuses a withdrawn Model Configuration first.
 	admission := domain.StartAdmission{AdmittedAt: h.now(), AgentID: agent.ID, ModelConfigurationProvided: provided, Soul: agent.Soul}
-	workID := request.WorkID
-	if workID == "" {
-		workID = requestedWorkID(request.RequestID)
-	}
+	workID := request.workID()
 	if available {
 		seat, err := admitRun(ctx, h.computers, RunAdmission{ComputerID: computer.ID, DeskID: requestedDeskID(request.RequestID), WorkID: workID, WorkOwnerID: agent.WorkPrincipal(), StarterID: request.SubjectID, Sandbox: harness.Sandbox})
 		if err != nil {
-			return h.reuseAfterRejection(ctx, agent, request, fingerprint, err)
+			return h.reuseAfterRejection(ctx, agent, request, err)
 		}
 		admission.DefinitionAdmitted, admission.Seat = true, seat
 	}
@@ -133,18 +129,17 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork, fing
 	}
 	if !established {
 		// Another creation established the Work for this Subject; its run
-		// holds its own Desk.
-		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
-		return h.reused(ctx, request, fingerprint, work.ID)
+		// holds its own Desk, unless a repeat of this very request did.
+		if work.ID != workID {
+			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
+		}
+		return h.created(ctx, request, work.ID)
 	}
-	record := query.StartRequest{ID: request.RequestID, Kind: query.StartKindStart, WorkID: work.ID, Fingerprint: fingerprint}
-	err = h.sessions.RegisterWork(ctx, work, WorkRegistration{SubjectID: request.SubjectID, Request: record, WorkspaceReference: request.WorkspaceReference, DefinitionVersion: agent.Version})
-	if errors.Is(err, ErrStartRequestCanceled) || errors.Is(err, ErrStartRequestConflict) {
-		// The request can never create this Work: its Desk is not needed.
-		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
-		return "", err
-	}
-	if err != nil {
+	// The save registers the Work against the definition revision it was
+	// created under; a competing registration of the same identity or a
+	// changed definition is a concurrent modification, after which the
+	// next attempt finds the Work or creates it again.
+	if err := h.sessions.Save(ctx, work); err != nil {
 		return "", err
 	}
 	// The start's execution begins once the Work commits; everything after
@@ -155,7 +150,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork, fing
 // A competing creation may establish this Subject's Work after the first
 // lookup but before admission is refused. Reusing that Work needs no new
 // capacity.
-func (h *CreateWorkHandler) reuseAfterRejection(ctx context.Context, agent *domain.AgentDefinition, request CreateWork, fingerprint string, rejection error) (string, error) {
+func (h *CreateWorkHandler) reuseAfterRejection(ctx context.Context, agent *domain.AgentDefinition, request CreateWork, rejection error) (string, error) {
 	if errors.Is(rejection, ErrDeskUnavailable) || errors.Is(rejection, ErrStartRequestConflict) {
 		return "", rejection
 	}
@@ -166,7 +161,7 @@ func (h *CreateWorkHandler) reuseAfterRejection(ctx context.Context, agent *doma
 	if work == nil {
 		return "", rejection
 	}
-	return h.reused(ctx, request, fingerprint, work.ID)
+	return h.created(ctx, request, work.ID)
 }
 
 // subjectWork is the definition's Work of the Subject, nil when it has none

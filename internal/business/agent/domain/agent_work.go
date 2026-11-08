@@ -286,6 +286,10 @@ type AgentWork struct {
 	WorkShares []string
 	Events     EventCollection
 	Version    int `validate:"gte=0"`
+	// DefinitionVersion is the AgentDefinition version a new Work was created
+	// under; its first save commits only while the definition is unchanged
+	// (Static creation admission). A loaded Work does not carry it.
+	DefinitionVersion int
 }
 
 func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error) {

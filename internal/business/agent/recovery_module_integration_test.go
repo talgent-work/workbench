@@ -141,13 +141,14 @@ func TestModuleRestartAdmitsNoResumeWithoutCaller(t *testing.T) {
 // lostCreationAnswer commits a creation and loses its answer, so nothing
 // continues the new Work but recovery.
 type lostCreationAnswer struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 }
 
 var errCreationAnswerLost = errors.New("creation answer lost after the commit")
 
-func (r lostCreationAnswer) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := r.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
+func (r lostCreationAnswer) Save(ctx context.Context, work *domain.AgentWork) error {
+	registration := work.Version == 0
+	if err := r.AgentWorkRepository.Save(ctx, work); err != nil || !registration {
 		return err
 	}
 	return errCreationAnswerLost
@@ -176,10 +177,10 @@ func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 	prepare := command.NewPrepareWorkExecutionHandler(sessions, auth, models)
 	_, err = command.NewCreateWorkHandler(time.Now, agents, lostCreationAnswer{sessions}, auth, models, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{}), prepare).Handle(ctx, request)
 	require.ErrorIs(t, err, errCreationAnswerLost)
-	record, found, err := sessions.FindStartRequest(ctx, request.RequestID)
+	committed, err := sessions.FindBySubject(ctx, definition.ID, request.Subject)
 	require.NoError(t, err)
-	require.True(t, found)
-	id := record.WorkID
+	require.NotNil(t, committed, "the creation committed")
+	id := committed.ID
 	require.Empty(t, launches(t, db), "nothing continued the creation before recovery")
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)

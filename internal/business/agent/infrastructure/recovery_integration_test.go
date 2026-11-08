@@ -23,16 +23,36 @@ import (
 	"xorm.io/xorm"
 )
 
-// Resume commits its Work change and request together. A concurrent closure or
-// request claimed by another Work must roll back the new execution obligation.
+// commitBarrier pauses a real start admission just before it commits, so a
+// concurrent change of the same Work races the admission transaction.
+type commitBarrier struct {
+	*infrastructure.AgentWorkRepository
+	arrived, proceed chan struct{}
+	once             *sync.Once
+}
+
+func newCommitBarrier(sessions *infrastructure.AgentWorkRepository) commitBarrier {
+	return commitBarrier{AgentWorkRepository: sessions, arrived: make(chan struct{}), proceed: make(chan struct{}), once: &sync.Once{}}
+}
+
+func (b commitBarrier) Save(ctx context.Context, work *domain.AgentWork) error {
+	b.once.Do(func() { close(b.arrived) })
+	select {
+	case <-b.proceed:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return b.AgentWorkRepository.Save(ctx, work)
+}
+
+// Resume commits its Work change alone. A concurrent closure must roll back
+// the new execution obligation.
 func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 	for _, scenario := range []struct {
-		name                                          string
-		closed, foreignAdmission, foreignCancellation bool
+		name   string
+		closed bool
 	}{
 		{name: "admitted"}, {name: "closed before commit", closed: true},
-		{name: "request admitted for another Work", foreignAdmission: true},
-		{name: "request canceled for another Work", foreignCancellation: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			f, id := stoppedContinuationSession(t)
@@ -43,7 +63,7 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 			before, err := sessions.Get(ctx, id)
 			require.NoError(t, err)
 			var starts atomic.Int32
-			counted := func(works command.AgentWorkRepository) startedWorks {
+			counted := func(works domain.AgentWorkRepository) startedWorks {
 				return startedWorks{AgentWorkRepository: works, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
 			}
 			barrier := newCommitBarrier(sessions)
@@ -64,33 +84,12 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 			if scenario.closed {
 				require.NoError(t, command.NewCloseWorkHandler(sessions, auth, executionsOf(db), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: "owner", WorkID: id, RequestID: "close-before-admission"}))
 			}
-			var foreignID string
 			var expectedStarts int32
-			if scenario.foreignAdmission || scenario.foreignCancellation {
-				foreign, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"other-owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "other-home", Namespace: "personal"}})
-				require.NoError(t, err)
-				require.NoError(t, agents.Save(ctx, foreign))
-				foreignRequest := uuid.NewString()
-				var foreignWorks command.AgentWorkRepository = sessions
-				if scenario.foreignAdmission {
-					foreignRequest, foreignWorks = requestID, counted(sessions)
-					expectedStarts = 1
-				}
-				foreignID, err = command.NewCreateWorkHandler(time.Now, agents, foreignWorks, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: foreignRequest, SubjectID: "other-owner", AgentID: foreign.ID, Subject: domain.WorkSubject{Kind: "case", ID: "other-work"}, ProjectID: "project", WorkspaceReference: "other-workspace"})
-				require.NoError(t, err)
-				if scenario.foreignCancellation {
-					canceled, err := sessions.CancelStart(ctx, foreignID, requestID)
-					require.NoError(t, err)
-					require.True(t, canceled)
-				}
-			}
 			release()
 			startupErr := <-result
 			switch {
 			case scenario.closed:
 				require.ErrorIs(t, startupErr, domain.ErrWorkTransition, "the retried admission observes the closed Work")
-			case scenario.foreignAdmission || scenario.foreignCancellation:
-				require.ErrorIs(t, startupErr, command.ErrStartRequestConflict)
 			default:
 				require.NoError(t, startupErr)
 				expectedStarts = 1
@@ -98,17 +97,12 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 			require.Equal(t, expectedStarts, starts.Load(), "only a committed admission may execute")
 			saved, err := sessions.Get(ctx, id)
 			require.NoError(t, err)
-			require.Equal(t, !scenario.closed && !scenario.foreignAdmission && !scenario.foreignCancellation, saved.HoldsProcess())
-			if scenario.foreignAdmission {
-				foreignSession, err := sessions.Get(ctx, foreignID)
-				require.NoError(t, err)
-				require.Equal(t, domain.WorkStarting, foreignSession.State)
-			}
+			require.Equal(t, !scenario.closed, saved.HoldsProcess())
 			ids, err := infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
 			require.NoError(t, err)
 			if scenario.closed {
 				require.NotContains(t, ids, id, "a closed Work leaves recovery; Storage owns its workspace reclamation")
-			} else if expectedStarts == 0 || scenario.foreignAdmission {
+			} else if expectedStarts == 0 {
 				require.NotContains(t, ids, id)
 			}
 			if saved.HoldsProcess() {
@@ -236,9 +230,9 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	ids, err = infrastructure.NewExecutionQueryRepository(db).ListWorkIDs(ctx, "", 100)
 	require.NoError(t, err)
 	require.Empty(t, ids, "a closed Work leaves recovery; Storage owns its workspace reclamation")
-	require.NoError(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest), "historical request replay returns its original acceptance")
-	require.Equal(t, resumed.ID, run.latest(ctx, sessionID).ID, "replaying a historical acceptance begins no execution")
+	require.ErrorIs(t, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, resumeRequest), domain.ErrWorkTransition, "a late repeat of an ended start starts nothing")
+	require.Equal(t, resumed.ID, run.latest(ctx, sessionID).ID, "replaying a historical request begins no execution")
 	closedAfterReplay, err := sessions.Get(ctx, sessionID)
 	require.NoError(t, err)
-	require.Equal(t, closed, closedAfterReplay, "replaying a historical acceptance cannot reopen a closed Session")
+	require.Equal(t, closed, closedAfterReplay, "replaying a historical request cannot reopen a closed Session")
 }

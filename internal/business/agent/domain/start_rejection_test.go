@@ -31,7 +31,7 @@ func TestRejectedStartRetainsFailureWithoutInventingExitOrEnvironmentLoss(t *tes
 	require.False(t, work.HarnessProcess.Exited)
 	require.False(t, work.HarnessProcess.EnvironmentLost)
 	require.False(t, work.HoldsProcess())
-	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true, CurrentPlugins: currentReleases(work)}
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-restart"}, ModelConfigurationProvided: true, CurrentPlugins: currentReleases(work)}
 	require.ErrorIs(t, work.Restart(admission), domain.ErrComputeReclamationPending)
 	released(t, work)
 	require.NoError(t, work.Restart(admission))

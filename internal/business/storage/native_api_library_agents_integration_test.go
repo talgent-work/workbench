@@ -83,9 +83,8 @@ func (a *libraryAgents) start(person, workspace, projectID string) libraryWork {
 	}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), Kind: agentdomain.ComputerCloud, DeskID: "desk"}})
 	require.NoError(a.t, err)
 	require.Empty(a.t, started.CapabilitySnapshot.Connectors, "the Work starts without a platform Connector")
-	require.NoError(a.t, a.works.RegisterWork(ctx, started, agentcommand.WorkRegistration{
-		SubjectID: person, Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: started.ID}, WorkspaceReference: workspace, DefinitionVersion: definition.Version,
-	}))
+	started.DefinitionVersion = definition.Version
+	require.NoError(a.t, a.works.Save(ctx, started))
 	return work
 }
 

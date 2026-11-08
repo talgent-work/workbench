@@ -137,7 +137,7 @@ func newRepositoryAccessFixture(t *testing.T, withoutAuthorization ...bool) *rep
 }
 
 type repositoryWorkStore struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	f *repositoryAccessFixture
 }
 

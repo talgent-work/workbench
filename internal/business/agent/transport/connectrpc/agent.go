@@ -255,13 +255,13 @@ func mapAgentError(err error) error {
 		code = connect.CodePermissionDenied
 	case errors.Is(err, domain.ErrAgentDefinitionNotFound), errors.Is(err, domain.ErrWorkNotFound):
 		code = connect.CodeNotFound
-	case errors.Is(err, pluginconfig.ErrInvalidConfiguration), errors.Is(err, query.ErrInvalidWorkReport), errors.Is(err, command.ErrInputAdmissionConflict), errors.Is(err, query.ErrInvalidDefinitionSelection), errors.Is(err, domain.ErrInvalidWorkSubject), errors.Is(err, domain.ErrInvalidAgentDefinition), errors.Is(err, domain.ErrInvalidCapabilities), errors.Is(err, domain.ErrInvalidWork), errors.Is(err, query.ErrInvalidStartRequest), errors.Is(err, domain.ErrInvalidVisibility), errors.Is(err, domain.ErrWorkShareOutOfScope), errors.Is(err, domain.ErrInvalidAgentAppearance), errors.Is(err, domain.ErrInvalidSoul), errors.Is(err, domain.ErrStartingContextNotAdmitted), errors.Is(err, domain.ErrInvalidDisplayTitle):
+	case errors.Is(err, pluginconfig.ErrInvalidConfiguration), errors.Is(err, query.ErrInvalidWorkReport), errors.Is(err, command.ErrInputAdmissionConflict), errors.Is(err, query.ErrInvalidDefinitionSelection), errors.Is(err, domain.ErrInvalidWorkSubject), errors.Is(err, domain.ErrInvalidAgentDefinition), errors.Is(err, domain.ErrInvalidCapabilities), errors.Is(err, domain.ErrInvalidWork), errors.Is(err, command.ErrInvalidStartRequest), errors.Is(err, domain.ErrInvalidVisibility), errors.Is(err, domain.ErrWorkShareOutOfScope), errors.Is(err, domain.ErrInvalidAgentAppearance), errors.Is(err, domain.ErrInvalidSoul), errors.Is(err, domain.ErrStartingContextNotAdmitted), errors.Is(err, domain.ErrInvalidDisplayTitle):
 		code = connect.CodeInvalidArgument
 	case errors.Is(err, domain.ErrCapacityUnavailable), errors.Is(err, command.ErrInputBacklog):
 		code = connect.CodeResourceExhausted
-	case errors.Is(err, command.ErrWorkCreationConflict), errors.Is(err, domain.ErrConcurrentModification):
+	case errors.Is(err, domain.ErrConcurrentModification):
 		code = connect.CodeAborted
-	case errors.Is(err, application.ErrWorkCapabilitiesUnavailable), errors.Is(err, domain.ErrTurnActive), errors.Is(err, command.ErrWorkCreationCanceled), errors.Is(err, domain.ErrWorkVisibilityFixed), errors.Is(err, domain.ErrWorkWithoutProject), errors.Is(err, command.ErrStartRequestCanceled), errors.Is(err, command.ErrStartRequestConflict), errors.Is(err, domain.ErrWorkTransition), errors.Is(err, domain.ErrExecutionNotPermitted), errors.Is(err, domain.ErrComputeReclamationPending), errors.Is(err, domain.ErrModelConfigurationWithdrawn), domain.RefusedByComputer(err), errors.Is(err, domain.ErrNotPersonalWork), errors.Is(err, domain.ErrWorkNotActing), errors.Is(err, domain.ErrWorkFilesUnavailable), errors.Is(err, domain.ErrWorkFilesClosed):
+	case errors.Is(err, application.ErrWorkCapabilitiesUnavailable), errors.Is(err, domain.ErrTurnActive), errors.Is(err, domain.ErrWorkVisibilityFixed), errors.Is(err, domain.ErrWorkWithoutProject), errors.Is(err, command.ErrDeskUnavailable), errors.Is(err, domain.ErrStartRequestSpent), errors.Is(err, command.ErrStartRequestConflict), errors.Is(err, domain.ErrWorkTransition), errors.Is(err, domain.ErrExecutionNotPermitted), errors.Is(err, domain.ErrComputeReclamationPending), errors.Is(err, domain.ErrModelConfigurationWithdrawn), domain.RefusedByComputer(err), errors.Is(err, domain.ErrNotPersonalWork), errors.Is(err, domain.ErrWorkNotActing), errors.Is(err, domain.ErrWorkFilesUnavailable), errors.Is(err, domain.ErrWorkFilesClosed):
 		code = connect.CodeFailedPrecondition
 	case errors.Is(err, domain.ErrExecutionUnobserved):
 		code = connect.CodeUnavailable
@@ -306,30 +306,6 @@ func (h *AgentHandler) RespondToInteraction(ctx context.Context, req *agentpriva
 		return nil, mapAgentError(err)
 	}
 	return &agentprivatev1.RespondToInteractionResponse{}, nil
-}
-
-func (h *AgentHandler) GetStartAdmission(ctx context.Context, req *agentprivatev1.GetStartAdmissionRequest) (*agentprivatev1.GetStartAdmissionResponse, error) {
-	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
-		return nil, err
-	}
-	admitted, found, err := h.application.Queries.GetStartAdmission.Handle(ctx, query.GetStartAdmission{SubjectID: req.GetSubjectId(), WorkID: req.GetWorkId(), RequestID: req.GetRequestId()})
-	if err != nil {
-		return nil, mapAgentError(err)
-	}
-	kind := agentprivatev1.StartKind_START_KIND_UNSPECIFIED
-	if found {
-		switch admitted.Kind {
-		case query.StartKindStart:
-			kind = agentprivatev1.StartKind_START_KIND_START
-		case query.StartKindResume:
-			kind = agentprivatev1.StartKind_START_KIND_RESUME
-		case query.StartKindRestart:
-			kind = agentprivatev1.StartKind_START_KIND_RESTART
-		default:
-			return nil, connect.NewError(connect.CodeInternal, "invalid retained start kind")
-		}
-	}
-	return &agentprivatev1.GetStartAdmissionResponse{Accepted: found, Kind: kind}, nil
 }
 
 func (h *AgentHandler) VerifyWorkCredential(ctx context.Context, req *agentprivatev1.VerifyWorkCredentialRequest) (*agentprivatev1.VerifyWorkCredentialResponse, error) {

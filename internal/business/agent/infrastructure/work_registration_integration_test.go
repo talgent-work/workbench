@@ -66,7 +66,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.Equal(t, domain.WorkStarting, session.State)
 	require.True(t, session.HoldsProcess())
 	require.NoError(t, auth.AuthorizeWork(ctx, "owner", session.ID))
-	require.Equal(t, input.RequestID, submitted[0].RequestID)
+	require.Equal(t, session.ID, submitted[0].RequestID, "the first start is named by the Work its creation request derived")
 	require.Equal(t, input.Input.ID, submitted[0].InputID)
 	require.Equal(t, input.Input.Text, submitted[0].Input)
 	require.Equal(t, input.WorkBranch, submitted[0].WorkBranch)
@@ -113,12 +113,13 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	repeated, err := prepareNew(ctx, creation, repeat)
 	require.NoError(t, err)
 	require.Equal(t, ref, repeated)
-	// Repeating that request identity with other content is a conflict; a new
-	// request with other repository choices returns the original Work, whose
-	// retained choices it never replaces.
+	// Repeating that request identity with other content returns the same
+	// Work; a new request with other repository choices returns the original
+	// Work too, whose retained choices it never replaces.
 	repeat.Input.Text = "different task"
-	_, err = prepareNew(ctx, creation, repeat)
-	require.ErrorIs(t, err, command.ErrWorkCreationConflict)
+	repeated, err = prepareNew(ctx, creation, repeat)
+	require.NoError(t, err)
+	require.Equal(t, ref, repeated)
 	repeat.RequestID, repeat.Input.ID = uuid.NewString(), uuid.NewString()
 	repeat.Selections = []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "main"}}
 	reused, err := prepareNew(ctx, creation, repeat)
@@ -131,13 +132,15 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.Len(t, buffer.Inputs, 1)
 }
 
+// registrationLostAcknowledgement registers a new Work and loses the answer.
 type registrationLostAcknowledgement struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	err error
 }
 
-func (r registrationLostAcknowledgement) RegisterWork(ctx context.Context, s *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := r.AgentWorkRepository.RegisterWork(ctx, s, registration); err != nil {
+func (r registrationLostAcknowledgement) Save(ctx context.Context, s *domain.AgentWork) error {
+	registration := s.Version == 0
+	if err := r.AgentWorkRepository.Save(ctx, s); err != nil || !registration {
 		return err
 	}
 	return r.err

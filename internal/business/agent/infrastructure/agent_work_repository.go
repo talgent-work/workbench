@@ -5,11 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
-
 	"github.com/samber/oops"
 	"xorm.io/xorm"
 
@@ -21,7 +16,7 @@ type AgentWorkRepository struct {
 	now func() time.Time
 }
 
-var _ command.AgentWorkRepository = (*AgentWorkRepository)(nil)
+var _ domain.AgentWorkRepository = (*AgentWorkRepository)(nil)
 
 func NewAgentWorkRepository(db *xorm.Engine, now func() time.Time) *AgentWorkRepository {
 	return &AgentWorkRepository{db: db, now: now}
@@ -44,43 +39,28 @@ func (r *AgentWorkRepository) Get(ctx context.Context, id string) (*domain.Agent
 	return session, err
 }
 
-// RegisterWork persists the definition's association, its controlling
-// principal and its creation request record together. The definition lock
-// serializes rule changes with creation; the request record's row lock
-// serializes it with the request's cancellation.
-func (r *AgentWorkRepository) RegisterWork(ctx context.Context, session *domain.AgentWork, registration command.WorkRegistration) error {
-	subject, definitionVersion, request := registration.SubjectID, registration.DefinitionVersion, registration.Request
-	if strings.TrimSpace(subject) == "" || len(subject) > 255 || subject != session.StartedBy {
-		return access.ErrAccessDenied
-	}
-	if session == nil || session.Version != 0 || definitionVersion < 1 || session.State != domain.WorkStarting || !session.HoldsProcess() || uuid.Validate(request.ID) != nil || request.Kind != query.StartKindStart || request.WorkID != session.ID || request.Canceled {
-		return domain.ErrInvalidWork
-	}
-	scope, err := registrationScope(subject, session.AgentID, registration.WorkspaceReference, session.Subject, session.ProjectID)
-	if err != nil {
-		return err
-	}
-	return r.saveWith(ctx, session, definitionVersion, r.startAdmissionHooks(session, request, scope))
-}
-
+// Save inserts a new Work or updates a loaded one. A new Work registers its
+// definition's association: the definition's row lock serializes rule changes
+// with creation, and the Work commits only against the definition version it
+// was created under. A competing registration of the same identity, a changed
+// definition or a Work changed since it was loaded answers
+// domain.ErrConcurrentModification.
 func (r *AgentWorkRepository) Save(ctx context.Context, session *domain.AgentWork) error {
-	if session == nil || session.Version == 0 {
+	if session == nil || session.Version == 0 && !registrable(session) {
 		return domain.ErrInvalidWork
 	}
-	return r.saveWith(ctx, session, 0, saveHooks{})
+	return r.save(ctx, session)
 }
 
-// saveHooks enlist related writes in the Work's transaction: before runs ahead
-// of the Work row write, so locks it takes are ordered before that row lock;
-// after persists request records once the Work row was written.
-type saveHooks struct {
-	before, after func(*xorm.Session, int64) error
+// registrable reports whether a new Work may be registered: created under a
+// stored definition version, started by someone, and in its admitted first
+// start.
+func registrable(session *domain.AgentWork) bool {
+	starter := strings.TrimSpace(session.StartedBy)
+	return session.DefinitionVersion >= 1 && starter != "" && len(starter) <= 255 && session.State == domain.WorkStarting && session.HoldsProcess()
 }
 
-func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.AgentWork, definitionVersion int, hooks saveHooks) error {
-	if session == nil {
-		return domain.ErrInvalidWork
-	}
+func (r *AgentWorkRepository) save(ctx context.Context, session *domain.AgentWork) error {
 	row, err := sessionToDO(session)
 	if err != nil {
 		return err
@@ -94,11 +74,6 @@ func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.Agen
 		return oops.Wrap(err)
 	}
 	defer tx.Rollback()
-	if hooks.before != nil {
-		if err := hooks.before(tx, row.UpdatedAt); err != nil {
-			return err
-		}
-	}
 	if session.Version == 0 {
 		var definition agentDefinitionDO
 		found, lockErr := tx.Cols("version").Where("id = ? AND deleted_at = 0", session.AgentID).ForUpdate().Get(&definition)
@@ -108,7 +83,7 @@ func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.Agen
 		if !found {
 			return domain.ErrAgentDefinitionNotFound
 		}
-		if definition.Version != definitionVersion {
+		if definition.Version != session.DefinitionVersion {
 			return domain.ErrConcurrentModification
 		}
 		row.CreatedAt = row.UpdatedAt
@@ -126,11 +101,6 @@ func (r *AgentWorkRepository) saveWith(ctx context.Context, session *domain.Agen
 	}
 	if err != nil {
 		return oops.With("operation", "agent_session.save").With("session_id", session.ID).Wrap(err)
-	}
-	if hooks.after != nil {
-		if err := hooks.after(tx, row.UpdatedAt); err != nil {
-			return err
-		}
 	}
 	if err := retainWorkShares(tx, session.ID, session.WorkShares, row.UpdatedAt); err != nil {
 		return err
