@@ -4,10 +4,12 @@ package execution
 
 import (
 	"context"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -93,7 +95,7 @@ func TestAgentExecutionRepositoryRoundTripsUnderItsVersion(t *testing.T) {
 	// Every fact the execution records survives the round trip.
 	stale, err := repository.Get(ctx, run.ID)
 	require.NoError(t, err)
-	require.True(t, stored.RecordSubmission())
+	require.True(t, commandtest.Submit(stored))
 	changed, err := stored.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "sandbox-round-trip"})
 	require.NoError(t, err)
 	require.True(t, changed)
@@ -112,7 +114,7 @@ func TestAgentExecutionRepositoryRoundTripsUnderItsVersion(t *testing.T) {
 	loaded, err := repository.Get(ctx, run.ID)
 	require.NoError(t, err)
 	require.Equal(t, 2, loaded.Version)
-	require.True(t, loaded.Creation.Submitted)
+	require.True(t, loaded.Creation.Submitted())
 	require.Equal(t, "sandbox-round-trip", loaded.Environment)
 	require.Equal(t, "process-round-trip", loaded.Process.ID)
 	require.True(t, loaded.Process.Exited)
@@ -248,7 +250,7 @@ func TestAgentExecutionRepositoryRoundTripsCheckoutResults(t *testing.T) {
 	_, ok := stored.CheckoutsEnded()
 	require.False(t, ok)
 
-	require.True(t, stored.RecordSubmission())
+	require.True(t, commandtest.Submit(stored))
 	_, err = stored.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "sandbox-checkout"})
 	require.NoError(t, err)
 	changed, err := stored.RecordPreparation(domain.PreparationReport{Checkouts: []domain.RepositoryCheckout{

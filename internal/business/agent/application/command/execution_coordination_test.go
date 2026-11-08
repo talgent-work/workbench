@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -191,7 +192,7 @@ func TestCoordinateRepairsLostDomainEvents(t *testing.T) {
 	require.Equal(t, 1, w.executions.Count(), "the missed beginning")
 
 	w.change(t, func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 		require.True(t, execution.RecordCredentialDelivery(domain.CredentialDelivery{}))
@@ -221,7 +222,7 @@ func TestCoordinateRepairsLostRetirementAndRelease(t *testing.T) {
 	w := newWorld(t, startingSession(t))
 	require.NoError(t, w.coordination.Coordinate(ctx, w.work().ID))
 	w.change(t, func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 		require.True(t, execution.RecordCredentialDelivery(domain.CredentialDelivery{}))

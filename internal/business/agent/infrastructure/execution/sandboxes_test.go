@@ -44,7 +44,7 @@ func init() {
 }
 
 func config() SandboxConfig {
-	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Lease: fixtureLease, Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
+	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Lease: fixtureLease, CreationWait: fixtureCreationWait, Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")},
 		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("1Gi")},
 	}}
@@ -287,7 +287,9 @@ func sandboxClient(t *testing.T) (*Sandboxes, *fake.Clientset, *lifecycleFixture
 	client, err := shared.NewLifecycleClient(server.Client(), shared.Config{Address: server.URL + "/v1", APIKey: "lifecycle-secret"})
 	require.NoError(t, err)
 	kubernetes := fake.NewSimpleClientset()
-	sandboxes, err := NewSandboxes(client, config())
+	pods, err := NewSandboxPods(kubernetes, fixtureSandboxNamespace)
+	require.NoError(t, err)
+	sandboxes, err := NewSandboxes(client, pods, config())
 	require.NoError(t, err)
 	vault := &vaultFixture{}
 	egress := httptest.NewServer(vault)
@@ -465,7 +467,7 @@ func TestNativeTelemetryCollectionOptionsReachSandbox(t *testing.T) {
 			for key, value := range tc.environment {
 				settings.Environment[key] = value
 			}
-			provider, err := NewSandboxes(base.client, settings)
+			provider, err := NewSandboxes(base.client, base.pods, settings)
 			require.NoError(t, err)
 			_, err = provider.submitRequest(context.Background(), request(), "execution-token-fixture")
 			require.NoError(t, err)
@@ -485,7 +487,7 @@ func TestNativeTelemetryAttributionAcrossContinueAndFresh(t *testing.T) {
 			base, _, fixture := sandboxClient(t)
 			settings := config()
 			settings.Environment["OTEL_RESOURCE_ATTRIBUTES"] = "talgent.execution_id=stale,talgent.project_id=wrong"
-			provider, err := NewSandboxes(base.client, settings)
+			provider, err := NewSandboxes(base.client, base.pods, settings)
 			require.NoError(t, err)
 			start := request()
 			start.ContextMode = mode

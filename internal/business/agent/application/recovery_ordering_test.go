@@ -76,7 +76,7 @@ func abandonedStart(t *testing.T) *recoveryWorld {
 	}
 	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: work.LaunchSpecification(), Realization: domain.RealizationCloud})
 	require.NoError(t, err)
-	require.True(t, execution.RecordSubmission())
+	require.True(t, commandtest.Submit(execution))
 	_, err = execution.Reconcile(domain.EnvironmentObservation{}, domain.LeaseTerms{}, time.Now())
 	require.NoError(t, err)
 	for _, report := range execution.Reports() {

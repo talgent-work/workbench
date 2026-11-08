@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -24,7 +25,7 @@ func beginPluginRun(t *testing.T, repository *AgentExecutionRepository, workID s
 	launch.Capabilities.Plugins = []domain.SelectedPlugin{{Release: fixedRelease("tools", "2.0.0")}, {Release: fixedRelease("runtime", "1.0.0")}}
 	run, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: domain.WorkStartAdmitted{WorkID: workID, StartAdmittedAt: admittedAt, DeskID: "desk-" + workID}, Launch: launch, Realization: domain.RealizationCloud})
 	require.NoError(t, err)
-	require.True(t, run.RecordSubmission())
+	require.True(t, commandtest.Submit(run))
 	_, err = run.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 	require.NoError(t, err)
 	prepared, err := run.RecordPreparation(domain.PreparationReport{Installations: installations})

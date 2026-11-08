@@ -30,7 +30,12 @@ type executionRecord struct {
 	DeskID          string `xorm:"'desk_id'"`
 	SeatedAt        int64  `xorm:"'seated_at'"`
 	DeskLeftAt      int64  `xorm:"'desk_left_at'"`
-	Submitted       bool   `xorm:"'submitted'"`
+	// SubmittedAt, CreationDeadline and CreationAnswered are the creation
+	// submission: when it was recorded before being sent, when an unanswered
+	// one can no longer produce a sandbox, and whether its answer arrived.
+	SubmittedAt      int64 `xorm:"'submitted_at'"`
+	CreationDeadline int64 `xorm:"'creation_deadline'"`
+	CreationAnswered bool  `xorm:"'creation_answered'"`
 	// StartRejected records that the creation was definitely refused, or
 	// failed, while nothing was bound.
 	StartRejected bool `xorm:"start_rejected"`
@@ -186,3 +191,7 @@ func (r records) current(ctx context.Context, record executionRecord) (execution
 	}
 	return current, nil
 }
+
+// submitted reports whether the execution's creation was recorded as
+// submitted.
+func (r executionRecord) submitted() bool { return r.SubmittedAt != 0 }

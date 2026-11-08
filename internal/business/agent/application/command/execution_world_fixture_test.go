@@ -61,7 +61,7 @@ func (w *world) feedback() *command.ApplyExecutionFeedbackHandler {
 }
 
 func (w *world) reconciliation() *command.ReconcileExecutionHandler {
-	return command.NewReconcileExecutionHandler(w.now, w.lease, w.executions, w.environment, w.harness, w.computers, noMounts{})
+	return command.NewReconcileExecutionHandler(w.now, w.lease, commandtest.CreationWait, w.executions, w.environment, w.harness, w.computers, noMounts{})
 }
 
 // execution is the Work's most recently begun execution.
@@ -93,7 +93,7 @@ func (w *world) launch(t *testing.T, processID string) {
 	t.Helper()
 	w.begin(t)
 	w.change(t, func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 		require.True(t, execution.RecordCredentialDelivery(domain.CredentialDelivery{}))

@@ -12,11 +12,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	shared "github.com/talgent-work/workbench/internal/pkg/opensandbox"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // fixtureLease is the deployment's default: two-hour leases renewed once less
 // than an hour remains.
 var fixtureLease = domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}
+
+// fixtureCreationWait is the creation wait sandboxes are configured with.
+var fixtureCreationWait = domain.CreationWait(5*time.Minute + 30*time.Second)
 
 func (f *lifecycleFixture) now() time.Time {
 	if f.clock == nil {
@@ -82,7 +87,19 @@ func TestSandboxLeaseNeedsAThresholdBelowItsDuration(t *testing.T) {
 	for _, lease := range []domain.LeaseTerms{{}, {Duration: time.Hour, RenewalThreshold: time.Hour}, {Duration: time.Hour}, {Duration: time.Millisecond, RenewalThreshold: time.Microsecond}} {
 		cfg := config()
 		cfg.Lease = lease
-		_, err := NewSandboxes(client, cfg)
+		_, err := NewSandboxes(client, fixturePods(), cfg)
 		require.Error(t, err, "lease %+v", lease)
 	}
+}
+
+// fixtureSandboxNamespace is where the fixture's sandbox Pods run.
+const fixtureSandboxNamespace = "talgent-sandbox"
+
+// fixturePods reads the given Pods as the sandbox namespace holds them.
+func fixturePods(pods ...runtime.Object) *SandboxPods {
+	reader, err := NewSandboxPods(fake.NewClientset(pods...), fixtureSandboxNamespace)
+	if err != nil {
+		panic(err)
+	}
+	return reader
 }

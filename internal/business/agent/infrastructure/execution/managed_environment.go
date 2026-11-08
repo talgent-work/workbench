@@ -169,7 +169,7 @@ func (m ManagedEnvironment) observe(ctx context.Context, record executionRecord,
 		return environmentView{}, err
 	}
 	if record.SandboxID == "" {
-		if !record.Submitted || retired {
+		if !record.submitted() || retired {
 			return environmentView{}, nil
 		}
 		opened, err := m.create(ctx, record)

@@ -63,7 +63,7 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *cloudStart {
 	require.True(t, f.reconcile(t), "the creation's submission is a long step")
 	require.Error(t, f.steps.handler.RunLongStep(context.Background(), f.allocation(t).ID), "the create's answer is lost")
 	record := f.allocation(t)
-	require.True(t, record.Submitted)
+	require.True(t, record.submitted())
 	require.Empty(t, record.SandboxID, "the sandbox's identity is never recorded")
 	require.Equal(t, 1, f.creates())
 	return f

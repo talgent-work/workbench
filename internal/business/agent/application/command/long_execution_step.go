@@ -70,8 +70,9 @@ func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domai
 	if err := h.environments.PrepareCreation(ctx, execution, mounts); err != nil {
 		return err
 	}
-	if !execution.RecordSubmission() {
-		return nil
+	submitting, err := execution.RecordSubmission(h.now(), h.creationWait)
+	if err != nil || !submitting {
+		return err
 	}
 	if err := h.executions.Save(ctx, execution); err != nil {
 		return err

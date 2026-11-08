@@ -79,15 +79,20 @@ func (e *AgentExecution) wantsRun() bool {
 }
 
 // RecordSubmission records that its environment's creation is submitted now,
-// before it is sent, so it is never submitted twice (Single creation). An
-// execution that submitted already, or no longer wants its run, submits
-// nothing.
-func (e *AgentExecution) RecordSubmission() bool {
-	if e.Creation.Submitted || e.State == ExecutionQueued || !e.wantsRun() {
-		return false
+// before it is sent, so it is never submitted twice (Single creation), with
+// its creation deadline: now plus the configured creation wait (Creation
+// deadline). An execution that submitted already, or no longer wants its run,
+// submits nothing.
+func (e *AgentExecution) RecordSubmission(now time.Time, wait CreationWait) (bool, error) {
+	if now.IsZero() || wait.Validate() != nil {
+		return false, ErrInvalidExecution
 	}
-	e.Creation.Submitted = true
-	return true
+	if e.Creation.Submitted() || e.State == ExecutionQueued || !e.wantsRun() {
+		return false, nil
+	}
+	now = now.UTC()
+	e.Creation = CreationSubmission{SubmittedAt: now, Deadline: now.Add(time.Duration(wait))}
+	return true, nil
 }
 
 // CreationAnswer is the definite answer to its environment's creation: the
@@ -97,17 +102,20 @@ type CreationAnswer struct {
 	Refused       bool
 }
 
-// RecordCreationAnswer applies its creation's definite answer: a created
-// environment is bound if none is yet (Single creation); a refusal or a
-// failure while nothing is bound rejects the start (Creation refusal). A
-// refusal after binding changes nothing: the bound environment's loss is
+// RecordCreationAnswer applies its creation's definite answer, which ends its
+// outstanding creation whatever else it decides (Outstanding creation): a
+// created environment is bound if none is yet (Single creation); a refusal or
+// a failure while nothing is bound rejects the start (Creation refusal). A
+// refusal after binding changes nothing more: the bound environment's loss is
 // observed instead.
 func (e *AgentExecution) RecordCreationAnswer(answer CreationAnswer) (bool, error) {
 	if (answer.EnvironmentID == "") == !answer.Refused {
 		return false, ErrInvalidExecution
 	}
+	answered := !e.Creation.Answered
+	e.Creation.Answered = true
 	if e.Retired() || e.Environment != "" || e.Outcome.Rejected || e.Outcome.Abandoned {
-		return false, nil
+		return answered, nil
 	}
 	if !answer.Refused {
 		e.Environment = answer.EnvironmentID

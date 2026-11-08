@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -73,7 +74,7 @@ func TestAComputerRemovalEndsAWaitingStartAndLeavesAStoppedWork(t *testing.T) {
 	execution := beginOf(t, queued, domain.RealizationManaged)
 	decide(t, execution, removed, time.Now())
 	require.True(t, execution.Outcome.Lost, "a Queued execution on a removed Computer is lost")
-	require.False(t, execution.RecordSubmission(), "nothing is created on a removed Computer")
+	require.False(t, commandtest.Submit(execution), "nothing is created on a removed Computer")
 	applyReports(t, queued, execution)
 	require.Equal(t, domain.WorkFailed, queued.State)
 

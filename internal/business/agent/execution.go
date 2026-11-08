@@ -23,6 +23,7 @@ import (
 	"go.uber.org/fx"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/client-go/kubernetes"
 	"xorm.io/xorm"
 )
 
@@ -82,7 +83,31 @@ func (c ExecutionLeaseConfig) terms() domain.LeaseTerms {
 	return terms
 }
 
+// defaultServerCreationTimeout is the sandbox creation timeout the deployed
+// OpenSandbox server is configured with (deploy/opensandbox/server.yaml).
+const defaultServerCreationTimeout = 5 * time.Minute
+
+// creationAnswerMargin is how much longer than the server's creation timeout
+// a create waits for its answer, so the server's own failure answer, sent
+// once it deleted the sandbox, still arrives.
+const creationAnswerMargin = 30 * time.Second
+
+// creationWait is how long a create waits for its answer and how long after
+// its submission a creation can still produce a sandbox: a little longer than
+// the server's creation timeout.
+func (cfg ExecutionConfig) creationWait() domain.CreationWait {
+	timeout := cfg.SandboxCreationTimeout.Duration()
+	if timeout == 0 {
+		timeout = defaultServerCreationTimeout
+	}
+	return domain.CreationWait(timeout + creationAnswerMargin)
+}
+
 func (cfg ExecutionConfig) Validate() error {
+	// A create's answer only matters within the Startup Deadline.
+	if cfg.SandboxCreationTimeout.Duration() < 0 || cfg.creationWait().Validate() != nil {
+		return errors.New("agent: the sandbox creation timeout must not be negative and must leave room within the Startup Deadline")
+	}
 	if err := cfg.Native.Validate(); err != nil {
 		return err
 	}
@@ -95,8 +120,12 @@ func (cfg ExecutionConfig) Validate() error {
 	return cfg.OpenSandbox.Validate()
 }
 
-func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, models *execution.ModelCatalog) (*execution.Sandboxes, error) {
+func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, cluster kubernetes.Interface, models *execution.ModelCatalog) (*execution.Sandboxes, error) {
 	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	pods, err := execution.NewSandboxPods(cluster, cfg.SandboxNamespace)
+	if err != nil {
 		return nil, err
 	}
 	resources := corev1.ResourceRequirements{Requests: corev1.ResourceList{}, Limits: corev1.ResourceList{}}
@@ -114,7 +143,7 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, mod
 		}
 		resources.Limits[corev1.ResourceName(name)] = quantity
 	}
-	return execution.NewSandboxes(client, execution.SandboxConfig{CreationTimeout: cfg.SandboxCreationTimeout.Duration(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
+	return execution.NewSandboxes(client, pods, execution.SandboxConfig{CreationWait: cfg.creationWait(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
 }
 
 var ExecutionModule = fx.Module("agent.execution-integration",
@@ -127,6 +156,9 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		// Every sandbox is created to expire under these terms, and each
 		// execution decides its renewals under them.
 		func(cfg ExecutionConfig) domain.LeaseTerms { return cfg.Lease.terms() },
+		// Each creation is waited for, and its deadline counted, under the
+		// same wait.
+		func(cfg ExecutionConfig) domain.CreationWait { return cfg.creationWait() },
 		newExecutionSandboxes,
 		newExecutionLifecycle,
 		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {

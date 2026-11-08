@@ -27,6 +27,23 @@ func (t LeaseTerms) Validate() error {
 	return nil
 }
 
+// ErrInvalidCreationWait means a creation wait that is not positive or leaves
+// no room within the Startup Deadline, where a creation's answer matters.
+var ErrInvalidCreationWait = errors.New("agent: invalid creation wait")
+
+// CreationWait is how long, after its submission, an environment's creation
+// can still produce an environment: longer than the environment authority's
+// own creation timeout. It is platform configuration, like the lease terms.
+type CreationWait time.Duration
+
+// Validate admits a positive wait shorter than the Startup Deadline.
+func (w CreationWait) Validate() error {
+	if w <= 0 || time.Duration(w) >= StartupDeadline {
+		return ErrInvalidCreationWait
+	}
+	return nil
+}
+
 // leases reports whether the terms lease environments at all.
 func (t LeaseTerms) leases() bool { return t.Validate() == nil }
 

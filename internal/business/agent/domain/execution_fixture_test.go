@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -51,7 +52,7 @@ func boundExecution(t *testing.T) (*domain.AgentWork, *domain.AgentExecution) {
 	execution := beginOf(t, work, domain.RealizationCloud)
 	now := execution.Desk.SeatedAt
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepSubmitCreation}, kinds(decide(t, execution, domain.EnvironmentObservation{}, now)))
-	require.True(t, execution.RecordSubmission())
+	require.True(t, commandtest.Submit(execution))
 	changed, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-1"})
 	require.NoError(t, err)
 	require.True(t, changed)

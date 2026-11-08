@@ -89,7 +89,7 @@ type recoveryFixture struct {
 
 func newRecoveryFixture(app *application.Application, lookups executionLookups, storage command.StoragePort) *recoveryFixture {
 	f := &recoveryFixture{executions: &commandtest.Executions{}, environment: &commandtest.Environment{}, enqueuer: &recordingEnqueuer{}}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, nil)
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWait, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, nil)
 	f.recovery = application.NewRecovery(app, f.enqueuer, f.executions, lookups, reconciliation, storage, nil)
 	return f
 }
@@ -112,7 +112,7 @@ func (f *recoveryFixture) execution(t *testing.T, workID string, realization dom
 // credentials delivered.
 func bound(t *testing.T) func(*domain.AgentExecution) {
 	return func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 		require.True(t, execution.RecordCredentialDelivery(domain.CredentialDelivery{}))
@@ -273,7 +273,7 @@ func TestALongStepHoldsBackNoShortStep(t *testing.T) {
 	}
 	managed := f.execution(t, "work-1", domain.RealizationManaged, bound(t))
 	other := f.execution(t, "work-2", domain.RealizationCloud, func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 	})

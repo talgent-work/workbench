@@ -74,7 +74,7 @@ func (c RecoveryConfig) sweepInterval() (time.Duration, error) {
 // sandbox observations, Work commits, connection reports and a periodic sweep
 // of unfinished obligations wake one object each; completed history is never
 // scanned. It requires a command.ExecutionEnvironmentPort and the platform's
-// domain.LeaseTerms, supplied by ExecutionModule, and the two named task
+// domain.LeaseTerms and domain.CreationWait, supplied by ExecutionModule, and the two named task
 // queues.
 var RecoveryModule = fx.Module("agent.recovery",
 	pkgtaskqueue.Bind(RecoveryQueue),

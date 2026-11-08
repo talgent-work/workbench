@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/taskprocessor"
@@ -56,7 +57,7 @@ func recovery(t *testing.T, environments *observed) (*application.Recovery, stri
 	})
 	require.NoError(t, err)
 	repository := executions{execution: queued}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, repository, environments, nil, unseated{}, nil)
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWait, repository, environments, nil, unseated{}, nil)
 	return application.NewRecovery(&application.Application{}, nil, repository, nil, reconciliation, nil, nil), queued.ID
 }
 

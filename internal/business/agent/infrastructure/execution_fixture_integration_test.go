@@ -90,7 +90,7 @@ func (r *runs) launch(ctx context.Context, workID string) {
 	if run.State != domain.ExecutionStarting || run.Process.ID != "" || run.ExitRequest.Requested() {
 		return
 	}
-	require.True(r.t, run.RecordSubmission())
+	require.True(r.t, commandtest.Submit(run))
 	_, err = run.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 	require.NoError(r.t, err)
 	run.RecordCredentialDelivery(domain.CredentialDelivery{})

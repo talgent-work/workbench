@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
@@ -99,7 +100,9 @@ func (c cloudEnvironment) create(ctx context.Context, record executionRecord) (s
 
 // observe lists the sandboxes the server shows with the execution's
 // ownership. The list may not show a sandbox yet, so the bound one is
-// confirmed by its own identity: present exactly while a GET finds it.
+// confirmed by its own identity: present exactly while a GET finds it. A Pod
+// carrying the execution's ownership whose sandbox is no longer shown is an
+// ending environment: deleted, yet still running (Ending environment).
 func (c cloudEnvironment) observe(ctx context.Context, record executionRecord, _ bool) (environmentView, error) {
 	owner, spec, err := c.ownership(record)
 	if err != nil {
@@ -115,18 +118,26 @@ func (c cloudEnvironment) observe(ctx context.Context, record executionRecord, _
 			view.environments = append(view.environments, domain.ObservedEnvironment{ID: info.ID, Running: info.Status.State == sdk.StateRunning, LeaseExpiresAt: leaseExpiry(&info)})
 		}
 	}
-	if record.SandboxID == "" {
-		return view, nil
+	if record.SandboxID != "" {
+		bound, err := c.sandboxes.inspect(ctx, owner, record.SandboxID)
+		switch {
+		case errors.Is(err, errSandboxAbsent):
+		case err != nil:
+			return environmentView{}, err
+		default:
+			view.environments = append([]domain.ObservedEnvironment{{ID: record.SandboxID, Running: bound.running, LeaseExpiresAt: bound.expiresAt}}, view.environments...)
+			view.endpoint = bound.endpoint
+		}
 	}
-	bound, err := c.sandboxes.inspect(ctx, owner, record.SandboxID)
-	if errors.Is(err, errSandboxAbsent) {
-		return view, nil
-	}
+	running, err := c.sandboxes.pods.running(ctx, owner)
 	if err != nil {
 		return environmentView{}, err
 	}
-	view.environments = append([]domain.ObservedEnvironment{{ID: record.SandboxID, Running: bound.running, LeaseExpiresAt: bound.expiresAt}}, view.environments...)
-	view.endpoint = bound.endpoint
+	for _, id := range running {
+		if !slices.ContainsFunc(view.environments, func(e domain.ObservedEnvironment) bool { return e.ID == id }) {
+			view.environments = append(view.environments, domain.ObservedEnvironment{ID: id, Ending: true})
+		}
+	}
 	return view, nil
 }
 

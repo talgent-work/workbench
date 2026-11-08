@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
@@ -40,7 +41,7 @@ func TestCommittedExecutionWakesAndDispatchesOnlyAfterItsCommit(t *testing.T) {
 	require.NoError(t, err)
 	stale, err := executions.Get(ctx, run.ID)
 	require.NoError(t, err)
-	current.RecordSubmission()
+	commandtest.Submit(current)
 	_, err = current.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: current.ID})
 	require.NoError(t, err)
 	_, err = current.RecordLaunch("process")
@@ -55,7 +56,7 @@ func TestCommittedExecutionWakesAndDispatchesOnlyAfterItsCommit(t *testing.T) {
 
 	require.Zero(t, current.Events.Len(), "dispatched events are drained")
 
-	stale.RecordSubmission()
+	commandtest.Submit(stale)
 	_, err = stale.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "other"})
 	require.NoError(t, err)
 	require.ErrorIs(t, executions.Save(ctx, stale), domain.ErrConcurrentModification)

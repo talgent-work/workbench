@@ -10,6 +10,7 @@ import (
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"xorm.io/xorm"
@@ -32,7 +33,7 @@ func TestAnUnreachedCloudRunReleasesItsSandboxWithoutAnExit(t *testing.T) {
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, p, connections, unread{}, nil, time.Now)
 	run := current(t, steps, record.ID)
-	require.True(t, run.RecordSubmission())
+	require.True(t, commandtest.Submit(run))
 	run.Environment = sandboxID
 	_, err = run.RecordLaunch("current-process")
 	require.NoError(t, err)

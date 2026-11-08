@@ -18,6 +18,8 @@ import (
 	internalpkg "github.com/talgent-work/workbench/internal/pkg"
 	"github.com/talgent-work/workbench/internal/pkg/opensandbox"
 	"go.uber.org/fx"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestExecutionCompositionReachesHTTP1OpenSandbox(t *testing.T) {
@@ -47,7 +49,7 @@ func TestExecutionCompositionReachesHTTP1OpenSandbox(t *testing.T) {
 	var models query.ModelConfigurations
 	app := fx.New(fx.NopLogger, fx.Supply(cfg), fx.Provide(internalpkg.NewH2CClient, newExecutionLifecycle, func(cfg ExecutionConfig) (*execution.ModelCatalog, error) {
 		return execution.LoadModelCatalog(cfg.Models)
-	}, newExecutionSandboxes, newModelConfigurations), fx.Populate(&sandboxes, &models))
+	}, func() kubernetes.Interface { return fake.NewClientset() }, newExecutionSandboxes, newModelConfigurations), fx.Populate(&sandboxes, &models))
 	require.NoError(t, app.Err())
 	provided := models.Provided()
 	require.Len(t, provided, 2)

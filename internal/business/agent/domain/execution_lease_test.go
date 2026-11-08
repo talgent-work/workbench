@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -91,7 +92,7 @@ func TestAnEnvironmentWithoutARecordedExpiryIsNeverRenewed(t *testing.T) {
 // as on a Managed Computer, nothing is renewed either.
 func TestALeaseIsRenewedOnlyForABoundUnretiredExecution(t *testing.T) {
 	unbound := beginOf(t, newSession(t), domain.RealizationCloud)
-	require.True(t, unbound.RecordSubmission())
+	require.True(t, commandtest.Submit(unbound))
 	require.False(t, unbound.RecordLease(time.Now().Add(time.Hour)), "an unbound execution has no lease to record")
 	require.Empty(t, renewals(decide(t, unbound, domain.EnvironmentObservation{}, unbound.Desk.SeatedAt)))
 

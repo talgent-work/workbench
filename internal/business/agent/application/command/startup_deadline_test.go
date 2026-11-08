@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -112,7 +113,7 @@ func TestRestartCountsItsOwnStartupDeadline(t *testing.T) {
 func TestAbandonedStartIsReleasedThroughReconciliation(t *testing.T) {
 	w := newWorld(t, startingSession(t))
 	w.begin(t)
-	w.change(t, func(execution *domain.AgentExecution) { require.True(t, execution.RecordSubmission()) })
+	w.change(t, func(execution *domain.AgentExecution) { require.True(t, commandtest.Submit(execution)) })
 	deadline := w.execution(t).StartupDeadlineAt()
 	reconcileAt(t, w, deadline)
 	require.Equal(t, domain.WorkFailed, w.work().State)

@@ -21,11 +21,15 @@ import (
 // deletion go through the OpenSandbox API.
 var BatchSandboxes = schema.GroupVersionResource{Group: "sandbox.opensandbox.io", Version: "v1alpha1", Resource: "batchsandboxes"}
 
+// SandboxPodResources are the Pods each sandbox runs in, which outlive its
+// BatchSandbox until they terminate; a Pod's exit wakes a release.
+var SandboxPodResources = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
+
 // observationTimeout bounds one event's ownership lookup and wake.
 const observationTimeout = 5 * time.Second
 
-// SandboxObserver watches Talgent's sandboxes and wakes the execution each one
-// belongs to. It never decides or deletes: the execution's reconciliation
+// SandboxObserver watches Talgent's sandboxes and their Pods and wakes the
+// execution each one belongs to, so a Pod's exit wakes a release. It never decides or deletes: the execution's reconciliation
 // re-reads the sandbox and its exact ownership before acting. Watch
 // interruptions and expired resource versions are recovered by relisting, which
 // re-observes every current sandbox.
@@ -44,8 +48,8 @@ func NewSandboxObserver(client dynamic.Interface, namespace string, db *xorm.Eng
 	return &SandboxObserver{client: client, namespace: namespace, records: records{db: db}, wake: wake, logger: logger}, nil
 }
 
-// Run observes sandboxes until ctx ends. Each observation is queued by the
-// value of the ownership label it carries; a failed lookup or wake is retried
+// Run observes sandboxes and their Pods until ctx ends. Each observation is
+// queued by the value of the ownership label it carries; a failed lookup or wake is retried
 // with backoff, because a retired execution's late sandbox is woken by
 // nothing else.
 func (o *SandboxObserver) Run(ctx context.Context) error {
@@ -53,13 +57,12 @@ func (o *SandboxObserver) Run(ctx context.Context) error {
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(o.client, 0, o.namespace, func(options *metav1.ListOptions) {
 		options.LabelSelector = sandboxOwnershipLabel
 	})
-	informer := factory.ForResource(BatchSandboxes).Informer()
 	observe := func(object any) {
 		if label := sandboxLabel(object); label != "" {
 			labels.Add(label)
 		}
 	}
-	if _, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	handler := cache.ResourceEventHandlerFuncs{
 		AddFunc: observe,
 		UpdateFunc: func(previous, current any) {
 			if sandboxVersion(previous) != sandboxVersion(current) {
@@ -67,9 +70,12 @@ func (o *SandboxObserver) Run(ctx context.Context) error {
 			}
 		},
 		DeleteFunc: observe,
-	}); err != nil {
-		labels.ShutDown()
-		return err
+	}
+	for _, resource := range []schema.GroupVersionResource{BatchSandboxes, SandboxPodResources} {
+		if _, err := factory.ForResource(resource).Informer().AddEventHandler(handler); err != nil {
+			labels.ShutDown()
+			return err
+		}
 	}
 	done := make(chan struct{})
 	go func() {

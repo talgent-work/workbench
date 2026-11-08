@@ -72,7 +72,7 @@ func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeCon
 	require.NoError(t, err)
 	executions := NewAgentExecutionRepository(p.db, now)
 	steps := &executionSteps{environment: environment, executions: executions, desks: &cloudDesks{}, harness: commandtest.NewHarness()}
-	steps.handler = command.NewReconcileExecutionHandler(now, fixtureLease, executions, environment, steps.harness, steps.desks, mounts)
+	steps.handler = command.NewReconcileExecutionHandler(now, fixtureLease, commandtest.CreationWait, executions, environment, steps.harness, steps.desks, mounts)
 	return steps
 }
 
@@ -111,7 +111,7 @@ func (s *executionSteps) submitted(ctx context.Context, id string) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	return execution.Creation.Submitted, nil
+	return execution.Creation.Submitted(), nil
 }
 
 // shortSteps reconciles one execution, taking only its short steps, as its

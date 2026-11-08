@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -110,7 +111,7 @@ func TestManagedFirstDeliveryNeedsTheModelConfigurationsKey(t *testing.T) {
 	// while the Model Configuration is still provided.
 	run := current(t, f.steps, begun.ID)
 	require.NoError(t, f.steps.environment.PrepareCreation(ctx, run, domain.SandboxMounts{}))
-	require.True(t, run.RecordSubmission())
+	require.True(t, commandtest.Submit(run))
 	require.NoError(t, f.steps.executions.Save(ctx, run))
 	run = current(t, f.steps, begun.ID)
 	answer, err := f.steps.environment.SubmitCreation(ctx, run)

@@ -15,6 +15,7 @@ import (
 	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 )
@@ -169,7 +170,7 @@ func (r *moduleRuns) realize(t *testing.T, ctx context.Context, workID string) {
 		if e.Process.ID != "" {
 			return false
 		}
-		e.RecordSubmission()
+		commandtest.Submit(e)
 		if e.Environment == "" {
 			_, err := e.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: e.ID})
 			require.NoError(t, err)

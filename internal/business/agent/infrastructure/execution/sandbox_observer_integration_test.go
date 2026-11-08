@@ -34,6 +34,19 @@ func (s *syncBuffer) Write(p []byte) (int, error) {
 }
 func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
+// observedKinds are the list kinds of the resources the observer watches.
+var observedKinds = map[schema.GroupVersionResource]string{BatchSandboxes: "BatchSandboxList", SandboxPodResources: "PodList"}
+
+func sandboxPod(name string, labels map[string]string) *unstructured.Unstructured {
+	pod := &unstructured.Unstructured{}
+	pod.SetAPIVersion("v1")
+	pod.SetKind("Pod")
+	pod.SetNamespace("talgent")
+	pod.SetName(name)
+	pod.SetLabels(labels)
+	return pod
+}
+
 func batchSandbox(name string, labels map[string]string) *unstructured.Unstructured {
 	sandbox := &unstructured.Unstructured{}
 	sandbox.SetAPIVersion("sandbox.opensandbox.io/v1alpha1")
@@ -61,7 +74,7 @@ func TestSandboxObserverWakesTheOwningAllocation(t *testing.T) {
 	require.NoError(t, err)
 
 	owned := correlation(SandboxOwner{WorkID: input.WorkID, ID: allocation.ID})
-	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{BatchSandboxes: "BatchSandboxList"})
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), observedKinds)
 	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("existing", owned), metav1.CreateOptions{})
 	require.NoError(t, err)
 	var mu sync.Mutex
@@ -113,7 +126,7 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 	input := request()
 	allocation, err := register(ctx, p, input, testMounts)
 	require.NoError(t, err)
-	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{BatchSandboxes: "BatchSandboxList"})
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), observedKinds)
 	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("late", correlation(SandboxOwner{WorkID: input.WorkID, ID: allocation.ID})), metav1.CreateOptions{})
 	require.NoError(t, err)
 	var mu sync.Mutex
@@ -150,7 +163,7 @@ func TestSandboxObserverSelectsByTheOwnershipLabel(t *testing.T) {
 	owned := correlation(SandboxOwner{WorkID: input.WorkID, ID: execution.ID})
 	unlabelled := map[string]string{sandboxSessionLabel: owned[sandboxSessionLabel], "talgent.io/allocation": owned["talgent.io/execution"]}
 
-	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{BatchSandboxes: "BatchSandboxList"})
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), observedKinds)
 	var mu sync.Mutex
 	var selectors []string
 	client.PrependReactor("list", "batchsandboxes", func(action k8stesting.Action) (bool, runtime.Object, error) {
@@ -183,4 +196,43 @@ func TestSandboxObserverSelectsByTheOwnershipLabel(t *testing.T) {
 	defer mu.Unlock()
 	require.Equal(t, []string{execution.ID}, woken, "only the sandbox carrying talgent.io/execution wakes its execution")
 	require.Equal(t, "talgent.io/execution", selectors[0], "the observer selects by the ownership label")
+}
+
+// A sandbox's Pod outlives its BatchSandbox until it terminates, so the Pod's
+// exit wakes the execution waiting for its release (Release waits for the
+// Pod).
+func TestSandboxObserverWakesTheOwningExecutionWhenItsPodExits(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	provider, _, _ := sandboxClient(t)
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	input := request()
+	execution, err := register(ctx, p, input, testMounts)
+	require.NoError(t, err)
+	owned := correlation(SandboxOwner{WorkID: input.WorkID, ID: execution.ID})
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), observedKinds)
+	_, err = client.Resource(SandboxPodResources).Namespace("talgent").Create(ctx, sandboxPod("sandbox-0", owned), metav1.CreateOptions{})
+	require.NoError(t, err)
+	var mu sync.Mutex
+	var woken []string
+	wake := func(_ context.Context, id string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		woken = append(woken, id)
+		return nil
+	}
+	wakes := func() int { mu.Lock(); defer mu.Unlock(); return len(woken) }
+	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.Default())
+	require.NoError(t, err)
+	go func() { _ = observer.Run(ctx) }()
+	require.Eventually(t, func() bool { return wakes() == 1 }, 5*time.Second, 10*time.Millisecond, "an existing Pod is observed")
+
+	require.NoError(t, client.Resource(SandboxPodResources).Namespace("talgent").Delete(ctx, "sandbox-0", metav1.DeleteOptions{}))
+	require.Eventually(t, func() bool { return wakes() == 2 }, 5*time.Second, 10*time.Millisecond, "the Pod's exit wakes its execution")
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{execution.ID, execution.ID}, woken)
 }

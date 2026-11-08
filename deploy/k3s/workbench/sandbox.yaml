@@ -95,8 +95,9 @@ spec:
       talgent.io/storage: juicefs-inputs-sandbox
 ---
 # controlplane, under its ServiceAccount in talgent, reads the execution
-# quota and observes the OpenSandbox resources that are the environment
-# authority; creation and deletion go through the OpenSandbox API.
+# quota and observes the environment authority, the BatchSandboxes and the
+# Pods that outlive them until they terminate; creation and deletion go
+# through the OpenSandbox API.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -106,6 +107,9 @@ rules:
   - apiGroups: [""]
     resources: ["resourcequotas"]
     verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["sandbox.opensandbox.io"]
     resources: ["batchsandboxes"]
     verbs: ["get", "list", "watch"]

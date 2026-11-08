@@ -53,12 +53,13 @@ func (a SandboxOwner) validate() error {
 // merely because its response was lost.
 type Sandboxes struct {
 	client *sdk.LifecycleClient
+	pods   *SandboxPods
 	config SandboxConfig
 }
 
-func NewSandboxes(client *sdk.LifecycleClient, config SandboxConfig) (*Sandboxes, error) {
-	if client == nil {
-		return nil, errors.New("agent: lifecycle client is required")
+func NewSandboxes(client *sdk.LifecycleClient, pods *SandboxPods, config SandboxConfig) (*Sandboxes, error) {
+	if client == nil || pods == nil {
+		return nil, errors.New("agent: lifecycle client and sandbox Pods are required")
 	}
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -67,7 +68,7 @@ func NewSandboxes(client *sdk.LifecycleClient, config SandboxConfig) (*Sandboxes
 	config.NetworkDeny = slices.Clone(config.NetworkDeny)
 	config.NetworkAllow = slices.Clone(config.NetworkAllow)
 	config.Resources = *config.Resources.DeepCopy()
-	return &Sandboxes{client: client, config: config}, nil
+	return &Sandboxes{client: client, pods: pods, config: config}, nil
 }
 
 // submit sends the create once and waits for its answer, which OpenSandbox
@@ -75,7 +76,7 @@ func NewSandboxes(client *sdk.LifecycleClient, config SandboxConfig) (*Sandboxes
 // than the server's own creation timeout. A wait that ends first loses the
 // answer.
 func (s *Sandboxes) submit(ctx context.Context, owner SandboxOwner, spec sdk.CreateSandboxRequest) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.config.creationWait())
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.CreationWait))
 	defer cancel()
 	result, err := s.client.CreateSandbox(ctx, withoutWorkCredential(spec))
 	if err != nil && ctx.Err() == nil && isCreationRefused(err) {

@@ -11,7 +11,6 @@ import (
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
-	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // serveHeldCreate creates the sandbox, then answers only once answer is
@@ -88,21 +87,6 @@ func TestSandboxCreateRefusalIsOnlyADefiniteAnswer(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, tc.refused, errors.Is(err, errCreationRefused), "HTTP %d %s", tc.status, tc.code)
 		require.NotContains(t, err.Error(), "invalid parameters", "response bodies never leave the adapter")
-	}
-}
-
-// A create waits for its answer a little longer than the OpenSandbox
-// server's creation timeout, its default unless configured; the timeout must
-// leave room within the Startup Deadline.
-func TestSandboxCreateWaitsLongerThanTheServerCreationTimeout(t *testing.T) {
-	require.Equal(t, 5*time.Minute+30*time.Second, config().creationWait())
-	configured := config()
-	configured.CreationTimeout = 2 * time.Minute
-	require.Equal(t, 2*time.Minute+30*time.Second, configured.creationWait())
-	require.NoError(t, configured.Validate())
-	for _, invalid := range []time.Duration{-time.Second, domain.StartupDeadline - 30*time.Second} {
-		configured.CreationTimeout = invalid
-		require.Error(t, configured.Validate(), invalid)
 	}
 }
 

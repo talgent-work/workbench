@@ -18,7 +18,7 @@ func TestNativeSandboxExpandsTheWorkModelConfigurationTemplate(t *testing.T) {
 	}
 	settings := config()
 	settings.Models = catalog("glm-5.3-coding-plan")
-	provider, err := NewSandboxes(base.client, settings)
+	provider, err := NewSandboxes(base.client, base.pods, settings)
 	require.NoError(t, err)
 	selected := request()
 	selected.WorkModel = domain.WorkModelSelection{ConfigurationID: "glm"}
@@ -45,7 +45,7 @@ func TestNativeSandboxExpandsTheWorkModelConfigurationTemplate(t *testing.T) {
 
 	// The configuration now names another template: the next start uses it.
 	settings.Models = catalog("deepseek-flash")
-	provider, err = NewSandboxes(base.client, settings)
+	provider, err = NewSandboxes(base.client, base.pods, settings)
 	require.NoError(t, err)
 	_, err = provider.submitRequest(t.Context(), selected, "execution-token-fixture")
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestNativeSandboxExpandsTheWorkModelConfigurationTemplate(t *testing.T) {
 	routed := ModelTemplate{ID: "kimi-k3-token-plan", Vendor: "kimi", BaseURL: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic", MainModel: "auto", OpusModel: "k3", SonnetModel: "k3", HaikuModel: "k3", FableModel: "k3", SubagentModel: "k3"}
 	settings.Models, err = NewModelCatalog([]ModelTemplate{routed}, []ModelConfiguration{{ID: "glm", Name: "Kimi K3", Template: "kimi-k3-token-plan", APIKey: "kimi-key"}})
 	require.NoError(t, err)
-	provider, err = NewSandboxes(base.client, settings)
+	provider, err = NewSandboxes(base.client, base.pods, settings)
 	require.NoError(t, err)
 	_, err = provider.submitRequest(t.Context(), selected, "execution-token-fixture")
 	require.NoError(t, err)

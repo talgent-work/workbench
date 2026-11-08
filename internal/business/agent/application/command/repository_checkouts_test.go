@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -22,7 +23,7 @@ func checkoutWorld(t *testing.T) *world {
 	w := newWorld(t, work)
 	w.begin(t)
 	w.change(t, func(execution *domain.AgentExecution) {
-		require.True(t, execution.RecordSubmission())
+		require.True(t, commandtest.Submit(execution))
 		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
 		require.NoError(t, err)
 		require.True(t, execution.RecordCredentialDelivery(domain.CredentialDelivery{}))

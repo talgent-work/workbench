@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -16,7 +17,7 @@ func TestQueuedExecutionWaitsAndASeatedOneSubmitsItsCreation(t *testing.T) {
 	work, _ := queuedWork(t, time.Now())
 	execution := beginOf(t, work, domain.RealizationManaged)
 	require.Empty(t, decide(t, execution, runningEnvironment("env-1"), time.Now().Add(time.Hour)).Steps)
-	require.False(t, execution.RecordSubmission(), "a Queued execution submits nothing")
+	require.False(t, commandtest.Submit(execution), "a Queued execution submits nothing")
 
 	seatedAt := time.Now().UTC()
 	seated, err := execution.Seat(seatedAt)
@@ -36,7 +37,7 @@ func TestQueuedExecutionWaitsAndASeatedOneSubmitsItsCreation(t *testing.T) {
 func TestASubmittedCreationThatProducedNothingFailsThenAbandonsTheStart(t *testing.T) {
 	work := newSession(t)
 	execution := beginOf(t, work, domain.RealizationCloud)
-	require.True(t, execution.RecordSubmission())
+	require.True(t, commandtest.Submit(execution))
 	deadline := execution.StartupDeadlineAt()
 
 	waiting := decide(t, execution, domain.EnvironmentObservation{}, deadline.Add(-time.Second))
@@ -73,7 +74,7 @@ func TestAStartThatCreatedNothingIsAbandonedWithoutACreation(t *testing.T) {
 	require.Empty(t, decide(t, stopped, domain.EnvironmentObservation{}, stopped.Desk.SeatedAt).Steps)
 	require.True(t, stopped.Outcome.Abandoned)
 	require.Empty(t, stopped.Outcome.StartFailure, "an abandoned stop is not a failure")
-	require.False(t, stopped.RecordSubmission())
+	require.False(t, commandtest.Submit(stopped))
 }
 
 // With none bound, the first observed environment is bound whatever its
@@ -81,7 +82,7 @@ func TestAStartThatCreatedNothingIsAbandonedWithoutACreation(t *testing.T) {
 // deleted; once bound, every surplus environment is deleted.
 func TestObservedEnvironmentsBindOneAndDeleteTheSurplus(t *testing.T) {
 	execution := beginOf(t, newSession(t), domain.RealizationCloud)
-	require.True(t, execution.RecordSubmission())
+	require.True(t, commandtest.Submit(execution))
 	observation := domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "env-a"}, {ID: "env-b", Running: true}, {ID: "env-c"}}}
 	decision := decide(t, execution, observation, execution.Desk.SeatedAt)
 	require.True(t, decision.Changed)
@@ -94,11 +95,12 @@ func TestObservedEnvironmentsBindOneAndDeleteTheSurplus(t *testing.T) {
 
 	changed, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-c"})
 	require.NoError(t, err)
-	require.False(t, changed, "the observed binding stands")
-	require.Equal(t, "env-b", execution.Environment)
+	require.True(t, changed, "the answer ends the outstanding creation")
+	require.True(t, execution.Creation.Answered)
+	require.Equal(t, "env-b", execution.Environment, "the observed binding stands")
 
 	pending := beginOf(t, newSession(t), domain.RealizationCloud)
-	require.True(t, pending.RecordSubmission())
+	require.True(t, commandtest.Submit(pending))
 	require.Empty(t, decide(t, pending, domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "env-x"}}}, pending.Desk.SeatedAt).Steps, "a bound environment not yet running waits")
 	require.Equal(t, "env-x", pending.Environment)
 }
@@ -135,7 +137,7 @@ func TestARunningRunConnectsAndKeepsItsCredentialsAndInputsCurrent(t *testing.T)
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, kinds(decide(t, execution, attached, now)))
 
 	expiring := beginOf(t, newSession(t), domain.RealizationCloud)
-	require.True(t, expiring.RecordSubmission())
+	require.True(t, commandtest.Submit(expiring))
 	_, err := expiring.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-1"})
 	require.NoError(t, err)
 	expiry := expiring.Desk.SeatedAt.Add(time.Hour)
@@ -153,7 +155,7 @@ func TestARunningRunConnectsAndKeepsItsCredentialsAndInputsCurrent(t *testing.T)
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, kinds(decide(t, expiring, current, expiry)))
 
 	managed := beginOf(t, newSession(t), domain.RealizationManaged)
-	require.True(t, managed.RecordSubmission())
+	require.True(t, commandtest.Submit(managed))
 	_, err = managed.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-m"})
 	require.NoError(t, err)
 	require.True(t, managed.RecordCredentialDelivery(domain.CredentialDelivery{}))

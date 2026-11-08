@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
@@ -27,7 +28,7 @@ func startTwice(t *testing.T, db *xorm.Engine) (*AgentExecutionRepository, *doma
 		require.NoError(t, err)
 		run, err := executions.Get(ctx, record.ID)
 		require.NoError(t, err)
-		require.True(t, run.RecordSubmission())
+		require.True(t, commandtest.Submit(run))
 		run.Environment = sandboxID
 		_, err = run.RecordLaunch(processID)
 		require.NoError(t, err)
