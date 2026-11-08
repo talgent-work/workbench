@@ -43,7 +43,7 @@ func TestAManagedWorkIdentityCarriesNoWorkspaceSoItsSentContentIsTaken(t *testin
 			Subject: agentdomain.WorkSubject{Kind: "case", ID: "case-1"}, ProjectID: "project-1", WorkModel: agentdomain.WorkModelSelection{ConfigurationID: "default"},
 			Capabilities:       agentdomain.CapabilitySnapshot{Connectors: []agentdomain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 			WorkspaceReference: "named-workspace", HomeBinding: agent.HomeBinding,
-		}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), DeskID: "desk"}})
+		}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), Kind: map[bool]agentdomain.ComputerKind{false: agentdomain.ComputerCloud, true: agentdomain.ComputerManaged}[managed], DeskID: "desk"}})
 		require.NoError(t, err)
 		works.items[work.ID] = work
 		return work.ID

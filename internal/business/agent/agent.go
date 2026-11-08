@@ -41,16 +41,6 @@ func newStorageClient(httpClient *http.Client, config StorageConfig) (*agentstor
 	return agentstorage.NewClient(httpClient, config)
 }
 
-type workspaceSources struct {
-	fx.In
-	Storage *agentstorage.Client
-	Managed *execution.ManagedWorkspaces `optional:"true"`
-}
-
-func newWorkspaces(in workspaceSources) (application.WorkspacePort, error) {
-	return execution.NewWorkspaces(in.Storage, in.Managed)
-}
-
 func newFileSpaces(httpClient *http.Client, config StorageConfig) (*agentstorage.FileSpaces, error) {
 	return agentstorage.NewFileSpaces(httpClient, config)
 }
@@ -97,11 +87,8 @@ var Module = fx.Module("domain.agent",
 	fx.Provide(command.NewExecutionCoordination),
 	fx.Provide(eventhandler.NewBeginExecution, eventhandler.NewRequestProcessExit, eventhandler.NewRetireExecution, eventhandler.NewApplyExecutionReport, eventhandler.NewRecordCheckouts, eventhandler.NewConfirmComputeRelease),
 	// Storage owns every space a Work uses.
-	fx.Provide(fx.Annotate(newStorageClient, fx.As(fx.Self()), fx.As(new(command.SandboxMountPort)))),
-	// A Work's workspace is read where its files are: Storage's for a Cloud
-	// Work, its machine's for a Managed one when ExecutionModule reaches
-	// Managed Computers.
-	fx.Provide(newWorkspaces),
+	fx.Provide(fx.Annotate(newStorageClient, fx.As(fx.Self()), fx.As(new(command.SandboxMountPort)), fx.As(new(execution.StorageWorkspaces)), fx.As(new(execution.PreviewJudge)))),
+	workspaceReading,
 	fx.Invoke(subscribeEventHandlers),
 	fx.Provide(application.NewRequiredResponseReader),
 	fx.Provide(fx.Annotate(command.NewInputAcceptance, fx.As(new(command.WorkInputs)))),

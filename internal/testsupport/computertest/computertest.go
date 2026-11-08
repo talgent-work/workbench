@@ -71,7 +71,7 @@ func (a *Admission) AdmitRun(_ context.Context, run command.RunAdmission) (comma
 		a.open = make(map[string]string)
 	}
 	a.open[run.DeskID] = run.WorkID
-	return command.ComputerAnswer{Kind: command.ComputerSeated}, nil
+	return command.ComputerAnswer{Kind: command.ComputerSeated, Computer: domain.ComputerCloud}, nil
 }
 
 func (a *Admission) LeaveDesk(_ context.Context, deskID string) error {
@@ -121,7 +121,7 @@ func (c checked) AdmitRun(ctx context.Context, _ command.RunAdmission) (command.
 	err := c.check.AdmitRoom(ctx)
 	switch {
 	case err == nil:
-		return command.ComputerAnswer{Kind: command.ComputerSeated}, nil
+		return command.ComputerAnswer{Kind: command.ComputerSeated, Computer: domain.ComputerCloud}, nil
 	case errors.Is(err, domain.ErrCapacityUnavailable):
 		return command.ComputerAnswer{Kind: command.ComputerRejected, Rejection: err}, nil
 	default:

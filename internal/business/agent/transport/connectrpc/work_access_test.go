@@ -90,7 +90,7 @@ func accessWork(t *testing.T, sessions *rpcSessions, definition *domain.AgentDef
 	t.Helper()
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project-a", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: owner, ID: uuid.NewString(), AgentID: definition.ID, Visibility: definition.Visibility,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, WorkspaceReference: "workspace", HomeBinding: definition.HomeBinding,
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	sessions.items[work.ID] = work
 	return work.ID

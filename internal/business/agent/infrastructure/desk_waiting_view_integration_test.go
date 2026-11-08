@@ -22,7 +22,7 @@ import (
 type waitingComputer struct{ command.ComputerPort }
 
 func (waitingComputer) AdmitRun(context.Context, command.RunAdmission) (command.ComputerAnswer, error) {
-	return command.ComputerAnswer{Kind: command.ComputerWaiting}, nil
+	return command.ComputerAnswer{Kind: command.ComputerWaiting, Computer: domain.ComputerCloud}, nil
 }
 
 // A start admitted waiting shows its Desk waiting while its execution is not

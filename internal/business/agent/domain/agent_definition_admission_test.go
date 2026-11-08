@@ -17,7 +17,7 @@ func TestDefinitionRequiresCompleteSnapshotOnlyForNewWork(t *testing.T) {
 	require.NoError(t, err)
 	original.RequiredPlugins[0] = "changed"
 	require.Equal(t, []string{"runtime"}, agent.ProvideCapabilities().RequiredPlugins)
-	request := domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: domain.WorkModelSelection{ConfigurationID: "model"}, WorkspaceReference: "workspace", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}
+	request := domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: domain.WorkModelSelection{ConfigurationID: "model"}, WorkspaceReference: "workspace", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}
 	lookup := &definitionSessionLookup{}
 	_, _, err = createWork(agent, request, lookup)
 	require.ErrorIs(t, err, domain.ErrInvalidCapabilities)

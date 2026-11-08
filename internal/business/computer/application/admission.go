@@ -34,7 +34,8 @@ type AdmitRun struct {
 type Admission struct {
 	Answer    Answer
 	Rejection domain.Rejection
-	// Kind is what the rejecting Computer is.
+	// Kind is what the answering Computer is, so its caller learns whether
+	// the run is on a Cloud or a Managed Computer.
 	Kind domain.Kind
 }
 
@@ -81,7 +82,7 @@ func (a *Application) AdmitRun(ctx context.Context, request AdmitRun) (Admission
 			if err := a.desks.Save(ctx, desk); err != nil {
 				return err
 			}
-			admission = Admission{Answer: answerOf(desk)}
+			admission = Admission{Answer: answerOf(desk), Kind: computer.Kind}
 			return a.computers.Save(ctx, computer)
 		})
 	})
@@ -109,7 +110,11 @@ func (a *Application) existingAnswer(ctx context.Context, request AdmitRun) (Adm
 	if desk.State == domain.DeskStateVacated {
 		return Admission{}, true, ErrDeskLeft
 	}
-	return Admission{Answer: answerOf(desk)}, true, nil
+	computer, err := a.computers.Get(ctx, desk.ComputerID)
+	if err != nil {
+		return Admission{}, true, err
+	}
+	return Admission{Answer: answerOf(desk), Kind: computer.Kind}, true, nil
 }
 
 func answerOf(desk *domain.Desk) Answer {

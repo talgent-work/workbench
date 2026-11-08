@@ -208,6 +208,7 @@ func TestAMailBufferedDuringTheGraceIsReadOnceAfterReconnection(t *testing.T) {
 	agents, w := runningMessagingWorld(t, "work")
 	sessions := w.works
 	sessions.session.PermissionMode = domain.PermissionBypass
+	sessions.session.ComputerKind = domain.ComputerManaged
 	buffer := w.harness.InputBuffer
 	lost := time.Now()
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, UnreachableSince: lost}}

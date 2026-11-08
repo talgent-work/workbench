@@ -129,14 +129,15 @@ func TestCloudTakesUpALowerCapacityOnceDesksLeave(t *testing.T) {
 	require.Equal(t, domain.Room{}, m.computers[cloudID].Occupied)
 }
 
+// Each answer names what the admitting Computer is, a repeated one too.
 func TestRepeatedAdmissionOfADeskReturnsItsAnswer(t *testing.T) {
 	app, m := newApp(t, oneRun)
 	desk, admission := admit(t, app)
-	require.Equal(t, application.AnswerSeated, admission.Answer)
+	require.Equal(t, application.Admission{Answer: application.AnswerSeated, Kind: domain.KindCloud}, admission)
 	work := m.desks[desk].WorkID
 	again, err := app.AdmitRun(context.Background(), application.AdmitRun{ComputerID: cloudID, DeskID: desk, WorkID: work, WorkOwnerID: "owner", StarterID: "owner"})
 	require.NoError(t, err)
-	require.Equal(t, application.AnswerSeated, again.Answer)
+	require.Equal(t, application.Admission{Answer: application.AnswerSeated, Kind: domain.KindCloud}, again)
 	require.Equal(t, oneRun, m.computers[cloudID].Occupied, "a repeated admission claims no more room")
 	_, err = app.AdmitRun(context.Background(), application.AdmitRun{ComputerID: cloudID, DeskID: desk, WorkID: uuid.NewString()})
 	require.ErrorIs(t, err, domain.ErrDeskTaken)
@@ -164,5 +165,5 @@ func TestAManagedComputerBelowTheMinimumVersionTakesNoRun(t *testing.T) {
 	m.computers[laptop.ID] = upgraded
 	admission, err = app.AdmitRun(context.Background(), request)
 	require.NoError(t, err)
-	require.Equal(t, application.AnswerSeated, admission.Answer)
+	require.Equal(t, application.Admission{Answer: application.AnswerSeated, Kind: domain.KindManaged}, admission)
 }

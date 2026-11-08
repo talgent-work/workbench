@@ -52,6 +52,7 @@ func managedWorking(t *testing.T) *world {
 	t.Helper()
 	_, w := runningMessagingWorld(t, "work")
 	w.work().PermissionMode = domain.PermissionBypass
+	w.work().ComputerKind = domain.ComputerManaged
 	require.Equal(t, domain.WorkWorking, w.work().State)
 	return w
 }
@@ -228,7 +229,7 @@ func TestASeatedManagedStartRecordsItsDisconnection(t *testing.T) {
 	ctx := context.Background()
 	agent := definitionFixture(t)
 	admission := fixtureAdmission(agent.ID)
-	admission.Seat.Waiting = true
+	admission.Seat.Waiting, admission.Seat.Kind = true, domain.ComputerManaged
 	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: true, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, AgentID: agent.ID, WorkspaceReference: "workspace"}, admission)
 	require.NoError(t, err)
 	w := newWorld(t, settled(work))

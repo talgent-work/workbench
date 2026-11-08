@@ -45,7 +45,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			require.NoError(t, definitions.Save(ctx, definition))
 			definition, err = definitions.Get(ctx, definition.ID)
 			require.NoError(t, err)
-			work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, HomeBinding: definition.HomeBinding, WorkspaceReference: uuid.NewString()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, DeskID: "desk-test"}, ModelConfigurationProvided: true})
+			work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, HomeBinding: definition.HomeBinding, WorkspaceReference: uuid.NewString()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 			require.NoError(t, err)
 			works := infrastructure.NewAgentWorkRepository(db, time.Now)
 			require.NoError(t, works.RegisterWork(ctx, work, command.WorkRegistration{SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}, DefinitionVersion: definition.Version}))

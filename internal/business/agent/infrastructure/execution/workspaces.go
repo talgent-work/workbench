@@ -5,25 +5,23 @@ import (
 	"errors"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // StorageWorkspaces is Storage's side of a Work's workspace: the Session
 // Workspace's views and links, and its reclamation.
 type StorageWorkspaces interface {
-	WorkspaceView(ctx context.Context, workspace application.ViewedWorkspace, path string) (application.WorkspaceListing, error)
-	PreviewWorkspaceFile(ctx context.Context, workspace application.ViewedWorkspace, path string) (application.WorkspaceFilePreview, error)
-	WorkspaceFileLink(ctx context.Context, workspace application.ViewedWorkspace, path string) (application.WorkspaceFileLink, error)
+	WorkspaceView(ctx context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceListing, error)
+	PreviewWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceFilePreview, error)
+	WorkspaceFileLink(ctx context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceFileLink, error)
 	RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error
 }
 
-// Workspaces reads a Work's workspace where its files are, as Environment
-// starts it where it runs: a Work whose environment the Managed realization
-// opened has its files in its directory on its machine, read through the
-// relay while the machine is reachable; any other Work's workspace is
-// Storage's. A Work's realization is fixed by its first start, so the
-// allocation's recorded realization decides, never a guess. Only Managed
-// Works' files are served behind Agent's own links, and a Work's reclamation
-// is always Storage's.
+// Workspaces reads a Work's workspace at the location its AgentWork names, as
+// Environment runs it where it runs: a directory on a Managed Computer through
+// the relay, any other location from Storage's Session Workspace. This is the
+// one place that tells the two apart. Only Managed Works' files are served
+// behind Agent's own links, and a Work's reclamation is always Storage's.
 type Workspaces struct {
 	cloud   StorageWorkspaces
 	managed *ManagedWorkspaces
@@ -40,65 +38,61 @@ func NewWorkspaces(cloud StorageWorkspaces, managed *ManagedWorkspaces) (*Worksp
 	return &Workspaces{cloud: cloud, managed: managed}, nil
 }
 
-func (v *Workspaces) WorkspaceView(ctx context.Context, workspace application.ViewedWorkspace, dir string) (application.WorkspaceListing, error) {
-	return readWhere(ctx, v, workspace, func(spec managedSpecification) (application.WorkspaceListing, error) {
-		return v.managed.view(ctx, spec, workspace.WorkID, dir)
-	}, func() (application.WorkspaceListing, error) { return v.cloud.WorkspaceView(ctx, workspace, dir) })
-}
-
-func (v *Workspaces) PreviewWorkspaceFile(ctx context.Context, workspace application.ViewedWorkspace, file string) (application.WorkspaceFilePreview, error) {
-	return readWhere(ctx, v, workspace, func(spec managedSpecification) (application.WorkspaceFilePreview, error) {
-		return v.managed.preview(ctx, spec, workspace.WorkID, file)
-	}, func() (application.WorkspaceFilePreview, error) {
-		return v.cloud.PreviewWorkspaceFile(ctx, workspace, file)
-	})
-}
-
-func (v *Workspaces) WorkspaceFileLink(ctx context.Context, workspace application.ViewedWorkspace, file string) (application.WorkspaceFileLink, error) {
-	return readWhere(ctx, v, workspace, func(spec managedSpecification) (application.WorkspaceFileLink, error) {
-		return v.managed.downloadLink(ctx, spec, workspace.WorkID, file)
-	}, func() (application.WorkspaceFileLink, error) { return v.cloud.WorkspaceFileLink(ctx, workspace, file) })
-}
-
-// LinkedWork is the Work a link grants a read of. Without Managed Computers
-// Agent issues no link, so none is valid.
-func (v *Workspaces) LinkedWork(token string) (string, error) {
-	if v.managed == nil {
-		return "", application.ErrInvalidWorkspaceFileLink
+func (v *Workspaces) WorkspaceView(ctx context.Context, location domain.WorkspaceLocation, dir string) (application.WorkspaceListing, error) {
+	reader, err := v.reader(location)
+	if err != nil {
+		return application.WorkspaceListing{}, err
 	}
-	return v.managed.LinkedWork(token)
+	return reader.WorkspaceView(ctx, location, dir)
 }
 
-// OpenLink opens the file a link grants. ErrWorkspaceUnavailable means the
-// machine is not reachable now.
-func (v *Workspaces) OpenLink(ctx context.Context, token string) (application.OpenedWorkspaceFile, error) {
-	if v.managed == nil {
+func (v *Workspaces) PreviewWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, file string) (application.WorkspaceFilePreview, error) {
+	reader, err := v.reader(location)
+	if err != nil {
+		return application.WorkspaceFilePreview{}, err
+	}
+	return reader.PreviewWorkspaceFile(ctx, location, file)
+}
+
+func (v *Workspaces) WorkspaceFileLink(ctx context.Context, location domain.WorkspaceLocation, file string) (application.WorkspaceFileLink, error) {
+	reader, err := v.reader(location)
+	if err != nil {
+		return application.WorkspaceFileLink{}, err
+	}
+	return reader.WorkspaceFileLink(ctx, location, file)
+}
+
+// OpenWorkspaceFile opens the file one of Agent's links grants: only a
+// Managed Work's files are behind such links.
+func (v *Workspaces) OpenWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, grant application.WorkspaceFileGrant) (application.OpenedWorkspaceFile, error) {
+	if !location.ThroughComputer() {
 		return application.OpenedWorkspaceFile{}, application.ErrInvalidWorkspaceFileLink
 	}
-	return v.managed.OpenLink(ctx, token)
+	if v.managed == nil {
+		return application.OpenedWorkspaceFile{}, domain.ErrWorkspaceUnavailable
+	}
+	return v.managed.OpenWorkspaceFile(ctx, location, grant)
 }
 
 func (v *Workspaces) RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error {
 	return v.cloud.RequestWorkspaceReclamation(ctx, workID, workspaceReference)
 }
 
-// readWhere reads the Work's workspace on its machine when the Managed
-// realization opened its environment, and its Session Workspace in Storage
-// otherwise. Any other Work, such as a project-scoped definition's or a Managed Work
-// whose directory was never opened, has nothing to read yet.
-func readWhere[T any](ctx context.Context, v *Workspaces, workspace application.ViewedWorkspace, managed func(managedSpecification) (T, error), cloud func() (T, error)) (T, error) {
-	var zero T
-	if v.managed != nil {
-		spec, opened, err := v.managed.opened(ctx, workspace.WorkID)
-		if err != nil {
-			return zero, err
-		}
-		if opened {
-			return managed(spec)
-		}
+// workspaceReader reads the workspace at one kind of location.
+type workspaceReader interface {
+	WorkspaceView(ctx context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceListing, error)
+	PreviewWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceFilePreview, error)
+	WorkspaceFileLink(ctx context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceFileLink, error)
+}
+
+// reader selects the reader of a location. A deployment that does not reach
+// Managed Computers cannot reach a Managed Work's files.
+func (v *Workspaces) reader(location domain.WorkspaceLocation) (workspaceReader, error) {
+	if !location.ThroughComputer() {
+		return v.cloud, nil
 	}
-	if workspace.Reference == "" {
-		return zero, application.ErrWorkspaceNotCreated
+	if v.managed == nil {
+		return nil, domain.ErrWorkspaceUnavailable
 	}
-	return cloud()
+	return v.managed, nil
 }

@@ -80,7 +80,7 @@ func (a *libraryAgents) start(person, workspace, projectID string) libraryWork {
 		StartedBy: person, ID: work.id, AgentID: definition.ID, ProjectID: projectID, WorkModel: agentdomain.WorkModelSelection{ConfigurationID: "default"},
 		WorkspaceReference: workspace, HomeBinding: definition.HomeBinding,
 		InputSource: agentdomain.WorkInputSource{Reference: "file-space/" + work.id, SpaceToken: work.space.SpaceToken},
-	}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), DeskID: "desk"}})
+	}, agentdomain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Seat: agentdomain.ComputerSeat{ComputerID: uuid.NewString(), Kind: agentdomain.ComputerCloud, DeskID: "desk"}})
 	require.NoError(a.t, err)
 	require.Empty(a.t, started.CapabilitySnapshot.Connectors, "the Work starts without a platform Connector")
 	require.NoError(a.t, a.works.RegisterWork(ctx, started, agentcommand.WorkRegistration{

@@ -15,7 +15,7 @@ const managedComputer = "01a19bc3-075a-7c57-b42b-7fdf73b611ee"
 
 // waitingSeat is a Computer's answer queuing a run in its line.
 func waitingSeat(desk string) domain.ComputerSeat {
-	return domain.ComputerSeat{ComputerID: managedComputer, DeskID: desk, Waiting: true}
+	return domain.ComputerSeat{ComputerID: managedComputer, Kind: domain.ComputerManaged, DeskID: desk, Waiting: true}
 }
 
 func queuedWork(t *testing.T, admittedAt time.Time) (*domain.AgentWork, *executionPort) {
@@ -103,7 +103,7 @@ func TestStoppingOrClosingAQueuedFirstStartClosesTheWork(t *testing.T) {
 // then closed; a queued Restart withdrawn returns to Failed.
 func TestAWithdrawnQueuedContinuationReturnsToItsFormerState(t *testing.T) {
 	work, port := stoppedWork(t)
-	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: work.ComputerID, DeskID: "desk-2", Waiting: true}, ModelConfigurationProvided: true}
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: work.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: work.ComputerID, Kind: domain.ComputerCloud, DeskID: "desk-2", Waiting: true}, ModelConfigurationProvided: true}
 	starts := port.starts()
 	require.NoError(t, work.Resume(admission))
 	require.Equal(t, domain.WorkStarting, work.State)
@@ -124,7 +124,7 @@ func TestAWithdrawnQueuedContinuationReturnsToItsFormerState(t *testing.T) {
 	exited(t, failed, domain.HarnessExit{ExitCode: 1})
 	released(t, failed)
 	require.Equal(t, domain.WorkFailed, failed.State)
-	admission = domain.StartAdmission{AdmittedAt: time.Now(), AgentID: failed.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: failed.ComputerID, DeskID: "desk-4", Waiting: true}, ModelConfigurationProvided: true}
+	admission = domain.StartAdmission{AdmittedAt: time.Now(), AgentID: failed.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: failed.ComputerID, Kind: domain.ComputerCloud, DeskID: "desk-4", Waiting: true}, ModelConfigurationProvided: true}
 	require.NoError(t, failed.Restart(admission))
 	require.True(t, failed.WaitsForDesk(true))
 	require.NoError(t, failed.Stop("withdraw", true))

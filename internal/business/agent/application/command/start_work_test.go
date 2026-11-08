@@ -246,11 +246,23 @@ func (c capacityCheck) ListUsableComputers(context.Context, string) ([]command.U
 	return append([]command.UsableComputer{{ID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Cloud: true}}, c.others...), nil
 }
 
-func (c capacityCheck) AdmitRun(context.Context, command.RunAdmission) (command.ComputerAnswer, error) {
+func (c capacityCheck) AdmitRun(ctx context.Context, run command.RunAdmission) (command.ComputerAnswer, error) {
 	if c.err != nil {
 		return command.ComputerAnswer{Kind: command.ComputerRejected, Rejection: c.err}, nil
 	}
-	return command.ComputerAnswer{Kind: command.ComputerSeated}, nil
+	return command.ComputerAnswer{Kind: command.ComputerSeated, Computer: c.kindOf(ctx, run.ComputerID)}, nil
+}
+
+// kindOf is what a listed Computer is; any Computer not listed as a Cloud is
+// Managed.
+func (c capacityCheck) kindOf(ctx context.Context, computerID string) domain.ComputerKind {
+	listed, _ := c.ListUsableComputers(ctx, "")
+	for _, computer := range listed {
+		if computer.ID == computerID && computer.Cloud {
+			return domain.ComputerCloud
+		}
+	}
+	return domain.ComputerManaged
 }
 
 func (c capacityCheck) LeaveDesk(context.Context, string) error { return nil }

@@ -31,10 +31,11 @@ const (
 	ComputerRejected ComputerAnswerKind = "rejected"
 )
 
-// ComputerAnswer is a Computer's answer to one run; a rejection carries its
-// reason as a domain error.
+// ComputerAnswer is a Computer's answer to one run, naming what the Computer
+// is; a rejection carries its reason as a domain error.
 type ComputerAnswer struct {
 	Kind      ComputerAnswerKind
+	Computer  domain.ComputerKind
 	Rejection error
 }
 
@@ -114,7 +115,7 @@ func admitRun(ctx context.Context, computers ComputerPort, run RunAdmission) (do
 	}
 	switch answer.Kind {
 	case ComputerSeated, ComputerWaiting:
-		return domain.ComputerSeat{ComputerID: run.ComputerID, DeskID: run.DeskID, Waiting: answer.Kind == ComputerWaiting}, nil
+		return domain.ComputerSeat{ComputerID: run.ComputerID, Kind: answer.Computer, DeskID: run.DeskID, Waiting: answer.Kind == ComputerWaiting}, nil
 	default:
 		if answer.Rejection != nil {
 			return domain.ComputerSeat{}, answer.Rejection

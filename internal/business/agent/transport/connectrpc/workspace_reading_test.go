@@ -20,7 +20,7 @@ type fakeWorkspaces struct {
 	missing error
 }
 
-func (f fakeWorkspaces) WorkspaceView(_ context.Context, _ application.ViewedWorkspace, path string) (application.WorkspaceListing, error) {
+func (f fakeWorkspaces) WorkspaceView(_ context.Context, _ domain.WorkspaceLocation, path string) (application.WorkspaceListing, error) {
 	if f.missing != nil {
 		return application.WorkspaceListing{}, f.missing
 	}
@@ -32,11 +32,11 @@ func (f fakeWorkspaces) WorkspaceView(_ context.Context, _ application.ViewedWor
 	}}, nil
 }
 
-func (f fakeWorkspaces) PreviewWorkspaceFile(context.Context, application.ViewedWorkspace, string) (application.WorkspaceFilePreview, error) {
+func (f fakeWorkspaces) PreviewWorkspaceFile(context.Context, domain.WorkspaceLocation, string) (application.WorkspaceFilePreview, error) {
 	return application.WorkspaceFilePreview{Mode: application.WorkspacePreviewDirect, Display: application.WorkspacePreviewText, Link: &application.WorkspaceFileLink{URL: "/content?grant=preview", ExpiresAt: time.Unix(60, 0)}}, nil
 }
 
-func (f fakeWorkspaces) WorkspaceFileLink(context.Context, application.ViewedWorkspace, string) (application.WorkspaceFileLink, error) {
+func (f fakeWorkspaces) WorkspaceFileLink(context.Context, domain.WorkspaceLocation, string) (application.WorkspaceFileLink, error) {
 	return application.WorkspaceFileLink{URL: "/content?grant=download", ExpiresAt: time.Unix(60, 0)}, nil
 }
 
@@ -98,10 +98,10 @@ func TestWorkspaceStates(t *testing.T) {
 	require.Empty(t, preview.GetAccessUrl())
 
 	for missing, state := range map[error]agentprivatev1.WorkspaceState{
-		application.ErrWorkspaceNotCreated: agentprivatev1.WorkspaceState_WORKSPACE_STATE_NOT_CREATED,
-		application.ErrWorkspaceReclaimed:  agentprivatev1.WorkspaceState_WORKSPACE_STATE_RECLAIMED,
+		domain.ErrWorkspaceNotCreated:     agentprivatev1.WorkspaceState_WORKSPACE_STATE_NOT_CREATED,
+		application.ErrWorkspaceReclaimed: agentprivatev1.WorkspaceState_WORKSPACE_STATE_RECLAIMED,
 		// A Managed Work's machine is away: its files come back with it.
-		application.ErrWorkspaceUnavailable: agentprivatev1.WorkspaceState_WORKSPACE_STATE_UNAVAILABLE,
+		domain.ErrWorkspaceUnavailable: agentprivatev1.WorkspaceState_WORKSPACE_STATE_UNAVAILABLE,
 	} {
 		f := newAccessFixtureWith(t, fakeWorkspaces{missing: missing})
 		listing, _ := f.browse(t, f.humanWork, "owner", nil, "")

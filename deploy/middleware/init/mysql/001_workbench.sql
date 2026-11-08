@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `agent_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Referenced AgentDefinition aggregate identity',
   `started_by` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Who started the Work, a fact; its Agent Owners are its definition''s owners',
   `computer_id` varchar(36) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Computer chosen at the Work''s first start, fixed for its life',
+  `computer_kind` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'cloud or managed: what the Work''s Computer is, as its admission answered at the first start',
   `subject_kind` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Kind of the object the Work is about, as its caller defines it; NULL when the Work has no Subject',
   `subject_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Identity of the Work Subject; one Work per definition and Subject for good; NULL when none',
   `project_ref` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'The Work''s optional Project, for visibility and authorization; empty when none',

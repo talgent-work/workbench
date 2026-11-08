@@ -90,7 +90,7 @@ func (c *ExecutionCoordination) begin(ctx context.Context, work *domain.AgentWor
 	launch := work.LaunchSpecification()
 	launch.ComputerName = place.Name
 	realization := domain.RealizationCloud
-	if place.Managed {
+	if work.OnManagedComputer() {
 		realization = domain.RealizationManaged
 	}
 	execution, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: admitted, Launch: launch, Realization: realization})

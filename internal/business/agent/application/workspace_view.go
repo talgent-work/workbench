@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"time"
 
@@ -16,88 +15,35 @@ var (
 	// ErrInvalidWorkspacePath means a path leaves the workspace, crosses a
 	// symbolic link, or names nothing a reader may open.
 	ErrInvalidWorkspacePath = errors.New("agent: invalid workspace path")
-	// ErrWorkspaceNotCreated means the Work never had its workspace prepared.
-	ErrWorkspaceNotCreated = errors.New("agent: the workspace has not been created")
 	// ErrWorkspaceReclaimed means Storage reclaimed the workspace.
 	ErrWorkspaceReclaimed = errors.New("agent: the workspace was reclaimed")
 	// ErrWorkspaceClosed means the Work is Closed: its workspace is neither
 	// browsed nor read, whether or not reclamation has finished.
 	ErrWorkspaceClosed = errors.New("agent: the Work is closed, its workspace is unavailable")
-	// ErrWorkspaceUnavailable means the Work's files stay on its Managed
-	// Computer, which is not reachable now: a Disconnection.
-	ErrWorkspaceUnavailable = errors.New("agent: the Computer is not reachable")
 	// ErrInvalidWorkspaceFileLink means a link to a Managed Work's file is
 	// unsigned, altered or expired.
 	ErrInvalidWorkspaceFileLink = errors.New("agent: invalid or expired workspace file link")
 )
 
-// WorkspacePort reaches a Work's workspace where its files are: Storage's
-// Session Workspace for a Cloud Work, the Computer itself for a Managed Work,
-// unavailable during a Disconnection (ErrWorkspaceUnavailable). The Work's
-// realization decides: a Work with neither a directory opened on its machine
-// nor a Session Workspace, such as a project-scoped definition's Work, has
-// nothing to read (ErrWorkspaceNotCreated).
+// WorkspacePort reads a Work's workspace at the WorkspaceLocation its
+// AgentWork names, for either realization: callers never tell a Session
+// Workspace from a directory on a Managed Computer. A location whose files
+// cannot be reached now answers domain.ErrWorkspaceUnavailable, and one with
+// nothing to read yet domain.ErrWorkspaceNotCreated.
 type WorkspacePort interface {
 	// WorkspaceView, PreviewWorkspaceFile and WorkspaceFileLink serve the
 	// Workspace View Query and Workspace File Access Link.
-	WorkspaceView(ctx context.Context, workspace ViewedWorkspace, path string) (WorkspaceListing, error)
-	PreviewWorkspaceFile(ctx context.Context, workspace ViewedWorkspace, path string) (WorkspaceFilePreview, error)
-	WorkspaceFileLink(ctx context.Context, workspace ViewedWorkspace, path string) (WorkspaceFileLink, error)
-	// LinkedWork is the Work one of Agent's own links, to a Managed Work's
-	// file on its machine, grants a read of; ErrInvalidWorkspaceFileLink for
-	// an unsigned, altered or expired one.
-	LinkedWork(token string) (string, error)
-	// OpenLink opens the file the link grants; ErrWorkspaceUnavailable while
-	// its machine is not reachable.
-	OpenLink(ctx context.Context, token string) (OpenedWorkspaceFile, error)
+	WorkspaceView(ctx context.Context, location domain.WorkspaceLocation, path string) (WorkspaceListing, error)
+	PreviewWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, path string) (WorkspaceFilePreview, error)
+	WorkspaceFileLink(ctx context.Context, location domain.WorkspaceLocation, path string) (WorkspaceFileLink, error)
+	// OpenWorkspaceFile opens the file one of Agent's own links grants, its
+	// grant already verified; ErrInvalidWorkspaceFileLink where Agent issues
+	// no such link.
+	OpenWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, grant WorkspaceFileGrant) (OpenedWorkspaceFile, error)
 	// RequestWorkspaceReclamation sends Storage's Workspace Reclamation
 	// Request, an asynchronous request Storage accepts idempotently and
 	// completes on its own schedule.
 	RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error
-}
-
-// WorkspaceFileLinks serves the links to Managed Works' files. A link admits
-// its reader by itself, until the Work is Closed.
-type WorkspaceFileLinks struct {
-	works domain.AgentWorkRepository
-	files WorkspacePort
-}
-
-func NewWorkspaceFileLinks(works domain.AgentWorkRepository, files WorkspacePort) (*WorkspaceFileLinks, error) {
-	if works == nil || files == nil {
-		return nil, errors.New("agent: Works and Managed workspace files are required for workspace file links")
-	}
-	return &WorkspaceFileLinks{works: works, files: files}, nil
-}
-
-// Open opens the file a link grants while its Work is not Closed: a Closed
-// Work's workspace is not read, by a link issued earlier either.
-func (l *WorkspaceFileLinks) Open(ctx context.Context, token string) (OpenedWorkspaceFile, error) {
-	workID, err := l.files.LinkedWork(token)
-	if err != nil {
-		return OpenedWorkspaceFile{}, err
-	}
-	work, err := l.works.Get(ctx, workID)
-	if errors.Is(err, domain.ErrWorkNotFound) {
-		return OpenedWorkspaceFile{}, ErrInvalidWorkspaceFileLink
-	}
-	if err != nil {
-		return OpenedWorkspaceFile{}, err
-	}
-	if work.ClosureConfirmed() {
-		return OpenedWorkspaceFile{}, ErrWorkspaceClosed
-	}
-	return l.files.OpenLink(ctx, token)
-}
-
-// OpenedWorkspaceFile is one Managed Work's file a link reads, streamed from
-// its machine; the reader closes Content.
-type OpenedWorkspaceFile struct {
-	Name     string
-	Download bool
-	// Limit bounds the bytes served, zero for the whole file.
-	Limit   int64
-	Content io.ReadCloser
 }
 
 // WorkspaceEntryKind is what a workspace entry is.
@@ -170,21 +116,6 @@ type WorkspaceFileLink struct {
 	ExpiresAt time.Time
 }
 
-// ViewedWorkspace names a Work's workspace: on a Cloud its Session Workspace
-// and what its sandbox mounts inside it, its input source and its read-only
-// mounts; on a Managed Computer the Work's directory on the machine.
-type ViewedWorkspace struct {
-	WorkID         string
-	Reference      string
-	InputSource    domain.WorkInputSource
-	ReadOnlyMounts []domain.ReadOnlyMount
-}
-
-// viewedWorkspace is the workspace a Work's execution environment sees.
-func viewedWorkspace(work *domain.AgentWork) ViewedWorkspace {
-	return ViewedWorkspace{WorkID: work.ID, Reference: work.WorkspaceReference, InputSource: work.InputSource, ReadOnlyMounts: work.ReadOnlyMounts}
-}
-
 // ReadWorkspace names a Work, a path in its workspace, the reader and the
 // reader's admission a trusted caller supplied.
 type ReadWorkspace struct {
@@ -195,51 +126,52 @@ type ReadWorkspace struct {
 // BrowseWorkspace serves Storage's Workspace View to a reader Work access
 // admits, until the Work is Closed.
 func (a *Application) BrowseWorkspace(ctx context.Context, input ReadWorkspace) (WorkspaceListing, error) {
-	work, err := a.readableWorkspace(ctx, input)
+	location, err := a.readableWorkspace(ctx, input)
 	if err != nil {
 		return WorkspaceListing{}, err
 	}
-	return a.Workspaces.WorkspaceView(ctx, viewedWorkspace(work), input.Path)
+	return a.Workspaces.WorkspaceView(ctx, location, input.Path)
 }
 
 // PreviewWorkspaceFile tells such a reader how one workspace file is shown,
 // with a link for one inline read.
 func (a *Application) PreviewWorkspaceFile(ctx context.Context, input ReadWorkspace) (WorkspaceFilePreview, error) {
-	work, err := a.readableWorkspace(ctx, input)
+	location, err := a.readableWorkspace(ctx, input)
 	if err != nil {
 		return WorkspaceFilePreview{}, err
 	}
-	return a.Workspaces.PreviewWorkspaceFile(ctx, viewedWorkspace(work), input.Path)
+	return a.Workspaces.PreviewWorkspaceFile(ctx, location, input.Path)
 }
 
 // DownloadWorkspaceFile issues such a reader a link to download one
 // workspace file under its own name.
 func (a *Application) DownloadWorkspaceFile(ctx context.Context, input ReadWorkspace) (WorkspaceFileLink, error) {
-	work, err := a.readableWorkspace(ctx, input)
+	location, err := a.readableWorkspace(ctx, input)
 	if err != nil {
 		return WorkspaceFileLink{}, err
 	}
-	return a.Workspaces.WorkspaceFileLink(ctx, viewedWorkspace(work), input.Path)
+	return a.Workspaces.WorkspaceFileLink(ctx, location, input.Path)
 }
 
-// readableWorkspace admits the reader as for the Work's message stream, then
-// refuses a Closed Work: its workspace is reclaimed or about to be, and its
-// readers are pointed to its Artifacts.
-func (a *Application) readableWorkspace(ctx context.Context, input ReadWorkspace) (*domain.AgentWork, error) {
+// readableWorkspace admits the reader as for the Work's message stream,
+// refuses a Closed Work, whose workspace is reclaimed or about to be and
+// whose readers are pointed to its Artifacts, and names where the Work's
+// files are read.
+func (a *Application) readableWorkspace(ctx context.Context, input ReadWorkspace) (domain.WorkspaceLocation, error) {
 	if strings.TrimSpace(input.ActorUserID) == "" {
-		return nil, domain.ErrInvalidWork
+		return domain.WorkspaceLocation{}, domain.ErrInvalidWork
 	}
 	work, _, err := a.admittedReaderWork(ctx, AdmitWorkReader{ReaderID: input.ActorUserID, WorkID: input.WorkID, Admission: input.Admission})
 	if err != nil {
-		return nil, err
+		return domain.WorkspaceLocation{}, err
 	}
 	if work.ClosureConfirmed() {
-		return nil, ErrWorkspaceClosed
+		return domain.WorkspaceLocation{}, ErrWorkspaceClosed
 	}
 	// Compositions that build only part of the Application, as tests do,
 	// leave the port unset; refuse instead of panicking.
 	if a.Workspaces == nil {
-		return nil, errors.New("agent: workspace views are not configured")
+		return domain.WorkspaceLocation{}, errors.New("agent: workspace views are not configured")
 	}
-	return work, nil
+	return work.LocateWorkspace()
 }

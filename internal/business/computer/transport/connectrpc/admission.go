@@ -58,11 +58,9 @@ func (h *AdmissionHandler) AdmitRun(ctx context.Context, req *computerprivatev1.
 	if err != nil {
 		return nil, publicError(err)
 	}
-	response := &computerprivatev1.AdmitRunResponse{Answer: answerToProto(admission.Answer), Reason: rejectionToProto(admission.Rejection)}
-	if admission.Answer == application.AnswerRejected {
-		response.ComputerKind = kindToProto(admission.Kind)
-	}
-	return response, nil
+	// The kind travels with every answer: a rejection is worded by it, and an
+	// admitted run's Work records it.
+	return &computerprivatev1.AdmitRunResponse{Answer: answerToProto(admission.Answer), Reason: rejectionToProto(admission.Rejection), ComputerKind: kindToProto(admission.Kind)}, nil
 }
 
 func (h *AdmissionHandler) LeaveDesk(ctx context.Context, req *computerprivatev1.LeaveDeskRequest) (*computerprivatev1.LeaveDeskResponse, error) {
