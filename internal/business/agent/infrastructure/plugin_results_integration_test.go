@@ -22,6 +22,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	dispatchercommand "github.com/talgent-work/workbench/internal/business/dispatcher/application/command"
 	"github.com/talgent-work/workbench/internal/business/dispatcher/infrastructure/agentfeedback"
@@ -42,7 +43,7 @@ func (a pluginResultAccess) AuthorizeWork(_ context.Context, actor, workID strin
 
 func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	db, definitions, works, definition := startingCreationDatabase(t)
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, definitions, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(&initialCreationCapacity{}), creationPreparation(db, creationModels()))
 	id, err := create.Handle(t.Context(), creationInput(definition.ID, "plugin-results"))
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), id)
@@ -56,7 +57,7 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	require.NoError(t, works.Save(t.Context(), work))
 	before, err := works.Get(t.Context(), id)
 	require.NoError(t, err)
-	app := &application.Application{Works: works, WorkPrincipals: pluginResultAccess{workID: id}, PluginResults: infrastructure.NewExecutionQueryRepository(db),
+	app := &application.Application{Works: works, WorkPrincipals: pluginResultAccess{workID: id}, ExecutionQueries: execution.NewExecutionQueryRepository(db),
 		Commands: application.Commands{ApplyExecutionFeedback: run.feedback}}
 	mux := http.NewServeMux()
 	path, handler := "/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {

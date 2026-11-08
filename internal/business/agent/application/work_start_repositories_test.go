@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -20,10 +21,13 @@ func (r reachableRepositories) ListAccessibleRepositories(context.Context, strin
 	return r.repositories, r.err
 }
 
-type recentRepositories []string
+type recentRepositories struct {
+	query.WorkQueryRepository
+	ids []string
+}
 
 func (r recentRepositories) ListRecentRepositoryIDs(context.Context, string) ([]string, error) {
-	return r, nil
+	return r.ids, nil
 }
 
 func TestRecentRepositoriesAreTheOwnersStillReachableOnesMostRecentFirst(t *testing.T) {
@@ -32,7 +36,7 @@ func TestRecentRepositoriesAreTheOwnersStillReachableOnesMostRecentFirst(t *test
 		reachable = append(reachable, domain.AccessibleRepository{OwnerUserID: "owner", Provider: "github", RepoID: "github:" + id, RepoName: "acme/" + id, DefaultBranch: "main"})
 	}
 	app := &Application{Catalog: reachableRepositories{repositories: reachable},
-		RecentRepositories: recentRepositories{"github:g", "github:lost", "github:a", "github:f", "github:e", "github:d", "github:c"}}
+		WorkQueries: recentRepositories{ids: []string{"github:g", "github:lost", "github:a", "github:f", "github:e", "github:d", "github:c"}}}
 	options, err := app.ListWorkStartRepositories(t.Context(), "owner")
 	require.NoError(t, err)
 	require.Len(t, options.Repositories, 7)
@@ -41,7 +45,7 @@ func TestRecentRepositoriesAreTheOwnersStillReachableOnesMostRecentFirst(t *test
 }
 
 func TestRepositoryDiscoveryFailureKeepsStartupPossible(t *testing.T) {
-	app := &Application{Catalog: reachableRepositories{err: errors.New("github unavailable")}, RecentRepositories: recentRepositories{"github:a"}}
+	app := &Application{Catalog: reachableRepositories{err: errors.New("github unavailable")}, WorkQueries: recentRepositories{ids: []string{"github:a"}}}
 	options, err := app.ListWorkStartRepositories(t.Context(), "owner")
 	require.NoError(t, err)
 	require.True(t, options.RepositoriesUnavailable)
@@ -50,7 +54,7 @@ func TestRepositoryDiscoveryFailureKeepsStartupPossible(t *testing.T) {
 }
 
 func TestRepositoryDiscoveryNeedsAnOwner(t *testing.T) {
-	app := &Application{Catalog: reachableRepositories{}, RecentRepositories: recentRepositories{}}
+	app := &Application{Catalog: reachableRepositories{}, WorkQueries: recentRepositories{}}
 	_, err := app.ListWorkStartRepositories(t.Context(), " ")
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
 }

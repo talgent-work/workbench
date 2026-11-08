@@ -13,7 +13,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-type disconnectedView struct{ view query.WorkView }
+type disconnectedView struct {
+	query.WorkQueryRepository
+	view query.WorkView
+}
 
 func (v disconnectedView) GetWorkView(context.Context, string) (query.WorkView, error) {
 	return v.view, nil
@@ -46,7 +49,7 @@ func TestLiveTurnControlsAreUnobservedDuringADisconnection(t *testing.T) {
 	since := time.Now().Add(-time.Minute)
 	app, store, _, _ := thinkingApplication()
 	store.work.DisconnectedSince = since
-	app.WorkViews = disconnectedView{view: query.WorkView{WorkID: "work", State: "working", DisconnectedSince: since}}
+	app.WorkQueries = disconnectedView{view: query.WorkView{WorkID: "work", State: "working", DisconnectedSince: since}}
 	app.Harness = unreachedTurns{t: t}
 	work := application.ControlWork{ActorUserID: "owner", WorkID: "work"}
 

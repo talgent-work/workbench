@@ -20,7 +20,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
@@ -28,7 +27,7 @@ import (
 func TestServiceAccessResultsThroughAuthenticatedPublicAPI(t *testing.T) {
 	f := newNativeWorkLifecycle(t, t.Context())
 	work, _ := f.createWithAuthorization(t, t.Context(), domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, domain.WorkAuthorizationInput{OwnerUserID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerUserID: "lifecycle-owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}})
-	app := &application.Application{Works: f.works, WorkPrincipals: serviceObservationAccess{workID: work.ID}, ServiceAccessResults: infrastructure.NewServiceAccessResults(f.db)}
+	app := &application.Application{Works: f.works, WorkPrincipals: serviceObservationAccess{workID: work.ID}, ExecutionQueries: NewExecutionQueryRepository(f.db)}
 	mux := http.NewServeMux()
 	mux.Handle("/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))

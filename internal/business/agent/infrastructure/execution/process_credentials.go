@@ -10,7 +10,6 @@ import (
 	"github.com/samber/oops"
 	dispatcherprivatev1 "github.com/talgent-work/contracts/gen/go/dispatcher/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -56,37 +55,23 @@ func sandboxAttachment(response *dispatcherprivatev1.ObserveProcessResponse) com
 	}
 }
 
-// WorkCredentials verifies the native process credential issued to the Work's
-// current live environment. Retiring the execution revokes the credential.
-type WorkCredentials struct{ provisioning *Provisioning }
-
-var _ query.WorkCredentialVerifier = (*WorkCredentials)(nil)
-
 var errWorkCredentialRejected = errors.New("agent: Work credential rejected")
 
-func NewWorkCredentials(provisioning *Provisioning) (*WorkCredentials, error) {
-	if provisioning == nil {
-		return nil, errors.New("agent: provisioning is required")
-	}
-	return &WorkCredentials{provisioning: provisioning}, nil
-}
-
-func (w *WorkCredentials) VerifyWorkCredential(ctx context.Context, workID, credential string) error {
+// VerifyWorkCredential verifies the native process credential issued to the
+// Work's current live environment. Retiring the execution revokes the
+// credential.
+func (q *ExecutionQueryRepository) VerifyWorkCredential(ctx context.Context, workID, credential string) error {
 	if strings.TrimSpace(workID) == "" || strings.TrimSpace(credential) == "" {
 		return errWorkCredentialRejected
 	}
-	record, found, err := w.provisioning.live(ctx, workID)
+	record, found, err := q.records.live(ctx, workID)
 	if err != nil {
 		return err
 	}
 	if !found || record.SandboxID == "" {
 		return errWorkCredentialRejected
 	}
-	authority, err := w.provisioning.authority(record)
-	if err != nil {
-		return err
-	}
-	issued, err := authority.workCredential(record)
+	issued, err := issuedWorkCredential(record)
 	if err != nil {
 		return err
 	}
@@ -94,4 +79,17 @@ func (w *WorkCredentials) VerifyWorkCredential(ctx context.Context, workID, cred
 		return errWorkCredentialRejected
 	}
 	return nil
+}
+
+// issuedWorkCredential reads the Work credential that the execution's
+// realization recorded in its specification.
+func issuedWorkCredential(record executionRecord) (string, error) {
+	switch record.Realization {
+	case realizationCloud:
+		return cloudEnvironment{}.workCredential(record)
+	case realizationManaged:
+		return ManagedEnvironment{}.workCredential(record)
+	default:
+		return "", oops.With("realization", record.Realization).Errorf("agent: unknown execution realization")
+	}
 }

@@ -3,7 +3,6 @@ package execution
 import (
 	"context"
 	"crypto/subtle"
-	"errors"
 	"maps"
 	"strings"
 
@@ -56,27 +55,15 @@ func (s managedSpecification) machineTelemetry() machineTelemetry {
 	return machineTelemetry{Endpoint: s.Telemetry.Endpoint, Token: s.Telemetry.Token}
 }
 
-// TelemetryAttributions authenticates a Managed run's telemetry by its
-// token, against the Work's current live execution.
-type TelemetryAttributions struct{ provisioning *Provisioning }
-
-var _ query.RunTelemetryAttributions = (*TelemetryAttributions)(nil)
-
-func NewTelemetryAttributions(provisioning *Provisioning) (*TelemetryAttributions, error) {
-	if provisioning == nil {
-		return nil, errors.New("agent: provisioning is required")
-	}
-	return &TelemetryAttributions{provisioning: provisioning}, nil
-}
-
-// RunTelemetryAttribution answers the attribution of the Work's live Managed
-// run whose telemetry token this is. Any other token, one of an earlier run,
-// another Work's or a Cloud run's, which has none, is rejected alike.
-func (t *TelemetryAttributions) RunTelemetryAttribution(ctx context.Context, workID, token string) (map[string]string, error) {
+// RunTelemetryAttribution authenticates a Managed run's telemetry by its
+// token, against the Work's current live execution, and answers the
+// attribution of that run. Any other token, one of an earlier run, another
+// Work's or a Cloud run's, which has none, is rejected alike.
+func (q *ExecutionQueryRepository) RunTelemetryAttribution(ctx context.Context, workID, token string) (map[string]string, error) {
 	if strings.TrimSpace(workID) == "" || strings.TrimSpace(token) == "" {
 		return nil, query.ErrTelemetryTokenRejected
 	}
-	record, found, err := t.provisioning.live(ctx, workID)
+	record, found, err := q.records.live(ctx, workID)
 	if err != nil {
 		return nil, err
 	}

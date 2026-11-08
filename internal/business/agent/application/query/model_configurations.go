@@ -62,18 +62,19 @@ func (m ModelConfigurations) ThinkingLevels(selection domain.WorkModelSelection)
 }
 
 // modelOptionViews adds the current option of each Work's retained Model
-// Configuration to its view, so every reader presents the same model.
+// Configuration to its view, so every reader presents the same model; the
+// repository's other reads pass through.
 type modelOptionViews struct {
-	reader WorkViewReader
+	WorkQueryRepository
 	models ModelConfigurations
 }
 
-func NewModelOptionViews(reader WorkViewReader, models ModelConfigurations) WorkViewReader {
-	return modelOptionViews{reader: reader, models: models}
+func NewModelOptionViews(repository WorkQueryRepository, models ModelConfigurations) WorkQueryRepository {
+	return modelOptionViews{WorkQueryRepository: repository, models: models}
 }
 
 func (v modelOptionViews) GetWorkView(ctx context.Context, id string) (WorkView, error) {
-	value, err := v.reader.GetWorkView(ctx, id)
+	value, err := v.WorkQueryRepository.GetWorkView(ctx, id)
 	if err != nil {
 		return WorkView{}, err
 	}

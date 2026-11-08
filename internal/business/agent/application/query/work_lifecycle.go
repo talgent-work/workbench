@@ -16,18 +16,14 @@ type WorkLifecycleEvent struct {
 	OccurredAt time.Time
 }
 
-type WorkLifecycleReader interface {
-	ListWorkLifecycleEvents(ctx context.Context, workID string) ([]WorkLifecycleEvent, error)
-}
-
 type ListWorkLifecycleEvents struct{ ActorUserID, WorkID string }
 
 type ListWorkLifecycleEventsHandler struct {
 	authorization access.WorkAuthorizer
-	reader        WorkLifecycleReader
+	reader        WorkQueryRepository
 }
 
-func NewListWorkLifecycleEventsHandler(authorization access.WorkAuthorizer, reader WorkLifecycleReader) *ListWorkLifecycleEventsHandler {
+func NewListWorkLifecycleEventsHandler(authorization access.WorkAuthorizer, reader WorkQueryRepository) *ListWorkLifecycleEventsHandler {
 	return &ListWorkLifecycleEventsHandler{authorization: authorization, reader: reader}
 }
 

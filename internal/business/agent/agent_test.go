@@ -133,7 +133,7 @@ func (stubStorage) RequestWorkspaceReclamation(context.Context, string, string) 
 func sessionStateTransport(t *testing.T) fx.Option {
 	t.Helper()
 	serverURL := middlewaretest.Environment(t, "TALGENT_TEST_NATS_URL")
-	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() query.WorkCredentialVerifier { return unusedExecutionPort{} }, func() query.CallPositionReader { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }),
+	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() query.RootTurnResultReader { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }),
 		// The Library reads' native callers are verified by the native API in
 		// front; no test here reaches it.
 		fx.Provide(func() (*nativeauth.LiveWorkClient, error) {
@@ -173,8 +173,8 @@ func (unusedExecutionPort) ObserveProcess(context.Context, string, string) (comm
 	panic("unexpected process observation")
 }
 
-func (unusedExecutionPort) VerifyWorkCredential(context.Context, string, string) error {
-	panic("unexpected Work credential verification")
+func (unusedExecutionPort) ListRootTurnResults(context.Context, string) ([]query.RootTurnResult, error) {
+	panic("unexpected turn result query")
 }
 
 func (unusedExecutionPort) GetWorkCapabilities(context.Context, string) (command.WorkCapabilities, error) {

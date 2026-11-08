@@ -34,7 +34,7 @@ func (a *Application) GetCurrentTurn(ctx context.Context, input ControlWork) (co
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
 		return command.CurrentTurn{}, err
 	}
-	work, err := a.WorkViews.GetWorkView(ctx, input.WorkID)
+	work, err := a.WorkQueries.GetWorkView(ctx, input.WorkID)
 	if err != nil {
 		return command.CurrentTurn{}, err
 	}

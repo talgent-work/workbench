@@ -5,20 +5,11 @@ import (
 	"encoding/json"
 
 	"github.com/samber/oops"
-	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"xorm.io/xorm"
 )
 
-// WorkAccessReader reads the facts Work access is decided from, without
-// loading the Work.
-type WorkAccessReader struct{ db *xorm.Engine }
-
-var _ access.WorkAccessReader = (*WorkAccessReader)(nil)
-
-func NewWorkAccessReader(db *xorm.Engine) *WorkAccessReader { return &WorkAccessReader{db: db} }
-
-// WorkOwners reads the Owners of the Work's definition.
-func (r *WorkAccessReader) WorkOwners(ctx context.Context, workID string) ([]string, bool, error) {
+// WorkOwners reads the Owners of the Work's definition, the facts Work access
+// is decided from, without loading the Work.
+func (r *WorkQueryRepository) WorkOwners(ctx context.Context, workID string) ([]string, bool, error) {
 	var rows []struct {
 		Owners string `xorm:"owners"`
 	}

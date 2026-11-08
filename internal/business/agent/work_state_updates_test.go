@@ -13,7 +13,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-type unavailableViews struct{}
+type unavailableViews struct{ query.WorkQueryRepository }
 
 func (unavailableViews) GetWorkView(context.Context, string) (query.WorkView, error) {
 	return query.WorkView{}, errors.New("view unavailable")

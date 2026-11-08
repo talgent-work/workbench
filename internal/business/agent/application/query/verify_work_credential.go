@@ -9,13 +9,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// WorkCredentialVerifier authenticates a native process by the credential that
-// execution infrastructure issued to the Work's current live sandbox. The
-// credential is revoked with that sandbox; AgentWork takes no part.
-type WorkCredentialVerifier interface {
-	VerifyWorkCredential(ctx context.Context, workID, credential string) error
-}
-
 // VerifyWorkCredential names the credential to verify; RequireActing admits
 // it only while its Work acts, for a caller admitting the Work's actions.
 type VerifyWorkCredential struct {
@@ -48,12 +41,12 @@ const (
 type VerifyWorkCredentialHandler struct {
 	definitions      domain.AgentDefinitionRepository
 	sessions         domain.AgentWorkRepository
-	credentials      WorkCredentialVerifier
+	credentials      ExecutionQueryRepository
 	assemble         func(*domain.AgentWork, *domain.AgentDefinition, string) WorkIdentity
 	requiredResponse RequiredResponseReader
 }
 
-func NewVerifyWorkCredentialHandler(definitions domain.AgentDefinitionRepository, sessions domain.AgentWorkRepository, credentials WorkCredentialVerifier, assemble func(*domain.AgentWork, *domain.AgentDefinition, string) WorkIdentity, requiredResponse RequiredResponseReader) *VerifyWorkCredentialHandler {
+func NewVerifyWorkCredentialHandler(definitions domain.AgentDefinitionRepository, sessions domain.AgentWorkRepository, credentials ExecutionQueryRepository, assemble func(*domain.AgentWork, *domain.AgentDefinition, string) WorkIdentity, requiredResponse RequiredResponseReader) *VerifyWorkCredentialHandler {
 	return &VerifyWorkCredentialHandler{definitions: definitions, sessions: sessions, credentials: credentials, assemble: assemble, requiredResponse: requiredResponse}
 }
 

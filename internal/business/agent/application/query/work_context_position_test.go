@@ -10,10 +10,13 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-type originsFake map[string]query.WorkOrigin
+type originsFake struct {
+	query.WorkQueryRepository
+	origins map[string]query.WorkOrigin
+}
 
 func (f originsFake) GetWorkOrigin(_ context.Context, workID string) (query.WorkOrigin, error) {
-	origin, ok := f[workID]
+	origin, ok := f.origins[workID]
 	if !ok {
 		return query.WorkOrigin{}, domain.ErrWorkNotFound
 	}
@@ -23,17 +26,20 @@ func (f originsFake) GetWorkOrigin(_ context.Context, workID string) (query.Work
 func (f originsFake) ListWorkOrigins(_ context.Context, workIDs []string) (map[string]query.WorkOrigin, error) {
 	out := map[string]query.WorkOrigin{}
 	for _, id := range workIDs {
-		if origin, ok := f[id]; ok {
+		if origin, ok := f.origins[id]; ok {
 			out[id] = origin
 		}
 	}
 	return out, nil
 }
 
-type callPositions map[string]string
+type callPositions struct {
+	query.RootTurnResultReader
+	positions map[string]string
+}
 
 func (p callPositions) FindCallPosition(_ context.Context, workID, callID string) (string, bool, error) {
-	position, ok := p[workID+"/"+callID]
+	position, ok := p.positions[workID+"/"+callID]
 	return position, ok, nil
 }
 
@@ -41,8 +47,8 @@ func (p callPositions) FindCallPosition(_ context.Context, workID, callID string
 // a Work of the asking Project; anything else is reported as not returned.
 func TestWorkContextPositionNamesWhereACallReturned(t *testing.T) {
 	handler := query.NewResolveWorkContextPositionHandler(
-		originsFake{"project-work": {WorkID: "project-work", ProjectID: "project-a"}},
-		callPositions{"project-work/toolu_invite": "native-uuid-1"},
+		originsFake{origins: map[string]query.WorkOrigin{"project-work": {WorkID: "project-work", ProjectID: "project-a"}}},
+		callPositions{positions: map[string]string{"project-work/toolu_invite": "native-uuid-1"}},
 	)
 	position, err := handler.Handle(t.Context(), "project-a", "project-work", "toolu_invite")
 	require.NoError(t, err)

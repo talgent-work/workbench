@@ -8,14 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
-
-// ReachResumeWorks lists, in identity order after afterID, a Computer's
-// Stopped Works marked ReachResumeDue.
-type ReachResumeWorks interface {
-	ListReachResumeWorkIDs(ctx context.Context, computerID, afterID string, limit int) ([]string, error)
-}
 
 // ComputerReconnectionHandler applies a Managed Computer's return of reach:
 // it reconciles the machine and requests once more the Resume each marked
@@ -28,14 +23,14 @@ type ComputerReconnectionHandler struct {
 	computers    ComputerPort
 	sessions     domain.AgentWorkRepository
 	agents       domain.AgentDefinitionRepository
-	works        ReachResumeWorks
+	works        query.ExecutionQueryRepository
 	buffer       DispatcherPort
 	resume       *ResumeWorkHandler
 	environments ExecutionEnvironmentPort
 	logger       *slog.Logger
 }
 
-func NewComputerReconnectionHandler(computers ComputerPort, sessions domain.AgentWorkRepository, agents domain.AgentDefinitionRepository, works ReachResumeWorks, buffer DispatcherPort, resume *ResumeWorkHandler, environments ExecutionEnvironmentPort, logger *slog.Logger) (*ComputerReconnectionHandler, error) {
+func NewComputerReconnectionHandler(computers ComputerPort, sessions domain.AgentWorkRepository, agents domain.AgentDefinitionRepository, works query.ExecutionQueryRepository, buffer DispatcherPort, resume *ResumeWorkHandler, environments ExecutionEnvironmentPort, logger *slog.Logger) (*ComputerReconnectionHandler, error) {
 	if computers == nil || sessions == nil || agents == nil || works == nil || buffer == nil || resume == nil || environments == nil {
 		return nil, errors.New("agent: Computer, Works, definitions, input buffer, Resume and execution environments are required to apply a reconnection")
 	}

@@ -40,15 +40,11 @@ type WorkListFilter struct {
 	Archived    *bool
 }
 
-type WorkListReader interface {
-	ListWorkViews(context.Context, WorkListFilter) ([]WorkSummary, error)
-}
-
 type ListWorks struct{ Filter WorkListFilter }
 
-type ListWorksHandler struct{ reader WorkListReader }
+type ListWorksHandler struct{ reader WorkQueryRepository }
 
-func NewListWorksHandler(reader WorkListReader) *ListWorksHandler {
+func NewListWorksHandler(reader WorkQueryRepository) *ListWorksHandler {
 	return &ListWorksHandler{reader: reader}
 }
 

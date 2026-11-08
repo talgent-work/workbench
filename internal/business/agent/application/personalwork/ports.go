@@ -7,7 +7,6 @@ package personalwork
 import (
 	"context"
 	"errors"
-	"time"
 )
 
 var (
@@ -26,41 +25,4 @@ type DirectoryUser struct {
 type AccountPort interface {
 	SearchUsers(ctx context.Context, query string, limit int) ([]DirectoryUser, error)
 	GetUsers(ctx context.Context, userIDs []string) ([]DirectoryUser, error)
-}
-
-// PersonalWorkSummary is one Personal Work as its owner's list shows it.
-type PersonalWorkSummary struct {
-	WorkID, Title string
-	// State is the Work State as Works are shown.
-	State   string
-	Waiting bool
-	// StateReason is why it stopped, when it is Stopped.
-	StateReason string
-	// DisconnectedSince is the origin of its current Disconnection; zero
-	// while observed.
-	DisconnectedSince    time.Time
-	CreatedAt, UpdatedAt time.Time
-}
-
-// LibraryWork is one Work whose Artifacts a person's Personal Library holds:
-// one of their Personal Works, or one they hold a Work Share in, shared by
-// its owner.
-type LibraryWork struct {
-	WorkID, Title string
-	InputSource   string
-	// Personal tells the Work is a Personal Work, whose File Space it owns.
-	Personal bool
-	// SharedBy is the owner who shared it; empty for the person's own Work.
-	SharedBy string
-}
-
-// Works reads the Works a person's own pages show.
-type Works interface {
-	// ListPersonalWorks lists a definition's Works without a Subject or a
-	// Project, most recently updated first.
-	ListPersonalWorks(ctx context.Context, agentID string, limit int) ([]PersonalWorkSummary, error)
-	// ListLibraryWorks lists the person's Personal Works under their
-	// definition and the Works with an input source they hold a Work Share
-	// in, closed ones included, at most limit.
-	ListLibraryWorks(ctx context.Context, person, agentID string, limit int) ([]LibraryWork, error)
 }
