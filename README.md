@@ -88,7 +88,7 @@ Credential Proxy adds; the core runtime plugin (`plugins/talgent-runtime`) teach
 | `packages/workbench-ui/` | The pages and components the web app is built from (`@talgent/workbench-ui`) |
 | `plugins/talgent-runtime/` | The core runtime plugin every Work loads |
 | `configs/` | Each process's default configuration |
-| `deploy/` | Kubernetes base, schemas, sandbox and execd images, OpenSandbox and Kata assets |
+| `deploy/` | Kubernetes base, schemas, sandbox image, OpenSandbox and Kata assets |
 | `scripts/` | Deployment, image build and maintenance scripts |
 
 ## Documentation

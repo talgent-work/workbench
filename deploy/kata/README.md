@@ -42,7 +42,7 @@ runtime; only sandboxes started afterwards get the new virtiofsd arguments.
 
 Deploy the complete matching image set with `scripts/deploy/apply-opensandbox.sh`.
 That command refuses a missing Kata RuntimeClass or non-WireGuard node backend,
-and uses official Server v0.2.2 and egress v1.1.7 images pinned by digest. The controlled execd installer derives from the pinned official v1.1.0 image and changes only its shared-HOME NSS bootstrap; see `deploy/execd/Dockerfile`.
+and uses official Server v0.2.2 and egress v1.1.7 images pinned by digest. Sandboxes run the official execd v1.1.0 image, also pinned by digest; each Work has its own HOME, so execd needs no NSS bootstrap patch.
 The sandbox NetworkPolicies are declared in `deploy/k3s/workbench/sandbox.yaml`.
 Telemetry uses the `otel-collector.talgent:4318` Service in front of the
 in-cluster Collector Pods (`deploy/k3s/workbench/otel-collector.yaml`).

@@ -1,2 +1,1 @@
-deploy/execd/*.patch -whitespace
 deploy/opensandbox/egress/*.patch -whitespace
