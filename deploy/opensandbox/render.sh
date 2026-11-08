@@ -7,7 +7,7 @@ root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 command -v helm >/dev/null
 render_dir=$(mktemp -d)
 trap 'rm -rf "$render_dir"' EXIT
-# Fetch chart sources only; the separately published execd image applies its bounded NSS bootstrap patch.
+# Fetch chart sources only.
 chart_revision=05a8d26a18bbdf1b3e698483fa7c14a9b4d903ec
 git init -q "$render_dir/source"
 git -C "$render_dir/source" remote add origin https://github.com/opensandbox-group/OpenSandbox.git
