@@ -28,7 +28,9 @@ type continuationCapacity struct {
 
 func (c *continuationCapacity) AdmitRoom(context.Context) error { c.calls++; return c.err }
 
-func stoppedContinuationSession(t *testing.T) (workCreationFixture, string) {
+// workingSession creates a Work whose first run is ready: Working, its
+// initial task input handed off.
+func workingSession(t *testing.T) (workCreationFixture, string) {
 	t.Helper()
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
@@ -37,8 +39,15 @@ func stoppedContinuationSession(t *testing.T) (workCreationFixture, string) {
 	require.NoError(t, err)
 	// The Work recovery its creation wakes hands off its initial task input.
 	require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))
+	newRuns(t, f.db, f.sessions).ready(ctx, id)
+	return f, id
+}
+
+func stoppedContinuationSession(t *testing.T) (workCreationFixture, string) {
+	t.Helper()
+	f, id := workingSession(t)
+	ctx := context.Background()
 	run := newRuns(t, f.db, f.sessions)
-	run.ready(ctx, id)
 	// A normal exit follows an admitted stop (Lifecycle observation).
 	require.NoError(t, command.NewStopWorkHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), executionsOf(f.db)).Handle(ctx, command.WorkControl{SubjectID: f.request.SubjectID, WorkID: id, RequestID: uuid.NewString()}))
 	run.exit(ctx, id)
