@@ -65,8 +65,8 @@ func TestComputerKindMigrationTakesEachWorksKindFromItsComputer(t *testing.T) {
 		"00000000-0000-4000-8000-000000000005": {vanished, "", "cloud"},
 	}
 	for id, work := range works {
-		_, err = conn.ExecContext(ctx, `INSERT INTO agent_session (id, agent_id, started_by, computer_id, permission_mode, state, capabilities, authorization_selection, repository_selection, context_ref, read_only_mounts, trace_attributes, harness_process, failure_reason, work_progress)
- VALUES (?, 'agent', 'owner', ?, ?, 2, '{}', '{}', '{}', '', '[]', '{}', '{}', '', '')`, id, work.computer, work.permission)
+		_, err = conn.ExecContext(ctx, `INSERT INTO agent_session (id, agent_id, started_by, computer_id, permission_mode, state, capabilities, authorization_selection, repository_selection, context_ref, agent_harness, located_layout, trace_attributes, harness_process, failure_reason, work_progress)
+ VALUES (?, 'agent', 'owner', ?, ?, 2, '{}', '{}', '{}', '', 'claude-code', '{"mounts":[]}', '{}', '{}', '', '')`, id, work.computer, work.permission)
 		require.NoError(t, err)
 	}
 

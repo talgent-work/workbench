@@ -96,7 +96,7 @@ type credentialDelivery interface {
 	// a redelivery replaces those delivered before.
 	// It asks holding before each write and clears what it wrote once
 	// holding refuses.
-	deliver(ctx context.Context, record executionRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error)
+	deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error)
 	// withdraw clears the delivered credentials.
 	withdraw(ctx context.Context, record executionRecord) error
 	// modelDigest identifies the model key a delivery carries now.

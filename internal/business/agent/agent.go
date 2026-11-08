@@ -199,7 +199,7 @@ type eventSubscriptions struct {
 	Releases    *eventhandler.ConfirmComputeRelease
 	// Reclamations is present where the recovery queue delivers each
 	// Workspace Reclamation Request.
-	Reclamations *eventhandler.WorkspaceReclamations `optional:"true"`
+	Reclamations *eventhandler.WorkReclamations `optional:"true"`
 	Logger       *slog.Logger
 }
 

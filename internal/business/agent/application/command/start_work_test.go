@@ -146,7 +146,7 @@ func TestResumeAndRestartRetainCapabilitiesAndHarnessSession(t *testing.T) {
 			launch := sessions.session.LaunchSpecification()
 			require.Empty(t, launch.Capabilities.Prompt, "existing session retains its original capability snapshot")
 			require.Equal(t, "Written after the Work started.", launch.Soul, "each start takes up the definition's current Soul")
-			require.Equal(t, session.WorkspaceReference, launch.WorkspaceReference)
+			require.Equal(t, session.LocatedLayout, launch.LocatedLayout)
 			require.Equal(t, harnessSession, launch.HarnessSessionReference)
 			if restart {
 				require.Equal(t, domain.ContextRecover, launch.ContextMode)
@@ -184,7 +184,7 @@ func TestResumeAndRestartRejectAWithdrawnModelConfiguration(t *testing.T) {
 // admitted.
 func stoppingSessionFor(t *testing.T, agent *domain.AgentDefinition) *domain.AgentWork {
 	t.Helper()
-	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, AgentID: agent.ID, WorkspaceReference: "workspace"}, fixtureAdmission(agent.ID))
+	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID}, fixtureAdmission(agent.ID))
 	require.NoError(t, err)
 	report(t, session, readyReport)
 	require.NoError(t, session.Stop("stop", false))
@@ -211,9 +211,9 @@ func startupStores(t *testing.T) (*startupAgentStore, *feedbackSessionStore) {
 
 func startupStoresForPurpose(t *testing.T, purpose string) (*startupAgentStore, *feedbackSessionStore) {
 	t.Helper()
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: purpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{}})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: purpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{}})
 	require.NoError(t, err)
-	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, AgentID: agent.ID, WorkspaceReference: "workspace"}, fixtureAdmission(agent.ID))
+	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID}, fixtureAdmission(agent.ID))
 	require.NoError(t, err)
 	return &startupAgentStore{agent: agent}, &feedbackSessionStore{session: settled(session)}
 }
@@ -317,8 +317,8 @@ func TestResumeAfterFirstStartContinuesTheSameConversation(t *testing.T) {
 	require.Equal(t, harnessSession, launches[0].HarnessSessionReference)
 	require.Equal(t, harnessSession, launches[1].HarnessSessionReference)
 	require.Equal(t, "Retained instructions", launches[1].Capabilities.Prompt)
-	require.Equal(t, launches[0].WorkspaceReference, launches[1].WorkspaceReference)
-	require.Equal(t, launches[0].HomeBinding, launches[1].HomeBinding)
+	require.Equal(t, launches[0].LocatedLayout, launches[1].LocatedLayout)
+	require.Equal(t, launches[0].AgentHarness, launches[1].AgentHarness)
 	require.NoError(t, handler.Handle(ctx, second))
 	require.Len(t, sessions.admittedStarts(), 1)
 }

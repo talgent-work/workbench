@@ -3,7 +3,6 @@ package domain
 import (
 	"errors"
 	"maps"
-	"slices"
 	"time"
 )
 
@@ -126,8 +125,8 @@ func (s *AgentWork) LaunchSpecification() LaunchSpecification {
 		RemainingRepositories:  s.RemainingRepositories(),
 		AuthorizationSelection: s.AuthorizationSelection.Clone(),
 		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, ProjectID: s.ProjectID, Capabilities: s.CapabilitySnapshot.Clone(),
-		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, WorkspaceReference: s.WorkspaceReference, InputSource: s.InputSource, ReadOnlyMounts: slices.Clone(s.ReadOnlyMounts),
-		HomeBinding: s.HomeBinding, TraceAttributes: s.executionTraceAttributes(), StartingContext: s.StartingContext.clone(),
+		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, LocatedLayout: s.LocatedLayout.Clone(),
+		AgentHarness: s.AgentHarnessReference, RepresentedPerson: s.RepresentedPerson, TraceAttributes: s.executionTraceAttributes(), StartingContext: s.StartingContext.clone(),
 	}
 }
 

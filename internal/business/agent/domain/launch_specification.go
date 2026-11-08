@@ -36,12 +36,17 @@ type LaunchSpecification struct {
 	Soul string
 	// PreparationBound is when the in-environment preparation of this start
 	// (Plugin installation, then repository checkout) degrades.
-	PreparationBound   time.Time
-	WorkspaceReference string
-	InputSource        WorkInputSource
-	ReadOnlyMounts     []ReadOnlyMount
-	HomeBinding        HomeBinding
-	TraceAttributes    map[string]string
+	PreparationBound time.Time
+	// LocatedLayout is the Work's fixed layout: the Directories a Cloud run
+	// mounts, its inputs and its publication target.
+	LocatedLayout LocatedLayout
+	// AgentHarness is the Work's Agent Harness, which the run launches as
+	// it describes (Harness description).
+	AgentHarness string
+	// RepresentedPerson is the person the Work's Agent represents, whose
+	// credentials the run uses; empty for none.
+	RepresentedPerson string
+	TraceAttributes   map[string]string
 	// StartingContext is the context the Work started from, if any; a start
 	// without a conversation of its own yet takes it up.
 	StartingContext *StartingContext

@@ -34,7 +34,7 @@ func (f originsFake) ListWorkOrigins(_ context.Context, workIDs []string) (map[s
 }
 
 type callPositions struct {
-	query.RootTurnResultReader
+	query.DispatcherMessageLogPort
 	positions map[string]string
 }
 

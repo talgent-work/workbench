@@ -88,7 +88,7 @@ func TestServiceAccessRefusesAnotherOwnerAndLateMaterialAfterStop(t *testing.T) 
 func serviceFixture(t *testing.T, selected bool) (*repositoryAccessFixture, *serviceSupplier) {
 	t.Helper()
 	agentID := uuid.NewString()
-	input := domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID, WorkspaceReference: "workspace", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}}
+	input := domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout()}
 	// A Work holds a Provider's authorization only when the owner had one usable at creation.
 	input.AuthorizationInput = domain.WorkAuthorizationInput{OwnerUserID: "owner"}
 	if selected {

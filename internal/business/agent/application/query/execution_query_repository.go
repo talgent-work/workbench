@@ -1,6 +1,10 @@
 package query
 
-import "context"
+import (
+	"context"
+
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+)
 
 // ExecutionQueryRepository reads what the AgentExecutions recorded without
 // loading them: the current run's Plugin and service access outcomes, the
@@ -18,8 +22,8 @@ type ExecutionQueryRepository interface {
 	// Work selected the Provider Authorization.
 	ListExecutionsUsingAuthorization(ctx context.Context, authorizationID string) ([]string, error)
 	// ListExecutionsReadingInputs lists the unretired Managed executions
-	// whose Work's input source is owner's File Space.
-	ListExecutionsReadingInputs(ctx context.Context, owner string) ([]string, error)
+	// whose Work's located inputs are the Directory.
+	ListExecutionsReadingInputs(ctx context.Context, directory domain.Directory) ([]string, error)
 	// ListRunningWorkIDs lists, in identity order after afterID, a
 	// Computer's Works whose run may still be in an execution environment on
 	// it: Starting past its Desk, Working, Stopping, or Closing before its

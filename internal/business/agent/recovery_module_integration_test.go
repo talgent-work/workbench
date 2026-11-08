@@ -90,9 +90,9 @@ func TestModuleRestartAdmitsNoResumeWithoutCaller(t *testing.T) {
 		return agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), stop
 	}
 	client, stop := start(false)
-	created, err := client.CreateAgentDefinition(sessionControlRequest(ctx), &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee"}, AgentName: "Fixture Agent", UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "employee"}, Purpose: "work", HomeBinding: &agentprivatev1.HomeBinding{OwnerId: "employee", Namespace: "personal"}})
+	created, err := client.CreateAgentDefinition(sessionControlRequest(ctx), &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee"}, AgentName: "Fixture Agent", UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "employee"}, Purpose: "work"})
 	require.NoError(t, err)
-	conversation, err := client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{SubjectId: "employee", AgentId: created.AgentId, RequestId: uuid.NewString(), WorkspaceReference: "work", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project"})
+	conversation, err := client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{SubjectId: "employee", AgentId: created.AgentId, RequestId: uuid.NewString(), Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project"})
 	require.NoError(t, err)
 	// Complete the initial process before restarting the module.
 	workID := conversation.WorkId
@@ -166,11 +166,11 @@ func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 	defer cancel()
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"employee"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "employee", Namespace: "personal"}})
+	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"employee"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
 	initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-342", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Recover retained explicit creation"}}
-	request := command.CreateWork{RequestID: initial.RequestID, SubjectID: "employee", AgentID: definition.ID, WorkspaceReference: uuid.NewString(), Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), InitialExecution: &initial}
+	request := command.CreateWork{RequestID: initial.RequestID, SubjectID: "employee", AgentID: definition.ID, Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), InitialExecution: &initial}
 	port := &sessionCommandRecorder{}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)

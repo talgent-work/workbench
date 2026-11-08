@@ -158,3 +158,6 @@ require (
 )
 
 tool google.golang.org/protobuf/cmd/protoc-gen-go
+
+// Replaced by the coordinated contracts release of the persistent-directories change before merge.
+replace github.com/talgent-work/contracts => ../contracts

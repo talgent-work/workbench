@@ -12,13 +12,12 @@ type CreateAgentDefinition struct {
 	AgentName    string
 	Purpose      string
 	UsageScope   domain.UsageScope
-	HomeBinding  domain.HomeBinding
 	Visibility   domain.VisibilityRule
 	Capabilities domain.CapabilityConfiguration
 }
 
 func (a *Application) CreateAgentDefinition(ctx context.Context, request CreateAgentDefinition) (string, error) {
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: request.Owners, AgentName: request.AgentName, Purpose: request.Purpose, UsageScope: request.UsageScope, HomeBinding: request.HomeBinding, Visibility: request.Visibility, Capabilities: request.Capabilities})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: request.Owners, AgentName: request.AgentName, Purpose: request.Purpose, UsageScope: request.UsageScope, Visibility: request.Visibility, Capabilities: request.Capabilities})
 	if err != nil {
 		return "", err
 	}

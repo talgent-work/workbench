@@ -56,7 +56,6 @@ func employeeDefinition(t *testing.T) *domain.AgentDefinition {
 	t.Helper()
 	value, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"jack"},
 		AgentName: "Old name's Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"},
-		HomeBinding:  domain.HomeBinding{OwnerID: "custom-home", Namespace: "personal"},
 		Capabilities: domain.CapabilityConfiguration{Prompt: "Preserve the configured task"},
 	})
 	require.NoError(t, err)
@@ -68,7 +67,7 @@ func employeeDefinition(t *testing.T) *domain.AgentDefinition {
 // appearance; both write only what is unset or chosen.
 func changeDefinition(ctx context.Context, store *definitionFaultStore, operation string) error {
 	if operation == "ensure" {
-		_, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(ctx, command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"jack"}, UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, Purpose: "work", HomeBinding: domain.HomeBinding{OwnerID: "caller-home", Namespace: "caller"}}, EmployeeDisplayName: "Jack"})
+		_, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(ctx, command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"jack"}, UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, Purpose: "work"}, EmployeeDisplayName: "Jack"})
 		return err
 	}
 	_, err := command.NewChangeAgentAppearanceHandler(store).Handle(ctx, command.ChangeAgentAppearance{AgentID: store.value.ID, Actor: "jack", Name: "Scout", Glyph: "rocket", Color: "violet"})
@@ -102,7 +101,6 @@ func TestDefinitionNameRetryReloadsConcurrentConfiguration(t *testing.T) {
 			require.Equal(t, originalID, store.value.ID)
 			require.Equal(t, expectedAppearance(operation), store.value.Appearance())
 			require.Equal(t, "Updated by another writer", store.value.Capabilities.Prompt)
-			require.Equal(t, "custom-home", store.value.HomeBinding.OwnerID)
 			require.Equal(t, 2, store.saves)
 			require.NoError(t, changeDefinition(t.Context(), store, operation))
 			require.Equal(t, 2, store.saves, "an unchanged appearance must not write another version")
@@ -159,18 +157,16 @@ func TestDefinitionNameFailuresDoNotReportSuccessOrPersistName(t *testing.T) {
 func TestDefinitionCreationRetryUsesWinningProjectIdentity(t *testing.T) {
 	winner, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"},
 		AgentName: "Existing Coordinator", Purpose: "project_coordination", UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"},
-		HomeBinding: domain.HomeBinding{OwnerID: "existing-home", Namespace: "coordination"},
 	})
 	require.NoError(t, err)
 	winner.Version = 1
 	store := &definitionFaultStore{}
 	store.beforeSave = func() { store.value = winner; store.saveErr = domain.ErrConcurrentModification }
-	result, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"owner"}, UsageScope: winner.UsageScope, Purpose: winner.Purpose, HomeBinding: domain.HomeBinding{OwnerID: "caller-home", Namespace: "caller"}}})
+	result, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"owner"}, UsageScope: winner.UsageScope, Purpose: winner.Purpose}})
 	require.NoError(t, err)
 	require.Equal(t, winner.ID, result.AgentID)
 	require.Equal(t, "Existing Coordinator", result.Appearance.Name, "a losing initializer must not return its generated name")
 	require.Equal(t, 1, store.saves, "the winning named definition needs no repair")
-	require.Equal(t, "existing-home", store.value.HomeBinding.OwnerID)
 }
 
 func TestDefinitionInitializationRejectsInvalidScopeBeforeStorage(t *testing.T) {
@@ -189,7 +185,6 @@ func TestDefinitionInitializationAppliesCallerConfigurationForEveryPurpose(t *te
 			store := &definitionFaultStore{}
 			configuration := domain.AgentDefinitionInput{Owners: []string{"owner"},
 				AgentName: "Caller supplied name", UsageScope: domain.UsageScope{Kind: "project", Reference: "project"}, Purpose: purpose,
-				HomeBinding:  domain.HomeBinding{OwnerID: "supplied-home", Namespace: "supplied-space"},
 				Capabilities: domain.CapabilityConfiguration{StartupAgent: "custom:reviewer", RequiredPlugins: []string{"custom"}},
 			}
 			result, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: configuration})
@@ -197,7 +192,7 @@ func TestDefinitionInitializationAppliesCallerConfigurationForEveryPurpose(t *te
 			require.Equal(t, store.value.ID, result.AgentID)
 			require.Equal(t, configuration.AgentName, result.Appearance.Name)
 			require.Equal(t, domain.DefaultAgentIcon, result.Appearance.Icon)
-			require.Equal(t, configuration.HomeBinding, store.value.HomeBinding)
+			require.Equal(t, domain.DefaultWorkLayout(), store.value.WorkLayout, "a caller never supplies the Work Layout")
 			require.Equal(t, configuration.Capabilities, store.value.Capabilities)
 		})
 	}
@@ -215,7 +210,7 @@ func TestEnsureKeepsAChosenAppearanceAndOnlyTheHumanChangesIt(t *testing.T) {
 
 	require.NoError(t, changeDefinition(t.Context(), store, "appearance"))
 	saves := store.saves
-	result, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"jack"}, UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, Purpose: "work", HomeBinding: domain.HomeBinding{OwnerID: "jack", Namespace: "personal"}}, EmployeeDisplayName: "Renamed On GitHub"})
+	result, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"jack"}, UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, Purpose: "work"}, EmployeeDisplayName: "Renamed On GitHub"})
 	require.NoError(t, err)
 	require.Equal(t, expectedAppearance("appearance"), result.Appearance)
 	require.Equal(t, expectedAppearance("appearance"), store.value.Appearance())
@@ -226,7 +221,7 @@ func TestEnsureKeepsAChosenAppearanceAndOnlyTheHumanChangesIt(t *testing.T) {
 // English and starts with the default icon.
 func TestEnsureNamesANewEmployeeDefinitionAfterItsHuman(t *testing.T) {
 	store := &definitionFaultStore{}
-	result, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"jack"}, UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, Purpose: "work", HomeBinding: domain.HomeBinding{OwnerID: "jack", Namespace: "personal"}}, EmployeeDisplayName: "Jack"})
+	result, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"jack"}, UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, Purpose: "work"}, EmployeeDisplayName: "Jack"})
 	require.NoError(t, err)
 	require.Equal(t, domain.AgentAppearance{Name: "Jack's Agent", Icon: domain.DefaultAgentIcon}, result.Appearance)
 }

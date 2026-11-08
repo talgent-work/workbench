@@ -89,7 +89,7 @@ func startManagedQueue(t *testing.T, ctx context.Context) *managedQueue {
 }
 
 func (q *managedQueue) createOn(ctx context.Context, definition, computerID, subject string) (string, error) {
-	response, err := q.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, WorkspaceReference: subject, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a", ComputerId: computerID})
+	response, err := q.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a", ComputerId: computerID})
 	if err != nil {
 		return "", err
 	}

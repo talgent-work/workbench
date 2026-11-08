@@ -29,16 +29,16 @@ func (q *reclamationQueue) Enqueue(_ context.Context, task taskqueue.Task, opts 
 	return nil
 }
 
-// Reaching Closed queues the Work's one Workspace Reclamation Request task
+// A Cloud Work reaching Closed queues its one Work Reclamation Request task
 // once, riding out a brief queue outage; the task is retried until Storage
 // accepts the request, and Agent keeps nothing to follow up.
 func TestClosedWorkRequestsReclamationOnce(t *testing.T) {
 	queue := &reclamationQueue{failures: 1}
-	handler := NewWorkspaceReclamations(queue, slog.Default())
+	handler := NewWorkReclamations(queue, slog.Default())
 	handler.backoff = 0
-	handler.Handle(context.Background(), domain.WorkClosedEvent{WorkID: "work-1", WorkspaceReference: "workspace-1"})
+	handler.Handle(context.Background(), domain.WorkClosedEvent{WorkID: "work-1", Cloud: true})
 	require.Len(t, queue.queued, 1)
-	require.Equal(t, agenttask.RequestWorkspaceReclamationType, queue.queued[0].Type())
+	require.Equal(t, agenttask.RequestWorkReclamationType, queue.queued[0].Type())
 	require.Equal(t, "agent:workspace-reclamation:work-1", queue.queued[0].ID())
 	retries, set := queue.options[0].MaxRetry()
 	require.True(t, set)
@@ -46,5 +46,5 @@ func TestClosedWorkRequestsReclamationOnce(t *testing.T) {
 	require.Positive(t, queue.options[0].Timeout())
 
 	handler.Handle(context.Background(), domain.WorkClosedEvent{WorkID: "work-2"})
-	require.Len(t, queue.queued, 1, "a Work without a workspace has nothing to reclaim")
+	require.Len(t, queue.queued, 1, "a Managed Work mounted no Work Directory to reclaim")
 }

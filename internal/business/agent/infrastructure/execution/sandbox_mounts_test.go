@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"testing"
 
@@ -11,43 +12,58 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
-func withInputs(input domain.LaunchSpecification) domain.LaunchSpecification {
-	input.InputSource = domain.WorkInputSource{Reference: "file-space/case-1", SpaceToken: "space-token"}
-	return input
+// testLayout is what the default Work Layout locates for a Work without a
+// Subject or Project on a Cloud: its HOME and Session Workspace, its
+// definition's Claude Code state and its own inputs.
+func testLayout() domain.LocatedLayout {
+	located := func(condition domain.LocatorCondition, value, name string, backend domain.DirectoryBackend, lifetime domain.DirectoryLifetime) domain.LocatedDirectory {
+		return domain.LocatedDirectory{Directory: domain.Directory{Owner: []domain.OwnerFact{{Condition: condition, Value: value}}, Name: name}, Backend: backend, Lifetime: lifetime}
+	}
+	inputs := located(domain.ConditionWork, "session", "inputs", domain.BackendJuiceFS, domain.LifetimePermanent)
+	return domain.LocatedLayout{
+		Mounts: []domain.LocatedMount{
+			{Path: "$HOME", Directory: located(domain.ConditionWork, "session", "home", domain.BackendNAS, domain.LifetimeWork)},
+			{Path: "/workspace", Directory: located(domain.ConditionWork, "session", "workspace", domain.BackendNAS, domain.LifetimeWork)},
+			{Path: "$HOME/.claude", Directory: located(domain.ConditionAgentDefinition, "agent", "claude-code", domain.BackendNAS, domain.LifetimePermanent)},
+			{Path: "/workspace/inputs", ReadOnly: true, Directory: inputs},
+		},
+		Inputs:            &inputs,
+		PublicationTarget: located(domain.ConditionWork, "session", "artifacts", domain.BackendJuiceFS, domain.LifetimePermanent),
+	}
 }
 
-// inputMounts are Storage's grants for a start with an input source.
-func inputMounts() domain.SandboxMounts {
-	mounts := testMounts
-	workspace := *testMounts.Workspace
-	mounts.Workspace = &workspace
-	mounts.Inputs = &domain.MountGrant{ClaimName: "juicefs-inputs", SubPath: "talgent/assets/spaces/case-1/attachments", ReadOnly: true}
-	return mounts
+// testMounts are the Mount Grants Storage issues for request's located
+// layout, in its order.
+var testMounts = domain.SandboxMounts{
+	{ClaimName: "nas-root", SubPath: "homes/key"},
+	{ClaimName: "nas-root", SubPath: "workspaces/key"},
+	{ClaimName: "nas-root", SubPath: "harness/key"},
+	{ClaimName: "juicefs-inputs", SubPath: "talgent/inputs/key", ReadOnly: true},
 }
 
-// A sandbox mounts exactly the grants Storage issued: the workspace and HOME
-// read-write and the input source's Attachments read-only at /workspace/inputs. The
-// Space Token is a credential, so it never reaches the workload.
-func TestSandboxMountsTheGrantsStorageIssued(t *testing.T) {
+// grantsFor are Mount Grants Storage issues for layout, in its order.
+func grantsFor(layout domain.LocatedLayout) domain.SandboxMounts {
+	grants := make(domain.SandboxMounts, 0, len(layout.Mounts))
+	for i, mount := range layout.Mounts {
+		grants = append(grants, domain.MountGrant{ClaimName: "nas-root", SubPath: fmt.Sprintf("directories/%d", i), ReadOnly: mount.ReadOnly})
+	}
+	return grants
+}
+
+// A sandbox mounts exactly the grants Storage issued for the located layout,
+// one per located Directory: a layout that located no inputs mounts none.
+func TestASandboxMountsOnlyWhatItsLayoutLocated(t *testing.T) {
 	provider, _, _ := sandboxClient(t)
-	input := withInputs(request())
-	spec, err := provider.specification(context.Background(), input, inputMounts(), owner(input), "test-token", "work-credential-fixture")
+	input := request()
+	input.LocatedLayout.Mounts = input.LocatedLayout.Mounts[:3]
+	spec, err := provider.specification(context.Background(), input, testMounts[:3], owner(input), "test-token", "work-credential-fixture")
 	require.NoError(t, err)
-	mounts := map[string]sdk.Volume{}
+	require.Len(t, spec.Volumes, 3)
 	for _, volume := range spec.Volumes {
-		mounts[volume.MountPath] = volume
+		require.NotEqual(t, "/workspace/inputs", volume.MountPath)
 	}
-	require.Len(t, mounts, 3)
-	require.Equal(t, "workspaces/key", mounts["/workspace"].SubPath)
-	require.False(t, mounts["/workspace"].ReadOnly)
-	require.Equal(t, "homes/key", mounts["/home/talgent"].SubPath)
-	require.False(t, mounts["/home/talgent"].ReadOnly)
-	inputs := mounts["/workspace/inputs"]
-	require.True(t, inputs.ReadOnly, "a Work never changes its input source's Attachments")
-	require.Equal(t, "juicefs-inputs", inputs.PVC.ClaimName)
-	for name, value := range spec.Env {
-		require.NotContains(t, value, "space-token", name)
-	}
+	_, err = provider.specification(context.Background(), input, testMounts, owner(input), "test-token", "work-credential-fixture")
+	require.ErrorIs(t, err, domain.ErrExecutionRequest, "a grant for no located Directory fails the start")
 }
 
 // The Credential Proxy injects the Work credential, and the Space Token when
@@ -129,61 +145,35 @@ func TestTheSandboxNeverHoldsItsWorkCredential(t *testing.T) {
 	require.Equal(t, "secret", spec.Env[workCredentialEnv], "the recorded specification keeps it")
 }
 
-func TestWorkWithoutInputSourceMountsNoInputs(t *testing.T) {
-	provider, _, _ := sandboxClient(t)
-	input := request()
-	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "test-token", "work-credential-fixture")
-	require.NoError(t, err)
-	for _, volume := range spec.Volumes {
-		require.NotEqual(t, "/workspace/inputs", volume.MountPath)
-	}
-}
-
-// A project-scoped definition's Works have no Session Workspace: the sandbox mounts
-// only HOME, and its drafts stay in the sandbox's own /workspace, ending
-// with it.
-func TestWorkWithoutSessionWorkspaceMountsNone(t *testing.T) {
-	provider, _, _ := sandboxClient(t)
-	input := request()
-	input.WorkspaceReference = ""
-	mounts := domain.SandboxMounts{Home: testMounts.Home}
-	spec, err := provider.specification(context.Background(), input, mounts, owner(input), "test-token", "work-credential-fixture")
-	require.NoError(t, err)
-	require.Len(t, spec.Volumes, 1)
-	require.Equal(t, "/home/talgent", spec.Volumes[0].MountPath)
-	input.WorkspaceReference = "workspace"
-	_, err = provider.specification(context.Background(), input, mounts, owner(input), "test-token", "work-credential-fixture")
-	require.ErrorIs(t, err, domain.ErrExecutionRequest, "a Work with a Session Workspace needs its grant")
-}
-
 // A missing or mis-scoped grant fails the start instead of being repaired.
 func TestSandboxRefusesMissingOrMisScopedGrants(t *testing.T) {
 	provider, _, _ := sandboxClient(t)
-	for name, change := range map[string]func(*domain.SandboxMounts){
-		"no inputs grant":        func(m *domain.SandboxMounts) { m.Inputs = nil },
-		"writable inputs":        func(m *domain.SandboxMounts) { m.Inputs.ReadOnly = false },
-		"read-only workspace":    func(m *domain.SandboxMounts) { m.Workspace.ReadOnly = true },
-		"no home grant":          func(m *domain.SandboxMounts) { m.Home = domain.MountGrant{} },
-		"escaping subPath":       func(m *domain.SandboxMounts) { m.Workspace.SubPath = "../other" },
-		"absolute subPath":       func(m *domain.SandboxMounts) { m.Home.SubPath = "/homes/key" },
-		"unclean inputs subPath": func(m *domain.SandboxMounts) { m.Inputs.SubPath = "talgent/assets/../homes" },
-		"whole claim as a mount": func(m *domain.SandboxMounts) { m.Workspace.SubPath = "." },
+	for name, change := range map[string]func(domain.SandboxMounts) domain.SandboxMounts{
+		"no inputs grant":        func(m domain.SandboxMounts) domain.SandboxMounts { return m[:3] },
+		"writable inputs":        func(m domain.SandboxMounts) domain.SandboxMounts { m[3].ReadOnly = false; return m },
+		"read-only workspace":    func(m domain.SandboxMounts) domain.SandboxMounts { m[1].ReadOnly = true; return m },
+		"no claim":               func(m domain.SandboxMounts) domain.SandboxMounts { m[0].ClaimName = ""; return m },
+		"escaping subPath":       func(m domain.SandboxMounts) domain.SandboxMounts { m[1].SubPath = "../other"; return m },
+		"absolute subPath":       func(m domain.SandboxMounts) domain.SandboxMounts { m[0].SubPath = "/homes/key"; return m },
+		"unclean inputs subPath": func(m domain.SandboxMounts) domain.SandboxMounts { m[3].SubPath = "talgent/assets/../homes"; return m },
+		"whole claim as a mount": func(m domain.SandboxMounts) domain.SandboxMounts { m[1].SubPath = "."; return m },
 	} {
-		input, mounts := withInputs(request()), inputMounts()
-		change(&mounts)
+		input := request()
+		mounts := change(append(domain.SandboxMounts(nil), testMounts...))
 		_, err := provider.specification(context.Background(), input, mounts, owner(input), "test-token", "work-credential-fixture")
 		require.ErrorIs(t, err, domain.ErrExecutionRequest, name)
 	}
 }
 
-// The stored start keeps the input source, so a credential delivery after a
-// restart still hands the Space Token to the Vault.
-func TestStoredStartKeepsItsInputSource(t *testing.T) {
-	encoded, err := encodeLaunch(withInputs(request()))
+// The stored start keeps the located layout, so every later step mounts and
+// publishes where the Work located at creation.
+func TestStoredStartKeepsItsLocatedLayout(t *testing.T) {
+	encoded, err := encodeLaunch(request())
 	require.NoError(t, err)
 	decoded, err := decodeStartRequest(encoded)
 	require.NoError(t, err)
-	require.Equal(t, domain.WorkInputSource{Reference: "file-space/case-1", SpaceToken: "space-token"}, decoded.InputSource)
+	require.Equal(t, testLayout(), decoded.LocatedLayout)
+	require.Equal(t, "claude-code", decoded.AgentHarness)
 }
 
 // A platform address the Credential Proxy cannot match is refused at start,
@@ -243,38 +233,4 @@ func TestSandboxEgressReachesThePlatformAddresses(t *testing.T) {
 	alone := denied(map[string]string{platformAPIAddressEnv: "http://controlplane.talgent.svc.cluster.local"})
 	require.False(t, alone(addresses["controlplane.talgent.svc.cluster.local"]))
 	require.True(t, alone(addresses["connector.talgent.svc.cluster.local"]), "without a Gateway its address stays denied")
-}
-
-// Each read-only mount its caller supplied appears read-only at
-// /workspace/<name>, and only those: a grant Storage did not issue read-only,
-// or did not issue at all, fails the start.
-func TestSandboxPlacesEachReadOnlyMountUnderItsName(t *testing.T) {
-	provider, _, _ := sandboxClient(t)
-	input := request()
-	input.WorkspaceReference = ""
-	input.ReadOnlyMounts = []domain.ReadOnlyMount{{Name: "reference", Reference: "project-1"}}
-	reference := domain.MountGrant{ClaimName: "juicefs-inputs", SubPath: "talgent/assets/references/project-1", ReadOnly: true}
-	mounts := domain.SandboxMounts{Home: testMounts.Home, ReadOnly: map[string]domain.MountGrant{"reference": reference}}
-	spec, err := provider.specification(context.Background(), input, mounts, owner(input), "test-token", "work-credential-fixture")
-	require.NoError(t, err)
-	require.Len(t, spec.Volumes, 2)
-	mounted := spec.Volumes[1]
-	require.Equal(t, "/workspace/reference", mounted.MountPath)
-	require.Equal(t, "talgent/assets/references/project-1", mounted.SubPath)
-	require.True(t, mounted.ReadOnly, "no Work edits a read-only mount")
-	require.Equal(t, input.ReadOnlyMounts, input.MountRequest().ReadOnlyMounts)
-
-	writable := reference
-	writable.ReadOnly = false
-	mounts.ReadOnly["reference"] = writable
-	_, err = provider.specification(context.Background(), input, mounts, owner(input), "test-token", "work-credential-fixture")
-	require.ErrorIs(t, err, domain.ErrExecutionRequest)
-	delete(mounts.ReadOnly, "reference")
-	_, err = provider.specification(context.Background(), input, mounts, owner(input), "test-token", "work-credential-fixture")
-	require.ErrorIs(t, err, domain.ErrExecutionRequest)
-
-	input.ReadOnlyMounts = nil
-	spec, err = provider.specification(context.Background(), input, domain.SandboxMounts{Home: testMounts.Home}, owner(input), "test-token", "work-credential-fixture")
-	require.NoError(t, err)
-	require.Len(t, spec.Volumes, 1, "a Work without read-only mounts mounts none")
 }

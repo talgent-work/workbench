@@ -4,7 +4,6 @@ package infrastructure_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -24,31 +23,32 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
-// librarySpaces stands in for Storage's File Space Contract: a space opens
-// under its owner's name and the files are the fixture's.
+// librarySpaces stands in for Storage's Directories: every Directory opens
+// with a token naming it, and the files are the fixture's.
 type librarySpaces struct {
 	command.StoragePort
 	files  []command.SpaceFile
 	issued []string
 }
 
-func (s *librarySpaces) OpenFileSpace(_ context.Context, owner string) (domain.WorkInputSource, error) {
-	return domain.WorkInputSource{Reference: "file-space/" + owner, SpaceToken: "token-" + owner}, nil
-}
-
-func (s *librarySpaces) ResolveOwners(_ context.Context, sources []string) ([]string, error) {
-	owners := make([]string, len(sources))
-	for i, source := range sources {
-		owners[i], _ = strings.CutPrefix(source, "file-space/")
+// directoryName names a Directory by its owner facts and name.
+func directoryName(directory domain.Directory) string {
+	name := ""
+	for _, fact := range directory.Owner {
+		name += string(fact.Condition) + ":" + fact.Value + "/"
 	}
-	return owners, nil
+	return name + directory.Name
 }
 
-func (s *librarySpaces) filesOf(owners ...string) []command.SpaceFile {
+func (s *librarySpaces) OpenDirectory(_ context.Context, located domain.LocatedDirectory) (string, error) {
+	return "token-" + directoryName(located.Directory), nil
+}
+
+func (s *librarySpaces) filesOf(directories ...domain.Directory) []command.SpaceFile {
 	var out []command.SpaceFile
-	for _, owner := range owners {
+	for _, directory := range directories {
 		for _, file := range s.files {
-			if file.Owner == owner {
+			if file.Directory.Equal(directory) {
 				out = append(out, file)
 			}
 		}
@@ -56,21 +56,29 @@ func (s *librarySpaces) filesOf(owners ...string) []command.SpaceFile {
 	return out
 }
 
-func (s *librarySpaces) ListFiles(_ context.Context, owner string) ([]command.SpaceFile, error) {
-	return s.filesOf(owner), nil
+func (s *librarySpaces) ListFiles(_ context.Context, directory domain.Directory) ([]command.SpaceFile, error) {
+	return s.filesOf(directory), nil
 }
 
-func (s *librarySpaces) ListOwnerFiles(_ context.Context, owners []string) ([]command.SpaceFile, error) {
-	return s.filesOf(owners...), nil
+func (s *librarySpaces) ListDirectoryFiles(_ context.Context, directories []domain.Directory) ([]command.SpaceFile, error) {
+	return s.filesOf(directories...), nil
 }
 
-func (s *librarySpaces) IssueAccessLink(_ context.Context, owner string, kind command.FileKind, name string, _ bool) (command.FileLink, error) {
-	s.issued = append(s.issued, owner+"/"+string(kind)+"/"+name)
-	return command.FileLink{URL: "https://files.invalid/" + name}, nil
+func (s *librarySpaces) IssueAccessLink(_ context.Context, position command.FilePosition, _ bool) (command.FileLink, error) {
+	s.issued = append(s.issued, directoryName(position.Directory)+"/"+position.Name)
+	return command.FileLink{URL: "https://files.invalid/" + position.Name}, nil
 }
 
-func (s *librarySpaces) DeleteFile(context.Context, domain.WorkInputSource, string, command.FileKind, string, string) error {
+func (s *librarySpaces) DeleteFile(context.Context, command.FilePosition, string, string) error {
 	return nil
+}
+
+func workFiles(workID, name string) domain.Directory {
+	return domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: workID}}, Name: name}
+}
+
+func caseFiles(caseID, name string) domain.Directory {
+	return domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:" + caseID}}, Name: name}
 }
 
 type knownPeople map[string]personalwork.DirectoryUser
@@ -136,8 +144,8 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, stored.Personal())
 	require.Equal(t, "Draft the plan", stored.DisplayTitle)
-	require.Equal(t, domain.WorkInputSource{Reference: "file-space/" + first, SpaceToken: "token-" + first}, stored.InputSource, "the File Space is named by the Work")
-	require.Empty(t, stored.ReadOnlyMounts)
+	require.Equal(t, workFiles(first, "inputs"), stored.LocatedLayout.Inputs.Directory, "a Personal Work's inputs are its own")
+	require.Equal(t, workFiles(first, "artifacts"), stored.LocatedLayout.PublicationTarget.Directory, "and so are its Artifacts")
 
 	require.NoError(t, works.ChangeTitle(ctx, owner, first, "Plan"))
 	require.ErrorIs(t, works.ChangeTitle(ctx, stranger, first, "Mine"), domain.ErrControlRequesterNotOwner)
@@ -156,26 +164,27 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.ErrorIs(t, works.GrantShare(ctx, owner, first, "ghost"), personalwork.ErrReaderUnknown)
 	require.NoError(t, works.GrantShare(ctx, owner, first, "reader"))
 
-	// A Work with a Subject and a Project, whose File Space it shares with
-	// its caller's other Works, shared with the reader within its Project.
+	// A Work with a Subject and a Project, which publishes into its Subject's
+	// Artifacts with the Subject's other Works, shared with the reader within
+	// its Project.
 	definition, err := app.EnsureEmployeeAgent(ctx, "owner", "Owner")
 	require.NoError(t, err)
 	project := uuid.NewString()
 	initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/TAL-1", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Build it"}}
 	subjectWork, err := app.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: "owner", SubjectID: "owner", RequestID: initial.RequestID, AgentID: definition.AgentID,
-		Subject: domain.WorkSubject{Kind: "case", ID: "case-x"}, ProjectID: project, WorkspaceReference: uuid.NewString(),
-		InputSource: domain.WorkInputSource{Reference: "file-space/case-x", SpaceToken: "token-x"}, InitialExecution: &initial})
+		Subject: domain.WorkSubject{Kind: "case", ID: "case-x"}, ProjectID: project,
+		InitialExecution: &initial})
 	require.NoError(t, err)
 	require.NoError(t, app.GrantWorkShare(ctx, application.GrantWorkShare{RequesterID: "owner", WorkID: subjectWork, ReaderID: "reader", Admission: domain.ReaderAdmission{ProjectID: project}}))
 
 	now := time.Now().UTC()
 	spaces.files = []command.SpaceFile{
-		{Owner: first, Kind: command.FileKindAttachment, Name: "brief.md", UpdatedAt: now},
-		{Owner: first, Kind: command.FileKindArtifact, Name: "plan.pdf", WorkID: first, UpdatedAt: now.Add(-time.Hour)},
-		{Owner: second, Kind: command.FileKindArtifact, Name: "notes.md", WorkID: second, UpdatedAt: now},
-		{Owner: "case-x", Kind: command.FileKindArtifact, Name: "design.md", WorkID: subjectWork, UpdatedAt: now.Add(-2 * time.Hour)},
-		{Owner: "case-x", Kind: command.FileKindArtifact, Name: "other.md", WorkID: uuid.NewString(), UpdatedAt: now},
-		{Owner: "case-x", Kind: command.FileKindAttachment, Name: "spec.md", UpdatedAt: now},
+		{Directory: workFiles(first, "inputs"), Kind: command.FileKindAttachment, Name: "brief.md", UpdatedAt: now},
+		{Directory: workFiles(first, "artifacts"), Kind: command.FileKindArtifact, Name: "plan.pdf", WorkID: first, UpdatedAt: now.Add(-time.Hour)},
+		{Directory: workFiles(second, "artifacts"), Kind: command.FileKindArtifact, Name: "notes.md", WorkID: second, UpdatedAt: now},
+		{Directory: caseFiles("case-x", "artifacts"), Kind: command.FileKindArtifact, Name: "design.md", WorkID: subjectWork, UpdatedAt: now.Add(-2 * time.Hour)},
+		{Directory: caseFiles("case-x", "artifacts"), Kind: command.FileKindArtifact, Name: "other.md", WorkID: uuid.NewString(), UpdatedAt: now},
+		{Directory: caseFiles("case-x", "inputs"), Kind: command.FileKindAttachment, Name: "spec.md", UpdatedAt: now},
 	}
 
 	names := func(library personalwork.Library) []string {
@@ -208,7 +217,7 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.NoError(t, err, "a Work Share holder reads a Personal Work's Attachments")
 	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "design.md"}, false)
 	require.NoError(t, err)
-	require.Equal(t, []string{first + "/attachment/brief.md", "case-x/artifact/design.md"}, spaces.issued)
+	require.Equal(t, []string{"work:" + first + "/inputs/brief.md", "subject:case:case-x/artifacts/design.md"}, spaces.issued)
 	for _, refused := range []personalwork.WorkFile{
 		{WorkID: subjectWork, Kind: command.FileKindAttachment, Name: "spec.md"},
 		{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "other.md"},

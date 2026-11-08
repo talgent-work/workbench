@@ -19,7 +19,6 @@ import (
 func TestWorkUsesOneHumanForPluginsHomeAndAuthorization(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"},
 		Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"},
-		HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"},
 	})
 	require.NoError(t, err)
 	store := &sessionStore{}
@@ -27,7 +26,7 @@ func TestWorkUsesOneHumanForPluginsHomeAndAuthorization(t *testing.T) {
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
 		commandtest.StartCatalog(personalCatalog{}, ownerAuthorizationCatalog{}), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
 	input := command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), AgentID: agent.ID,
-		SubjectID: "owner", StartingUserID: "starter", WorkspaceReference: "workspace"}
+		SubjectID: "owner", StartingUserID: "starter"}
 	_, err = handler.Handle(t.Context(), input)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 	require.Nil(t, store.session)
@@ -37,7 +36,7 @@ func TestWorkUsesOneHumanForPluginsHomeAndAuthorization(t *testing.T) {
 	require.NoError(t, err)
 	work, err := store.Get(t.Context(), id)
 	require.NoError(t, err)
-	require.Equal(t, "owner", work.HomeBinding.OwnerID)
+	require.Equal(t, "owner", work.RepresentedPerson)
 	require.Equal(t, domain.WorkAuthorizationSelection{OwnerUserID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: "01940000-0000-7000-8000-000000000382", Provider: "github", Service: "github"}}}, work.AuthorizationSelection)
 	require.NoError(t, store.AuthorizeWork(t.Context(), "owner", id))
 	require.Len(t, work.CapabilitySnapshot.Plugins, 1)
@@ -67,7 +66,6 @@ func (personalCatalog) ResolvePlugin(_ context.Context, _, slug string) (domain.
 func TestAutomatedWorkUsesRequiredPluginsWithoutPersonalDefaults(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"triggering-human"},
 		Purpose: "project_coordination", UsageScope: domain.UsageScope{Kind: "project", Reference: "project"},
-		HomeBinding:  domain.HomeBinding{OwnerID: "project-home", Namespace: "coordination"},
 		Capabilities: domain.CapabilityConfiguration{RequiredPlugins: []string{"runtime"}},
 	})
 	require.NoError(t, err)
@@ -76,7 +74,7 @@ func TestAutomatedWorkUsesRequiredPluginsWithoutPersonalDefaults(t *testing.T) {
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
 		commandtest.StartCatalog(personalCatalog{}, ownerAuthorizationCatalog{}), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
 	id, err := handler.Handle(t.Context(), command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(),
-		AgentID: agent.ID, SubjectID: "triggering-human", WorkspaceReference: "workspace"})
+		AgentID: agent.ID, SubjectID: "triggering-human"})
 	require.NoError(t, err)
 	work, err := store.Get(t.Context(), id)
 	require.NoError(t, err)

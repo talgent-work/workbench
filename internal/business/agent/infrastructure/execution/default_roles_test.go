@@ -81,12 +81,8 @@ func (*nativeDefaultDefinition) FindForPurpose(context.Context, query.GetAgentDe
 }
 
 func suppliedRoleDefinition(scope, owner, purpose, plugin, startupAgent string) command.EnsureAgentDefinition {
-	home := domain.HomeBinding{OwnerID: owner, Namespace: "personal"}
-	if scope == "project" {
-		home = domain.HomeBinding{OwnerID: "project/" + owner + "/" + purpose, Namespace: purpose}
-	}
 	return command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"owner"},
-		UsageScope: domain.UsageScope{Kind: scope, Reference: owner}, Purpose: purpose, HomeBinding: home,
+		UsageScope: domain.UsageScope{Kind: scope, Reference: owner}, Purpose: purpose,
 		Capabilities: domain.CapabilityConfiguration{StartupAgent: startupAgent, RequiredPlugins: []string{plugin}},
 	}, EmployeeDisplayName: "Jack"}
 }

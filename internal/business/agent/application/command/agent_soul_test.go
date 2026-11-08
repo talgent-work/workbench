@@ -37,7 +37,7 @@ func (s *conflictingAgents) Save(_ context.Context, agent *domain.AgentDefinitio
 func soulOwnedBy(t *testing.T, owner string) *domain.AgentDefinition {
 	t.Helper()
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{owner}, Purpose: "work",
-		UsageScope: domain.UsageScope{Kind: "employee", Reference: owner}, HomeBinding: domain.HomeBinding{OwnerID: owner, Namespace: "personal"}})
+		UsageScope: domain.UsageScope{Kind: "employee", Reference: owner}})
 	require.NoError(t, err)
 	return agent
 }

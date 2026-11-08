@@ -13,11 +13,11 @@ import (
 // a caller cannot bypass its required selection by supplying a valid subset.
 func TestDefinitionRequiresCompleteSnapshotOnlyForNewWork(t *testing.T) {
 	original := domain.CapabilityConfiguration{Prompt: "Base", RequiredPlugins: []string{"runtime"}}
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "project"}, Capabilities: original})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: original})
 	require.NoError(t, err)
 	original.RequiredPlugins[0] = "changed"
 	require.Equal(t, []string{"runtime"}, agent.ProvideCapabilities().RequiredPlugins)
-	request := domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: domain.WorkModelSelection{ConfigurationID: "model"}, WorkspaceReference: "workspace", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}
+	request := domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, WorkModel: domain.WorkModelSelection{ConfigurationID: "model"}, Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"}
 	lookup := &definitionSessionLookup{}
 	_, _, err = createWork(agent, request, lookup)
 	require.ErrorIs(t, err, domain.ErrInvalidCapabilities)

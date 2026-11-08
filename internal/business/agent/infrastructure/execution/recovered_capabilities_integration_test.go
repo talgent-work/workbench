@@ -39,12 +39,12 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			snapshot.Connectors = []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}
 			definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-			definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
+			definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}})
 			require.NoError(t, err)
 			require.NoError(t, definitions.Save(ctx, definition))
 			definition, err = definitions.Get(ctx, definition.ID)
 			require.NoError(t, err)
-			work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, HomeBinding: definition.HomeBinding, WorkspaceReference: uuid.NewString()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
+			work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, Capabilities: snapshot, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 			require.NoError(t, err)
 			works := infrastructure.NewAgentWorkRepository(db, time.Now)
 			work.DefinitionVersion = definition.Version
@@ -53,7 +53,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			begun, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 			require.True(t, found)
-			require.NoError(t, provisioning.specify(ctx, begun, testMounts))
+			require.NoError(t, provisioning.specify(ctx, begun, grantsFor(work.LocatedLayout)))
 			original, _, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 

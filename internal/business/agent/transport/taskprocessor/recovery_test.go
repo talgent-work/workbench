@@ -52,7 +52,7 @@ func recovery(t *testing.T, environments *observed) (*application.Recovery, stri
 	t.Helper()
 	queued, err := domain.BeginExecution(domain.ExecutionBeginning{
 		Admitted:    domain.WorkStartAdmitted{WorkID: "work-1", StartAdmittedAt: time.Now(), DeskID: "desk-1", Waiting: true},
-		Launch:      domain.LaunchSpecification{WorkID: "work-1", HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "home"}},
+		Launch:      domain.LaunchSpecification{WorkID: "work-1", RepresentedPerson: "owner", AgentHarness: "claude-code"},
 		Realization: domain.RealizationCloud,
 	})
 	require.NoError(t, err)
@@ -128,7 +128,7 @@ func TestAgentRecoversThroughFiveTasks(t *testing.T) {
 			served = append(served, processor.TaskType())
 		}
 	}
-	require.ElementsMatch(t, []taskqueue.TaskType{agenttask.ReconcileExecutionType, agenttask.RunLongExecutionStepType, agenttask.RecoverWorkType, agenttask.RequestWorkspaceReclamationType, agenttask.SweepRecoveryType}, served)
+	require.ElementsMatch(t, []taskqueue.TaskType{agenttask.ReconcileExecutionType, agenttask.RunLongExecutionStepType, agenttask.RecoverWorkType, agenttask.RequestWorkReclamationType, agenttask.SweepRecoveryType}, served)
 }
 
 // A task queued under a type no longer enqueued is dropped without

@@ -38,7 +38,7 @@ func launchArgs(t *testing.T, input domain.LaunchSpecification, mode string, env
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", "-c", launch.Command)
-	cmd.Env = append(os.Environ(), "ARGV_FILE="+output, "CLAUDE_CONFIG_DIR="+config, "CLAUDE_CODE_PROJECT_DIR_NAME=namespace")
+	cmd.Env = append(os.Environ(), "ARGV_FILE="+output, "CLAUDE_CONFIG_DIR="+config)
 	cmd.Env = append(cmd.Env, env...)
 	if err := cmd.Run(); err != nil {
 		return nil, launch

@@ -41,9 +41,9 @@ func (c *sandboxCredentials) VerifyWorkCredential(_ context.Context, workID, cre
 // with that sandbox; only the current sandbox's credential authenticates.
 func TestWorkCredentialAuthenticatesOnlyTheCurrentLiveSandbox(t *testing.T) {
 	ctx := context.Background()
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{}})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{}})
 	require.NoError(t, err)
-	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agent.ID, WorkspaceReference: "authorized-workspace", HomeBinding: domain.HomeBinding{OwnerID: "authorized-home", Namespace: "project"}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agent.ID, RepresentedPerson: "authorized-home", WorkLayout: domain.DefaultWorkLayout()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	repo := &rpcSessions{items: map[string]*domain.AgentWork{}}
 	require.NoError(t, repo.Save(ctx, session))
@@ -62,7 +62,15 @@ func TestWorkCredentialAuthenticatesOnlyTheCurrentLiveSandbox(t *testing.T) {
 	require.Equal(t, "owner", verified.SubjectId, "a person's Agent acts for its Owner")
 	require.Equal(t, session.ID, verified.WorkId)
 	require.Equal(t, agent.ID, verified.AgentId)
-	require.Equal(t, "authorized-workspace", verified.WorkspaceReference)
+	workspace := verified.GetWorkspace()
+	require.Equal(t, "workspace", workspace.GetWorkspace().GetName(), "the Work's Session Workspace is its own Work Directory")
+	require.Equal(t, "work", workspace.GetWorkspace().GetOwner().GetFacts()[0].GetCondition())
+	require.Equal(t, session.ID, workspace.GetWorkspace().GetOwner().GetFacts()[0].GetValue())
+	mounted := map[string]string{}
+	for _, mount := range workspace.GetMounts() {
+		mounted[mount.GetPath()] = mount.GetDirectory().GetOwner().GetFacts()[0].GetValue() + "/" + mount.GetDirectory().GetName()
+	}
+	require.Equal(t, map[string]string{"inputs": "case:case/inputs", "knowledge": "project/knowledge"}, mounted, "the Directories mounted inside it follow its Subject and Project")
 	require.Equal(t, "project", verified.ProjectId)
 	require.Equal(t, "case", verified.GetSubject().GetKind())
 	require.Equal(t, "case", verified.GetSubject().GetId())
@@ -99,9 +107,9 @@ func awaitingResponse(context.Context, string) (bool, error) { return true, nil 
 // that stays unresolved is refused.
 func TestWorkCredentialForAnActionRequiresTheWorkToAct(t *testing.T) {
 	ctx := context.Background()
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{}})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{}})
 	require.NoError(t, err)
-	session, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agent.ID, WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "home", Namespace: "personal"}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	session, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agent.ID, RepresentedPerson: "home", WorkLayout: domain.DefaultWorkLayout()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	session.State = domain.WorkWorking
 	repo := &rpcSessions{items: map[string]*domain.AgentWork{}}

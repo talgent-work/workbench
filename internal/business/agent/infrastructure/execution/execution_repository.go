@@ -8,6 +8,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"xorm.io/xorm"
 )
 
@@ -137,9 +138,13 @@ func recordFromExecution(e *domain.AgentExecution) (executionRecord, error) {
 	if err != nil {
 		return executionRecord{}, err
 	}
+	inputs := ""
+	if located := e.Launch.LocatedLayout.Inputs; located != nil && e.Realization == domain.RealizationManaged {
+		inputs = infrastructure.DirectoryKey(located.Directory)
+	}
 	return executionRecord{
-		CheckoutResults: checkouts,
-		ID:              e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch,
+		CheckoutResults: checkouts, InputsDirectory: inputs,
+		ID: e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch,
 		State: string(e.State), StartAdmittedAt: millis(e.StartAdmittedAt), DeskID: e.Desk.ID, SeatedAt: millis(e.Desk.SeatedAt), DeskLeftAt: millis(e.Desk.LeftAt),
 		SubmittedAt: millis(e.Creation.SubmittedAt), CreationDeadline: millis(e.Creation.Deadline), CreationAnswered: e.Creation.Answered, StartRejected: e.Outcome.Rejected, SandboxID: e.Environment, LeaseExpiresAt: millis(e.Lease),
 		CredentialsDelivered: e.Credentials.Delivered, PreparationEnded: e.Process.PreparationEnded,

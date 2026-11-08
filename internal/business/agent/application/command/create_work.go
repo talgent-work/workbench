@@ -30,9 +30,6 @@ type CreateWork struct {
 	// is its optional Project.
 	Subject               domain.WorkSubject
 	ProjectID             string
-	WorkspaceReference    string
-	InputSource           domain.WorkInputSource
-	ReadOnlyMounts        []domain.ReadOnlyMount `json:",omitempty"`
 	TraceAttributes       map[string]string
 	CapabilityDifferences domain.CapabilityDifferences
 	// StartingContext, when supplied, starts a new Work from another Work of
@@ -50,6 +47,9 @@ type CreateWork struct {
 	// Harness is the starter's choice for the Work's Harness, admitted only
 	// on a Managed Computer.
 	Harness domain.HarnessChoice
+	// AgentHarness names the Agent Harness the Work runs; empty chooses the
+	// default.
+	AgentHarness string
 }
 
 // CreateWorkHandler creates at most one Work per caller request identity: the

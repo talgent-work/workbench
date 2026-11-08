@@ -69,8 +69,8 @@ func TestClosingRemainsDiscoverableAndConvergesOnEnvironmentLoss(t *testing.T) {
 	require.True(t, closed.HarnessProcess.EnvironmentLost)
 	require.False(t, closed.HarnessProcess.Exited, "normal exit must not be fabricated")
 	require.NotEmpty(t, closed.FailureReason)
-	require.Equal(t, pending.WorkspaceReference, closed.WorkspaceReference)
-	require.Equal(t, pending.HomeBinding, closed.HomeBinding)
+	require.Equal(t, pending.LocatedLayout, closed.LocatedLayout)
+	require.Equal(t, pending.RepresentedPerson, closed.RepresentedPerson)
 	require.False(t, closed.HoldsProcess())
 	require.ErrorIs(t, closed.RequireReadyProcess(), domain.ErrWorkTransition)
 }

@@ -41,22 +41,6 @@ const (
 	WorkClosed   WorkState = "closed"
 )
 
-// HomeBinding identifies a caller-authorized persistent home and scope within it.
-type HomeBinding struct {
-	OwnerID   string `validate:"required,max=255"`
-	Namespace string `validate:"required,max=64"`
-}
-
-func (h HomeBinding) Validate() error {
-	if err := validation.Struct(h); err != nil {
-		return ErrInvalidWork
-	}
-	if strings.TrimSpace(h.OwnerID) == "" || strings.TrimSpace(h.Namespace) == "" {
-		return ErrInvalidWork
-	}
-	return nil
-}
-
 type ContextMode string
 
 const (
@@ -76,17 +60,24 @@ type WorkInput struct {
 	ID                 string
 	AgentID            string
 	Capabilities       CapabilitySnapshot
-	WorkspaceReference string
-	InputSource        WorkInputSource
-	ReadOnlyMounts     []ReadOnlyMount
-	HomeBinding        HomeBinding
-	TraceAttributes    map[string]string
-	Visibility         VisibilityRule
-	DisplayTitle       string
-	StartingContext    *StartingContext
+	// RepresentedPerson is the person the definition's Agent represents;
+	// empty for one that represents no person.
+	RepresentedPerson string
+	// StartingUser is the person starting the Work; empty for an automated
+	// start.
+	StartingUser string
+	// WorkLayout is the definition's, which the Work locates once.
+	WorkLayout WorkLayout
+	// AgentHarness names the Harness the Work runs for its life; empty
+	// chooses the default.
+	AgentHarness    string
+	TraceAttributes map[string]string
+	Visibility      VisibilityRule
+	DisplayTitle    string
+	StartingContext *StartingContext
 	// ComputerManaged reports that the Computer the Work starts on is a
 	// Managed Computer; it decides which model selections the Work may keep
-	// and that it has no Session Workspace.
+	// and that it mounts no Directory.
 	ComputerManaged bool
 	// Harness is its starter's choice, admitted only on a Managed Computer.
 	Harness HarnessChoice
@@ -246,24 +237,26 @@ type AgentWork struct {
 	// Computer chosen at its first start and whether it is a Cloud or a
 	// Managed Computer, as that Computer's admission answered, fixed for its
 	// life; every run of the Work is admitted there.
-	ComputerID              string       `validate:"required,uuid"`
-	ComputerKind            ComputerKind `validate:"oneof=cloud managed"`
-	HarnessSessionReference string       `validate:"required"`
-	// WorkspaceReference names the Work's Session Workspace; empty for a Work
-	// that has none: a project-scoped definition's Work, and every Work on a
-	// Managed Computer, whose files stay in its directory on the machine.
-	WorkspaceReference string `validate:"max=512"`
+	ComputerID   string       `validate:"required,uuid"`
+	ComputerKind ComputerKind `validate:"oneof=cloud managed"`
+	// HarnessSessionReference is the Work's one Harness Session within its
+	// Harness state Directory.
+	HarnessSessionReference string `validate:"required"`
+	// AgentHarnessReference is the Agent Harness chosen at creation, kept for
+	// the Work's life (Harness choice).
+	AgentHarnessReference string `validate:"required"`
+	// LocatedLayout is what the definition's Work Layout located from the
+	// Work's facts at creation, kept whatever the layout becomes later.
+	LocatedLayout LocatedLayout
+	// RepresentedPerson is the person the Work's Agent represents, fixed at
+	// creation; empty for a Work whose Agent represents no person.
+	RepresentedPerson string `validate:"max=255"`
 	// StartingContext is the context the Work started from, fixed at
 	// creation; nil for a Work that started afresh.
 	StartingContext *StartingContext
-	InputSource     WorkInputSource
-	// ReadOnlyMounts are the spaces its creating caller had mounted read-only,
-	// each under the name it gave.
-	ReadOnlyMounts []ReadOnlyMount
 	// DisplayTitle is a Personal Work's title, changed by its owner at any
 	// time; it never identifies the Work.
 	DisplayTitle    string
-	HomeBinding     HomeBinding
 	TraceAttributes map[string]string
 	HarnessProcess  *HarnessProcess
 	// DisconnectedSince is the origin of the current Disconnection: the
@@ -296,14 +289,6 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 	if strings.TrimSpace(input.StartedBy) == "" {
 		return nil, fmt.Errorf("%w: who starts the Work is required", ErrInvalidWork)
 	}
-	// The Computer is fixed at the first start: a Work on a Managed Computer
-	// never has a Session Workspace or a read-only mount, whatever its
-	// creating caller named; its Agent there reads what the mount would hold
-	// through the platform Connector instead.
-	workspace, mounts := input.WorkspaceReference, slices.Clone(input.ReadOnlyMounts)
-	if input.ComputerManaged {
-		workspace, mounts = "", nil
-	}
 	harness, err := input.Harness.On(input.ComputerManaged)
 	if err != nil {
 		return nil, err
@@ -314,7 +299,7 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 		StartedBy: input.StartedBy, PermissionMode: harness.PermissionMode,
 		WorkModel: input.WorkModel, ID: input.ID, AgentID: input.AgentID, ThinkingLevel: input.ThinkingLevel, State: WorkStarting, ComputerID: admission.Seat.ComputerID, ComputerKind: admission.Seat.Kind, HarnessProcess: admission.process(ContextFresh, time.Time{}), Subject: input.Subject, ProjectID: strings.TrimSpace(input.ProjectID),
 		CapabilitySnapshot: capabilities, HarnessSessionReference: uuid.Must(uuid.NewV7()).String(),
-		WorkspaceReference: workspace, InputSource: input.InputSource, ReadOnlyMounts: mounts, DisplayTitle: strings.TrimSpace(input.DisplayTitle), HomeBinding: input.HomeBinding, TraceAttributes: maps.Clone(input.TraceAttributes),
+		RepresentedPerson: input.RepresentedPerson, DisplayTitle: strings.TrimSpace(input.DisplayTitle), TraceAttributes: maps.Clone(input.TraceAttributes),
 		Visibility: WorkVisibility{Public: input.Visibility.Public && strings.TrimSpace(input.ProjectID) != ""}, StartingContext: input.StartingContext.clone(), Events: NewEventCollection(),
 	}
 	if initial := input.InitialTaskInput; initial != nil {
@@ -323,6 +308,9 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 			return nil, err
 		}
 		session.InitialTaskInput = &established
+	}
+	if err := session.locateLayout(input.WorkLayout, input.AgentHarness, input.StartingUser, input.ComputerManaged); err != nil {
+		return nil, err
 	}
 	if err := session.determineAuthorizationSelection(input.AuthorizationInput); err != nil {
 		return nil, err
@@ -373,9 +361,6 @@ func (s *AgentWork) Validate() error {
 	if err := s.Subject.Validate(); err != nil {
 		return err
 	}
-	if err := s.HomeBinding.Validate(); err != nil {
-		return err
-	}
 	if err := validation.Struct(s); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidWork, err)
 	}
@@ -391,13 +376,10 @@ func (s *AgentWork) Validate() error {
 	if err := s.RepositorySelection.Validate(); err != nil {
 		return err
 	}
-	if err := ValidateReadOnlyMounts(s.ReadOnlyMounts); err != nil {
+	if err := validateDisplayTitle(s.DisplayTitle, s.Personal()); err != nil {
 		return err
 	}
-	if err := s.validatePersonalWork(); err != nil {
-		return err
-	}
-	if err := s.InputSource.Validate(); err != nil {
+	if err := s.validateLocatedLayout(); err != nil {
 		return err
 	}
 	if err := s.StartingContext.validate(); err != nil {
@@ -409,10 +391,10 @@ func (s *AgentWork) Validate() error {
 	if s.StartedBy != "" && s.StartedBy == s.AgentID {
 		return fmt.Errorf("%w: an AgentDefinition never starts a Work", ErrInvalidWork)
 	}
-	if owner := s.RepositorySelection.OwnerUserID; owner != "" && owner != s.HomeBinding.OwnerID {
+	if owner := s.RepositorySelection.OwnerUserID; owner != "" && owner != s.RepresentedPerson {
 		return ErrInvalidWork
 	}
-	if owner := s.AuthorizationSelection.OwnerUserID; owner != "" && owner != s.HomeBinding.OwnerID {
+	if owner := s.AuthorizationSelection.OwnerUserID; owner != "" && owner != s.RepresentedPerson {
 		return ErrInvalidWork
 	}
 	if s.HarnessProcess == nil && s.State != WorkClosed {

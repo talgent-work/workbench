@@ -7,19 +7,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
+	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
 
-// Supplied HOME propagation, Work snapshots and native SDK serialization are real. Only
-// definition/session lookup, Storage's grants and the external OpenSandbox
-// service are controlled; this verifies that a start names its spaces by
-// business identity, not a Kubernetes filesystem or SCM grant.
-func TestSuppliedHomesReachNativeSandboxWithBusinessOwnership(t *testing.T) {
+// Definition ensuring, Work creation, located layouts and native SDK
+// serialization are real. Only definition lookup, Storage's grants and the
+// external OpenSandbox service are controlled; this verifies that each start
+// mounts the Directories its Work located by business identity: its own HOME
+// and Session Workspace, its definition's Harness state, its Subject's inputs
+// and its Project's knowledge.
+func TestLocatedLayoutsReachTheNativeSandbox(t *testing.T) {
 	ctx := context.Background()
 	provider, _, fixture := sandboxClient(t)
 	ensure := func(scope, owner, purpose string) *domain.AgentDefinition {
@@ -29,69 +32,54 @@ func TestSuppliedHomesReachNativeSandboxWithBusinessOwnership(t *testing.T) {
 		require.NoError(t, err)
 		return definitions.value
 	}
-	type mounts struct{ home, workspace string }
-	seenWorkspaces := map[string]bool{}
+	type mounts map[string]string
 	submit := func(definition *domain.AgentDefinition, project, subject string) mounts {
 		t.Helper()
 		forward := &defaultHomeSubmission{provider: provider, root: t.TempDir()}
 		snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.Capabilities.RequiredPlugins}, []domain.PluginRelease{{Slug: "talgent-runtime", Source: "fixture", Version: "1", RetrievalRef: "fixture:runtime", NativeEntry: []byte(`{"name":"talgent-runtime","version":"1"}`)}})
 		require.NoError(t, err)
-		created, isNew, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: "owner",
+		created, isNew, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", StartingUser: "owner",
 			Capabilities: snapshot, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
-			WorkModel:          domain.WorkModelSelection{ConfigurationID: "deployment-default"},
-			Subject:            domain.WorkSubject{Kind: "case", ID: subject + "/" + uuid.NewString()},
-			ProjectID:          project,
-			WorkspaceReference: uuid.NewString(),
+			WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"},
+			Subject:   domain.WorkSubject{Kind: "case", ID: subject},
+			ProjectID: project,
 		}, domain.WorkCreationFacts{})
 		require.NoError(t, err)
 		require.True(t, isNew)
-		session := created
-		require.NoError(t, forward.StartExecution(ctx, session.LaunchSpecification()))
-
-		require.Equal(t, definition.HomeBinding, forward.admitted.HomeBinding, "the Session must deliver its definition's HOME owner to execution, including SCM resolution")
+		require.NoError(t, forward.StartExecution(ctx, created.LaunchSpecification()))
+		require.Equal(t, created.LocatedLayout, forward.admitted.LocatedLayout, "the start mounts the layout its Work located")
 		spec := fixture.create
-		require.Equal(t, session.ID, spec.Env["TALGENT_WORK_ID"])
+		require.Equal(t, created.ID, spec.Env["TALGENT_WORK_ID"])
 		require.Equal(t, "/home/talgent", spec.Env["HOME"])
-		var result mounts
+		result := mounts{}
 		for _, volume := range spec.Volumes {
 			require.NotNil(t, volume.PVC)
-			switch volume.MountPath {
-			case "/home/talgent":
-				require.Equal(t, "nas", volume.PVC.ClaimName, "the HOME is mounted where Storage granted it")
-				result.home = volume.SubPath
-			case "/workspace":
-				require.Equal(t, "nas", volume.PVC.ClaimName, "the workspace is mounted where Storage granted it")
-				result.workspace = volume.SubPath
-			}
+			require.Equal(t, "nas", volume.PVC.ClaimName, "each Directory is mounted where Storage granted it")
+			result[volume.MountPath] = volume.SubPath
 		}
-		require.NotEmpty(t, result.home)
-		require.Equal(t, filepath.Join("workspaces", session.WorkspaceReference), result.workspace, "the submitted workspace must belong to this Session")
-		require.NotEqual(t, result.home, result.workspace)
-		require.False(t, seenWorkspaces[result.workspace], "separate Sessions must never share a workspace")
-		seenWorkspaces[result.workspace] = true
+		require.Equal(t, directorySubPath(workDirectory(created.ID, "home")), result["/home/talgent"])
+		require.Equal(t, directorySubPath(workDirectory(created.ID, "workspace")), result["/workspace"])
+		require.Equal(t, directorySubPath(domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionAgentDefinition, Value: definition.ID}}, Name: "claude-code"}), result["/home/talgent/.claude"])
+		require.Equal(t, directorySubPath(domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:" + subject}}, Name: "inputs"}), result["/workspace/inputs"])
+		require.Equal(t, directorySubPath(domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionProject, Value: project}}, Name: "knowledge"}), result["/workspace/knowledge"])
 		return result
 	}
 
-	employeeID := uuid.NewString()
-	work := ensure("employee", employeeID, "work")
-	require.Equal(t, employeeID, work.HomeBinding.OwnerID, "SCM resolves employee credentials by the actual employee ID, without an Agent or project prefix")
-	personalA := submit(work, "project-a", "case-a")
-	personalB := submit(work, "project-b", "case-b")
-	require.Equal(t, personalA.home, personalB.home, "the employee carries the same personal HOME across projects")
-	otherEmployee := submit(ensure("employee", uuid.NewString(), "work"), "project-a", "case-c")
-	require.NotEqual(t, personalA.home, otherEmployee.home)
+	employee := ensure("employee", uuid.NewString(), "work")
+	first := submit(employee, "project-a", "case-a")
+	second := submit(employee, "project-b", "case-b")
+	require.NotEqual(t, first["/home/talgent"], second["/home/talgent"], "each Work has its own HOME")
+	require.NotEqual(t, first["/workspace"], second["/workspace"])
+	require.Equal(t, first["/home/talgent/.claude"], second["/home/talgent/.claude"], "a definition's Works share its Harness state")
+	other := submit(ensure("employee", uuid.NewString(), "work"), "project-a", "case-a")
+	require.NotEqual(t, first["/home/talgent/.claude"], other["/home/talgent/.claude"])
+	require.Equal(t, first["/workspace/inputs"], other["/workspace/inputs"], "Works of one Subject read its inputs")
+	coordination := submit(ensure("project", "project-a", "project_coordination"), "project-a", "case-c")
+	require.Equal(t, first["/workspace/knowledge"], coordination["/workspace/knowledge"], "Works of one Project read its knowledge")
+}
 
-	seenHomes := map[string]bool{personalA.home: true, otherEmployee.home: true}
-	for _, project := range []string{"project-a", "project-b"} {
-		for _, purpose := range []string{"project_coordination"} {
-			definition := ensure("project", project, purpose)
-			first := submit(definition, project, project+"-case-a")
-			require.False(t, seenHomes[first.home], "%s/%s must be isolated from other project roles, projects and personal HOMEs", project, purpose)
-			seenHomes[first.home] = true
-			second := submit(definition, project, project+"-case-b")
-			require.Equal(t, first.home, second.home, "a project role's Works share its HOME while retaining separate Session workspaces")
-		}
-	}
+func workDirectory(workID, name string) domain.Directory {
+	return domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: workID}}, Name: name}
 }
 
 // Forward the real Work's LaunchSpecification to the real native provider.
@@ -104,7 +92,7 @@ type defaultHomeSubmission struct {
 
 func (s *defaultHomeSubmission) StartExecution(ctx context.Context, input domain.LaunchSpecification) error {
 	s.admitted = input
-	mounts, err := directoryMounts{root: s.root}.AcquireMounts(ctx, input.MountRequest())
+	mounts, err := directoryMounts{root: s.root}.AcquireMounts(ctx, input.WorkID, input.LocatedLayout.MountRequests())
 	if err != nil {
 		return err
 	}
@@ -116,31 +104,35 @@ func (s *defaultHomeSubmission) StartExecution(ctx context.Context, input domain
 	return err
 }
 
-// directoryMounts stands in for Storage: it prepares each space as a
-// directory of root, the one workspace per reference, HOME per owner and the
-// caller's read-only mounts.
+// directorySubPath is where directoryMounts prepares a Directory.
+func directorySubPath(directory domain.Directory) string {
+	return filepath.Join("directories", infrastructure.DirectoryKey(directory))
+}
+
+// directoryMounts stands in for Storage: it prepares each requested
+// Directory as a directory of root and grants it in request order, opens
+// every Directory with one Space Token and holds no files.
 type directoryMounts struct {
 	command.StoragePort
 	root string
 }
 
-func (m directoryMounts) AcquireMounts(_ context.Context, request domain.SandboxMountRequest) (domain.SandboxMounts, error) {
-	workspace, home := filepath.Join("workspaces", request.WorkspaceReference), filepath.Join("homes", request.HomeOwner)
-	for _, directory := range []string{workspace, home} {
-		if err := os.MkdirAll(filepath.Join(m.root, directory), 0o700); err != nil {
-			return domain.SandboxMounts{}, err
+func (m directoryMounts) AcquireMounts(_ context.Context, _ string, requests []domain.DirectoryMount) (domain.SandboxMounts, error) {
+	mounts := make(domain.SandboxMounts, 0, len(requests))
+	for _, request := range requests {
+		sub := directorySubPath(request.Directory.Directory)
+		if err := os.MkdirAll(filepath.Join(m.root, sub), 0o700); err != nil {
+			return nil, err
 		}
-	}
-	mounts := domain.SandboxMounts{Workspace: &domain.MountGrant{ClaimName: "nas", SubPath: workspace}, Home: domain.MountGrant{ClaimName: "nas", SubPath: home}}
-	for _, mount := range request.ReadOnlyMounts {
-		reference := filepath.Join("references", mount.Reference)
-		if err := os.MkdirAll(filepath.Join(m.root, reference), 0o700); err != nil {
-			return domain.SandboxMounts{}, err
-		}
-		if mounts.ReadOnly == nil {
-			mounts.ReadOnly = map[string]domain.MountGrant{}
-		}
-		mounts.ReadOnly[mount.Name] = domain.MountGrant{ClaimName: "nas", SubPath: reference, ReadOnly: true}
+		mounts = append(mounts, domain.MountGrant{ClaimName: "nas", SubPath: sub, ReadOnly: request.ReadOnly})
 	}
 	return mounts, nil
+}
+
+func (directoryMounts) OpenDirectory(context.Context, domain.LocatedDirectory) (string, error) {
+	return "space-token", nil
+}
+
+func (directoryMounts) ListFiles(context.Context, domain.Directory) ([]command.SpaceFile, error) {
+	return nil, nil
 }

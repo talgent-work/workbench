@@ -36,7 +36,7 @@ func TestPreparationIsBoundedByTheStartupDeadline(t *testing.T) {
 			require.NotContains(t, launch.PreparationCommand, "600s")
 
 			process := exec.Command("sh", "-c", launch.PreparationCommand)
-			process.Env = append(os.Environ(), "HOME="+dir, "PATH="+dir+":"+os.Getenv("PATH"))
+			process.Env = append(os.Environ(), "HOME="+dir, "CLAUDE_CONFIG_DIR="+filepath.Join(dir, ".claude"), "PATH="+dir+":"+os.Getenv("PATH"))
 			output, err := process.Output()
 			require.NoError(t, err)
 			fields := strings.Fields(string(output))

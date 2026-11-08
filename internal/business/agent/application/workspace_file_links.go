@@ -103,11 +103,11 @@ func (l *WorkspaceFileSigner) signature(encoded string) string {
 // its reader by itself, until the Work is Closed.
 type WorkspaceFileLinks struct {
 	works  domain.AgentWorkRepository
-	files  WorkspacePort
+	files  WorkspaceReadingPort
 	signer *WorkspaceFileSigner
 }
 
-func NewWorkspaceFileLinks(works domain.AgentWorkRepository, files WorkspacePort, signer *WorkspaceFileSigner) (*WorkspaceFileLinks, error) {
+func NewWorkspaceFileLinks(works domain.AgentWorkRepository, files WorkspaceReadingPort, signer *WorkspaceFileSigner) (*WorkspaceFileLinks, error) {
 	if works == nil || files == nil || signer == nil {
 		return nil, errors.New("agent: Works, workspaces and a link signer are required for workspace file links")
 	}

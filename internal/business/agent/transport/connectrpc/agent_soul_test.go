@@ -25,7 +25,7 @@ import (
 func TestSoulIsReadAndWrittenOnlyByAnOwner(t *testing.T) {
 	agents := &rpcAgents{items: map[string]*domain.AgentDefinition{}}
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"alice"}, Purpose: "work",
-		UsageScope: domain.UsageScope{Kind: "employee", Reference: "alice"}, HomeBinding: domain.HomeBinding{OwnerID: "alice", Namespace: "personal"}})
+		UsageScope: domain.UsageScope{Kind: "employee", Reference: "alice"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(context.Background(), definition))
 	app := &application.Application{Definitions: agents, Logger: slog.Default(),

@@ -16,8 +16,8 @@ func TestWorkRetainsSelectedAuthorizationAcrossResumeAndRestart(t *testing.T) {
 		t.Run(map[bool]string{false: "resume", true: "restart"}[restart], func(t *testing.T) {
 			githubID, otherID := uuid.NewString(), uuid.NewString()
 			input := domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(),
-				WorkModel:   domain.WorkModelSelection{ConfigurationID: "default"},
-				HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}, WorkspaceReference: "workspace",
+				WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
+				RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(),
 				AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner",
 					Available: []domain.PersonalAuthorization{
 						{OwnerUserID: "owner", AuthorizationID: githubID, Provider: "github", Service: "github"},
@@ -63,9 +63,9 @@ func TestWorkRejectsAuthorizationFactsForAnotherHuman(t *testing.T) {
 	} {
 		id := uuid.NewString()
 		work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
-			ID: uuid.NewString(), AgentID: id, WorkspaceReference: "workspace",
-			WorkModel:   domain.WorkModelSelection{ConfigurationID: "default"},
-			HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}, AuthorizationInput: input,
+			ID: uuid.NewString(), AgentID: id,
+			WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
+			RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(), AuthorizationInput: input,
 		}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: id, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 		port := follow(work)
 		require.ErrorIs(t, err, domain.ErrInvalidWork)

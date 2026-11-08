@@ -26,7 +26,7 @@ type Workspaces struct {
 	managed *ManagedWorkspaces
 }
 
-var _ application.WorkspacePort = (*Workspaces)(nil)
+var _ application.WorkspaceReadingPort = (*Workspaces)(nil)
 
 // NewWorkspaces reads Cloud Works through cloud and, when the deployment
 // reaches Managed Computers, Managed Works through managed.

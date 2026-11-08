@@ -9,7 +9,7 @@ import (
 )
 
 // A restart continues the Work's conversation when its transcript exists in
-// the Work's HOME, whatever the transcript holds, and starts it afresh when
+// the Agent Harness's state, whatever the transcript holds, and starts it afresh when
 // it does not.
 func TestARestartContinuesTheConversationWhoseTranscriptExists(t *testing.T) {
 	input := request()
@@ -22,11 +22,11 @@ func TestARestartContinuesTheConversationWhoseTranscriptExists(t *testing.T) {
 	require.Equal(t, []string{"--session-id", sessionID}, contextArgs(args))
 }
 
-// Without the sandbox's transcript location a restart starts nothing rather
+// Without the Agent Harness's state location a restart starts nothing rather
 // than guessing.
 func TestARestartNeedsTheTranscriptLocation(t *testing.T) {
 	input := request()
 	input.ContextMode = domain.ContextRecover
-	args, _ := launchArgs(t, input, "--session-id", "CLAUDE_CODE_PROJECT_DIR_NAME=")
+	args, _ := launchArgs(t, input, "--session-id", "CLAUDE_CONFIG_DIR=")
 	require.Nil(t, args)
 }

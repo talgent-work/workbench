@@ -25,12 +25,12 @@ var (
 	ErrInvalidWorkspaceFileLink = errors.New("agent: invalid or expired workspace file link")
 )
 
-// WorkspacePort reads a Work's workspace at the WorkspaceLocation its
+// WorkspaceReadingPort reads a Work's workspace at the WorkspaceLocation its
 // AgentWork names, for either realization: callers never tell a Session
 // Workspace from a directory on a Managed Computer. A location whose files
 // cannot be reached now answers domain.ErrWorkspaceUnavailable, and one with
 // nothing to read yet domain.ErrWorkspaceNotCreated.
-type WorkspacePort interface {
+type WorkspaceReadingPort interface {
 	// WorkspaceView, PreviewWorkspaceFile and WorkspaceFileLink serve the
 	// Workspace View Query and Workspace File Access Link.
 	WorkspaceView(ctx context.Context, location domain.WorkspaceLocation, path string) (WorkspaceListing, error)

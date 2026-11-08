@@ -32,7 +32,7 @@ func (linkedWorks) Save(context.Context, *domain.AgentWork) error { return nil }
 
 // machineFiles opens each linked file where its Work is located.
 type machineFiles struct {
-	application.WorkspacePort
+	application.WorkspaceReadingPort
 	opened []domain.WorkspaceLocation
 }
 

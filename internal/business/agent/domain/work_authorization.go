@@ -11,7 +11,7 @@ var ErrServiceAuthorizationNotSelected = errors.New("agent: service authorizatio
 // ServiceAuthorization admits only a retained personal reference for the trusted
 // owner while this Work may use credentials. Marketplace decides current validity.
 func (s *AgentWork) ServiceAuthorization(owner, service string) (WorkServiceAuthorization, error) {
-	if owner == "" || owner != s.HomeBinding.OwnerID {
+	if owner == "" || owner != s.RepresentedPerson {
 		return WorkServiceAuthorization{}, ErrInvalidWork
 	}
 	if err := s.AuthorizeCredentialAccess(); err != nil {
@@ -87,7 +87,7 @@ func (s WorkAuthorizationSelection) Validate() error {
 
 func (s *AgentWork) determineAuthorizationSelection(input WorkAuthorizationInput) error {
 	selection := WorkAuthorizationSelection{OwnerUserID: input.OwnerUserID}
-	if input.OwnerUserID != "" && input.OwnerUserID != s.HomeBinding.OwnerID {
+	if input.OwnerUserID != "" && input.OwnerUserID != s.RepresentedPerson {
 		return fmt.Errorf("%w: authorization owner differs from represented owner", ErrInvalidWork)
 	}
 	for _, fact := range input.Available {

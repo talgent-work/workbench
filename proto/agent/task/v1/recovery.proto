@@ -31,13 +31,14 @@ message RecoverWorkTaskV1 {
 // recovery obligation. It carries no data.
 message SweepRecoveryTaskV1 {}
 
-// RequestWorkspaceReclamationTaskV1 delivers a Closed Work's one Workspace
-// Reclamation Request to Storage, retried until Storage accepts it.
+// RequestWorkspaceReclamationTaskV1 delivers a Closed Work's one Work
+// Reclamation Request to Storage, retried until Storage accepts it. Storage
+// reclaims every Directory with that Work's lifetime.
 message RequestWorkspaceReclamationTaskV1 {
-  // AgentWork identity whose Session Workspace is reclaimed.
+  reserved 2;
+  reserved "workspace_reference";
+  // The closed AgentWork's identity.
   string work_id = 1;
-  // The Work's opaque Session Workspace reference.
-  string workspace_reference = 2;
 }
 
 // The task payloads below are retired: their queued tasks are dropped without

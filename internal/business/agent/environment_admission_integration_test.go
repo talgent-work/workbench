@@ -53,7 +53,7 @@ func (e *interruptedEnvironments) Observe(ctx context.Context, execution *domain
 	return observation, err
 }
 
-func (e *interruptedEnvironments) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
+func (e *interruptedEnvironments) DeliverCredentials(ctx context.Context, _ *domain.AgentExecution, _ command.CredentialSupply, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
 	if err := holding(ctx); err != nil {
 		return domain.CredentialDelivery{}, err
 	}

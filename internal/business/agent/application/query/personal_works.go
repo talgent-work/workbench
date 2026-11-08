@@ -1,6 +1,10 @@
 package query
 
-import "time"
+import (
+	"time"
+
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+)
 
 // PersonalWorkSummary is one Personal Work as its owner's list shows it.
 type PersonalWorkSummary struct {
@@ -21,8 +25,9 @@ type PersonalWorkSummary struct {
 // its owner.
 type LibraryWork struct {
 	WorkID, Title string
-	InputSource   string
-	// Personal tells the Work is a Personal Work, whose File Space it owns.
+	// PublicationTarget is the File Space the Work publishes Artifacts into.
+	PublicationTarget domain.Directory
+	// Personal tells the Work is a Personal Work, whose File Spaces it owns.
 	Personal bool
 	// SharedBy is the owner who shared it; empty for the person's own Work.
 	SharedBy string

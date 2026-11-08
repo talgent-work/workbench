@@ -55,13 +55,13 @@ func newManagedWorkspaces(db *xorm.Engine, machines *execution.ManagedComputers,
 	return execution.NewManagedWorkspaces(db, machines, links, previews)
 }
 
-func newWorkspaces(storage execution.StorageWorkspaces, managed *execution.ManagedWorkspaces) (application.WorkspacePort, error) {
+func newWorkspaces(storage execution.StorageWorkspaces, managed *execution.ManagedWorkspaces) (application.WorkspaceReadingPort, error) {
 	return execution.NewWorkspaces(storage, managed)
 }
 
 // registerManagedWorkspaceFiles serves the links to Managed Works' files,
 // which only a deployment that reaches Managed Computers issues.
-func registerManagedWorkspaceFiles(mux *http.ServeMux, links *application.WorkspaceFileSigner, workspaces application.WorkspacePort, works domain.AgentWorkRepository, logger *slog.Logger) error {
+func registerManagedWorkspaceFiles(mux *http.ServeMux, links *application.WorkspaceFileSigner, workspaces application.WorkspaceReadingPort, works domain.AgentWorkRepository, logger *slog.Logger) error {
 	if links == nil {
 		return nil
 	}

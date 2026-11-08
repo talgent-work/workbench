@@ -33,7 +33,6 @@ type ManagedEnvironment struct {
 	models *ModelCatalog
 	// inputs are the Attachments of the Work's input source, which their
 	// own sync hands the machine (managed_inputs.go).
-	inputs WorkInputFiles
 	// inputsRefresh is how long synced inputs stay current before the
 	// recovery sweep syncs them again (managed_inputs.go).
 	inputsRefresh time.Duration
@@ -49,9 +48,9 @@ var (
 
 // NewManagedEnvironment is the Managed realization of a deployment whose
 // relay reaches Managed Computers.
-func NewManagedEnvironment(db *xorm.Engine, machines *ManagedComputers, models *ModelCatalog, sessions domain.AgentWorkRepository, inputs WorkInputFiles, inputsRefresh time.Duration) (*ManagedEnvironment, error) {
-	if db == nil || machines == nil || models == nil || sessions == nil || inputs == nil {
-		return nil, errors.New("agent: executions, Managed Computers, Model Configurations, Works and input files are required for the Managed realization")
+func NewManagedEnvironment(db *xorm.Engine, machines *ManagedComputers, models *ModelCatalog, sessions domain.AgentWorkRepository, inputsRefresh time.Duration) (*ManagedEnvironment, error) {
+	if db == nil || machines == nil || models == nil || sessions == nil {
+		return nil, errors.New("agent: executions, Managed Computers, Model Configurations and Works are required for the Managed realization")
 	}
 	if inputsRefresh <= 0 {
 		return nil, errors.New("agent: the inputs refresh interval must be positive")
@@ -60,7 +59,7 @@ func NewManagedEnvironment(db *xorm.Engine, machines *ManagedComputers, models *
 	if err != nil {
 		return nil, err
 	}
-	return &ManagedEnvironment{records: records{db: db}, machines: machines, models: models, inputs: inputs, inputsRefresh: inputsRefresh, reconciliation: reconciliation}, nil
+	return &ManagedEnvironment{records: records{db: db}, machines: machines, models: models, inputsRefresh: inputsRefresh, reconciliation: reconciliation}, nil
 }
 
 // Reconciliation reconciles the Managed Computers this realization runs

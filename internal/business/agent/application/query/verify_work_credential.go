@@ -18,16 +18,17 @@ type VerifyWorkCredential struct {
 }
 
 // WorkIdentity is the verified Work: its definition, principal, optional
-// Project and Subject.
+// Project and Subject, and its Session Workspace as its sandbox sees it, nil
+// for a Work that mounts none, such as a Work on a Managed Computer.
 type WorkIdentity struct {
-	AgentName          string
-	WorkID             string
-	AgentID            string
-	SubjectID          string
-	WorkspaceReference string
-	ProjectID          string
-	Subject            domain.WorkSubject
-	Purpose            string
+	AgentName string
+	WorkID    string
+	AgentID   string
+	SubjectID string
+	Workspace *domain.WorkspaceLayout
+	ProjectID string
+	Subject   domain.WorkSubject
+	Purpose   string
 }
 
 // actingWait bounds how long an action waits for a delivered reply to resolve

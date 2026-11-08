@@ -3,13 +3,12 @@ package domain
 import (
 	"errors"
 	"fmt"
-	"slices"
 )
 
 var (
 	// ErrWorkspaceNotCreated means the Work has no workspace to read yet: a
-	// Cloud Work without a Session Workspace, or a Managed Work whose machine
-	// never opened its directory.
+	// Cloud Work whose layout mounts no Session Workspace, or a Managed Work
+	// whose machine never opened its directory.
 	ErrWorkspaceNotCreated = errors.New("agent: the workspace has not been created")
 	// ErrWorkspaceUnavailable means the Work's files stay on its Managed
 	// Computer, which is not reachable now: a Disconnection.
@@ -24,12 +23,9 @@ type WorkspaceLocation struct {
 	// ComputerID is the Managed Computer that holds the Work's directory;
 	// empty on a Cloud.
 	ComputerID string
-	// SessionWorkspace, InputSource and ReadOnlyMounts are the Session
-	// Workspace and the spaces mounted inside it; empty on a Managed
-	// Computer.
-	SessionWorkspace string
-	InputSource      WorkInputSource
-	ReadOnlyMounts   []ReadOnlyMount
+	// SessionWorkspace is the Session Workspace and the Directories mounted
+	// inside it; empty on a Managed Computer.
+	SessionWorkspace WorkspaceLayout
 }
 
 // ThroughComputer reports whether the files are read through the Work's
@@ -39,7 +35,7 @@ func (l WorkspaceLocation) ThroughComputer() bool { return l.ComputerID != "" }
 // LocateWorkspace names where the Work's files are read (Managed workspace,
 // Managed workspace reading): a Managed Work's directory through its
 // Computer, refused during a Disconnection; a Cloud Work's Session
-// Workspace, absent for a Work that has none.
+// Workspace as its located layout mounts it.
 func (s *AgentWork) LocateWorkspace() (WorkspaceLocation, error) {
 	switch s.ComputerKind {
 	case ComputerManaged:
@@ -48,10 +44,11 @@ func (s *AgentWork) LocateWorkspace() (WorkspaceLocation, error) {
 		}
 		return WorkspaceLocation{WorkID: s.ID, ComputerID: s.ComputerID}, nil
 	case ComputerCloud:
-		if s.WorkspaceReference == "" {
+		workspace, ok := s.LocatedLayout.Workspace()
+		if !ok {
 			return WorkspaceLocation{}, ErrWorkspaceNotCreated
 		}
-		return WorkspaceLocation{WorkID: s.ID, SessionWorkspace: s.WorkspaceReference, InputSource: s.InputSource, ReadOnlyMounts: slices.Clone(s.ReadOnlyMounts)}, nil
+		return WorkspaceLocation{WorkID: s.ID, SessionWorkspace: workspace}, nil
 	}
 	return WorkspaceLocation{}, fmt.Errorf("%w: the Work's Computer kind is unknown", ErrInvalidWork)
 }

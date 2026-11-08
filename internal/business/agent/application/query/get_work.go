@@ -12,7 +12,6 @@ type AgentWork struct {
 	AgentName               string
 	StopReason              domain.StopReason
 	Waiting                 bool
-	WorkspaceReference      string
 	Version                 int
 	StopRequestID           string
 	ID                      string

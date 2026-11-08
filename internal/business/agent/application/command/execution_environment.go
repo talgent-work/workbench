@@ -42,11 +42,12 @@ type ExecutionEnvironmentPort interface {
 	// DeleteEnvironment deletes one environment carrying the execution's
 	// ownership, clearing its Vault first; a gone one is deleted already.
 	DeleteEnvironment(ctx context.Context, execution *domain.AgentExecution, environmentID string) error
-	// DeliverCredentials delivers the Work's current credentials into the
-	// bound environment, replacing earlier ones, and reports what it
-	// delivered. It asks holding before each write, and clears what it wrote
-	// once holding refuses.
-	DeliverCredentials(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (domain.CredentialDelivery, error)
+	// DeliverCredentials delivers the Work's current credentials, with what
+	// Application supplied from other authorities, into the bound
+	// environment, replacing earlier ones, and reports what it delivered. It
+	// asks holding before each write, and clears what it wrote once holding
+	// refuses.
+	DeliverCredentials(ctx context.Context, execution *domain.AgentExecution, supply CredentialSupply, holding EnvironmentHolding) (domain.CredentialDelivery, error)
 	// WithdrawCredentials clears the bound environment's credentials and
 	// discards an unfinished preparation.
 	WithdrawCredentials(ctx context.Context, execution *domain.AgentExecution) error
@@ -63,14 +64,40 @@ type ExecutionEnvironmentPort interface {
 	// RenewLease renews the bound environment's lease to expiresAt and
 	// reports the expiry the authority returned.
 	RenewLease(ctx context.Context, execution *domain.AgentExecution, expiresAt time.Time) (time.Time, error)
-	// SyncInputs hands a Managed Computer the current inputs of its Work and
-	// reports how many due changes it covered. It asks holding before the
-	// sync, whose downloads authenticate with the delivered credentials.
-	SyncInputs(ctx context.Context, execution *domain.AgentExecution, holding EnvironmentHolding) (int64, error)
+	// SyncInputs hands a Managed Computer the current files of its Work's
+	// located inputs and reports how many due changes it covered. It asks
+	// holding before the sync, whose downloads authenticate with the
+	// delivered credentials.
+	SyncInputs(ctx context.Context, execution *domain.AgentExecution, inputs ManagedInputs, holding EnvironmentHolding) (int64, error)
 	// ReconcileComputer reconciles a Managed Computer that is reachable again:
 	// it ends the processes of Works no longer running there and removes the
 	// files of Works gone from it before anything new starts on it (Computer
 	// model: Reconciliation). It does nothing where no Managed Computer is
 	// reached.
 	ReconcileComputer(ctx context.Context, computerID string) error
+}
+
+// CredentialSupply is what a delivery hands the bound environment from
+// other authorities, obtained by Application: the Space Token of the Work's
+// publication target, with which its Agent publishes (Space Token in
+// sandbox).
+type CredentialSupply struct {
+	SpaceToken string
+}
+
+// ManagedInputs are the current files of a Managed Work's located inputs,
+// each with a fresh download Access Link; Located is false for a Work whose
+// layout located no inputs, which has none to copy.
+type ManagedInputs struct {
+	Located bool
+	Files   []InputFile
+}
+
+// InputFile is one file of a Work's located inputs and the path of its Access
+// Link, as Storage issues it for the platform's public address.
+type InputFile struct {
+	Name       string
+	SizeBytes  int64
+	UpdatedAt  time.Time
+	AccessPath string
 }

@@ -11,7 +11,7 @@ import (
 // Intent (real): only the human an employee-scoped definition represents
 // changes its name and icon, within the presets; nothing else changes.
 func TestChangeAppearanceAdmitsOnlyTheRepresentedHuman(t *testing.T) {
-	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"jack"}, AgentName: "Jack's Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, HomeBinding: domain.HomeBinding{OwnerID: "jack", Namespace: "personal"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Retained instructions"}})
+	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"jack"}, AgentName: "Jack's Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Retained instructions"}})
 	require.NoError(t, err)
 	rocket, err := domain.NewAgentIcon("rocket", "violet")
 	require.NoError(t, err)
@@ -39,7 +39,7 @@ func TestChangeAppearanceAdmitsOnlyTheRepresentedHuman(t *testing.T) {
 }
 
 func TestProjectDefinitionsKeepTheirEstablishedAppearance(t *testing.T) {
-	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Brisk Falcon", Purpose: "project_coordination", UsageScope: domain.UsageScope{Kind: "project", Reference: "jack"}, HomeBinding: domain.HomeBinding{OwnerID: "project/p", Namespace: "project_coordination"}})
+	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Brisk Falcon", Purpose: "project_coordination", UsageScope: domain.UsageScope{Kind: "project", Reference: "jack"}})
 	require.NoError(t, err)
 	_, err = a.ChangeAppearance("jack", "Renamed", domain.DefaultAgentIcon)
 	require.ErrorIs(t, err, domain.ErrAgentAppearanceForbidden, "a project scope reference is not a represented human")
@@ -48,7 +48,7 @@ func TestProjectDefinitionsKeepTheirEstablishedAppearance(t *testing.T) {
 // Intent (real): a definition gets its default appearance once; locating it
 // again keeps whatever its human chose.
 func TestEstablishAppearanceSetsDefaultsOnlyWhereUnset(t *testing.T) {
-	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"jack"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, HomeBinding: domain.HomeBinding{OwnerID: "jack", Namespace: "personal"}})
+	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"jack"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}})
 	require.NoError(t, err)
 	changed, err := a.EstablishAppearance("Jack", "")
 	require.NoError(t, err)
@@ -64,7 +64,7 @@ func TestEstablishAppearanceSetsDefaultsOnlyWhereUnset(t *testing.T) {
 	require.False(t, changed)
 	require.Equal(t, domain.AgentAppearance{Name: "Whiskers", Icon: cat}, a.Appearance())
 
-	project, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "project_coordination", UsageScope: domain.UsageScope{Kind: "project", Reference: "p"}, HomeBinding: domain.HomeBinding{OwnerID: "project/p", Namespace: "project_coordination"}})
+	project, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "project_coordination", UsageScope: domain.UsageScope{Kind: "project", Reference: "p"}})
 	require.NoError(t, err)
 	_, err = project.EstablishAppearance("Jack", " ")
 	require.ErrorIs(t, err, domain.ErrInvalidAgentDefinition, "a project Agent needs its supplied initial name")
@@ -79,7 +79,7 @@ func TestEmployeeDefaultAgentName(t *testing.T) {
 	require.Equal(t, "Work Agent", domain.EmployeeDefaultAgentName(" "), "without a display name the Agent still has a name")
 	long := domain.EmployeeDefaultAgentName(strings.Repeat("名", 50))
 	require.Equal(t, strings.Repeat("名", 32)+"'s Agent", long, "a long display name is shortened so the default stays a valid name")
-	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"jack"}, AgentName: long, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, HomeBinding: domain.HomeBinding{OwnerID: "jack", Namespace: "personal"}})
+	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"jack"}, AgentName: long, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}})
 	require.NoError(t, err)
 	_, err = a.ChangeAppearance("jack", long, domain.AgentIcon{Glyph: "cat", Color: "rose"})
 	require.NoError(t, err, "only the icon changes")

@@ -103,7 +103,7 @@ func (s WorkRepositorySelection) Validate() error {
 }
 
 func (s *AgentWork) determineRepositorySelection(input WorkRepositoryInput) error {
-	if input.OwnerUserID != "" && input.OwnerUserID != s.HomeBinding.OwnerID {
+	if input.OwnerUserID != "" && input.OwnerUserID != s.RepresentedPerson {
 		return fmt.Errorf("%w: repository owner differs from represented owner", ErrInvalidWork)
 	}
 	facts := make(map[string]AccessibleRepository, len(input.Available))

@@ -56,19 +56,19 @@ type libraryWorkRow struct {
 	SubjectKind  *string `xorm:"subject_kind"`
 	ProjectRef   string  `xorm:"project_ref"`
 	DisplayTitle string  `xorm:"display_title"`
-	InputSource  string  `xorm:"input_source"`
+	Layout       string  `xorm:"located_layout"`
 	UpdatedAt    int64   `xorm:"updated_at"`
 	Owner        string  `xorm:"agent_owner"`
 }
 
-// ListLibraryWorks reads the person's Personal Works and the Works with an
-// input source shared with them, each by its own index, most recently updated
-// first.
+// ListLibraryWorks reads the person's Personal Works and the Works shared
+// with them, each by its own index, most recently updated first, each with
+// the publication target its located layout fixed.
 func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person, agentID string, limit int) ([]query.LibraryWork, error) {
 	read := func(condition builder.Cond) ([]libraryWorkRow, error) {
 		var rows []libraryWorkRow
 		err := r.db.Context(ctx).Table("agent_session").Alias("s").
-			Select("s.id,s.agent_id,s.subject_kind,s.project_ref,s.display_title,s.input_source,s.updated_at,"+agentOwnerColumn+" AS agent_owner").
+			Select("s.id,s.agent_id,s.subject_kind,s.project_ref,s.display_title,s.located_layout,s.updated_at,"+agentOwnerColumn+" AS agent_owner").
 			Where("s.deleted_at=0").And(condition).Desc("s.updated_at", "s.id").Limit(limit).Find(&rows)
 		return rows, oops.With("operation", "agent.list_library_works").Wrap(err)
 	}
@@ -76,7 +76,7 @@ func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person, agen
 	if err != nil {
 		return nil, err
 	}
-	shared, err := read(builder.Expr("s.id IN (SELECT w.work_id FROM agent_work_share w WHERE w.reader_id=?) AND s.input_source<>''", person))
+	shared, err := read(builder.Expr("s.id IN (SELECT w.work_id FROM agent_work_share w WHERE w.reader_id=?)", person))
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,11 @@ func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person, agen
 	slices.SortStableFunc(rows, func(a, b libraryWorkRow) int { return cmp.Compare(b.UpdatedAt, a.UpdatedAt) })
 	works := make([]query.LibraryWork, 0, min(len(rows), limit))
 	for _, row := range rows[:min(len(rows), limit)] {
-		work := query.LibraryWork{WorkID: row.ID, Title: row.DisplayTitle, InputSource: row.InputSource, Personal: row.ProjectRef == "" && row.SubjectKind == nil}
+		layout, err := decodeLocatedLayout(row.Layout)
+		if err != nil {
+			return nil, err
+		}
+		work := query.LibraryWork{WorkID: row.ID, Title: row.DisplayTitle, PublicationTarget: layout.PublicationTarget.Directory, Personal: row.ProjectRef == "" && row.SubjectKind == nil}
 		if row.AgentID != agentID {
 			work.SharedBy = row.Owner
 		}
