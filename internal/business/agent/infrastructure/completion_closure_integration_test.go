@@ -73,7 +73,7 @@ func TestCompletionAndRestartShareOneOrder(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			f, id := runningInputSession(t)
+			f, id := workingSession(t)
 			failed, err := f.sessions.Get(ctx, id)
 			require.NoError(t, err)
 			require.NoError(t, failed.ObserveTurn(domain.TurnObservation{Sequence: 1, Completed: true}, false, false, time.Now()))

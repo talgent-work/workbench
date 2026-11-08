@@ -31,7 +31,7 @@ func TestIdleTimeoutAndInputAcceptanceShareCommitOrder(t *testing.T) {
 			name = "timeout commits first"
 		}
 		t.Run(name, func(t *testing.T) {
-			f, ref := runningInputSession(t)
+			f, ref := workingSession(t)
 			ctx := t.Context()
 			now := time.Now().UTC()
 			origin := now.Add(-30 * time.Minute)

@@ -28,7 +28,9 @@ func TestOriginalDetailsRemainSeparateBoundedAndWorkScoped(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 	writer, reader := unifiedmessagelog.NewWriter(conn), sglog.NewClickHouseReader(conn)
-	text := strings.Repeat("原文🙂 e\u0301\n", 100000)
+	// Three pages of each detail: pages split inside multi-byte and combining
+	// runes without the cost of a megabyte-scale body.
+	text := strings.Repeat("原文🙂 e\u0301\n", 6000)
 	input := `{"file_path":"/work/report.md","content":"` + strings.ReplaceAll(text, "\n", `\n`) + `"}`
 	encodedOutput, err := json.Marshal(text)
 	require.NoError(t, err)
