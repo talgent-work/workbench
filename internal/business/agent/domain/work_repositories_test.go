@@ -39,6 +39,7 @@ func TestWorkRetainsRepositoryIdentityAndBranchAcrossExecution(t *testing.T) {
 				exited(t, work, domain.HarnessExit{})
 			}
 			released(t, work)
+			admit.Seat.DeskID = "desk-next"
 			if restart {
 				require.NoError(t, work.Restart(admit))
 			} else {

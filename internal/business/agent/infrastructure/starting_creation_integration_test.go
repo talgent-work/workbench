@@ -35,14 +35,10 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
 	require.Empty(t, workID)
 	require.Zero(t, execution.starts.Load())
-	// The refusal settles the request identity and creates no Work.
-	assertCreationRows(t, db, 0, 1)
-	_, found := admittedStart(t, works, request.RequestID)
-	require.False(t, found)
+	// The refusal creates no Work and keeps nothing of its request: its
+	// repeat is admitted afresh once there is room.
+	assertCreatedWorks(t, db, 0)
 	capacity.err = nil
-	_, err = handler.Handle(t.Context(), request)
-	require.ErrorIs(t, err, command.ErrWorkCreationCanceled, "a settled refusal is not retried")
-	request.RequestID = uuid.NewString()
 	workID, err = handler.Handle(t.Context(), request)
 	require.NoError(t, err)
 	work, err := works.Get(t.Context(), workID)
@@ -50,11 +46,8 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	require.Equal(t, domain.WorkStarting, work.State)
 	require.True(t, work.HoldsProcess())
 	require.Equal(t, "1", work.CapabilitySnapshot.Plugins[0].Release.Version)
-	admitted, found := admittedStart(t, works, request.RequestID)
-	require.True(t, found)
-	require.Equal(t, query.AdmittedStart{WorkID: workID, Kind: query.StartKindStart}, admitted)
 	require.EqualValues(t, 1, execution.starts.Load())
-	assertCreationRows(t, db, 1, 2)
+	assertCreatedWorks(t, db, 1)
 	// Response-loss recovery is lookup-only even if catalog and capacity are down.
 	catalog.unavailable = true
 	capacity.err = domain.ErrCapacityUnavailable
@@ -65,9 +58,10 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	require.Equal(t, before, catalog.reads.Load())
 	other := creationInput(agent.ID, "other")
 	other.RequestID = request.RequestID
-	_, err = handler.Handle(t.Context(), other)
-	require.ErrorIs(t, err, command.ErrStartRequestConflict)
-	assertCreationRows(t, db, 1, 2)
+	repeated, err := handler.Handle(t.Context(), other)
+	require.NoError(t, err)
+	require.Equal(t, workID, repeated, "a repeated request identity names the Work it created, whatever else it carries")
+	assertCreatedWorks(t, db, 1)
 }
 
 func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
@@ -87,7 +81,7 @@ func TestCreationReusesSubjectCommittedBeforeAdmissionRejection(t *testing.T) {
 	reused, err := loser.Handle(t.Context(), creationInput(agent.ID, "same-subject"))
 	require.NoError(t, err)
 	require.Equal(t, winnerID, reused)
-	assertCreationRows(t, db, 1, 2) // the reuse is recorded on the loser's request identity
+	assertCreatedWorks(t, db, 1)
 	require.EqualValues(t, 1, port.starts.Load(), "reuse cannot send another initial startup")
 }
 
@@ -128,13 +122,11 @@ func creationInput(agentID, reference string) command.CreateWork {
 func creationModels() query.ModelConfigurations {
 	return query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "fixture"}})
 }
-func assertCreationRows(t *testing.T, db *xorm.Engine, works, requests int) {
+func assertCreatedWorks(t *testing.T, db *xorm.Engine, works int) {
 	t.Helper()
-	for table, want := range map[string]int{"agent_session": works, "agent_start_request": requests} {
-		var counts []int
-		require.NoError(t, db.SQL("SELECT COUNT(*) FROM "+table).Find(&counts))
-		require.Equal(t, []int{want}, counts, table)
-	}
+	var counts []int
+	require.NoError(t, db.SQL("SELECT COUNT(*) FROM agent_session").Find(&counts))
+	require.Equal(t, []int{works}, counts)
 }
 
 type initialCreationCapacity struct{ err error }
@@ -158,27 +150,13 @@ func (c *creationCatalog) ResolvePlugin(_ context.Context, _ string, slug string
 }
 
 // creationExecution observes, in place of beginning the execution, each
-// start a committed Work admitted, and checks that both durable records are
-// readable by a separate database session by then. No fake repository
-// substitutes for the commit.
+// start a committed Work admitted, and checks that the Work is readable by a
+// separate database session by then. No fake repository substitutes for the
+// commit.
 type creationExecution struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	db     *xorm.Engine
 	starts atomic.Int32
-}
-
-func (e *creationExecution) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := e.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
-		return err
-	}
-	return e.started(ctx, work)
-}
-
-func (e *creationExecution) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
-	if err := e.AgentWorkRepository.CommitStart(ctx, work, request); err != nil {
-		return err
-	}
-	return e.started(ctx, work)
 }
 
 func (e *creationExecution) Save(ctx context.Context, work *domain.AgentWork) error {
@@ -193,11 +171,11 @@ func (e *creationExecution) started(ctx context.Context, work *domain.AgentWork)
 		if _, admitted := event.(domain.WorkStartAdmitted); !admitted {
 			continue
 		}
-		rows, err := e.db.Context(ctx).QueryString("SELECT s.state,s.holds_process,r.kind FROM agent_session s JOIN agent_start_request r ON r.session_id=s.id WHERE s.id=?", work.ID)
+		rows, err := e.db.Context(ctx).QueryString("SELECT s.state,s.holds_process FROM agent_session s WHERE s.id=?", work.ID)
 		if err != nil {
 			return err
 		}
-		if len(rows) != 1 || rows[0]["state"] != "1" || rows[0]["holds_process"] != "1" || rows[0]["kind"] != "start" {
+		if len(rows) != 1 || rows[0]["state"] != "1" || rows[0]["holds_process"] != "1" {
 			return errors.New("execution preceded atomic creation admission")
 		}
 		e.starts.Add(1)

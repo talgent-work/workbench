@@ -229,28 +229,6 @@ func TestOwnerOperationsRefuseOtherReaders(t *testing.T) {
 	require.Equal(t, []string{"reader"}, owned.GetWork().GetShareReaderIds())
 }
 
-func TestCancelledCreationRequestIdentityNeverCreatesAWork(t *testing.T) {
-	ctx := context.Background()
-	f := newAccessFixture(t)
-	requestID := uuid.NewString()
-	outcome, err := f.agent.GetWorkCreation(authenticated(ctx, "control"), &agentprivatev1.GetWorkCreationRequest{RequestId: requestID})
-	require.NoError(t, err)
-	require.Equal(t, agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_UNKNOWN, outcome.GetOutcome())
-
-	cancelled, err := f.agent.CancelWorkCreation(authenticated(ctx, "control"), &agentprivatev1.CancelWorkCreationRequest{RequestId: requestID})
-	require.NoError(t, err)
-	require.Empty(t, cancelled.GetWorkId())
-	outcome, err = f.agent.GetWorkCreation(authenticated(ctx, "control"), &agentprivatev1.GetWorkCreationRequest{RequestId: requestID})
-	require.NoError(t, err)
-	require.Equal(t, agentprivatev1.WorkCreationOutcome_WORK_CREATION_OUTCOME_CANCELLED, outcome.GetOutcome())
-
-	works := len(f.sessions.items)
-	_, err = f.agent.PrepareWorkExecution(authenticated(ctx, "control"), &agentprivatev1.PrepareWorkExecutionRequest{SubjectId: "owner", RequestId: requestID, WorkBranch: "talgent/" + "TAL-1", InputId: uuid.NewString(), Input: "Start",
-		Creation: &agentprivatev1.CreateWorkRequest{SubjectId: "owner", AgentId: uuid.NewString(), WorkspaceReference: "workspace", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project-a"}})
-	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a delayed request carrying a cancelled identity is refused")
-	require.Len(t, f.sessions.items, works, "and creates nothing")
-}
-
 type recordedWithdrawals struct {
 	eventhandler.LiveStreamPort
 	mu    sync.Mutex

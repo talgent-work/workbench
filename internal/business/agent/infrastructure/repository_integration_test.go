@@ -312,11 +312,10 @@ func verifyConcurrentAdmission(t *testing.T, db *xorm.Engine, sessionID string) 
 		require.NoError(t, err)
 	}
 	require.Equal(t, int32(1), starts.Load(), "competing retries authorize only one outbound execution")
-	rows, err := db.QueryString("SELECT id, kind FROM agent_start_request WHERE session_id = ? AND kind = ?", sessionID, "resume")
+	admitted, err := command.NewRestartWorkHandler(time.Now, started, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
 	require.NoError(t, err)
-	require.Equal(t, []map[string]string{{"id": request.RequestID, "kind": "resume"}}, rows)
-	_, err = command.NewRestartWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
-	require.ErrorIs(t, err, command.ErrStartRequestConflict, "reusing an acceptance identity for another operation is rejected")
+	require.True(t, admitted, "the identity's Desk is held by the start it admitted")
+	require.Equal(t, int32(1), starts.Load(), "reusing the identity for another operation starts nothing more")
 }
 
 // Only the external catalog is controlled; snapshot composition, validation and

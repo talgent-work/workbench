@@ -5,7 +5,6 @@ package infrastructure_test
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -64,169 +63,48 @@ func creationPreparation(db *xorm.Engine, models agentquery.ModelConfigurations)
 
 // creation is the production creation use case over this fixture's database;
 // registrar may wrap the Work repository to inject a failure.
-func (f workCreationFixture) creation(registrar command.AgentWorkRepository, computer command.ComputerPort) *command.CreateWorkHandler {
+func (f workCreationFixture) creation(registrar domain.AgentWorkRepository, computer command.ComputerPort) *command.CreateWorkHandler {
 	if registrar == nil {
 		registrar = f.sessions
 	}
 	return command.NewCreateWorkHandler(time.Now, f.agents, registrar, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), deploymentModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computer, creationPreparation(f.db, deploymentModels()))
 }
 
-func startRequestRows(t *testing.T, db *xorm.Engine) int {
-	t.Helper()
-	var counts []int
-	require.NoError(t, db.SQL("SELECT COUNT(*) FROM agent_start_request").Find(&counts))
-	return counts[0]
-}
-
-// Both histories overlap the creation use case and its cancellation through
-// independent DB connections. The barrier controls which transaction commits
-// first; the request record decides the outcome for both.
-func TestWorkCreationCancellationAndRegistration(t *testing.T) {
-	for _, registeredFirst := range []bool{false, true} {
-		name := "cancellation commits first"
-		if registeredFirst {
-			name = "registration commits first and acknowledgement is lost"
-		}
-		t.Run(name, func(t *testing.T) {
-			f := newWorkCreationFixture(t)
-			other, err := xorm.NewEngine("mysql", f.dsn)
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = other.Close() })
-			canceller := workCreationFixture{db: other, dsn: f.dsn, agents: infrastructure.NewAgentDefinitionRepository(other, time.Now), sessions: infrastructure.NewAgentWorkRepository(other, time.Now)}
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			entered, resume := make(chan struct{}), make(chan struct{})
-			var release sync.Once
-			unpause := func() { release.Do(func() { close(resume) }) }
-			defer unpause()
-			lost := errors.New("registration acknowledgement lost")
-			registrar := creationBarrierRegistrar{AgentWorkRepository: f.sessions, afterCommit: registeredFirst, entered: entered, resume: resume, lost: lost}
-			create := f.creation(registrar, computertest.Checked(startupAuthority{}))
-			result := make(chan error, 1)
-			go func() { _, err := create.Handle(ctx, f.request); result <- err }()
-			select {
-			case <-entered:
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			}
-			workID, err := canceller.creation(nil, computertest.Checked(startupAuthority{})).Cancel(ctx, f.request.RequestID)
-			require.NoError(t, err)
-			unpause()
-			select {
-			case err := <-result:
-				if registeredFirst {
-					require.ErrorIs(t, err, lost)
-				} else {
-					require.ErrorIs(t, err, command.ErrWorkCreationCanceled)
-				}
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			}
-			actual, err := f.sessions.FindBySubject(ctx, f.request.AgentID, f.request.Subject)
-			require.NoError(t, err)
-			if registeredFirst {
-				require.NotNil(t, actual)
-				require.Equal(t, actual.ID, workID, "cancelling a committed creation returns its Work")
-				require.Equal(t, domain.WorkStarting, actual.State)
-				require.True(t, actual.HoldsProcess())
-				input, held := actual.PendingInitialTaskInput()
-				require.True(t, held, "the committed Work holds its initial task input")
-				require.Equal(t, f.request.InitialExecution.Input.ID, input.ID)
-				require.NoError(t, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(other)).AuthorizeWork(ctx, "owner", actual.ID))
-			} else {
-				require.Empty(t, workID)
-				require.Nil(t, actual, "a cancelled creation creates nothing")
-			}
-			require.Equal(t, 1, startRequestRows(t, f.db))
-		})
-	}
-}
-
-type creationBarrierRegistrar struct {
-	command.AgentWorkRepository
-	afterCommit bool
-	entered     chan struct{}
-	resume      chan struct{}
-	lost        error
-}
-
-func (r creationBarrierRegistrar) RegisterWork(ctx context.Context, s *domain.AgentWork, registration command.WorkRegistration) error {
-	if r.afterCommit {
-		if err := r.AgentWorkRepository.RegisterWork(ctx, s, registration); err != nil {
-			return err
-		}
-	}
-	close(r.entered)
-	select {
-	case <-r.resume:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	if r.afterCommit {
-		return r.lost
-	}
-	return r.AgentWorkRepository.RegisterWork(ctx, s, registration)
-}
-
-// A failure after writing the request record rolls it back together with the
-// Work, so the identity stays unanswered: its caller may still cancel it, and
-// the cancellation then holds against a delayed repeat.
-func TestWorkCreationRegistrationRollbackAllowsCancellation(t *testing.T) {
-	f := newWorkCreationFixture(t)
-	ctx := context.Background()
-	_, err := f.db.Exec(`CREATE TRIGGER reject_creation_request AFTER INSERT ON agent_start_request FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='creation request write failed'`)
-	require.NoError(t, err)
-	create := f.creation(nil, computertest.Checked(startupAuthority{}))
-	_, err = create.Handle(ctx, f.request)
-	require.ErrorContains(t, err, "creation request write failed")
-	_, found, err := create.Outcome(ctx, f.request.RequestID)
-	require.NoError(t, err)
-	require.False(t, found, "a rolled-back creation records nothing")
-	session, err := f.sessions.FindBySubject(ctx, f.request.AgentID, f.request.Subject)
-	require.NoError(t, err)
-	require.Nil(t, session)
-	_, err = f.db.Exec(`DROP TRIGGER reject_creation_request`)
-	require.NoError(t, err)
-	workID, err := create.Cancel(ctx, f.request.RequestID)
-	require.NoError(t, err)
-	require.Empty(t, workID)
-	_, err = create.Handle(ctx, f.request)
-	require.ErrorIs(t, err, command.ErrWorkCreationCanceled)
-	session, err = f.sessions.FindBySubject(ctx, f.request.AgentID, f.request.Subject)
-	require.NoError(t, err)
-	require.Nil(t, session)
-}
-
-// The first creation decides its request identity: a repeat with other
-// content is a conflict, and the caller mutating its request afterwards does
-// not rewrite what was recorded.
-func TestWorkCreationRetainsOriginalContent(t *testing.T) {
+// A repeated creation returns the Work its request identity derives,
+// whatever else the repeat carries; an identity whose Work belongs to another
+// definition names another operation.
+func TestARepeatedCreationReturnsTheWorkItsIdentityDerives(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	create := f.creation(nil, computertest.Checked(startupAuthority{}))
 	id, err := create.Handle(ctx, f.request)
 	require.NoError(t, err)
 	for name, mutate := range map[string]func(*command.CreateWork){
-		"subject":    func(r *command.CreateWork) { r.Subject.ID = uuid.NewString() },
-		"definition": func(r *command.CreateWork) { r.AgentID = uuid.NewString() },
-		"input":      func(r *command.CreateWork) { r.InitialExecution.Input.Text = "changed after return" },
+		"subject": func(r *command.CreateWork) { r.Subject.ID = uuid.NewString() },
+		"input":   func(r *command.CreateWork) { r.InitialExecution.Input.Text = "changed after return" },
 	} {
 		changed := f.request
 		initial := *f.request.InitialExecution
 		changed.InitialExecution = &initial
 		mutate(&changed)
-		_, err := create.Handle(ctx, changed)
-		require.ErrorIs(t, err, command.ErrWorkCreationConflict, name)
+		repeated, err := create.Handle(ctx, changed)
+		require.NoError(t, err, name)
+		require.Equal(t, id, repeated, name)
 	}
-	repeated, err := create.Handle(ctx, f.request)
+	work, err := f.sessions.Get(ctx, id)
 	require.NoError(t, err)
-	require.Equal(t, id, repeated)
-	outcome, found, err := create.Outcome(ctx, f.request.RequestID)
+	require.Equal(t, f.request.Subject, work.Subject, "a repeat changes nothing of its Work")
+	pending, held := work.PendingInitialTaskInput()
+	require.True(t, held)
+	require.Equal(t, f.request.InitialExecution.Input.Text, pending.Text)
+
+	other, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Other Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.NewString()}, HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}})
 	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, id, outcome.WorkID)
-	require.False(t, outcome.Canceled)
-	require.Equal(t, 1, startRequestRows(t, f.db))
+	require.NoError(t, f.agents.Save(ctx, other))
+	foreign := f.request
+	foreign.AgentID = other.ID
+	_, err = create.Handle(ctx, foreign)
+	require.ErrorIs(t, err, command.ErrStartRequestConflict)
 }
 
 // Works without a Subject are created one per request identity: a repeated
@@ -237,7 +115,6 @@ func TestWorksWithoutSubjectAreCreatedPerRequest(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	create := f.creation(nil, computertest.Checked(startupAuthority{}))
-	startups := infrastructure.NewExecutionQueryRepository(f.db)
 	mounts := []domain.ReadOnlyMount{{Name: "reference", Reference: "space-1"}}
 	personal := func() command.CreateWork {
 		initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), Input: command.ExecutionInput{ID: uuid.NewString(), Text: "my own work"}}
@@ -258,36 +135,35 @@ func TestWorksWithoutSubjectAreCreatedPerRequest(t *testing.T) {
 	require.False(t, work.Subject.Present())
 	require.Equal(t, mounts, work.ReadOnlyMounts)
 
-	for _, id := range []string{firstID, secondID} {
-		startup, err := startups.GetWorkStartup(ctx, id)
+	holds := func(id string) bool {
+		work, err := f.sessions.Get(ctx, id)
 		require.NoError(t, err)
-		require.True(t, startup.CreationPending, "a new Work holds its initial task input")
+		_, held := work.PendingInitialTaskInput()
+		return held
 	}
+	require.True(t, holds(firstID), "a new Work holds its initial task input")
+	require.True(t, holds(secondID))
 	buffer := &commandtest.InputBuffer{}
 	require.NoError(t, command.NewInputAcceptance(f.sessions, buffer).HandOffInitialTaskInput(ctx, firstID))
 	require.Equal(t, []command.ExecutionInput{first.InitialExecution.Input}, buffer.Inputs)
-	startup, err := startups.GetWorkStartup(ctx, firstID)
-	require.NoError(t, err)
-	require.False(t, startup.CreationPending, "a handed-off initial task input leaves the Work")
-	startup, err = startups.GetWorkStartup(ctx, secondID)
-	require.NoError(t, err)
-	require.True(t, startup.CreationPending, "another Work's hand-off is not this one's")
+	require.False(t, holds(firstID), "a handed-off initial task input leaves the Work")
+	require.True(t, holds(secondID), "another Work's hand-off is not this one's")
 }
 
 // competingRegistration lets another creation of the same request register
 // first, as a concurrent repeat would.
 type competingRegistration struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	compete func()
 }
 
-func (r *competingRegistration) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
-	if r.compete != nil {
+func (r *competingRegistration) Save(ctx context.Context, work *domain.AgentWork) error {
+	if r.compete != nil && work.Version == 0 {
 		compete := r.compete
 		r.compete = nil
 		compete()
 	}
-	return r.AgentWorkRepository.RegisterWork(ctx, work, registration)
+	return r.AgentWorkRepository.Save(ctx, work)
 }
 
 // A concurrent repeat of a request without a Subject that loses registration
@@ -309,19 +185,6 @@ func TestAConcurrentRepeatWithoutSubjectReturnsTheWinnersWork(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, winner, loser)
 	require.Equal(t, request.WorkID, loser, "the Work keeps the identity its caller allocated")
-	require.Equal(t, 1, startRequestRows(t, f.db))
-}
-
-// admittedStart reads a start request identity as GetStartAdmission does:
-// found only when a Work admitted it.
-func admittedStart(t *testing.T, works command.AgentWorkRepository, requestID string) (agentquery.AdmittedStart, bool) {
-	t.Helper()
-	record, found, err := works.FindStartRequest(t.Context(), requestID)
-	require.NoError(t, err)
-	if !found || !record.Admitted() {
-		return agentquery.AdmittedStart{}, false
-	}
-	return agentquery.AdmittedStart{WorkID: record.WorkID, Kind: record.Kind}, true
 }
 
 // committedCreation creates the fixture's Work and loses the answer right
@@ -332,8 +195,8 @@ func (f workCreationFixture) committedCreation(t *testing.T) string {
 	lost := errors.New("creation answer lost after the commit")
 	_, err := f.creation(registrationLostAcknowledgement{AgentWorkRepository: f.sessions, err: lost}, computertest.Checked(startupAuthority{})).Handle(t.Context(), f.request)
 	require.ErrorIs(t, err, lost)
-	outcome, found, err := f.creation(nil, computertest.Checked(startupAuthority{})).Outcome(t.Context(), f.request.RequestID)
+	work, err := f.sessions.FindBySubject(t.Context(), f.request.AgentID, f.request.Subject)
 	require.NoError(t, err)
-	require.True(t, found)
-	return outcome.WorkID
+	require.NotNil(t, work, "the creation committed")
+	return work.ID
 }

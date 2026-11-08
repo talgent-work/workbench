@@ -161,7 +161,7 @@ func TestReadyProcessIsIdleOnlyWhenNothingIsComing(t *testing.T) {
 	ctx := context.Background()
 	resumed := func(t *testing.T) *domain.AgentWork {
 		session := stoppedSession(t)
-		require.NoError(t, session.Resume(fixtureAdmission(session.AgentID)))
+		require.NoError(t, session.Resume(nextAdmission(session.AgentID)))
 		return session
 	}
 	for _, tc := range []struct {

@@ -130,21 +130,6 @@ CREATE TABLE IF NOT EXISTS `agent_work_share` (
   KEY `idx_reader_id_work_id` (`reader_id`,`work_id`) COMMENT 'A reader finds the Works shared with them'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Work Shares of an AgentWork, owned by agent_session';
 
-CREATE TABLE IF NOT EXISTS `agent_start_request` (
-  `id` varchar(36) NOT NULL COMMENT 'Caller-selected start request UUID',
-  `session_id` varchar(36) NOT NULL COMMENT 'Target Work; empty for a creation cancelled or refused before it created one',
-  `kind` varchar(16) NOT NULL DEFAULT '' COMMENT 'Start (creation), resume or restart; empty when a start was canceled before its operation was known',
-  `fingerprint` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'SHA-256 digest of the request content; a repeat with other content is a conflict; empty for an identity cancelled before receipt',
-  `creation_scope` varchar(64) NOT NULL DEFAULT '' COMMENT 'Original scope digest for cancellation before Work registration',
-  `canceled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'True when the request was canceled before admission',
-  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Immutable receipt version',
-  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
-  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
-  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; zero is retained',
-  PRIMARY KEY (`id`),
-  KEY `idx_session_id_canceled_deleted_at_created_at` (`session_id`, `canceled`, `deleted_at`, `created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='The single record of caller request identities for Work creation, Resume and Restart; not a process run';
-
 CREATE TABLE IF NOT EXISTS `computer` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Computer UUIDv7 identity; a Cloud''s is fixed by its cluster''s configuration',
   `kind` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'cloud or managed',

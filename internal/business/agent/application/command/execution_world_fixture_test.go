@@ -169,6 +169,14 @@ func fixtureAdmission(agentID string) domain.StartAdmission {
 	return domain.StartAdmission{AdmittedAt: time.Now().Add(-time.Minute), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureComputer, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 }
 
+// nextAdmission admits a later start of the Work under a new request, which
+// derives a Desk of its own.
+func nextAdmission(agentID string) domain.StartAdmission {
+	admission := fixtureAdmission(agentID)
+	admission.Seat.DeskID = uuid.NewString()
+	return admission
+}
+
 // startingSession is a new Work whose first start is admitted and seated.
 func startingSession(t *testing.T) *domain.AgentWork {
 	t.Helper()

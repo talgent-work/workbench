@@ -4,28 +4,26 @@ import (
 	"context"
 	"sync"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// feedbackSessionStore holds one Work and its start-request records, standing
-// in for the AgentWork repository and its request records.
+// feedbackSessionStore holds one Work, standing in for the AgentWork
+// repository.
 type feedbackSessionStore struct {
-	command.AgentWorkRepository
-	mu       sync.Mutex
-	session  *domain.AgentWork
-	saves    int
-	saveErr  error
-	requests map[string]query.StartRequest
-	// commitErr fails the next commit of a start request once, after its
-	// Work and record were not written.
-	commitErr error
+	domain.AgentWorkRepository
+	mu      sync.Mutex
+	session *domain.AgentWork
+	saves   int
+	saveErr error
+	// commitErr fails the next save once, without writing the Work;
+	// answerErr fails it once after writing the Work, an answer lost after
+	// the commit landed.
+	commitErr, answerErr error
 	// committed are the Domain Events of every successful save, in order.
 	committed []domain.Event
 }
 
-var _ command.AgentWorkRepository = (*feedbackSessionStore)(nil)
+var _ domain.AgentWorkRepository = (*feedbackSessionStore)(nil)
 
 func (s *feedbackSessionStore) Get(context.Context, string) (*domain.AgentWork, error) {
 	copy := *s.session
@@ -39,6 +37,9 @@ func (s *feedbackSessionStore) Get(context.Context, string) (*domain.AgentWork, 
 	return &copy, nil
 }
 func (s *feedbackSessionStore) Save(_ context.Context, session *domain.AgentWork) error {
+	if err := s.failCommit(); err != nil {
+		return err
+	}
 	if s.saveErr != nil {
 		return s.saveErr
 	}
@@ -47,7 +48,7 @@ func (s *feedbackSessionStore) Save(_ context.Context, session *domain.AgentWork
 	if session.Events != nil {
 		s.committed = append(s.committed, session.Events.Drain()...)
 	}
-	return nil
+	return s.loseAnswer()
 }
 
 // admittedStarts are the starts the committed Work admitted, each the request
@@ -73,48 +74,6 @@ func (s *feedbackSessionStore) committedOf(kind domain.EventKind) int {
 	return count
 }
 
-func (s *feedbackSessionStore) FindStartRequest(_ context.Context, requestID string) (query.StartRequest, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	record, found := s.requests[requestID]
-	return record, found, nil
-}
-
-// record retains a request unless its identity is recorded, as the first
-// writer decides it, and answers the retained record.
-func (s *feedbackSessionStore) record(request query.StartRequest) query.StartRequest {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.requests == nil {
-		s.requests = map[string]query.StartRequest{}
-	}
-	if retained, found := s.requests[request.ID]; found {
-		return retained
-	}
-	s.requests[request.ID] = request
-	return request
-}
-
-func (s *feedbackSessionStore) forget(requestID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.requests, requestID)
-}
-
-func (s *feedbackSessionStore) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
-	if err := s.failCommit(); err != nil {
-		return err
-	}
-	if err := command.AnswerRetained(s.record(request), request); err != nil {
-		return err
-	}
-	if err := s.Save(ctx, work); err != nil {
-		s.forget(request.ID)
-		return err
-	}
-	return nil
-}
-
 func (s *feedbackSessionStore) failCommit() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -123,13 +82,12 @@ func (s *feedbackSessionStore) failCommit() error {
 	return err
 }
 
-func (s *feedbackSessionStore) CancelStart(_ context.Context, workID string, requestID string) (bool, error) {
-	retained := s.record(query.StartRequest{ID: requestID, WorkID: workID, Canceled: true})
-	return retained.Canceled, nil
-}
-
-func (s *feedbackSessionStore) RecordCreation(_ context.Context, request query.StartRequest) (query.StartRequest, error) {
-	return s.record(request), nil
+func (s *feedbackSessionStore) loseAnswer() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	err := s.answerErr
+	s.answerErr = nil
+	return err
 }
 
 // committedStops are the committed requests that the Work's process exit.

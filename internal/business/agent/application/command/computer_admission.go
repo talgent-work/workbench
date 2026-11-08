@@ -104,6 +104,10 @@ func workComputer(ctx context.Context, computers ComputerPort, personID, chosen 
 // so the request can no longer start.
 var ErrDeskUnavailable = errors.New("agent: the request's Desk already left")
 
+// ErrStartRequestConflict reports that the Desk a request identity derives
+// belongs to another run: the identity names another start than its first.
+var ErrStartRequestConflict = errors.New("agent: start request identity belongs to another operation")
+
 // admitRun asks the Work's Computer to admit one run under the Desk its
 // request names: it is seated, or waits in the Computer's line when the
 // Computer queues a run while full. A repeated Desk identity is answered with

@@ -4,14 +4,12 @@ package infrastructure_test
 
 import (
 	"context"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"testing"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
@@ -45,7 +43,7 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	creation, isNew, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-a"}, subjectWork(t, sessions, agent.ID, subject))
 	require.NoError(t, err)
 	require.True(t, isNew)
-	require.NoError(t, sessions.RegisterWork(ctx, creation, command.WorkRegistration{SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: creation.ID}, DefinitionVersion: agent.Version}))
+	require.NoError(t, sessions.Save(ctx, creation))
 	originalID, originalContext := creation.ID, creation.HarnessSessionReference
 	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "Changed", StartupAgent: "employees:architect", RequiredPlugins: []string{"employees"}}))
 	require.NoError(t, agents.Save(ctx, agent))
@@ -83,5 +81,5 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	duplicate, isNew, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a", WorkspaceReference: "workspace-b"}, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	require.True(t, isNew)
-	require.ErrorIs(t, sessions.RegisterWork(ctx, duplicate, command.WorkRegistration{SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: duplicate.ID}, DefinitionVersion: agent.Version}), domain.ErrConcurrentModification, "storage keeps one Work per definition and Subject")
+	require.ErrorIs(t, sessions.Save(ctx, duplicate), domain.ErrConcurrentModification, "storage keeps one Work per definition and Subject")
 }

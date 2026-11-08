@@ -4,7 +4,6 @@ package infrastructure_test
 
 import (
 	"context"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"testing"
 	"time"
 
@@ -65,9 +64,7 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 	work, created, err := agent.CreateWork(input, subjectWork(t, f.sessions, agent.ID, input.Subject))
 	require.NoError(t, err)
 	require.True(t, created)
-	require.NoError(t, f.sessions.RegisterWork(t.Context(), work, command.WorkRegistration{
-		SubjectID: "owner", Request: agentquery.StartRequest{ID: uuid.NewString(), Kind: agentquery.StartKindStart, WorkID: work.ID}, DefinitionVersion: agent.Version,
-	}))
+	require.NoError(t, f.sessions.Save(t.Context(), work))
 	retained, err := f.sessions.Get(t.Context(), work.ID)
 	require.NoError(t, err)
 	want := domain.WorkAuthorizationSelection{OwnerUserID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: selectedID, Provider: "github", Service: "github"}, {AuthorizationID: otherID, Provider: "other", Service: "other"}}}

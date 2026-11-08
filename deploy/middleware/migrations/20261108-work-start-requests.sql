@@ -29,7 +29,11 @@ PREPARE step FROM @statement;
 EXECUTE step;
 DEALLOCATE PREPARE step;
 
-SET @fingerprint_missing = (SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+-- 20261108-start-request-removal.sql drops agent_start_request; once it ran,
+-- this step leaves the table alone.
+SET @fingerprint_missing = (SELECT COUNT(*) = 1 FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_start_request')
+  AND (SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_start_request' AND COLUMN_NAME = 'fingerprint');
 SET @statement = IF(@fingerprint_missing,
   'ALTER TABLE agent_start_request

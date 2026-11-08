@@ -13,7 +13,6 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -27,28 +26,12 @@ func (startupAuthority) AdmitRoom(context.Context) error                     { r
 // startedWorks reports each start a committed Work admitted, in place of
 // beginning its execution.
 type startedWorks struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	onStart func(domain.LaunchSpecification)
 }
 
 func (w startedWorks) Save(ctx context.Context, work *domain.AgentWork) error {
 	if err := w.AgentWorkRepository.Save(ctx, work); err != nil {
-		return err
-	}
-	w.started(work)
-	return nil
-}
-
-func (w startedWorks) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
-	if err := w.AgentWorkRepository.RegisterWork(ctx, work, registration); err != nil {
-		return err
-	}
-	w.started(work)
-	return nil
-}
-
-func (w startedWorks) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
-	if err := w.AgentWorkRepository.CommitStart(ctx, work, request); err != nil {
 		return err
 	}
 	w.started(work)

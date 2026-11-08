@@ -298,8 +298,9 @@ func TestALaterStartSupersedesAWithdrawnStartWhoseRetirementWasLost(t *testing.T
 }
 
 // fixtureAdmissionAt is a seated admission at the given time.
+// fixtureAdmissionAt admits a later start of the Work at the time.
 func fixtureAdmissionAt(agentID string, at time.Time) domain.StartAdmission {
-	admission := fixtureAdmission(agentID)
+	admission := nextAdmission(agentID)
 	admission.AdmittedAt = at
 	return admission
 }

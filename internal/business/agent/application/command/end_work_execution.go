@@ -7,13 +7,13 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// EndWorkExecution ends the Work's Harness process for a caller whose start
-// request was admitted, or prevents that request's admission when it is still
-// pending. It never closes the conversation.
+// EndWorkExecution ends the Work's Harness process for the caller of its
+// start request. It never closes the conversation. A start request is not
+// cancelled before admission: no request record is kept, and a start admitted
+// later is ended by a later request.
 type EndWorkExecution struct {
 	SubjectID      string
 	WorkID         string
@@ -23,11 +23,10 @@ type EndWorkExecution struct {
 
 type EndWorkExecutionHandler struct {
 	control sessionControl
-	starts  AgentWorkRepository
 }
 
-func NewEndWorkExecutionHandler(sessions AgentWorkRepository, authorization access.WorkAuthorizer) *EndWorkExecutionHandler {
-	return &EndWorkExecutionHandler{control: sessionControl{sessions: sessions, access: authorization}, starts: sessions}
+func NewEndWorkExecutionHandler(sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer) *EndWorkExecutionHandler {
+	return &EndWorkExecutionHandler{control: sessionControl{sessions: sessions, access: authorization}}
 }
 
 func (h *EndWorkExecutionHandler) Handle(ctx context.Context, request EndWorkExecution) error {
@@ -35,14 +34,10 @@ func (h *EndWorkExecutionHandler) Handle(ctx context.Context, request EndWorkExe
 		return err
 	}
 	if uuid.Validate(request.StartRequestID) != nil {
-		return query.ErrInvalidStartRequest
+		return ErrInvalidStartRequest
 	}
 	if strings.TrimSpace(request.RequestID) == "" || len(request.RequestID) > 128 {
 		return domain.ErrInvalidWork
-	}
-	canceled, err := h.starts.CancelStart(ctx, request.WorkID, request.StartRequestID)
-	if err != nil || canceled {
-		return err
 	}
 	return h.control.apply(ctx, WorkControl{SubjectID: request.SubjectID, WorkID: request.WorkID, RequestID: request.RequestID}, func(_ context.Context, work *domain.AgentWork, requestID string) error {
 		return work.RequestExecutionEnd(requestID)

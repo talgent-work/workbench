@@ -7,7 +7,6 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -30,9 +29,8 @@ func (r *rpcAgents) Save(_ context.Context, a *domain.AgentDefinition) error {
 }
 
 type rpcSessions struct {
-	command.AgentWorkRepository
-	items    map[string]*domain.AgentWork
-	requests map[string]query.StartRequest
+	domain.AgentWorkRepository
+	items map[string]*domain.AgentWork
 	// events receives the Work's Domain Events once a change is saved, as the
 	// production repository dispatches them.
 	events domainevent.Dispatcher
@@ -82,63 +80,9 @@ func (p *rpcExecution) AcceptInput(_ context.Context, _ string, input command.Ex
 	return command.InputBuffered, nil
 }
 
-func (r *rpcSessions) RegisterWork(ctx context.Context, s *domain.AgentWork, registration command.WorkRegistration) error {
-	if retained := r.record(registration.Request); retained != registration.Request {
-		if retained.Canceled {
-			return command.ErrWorkCreationCanceled
-		}
-		return command.ErrStartRequestConflict
-	}
-	return r.Save(ctx, s)
-}
-
 func (p *rpcExecution) AcceptResponse(_ context.Context, _ string, response command.InteractionResponse) error {
 	p.responses = append(p.responses, response)
 	return nil
-}
-
-func (r *rpcSessions) FindStartRequest(_ context.Context, requestID string) (query.StartRequest, bool, error) {
-	record, found := r.requests[requestID]
-	return record, found, nil
-}
-
-// record retains a request unless its identity is recorded, as the first
-// writer decides it, and answers the retained record.
-func (r *rpcSessions) record(request query.StartRequest) query.StartRequest {
-	if retained, found := r.requests[request.ID]; found {
-		return retained
-	}
-	if r.requests == nil {
-		r.requests = map[string]query.StartRequest{}
-	}
-	r.requests[request.ID] = request
-	return request
-}
-
-func (r *rpcSessions) CommitStart(ctx context.Context, work *domain.AgentWork, request query.StartRequest) error {
-	if err := command.AnswerRetained(r.record(request), request); err != nil {
-		return err
-	}
-	return r.Save(ctx, work)
-}
-
-func (r *rpcSessions) CancelStart(_ context.Context, workID string, requestID string) (bool, error) {
-	return r.record(query.StartRequest{ID: requestID, WorkID: workID, Canceled: true}).Canceled, nil
-}
-
-func (r *rpcSessions) RecordCreation(_ context.Context, request query.StartRequest) (query.StartRequest, error) {
-	return r.record(request), nil
-}
-
-// admitted are the start requests committed with a start.
-func (r *rpcSessions) admitted() []query.StartRequest {
-	var admitted []query.StartRequest
-	for _, record := range r.requests {
-		if record.Admitted() {
-			admitted = append(admitted, record)
-		}
-	}
-	return admitted
 }
 
 func (r *rpcSessions) FindBySubject(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {

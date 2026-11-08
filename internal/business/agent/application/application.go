@@ -36,7 +36,6 @@ type Queries struct {
 	ListWorks                    *query.ListWorksHandler
 	GetWorkView                  *query.GetWorkViewHandler
 	ListWorkLifecycleEvents      *query.ListWorkLifecycleEventsHandler
-	GetWorkStartup               *query.GetWorkStartupHandler
 	GetWorkOrigin                *query.GetWorkOriginHandler
 	ResolveWorkContextPosition   *query.ResolveWorkContextPositionHandler
 	ResolveWorkStarts            *query.ResolveWorkStartsHandler
@@ -46,7 +45,6 @@ type Queries struct {
 	LocateWork                   *query.LocateWorkHandler
 	VerifyWorkCredential         *query.VerifyWorkCredentialHandler
 	GetAgentDefinitionForPurpose *query.GetAgentDefinitionForPurposeHandler
-	GetStartAdmission            *query.GetStartAdmissionHandler
 	ListRecoveryWorks            *query.ListRecoveryWorksHandler
 	GetAgentDefinition           *query.GetAgentDefinitionHandler
 	GetWork                      *query.GetWorkHandler
@@ -61,7 +59,7 @@ type Application struct {
 	PluginResults        query.PluginResultReader
 	ServiceAccessResults query.ServiceAccessReader
 	Catalog              command.MarketplacePort
-	Works                command.AgentWorkRepository
+	Works                domain.AgentWorkRepository
 	// Workspaces serves workspace browsing; Storage owns a Cloud Work's view.
 	Workspaces       WorkspacePort
 	Models           query.ModelConfigurations
@@ -82,7 +80,7 @@ func NewApplication(
 	serviceAccessResults query.ServiceAccessReader,
 	catalog command.MarketplacePort,
 	recentRepositories query.RecentRepositoryReader,
-	sessions command.AgentWorkRepository,
+	sessions domain.AgentWorkRepository,
 	workspaces WorkspacePort,
 	models query.ModelConfigurations,
 	definitions domain.AgentDefinitionRepository,
@@ -113,7 +111,6 @@ func NewApplication(
 	interaction *command.RespondWorkInteractionHandler,
 	recovery *command.RecoverWorkHandler,
 	recoverySessions *query.ListRecoveryWorksHandler,
-	admission *query.GetStartAdmissionHandler,
 	definition *query.GetAgentDefinitionForPurposeHandler,
 	identity *query.VerifyWorkCredentialHandler,
 	locate *query.LocateWorkHandler,
@@ -121,7 +118,6 @@ func NewApplication(
 	prepare *command.PrepareWorkExecutionHandler,
 	preparation *query.GetWorkPreparationHandler,
 	submitted *query.ListSubmittedPreparationsHandler,
-	startup *query.GetWorkStartupHandler,
 	reconcileDesks *command.ReconcileDesksHandler,
 	coordination *command.ExecutionCoordination,
 ) *Application {
@@ -164,7 +160,6 @@ func NewApplication(
 			ListWorks:                    listWorks,
 			GetWorkView:                  workView,
 			ListWorkLifecycleEvents:      lifecycle,
-			GetWorkStartup:               startup,
 			GetWorkOrigin:                origin,
 			ResolveWorkContextPosition:   resolvePositions,
 			ResolveWorkStarts:            resolveStarts,
@@ -174,7 +169,6 @@ func NewApplication(
 			LocateWork:                   locate,
 			VerifyWorkCredential:         identity,
 			GetAgentDefinitionForPurpose: definition,
-			GetStartAdmission:            admission,
 			ListRecoveryWorks:            recoverySessions,
 			GetAgentDefinition:           getAgent,
 			GetWork:                      getSession,

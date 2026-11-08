@@ -30,8 +30,10 @@ func machineLoginInput(managed bool) domain.WorkInput {
 	return domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: managed, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(), WorkspaceReference: "workspace", HomeBinding: domain.HomeBinding{OwnerID: "owner", Namespace: "personal"}}
 }
 
+// seated is the Computer's answer seating a new start request, which derives
+// a Desk of its own.
 func seated(agentID string) domain.StartAdmission {
-	return domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}}
+	return domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: uuid.NewString()}}
 }
 
 // seatedFor is the Computer's answer seating a run on the kind of Computer

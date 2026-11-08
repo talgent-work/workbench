@@ -13,7 +13,6 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -26,14 +25,19 @@ import (
 )
 
 // Both requests reach the real admission transaction before either commits.
-// The barrier exercises request-identity ownership across independent Works.
+// The barrier exercises one request identity, which derives one Work, used
+// for two definitions.
 type admissionSaveBarrier struct {
-	command.AgentWorkRepository
+	domain.AgentWorkRepository
 	arrived chan struct{}
 	proceed chan struct{}
 }
 
-func (b admissionSaveBarrier) RegisterWork(ctx context.Context, work *domain.AgentWork, registration command.WorkRegistration) error {
+// Save holds the registration of a new Work at the barrier.
+func (b admissionSaveBarrier) Save(ctx context.Context, work *domain.AgentWork) error {
+	if work.Version != 0 {
+		return b.AgentWorkRepository.Save(ctx, work)
+	}
 	select {
 	case b.arrived <- struct{}{}:
 	case <-ctx.Done():
@@ -44,7 +48,7 @@ func (b admissionSaveBarrier) RegisterWork(ctx context.Context, work *domain.Age
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	return b.AgentWorkRepository.RegisterWork(ctx, work, registration)
+	return b.AgentWorkRepository.Save(ctx, work)
 }
 
 func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *testing.T) {
@@ -99,9 +103,6 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, winner.State)
 	require.True(t, winner.HoldsProcess())
-	accepted, found := admittedStart(t, sessions, requestID)
-	require.True(t, found)
-	require.Equal(t, agentquery.AdmittedStart{WorkID: winner.ID, Kind: agentquery.StartKindStart}, accepted)
 	loserCreation := creations[0]
 	if winner.AgentID == loserCreation.AgentID {
 		loserCreation = creations[1]
