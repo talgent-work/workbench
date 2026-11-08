@@ -104,9 +104,6 @@ func (e *ExecutionEnvironment) Observe(ctx context.Context, execution *domain.Ag
 	if inputs, syncs := authority.(inputDelivery); syncs {
 		observation.InputsRefresh = inputs.refresh()
 	}
-	if leases, leased := authority.(leasing); leased {
-		observation.Lease = leases.leaseTerms()
-	}
 	return observation, nil
 }
 
@@ -194,8 +191,9 @@ func (e *ExecutionEnvironment) DeleteEnvironment(ctx context.Context, execution 
 	return withExecution(authority.remove(attempt, record, environmentID), execution)
 }
 
-// RenewLease extends the bound environment's lease to expiresAt and answers
-// the expiry its authority returned.
+// RenewLease extends the bound environment's lease to expiresAt, the expiry
+// the execution decided, and answers the expiry its authority returned; it
+// decides no renewal of its own.
 func (e *ExecutionEnvironment) RenewLease(ctx context.Context, execution *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
@@ -217,14 +215,14 @@ func (e *ExecutionEnvironment) RenewLease(ctx context.Context, execution *domain
 
 // DeliverCredentials delivers the Work's current credentials into the bound
 // environment, replacing those delivered before.
-func (e *ExecutionEnvironment) DeliverCredentials(ctx context.Context, execution *domain.AgentExecution) (domain.CredentialDelivery, error) {
+func (e *ExecutionEnvironment) DeliverCredentials(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (domain.CredentialDelivery, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
 		return domain.CredentialDelivery{}, err
 	}
 	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
 	defer cancel()
-	delivery, err := e.connections.deliver(attempt, record, execution.Credentials.Delivered)
+	delivery, err := e.connections.deliver(attempt, record, execution.Credentials.Delivered, holding)
 	if !execution.Credentials.Delivered {
 		err = e.recovering(ctx, record, err)
 	}
@@ -244,13 +242,13 @@ func (e *ExecutionEnvironment) WithdrawCredentials(ctx context.Context, executio
 
 // Prepare sees the in-environment preparation through to its exit, bounded by
 // ctx, and reports its Plugins' installation and its checkout outcomes.
-func (e *ExecutionEnvironment) Prepare(ctx context.Context, execution *domain.AgentExecution) (domain.PreparationReport, error) {
+func (e *ExecutionEnvironment) Prepare(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (domain.PreparationReport, error) {
 	var none domain.PreparationReport
 	record, err := e.record(ctx, execution)
 	if err != nil {
 		return none, err
 	}
-	report, err := e.connections.prepare(ctx, record)
+	report, err := e.connections.prepare(ctx, record, holding)
 	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil {
 		// The bound passed while it prepared: the execution decides what
 		// follows, not the recovery flag.
@@ -263,12 +261,12 @@ func (e *ExecutionEnvironment) Prepare(ctx context.Context, execution *domain.Ag
 }
 
 // Launch starts the Harness in the bound environment and returns its process.
-func (e *ExecutionEnvironment) Launch(ctx context.Context, execution *domain.AgentExecution) (string, error) {
+func (e *ExecutionEnvironment) Launch(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (string, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
 		return "", err
 	}
-	id, err := e.connections.launch(ctx, record)
+	id, err := e.connections.launch(ctx, record, holding)
 	return id, withExecution(e.recovering(ctx, record, err), execution)
 }
 
@@ -289,7 +287,7 @@ func (e *ExecutionEnvironment) Connect(ctx context.Context, execution *domain.Ag
 // SyncInputs hands a Managed Computer the current inputs of the execution's
 // Work and answers the input changes the sync covers: those the execution
 // had marked when it was read.
-func (e *ExecutionEnvironment) SyncInputs(ctx context.Context, execution *domain.AgentExecution) (int64, error) {
+func (e *ExecutionEnvironment) SyncInputs(ctx context.Context, execution *domain.AgentExecution, holding command.EnvironmentHolding) (int64, error) {
 	record, err := e.record(ctx, execution)
 	if err != nil {
 		return 0, err
@@ -305,7 +303,10 @@ func (e *ExecutionEnvironment) SyncInputs(ctx context.Context, execution *domain
 	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
 	defer cancel()
 	err = e.connections.credentials.withLock(attempt, record.SandboxID, func() error {
-		current, err := e.provisioning.holding(attempt, record)
+		if err := holding(attempt); err != nil {
+			return err
+		}
+		current, err := e.provisioning.current(attempt, record)
 		if err != nil {
 			return err
 		}
@@ -327,10 +328,10 @@ func (e *ExecutionEnvironment) ReconcileComputer(ctx context.Context, computerID
 }
 
 // recovering records whether a startup step's latest attempt left the start
-// recovering, which its startup progress shows. A conflict means another step
-// changed the execution and says nothing about recovery.
+// recovering, which its startup progress shows. A conflict, or the execution
+// no longer admitting the step, says nothing about recovery.
 func (e *ExecutionEnvironment) recovering(ctx context.Context, record allocationRecord, err error) error {
-	if errors.Is(err, errEnvironmentConflict) || errors.Is(err, errAllocationNotHeld) {
+	if errors.Is(err, errEnvironmentConflict) || errors.Is(err, command.ErrEnvironmentActionRefused) {
 		return err
 	}
 	return errors.Join(err, e.provisioning.recordRecovery(ctx, record, err != nil))

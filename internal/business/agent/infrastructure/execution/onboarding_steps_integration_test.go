@@ -102,7 +102,7 @@ func (f *onboardingFixture) step(t *testing.T) []domain.ExecutionStepKind {
 	run := f.execution(t)
 	observation, err := f.steps.environment.Observe(context.Background(), run)
 	require.NoError(t, err)
-	decision, err := run.Reconcile(observation, time.Now())
+	decision, err := run.Reconcile(observation, fixtureLease, time.Now())
 	require.NoError(t, err)
 	kinds := []domain.ExecutionStepKind{}
 	for _, step := range decision.Steps {

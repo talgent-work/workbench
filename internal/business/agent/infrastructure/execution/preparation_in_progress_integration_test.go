@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
@@ -118,7 +119,7 @@ func TestStopAdmittedDuringPreparationStartsNoHarness(t *testing.T) {
 		require.NoError(t, f.steps.executions.Save(ctx, run))
 	}
 	f.beforeExit.Store(&stop)
-	require.ErrorIs(t, f.steps.handler.RunLongStep(ctx, f.record.ID), errAllocationNotHeld)
+	require.ErrorIs(t, f.steps.handler.RunLongStep(ctx, f.record.ID), command.ErrEnvironmentActionRefused)
 	<-f.exited
 	stopped, _, err := latestAllocation(ctx, f.db, f.record.SessionID)
 	require.NoError(t, err)

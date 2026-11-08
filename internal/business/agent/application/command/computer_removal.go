@@ -59,7 +59,8 @@ func (h *ComputerReachHandler) loseEnvironment(ctx context.Context, workID strin
 			return err
 		}
 		var decision domain.ExecutionDecision
-		if decision, err = execution.Reconcile(domain.EnvironmentObservation{Removed: true, LossReason: domain.ComputerRemovedReason}, h.now()); err != nil {
+		// A removed Computer took every environment with it; nothing is leased.
+		if decision, err = execution.Reconcile(domain.EnvironmentObservation{Removed: true, LossReason: domain.ComputerRemovedReason}, domain.LeaseTerms{}, h.now()); err != nil {
 			return err
 		}
 		if !decision.Changed {

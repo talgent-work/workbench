@@ -61,12 +61,29 @@ func (e *AgentExecution) pastDeadline(now time.Time) bool {
 	return !deadline.IsZero() && !now.Before(deadline)
 }
 
+// AdmitEnvironmentAction admits a launch or a credential delivery only into
+// its bound environment while it still wants its run (Bound environment
+// only, Exit request ends delivery, Abandonment is final). Application asks
+// it again between the remote calls of such an action, so an exit request
+// admitted meanwhile stops what follows.
+func (e *AgentExecution) AdmitEnvironmentAction(environmentID string) bool {
+	return environmentID != "" && environmentID == e.Environment && e.wantsRun()
+}
+
+// wantsRun reports whether it still wants its run: unretired, without an
+// exit request from its Work, and without its start failed, rejected or
+// abandoned, its environment lost or its process exited.
+func (e *AgentExecution) wantsRun() bool {
+	o := e.Outcome
+	return !e.Retired() && !e.ExitRequest.Requested() && o.StartFailure == "" && !o.Rejected && !o.Abandoned && !o.Lost && !e.Process.Exited
+}
+
 // RecordSubmission records that its environment's creation is submitted now,
 // before it is sent, so it is never submitted twice (Single creation). An
 // execution that submitted already, or no longer wants its run, submits
 // nothing.
 func (e *AgentExecution) RecordSubmission() bool {
-	if e.Creation.Submitted || e.Retired() || e.State == ExecutionQueued || e.ExitRequest.Requested() || e.Outcome.Abandoned || e.Outcome.Lost {
+	if e.Creation.Submitted || e.State == ExecutionQueued || !e.wantsRun() {
 		return false
 	}
 	e.Creation.Submitted = true
@@ -102,9 +119,10 @@ func (e *AgentExecution) RecordCreationAnswer(answer CreationAnswer) (bool, erro
 }
 
 // RecordCredentialDelivery records the credentials delivered into its bound
-// environment, by digest and earliest declared expiry.
+// environment, by digest and earliest declared expiry, while it admits the
+// delivery (Admit environment action).
 func (e *AgentExecution) RecordCredentialDelivery(delivery CredentialDelivery) bool {
-	if e.Retired() || e.Environment == "" || e.ExitRequest.Requested() {
+	if !e.AdmitEnvironmentAction(e.Environment) {
 		return false
 	}
 	delivery.Delivered, delivery.Withdrawn = true, false
@@ -160,13 +178,13 @@ func (e *AgentExecution) RecordInputSync(synced int64, syncedAt time.Time) bool 
 }
 
 // RecordLaunch records the Harness process launched into its bound
-// environment. Only an unretired execution without an exit request launches
-// (Bound environment only), and a second process is never recorded.
+// environment while it admits the launch (Admit environment action); a
+// second process is never recorded.
 func (e *AgentExecution) RecordLaunch(processID string) (bool, error) {
 	if strings.TrimSpace(processID) == "" {
 		return false, ErrInvalidExecution
 	}
-	if e.Retired() || e.Environment == "" || e.ExitRequest.Requested() || e.Process.ID != "" || e.Outcome.Abandoned || e.Outcome.StartFailure != "" {
+	if e.Process.ID != "" || !e.AdmitEnvironmentAction(e.Environment) {
 		return false, nil
 	}
 	e.Process.ID = processID

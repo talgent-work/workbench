@@ -25,10 +25,11 @@ func runningEnvironment(env string) domain.EnvironmentObservation {
 	return domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: env, Running: true}}}
 }
 
-// decide reconciles the execution against observation at now.
+// decide reconciles the execution against observation at now, under the
+// deployment's leaseTerms.
 func decide(t *testing.T, execution *domain.AgentExecution, observation domain.EnvironmentObservation, now time.Time) domain.ExecutionDecision {
 	t.Helper()
-	decision, err := execution.Reconcile(observation, now)
+	decision, err := execution.Reconcile(observation, leaseTerms, now)
 	require.NoError(t, err)
 	return decision
 }

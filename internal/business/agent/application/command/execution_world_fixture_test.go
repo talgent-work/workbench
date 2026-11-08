@@ -27,7 +27,9 @@ type world struct {
 	environment  *commandtest.Environment
 	settlements  *commandtest.InputSettlements
 	coordination *command.ExecutionCoordination
-	at           time.Time
+	// lease is the platform's configured lease terms; zero leases nothing.
+	lease domain.LeaseTerms
+	at    time.Time
 }
 
 func newWorld(t *testing.T, work *domain.AgentWork) *world {
@@ -59,7 +61,7 @@ func (w *world) feedback() *command.ApplyExecutionFeedbackHandler {
 }
 
 func (w *world) reconciliation() *command.ReconcileExecutionHandler {
-	return command.NewReconcileExecutionHandler(w.now, w.executions, w.environment, w.harness, w.computers, noMounts{})
+	return command.NewReconcileExecutionHandler(w.now, w.lease, w.executions, w.environment, w.harness, w.computers, noMounts{})
 }
 
 // execution is the Work's most recently begun execution.

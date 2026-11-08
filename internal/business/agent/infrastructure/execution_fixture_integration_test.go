@@ -157,7 +157,7 @@ func (r *runs) lose(ctx context.Context, workID string) {
 	r.t.Helper()
 	run, err := r.executions.Latest(ctx, workID)
 	require.NoError(r.t, err)
-	_, err = run.Reconcile(domain.EnvironmentObservation{}, r.now())
+	_, err = run.Reconcile(domain.EnvironmentObservation{}, domain.LeaseTerms{}, r.now())
 	require.NoError(r.t, err)
 	require.True(r.t, run.Outcome.Lost)
 	require.NoError(r.t, r.executions.Save(ctx, run))

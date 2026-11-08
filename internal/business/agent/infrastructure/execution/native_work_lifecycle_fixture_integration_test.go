@@ -93,7 +93,7 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	computers := &cloudDesks{}
 	return &nativeWorkLifecycleFixture{
 		db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, external: external, executions: executions, readings: readings,
-		reconcile:    command.NewReconcileExecutionHandler(time.Now, executions, environment, harness, computers, directoryMounts{root: t.TempDir()}),
+		reconcile:    command.NewReconcileExecutionHandler(time.Now, fixtureLease, executions, environment, harness, computers, directoryMounts{root: t.TempDir()}),
 		coordination: command.NewExecutionCoordination(time.Now, works, executions, computers, harness),
 	}
 }

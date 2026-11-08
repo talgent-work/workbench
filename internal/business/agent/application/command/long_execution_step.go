@@ -105,7 +105,7 @@ func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *doma
 	bounded, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	if !execution.Process.PreparationEnded {
-		report, err := h.environments.Prepare(bounded, execution)
+		report, err := h.environments.Prepare(bounded, execution, h.holding(execution))
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			// The Startup Deadline passed while it prepared; the execution's
 			// next reconciliation records the failure.
@@ -125,7 +125,7 @@ func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *doma
 	}
 	launch, release := context.WithTimeout(ctx, launchTimeout)
 	defer release()
-	processID, err := h.environments.Launch(launch, execution)
+	processID, err := h.environments.Launch(launch, execution, h.holding(execution))
 	if err != nil {
 		return err
 	}

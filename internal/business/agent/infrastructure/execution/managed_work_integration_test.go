@@ -356,7 +356,7 @@ func (f *managedWork) decided(t *testing.T, id string) []domain.ExecutionStepKin
 	run := current(t, f.steps, id)
 	observation, err := f.steps.environment.Observe(context.Background(), run)
 	require.NoError(t, err)
-	decision, err := run.Reconcile(observation, time.Now())
+	decision, err := run.Reconcile(observation, domain.LeaseTerms{}, time.Now())
 	require.NoError(t, err)
 	kinds := []domain.ExecutionStepKind{}
 	for _, step := range decision.Steps {

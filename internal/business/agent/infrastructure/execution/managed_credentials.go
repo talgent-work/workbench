@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 )
 
 // A Managed Work's credentials are delivered to Talgent Computer, which keeps
@@ -80,7 +81,7 @@ func (m *ManagedComputers) forgetCredentials(ctx context.Context, spec managedSp
 // delivered declares an expiry. The Work's inputs, whose downloads
 // authenticate with the Work credential delivered here, are synced as their
 // own step once it is delivered.
-func (m ManagedEnvironment) deliver(ctx context.Context, record allocationRecord, redelivery bool) (deliveredCredentials, error) {
+func (m ManagedEnvironment) deliver(ctx context.Context, record allocationRecord, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {
 		return deliveredCredentials{}, err
@@ -89,7 +90,7 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record allocationRecord
 	if err != nil {
 		return deliveredCredentials{}, oops.With("operation", "decode_native_request").Wrap(err)
 	}
-	if _, err := m.records.holding(ctx, record); err != nil {
+	if err := holding(ctx); err != nil {
 		return deliveredCredentials{}, err
 	}
 	credentials := workCredentials{Gateway: workGatewayCredential{URL: m.machines.gateway, WorkID: record.SessionID, WorkCredential: spec.WorkCredential, SpaceToken: admitted.InputSource.SpaceToken}}
@@ -117,7 +118,7 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record allocationRecord
 		return deliveredCredentials{}, nil
 	}
 	// A stop admitted while delivering must not leave the credentials behind.
-	if _, err := m.records.holding(ctx, record); err != nil {
+	if err := holding(ctx); err != nil {
 		clear, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		return deliveredCredentials{}, errors.Join(err, m.machines.forgetCredentials(clear, spec, record.SessionID))

@@ -204,9 +204,6 @@ func recordedExpiry(expiresAt time.Time) time.Time {
 	return expiresAt.Truncate(time.Millisecond).UTC()
 }
 
-// lease is how every sandbox is leased.
-func (s *Sandboxes) lease() domain.LeaseTerms { return s.config.Lease }
-
 // renew moves the bound sandbox's expiry to expiresAt and returns the expiry
 // OpenSandbox answered. OpenSandbox accepts any future time, a shorter one
 // included, so the caller asks only for later ones; it refuses a sandbox

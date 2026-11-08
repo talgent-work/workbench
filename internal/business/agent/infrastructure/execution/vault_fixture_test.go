@@ -102,3 +102,7 @@ func (fixtureRepositoryCredentials) Plan(context.Context, string, string) ([]Rep
 func fixtureSandboxCredentials(db *xorm.Engine, s *Sandboxes) *SandboxCredentials {
 	return &SandboxCredentials{db: db, lifecycle: s.client, models: s.config.Models, repositories: fixtureRepositoryCredentials{}, services: authorizationcatalogtest.NoServices{}, http: http.DefaultClient, transport: "encrypted-network"}
 }
+
+// admitting is the holding check of an execution that still admits every
+// delivery.
+func admitting(context.Context) error { return nil }
