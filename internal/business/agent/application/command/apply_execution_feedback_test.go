@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -107,6 +108,47 @@ func TestExitIsKeptWhenItsWorkCannotBeSavedNow(t *testing.T) {
 	require.Equal(t, 1, w.works.committedOf(domain.EventKindWorkComputeReleaseRequested), "the Work asks for the retirement with the exit")
 	require.NoError(t, w.coordination.RetireExecution(ctx, w.work().ID))
 	require.Equal(t, domain.RetiredByExit, w.execution(t).Retirement, "the retirement passes once the exit is recorded")
+}
+
+// An exit fact read against an execution that changed concurrently, such as
+// a stop's exit request passed meanwhile, is recorded on the execution as it
+// is now, a bounded number of times.
+func TestExitIsRecordedOverAConcurrentChangeOfItsExecution(t *testing.T) {
+	ctx := context.Background()
+	w := runningWorld(t)
+	require.NoError(t, w.work().Stop("stop", false))
+	require.NoError(t, w.works.Save(ctx, w.work()))
+	racing := &racingExecutions{Executions: w.executions, race: func() {
+		require.NoError(t, w.coordination.RequestProcessExit(ctx, w.work().ID))
+	}}
+	feedback := command.NewApplyExecutionFeedbackHandler(w.now, w.works, racing, w.coordination, w.harness, w.settlements)
+	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: w.work().ID, ProcessID: "process", ExitCode: 143}))
+	require.True(t, w.execution(t).Process.Exited, "the exit is recorded after the concurrent change")
+	require.Equal(t, "stop", w.execution(t).ExitRequest.StopRequestID, "the concurrent change is kept")
+	require.True(t, w.work().HarnessProcess.Exited)
+	require.Equal(t, domain.WorkStopping, w.work().State)
+
+	w = stoppingWorld(t)
+	w.executions.Conflicts = 3
+	err := w.feedback().Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: w.work().ID, ProcessID: "process"})
+	require.ErrorIs(t, err, domain.ErrConcurrentModification, "the retries are bounded")
+	require.False(t, w.execution(t).Process.Exited)
+}
+
+// racingExecutions runs a concurrent change once, right after the first read
+// of a Work's latest execution.
+type racingExecutions struct {
+	*commandtest.Executions
+	race func()
+}
+
+func (r *racingExecutions) Latest(ctx context.Context, workID string) (*domain.AgentExecution, error) {
+	execution, err := r.Executions.Latest(ctx, workID)
+	if race := r.race; race != nil {
+		r.race = nil
+		race()
+	}
+	return execution, err
 }
 
 // An authoritative loss of the bound environment fails a stopping Work
