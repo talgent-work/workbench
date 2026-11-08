@@ -99,7 +99,7 @@ func (a *libraryAgents) personalWorks() *personalwork.PersonalWorks {
 	}))
 	server := httptest.NewServer(mux)
 	a.t.Cleanup(server.Close)
-	spaces, err := agentstorage.NewFileSpaces(server.Client(), agentstorage.Config{Address: server.URL, Token: libraryAgentToken})
+	spaces, err := agentstorage.NewClient(server.Client(), agentstorage.Config{Address: server.URL, Token: libraryAgentToken})
 	require.NoError(a.t, err)
 	return personalwork.New(a.app, agentinfrastructure.NewWorkQueryRepository(a.db), spaces, nil)
 }

@@ -21,10 +21,10 @@ type ExecutionCoordination struct {
 	works      domain.AgentWorkRepository
 	executions domain.AgentExecutionRepository
 	computers  ComputerPort
-	buffer     RunningHarnessPort
+	buffer     DispatcherPort
 }
 
-func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkRepository, executions domain.AgentExecutionRepository, computers ComputerPort, buffer RunningHarnessPort) *ExecutionCoordination {
+func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkRepository, executions domain.AgentExecutionRepository, computers ComputerPort, buffer DispatcherPort) *ExecutionCoordination {
 	return &ExecutionCoordination{now: now, works: works, executions: executions, computers: computers, buffer: buffer}
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -24,7 +25,7 @@ type LibraryFilter struct {
 // LibraryFile is one Artifact in a Personal Library.
 type LibraryFile struct {
 	Work LibraryWork
-	File SpaceFile
+	File command.SpaceFile
 }
 
 // Library is a person's Personal Library and the Works it draws from.
@@ -72,7 +73,7 @@ func (p *PersonalWorks) Library(ctx context.Context, person Person, filter Libra
 	}
 	library := Library{Works: works}
 	for _, file := range files {
-		if file.Kind != FileKindArtifact {
+		if file.Kind != command.FileKindArtifact {
 			continue
 		}
 		for _, work := range byOwner[file.Owner] {
@@ -115,7 +116,7 @@ func (p *PersonalWorks) spaceOwners(ctx context.Context, works []LibraryWork) ([
 	return owners, nil
 }
 
-func (f LibraryFilter) admits(file SpaceFile) bool {
+func (f LibraryFilter) admits(file command.SpaceFile) bool {
 	if query := strings.TrimSpace(f.NameQuery); query != "" && !strings.Contains(strings.ToLower(file.Name), strings.ToLower(query)) {
 		return false
 	}

@@ -19,22 +19,13 @@ var (
 	ErrRepositoryAccessChanged = errors.New("agent: repository access changed while it was supplied")
 )
 
-type RepositoryCredentialRequest struct {
-	OwnerUserID, AuthorizationID, RepositoryID, CloneURL string
-}
-
-type RepositoryCredentialMaterial struct {
-	Username, Password string
-	ExpiresAt          time.Time
-}
-
 type RepositoryAccessReference struct {
 	AccessID, RepositoryID, CloneURL, AuthorizationID string
 }
 
 type RepositoryAccessMaterial struct {
 	RepositoryAccessReference
-	RepositoryCredentialMaterial
+	command.RepositoryCredentialMaterial
 }
 
 // RepositoryAccessFailure is a repository no credential was supplied for;
@@ -54,10 +45,10 @@ type RepositoryAccessResult struct {
 // owns no grant lifecycle.
 type RepositoryAccess struct {
 	works  domain.AgentWorkRepository
-	supply CredentialSupplyPort
+	supply command.MarketplacePort
 }
 
-func NewRepositoryAccess(works domain.AgentWorkRepository, supply CredentialSupplyPort) *RepositoryAccess {
+func NewRepositoryAccess(works domain.AgentWorkRepository, supply command.MarketplacePort) *RepositoryAccess {
 	return &RepositoryAccess{works: works, supply: supply}
 }
 
@@ -101,7 +92,7 @@ func (a *RepositoryAccess) Resolve(ctx context.Context, owner, workID string) (R
 			result.Unavailable = append(result.Unavailable, RepositoryAccessFailure{RepositoryID: ref.RepositoryID, Reason: "not_selected"})
 			continue
 		}
-		material, err := a.supply.SupplyRepositoryCredential(ctx, RepositoryCredentialRequest{OwnerUserID: owner, AuthorizationID: ref.AuthorizationID, RepositoryID: ref.RepositoryID, CloneURL: ref.CloneURL})
+		material, err := a.supply.SupplyRepositoryCredential(ctx, command.RepositoryCredentialRequest{OwnerUserID: owner, AuthorizationID: ref.AuthorizationID, RepositoryID: ref.RepositoryID, CloneURL: ref.CloneURL})
 		if err != nil {
 			if ctx.Err() != nil {
 				return RepositoryAccessResult{}, ctx.Err()
@@ -126,7 +117,7 @@ func (a *RepositoryAccess) Resolve(ctx context.Context, owner, workID string) (R
 	return result, nil
 }
 
-func usableRepositoryCredential(material RepositoryCredentialMaterial) bool {
+func usableRepositoryCredential(material command.RepositoryCredentialMaterial) bool {
 	return material.Username != "" && !strings.Contains(material.Username, ":") && material.Password != "" && !credentialExpired(material.ExpiresAt, time.Now())
 }
 

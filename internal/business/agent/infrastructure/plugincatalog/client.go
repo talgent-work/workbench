@@ -41,7 +41,7 @@ type Client struct {
 	credentialToken string
 }
 
-var _ command.StartCatalogPort = (*Client)(nil)
+var _ command.MarketplacePort = (*Client)(nil)
 
 func NewClient(httpClient *http.Client, config Config) (*Client, error) {
 	if err := config.Validate(); err != nil {

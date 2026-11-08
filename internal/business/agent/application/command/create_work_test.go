@@ -189,7 +189,7 @@ func TestInitialThinkingLevelUsesRetainedWorkModel(t *testing.T) {
 	require.Equal(t, configured, store.session.WorkModel)
 }
 
-type emptyPluginCatalog struct{ command.StartCatalogPort }
+type emptyPluginCatalog struct{ command.MarketplacePort }
 
 func (emptyPluginCatalog) ListPersonalPlugins(context.Context, string) ([]domain.PersonalPlugin, error) {
 	return nil, nil

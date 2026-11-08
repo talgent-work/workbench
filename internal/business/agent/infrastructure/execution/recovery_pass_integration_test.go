@@ -66,7 +66,7 @@ func newExecutionSteps(t testing.TB, p *Provisioning, connections *NativeConnect
 }
 
 // newExecutionStepsWith acquires a Cloud start's mounts from mounts.
-func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeConnections, owners StreamOwners, managed *ManagedEnvironment, now func() time.Time, mounts command.SandboxMountPort) *executionSteps {
+func newExecutionStepsWith(t testing.TB, p *Provisioning, connections *NativeConnections, owners StreamOwners, managed *ManagedEnvironment, now func() time.Time, mounts command.StoragePort) *executionSteps {
 	t.Helper()
 	environment, err := NewExecutionEnvironment(p, connections, owners, managed)
 	require.NoError(t, err)

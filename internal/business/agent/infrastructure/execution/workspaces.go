@@ -9,19 +9,18 @@ import (
 )
 
 // StorageWorkspaces is Storage's side of a Work's workspace: the Session
-// Workspace's views and links, and its reclamation.
+// Workspace's views and links.
 type StorageWorkspaces interface {
 	WorkspaceView(ctx context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceListing, error)
 	PreviewWorkspaceFile(ctx context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceFilePreview, error)
 	WorkspaceFileLink(ctx context.Context, location domain.WorkspaceLocation, path string) (application.WorkspaceFileLink, error)
-	RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error
 }
 
 // Workspaces reads a Work's workspace at the location its AgentWork names, as
 // Environment runs it where it runs: a directory on a Managed Computer through
 // the relay, any other location from Storage's Session Workspace. This is the
 // one place that tells the two apart. Only Managed Works' files are served
-// behind Agent's own links, and a Work's reclamation is always Storage's.
+// behind Agent's own links.
 type Workspaces struct {
 	cloud   StorageWorkspaces
 	managed *ManagedWorkspaces
@@ -72,10 +71,6 @@ func (v *Workspaces) OpenWorkspaceFile(ctx context.Context, location domain.Work
 		return application.OpenedWorkspaceFile{}, domain.ErrWorkspaceUnavailable
 	}
 	return v.managed.OpenWorkspaceFile(ctx, location, grant)
-}
-
-func (v *Workspaces) RequestWorkspaceReclamation(ctx context.Context, workID, workspaceReference string) error {
-	return v.cloud.RequestWorkspaceReclamation(ctx, workID, workspaceReference)
 }
 
 // workspaceReader reads the workspace at one kind of location.

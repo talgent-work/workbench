@@ -143,7 +143,7 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		func(p *execution.Provisioning, credentials *execution.SandboxCredentials, cfg ExecutionConfig) (*execution.NativeConnections, error) {
 			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token)
 		},
-		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.RunningHarnessPort))),
+		fx.Annotate(newDispatcherControl, fx.As(fx.Self()), fx.As(new(command.DispatcherPort))),
 	),
 	fx.Invoke(registerManagedTelemetry),
 	environmentRecoveryOptions,

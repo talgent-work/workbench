@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
@@ -51,13 +52,15 @@ type connections interface {
 }
 
 // startCatalog is the Marketplace a Work's start reaches: the catalog's
-// Plugins and Connectors, and the user's connections.
+// Plugins and Connectors, and the user's connections. It supplies no
+// credentials.
 type startCatalog struct {
 	*catalog
+	commandtest.NoCredentials
 	connections connections
 }
 
-var _ command.StartCatalogPort = startCatalog{}
+var _ command.MarketplacePort = startCatalog{}
 
 func (s startCatalog) ListPersonalAuthorizations(ctx context.Context, user string) ([]domain.PersonalAuthorization, error) {
 	return s.connections.ListPersonalAuthorizations(ctx, user)

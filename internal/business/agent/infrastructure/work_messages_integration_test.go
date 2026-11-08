@@ -40,7 +40,7 @@ type workReplyDelivery struct {
 	response  command.InteractionResponse
 }
 type workMessaging struct {
-	command.RunningHarnessPort
+	command.DispatcherPort
 	mu      sync.Mutex
 	inputs  []workInputDelivery
 	replies []workReplyDelivery

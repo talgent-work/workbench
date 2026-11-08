@@ -64,7 +64,7 @@ func TestModuleRestartAdmitsNoResumeWithoutCaller(t *testing.T) {
 			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(func() kubernetes.Interface { return kube }),
-			fx.Provide(func() command.RunningHarnessPort { return port }),
+			fx.Provide(func() command.DispatcherPort { return port }),
 			runs.option(),
 		}
 		if recover {
@@ -191,7 +191,7 @@ func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota) }),
-		fx.Provide(func() command.RunningHarnessPort { return port }),
+		fx.Provide(func() command.DispatcherPort { return port }),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(ctx))

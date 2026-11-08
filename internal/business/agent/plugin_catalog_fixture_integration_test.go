@@ -20,7 +20,7 @@ import (
 type modulePluginCatalog struct{}
 
 func moduleCatalog() fx.Option {
-	return fx.Replace(fx.Annotate(commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), fx.As(new(command.StartCatalogPort))))
+	return fx.Replace(fx.Annotate(commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), fx.As(new(command.MarketplacePort))))
 }
 
 func (modulePluginCatalog) ListPersonalPlugins(_ context.Context, subject string) ([]domain.PersonalPlugin, error) {

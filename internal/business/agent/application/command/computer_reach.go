@@ -38,12 +38,12 @@ type ComputerReachHandler struct {
 	works        ComputerWorks
 	executions   domain.AgentExecutionRepository
 	coordination *ExecutionCoordination
-	buffer       RunningHarnessPort
+	buffer       DispatcherPort
 	places       presenceReads
 	logger       *slog.Logger
 }
 
-func NewComputerReachHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerPort, works ComputerWorks, executions domain.AgentExecutionRepository, coordination *ExecutionCoordination, buffer RunningHarnessPort, logger *slog.Logger) *ComputerReachHandler {
+func NewComputerReachHandler(now func() time.Time, sessions domain.AgentWorkRepository, computers ComputerPort, works ComputerWorks, executions domain.AgentExecutionRepository, coordination *ExecutionCoordination, buffer DispatcherPort, logger *slog.Logger) *ComputerReachHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}

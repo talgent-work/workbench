@@ -147,7 +147,7 @@ func (w *world) release(t *testing.T) {
 }
 
 // noMounts grants no mounts.
-type noMounts struct{ command.SandboxMountPort }
+type noMounts struct{ command.StoragePort }
 
 func (noMounts) AcquireMounts(context.Context, domain.SandboxMountRequest) (domain.SandboxMounts, error) {
 	return domain.SandboxMounts{}, nil

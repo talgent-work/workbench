@@ -50,7 +50,7 @@ func (a *thinkingAccess) AuthorizeWork(_ context.Context, subject, _ string) err
 }
 
 type thinkingHarness struct {
-	command.RunningHarnessPort
+	command.DispatcherPort
 	calls []string
 	err   error
 }

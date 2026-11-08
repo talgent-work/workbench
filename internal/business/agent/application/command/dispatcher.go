@@ -6,12 +6,12 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// RunningHarnessPort reaches the Work's running Harness process through
-// Dispatcher: its input buffer, its Turn and that Turn's cancellation, its
+// DispatcherPort reaches the Work's running Harness process through
+// Dispatcher's contract: its input buffer, its Turn and that Turn's cancellation, its
 // settings and what it currently offers. A call never changes the Work's
 // lifecycle; the Harness reports the facts that do separately. The Work has at
 // most one Harness process, so the Work addresses it.
-type RunningHarnessPort interface {
+type DispatcherPort interface {
 	// BufferInput hands input to the Work's input buffer; a hand-off is
 	// accepted once buffered, and Dispatcher writes it to the Harness and
 	// reports how it settled.

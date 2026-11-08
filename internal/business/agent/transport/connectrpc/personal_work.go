@@ -185,11 +185,11 @@ var errUnavailable = errors.New("agent: the request could not be completed")
 // mapPersonalWorkError maps a person's own-Work outcomes, then Agent's.
 func mapPersonalWorkError(ctx context.Context, err error) error {
 	switch {
-	case errors.Is(err, personalwork.ErrInvalidRequest), errors.Is(err, personalwork.ErrReaderUnknown), errors.Is(err, personalwork.ErrInvalidFileName):
+	case errors.Is(err, personalwork.ErrInvalidRequest), errors.Is(err, personalwork.ErrReaderUnknown), errors.Is(err, command.ErrInvalidFileName):
 		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
-	case errors.Is(err, personalwork.ErrFileNotFound):
+	case errors.Is(err, command.ErrFileNotFound):
 		return connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
-	case errors.Is(err, personalwork.ErrFileNameTaken):
+	case errors.Is(err, command.ErrFileNameTaken):
 		return connect.NewError(connect.CodeAlreadyExists, err.Error()).WithCause(err)
 	}
 	mapped := mapAgentError(err)

@@ -88,7 +88,7 @@ func TestFailedSweepDoesNotSuppressLaterSweeps(t *testing.T) {
 		fx.Supply(http.NewServeMux(), slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
-		fx.Provide(func() command.RunningHarnessPort { return port }),
+		fx.Provide(func() command.DispatcherPort { return port }),
 	)
 	require.NoError(t, app.Err())
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

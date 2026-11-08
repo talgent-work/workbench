@@ -196,7 +196,7 @@ func loadedExecution(saved domain.AgentExecution) *domain.AgentExecution {
 // executionWorld wires a Work's Policies with its AgentExecution: the Work's
 // The execution requests begin, stop and retire its execution, and the execution's reports
 // reach the Work, each as soon as the change is saved.
-func executionWorld(now func() time.Time, works domain.AgentWorkRepository, computers command.ComputerPort, buffer command.RunningHarnessPort) (*syncEvents, *rpcExecutions, *command.ExecutionCoordination) {
+func executionWorld(now func() time.Time, works domain.AgentWorkRepository, computers command.ComputerPort, buffer command.DispatcherPort) (*syncEvents, *rpcExecutions, *command.ExecutionCoordination) {
 	events := &syncEvents{}
 	executions := &rpcExecutions{events: events, now: now}
 	coordination := command.NewExecutionCoordination(now, works, executions, computers, buffer)

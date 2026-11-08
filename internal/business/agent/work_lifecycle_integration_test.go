@@ -69,7 +69,7 @@ func TestSessionLifecycleThroughPrivateAPIAndModuleRestart(t *testing.T) {
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 			fx.Provide(func() kubernetes.Interface { return capacityClient }),
-			fx.Provide(func() command.RunningHarnessPort { return port }),
+			fx.Provide(func() command.DispatcherPort { return port }),
 			runs.option(),
 			fx.Invoke(func(recoverSession *command.RecoverWorkHandler, app *application.Application) {
 				recovery, agentApp = recoverSession, app

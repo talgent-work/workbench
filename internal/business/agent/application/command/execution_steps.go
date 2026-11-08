@@ -138,7 +138,7 @@ func (h *ReconcileExecutionHandler) markEach(ctx context.Context, ids []string, 
 // cancelRunningTurn ends the Turn the Harness is running, if one is; asking
 // again while its cancellation is pending, or after it ended, changes
 // nothing.
-func cancelRunningTurn(ctx context.Context, harness RunningHarnessPort, workID string) error {
+func cancelRunningTurn(ctx context.Context, harness DispatcherPort, workID string) error {
 	turn, err := harness.GetCurrentTurn(ctx, workID)
 	if err != nil || !turn.Active || turn.ID == "" || turn.CancelRequested {
 		return err

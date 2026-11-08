@@ -85,6 +85,9 @@ var RecoveryModule = fx.Module("agent.recovery",
 		// and for the recovery of each Work owed a Resume.
 		fx.Annotate(command.NewComputerReconnectionHandler, fx.As(fx.Self()), fx.As(new(application.OwedResumes))),
 		application.NewRecovery,
+		// A Closed Work's Workspace Reclamation Request is queued on the
+		// recovery queue, which delivers it to Storage.
+		eventhandler.NewWorkspaceReclamations,
 		command.NewReconcileExecutionHandler,
 		fx.Annotate(taskprocessor.RecoveryProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(RecoveryQueue))),
 		fx.Annotate(taskprocessor.PreparationProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(PreparationQueue))),
