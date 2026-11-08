@@ -112,7 +112,7 @@ func (s *defaultHomeSubmission) StartExecution(ctx context.Context, input domain
 	if err != nil {
 		return err
 	}
-	_, err = s.provider.submit(ctx, owner(input), spec)
+	_, err = s.provider.submit(ctx, owner(input), spec, time.Now().Add(time.Duration(s.provider.config.CreationWait)))
 	return err
 }
 

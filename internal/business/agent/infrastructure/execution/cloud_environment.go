@@ -95,14 +95,15 @@ func (c cloudEnvironment) create(ctx context.Context, record executionRecord) (s
 	if err != nil {
 		return "", err
 	}
-	return c.sandboxes.submit(ctx, owner, spec)
+	return c.sandboxes.submit(ctx, owner, spec, fromMillis(record.CreationDeadline))
 }
 
 // observe lists the sandboxes the server shows with the execution's
 // ownership. The list may not show a sandbox yet, so the bound one is
 // confirmed by its own identity: present exactly while a GET finds it. A Pod
-// carrying the execution's ownership whose sandbox is no longer shown is an
-// ending environment: deleted, yet still running (Ending environment).
+// carrying the execution's ownership whose sandbox a GET no longer finds is an
+// ending environment: deleted, yet still running (Ending environment); one
+// whose sandbox the list merely did not show yet is that sandbox.
 func (c cloudEnvironment) observe(ctx context.Context, record executionRecord, _ bool) (environmentView, error) {
 	owner, spec, err := c.ownership(record)
 	if err != nil {
@@ -129,14 +130,19 @@ func (c cloudEnvironment) observe(ctx context.Context, record executionRecord, _
 			view.endpoint = bound.endpoint
 		}
 	}
-	running, err := c.sandboxes.pods.running(ctx, owner)
+	running, err := c.sandboxes.pods.runningSandboxes(ctx, owner)
 	if err != nil {
 		return environmentView{}, err
 	}
 	for _, id := range running {
-		if !slices.ContainsFunc(view.environments, func(e domain.ObservedEnvironment) bool { return e.ID == id }) {
-			view.environments = append(view.environments, domain.ObservedEnvironment{ID: id, Ending: true})
+		if slices.ContainsFunc(view.environments, func(e domain.ObservedEnvironment) bool { return e.ID == id }) {
+			continue
 		}
+		observed, err := c.sandboxes.podSandbox(ctx, owner, id)
+		if err != nil {
+			return environmentView{}, err
+		}
+		view.environments = append(view.environments, observed)
 	}
 	return view, nil
 }

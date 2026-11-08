@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -18,13 +19,14 @@ import (
 // A Pod carrying the execution's ownership whose sandbox the server no longer
 // shows is an ending environment: deleted, yet still able to write the Work's
 // directories. A terminated Pod and another execution's Pod are not the
-// execution's environments.
+// execution's environments, and a Pod whose sandbox the list merely lags
+// behind is that live sandbox.
 func TestAPodOutlivingItsSandboxIsObservedAsEnding(t *testing.T) {
 	ctx := context.Background()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	provider, cluster, _ := sandboxClient(t)
+	provider, cluster, fixture := sandboxClient(t)
 	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	input := request()
 	record, err := register(ctx, p, input, testMounts)
@@ -38,8 +40,12 @@ func TestAPodOutlivingItsSandboxIsObservedAsEnding(t *testing.T) {
 		}
 		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: fixtureSandboxNamespace, Labels: withID}, Status: corev1.PodStatus{Phase: phase}}
 	}
+	// A sandbox the list does not show yet, which a GET still finds.
+	const unlisted = "22222222-2222-4222-8222-222222222222"
+	fixture.others = map[string]sdk.SandboxInfo{unlisted: {ID: unlisted, Metadata: owned, Status: sdk.SandboxStatus{State: sdk.StateRunning}}}
 	for _, created := range []*corev1.Pod{
 		pod("ending-0", "sandbox-ending", owned, corev1.PodRunning),
+		pod("unlisted-0", unlisted, owned, corev1.PodRunning),
 		pod("done-0", "sandbox-done", owned, corev1.PodSucceeded),
 		pod("foreign-0", "sandbox-foreign", other, corev1.PodRunning),
 	} {
@@ -52,5 +58,5 @@ func TestAPodOutlivingItsSandboxIsObservedAsEnding(t *testing.T) {
 	require.True(t, found)
 	view, err := cloudEnvironment{sandboxes: provider}.observe(ctx, stored, false)
 	require.NoError(t, err)
-	require.Equal(t, []domain.ObservedEnvironment{{ID: "sandbox-ending", Ending: true}}, view.environments)
+	require.ElementsMatch(t, []domain.ObservedEnvironment{{ID: "sandbox-ending", Ending: true}, {ID: unlisted, Running: true}}, view.environments, "a Pod whose sandbox still exists is that sandbox, not an ending one")
 }

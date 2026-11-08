@@ -32,8 +32,8 @@ func (t LeaseTerms) Validate() error {
 var ErrInvalidCreationWait = errors.New("agent: invalid creation wait")
 
 // CreationWait is how long, after its submission, an environment's creation
-// can still produce an environment: longer than the environment authority's
-// own creation timeout. It is platform configuration, like the lease terms.
+// can still produce an environment: longer than its environment authority
+// takes to create one or give up.
 type CreationWait time.Duration
 
 // Validate admits a positive wait shorter than the Startup Deadline.
@@ -42,6 +42,23 @@ func (w CreationWait) Validate() error {
 		return ErrInvalidCreationWait
 	}
 	return nil
+}
+
+// CreationWaits are the configured creation waits of each realization's
+// environment authority, platform configuration like the lease terms: a
+// Cloud's OpenSandbox server creates a sandbox for minutes, while a Managed
+// Computer opens the Work's directory within one relayed command.
+type CreationWaits struct {
+	Cloud   CreationWait
+	Managed CreationWait
+}
+
+// of is the creation wait of an execution of realization.
+func (w CreationWaits) of(realization ExecutionRealization) CreationWait {
+	if realization == RealizationManaged {
+		return w.Managed
+	}
+	return w.Cloud
 }
 
 // leases reports whether the terms lease environments at all.

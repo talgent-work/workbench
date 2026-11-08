@@ -44,7 +44,7 @@ func init() {
 }
 
 func config() SandboxConfig {
-	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Lease: fixtureLease, CreationWait: fixtureCreationWait, Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
+	return SandboxConfig{Models: fixtureModels(), Image: "native-claude:test", Lease: fixtureLease, CreationTimeout: fixtureCreationTimeout, CreationWait: fixtureCreationWait, Environment: map[string]string{platformAPIAddressEnv: fixturePlatformAPIAddress}, Resources: corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")},
 		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("1Gi")},
 	}}
@@ -65,7 +65,7 @@ func (s *Sandboxes) submitRequest(ctx context.Context, r domain.LaunchSpecificat
 	if err != nil {
 		return "", err
 	}
-	return s.submit(ctx, owner(r), spec)
+	return s.submit(ctx, owner(r), spec, time.Now().Add(time.Duration(s.config.CreationWait)))
 }
 
 // ownedRequest lists the sandboxes carrying the request's ownership.

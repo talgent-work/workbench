@@ -79,7 +79,7 @@ func TestFailedSweepDoesNotSuppressLaterSweeps(t *testing.T) {
 	port := &sessionCommandRecorder{}
 	app := fx.New(agent.Module, moduleCatalog(), sessionStateTransport(t), agent.RecoveryModule, recoveryQueues(t), fx.NopLogger,
 		fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }),
-		fx.Supply(domain.LeaseTerms{}, commandtest.CreationWait),
+		fx.Supply(domain.LeaseTerms{}, commandtest.CreationWaits),
 		fx.Decorate(func(agentquery.ExecutionQueryRepository) agentquery.ExecutionQueryRepository { return lookups }),
 		fx.Decorate(func(repository domain.AgentExecutionRepository) domain.AgentExecutionRepository {
 			executions.AgentExecutionRepository = repository

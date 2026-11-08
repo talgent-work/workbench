@@ -104,3 +104,16 @@ func TestSandboxCreateNeverAnsweredIsSentOnce(t *testing.T) {
 	require.Equal(t, 1, fixture.creates)
 	require.NotNil(t, fixture.info, "the sandbox it created remains")
 }
+
+// A recorded submission that reaches the sending with less of its creation
+// wait left than the server's creation timeout is not sent: sent, the
+// creation could still produce a sandbox after its creation deadline.
+func TestACreationTooCloseToItsDeadlineIsNotSent(t *testing.T) {
+	provider, _, fixture := sandboxClient(t)
+	input := request()
+	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "execd-secret", "work-credential-fixture")
+	require.NoError(t, err)
+	_, err = provider.submit(context.Background(), owner(input), spec, time.Now().Add(fixtureCreationTimeout-time.Second))
+	require.ErrorIs(t, err, errCreationTooLate)
+	require.Zero(t, fixture.creates, "nothing is sent")
+}

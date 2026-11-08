@@ -18,7 +18,7 @@ const sandboxIDLabel = "opensandbox.io/id"
 // SandboxPods reads the Pods in the sandbox namespace that carry an
 // execution's ownership label. A sandbox's Pod outlives its BatchSandbox until
 // it terminates and can still write the Work's directories, so an
-// environment is gone only once neither remains (ADR 0047, Release waits for
+// environment is gone only once neither remains (Release waits for
 // the Pod). It only reads.
 type SandboxPods struct {
 	client    kubernetes.Interface
@@ -32,9 +32,10 @@ func NewSandboxPods(client kubernetes.Interface, namespace string) (*SandboxPods
 	return &SandboxPods{client: client, namespace: namespace}, nil
 }
 
-// running lists the sandbox identities of the execution's Pods that have not
-// terminated, each once.
-func (p *SandboxPods) running(ctx context.Context, owner SandboxOwner) ([]string, error) {
+// runningSandboxes lists, each once, the sandbox identities of the
+// execution's Pods that have not terminated: a Pod in phase Succeeded or
+// Failed runs no container and writes nothing more.
+func (p *SandboxPods) runningSandboxes(ctx context.Context, owner SandboxOwner) ([]string, error) {
 	selector := labels.Set{sandboxOwnershipLabel: correlation(owner)[sandboxOwnershipLabel]}.AsSelector().String()
 	pods, err := p.client.CoreV1().Pods(p.namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
@@ -47,6 +48,10 @@ func (p *SandboxPods) running(ctx context.Context, owner SandboxOwner) ([]string
 		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
 			continue
 		}
+		// OpenSandbox labels every sandbox Pod with its sandbox identity
+		// (verified on the deployed v0.2.2, 2026-11-08); a Pod without one
+		// is named by itself, matches no sandbox and so is ending, holding
+		// the release rather than allowing it.
 		id := pod.Labels[sandboxIDLabel]
 		if id == "" {
 			id = pod.Name

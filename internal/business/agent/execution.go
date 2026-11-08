@@ -92,15 +92,25 @@ const defaultServerCreationTimeout = 5 * time.Minute
 // once it deleted the sandbox, still arrives.
 const creationAnswerMargin = 30 * time.Second
 
-// creationWait is how long a create waits for its answer and how long after
-// its submission a creation can still produce a sandbox: a little longer than
-// the server's creation timeout.
-func (cfg ExecutionConfig) creationWait() domain.CreationWait {
-	timeout := cfg.SandboxCreationTimeout.Duration()
-	if timeout == 0 {
-		timeout = defaultServerCreationTimeout
+// managedCreationWait is how long a Managed Computer's opening of a Work's
+// directory can still take effect after its submission: one relayed command,
+// bounded at a few seconds, with a margin.
+const managedCreationWait = domain.CreationWait(30 * time.Second)
+
+// creationTimeout is the server's sandbox creation timeout, its default
+// unless configured.
+func (cfg ExecutionConfig) creationTimeout() time.Duration {
+	if timeout := cfg.SandboxCreationTimeout.Duration(); timeout != 0 {
+		return timeout
 	}
-	return domain.CreationWait(timeout + creationAnswerMargin)
+	return defaultServerCreationTimeout
+}
+
+// creationWait is how long after its submission a creation can still produce
+// a sandbox: a little longer than the server's creation timeout, so the
+// server's own failure answer still arrives.
+func (cfg ExecutionConfig) creationWait() domain.CreationWait {
+	return domain.CreationWait(cfg.creationTimeout() + creationAnswerMargin)
 }
 
 func (cfg ExecutionConfig) Validate() error {
@@ -143,7 +153,7 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, clu
 		}
 		resources.Limits[corev1.ResourceName(name)] = quantity
 	}
-	return execution.NewSandboxes(client, pods, execution.SandboxConfig{CreationWait: cfg.creationWait(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
+	return execution.NewSandboxes(client, pods, execution.SandboxConfig{CreationTimeout: cfg.creationTimeout(), CreationWait: cfg.creationWait(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
 }
 
 var ExecutionModule = fx.Module("agent.execution-integration",
@@ -156,9 +166,11 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 		// Every sandbox is created to expire under these terms, and each
 		// execution decides its renewals under them.
 		func(cfg ExecutionConfig) domain.LeaseTerms { return cfg.Lease.terms() },
-		// Each creation is waited for, and its deadline counted, under the
-		// same wait.
-		func(cfg ExecutionConfig) domain.CreationWait { return cfg.creationWait() },
+		// Each creation's deadline is counted under its realization's wait;
+		// a Cloud create is waited for under the same wait.
+		func(cfg ExecutionConfig) domain.CreationWaits {
+			return domain.CreationWaits{Cloud: cfg.creationWait(), Managed: managedCreationWait}
+		},
 		newExecutionSandboxes,
 		newExecutionLifecycle,
 		func(db *xorm.Engine, client *sdk.LifecycleClient, models *execution.ModelCatalog, repositories *application.RepositoryAccess, services *application.ServiceAccess, cfg ExecutionConfig) (*execution.SandboxCredentials, error) {

@@ -9,8 +9,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// creationWait is the deployment's creation wait in these tests.
-const creationWait = domain.CreationWait(5*time.Minute + 30*time.Second)
+// creationWaits are the deployment's creation waits in these tests.
+var creationWaits = domain.CreationWaits{Cloud: domain.CreationWait(5*time.Minute + 30*time.Second), Managed: domain.CreationWait(30 * time.Second)}
 
 // unansweredExecution is a seated Cloud execution of a new Work that
 // submitted its creation at its seating, never received the answer, and bound
@@ -19,7 +19,7 @@ func unansweredExecution(t *testing.T) *domain.AgentExecution {
 	t.Helper()
 	work := newSession(t)
 	execution := beginOf(t, work, domain.RealizationCloud)
-	submitted, err := execution.RecordSubmission(execution.Desk.SeatedAt, creationWait)
+	submitted, err := execution.RecordSubmission(execution.Desk.SeatedAt, creationWaits)
 	require.NoError(t, err)
 	require.True(t, submitted)
 	decide(t, execution, runningEnvironment("env-1"), execution.Desk.SeatedAt)
@@ -38,25 +38,31 @@ func TestASubmissionRecordsItsCreationDeadline(t *testing.T) {
 	execution := beginOf(t, work, domain.RealizationCloud)
 	at := execution.Desk.SeatedAt
 	for _, invalid := range []domain.CreationWait{0, -1, domain.CreationWait(domain.StartupDeadline)} {
-		_, err := execution.RecordSubmission(at, invalid)
+		_, err := execution.RecordSubmission(at, domain.CreationWaits{Cloud: invalid, Managed: creationWaits.Managed})
 		require.ErrorIs(t, err, domain.ErrInvalidExecution, invalid)
 	}
-	_, err := execution.RecordSubmission(time.Time{}, creationWait)
+	_, err := execution.RecordSubmission(time.Time{}, creationWaits)
 	require.ErrorIs(t, err, domain.ErrInvalidExecution)
 
-	submitted, err := execution.RecordSubmission(at, creationWait)
+	submitted, err := execution.RecordSubmission(at, creationWaits)
 	require.NoError(t, err)
 	require.True(t, submitted)
 	require.Equal(t, at.UTC(), execution.Creation.SubmittedAt)
-	require.Equal(t, at.UTC().Add(time.Duration(creationWait)), execution.Creation.Deadline)
+	require.Equal(t, at.UTC().Add(time.Duration(creationWaits.Cloud)), execution.Creation.Deadline)
 	require.False(t, execution.Creation.Answered)
 	require.True(t, execution.Creation.Outstanding(at))
 	require.False(t, execution.Creation.Outstanding(execution.Creation.Deadline), "the creation can no longer produce an environment at its deadline")
 
-	again, err := execution.RecordSubmission(at.Add(time.Minute), creationWait)
+	again, err := execution.RecordSubmission(at.Add(time.Minute), creationWaits)
 	require.NoError(t, err)
 	require.False(t, again, "a creation is submitted once")
 	require.Equal(t, at.UTC(), execution.Creation.SubmittedAt)
+
+	managed := beginOf(t, newSession(t), domain.RealizationManaged)
+	submitted, err = managed.RecordSubmission(at, creationWaits)
+	require.NoError(t, err)
+	require.True(t, submitted)
+	require.Equal(t, at.UTC().Add(time.Duration(creationWaits.Managed)), managed.Creation.Deadline, "a Managed creation counts its own authority's wait")
 }
 
 // A deleted environment whose Pod still runs keeps its retired execution
@@ -91,7 +97,7 @@ func TestReleaseWaitsForAnEndingEnvironment(t *testing.T) {
 func TestAnUnretiredExecutionNeitherBindsNorDeletesAnEndingEnvironment(t *testing.T) {
 	work := newSession(t)
 	execution := beginOf(t, work, domain.RealizationCloud)
-	submitted, err := execution.RecordSubmission(execution.Desk.SeatedAt, creationWait)
+	submitted, err := execution.RecordSubmission(execution.Desk.SeatedAt, creationWaits)
 	require.NoError(t, err)
 	require.True(t, submitted)
 	observed := domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "env-old", Ending: true}, {ID: "env-1", Running: true}}}

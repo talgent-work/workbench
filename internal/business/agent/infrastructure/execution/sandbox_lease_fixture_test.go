@@ -20,8 +20,15 @@ import (
 // than an hour remains.
 var fixtureLease = domain.LeaseTerms{Duration: 2 * time.Hour, RenewalThreshold: time.Hour}
 
-// fixtureCreationWait is the creation wait sandboxes are configured with.
-var fixtureCreationWait = domain.CreationWait(5*time.Minute + 30*time.Second)
+// fixtureCreationTimeout and fixtureCreationWait are the server's creation
+// timeout and the creation wait sandboxes are configured with.
+var (
+	fixtureCreationTimeout = 5 * time.Minute
+	fixtureCreationWait    = domain.CreationWait(fixtureCreationTimeout + 30*time.Second)
+	// fixtureCreationWaits are the creation waits reconciliation counts
+	// creation deadlines with, the Cloud's matching the sandboxes'.
+	fixtureCreationWaits = domain.CreationWaits{Cloud: fixtureCreationWait, Managed: domain.CreationWait(30 * time.Second)}
+)
 
 func (f *lifecycleFixture) now() time.Time {
 	if f.clock == nil {

@@ -71,12 +71,24 @@ func NewSandboxes(client *sdk.LifecycleClient, pods *SandboxPods, config Sandbox
 	return &Sandboxes{client: client, pods: pods, config: config}, nil
 }
 
+// errCreationTooLate means a recorded submission reached the sending only
+// once too little of its creation wait remained for the server's own
+// creation timeout: sent now, the creation could still produce a sandbox
+// after its creation deadline, so it is not sent, and observation and the
+// Startup Deadline decide the start.
+var errCreationTooLate = errors.New("agent: the creation deadline leaves no room for the server's creation timeout")
+
 // submit sends the create once and waits for its answer, which OpenSandbox
-// gives once the sandbox is ready or has definitely failed, a little longer
-// than the server's own creation timeout. A wait that ends first loses the
-// answer.
-func (s *Sandboxes) submit(ctx context.Context, owner SandboxOwner, spec sdk.CreateSandboxRequest) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.CreationWait))
+// gives once the sandbox is ready or has definitely failed, until the
+// creation deadline the execution recorded before sending. It sends only
+// while the server's creation timeout still ends before that deadline, so a
+// creation can produce a sandbox only before it. A wait that ends first
+// loses the answer.
+func (s *Sandboxes) submit(ctx context.Context, owner SandboxOwner, spec sdk.CreateSandboxRequest, deadline time.Time) (string, error) {
+	if time.Until(deadline) <= s.config.CreationTimeout {
+		return "", errCreationTooLate
+	}
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	result, err := s.client.CreateSandbox(ctx, withoutWorkCredential(spec))
 	if err != nil && ctx.Err() == nil && isCreationRefused(err) {
@@ -89,6 +101,30 @@ func (s *Sandboxes) submit(ctx context.Context, owner SandboxOwner, spec sdk.Cre
 		return "", errEnvironmentConflict
 	}
 	return result.ID, nil
+}
+
+// podSandbox is the environment a running Pod carrying the execution's
+// ownership belongs to when the list did not show its sandbox: the sandbox
+// itself while a GET still finds it owned by the execution, otherwise an
+// ending environment, deleted while its Pod still runs. A sandbox found owned
+// by another execution is ending too, so a doubtful Pod holds the release
+// rather than allowing it.
+func (s *Sandboxes) podSandbox(ctx context.Context, owner SandboxOwner, id string) (domain.ObservedEnvironment, error) {
+	ending := domain.ObservedEnvironment{ID: id, Ending: true}
+	if !validSandboxID(id) {
+		return ending, nil
+	}
+	info, err := s.client.GetSandbox(ctx, id)
+	if isSandboxNotFound(err) {
+		return ending, nil
+	}
+	if err != nil {
+		return domain.ObservedEnvironment{}, sandboxError(ctx, "inspect", err)
+	}
+	if !matchesSandbox(info, owner) || info.ID != id {
+		return ending, nil
+	}
+	return domain.ObservedEnvironment{ID: id, Running: info.Status.State == sdk.StateRunning, LeaseExpiresAt: leaseExpiry(info)}, nil
 }
 
 // withoutWorkCredential is the specification as the sandbox receives it: the

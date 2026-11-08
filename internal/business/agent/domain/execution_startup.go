@@ -81,9 +81,10 @@ func (e *AgentExecution) wantsRun() bool {
 // RecordSubmission records that its environment's creation is submitted now,
 // before it is sent, so it is never submitted twice (Single creation), with
 // its creation deadline: now plus the configured creation wait (Creation
-// deadline). An execution that submitted already, or no longer wants its run,
-// submits nothing.
-func (e *AgentExecution) RecordSubmission(now time.Time, wait CreationWait) (bool, error) {
+// deadline), its realization's wait. An execution that submitted already, or
+// no longer wants its run, submits nothing.
+func (e *AgentExecution) RecordSubmission(now time.Time, waits CreationWaits) (bool, error) {
+	wait := waits.of(e.Realization)
 	if now.IsZero() || wait.Validate() != nil {
 		return false, ErrInvalidExecution
 	}

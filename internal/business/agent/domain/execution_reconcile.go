@@ -193,12 +193,12 @@ func (e *AgentExecution) bind(observation EnvironmentObservation) []ExecutionSte
 			e.Environment = first.ID
 		}
 	}
-	return deletions(observation, e.Environment)
+	return deleteOthers(observation, e.Environment)
 }
 
-// deletions delete every observed environment other than keep that is not
+// deleteOthers deletes every observed environment other than keep that is not
 // already ending.
-func deletions(observation EnvironmentObservation, keep string) []ExecutionStep {
+func deleteOthers(observation EnvironmentObservation, keep string) []ExecutionStep {
 	var steps []ExecutionStep
 	for _, observed := range observation.Environments {
 		if observed.ID != keep && !observed.Ending {
@@ -292,8 +292,8 @@ func (e *AgentExecution) inputsDue(observation EnvironmentObservation, now time.
 // Outstanding creation, Desk release); a released one deletes an environment
 // that appeared late.
 func (e *AgentExecution) release(observation EnvironmentObservation, now time.Time) []ExecutionStep {
-	steps := deletions(observation, "")
-	if e.State == ExecutionRetired && e.Desk.LeftAt.IsZero() && len(observation.Environments) == 0 && !e.Creation.Outstanding(now) {
+	steps := deleteOthers(observation, "")
+	if e.State == ExecutionRetired && e.Desk.LeftAt.IsZero() && e.computeEnded(observation, now) {
 		steps = append(steps, ExecutionStep{Kind: StepLeaveDesk})
 	}
 	return steps

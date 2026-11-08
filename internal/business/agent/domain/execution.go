@@ -375,12 +375,18 @@ func (e *AgentExecution) ConfirmRelease(observation EnvironmentObservation, now 
 	if now.IsZero() {
 		return false, ErrInvalidExecution
 	}
-	if e.State != ExecutionRetired || e.Desk.LeftAt.IsZero() || len(observation.Environments) > 0 || e.Creation.Outstanding(now) {
+	if e.State != ExecutionRetired || e.Desk.LeftAt.IsZero() || !e.computeEnded(observation, now) {
 		return false, nil
 	}
 	e.State, e.ReleasedAt = ExecutionReleased, now.UTC()
 	e.record(ExecutionReleasedEvent{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt})
 	return true, nil
+}
+
+// computeEnded reports that it owns no environment as observed now, not even
+// one still ending, and no creation of its is outstanding.
+func (e *AgentExecution) computeEnded(observation EnvironmentObservation, now time.Time) bool {
+	return len(observation.Environments) == 0 && !e.Creation.Outstanding(now)
 }
 
 func (e *AgentExecution) record(event Event) {

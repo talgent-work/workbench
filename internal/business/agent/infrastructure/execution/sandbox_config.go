@@ -23,16 +23,18 @@ type SandboxConfig struct {
 	// Lease is how every sandbox is leased: created to expire after its
 	// duration, and renewed while its execution wants it.
 	Lease domain.LeaseTerms
-	// CreationWait bounds one create: longer than the OpenSandbox server's
-	// own creation timeout, after which the server deletes a sandbox that
-	// never became ready and answers the create. Each execution's creation
-	// deadline counts the same wait.
+	// CreationTimeout equals the OpenSandbox server's own creation timeout,
+	// after which it deletes a sandbox that never became ready and answers
+	// the create.
+	CreationTimeout time.Duration
+	// CreationWait, longer than CreationTimeout, is the creation wait each
+	// execution's creation deadline counts.
 	CreationWait domain.CreationWait
 }
 
 func (c SandboxConfig) Validate() error {
-	if err := c.CreationWait.Validate(); err != nil {
-		return err
+	if err := c.CreationWait.Validate(); err != nil || c.CreationTimeout <= 0 || time.Duration(c.CreationWait) <= c.CreationTimeout {
+		return errors.New("agent: the creation wait must be valid and longer than the server's creation timeout")
 	}
 	if c.Models == nil {
 		return errors.New("agent: model catalog is required")
