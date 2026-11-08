@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
@@ -33,7 +34,10 @@ type testClock struct{ at time.Time }
 func (c *testClock) now() time.Time { return c.at }
 
 // computerWorks lists the one Work as running on every Computer.
-type computerWorks struct{ id string }
+type computerWorks struct {
+	query.ExecutionQueryRepository
+	id string
+}
 
 func (c computerWorks) ListRunningWorkIDs(_ context.Context, _, after string, _ int) ([]string, error) {
 	if after != "" {

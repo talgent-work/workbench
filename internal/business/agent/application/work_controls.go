@@ -18,7 +18,7 @@ func (a *Application) StopWork(ctx context.Context, request ControlWork) (query.
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, subject, request.WorkID); err != nil {
 		return query.WorkView{}, err
 	}
-	current, err := a.WorkViews.GetWorkView(ctx, request.WorkID)
+	current, err := a.WorkQueries.GetWorkView(ctx, request.WorkID)
 	if err != nil {
 		return query.WorkView{}, err
 	}
@@ -36,7 +36,7 @@ func (a *Application) StopWork(ctx context.Context, request ControlWork) (query.
 	if err != nil {
 		return query.WorkView{}, err
 	}
-	return a.WorkViews.GetWorkView(ctx, request.WorkID)
+	return a.WorkQueries.GetWorkView(ctx, request.WorkID)
 }
 
 func (a *Application) ResumeWork(ctx context.Context, request ControlWork) (query.WorkView, error) {
@@ -48,7 +48,7 @@ func (a *Application) ResumeWork(ctx context.Context, request ControlWork) (quer
 	if err != nil {
 		return query.WorkView{}, err
 	}
-	return a.WorkViews.GetWorkView(ctx, request.WorkID)
+	return a.WorkQueries.GetWorkView(ctx, request.WorkID)
 }
 
 func (a *Application) RestartWork(ctx context.Context, request ControlWork) (query.WorkView, error) {
@@ -60,7 +60,7 @@ func (a *Application) RestartWork(ctx context.Context, request ControlWork) (que
 	if err != nil {
 		return query.WorkView{}, err
 	}
-	return a.WorkViews.GetWorkView(ctx, request.WorkID)
+	return a.WorkQueries.GetWorkView(ctx, request.WorkID)
 }
 
 // CloseWork closes a Work for its owner in the Portal, where it is called
@@ -74,5 +74,5 @@ func (a *Application) CloseWork(ctx context.Context, request ControlWork) (query
 	if err != nil {
 		return query.WorkView{}, err
 	}
-	return a.WorkViews.GetWorkView(ctx, request.WorkID)
+	return a.WorkQueries.GetWorkView(ctx, request.WorkID)
 }

@@ -5,14 +5,15 @@ import (
 	"time"
 
 	"github.com/samber/oops"
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"xorm.io/xorm"
 )
 
+// ExecutionQueryRepository answers the execution query store's listings and
+// recorded outcomes. execution.ExecutionQueryRepository completes it into
+// query.ExecutionQueryRepository with the credentials issued to a live run,
+// which only the execution environments can decode.
 type ExecutionQueryRepository struct{ db *xorm.Engine }
-
-var _ query.ExecutionQueryRepository = (*ExecutionQueryRepository)(nil)
 
 func NewExecutionQueryRepository(db *xorm.Engine) *ExecutionQueryRepository {
 	return &ExecutionQueryRepository{db: db}
@@ -45,11 +46,6 @@ func (r *ExecutionQueryRepository) ListWorkIDs(ctx context.Context, afterID stri
 	}
 	return ids, nil
 }
-
-var (
-	_ command.ComputerWorks    = (*ExecutionQueryRepository)(nil)
-	_ command.ReachResumeWorks = (*ExecutionQueryRepository)(nil)
-)
 
 // ListReachResumeWorkIDs lists the Stopped Works on a Computer whose Resume
 // it refused as unreachable.

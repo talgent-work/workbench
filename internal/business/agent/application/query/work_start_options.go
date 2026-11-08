@@ -1,8 +1,6 @@
 package query
 
 import (
-	"context"
-
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -58,10 +56,4 @@ type WorkStartRepositories struct {
 
 type WorkRepositoryOption struct {
 	ID, Provider, RepoName, DefaultBranch string
-}
-
-// RecentRepositoryReader reads repository identities from the owner's own
-// Works, most recently created first and without duplicates.
-type RecentRepositoryReader interface {
-	ListRecentRepositoryIDs(ctx context.Context, owner string) ([]string, error)
 }

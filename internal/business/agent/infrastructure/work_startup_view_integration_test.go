@@ -37,9 +37,9 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	require.NoError(t, err)
 	requireStartRequested(t, f.sessions, id)
 	thinking := &workThinking{}
-	owners := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	owners := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	views := query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(f.db), models)
-	app := &application.Application{Works: f.sessions, Harness: thinking, WorkPrincipals: owners, WorkViews: views, Models: models, Queries: application.Queries{
+	app := &application.Application{Works: f.sessions, Harness: thinking, WorkPrincipals: owners, WorkQueries: views, Models: models, Queries: application.Queries{
 		GetWork:     query.NewGetWorkHandler(f.agents, f.sessions, owners, application.AssembleAgentWorkEntity, querytest.NoRequiredResponse),
 		GetWorkView: query.NewGetWorkViewHandler(owners, views),
 	}}

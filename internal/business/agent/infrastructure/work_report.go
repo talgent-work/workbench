@@ -8,16 +8,7 @@ import (
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"xorm.io/xorm"
 )
-
-type WorkReportQueryRepository struct{ db *xorm.Engine }
-
-func NewWorkReportQueryRepository(db *xorm.Engine) *WorkReportQueryRepository {
-	return &WorkReportQueryRepository{db: db}
-}
-
-var _ query.WorkReportReader = (*WorkReportQueryRepository)(nil)
 
 type workHistoryRow struct {
 	SessionID                            string `xorm:"session_id"`
@@ -32,7 +23,7 @@ type workHistoryRow struct {
 	CurrentProcess, CurrentFailureReason string
 }
 
-func (r *WorkReportQueryRepository) ReadWorkHistory(ctx context.Context, scope query.WorkReportScope, before time.Time) ([]query.WorkHistory, error) {
+func (r *WorkQueryRepository) ReadWorkHistory(ctx context.Context, scope query.WorkReportScope, before time.Time) ([]query.WorkHistory, error) {
 	// One statement observes a coherent population including permanently closed
 	// Work. It never uses a caller's board, the personal Recent list, or their limits.
 	// ponytail: memory grows with a project's state transitions; replace with a

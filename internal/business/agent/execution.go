@@ -139,7 +139,6 @@ var ExecutionModule = fx.Module("agent.execution-integration",
 			p.ProgressCommitted = updates.publish
 			return p
 		},
-		fx.Annotate(execution.NewWorkCredentials, fx.As(new(query.WorkCredentialVerifier))),
 		func(p *execution.Provisioning, credentials *execution.SandboxCredentials, cfg ExecutionConfig) (*execution.NativeConnections, error) {
 			return execution.NewNativeConnections(p, credentials, http.DefaultClient, cfg.Dispatcher.Address, cfg.Dispatcher.Token)
 		},
@@ -201,13 +200,9 @@ func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers
 // registerManagedTelemetry takes the telemetry of Works on Managed Computers,
 // attributes it to each run and forwards it to the OTel Collector; nothing
 // without Managed Computers.
-func registerManagedTelemetry(mux *http.ServeMux, provisioning *execution.Provisioning, managed *execution.ManagedEnvironment, cfg ComputerConfig, logger *slog.Logger) error {
+func registerManagedTelemetry(mux *http.ServeMux, attributions query.ExecutionQueryRepository, managed *execution.ManagedEnvironment, cfg ComputerConfig, logger *slog.Logger) error {
 	if managed == nil {
 		return nil
-	}
-	attributions, err := execution.NewTelemetryAttributions(provisioning)
-	if err != nil {
-		return err
 	}
 	collector, err := telemetryingest.NewCollector(http.DefaultClient, cfg.TelemetryCollectorAddress)
 	if err != nil {

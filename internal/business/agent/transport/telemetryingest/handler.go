@@ -41,7 +41,7 @@ const (
 )
 
 // Register mounts the endpoint on mux.
-func Register(mux *http.ServeMux, attributions query.RunTelemetryAttributions, collector *Collector, logger *slog.Logger) {
+func Register(mux *http.ServeMux, attributions query.ExecutionQueryRepository, collector *Collector, logger *slog.Logger) {
 	h := handler{attributions: attributions, collector: collector, logger: logger}
 	mux.HandleFunc("POST "+Prefix+tracesPath, func(w http.ResponseWriter, r *http.Request) {
 		h.serve(w, r, tracesPath, attributeTraces)
@@ -52,7 +52,7 @@ func Register(mux *http.ServeMux, attributions query.RunTelemetryAttributions, c
 }
 
 type handler struct {
-	attributions query.RunTelemetryAttributions
+	attributions query.ExecutionQueryRepository
 	collector    *Collector
 	logger       *slog.Logger
 }

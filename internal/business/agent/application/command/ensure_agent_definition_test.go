@@ -14,6 +14,7 @@ import (
 // Faults are controlled at the repository boundary. Real unique constraints and
 // concurrent creation are covered by the module's database integration tests.
 type definitionFaultStore struct {
+	query.AgentDefinitionQueryRepository
 	value                    *domain.AgentDefinition
 	findErr, getErr, saveErr error
 	beforeSave               func()

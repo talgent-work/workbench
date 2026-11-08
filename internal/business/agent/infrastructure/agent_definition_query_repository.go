@@ -10,18 +10,15 @@ import (
 	"xorm.io/xorm"
 )
 
-type AgentDefinitionLookup struct{ db *xorm.Engine }
+type AgentDefinitionQueryRepository struct{ db *xorm.Engine }
 
-var (
-	_ query.AgentDefinitionLookup = (*AgentDefinitionLookup)(nil)
-	_ query.AgentAppearanceReader = (*AgentDefinitionLookup)(nil)
-)
+var _ query.AgentDefinitionQueryRepository = (*AgentDefinitionQueryRepository)(nil)
 
-func NewAgentDefinitionLookup(db *xorm.Engine) *AgentDefinitionLookup {
-	return &AgentDefinitionLookup{db: db}
+func NewAgentDefinitionQueryRepository(db *xorm.Engine) *AgentDefinitionQueryRepository {
+	return &AgentDefinitionQueryRepository{db: db}
 }
 
-func (r *AgentDefinitionLookup) FindForPurpose(ctx context.Context, input query.GetAgentDefinitionForPurpose) (string, error) {
+func (r *AgentDefinitionQueryRepository) FindForPurpose(ctx context.Context, input query.GetAgentDefinitionForPurpose) (string, error) {
 	var row agentDefinitionDO
 	found, err := r.db.Context(ctx).Cols("id").Where("scope_kind = ? AND scope_ref = ? AND purpose = ? AND deleted_at = 0", input.ScopeKind, input.ScopeReference, input.Purpose).Get(&row)
 	if err != nil {
@@ -34,7 +31,7 @@ func (r *AgentDefinitionLookup) FindForPurpose(ctx context.Context, input query.
 }
 
 // ListEmployeeAgents reads the employees' definitions for the purpose.
-func (r *AgentDefinitionLookup) ListEmployeeAgents(ctx context.Context, purpose string, employeeIDs []string) (map[string]query.AgentAppearanceView, error) {
+func (r *AgentDefinitionQueryRepository) ListEmployeeAgents(ctx context.Context, purpose string, employeeIDs []string) (map[string]query.AgentAppearanceView, error) {
 	views := make(map[string]query.AgentAppearanceView, len(employeeIDs))
 	if len(employeeIDs) == 0 {
 		return views, nil
@@ -50,7 +47,7 @@ func (r *AgentDefinitionLookup) ListEmployeeAgents(ctx context.Context, purpose 
 }
 
 // ListWorkAgents reads the definitions of the Works.
-func (r *AgentDefinitionLookup) ListWorkAgents(ctx context.Context, workIDs []string) (map[string]query.AgentAppearanceView, error) {
+func (r *AgentDefinitionQueryRepository) ListWorkAgents(ctx context.Context, workIDs []string) (map[string]query.AgentAppearanceView, error) {
 	views := make(map[string]query.AgentAppearanceView, len(workIDs))
 	if len(workIDs) == 0 {
 		return views, nil

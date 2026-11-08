@@ -62,9 +62,9 @@ func newAccessFixtureWith(t *testing.T, views application.WorkspacePort) *access
 	f.digitalWork = accessWork(t, sessions, coordinator, "owner")
 
 	dispatcher.Subscribe(eventhandler.NewWorkAccessWithdrawals(f.withdrawals, slog.Default()))
-	app := &application.Application{Definitions: agents, Works: sessions, WorkPrincipals: ownerAuthorization{sessions}, WorkViews: sessionViews{sessions}, Logger: slog.Default(),
+	app := &application.Application{Definitions: agents, Works: sessions, WorkPrincipals: ownerAuthorization{sessions}, WorkQueries: sessionViews{sessions: sessions}, Logger: slog.Default(),
 		Commands:   application.Commands{CreateWork: command.NewCreateWorkHandler(time.Now, agents, sessions, ownerAuthorization{sessions}, query.NewModelConfigurations(), nil, nil, nil)},
-		Queries:    application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions})},
+		Queries:    application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions: sessions})},
 		Workspaces: views,
 	}
 	mux := http.NewServeMux()
@@ -258,7 +258,10 @@ func (a ownerAuthorization) AuthorizeWork(_ context.Context, subject, id string)
 	return nil
 }
 
-type sessionViews struct{ sessions *rpcSessions }
+type sessionViews struct {
+	query.WorkQueryRepository
+	sessions *rpcSessions
+}
 
 func (v sessionViews) GetWorkView(_ context.Context, id string) (query.WorkView, error) {
 	work, ok := v.sessions.items[id]

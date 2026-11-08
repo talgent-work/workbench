@@ -131,7 +131,9 @@ func (w *identityWorks) Save(context.Context, *agentdomain.AgentWork) error {
 }
 
 // identityCredentials admits each Work's one live credential.
-type identityCredentials struct{}
+type identityCredentials struct {
+	agentquery.ExecutionQueryRepository
+}
 
 func (identityCredentials) VerifyWorkCredential(_ context.Context, _, credential string) error {
 	if credential != "credential" {

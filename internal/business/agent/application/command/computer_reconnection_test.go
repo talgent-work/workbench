@@ -11,6 +11,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query/querytest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -32,7 +33,10 @@ func (c *switchableComputer) AdmitRun(ctx context.Context, run command.RunAdmiss
 }
 
 // markedWorks lists the one Work as marked on every Computer while it is.
-type markedWorks struct{ sessions *feedbackSessionStore }
+type markedWorks struct {
+	query.ExecutionQueryRepository
+	sessions *feedbackSessionStore
+}
 
 func (w markedWorks) ListReachResumeWorkIDs(_ context.Context, _, after string, _ int) ([]string, error) {
 	if after != "" || !w.sessions.session.ReachResumeDue || w.sessions.session.State != domain.WorkStopped {

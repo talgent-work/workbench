@@ -34,7 +34,7 @@ func TestExecutionArchiveRPCRequiresAStoppedWork(t *testing.T) {
 	ctx := context.Background()
 	run := newRuns(t, f.db, f.sessions)
 	stoppedRun := run.latest(ctx, id)
-	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	handler := command.NewCloseWorkHandler(f.sessions, authorization, run.executions, &commandtest.InputBuffer{})
 	app := &application.Application{Works: f.sessions, Commands: application.Commands{CloseWork: handler}}
 	endpoint := connecttest.Handler(func(s *connect.Server) {
@@ -138,7 +138,7 @@ func TestExecutionArchiveAndResumeCannotBothCommitFromStoppedRevision(t *testing
 			observer := infrastructure.NewAgentWorkRepository(other, time.Now)
 			run := newRuns(t, f.db, f.sessions)
 			stoppedRun := run.latest(ctx, id)
-			authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+			authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 			resume := command.NewResumeWorkHandler(time.Now, observer, f.agents, authorization, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 			request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 			var works domain.AgentWorkRepository = f.sessions
@@ -180,7 +180,7 @@ func TestExecutionArchiveRecoversCloseFromAgentAfterCommitAcknowledgementLoss(t 
 	f, id := stoppedContinuationSession(t)
 	ctx := context.Background()
 	run := newRuns(t, f.db, f.sessions)
-	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	authorization := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	ref, err := continuedRef(id, command.NewResumeWorkHandler(time.Now, f.sessions, f.agents, authorization, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}))
 	require.NoError(t, err)
 	admitted := run.latest(ctx, ref)

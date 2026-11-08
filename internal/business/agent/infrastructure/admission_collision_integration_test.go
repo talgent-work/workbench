@@ -59,7 +59,7 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	defer cancel()
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	newCreation := func(requestID string) command.CreateWork {
 		agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.Must(uuid.NewV7()).String()}, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Run"}})
 		require.NoError(t, err)
@@ -126,7 +126,7 @@ func TestConcurrentIndependentDefinitionsAdmitTheirFirstWorks(t *testing.T) {
 	defer cancel()
 	barrier := admissionSaveBarrier{AgentWorkRepository: works, arrived: make(chan struct{}, 2), proceed: make(chan struct{})}
 	execution := &creationExecution{AgentWorkRepository: barrier, db: db}
-	create := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, definitions, execution, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
 	type result struct {
 		id  string
 		err error

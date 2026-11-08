@@ -42,7 +42,7 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 	db := open()
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	auth := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	ids := map[string]string{}
 	definitions := map[string]string{}
 	for _, purpose := range []string{"work", "case_coordinator"} {

@@ -68,7 +68,6 @@ var Module = fx.Module("domain.agent",
 	fx.Invoke(RegisterPersonalWorkHandlers),
 	fx.Provide(fx.Annotate(userdirectory.NewClient, fx.As(new(personalwork.AccountPort))), fx.Private),
 	fx.Provide(personalwork.New, fx.Private),
-	fx.Provide(fx.Annotate(infrastructure.NewServiceAccessResults, fx.As(new(query.ServiceAccessReader)))),
 	fx.Provide(newLiveStreamPublisher, newWorkStateUpdates),
 	fx.Provide(newDomainEventDispatcher, fx.Private),
 	fx.Provide(func(d *domainevent.InMemoryDispatcher) domainevent.Dispatcher { return d }, fx.Private),
@@ -88,16 +87,14 @@ var Module = fx.Module("domain.agent",
 	fx.Invoke(subscribeEventHandlers),
 	fx.Provide(application.NewRequiredResponseReader),
 	fx.Provide(fx.Annotate(command.NewInputAcceptance, fx.As(new(command.WorkInputs)))),
-	fx.Provide(fx.Annotate(infrastructure.NewAgentDefinitionLookup, fx.As(new(query.AgentDefinitionLookup)), fx.As(new(query.AgentAppearanceReader)))),
+	fx.Provide(fx.Annotate(infrastructure.NewAgentDefinitionQueryRepository, fx.As(new(query.AgentDefinitionQueryRepository)))),
 	fx.Provide(func() func() time.Time { return time.Now }, fx.Private),
 	fx.Provide(fx.Annotate(infrastructure.NewAgentDefinitionRepository, fx.As(new(domain.AgentDefinitionRepository)))),
 	fx.Provide(fx.Annotate(newCommittedWorks, fx.As(new(domain.AgentWorkRepository)))),
-	fx.Provide(fx.Annotate(infrastructure.NewWorkAccessReader, fx.As(new(access.WorkAccessReader))), access.NewWorkAuthorizer),
+	fx.Provide(newWorkAuthorizer),
 	fx.Provide(fx.Annotate(command.NewCatalogPluginUpgrades, fx.As(new(command.PluginUpgrades)))),
-	fx.Provide(fx.Annotate(infrastructure.NewWorkQueryRepository, fx.As(new(personalwork.Works)), fx.As(new(query.WorkPreparationReader)), fx.As(new(query.WorkQueryRepository)), fx.As(new(query.WorkOriginQueryRepository)), fx.As(fx.Self()), fx.As(new(query.WorkOriginsReader)), fx.As(new(query.WorkLifecycleReader)), fx.As(new(query.WorkListReader)), fx.As(new(query.RecentRepositoryReader)))),
-	fx.Provide(newWorkViewReader),
-	fx.Provide(fx.Annotate(infrastructure.NewExecutionQueryRepository, fx.As(new(query.ExecutionQueryRepository)), fx.As(new(query.RecoveryWorkQueryRepository)), fx.As(new(query.ExecutionRecoveryReader)), fx.As(new(query.PluginResultReader)), fx.As(new(command.ComputerWorks)), fx.As(new(command.ReachResumeWorks)))),
-	fx.Provide(fx.Annotate(infrastructure.NewWorkReportQueryRepository, fx.As(new(query.WorkReportReader)))),
+	fx.Provide(newWorkQueryRepository),
+	fx.Provide(fx.Annotate(execution.NewExecutionQueryRepository, fx.As(new(query.ExecutionQueryRepository)))),
 	fx.Provide(
 		query.NewGetWorkReportHandler,
 		query.NewGetWorkViewHandler,
@@ -144,6 +141,12 @@ var Module = fx.Module("domain.agent",
 		return application.AssembleWorkIdentity
 	}, fx.Private),
 )
+
+// newWorkAuthorizer decides Work access from the Owners the Work query
+// repository reads.
+func newWorkAuthorizer(works query.WorkQueryRepository) access.WorkAuthorizer {
+	return access.NewWorkAuthorizer(works.WorkOwners)
+}
 
 // RegisterRPCHandlers mounts the work and private APIs on the controlplane
 // listener. recovery is nil where RecoveryModule is not composed.

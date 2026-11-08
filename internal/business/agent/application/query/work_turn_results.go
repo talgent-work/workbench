@@ -16,10 +16,15 @@ type RootTurnResult struct {
 	OccurredAt time.Time
 }
 
-// RootTurnResultReader reads the root stream's turn results in stream order.
-// Results of subagents are not part of the root stream.
+// RootTurnResultReader reads a Work's durable message log.
 type RootTurnResultReader interface {
+	// ListRootTurnResults reads the root stream's turn results in stream
+	// order. Results of subagents are not part of the root stream.
 	ListRootTurnResults(ctx context.Context, workID string) ([]RootTurnResult, error)
+	// FindCallPosition reads the Harness position of the message holding a
+	// call's result in a Work's own stream; found is false while there is
+	// none.
+	FindCallPosition(ctx context.Context, workID, callID string) (position string, found bool, err error)
 }
 
 // WorkTurnResult is a turn result with its position and whether it is the last.

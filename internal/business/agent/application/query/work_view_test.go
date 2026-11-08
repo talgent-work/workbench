@@ -60,6 +60,7 @@ func TestOnlyTheOwnerReadsItsWork(t *testing.T) {
 }
 
 type historyPorts struct {
+	query.WorkQueryRepository
 	owner   string
 	dataErr error
 	value   query.WorkView

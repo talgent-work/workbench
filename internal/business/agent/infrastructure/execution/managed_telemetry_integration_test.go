@@ -20,8 +20,7 @@ import (
 func TestAManagedRunsTelemetryTokenAttributesOnlyThatRun(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
-	attributions, err := NewTelemetryAttributions(f.provisioning)
-	require.NoError(t, err)
+	attributions := NewExecutionQueryRepository(f.db)
 	input := managedRequest()
 	input.ContextMode = domain.ContextFresh
 	input.TraceAttributes = map[string]string{"talgent.agent_work_id": input.WorkID, "talgent.user_id": "person-1", "talgent.computer_id": "forged"}

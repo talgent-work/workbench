@@ -7,20 +7,11 @@ import (
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
-	"xorm.io/xorm"
 )
-
-type ServiceAccessResults struct{ db *xorm.Engine }
-
-var _ query.ServiceAccessReader = (*ServiceAccessResults)(nil)
-
-func NewServiceAccessResults(db *xorm.Engine) *ServiceAccessResults {
-	return &ServiceAccessResults{db: db}
-}
 
 // ReadRepositoryPreparation reads the Work's recorded checkout outcomes in
 // selection order, each at the target its selection plans for it.
-func (r *ServiceAccessResults) ReadRepositoryPreparation(ctx context.Context, workID string) ([]query.RepositoryPreparation, error) {
+func (r *ExecutionQueryRepository) ReadRepositoryPreparation(ctx context.Context, workID string) ([]query.RepositoryPreparation, error) {
 	var row struct {
 		RepositorySelection string `xorm:"repository_selection"`
 		RepositoryCheckouts string `xorm:"repository_checkouts"`
@@ -51,7 +42,7 @@ func (r *ServiceAccessResults) ReadRepositoryPreparation(ctx context.Context, wo
 	return results, nil
 }
 
-func (r *ServiceAccessResults) ReadServiceAccess(ctx context.Context, workID string) ([]query.ServiceAccessObservation, error) {
+func (r *ExecutionQueryRepository) ReadServiceAccess(ctx context.Context, workID string) ([]query.ServiceAccessObservation, error) {
 	var row struct {
 		Observations []byte `xorm:"service_access_json"`
 	}

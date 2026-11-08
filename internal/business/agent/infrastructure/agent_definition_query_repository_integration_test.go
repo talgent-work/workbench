@@ -24,7 +24,7 @@ func TestDefinitionPurposeLookupPreservesScopeAndConcurrentUniqueness(t *testing
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
-	lookup := query.NewGetAgentDefinitionForPurposeHandler(infrastructure.NewAgentDefinitionLookup(db))
+	lookup := query.NewGetAgentDefinitionForPurposeHandler(infrastructure.NewAgentDefinitionQueryRepository(db))
 	for _, selection := range []query.GetAgentDefinitionForPurpose{
 		{ScopeKind: "employee", ScopeReference: "alice", Purpose: "work"},
 		{ScopeKind: "employee", ScopeReference: "bob", Purpose: "work"},
@@ -71,7 +71,7 @@ func TestDefinitionPurposeLookupPreservesScopeAndConcurrentUniqueness(t *testing
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
-	retained, err := query.NewGetAgentDefinitionForPurposeHandler(infrastructure.NewAgentDefinitionLookup(db)).Handle(ctx, selection)
+	retained, err := query.NewGetAgentDefinitionForPurposeHandler(infrastructure.NewAgentDefinitionQueryRepository(db)).Handle(ctx, selection)
 	require.NoError(t, err)
 	require.Equal(t, winner, retained)
 }
@@ -105,7 +105,7 @@ func TestAgentAppearancesReadEmployeeWorkAgentsAndWorkAgents(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, bob))
 
-	lookup := infrastructure.NewAgentDefinitionLookup(db)
+	lookup := infrastructure.NewAgentDefinitionQueryRepository(db)
 	views, err := lookup.ListEmployeeAgents(ctx, "work", []string{"alice", "bob", "carol", "dave", "nobody"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]query.AgentAppearanceView{

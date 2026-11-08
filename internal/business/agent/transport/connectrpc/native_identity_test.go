@@ -25,7 +25,10 @@ import (
 
 // sandboxCredentials stands in for execution infrastructure: one credential per
 // live sandbox of a Work, revoked when that sandbox is retired.
-type sandboxCredentials struct{ live map[string]string }
+type sandboxCredentials struct {
+	query.ExecutionQueryRepository
+	live map[string]string
+}
 
 func (c *sandboxCredentials) VerifyWorkCredential(_ context.Context, workID, credential string) error {
 	if issued, found := c.live[workID]; !found || issued != credential {

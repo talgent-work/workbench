@@ -36,9 +36,6 @@ type WorkReportScope struct {
 	ProjectID string
 	Purpose   string
 }
-type WorkReportReader interface {
-	ReadWorkHistory(context.Context, WorkReportScope, time.Time) ([]WorkHistory, error)
-}
 type GetWorkReport struct {
 	Scope  WorkReportScope
 	Window string
@@ -68,11 +65,11 @@ type WorkReport struct {
 	Current, Previous      WorkPeriodReport
 }
 type GetWorkReportHandler struct {
-	reader WorkReportReader
+	reader WorkQueryRepository
 	now    func() time.Time
 }
 
-func NewGetWorkReportHandler(reader WorkReportReader, now func() time.Time) *GetWorkReportHandler {
+func NewGetWorkReportHandler(reader WorkQueryRepository, now func() time.Time) *GetWorkReportHandler {
 	return &GetWorkReportHandler{reader: reader, now: now}
 }
 

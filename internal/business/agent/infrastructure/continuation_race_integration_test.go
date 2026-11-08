@@ -43,7 +43,7 @@ func TestConcurrentContinuationRecognizesAlreadyResolvedAdmission(t *testing.T) 
 	defer cancel()
 	starts := 0
 	started := startedWorks{AgentWorkRepository: f.sessions, onStart: func(domain.LaunchSpecification) { starts++ }}
-	access := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db))
+	access := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners)
 	winner := command.NewResumeWorkHandler(time.Now, started, f.agents, access, computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()}
 	admissions := &admissionCommitAfterWinner{AgentWorkRepository: started, completeWinner: func() { require.NoError(t, winner.Handle(ctx, request)) }}

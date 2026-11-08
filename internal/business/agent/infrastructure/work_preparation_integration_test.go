@@ -54,7 +54,7 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 
 	// A repeat outside creation is answered from the Work: whatever
 	// repository choices it names, it returns the original Work unchanged.
-	prepare := command.NewPrepareWorkExecutionHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels())
+	prepare := command.NewPrepareWorkExecutionHandler(f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels())
 	repeat := *initial
 	repeat.WorkID, repeat.RequestID, repeat.Input.ID, repeat.Input.Text = id, uuid.NewString(), uuid.NewString(), "another task"
 	confirmed, err := prepare.Handle(ctx, repeat)
@@ -73,7 +73,7 @@ func TestWorkPreparationIsDerivedFromTheCreationRequest(t *testing.T) {
 	reportExit(t, work, domain.HarnessExit{ExitCode: 1})
 	reportReleased(t, work)
 	require.NoError(t, f.sessions.Save(ctx, work))
-	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	restart := command.NewRestartWorkHandler(time.Now, f.sessions, f.agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	_, err = restart.Handle(ctx, command.StartWork{SubjectID: "owner", WorkID: id, RequestID: uuid.NewString()})
 	require.NoError(t, err)
 	restarted, _, err := reader.GetWorkPreparation(ctx, id)
@@ -147,7 +147,7 @@ func TestClosedWorkKeepsItsFirstStart(t *testing.T) {
 func TestConcurrentInitialCreationRetainsOneCompleteInput(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
 	ctx := t.Context()
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
 	type result struct {
 		workID string
 		err    error

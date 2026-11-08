@@ -67,7 +67,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "Answer with the conclusion first.", agent.Soul)
 
 	traceAttributes := map[string]string{"talgent.project_id": "project-1", "talgent.owner_id": "case"}
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, WorkspaceReference: "workspace-a", TraceAttributes: traceAttributes})
+	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, WorkspaceReference: "workspace-a", TraceAttributes: traceAttributes})
 	require.NoError(t, err)
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "Answer with the conclusion first.", session.HarnessProcess.Soul, "the first start took up the Soul, retained with its process")
 	originalCapabilities := session.CapabilitySnapshot.Clone()
 
-	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	require.NoError(t, authorizer.AuthorizeWork(ctx, "owner", session.ID))
 	require.ErrorIs(t, authorizer.AuthorizeWork(ctx, "Owner", session.ID), access.ErrAccessDenied)
 	require.ErrorIs(t, authorizer.AuthorizeWork(ctx, "intruder", session.ID), access.ErrAccessDenied)
@@ -119,7 +119,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
-	authorizer = access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db))
+	authorizer = access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	require.NoError(t, authorizer.AuthorizeWork(ctx, "owner", id))
 	require.ErrorIs(t, authorizer.AuthorizeWork(ctx, "intruder", id), access.ErrAccessDenied)
 	session = reload()
@@ -184,7 +184,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	require.NoError(t, agents.Save(ctx, agent))
 	const workers = 8
 	lookup := &creationRaceLookup{AgentWorkRepository: sessions, workers: workers, arrived: make(chan struct{}, workers), release: make(chan struct{})}
-	handler := command.NewCreateWorkHandler(time.Now, agents, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, agents, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
 	request := command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "Work-A"}, ProjectID: "project-a", WorkspaceReference: "work-one", TraceAttributes: map[string]string{"talgent.project_id": "project-a"}}
 	type result struct {
 		id  string
@@ -239,7 +239,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	db, err = xorm.NewEngine("mysql", dsn)
 	require.NoError(t, err)
 	sessions = infrastructure.NewAgentWorkRepository(db, time.Now)
-	handler = command.NewCreateWorkHandler(time.Now, infrastructure.NewAgentDefinitionRepository(db, time.Now), sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
+	handler = command.NewCreateWorkHandler(time.Now, infrastructure.NewAgentDefinitionRepository(db, time.Now), sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
 	request.WorkspaceReference = "another-authorized-workspace"
 	request.CapabilityDifferences = domain.CapabilityDifferences{Plugins: []domain.PluginChoice{{Slug: "duplicate", Include: true}, {Slug: "duplicate", Include: true}}}
 	id, err := handler.Handle(ctx, request)
@@ -287,7 +287,7 @@ func verifyConcurrentAdmission(t *testing.T, db *xorm.Engine, sessionID string) 
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	var starts atomic.Int32
 	started := startedWorks{AgentWorkRepository: sessions, onStart: func(domain.LaunchSpecification) { starts.Add(1) }}
-	handler := command.NewResumeWorkHandler(time.Now, started, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
+	handler := command.NewResumeWorkHandler(time.Now, started, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	request := command.StartWork{WorkID: sessionID, SubjectID: "owner", RequestID: uuid.Must(uuid.NewV7()).String()}
 	start := make(chan struct{})
 	failures := make(chan error, 8)
@@ -312,7 +312,7 @@ func verifyConcurrentAdmission(t *testing.T, db *xorm.Engine, sessionID string) 
 		require.NoError(t, err)
 	}
 	require.Equal(t, int32(1), starts.Load(), "competing retries authorize only one outbound execution")
-	admitted, err := command.NewRestartWorkHandler(time.Now, started, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
+	admitted, err := command.NewRestartWorkHandler(time.Now, started, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, request)
 	require.NoError(t, err)
 	require.True(t, admitted, "the identity's Desk is held by the start it admitted")
 	require.Equal(t, int32(1), starts.Load(), "reusing the identity for another operation starts nothing more")

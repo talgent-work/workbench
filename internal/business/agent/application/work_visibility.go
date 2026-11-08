@@ -26,7 +26,7 @@ func (a *Application) ChangeWorkVisibility(ctx context.Context, input ChangeWork
 	if err != nil {
 		return query.WorkView{}, err
 	}
-	return a.WorkViews.GetWorkView(ctx, input.WorkID)
+	return a.WorkQueries.GetWorkView(ctx, input.WorkID)
 }
 
 // GrantWorkShare lets the requesting owner share a Work with a reader the
@@ -51,7 +51,7 @@ func (a *Application) RevokeWorkShare(ctx context.Context, input RevokeWorkShare
 	if err != nil {
 		return query.WorkView{}, err
 	}
-	return a.WorkViews.GetWorkView(ctx, input.WorkID)
+	return a.WorkQueries.GetWorkView(ctx, input.WorkID)
 }
 
 // RevokeDepartedReader removes a reader's Work Shares on every Work within the
@@ -110,7 +110,7 @@ func (a *Application) AdmitWorkReader(ctx context.Context, input AdmitWorkReader
 	if err != nil || !input.IncludeWorkState {
 		return WorkReaderAdmission{Basis: basis}, err
 	}
-	view, err := a.WorkViews.GetWorkView(ctx, input.WorkID)
+	view, err := a.WorkQueries.GetWorkView(ctx, input.WorkID)
 	if err != nil {
 		return WorkReaderAdmission{}, err
 	}
@@ -183,7 +183,7 @@ func (a *Application) GetWorkFacts(ctx context.Context, workID string) (query.Wo
 	if strings.TrimSpace(workID) == "" {
 		return query.WorkView{}, domain.ErrInvalidWork
 	}
-	view, err := a.WorkViews.GetWorkView(ctx, workID)
+	view, err := a.WorkQueries.GetWorkView(ctx, workID)
 	if err != nil {
 		return query.WorkView{}, err
 	}

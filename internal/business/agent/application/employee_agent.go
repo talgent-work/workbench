@@ -25,7 +25,7 @@ func (a *Application) EnsureEmployeeAgent(ctx context.Context, employeeID, displ
 // establishing it.
 func (a *Application) FindEmployeeAgent(ctx context.Context, employeeID string) (string, bool, error) {
 	employee := domain.EmployeeDefinitionInput(strings.TrimSpace(employeeID))
-	id, err := a.DefinitionLookup.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: employee.UsageScope.Kind, ScopeReference: employee.UsageScope.Reference, Purpose: employee.Purpose})
+	id, err := a.DefinitionQueries.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: employee.UsageScope.Kind, ScopeReference: employee.UsageScope.Reference, Purpose: employee.Purpose})
 	if errors.Is(err, domain.ErrAgentDefinitionNotFound) {
 		return "", false, nil
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
+	"xorm.io/xorm"
 )
 
 // newModelConfigurations offers the provided Model Configurations in platform
@@ -25,7 +26,8 @@ func newModelConfigurations(models *execution.ModelCatalog) (query.ModelConfigur
 	return query.NewModelConfigurations(options...), nil
 }
 
-// Every Work view presents its retained Model Configuration as currently provided.
-func newWorkViewReader(views *infrastructure.WorkQueryRepository, models query.ModelConfigurations) query.WorkViewReader {
-	return query.NewModelOptionViews(views, models)
+// newWorkQueryRepository presents every Work view with its retained Model
+// Configuration as currently provided.
+func newWorkQueryRepository(db *xorm.Engine, models query.ModelConfigurations) query.WorkQueryRepository {
+	return query.NewModelOptionViews(infrastructure.NewWorkQueryRepository(db), models)
 }

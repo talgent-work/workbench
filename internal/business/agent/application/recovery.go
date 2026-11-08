@@ -20,7 +20,7 @@ type Recovery struct {
 	app        *Application
 	enqueuer   taskqueue.Enqueuer
 	executions domain.AgentExecutionRepository
-	lookups    query.ExecutionRecoveryReader
+	lookups    query.ExecutionQueryRepository
 	// reconciliation fulfils the steps each execution decides.
 	reconciliation *command.ReconcileExecutionHandler
 	// storage receives each queued Workspace Reclamation Request.
@@ -37,7 +37,7 @@ type OwedResumes interface {
 	RetryOwedResume(ctx context.Context, workID string) error
 }
 
-func NewRecovery(app *Application, enqueuer taskqueue.Enqueuer, executions domain.AgentExecutionRepository, lookups query.ExecutionRecoveryReader, reconciliation *command.ReconcileExecutionHandler, storage command.StoragePort, reconnection OwedResumes) *Recovery {
+func NewRecovery(app *Application, enqueuer taskqueue.Enqueuer, executions domain.AgentExecutionRepository, lookups query.ExecutionQueryRepository, reconciliation *command.ReconcileExecutionHandler, storage command.StoragePort, reconnection OwedResumes) *Recovery {
 	return &Recovery{app: app, enqueuer: enqueuer, executions: executions, lookups: lookups, reconciliation: reconciliation, storage: storage, reconnection: reconnection}
 }
 

@@ -17,12 +17,12 @@ import (
 // definition, their files and sharing, and their Personal Library.
 type PersonalWorks struct {
 	app       *application.Application
-	works     Works
+	works     query.WorkQueryRepository
 	files     command.StoragePort
 	directory AccountPort
 }
 
-func New(app *application.Application, works Works, files command.StoragePort, directory AccountPort) *PersonalWorks {
+func New(app *application.Application, works query.WorkQueryRepository, files command.StoragePort, directory AccountPort) *PersonalWorks {
 	return &PersonalWorks{app: app, works: works, files: files, directory: directory}
 }
 
@@ -133,7 +133,7 @@ const (
 
 // List lists the person's Personal Works, closed ones included, most
 // recently updated first; a person without a definition yet has none.
-func (p *PersonalWorks) List(ctx context.Context, person Person, limit int) ([]PersonalWorkSummary, error) {
+func (p *PersonalWorks) List(ctx context.Context, person Person, limit int) ([]query.PersonalWorkSummary, error) {
 	agentID, found, err := p.employeeDefinition(ctx, person)
 	if err != nil || !found {
 		return nil, err

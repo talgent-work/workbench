@@ -38,7 +38,7 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
 	run := newRunsAt(t, db, sessions, clock)
-	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID, WorkspaceReference: "workspace"})
+	id, err := command.NewCreateWorkHandler(time.Now, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definition.ID, WorkspaceReference: "workspace"})
 	require.NoError(t, err)
 	feedback := func(kind command.ExecutionFeedbackKind, interaction, stop string) error {
 		return run.Handle(ctx, command.ExecutionFeedback{ProcessID: "process", Kind: kind, WorkID: id, InteractionID: interaction, ObservationSequence: 1000, RequiredInteractionIDs: []string{interaction}})
@@ -106,7 +106,7 @@ func TestUserWaitTimeoutRecoversFromStoredOriginAndRetainsStopReason(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStopped, durable.State)
 	originalContext := durable.HarnessSessionReference
-	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
+	_, err = continuedRef(id, command.NewResumeWorkHandler(time.Now, sessions, agents, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), computertest.Checked(startupAuthority{}), querytest.ProvidedModels(), commandtest.UnchangedPlugins{}).Handle(ctx, command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: id}))
 	require.NoError(t, err)
 	durable, err = sessions.Get(ctx, id)
 	require.NoError(t, err)

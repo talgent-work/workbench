@@ -58,7 +58,7 @@ func deploymentModels() agentquery.ModelConfigurations {
 // creationPreparation is the real first-start preparation a creation carrying
 // an initial execution continues with.
 func creationPreparation(db *xorm.Engine, models agentquery.ModelConfigurations) *command.PrepareWorkExecutionHandler {
-	return command.NewPrepareWorkExecutionHandler(infrastructure.NewAgentWorkRepository(db, time.Now), access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(db)), models)
+	return command.NewPrepareWorkExecutionHandler(infrastructure.NewAgentWorkRepository(db, time.Now), access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), models)
 }
 
 // creation is the production creation use case over this fixture's database;
@@ -67,7 +67,7 @@ func (f workCreationFixture) creation(registrar domain.AgentWorkRepository, comp
 	if registrar == nil {
 		registrar = f.sessions
 	}
-	return command.NewCreateWorkHandler(time.Now, f.agents, registrar, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), deploymentModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computer, creationPreparation(f.db, deploymentModels()))
+	return command.NewCreateWorkHandler(time.Now, f.agents, registrar, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), deploymentModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computer, creationPreparation(f.db, deploymentModels()))
 }
 
 // A repeated creation returns the Work its request identity derives,

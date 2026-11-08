@@ -9,7 +9,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-type fixedView struct{ value query.WorkView }
+type fixedView struct {
+	query.WorkQueryRepository
+	value query.WorkView
+}
 
 func (f fixedView) GetWorkView(context.Context, string) (query.WorkView, error) { return f.value, nil }
 
@@ -20,11 +23,11 @@ func TestWorkViewsPresentTheRetainedModelConfigurationAsCurrentlyProvided(t *tes
 	require.True(t, ok)
 	require.Equal(t, "deepseek", first.Selection.ConfigurationID, "the first provided configuration is the default")
 
-	view, err := query.NewModelOptionViews(fixedView{query.WorkView{WorkModel: glm.Selection}}, models).GetWorkView(t.Context(), "work")
+	view, err := query.NewModelOptionViews(fixedView{value: query.WorkView{WorkModel: glm.Selection}}, models).GetWorkView(t.Context(), "work")
 	require.NoError(t, err)
 	require.Equal(t, &glm, view.ModelOption)
 
-	view, err = query.NewModelOptionViews(fixedView{query.WorkView{WorkModel: domain.WorkModelSelection{ConfigurationID: "withdrawn"}}}, models).GetWorkView(t.Context(), "work")
+	view, err = query.NewModelOptionViews(fixedView{value: query.WorkView{WorkModel: domain.WorkModelSelection{ConfigurationID: "withdrawn"}}}, models).GetWorkView(t.Context(), "work")
 	require.NoError(t, err)
 	require.Nil(t, view.ModelOption, "a withdrawn configuration has no current option")
 

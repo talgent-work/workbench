@@ -54,10 +54,10 @@ func newLibraryAgents(t *testing.T, f *fixture) *libraryAgents {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	definitions := agentinfrastructure.NewAgentDefinitionRepository(db, time.Now)
-	lookup := agentinfrastructure.NewAgentDefinitionLookup(db)
+	lookup := agentinfrastructure.NewAgentDefinitionQueryRepository(db)
 	works := agentinfrastructure.NewAgentWorkRepository(db, time.Now)
 	app := &agentapplication.Application{
-		Definitions: definitions, DefinitionLookup: lookup, Works: works, WorkViews: agentinfrastructure.NewWorkQueryRepository(db),
+		Definitions: definitions, DefinitionQueries: lookup, Works: works, WorkQueries: agentinfrastructure.NewWorkQueryRepository(db),
 		Commands: agentapplication.Commands{EnsureAgentDefinition: agentcommand.NewEnsureAgentDefinitionHandler(definitions, lookup)},
 		Queries: agentapplication.Queries{VerifyWorkCredential: agentquery.NewVerifyWorkCredentialHandler(definitions, works, identityCredentials{},
 			agentapplication.AssembleWorkIdentity, func(context.Context, string) (bool, error) { return false, nil })},
