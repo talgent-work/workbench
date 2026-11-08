@@ -178,6 +178,7 @@ func TestOneReclamationRemovesAWorksDirectoriesAfterPublicationsFinish(t *testin
 
 	require.NoDirExists(t, workspace)
 	require.NoDirExists(t, filepath.Join(f.working, home[0].SubPath), "every Directory with the Work's lifetime goes")
+	require.NoDirExists(t, filepath.Dir(filepath.Join(f.working, home[0].SubPath)), "and its owner's folder with the last of them")
 	require.DirExists(t, filepath.Join(f.working, home[1].SubPath), "the Persistent Directory stays")
 	require.DirExists(t, filepath.Join(f.working, other[0].SubPath), "another Work's Directories stay")
 	require.DirExists(t, f.folder(artifacts), "a permanent Directory the Work names stays")

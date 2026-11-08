@@ -274,6 +274,13 @@ func (f *DirectoryFiles) RemoveReclaimed(ctx context.Context, id domain.Director
 	if err := os.Remove(f.areaPath(locksArea, id)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		failures = append(failures, err)
 	}
+	// The owner's folder goes with its last Directory, so a reclaimed Work
+	// leaves nothing behind. An allocation that opened it a moment before
+	// fails to create its Directory and is completed by the next opening.
+	owner := filepath.Dir(folder)
+	if err := unix.Rmdir(owner); err != nil && !errors.Is(err, unix.ENOTEMPTY) && !errors.Is(err, unix.EEXIST) && !errors.Is(err, unix.ENOENT) {
+		failures = append(failures, err)
+	}
 	return oops.With("operation", "storage.remove_reclaimed", "directory", f.relative(id)).Wrap(errors.Join(failures...))
 }
 
