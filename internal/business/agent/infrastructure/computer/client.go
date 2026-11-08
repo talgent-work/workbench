@@ -109,12 +109,24 @@ func (c *Client) AdmitRun(ctx context.Context, run command.RunAdmission) (comman
 	}
 	switch response.GetAnswer() {
 	case computerprivatev1.AdmissionAnswer_ADMISSION_ANSWER_SEATED:
-		return command.ComputerAnswer{Kind: command.ComputerSeated}, nil
+		return command.ComputerAnswer{Kind: command.ComputerSeated, Computer: computerKind(response.GetComputerKind())}, nil
 	case computerprivatev1.AdmissionAnswer_ADMISSION_ANSWER_WAITING:
-		return command.ComputerAnswer{Kind: command.ComputerWaiting}, nil
+		return command.ComputerAnswer{Kind: command.ComputerWaiting, Computer: computerKind(response.GetComputerKind())}, nil
 	default:
 		return command.ComputerAnswer{Kind: command.ComputerRejected, Rejection: rejection(response.GetReason(), response.GetComputerKind())}, nil
 	}
+}
+
+// computerKind names what an admitting Computer answered it is; an answer
+// that names neither kind leaves it unknown, which no Work accepts.
+func computerKind(kind computerprivatev1.ComputerKind) domain.ComputerKind {
+	switch kind {
+	case computerprivatev1.ComputerKind_COMPUTER_KIND_CLOUD:
+		return domain.ComputerCloud
+	case computerprivatev1.ComputerKind_COMPUTER_KIND_MANAGED:
+		return domain.ComputerManaged
+	}
+	return ""
 }
 
 func rejection(reason computerprivatev1.RejectionReason, kind computerprivatev1.ComputerKind) error {

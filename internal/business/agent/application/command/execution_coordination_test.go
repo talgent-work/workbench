@@ -20,6 +20,9 @@ func TestBeginExecutionStartsTheAdmittedStartOnce(t *testing.T) {
 			ctx := context.Background()
 			w := newWorld(t, startingSession(t))
 			w.computers.Managed = managed
+			if managed {
+				w.work().ComputerKind = domain.ComputerManaged
+			}
 			execution := w.begin(t)
 			require.Equal(t, w.work().ID, execution.WorkID)
 			require.True(t, execution.Serves(w.work().HarnessProcess.StartingSince), "the execution serves the admitted start")

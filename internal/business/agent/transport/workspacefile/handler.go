@@ -13,6 +13,7 @@ import (
 	"path"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // Path is where the controlplane serves the links; the public route maps the
@@ -78,7 +79,7 @@ func writeError(w http.ResponseWriter, r *http.Request, err error, logger *slog.
 		status, message = http.StatusNotFound, "not found"
 	case errors.Is(err, application.ErrWorkspaceClosed):
 		status, message = http.StatusGone, "the Work is closed"
-	case errors.Is(err, application.ErrWorkspaceUnavailable):
+	case errors.Is(err, domain.ErrWorkspaceUnavailable):
 		status, message = http.StatusServiceUnavailable, "the Computer is not reachable"
 	case errors.Is(err, context.Canceled):
 		return

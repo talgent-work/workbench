@@ -181,15 +181,15 @@ func TestRejectedAdmissionDoesNotCreateProcessOrDeferredWork(t *testing.T) {
 		err       error
 	}{
 		{domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, ModelConfigurationProvided: true}, domain.ErrCapacityUnavailable},
-		{domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, domain.ErrExecutionNotPermitted},
-		{domain.StartAdmission{AdmittedAt: time.Now(), AgentID: "other", DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}, domain.ErrExecutionNotPermitted},
-		{domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}}, domain.ErrModelConfigurationWithdrawn},
+		{domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, domain.ErrExecutionNotPermitted},
+		{domain.StartAdmission{AdmittedAt: time.Now(), AgentID: "other", DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}, domain.ErrExecutionNotPermitted},
+		{domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}}, domain.ErrModelConfigurationWithdrawn},
 	} {
 		work, err := domain.NewAgentWork(input, test.admission)
 		require.ErrorIs(t, err, test.err)
 		require.Nil(t, work)
 	}
-	work, err := domain.NewAgentWork(input, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	work, err := domain.NewAgentWork(input, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	require.Equal(t, domain.WorkStarting, work.State)
 	require.True(t, work.HoldsProcess())
@@ -281,13 +281,13 @@ func newSession(t *testing.T) *domain.AgentWork {
 	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(),
 		AgentID: agent.ID, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Prompt: agent.ProvideCapabilities().Prompt}, WorkspaceReference: "workspace-a",
 		HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"},
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	return session
 }
 
 func admission(session *domain.AgentWork) domain.StartAdmission {
-	return domain.StartAdmission{AdmittedAt: time.Now(), AgentID: session.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	return domain.StartAdmission{AdmittedAt: time.Now(), AgentID: session.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 }
 
 // Reconcile process: with an admitted stop, a process that ended abnormally

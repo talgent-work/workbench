@@ -45,10 +45,29 @@ func RefusedByComputer(err error) bool {
 	return errors.Is(err, ErrComputerNotUsable) || errors.Is(err, ErrComputerUnreachable) || errors.Is(err, ErrComputerRemoved) || errors.Is(err, ErrComputerOutdated) || errors.Is(err, ErrComputerNoSandbox)
 }
 
-// ComputerSeat is a Computer's answer that admits one run: the Computer and
-// the Desk the run holds there, seated or, when Waiting, in its line.
+// ComputerKind is whether a Computer is a Cloud or a Managed Computer, as
+// Computer answers it.
+type ComputerKind string
+
+const (
+	ComputerCloud   ComputerKind = "cloud"
+	ComputerManaged ComputerKind = "managed"
+)
+
+// kindOf names the kind of Computer a starter chose.
+func kindOf(managed bool) ComputerKind {
+	if managed {
+		return ComputerManaged
+	}
+	return ComputerCloud
+}
+
+// ComputerSeat is a Computer's answer that admits one run: the Computer, what
+// it is, and the Desk the run holds there, seated or, when Waiting, in its
+// line.
 type ComputerSeat struct {
 	ComputerID string
+	Kind       ComputerKind
 	DeskID     string
 	Waiting    bool
 }

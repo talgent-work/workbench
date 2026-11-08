@@ -96,7 +96,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "review:architect", session.CapabilitySnapshot.StartupAgent)
 	current, err := commandtest.UnchangedPlugins{}.CurrentReleases(ctx, "owner", originalCapabilities.Plugins)
 	require.NoError(t, err)
-	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true, CurrentPlugins: current}
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true, CurrentPlugins: current}
 	require.NoError(t, sessions.Save(ctx, session))
 	require.ErrorIs(t, sessions.Save(ctx, session), domain.ErrConcurrentModification)
 	session = reload()

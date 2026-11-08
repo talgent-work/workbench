@@ -62,6 +62,7 @@ type agentWorkDO struct {
 	ProjectRef      string  `xorm:"project_ref varchar(255)"`
 	StartedBy       string  `xorm:"started_by varchar(255)"`
 	ComputerID      string  `xorm:"computer_id varchar(36)"`
+	ComputerKind    string  `xorm:"computer_kind varchar(16)"`
 	ID              string  `xorm:"id pk varchar(36)"`
 	AgentID         string  `xorm:"agent_id varchar(36)"`
 	State           uint8   `xorm:"state tinyint"`

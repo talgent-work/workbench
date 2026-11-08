@@ -11,6 +11,7 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // WorkspaceReadingHandler serves a trusted caller reading a Work's
@@ -121,11 +122,11 @@ func workspaceState(err error) (agentprivatev1.WorkspaceState, bool) {
 	switch {
 	case errors.Is(err, application.ErrWorkspaceClosed):
 		return agentprivatev1.WorkspaceState_WORKSPACE_STATE_CLOSED, true
-	case errors.Is(err, application.ErrWorkspaceNotCreated):
+	case errors.Is(err, domain.ErrWorkspaceNotCreated):
 		return agentprivatev1.WorkspaceState_WORKSPACE_STATE_NOT_CREATED, true
 	case errors.Is(err, application.ErrWorkspaceReclaimed):
 		return agentprivatev1.WorkspaceState_WORKSPACE_STATE_RECLAIMED, true
-	case errors.Is(err, application.ErrWorkspaceUnavailable):
+	case errors.Is(err, domain.ErrWorkspaceUnavailable):
 		return agentprivatev1.WorkspaceState_WORKSPACE_STATE_UNAVAILABLE, true
 	}
 	return agentprivatev1.WorkspaceState_WORKSPACE_STATE_UNSPECIFIED, false

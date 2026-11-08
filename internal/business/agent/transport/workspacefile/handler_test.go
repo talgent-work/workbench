@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/workspacefile"
 )
 
@@ -55,7 +56,7 @@ func TestLinksAnswerWhyNothingIsServed(t *testing.T) {
 	for err, status := range map[error]int{
 		application.ErrInvalidWorkspaceFileLink: http.StatusUnauthorized,
 		application.ErrWorkspacePathNotFound:    http.StatusNotFound,
-		application.ErrWorkspaceUnavailable:     http.StatusServiceUnavailable,
+		domain.ErrWorkspaceUnavailable:          http.StatusServiceUnavailable,
 		application.ErrWorkspaceClosed:          http.StatusGone,
 		io.ErrUnexpectedEOF:                     http.StatusInternalServerError,
 	} {

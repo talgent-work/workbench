@@ -166,7 +166,7 @@ func definitionFixture(t *testing.T) *domain.AgentDefinition {
 // precision, as persisted, so a later start a test admits now never shares
 // its admission time.
 func fixtureAdmission(agentID string) domain.StartAdmission {
-	return domain.StartAdmission{AdmittedAt: time.Now().Add(-time.Minute), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureComputer, DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	return domain.StartAdmission{AdmittedAt: time.Now().Add(-time.Minute), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureComputer, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 }
 
 // startingSession is a new Work whose first start is admitted and seated.

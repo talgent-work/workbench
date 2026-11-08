@@ -144,7 +144,7 @@ func TestAMachineLoginWorkResumesAndRestartsWithNoModelConfiguration(t *testing.
 		t.Run(map[bool]string{false: "resume", true: "restart"}[restart], func(t *testing.T) {
 			agents, sessions := startupStores(t)
 			session, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: true, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agents.agent.ID, HomeBinding: domain.HomeBinding{OwnerID: "user-home", Namespace: "project"}, WorkspaceReference: "workspace"},
-				domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agents.agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureComputer, DeskID: "desk-test"}})
+				domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agents.agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureComputer, Kind: domain.ComputerManaged, DeskID: "desk-test"}})
 			require.NoError(t, err)
 			report(t, session, readyReport)
 			require.NoError(t, session.Stop("stop", false))

@@ -38,7 +38,7 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	require.NoError(t, agents.Save(ctx, agent))
 	agent, err = agents.Get(ctx, agent.ID)
 	require.NoError(t, err)
-	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true}
+	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 	capabilities, err := command.ResolveStartupCapabilities(ctx, commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), "owner", domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: agent.Capabilities.RequiredPlugins, DefaultStartupAgent: agent.Capabilities.StartupAgent})
 	require.NoError(t, err)
 	subject := domain.WorkSubject{Kind: "case", ID: "Work-A"}

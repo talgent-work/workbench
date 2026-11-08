@@ -64,6 +64,7 @@ func TestDispatcherAttachmentRecordsAndEndsACloudWorksDisconnection(t *testing.T
 	require.ErrorIs(t, handler.Handle(ctx, attachment(command.AttachmentLost, id, "process", time.Time{})), domain.ErrInvalidWork)
 
 	store.session.PermissionMode = domain.PermissionBypass
+	store.session.ComputerKind = domain.ComputerManaged
 	require.NoError(t, handler.Handle(ctx, attachment(command.AttachmentLost, id, "process", lost)))
 	require.False(t, store.session.Disconnected(), "a Managed Work follows its Computer's Presence")
 }

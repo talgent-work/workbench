@@ -27,6 +27,15 @@ func (managedAdmission) ListUsableComputers(context.Context, string) ([]command.
 	return []command.UsableComputer{{ID: fixtureManagedComputer}}, nil
 }
 
+// AdmitRun answers as the Managed Computer it seats every run on.
+func (m managedAdmission) AdmitRun(ctx context.Context, run command.RunAdmission) (command.ComputerAnswer, error) {
+	answer, err := m.ComputerPort.AdmitRun(ctx, run)
+	if answer.Kind == command.ComputerSeated {
+		answer.Computer = domain.ComputerManaged
+	}
+	return answer, err
+}
+
 func TestTheMachineLoginSurvivesReloadAndIsShownOnTheWork(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkAccessReader(f.db)), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), managedAdmission{computertest.Checked(startupAuthority{})}, creationPreparation(f.db, creationModels()))
@@ -38,6 +47,7 @@ func TestTheMachineLoginSurvivesReloadAndIsShownOnTheWork(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.MachineLoginModel(), work.WorkModel)
 	require.Equal(t, fixtureManagedComputer, work.ComputerID)
+	require.Equal(t, domain.ComputerManaged, work.ComputerKind, "the Computer kind survives reload")
 	view, err := infrastructure.NewWorkQueryRepository(f.db).GetWorkView(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, domain.MachineLoginModel(), view.WorkModel)

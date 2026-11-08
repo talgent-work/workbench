@@ -97,7 +97,7 @@ func TestRepositoryAccessPlansAWorkStartedForAnotherHome(t *testing.T) {
 	home := "project/project/project_coordination"
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "review", ID: "review"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, HomeBinding: domain.HomeBinding{OwnerID: home, Namespace: "project_coordination"}, WorkspaceReference: "workspace",
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	f.work = work
 	refs, err := f.app.Plan(t.Context(), home, work.ID)
@@ -130,7 +130,7 @@ func newRepositoryAccessFixture(t *testing.T, withoutAuthorization ...bool) *rep
 		RepositoryInput: domain.WorkRepositoryInput{OwnerUserID: "owner", WorkBranch: "talgent/TAL-382", Choices: []domain.WorkRepositoryChoice{{RepositoryID: "123"}},
 			Available: []domain.AccessibleRepository{{OwnerUserID: "owner", Provider: "github", RepoID: "123", RepoName: "acme/project", CloneURL: "https://github.com/acme/project.git", DefaultBranch: "main"}}},
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner", Available: availableAuthorizations(withoutAuthorization...)},
-	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	f.app = application.NewRepositoryAccess(repositoryWorkStore{f: f}, f)
 	return f

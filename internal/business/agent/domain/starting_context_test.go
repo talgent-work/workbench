@@ -22,7 +22,7 @@ func pmDefinition(t *testing.T) *domain.AgentDefinition {
 }
 
 func startingRequest(agent *domain.AgentDefinition, subjectID string, source *domain.StartingContextSource) domain.WorkCreationRequest {
-	return domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", DeskID: "desk-test"}, ModelConfigurationProvided: true},
+	return domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, Subject: domain.WorkSubject{Kind: "review", ID: subjectID}, ProjectID: "project-a",
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, StartingContext: source}
 }

@@ -242,10 +242,13 @@ type AgentWork struct {
 	AgentID            string    `validate:"required,uuid"`
 	State              WorkState `validate:"oneof=starting working stopping stopped failed closing closed"`
 	CapabilitySnapshot CapabilitySnapshot
-	// ComputerID is the Computer chosen at the Work's first start, fixed for
-	// its life; every run of the Work is admitted there.
-	ComputerID              string `validate:"required,uuid"`
-	HarnessSessionReference string `validate:"required"`
+	// ComputerID and ComputerKind are the Work's ComputerReference: the
+	// Computer chosen at its first start and whether it is a Cloud or a
+	// Managed Computer, as that Computer's admission answered, fixed for its
+	// life; every run of the Work is admitted there.
+	ComputerID              string       `validate:"required,uuid"`
+	ComputerKind            ComputerKind `validate:"oneof=cloud managed"`
+	HarnessSessionReference string       `validate:"required"`
 	// WorkspaceReference names the Work's Session Workspace; empty for a Work
 	// that has none: a project-scoped definition's Work, and every Work on a
 	// Managed Computer, whose files stay in its directory on the machine.
@@ -305,7 +308,7 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 	capabilities.Sandbox = harness.Sandbox
 	session := &AgentWork{
 		StartedBy: input.StartedBy, PermissionMode: harness.PermissionMode,
-		WorkModel: input.WorkModel, ID: input.ID, AgentID: input.AgentID, ThinkingLevel: input.ThinkingLevel, State: WorkStarting, ComputerID: admission.Seat.ComputerID, HarnessProcess: admission.process(ContextFresh, time.Time{}), Subject: input.Subject, ProjectID: strings.TrimSpace(input.ProjectID),
+		WorkModel: input.WorkModel, ID: input.ID, AgentID: input.AgentID, ThinkingLevel: input.ThinkingLevel, State: WorkStarting, ComputerID: admission.Seat.ComputerID, ComputerKind: admission.Seat.Kind, HarnessProcess: admission.process(ContextFresh, time.Time{}), Subject: input.Subject, ProjectID: strings.TrimSpace(input.ProjectID),
 		CapabilitySnapshot: capabilities, HarnessSessionReference: uuid.Must(uuid.NewV7()).String(),
 		WorkspaceReference: workspace, InputSource: input.InputSource, ReadOnlyMounts: mounts, DisplayTitle: strings.TrimSpace(input.DisplayTitle), HomeBinding: input.HomeBinding, TraceAttributes: maps.Clone(input.TraceAttributes),
 		Visibility: WorkVisibility{Public: input.Visibility.Public && strings.TrimSpace(input.ProjectID) != ""}, StartingContext: input.StartingContext.clone(), Events: NewEventCollection(),
@@ -325,6 +328,11 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 	}
 	if err := validateStartAdmission(session.AgentID, session.WorkModel, admission); err != nil {
 		return nil, err
+	}
+	// The Computer's admission names what it is; a Computer that answers
+	// otherwise than the starter chose it is not the one chosen.
+	if admission.Seat.Kind != kindOf(input.ComputerManaged) {
+		return nil, fmt.Errorf("%w: the admitting Computer is not of the kind chosen", ErrComputerNotUsable)
 	}
 	if err := session.WorkModel.AdmitOn(input.ComputerManaged); err != nil {
 		return nil, err
