@@ -19,28 +19,28 @@ import (
 // the Directory file query.
 type DirectoryHandler struct {
 	application *application.Application
-	fileSpaces  []string
+	directory   []string
 	content     []string
 }
 
 var _ storageprivatev1connect.DirectoryServiceHandler = (*DirectoryHandler)(nil)
 
-// NewDirectoryHandler admits fileSpaces' tokens to the whole contract and
+// NewDirectoryHandler admits directory's tokens to the whole contract and
 // content's tokens to the whole-content part of it.
-func NewDirectoryHandler(app *application.Application, fileSpaces, content []string) *DirectoryHandler {
-	return &DirectoryHandler{application: app, fileSpaces: fileSpaces, content: content}
+func NewDirectoryHandler(app *application.Application, directory, content []string) *DirectoryHandler {
+	return &DirectoryHandler{application: app, directory: directory, content: content}
 }
 
-// fileSpaceCaller admits a caller of the whole contract.
-func (h *DirectoryHandler) fileSpaceCaller(ctx context.Context) error {
+// directoryCaller admits a caller of the whole contract.
+func (h *DirectoryHandler) directoryCaller(ctx context.Context) error {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	return authenticateAny(info.RequestHeader().Get("Authorization"), h.fileSpaces)
+	return authenticateAny(info.RequestHeader().Get("Authorization"), h.directory)
 }
 
 // contentCaller admits a caller of the whole-content part.
 func (h *DirectoryHandler) contentCaller(ctx context.Context) error {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	return authenticateAny(info.RequestHeader().Get("Authorization"), append(append([]string(nil), h.fileSpaces...), h.content...))
+	return authenticateAny(info.RequestHeader().Get("Authorization"), append(append([]string(nil), h.directory...), h.content...))
 }
 
 func (h *DirectoryHandler) OpenDirectory(ctx context.Context, request *storageprivatev1.OpenDirectoryRequest) (*storageprivatev1.OpenDirectoryResponse, error) {
@@ -55,7 +55,7 @@ func (h *DirectoryHandler) OpenDirectory(ctx context.Context, request *storagepr
 }
 
 func (h *DirectoryHandler) ListFiles(ctx context.Context, request *storageprivatev1.ListFilesRequest) (*storageprivatev1.ListFilesResponse, error) {
-	if err := h.fileSpaceCaller(ctx); err != nil {
+	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
 	files, err := h.application.ListFiles(ctx, namedFromProto(request.GetDirectory()))
@@ -92,7 +92,7 @@ func (h *DirectoryHandler) ListDirectoryFiles(ctx context.Context, request *stor
 }
 
 func (h *DirectoryHandler) IssueUpload(ctx context.Context, request *storageprivatev1.IssueUploadRequest) (*storageprivatev1.IssueUploadResponse, error) {
-	if err := h.fileSpaceCaller(ctx); err != nil {
+	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
 	link, err := h.application.IssueUpload(ctx, application.IssueUpload{
@@ -106,7 +106,7 @@ func (h *DirectoryHandler) IssueUpload(ctx context.Context, request *storagepriv
 }
 
 func (h *DirectoryHandler) RenameFile(ctx context.Context, request *storageprivatev1.RenameFileRequest) (*storageprivatev1.RenameFileResponse, error) {
-	if err := h.fileSpaceCaller(ctx); err != nil {
+	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
 	file, err := h.application.RenameFile(ctx, positionFromProto(request.GetPosition()), request.GetSpaceToken(), request.GetNewName(), request.GetActorUserId())
@@ -117,7 +117,7 @@ func (h *DirectoryHandler) RenameFile(ctx context.Context, request *storagepriva
 }
 
 func (h *DirectoryHandler) DeleteFile(ctx context.Context, request *storageprivatev1.DeleteFileRequest) (*storageprivatev1.DeleteFileResponse, error) {
-	if err := h.fileSpaceCaller(ctx); err != nil {
+	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
 	if err := h.application.DeleteFile(ctx, positionFromProto(request.GetPosition()), request.GetSpaceToken(), request.GetActorUserId()); err != nil {
@@ -127,7 +127,7 @@ func (h *DirectoryHandler) DeleteFile(ctx context.Context, request *storagepriva
 }
 
 func (h *DirectoryHandler) IssueAccessLink(ctx context.Context, request *storageprivatev1.IssueAccessLinkRequest) (*storageprivatev1.IssueAccessLinkResponse, error) {
-	if err := h.fileSpaceCaller(ctx); err != nil {
+	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
 	download := request.GetDisposition() != storageprivatev1.AccessDisposition_ACCESS_DISPOSITION_PREVIEW
@@ -139,7 +139,7 @@ func (h *DirectoryHandler) IssueAccessLink(ctx context.Context, request *storage
 }
 
 func (h *DirectoryHandler) CreateShareLink(ctx context.Context, request *storageprivatev1.CreateShareLinkRequest) (*storageprivatev1.CreateShareLinkResponse, error) {
-	if err := h.fileSpaceCaller(ctx); err != nil {
+	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
 	link, err := h.application.CreateShareLink(ctx, positionFromProto(request.GetPosition()), request.GetCreatedByUserId())
@@ -150,7 +150,7 @@ func (h *DirectoryHandler) CreateShareLink(ctx context.Context, request *storage
 }
 
 func (h *DirectoryHandler) RevokeShareLinks(ctx context.Context, request *storageprivatev1.RevokeShareLinksRequest) (*storageprivatev1.RevokeShareLinksResponse, error) {
-	if err := h.fileSpaceCaller(ctx); err != nil {
+	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
 	revoked, remaining, err := h.application.RevokeShareLinks(ctx, positionFromProto(request.GetPosition()), request.GetCreatedByUserId())
@@ -161,7 +161,7 @@ func (h *DirectoryHandler) RevokeShareLinks(ctx context.Context, request *storag
 }
 
 func (h *DirectoryHandler) GetFilePreview(ctx context.Context, request *storageprivatev1.GetFilePreviewRequest) (*storageprivatev1.GetFilePreviewResponse, error) {
-	if err := h.fileSpaceCaller(ctx); err != nil {
+	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
 	preview, err := h.application.PreviewFile(ctx, positionFromProto(request.GetPosition()))
@@ -172,7 +172,7 @@ func (h *DirectoryHandler) GetFilePreview(ctx context.Context, request *storagep
 }
 
 func (h *DirectoryHandler) RequestFilePreview(ctx context.Context, request *storageprivatev1.RequestFilePreviewRequest) (*storageprivatev1.RequestFilePreviewResponse, error) {
-	if err := h.fileSpaceCaller(ctx); err != nil {
+	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
 	preview, err := h.application.RequestFilePreview(ctx, positionFromProto(request.GetPosition()))

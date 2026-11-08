@@ -78,7 +78,7 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	config := Config{
 		PersistentRoot: f.persistent, WorkingRoot: f.working, SandboxUID: f.sandboxUID,
 		PublicBaseURL: f.server.URL, LinkSecret: "link-secret",
-		AgentToken: "a", FileSpaceTokens: []string{"i"}, ReferenceSpaceTokens: []string{"k"},
+		AgentToken: "a", DirectoryTokens: []string{"i"}, ContentTokens: []string{"k"},
 		Mounts:  MountConfig{NASClaim: "nas-root", JuiceFSClaim: "juicefs-inputs", JuiceFSRoot: "talgent"},
 		Preview: PreviewConfig{GotenbergAddress: f.converter.server.URL},
 	}

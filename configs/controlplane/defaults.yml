@@ -182,10 +182,10 @@ storage:
   max-upload-bytes: 1073741824
   agent-token: "${STORAGE_AGENT_TOKEN:}"
   # Callers beyond Agent; an empty token admits no one.
-  file-space-tokens:
-    - "${STORAGE_FILE_SPACE_TOKEN:}"
-  reference-space-tokens:
-    - "${STORAGE_REFERENCE_SPACE_TOKEN:}"
+  directory-tokens:
+    - "${STORAGE_DIRECTORY_TOKEN:}"
+  content-tokens:
+    - "${STORAGE_CONTENT_TOKEN:}"
   # Sandboxes mount each Directory from its backend's claim by subPath.
   mounts:
     nas-claim: "${K8S_NAS_PVC_NAME:talgent-nas-root}"

@@ -64,13 +64,13 @@ type Config struct {
 	// AgentToken admits Agent, the core's caller, to the Directory and
 	// Sandbox Mount contracts.
 	AgentToken string `json:"agent-token" yaml:"agent-token" toml:"agent-token"`
-	// FileSpaceTokens admit further callers to the whole Directory contract,
+	// DirectoryTokens admit further callers to the whole Directory contract,
 	// for the Directories they locate; none is required.
-	FileSpaceTokens []string `json:"file-space-tokens" yaml:"file-space-tokens" toml:"file-space-tokens"`
-	// ReferenceSpaceTokens admit callers that replace and consult whole
+	DirectoryTokens []string `json:"directory-tokens" yaml:"directory-tokens" toml:"directory-tokens"`
+	// ContentTokens admit callers that replace and consult whole
 	// content: opening, content replacement and reading, and the Directory
 	// file query; none is required.
-	ReferenceSpaceTokens []string `json:"reference-space-tokens" yaml:"reference-space-tokens" toml:"reference-space-tokens"`
+	ContentTokens []string `json:"content-tokens" yaml:"content-tokens" toml:"content-tokens"`
 	// Mounts names the shared volume claims Mount Grants point into.
 	Mounts MountConfig `json:"mounts" yaml:"mounts" toml:"mounts"`
 	// Preview is Storage's preview configuration.
@@ -251,7 +251,7 @@ var AgentArtifactProcedures = []string{
 
 func registerHandlers(app *application.Application, config Config, mux *http.ServeMux, logger *slog.Logger) {
 	server := connectserver.New(logger)
-	storageprivatev1connect.RegisterDirectoryServiceHandler(server, storageconnect.NewDirectoryHandler(app, append([]string{config.AgentToken}, config.FileSpaceTokens...), config.ReferenceSpaceTokens))
+	storageprivatev1connect.RegisterDirectoryServiceHandler(server, storageconnect.NewDirectoryHandler(app, append([]string{config.AgentToken}, config.DirectoryTokens...), config.ContentTokens))
 	storageprivatev1connect.RegisterSandboxMountServiceHandler(server, storageconnect.NewSandboxMountHandler(app, config.AgentToken))
 	connectserver.Mount(mux, server)
 	mountArtifactService(mux, app, logger)

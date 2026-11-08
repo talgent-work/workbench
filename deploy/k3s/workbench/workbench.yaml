@@ -225,10 +225,10 @@ data:
       max-upload-bytes: 1073741824
       agent-token: "${STORAGE_AGENT_TOKEN:}"
       # Callers beyond Agent; an empty token admits no one.
-      file-space-tokens:
-        - "${STORAGE_FILE_SPACE_TOKEN:}"
-      reference-space-tokens:
-        - "${STORAGE_REFERENCE_SPACE_TOKEN:}"
+      directory-tokens:
+        - "${STORAGE_DIRECTORY_TOKEN:}"
+      content-tokens:
+        - "${STORAGE_CONTENT_TOKEN:}"
       # Sandboxes mount each Directory from its backend's claim by subPath.
       mounts:
         nas-claim: talgent-nas-root
@@ -1061,11 +1061,11 @@ spec:
                 secretKeyRef:
                   name: native-execution-control
                   key: DISPATCHER_EXECUTION_CONTROL_TOKEN
-            - name: STORAGE_FILE_SPACE_TOKEN
+            - name: STORAGE_DIRECTORY_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: native-execution-control
-                  key: STORAGE_FILE_SPACE_TOKEN
+                  key: STORAGE_DIRECTORY_TOKEN
             - name: STORAGE_AGENT_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -1076,11 +1076,11 @@ spec:
                 secretKeyRef:
                   name: native-execution-control
                   key: COMPUTER_CONTROL_TOKEN
-            - name: STORAGE_REFERENCE_SPACE_TOKEN
+            - name: STORAGE_CONTENT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: native-execution-control
-                  key: STORAGE_REFERENCE_SPACE_TOKEN
+                  key: STORAGE_CONTENT_TOKEN
             - name: STORAGE_LINK_SECRET
               valueFrom:
                 secretKeyRef:
