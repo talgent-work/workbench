@@ -260,7 +260,7 @@ The scripts create, once, and never replace:
 | Secret | Keys | Notes |
 |---|---|---|
 | `account-master-key` | `master-key` | 32 random bytes that seal Account's signing keys. Keep it: if it is lost or replaced, delete every row of the Account database's `signing_key` table and restart controlplane; everyone signs in again. |
-| `native-execution-control` | `AGENT_CONTROL_TOKEN`, `AGENT_FEEDBACK_TOKEN`, `DISPATCHER_EXECUTION_CONTROL_TOKEN`, `STORAGE_FILE_SPACE_TOKEN`, `STORAGE_AGENT_TOKEN`, `STORAGE_REFERENCE_SPACE_TOKEN`, `STORAGE_LINK_SECRET`, `GATEWAY_TOKEN`, `COMPUTER_CONTROL_TOKEN` | Tokens between the services (`scripts/deploy/bootstrap-native-control.sh`). A release that adds a key adds it on the next deploy; present keys are never rotated. |
+| `native-execution-control` | `AGENT_CONTROL_TOKEN`, `AGENT_FEEDBACK_TOKEN`, `DISPATCHER_EXECUTION_CONTROL_TOKEN`, `STORAGE_DIRECTORY_TOKEN`, `STORAGE_AGENT_TOKEN`, `STORAGE_CONTENT_TOKEN`, `STORAGE_LINK_SECRET`, `GATEWAY_TOKEN`, `COMPUTER_CONTROL_TOKEN` | Tokens between the services (`scripts/deploy/bootstrap-native-control.sh`). A release that adds a key adds it on the next deploy; present keys are never rotated. |
 | `opensandbox-api` | `api-key` | The OpenSandbox API key (`apply-opensandbox.sh`). After rotating it by hand, restart the OpenSandbox Server and controlplane. |
 
 ## 5. Models
