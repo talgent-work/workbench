@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"connectrpc.com/connect/v2"
 	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
@@ -86,15 +85,12 @@ var Module = fx.Module("domain.marketplace",
 	fx.Provide(fx.Annotate(infrastructure.NewProviderAuthorizationQueries, fx.As(new(query.ProviderAuthorizationQueryRepository)))),
 	fx.Provide(application.NewApplication, marketplaceconnect.NewHandler, marketplacehttp.NewCatalogHandler),
 	fx.Invoke(func(params handlerParams) {
-		server := connectserver.New(params.Logger, gatewayActor())
-		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(server, params.Handler)
-		marketplaceprivatev1connect.RegisterSelectionServiceHandler(server, marketplaceconnect.NewSelectionHandler(params.App, params.Config.Connections.CredentialToken))
-		connectserver.Mount(params.Mux, server)
+		public := connectserver.New(params.Logger, authn.NewPrincipalInterceptor())
+		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(public, params.Handler)
+		connectserver.Mount(params.Mux, public)
+		private := connectserver.New(params.Logger)
+		marketplaceprivatev1connect.RegisterSelectionServiceHandler(private, marketplaceconnect.NewSelectionHandler(params.App, params.Config.Connections.CredentialToken))
+		connectserver.Mount(params.Mux, private)
 		params.Mux.Handle(marketplacehttp.ContentPath, params.Catalog)
 	}),
 )
-
-// gatewayActor admits only calls the gateway made for an authenticated person.
-func gatewayActor() connect.ServerInterceptor {
-	return authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})
-}

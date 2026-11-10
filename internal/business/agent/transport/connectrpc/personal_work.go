@@ -28,16 +28,17 @@ func NewPersonalWorkHandler(works *personalwork.PersonalWorks) *PersonalWorkHand
 	return &PersonalWorkHandler{works: works}
 }
 
-// currentPerson is the gateway-asserted person, or the owner of the Work
-// whose verified native process asks; the application decides what each may
-// read. An absent person is refused by the application.
+// currentPerson maps the request's Principal to the person Personal Works
+// act for: a user asks for themselves; an agent asks on behalf of the person
+// its Work represents, from its Work's Project and purpose, and the
+// application decides what that Agent may read. An absent person is refused
+// by the application.
 func currentPerson(ctx context.Context) personalwork.Person {
-	user, _ := authn.CurrentUser(ctx)
-	person := personalwork.Person{UserID: user.ID, DisplayName: user.DisplayName}
-	if process, native := authn.NativeProcessFromContext(ctx); native {
-		person.Agent = &personalwork.ActingAgent{ProjectID: process.ProjectID, Purpose: process.Purpose}
+	if agent, ok := authn.CurrentAgent(ctx); ok {
+		return personalwork.Person{UserID: agent.RepresentedUserID, Agent: &personalwork.ActingAgent{ProjectID: agent.ProjectID, Purpose: agent.Purpose}}
 	}
-	return person
+	user, _ := authn.CurrentUser(ctx)
+	return personalwork.Person{UserID: user.ID, DisplayName: user.DisplayName}
 }
 
 func (h *PersonalWorkHandler) GetPersonalWorkStartOptions(ctx context.Context, _ *agentpublicv1.GetPersonalWorkStartOptionsRequest) (*agentpublicv1.GetPersonalWorkStartOptionsResponse, error) {

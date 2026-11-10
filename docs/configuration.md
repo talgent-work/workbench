@@ -215,8 +215,6 @@ How Agent reaches Computer and Managed Computers.
 |---|---|---|
 | `trace-access.agent-address`, `agent-control-token` | `${WORK_AGENT_ADDR:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent's Work access, which admits readers of a Work's telemetry |
 | `trace-access.project-access-address` | `${TRACE_PROJECT_ACCESS_ADDRESS:}` | The Project access decision, served by a service built on the Workbench; empty in a Workbench deployment |
-| `trace-authn.enabled` | `${AUTHENTICATION_ENABLED:true}` | Require the gateway's identity on Trace queries; keep it on |
-| `trace-authn.mode` | `gateway-oidc` | The identity comes from the gateway's validated token |
 
 ## dispatcher
 

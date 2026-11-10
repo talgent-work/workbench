@@ -3,7 +3,6 @@ package query
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -31,24 +30,16 @@ type WorkIdentity struct {
 	Purpose   string
 }
 
-// actingWait bounds how long an action waits for a delivered reply to resolve
-// its Work's required response, polling at actingPoll; an Agent may call a
-// tool the moment it receives the reply, before the response is recorded.
-const (
-	actingWait = 2 * time.Second
-	actingPoll = 20 * time.Millisecond
-)
-
 type VerifyWorkCredentialHandler struct {
-	definitions      domain.AgentDefinitionRepository
-	sessions         domain.AgentWorkRepository
-	credentials      ExecutionQueryRepository
-	assemble         func(*domain.AgentWork, *domain.AgentDefinition, string) WorkIdentity
-	requiredResponse RequiredResponseReader
+	definitions domain.AgentDefinitionRepository
+	sessions    domain.AgentWorkRepository
+	credentials ExecutionQueryRepository
+	assemble    func(*domain.AgentWork, *domain.AgentDefinition, string) WorkIdentity
+	acting      *AdmitAgentActionHandler
 }
 
-func NewVerifyWorkCredentialHandler(definitions domain.AgentDefinitionRepository, sessions domain.AgentWorkRepository, credentials ExecutionQueryRepository, assemble func(*domain.AgentWork, *domain.AgentDefinition, string) WorkIdentity, requiredResponse RequiredResponseReader) *VerifyWorkCredentialHandler {
-	return &VerifyWorkCredentialHandler{definitions: definitions, sessions: sessions, credentials: credentials, assemble: assemble, requiredResponse: requiredResponse}
+func NewVerifyWorkCredentialHandler(definitions domain.AgentDefinitionRepository, sessions domain.AgentWorkRepository, credentials ExecutionQueryRepository, assemble func(*domain.AgentWork, *domain.AgentDefinition, string) WorkIdentity, acting *AdmitAgentActionHandler) *VerifyWorkCredentialHandler {
+	return &VerifyWorkCredentialHandler{definitions: definitions, sessions: sessions, credentials: credentials, assemble: assemble, acting: acting}
 }
 
 func (h *VerifyWorkCredentialHandler) Handle(ctx context.Context, request VerifyWorkCredential) (WorkIdentity, error) {
@@ -69,38 +60,9 @@ func (h *VerifyWorkCredentialHandler) Handle(ctx context.Context, request Verify
 	}
 	identity := h.assemble(session, definition, subject)
 	if request.RequireActing {
-		if err := h.awaitActing(ctx, session); err != nil {
+		if err := h.acting.Handle(ctx, AdmitAgentAction{WorkID: session.ID}); err != nil {
 			return WorkIdentity{}, err
 		}
 	}
 	return identity, nil
-}
-
-// awaitActing returns once the Work acts, or refuses when it is not Working or
-// its required response stays unresolved through actingWait.
-func (h *VerifyWorkCredentialHandler) awaitActing(ctx context.Context, session *domain.AgentWork) error {
-	deadline := time.Now().Add(actingWait)
-	for {
-		if session.State != domain.WorkWorking {
-			return domain.ErrWorkNotActing
-		}
-		awaiting, err := h.requiredResponse(ctx, session.ID)
-		if err != nil {
-			return err
-		}
-		if session.Acts(awaiting) {
-			return nil
-		}
-		if time.Now().Add(actingPoll).After(deadline) {
-			return domain.ErrWorkNotActing
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(actingPoll):
-		}
-		if session, err = h.sessions.Get(ctx, session.ID); err != nil {
-			return err
-		}
-	}
 }

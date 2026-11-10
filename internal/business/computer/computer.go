@@ -263,9 +263,9 @@ func registerHandlers(mux *http.ServeMux, app *application.Application, config C
 	server := connectserver.New(logger)
 	computerprivatev1connect.RegisterAdmissionServiceHandler(server, transport.NewAdmissionHandler(app, config.ControlToken))
 	computerprivatev1connect.RegisterConnectionServiceHandler(server, transport.NewConnectionHandler(app, config.ControlToken))
-	computerpublicv1connect.RegisterRegistrationServiceHandler(server, transport.NewRegistrationHandler(app, verification.String()))
 	connectserver.Mount(mux, server)
-	public := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	public := connectserver.New(logger, authn.NewPrincipalInterceptor())
+	computerpublicv1connect.RegisterRegistrationServiceHandler(public, transport.NewRegistrationHandler(app, verification.String()))
 	computerpublicv1connect.RegisterComputerServiceHandler(public, transport.NewComputerHandler(app))
 	connectserver.Mount(mux, public)
 	return nil

@@ -159,9 +159,6 @@ trace-access:
   project-access-address: "${TRACE_PROJECT_ACCESS_ADDRESS:}"
   agent-address: "${WORK_AGENT_ADDR:http://127.0.0.1:8080}"
   agent-control-token: "${AGENT_CONTROL_TOKEN:}"
-trace-authn:
-  enabled: "${AUTHENTICATION_ENABLED:true}"
-  mode: "gateway-oidc"
 account:
   issuer: "${ACCOUNT_ISSUER:http://localhost:3000/auth}"
   audience: "${ACCOUNT_AUDIENCE:talgent}"

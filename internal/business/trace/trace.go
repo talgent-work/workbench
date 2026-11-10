@@ -8,7 +8,6 @@ import (
 
 	"github.com/talgent-work/contracts/gen/go/trace/public/v1/tracepublicv1connect"
 
-	"connectrpc.com/connect/v2"
 	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"go.uber.org/fx"
 
@@ -39,20 +38,6 @@ func (c ClickHouseConfig) Validate() error {
 // AccessConfig reaches the Project access decision and Agent's Work access.
 type AccessConfig = access.Config
 
-type AuthnConfig struct {
-	Enabled string `json:"enabled" toml:"enabled" yaml:"enabled"`
-	Mode    string `json:"mode" toml:"mode" yaml:"mode"`
-}
-
-func (c AuthnConfig) EnabledFlag() bool {
-	switch strings.TrimSpace(c.Enabled) {
-	case "", "true", "TRUE", "True", "1", "yes", "YES", "Yes", "on", "ON", "On":
-		return true
-	default:
-		return false
-	}
-}
-
 // Module runs inside controlplane; its telemetry connection stays
 // private so it cannot be mistaken for the host's other ClickHouse use.
 var Module = fx.Module(
@@ -65,14 +50,6 @@ var Module = fx.Module(
 		fx.As(new(query.TraceMetricRepository)),
 		fx.As(new(query.EventRepository)),
 	)),
-	fx.Provide(fx.Annotate(
-		func(cfg AuthnConfig) connect.ServerInterceptor {
-			return authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{
-				Enabled: cfg.EnabledFlag(),
-			})
-		},
-		fx.ResultTags(`group:"trace_connect_interceptors"`),
-	)),
 	fx.Provide(
 		access.NewProjectAccess,
 		fx.Annotate(access.NewWorkAccess, fx.As(new(query.WorkAccess))),
@@ -80,15 +57,9 @@ var Module = fx.Module(
 	fx.Provide(query.NewQueries),
 	fx.Provide(application.NewApplication),
 
-	fx.Invoke(func(app *application.Application, mux *http.ServeMux, logger *slog.Logger, in connectHandlerInterceptors) {
-		server := connectserver.New(logger, in.Interceptors...)
+	fx.Invoke(func(app *application.Application, mux *http.ServeMux, logger *slog.Logger) {
+		server := connectserver.New(logger, authn.NewPrincipalInterceptor())
 		tracepublicv1connect.RegisterTraceQueryServiceHandler(server, tracerpc.NewHandler(app))
 		connectserver.Mount(mux, server)
 	}),
 )
-
-type connectHandlerInterceptors struct {
-	fx.In
-
-	Interceptors []connect.ServerInterceptor `group:"trace_connect_interceptors"`
-}

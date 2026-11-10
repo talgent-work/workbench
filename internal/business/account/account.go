@@ -45,14 +45,14 @@ type Config struct {
 	// ReturnOrigins are the base addresses of the other entries a sign-in may
 	// return to, such as https://app.example.com beside the Workbench
 	// that receives GitHub's callback.
-	ReturnOrigins           []string `json:"return-origins" yaml:"return-origins" toml:"return-origins"`
-	AccessTokenLifetime     string   `json:"access-token-lifetime" yaml:"access-token-lifetime" toml:"access-token-lifetime"`
+	ReturnOrigins       []string `json:"return-origins" yaml:"return-origins" toml:"return-origins"`
+	AccessTokenLifetime string   `json:"access-token-lifetime" yaml:"access-token-lifetime" toml:"access-token-lifetime"`
 	// AgentTokenLifetime bounds an agent's Identity Token, which is never
 	// refreshed and outlives any run.
-	AgentTokenLifetime      string   `json:"agent-token-lifetime" yaml:"agent-token-lifetime" toml:"agent-token-lifetime"`
-	SessionSlidingLifetime  string   `json:"session-sliding-lifetime" yaml:"session-sliding-lifetime" toml:"session-sliding-lifetime"`
-	SessionAbsoluteLifetime string   `json:"session-absolute-lifetime" yaml:"session-absolute-lifetime" toml:"session-absolute-lifetime"`
-	KeyRotationInterval     string   `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
+	AgentTokenLifetime      string `json:"agent-token-lifetime" yaml:"agent-token-lifetime" toml:"agent-token-lifetime"`
+	SessionSlidingLifetime  string `json:"session-sliding-lifetime" yaml:"session-sliding-lifetime" toml:"session-sliding-lifetime"`
+	SessionAbsoluteLifetime string `json:"session-absolute-lifetime" yaml:"session-absolute-lifetime" toml:"session-absolute-lifetime"`
+	KeyRotationInterval     string `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
 	// KeyOverlap is how long a new key is published before it signs.
 	KeyOverlap string `json:"key-overlap" yaml:"key-overlap" toml:"key-overlap"`
 	// MasterKeyPath is a file holding 32 base64-encoded bytes that seal
@@ -219,8 +219,8 @@ func register(r registration) {
 	accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
 	accountprivatev1connect.RegisterAgentAccountServiceHandler(private, accountconnect.NewAgentAccounts(r.App))
 	connectserver.Mount(r.Mux, private)
-	// The browser reads who is signed in under the gateway-verified identity.
-	public := connectserver.New(r.Logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	// The browser reads who is signed in under the identity the entry verified.
+	public := connectserver.New(r.Logger, authn.NewPrincipalInterceptor())
 	accountpublicv1connect.RegisterSessionServiceHandler(public, accountconnect.Session{})
 	connectserver.Mount(r.Mux, public)
 }

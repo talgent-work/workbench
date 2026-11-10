@@ -45,7 +45,7 @@ func TestStartingWorkViewAndThinkingLevel(t *testing.T) {
 	}}
 	handler := connecttest.Handler(func(s *connect.Server) {
 		agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
-	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	}, authn.NewPrincipalInterceptor())
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client := agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))

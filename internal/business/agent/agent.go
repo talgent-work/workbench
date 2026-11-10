@@ -139,6 +139,7 @@ var Module = fx.Module("domain.agent",
 		query.NewResolveAgentsHandler,
 		query.NewGetWorkHandler,
 		query.NewVerifyWorkCredentialHandler,
+		query.NewAdmitAgentActionHandler,
 		application.NewApplication,
 	),
 	fx.Provide(func() func(*domain.AgentDefinition) query.AgentDefinition { return application.AssembleAgentDefinition }, fx.Private),
@@ -159,8 +160,8 @@ func newWorkAuthorizer(works query.WorkQueryRepository) access.WorkAuthorizer {
 // RegisterRPCHandlers mounts the work and private APIs on the controlplane
 // listener. recovery is nil where RecoveryModule is not composed.
 func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, config RPCConfig, logger *slog.Logger, recovery *application.Recovery) {
-	// A public service's person is the gateway-asserted identity alone.
-	public := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	// A public service admits the Principals its procedures declare.
+	public := connectserver.New(logger, authn.NewPrincipalInterceptor())
 	agentpublicv1connect.RegisterAgentWorkServiceHandler(public, transport.NewWorkHandler(app))
 	connectserver.Mount(mux, public)
 	private := connectserver.New(logger)
@@ -168,6 +169,7 @@ func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, confi
 	agentprivatev1connect.RegisterWorkAccessServiceHandler(private, transport.NewWorkAccessHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterWorkspaceReadingServiceHandler(private, transport.NewWorkspaceReadingHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterWorkFactsServiceHandler(private, transport.NewWorkFactsHandler(app, config.ControlToken))
+	agentprivatev1connect.RegisterActingWorkServiceHandler(private, transport.NewActingWorkHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(private, transport.NewFeedbackHandler(app, recovery, config.FeedbackToken))
 	connectserver.Mount(mux, private)
 }
@@ -183,9 +185,7 @@ var AgentLibraryProcedures = []string{
 // the gateway-asserted person, and the Library reads for an Agent acting for
 // its Work's owner.
 func RegisterPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.PersonalWorks, native *nativeauth.LiveWorkClient, logger *slog.Logger) {
-	server := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{
-		Enabled: true, NativeProcessVerifier: native, NativeProcedures: AgentLibraryProcedures,
-	}))
+	server := connectserver.New(logger, authn.NewPrincipalInterceptor(authn.WithNativeProcessVerifier(native)))
 	agentpublicv1connect.RegisterPersonalWorkServiceHandler(server, transport.NewPersonalWorkHandler(works))
 	agentpublicv1connect.RegisterWorkFileServiceHandler(server, transport.NewWorkFileHandler(works))
 	connectserver.Mount(mux, server)

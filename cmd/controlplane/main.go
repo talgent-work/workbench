@@ -80,7 +80,6 @@ type Option struct {
 	// access decision and Agent's Work access through their contracts.
 	TraceClickHouse trace.ClickHouseConfig `json:"trace-clickhouse" toml:"trace-clickhouse" yaml:"trace-clickhouse"`
 	TraceAccess     trace.AccessConfig     `json:"trace-access" toml:"trace-access" yaml:"trace-access"`
-	TraceAuthn      trace.AuthnConfig      `json:"trace-authn" toml:"trace-authn" yaml:"trace-authn"`
 }
 
 func main() {

@@ -19,7 +19,6 @@ import (
 	marketdomain "github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	marketinfra "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	markettransport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // CloudLaunch is the Harness launch of a Work as a Cloud sandbox runs it.
@@ -54,7 +53,7 @@ func platformConnector(t testing.TB, dsn, address string) domain.SelectedConnect
 	ctx := context.Background()
 	require.NoError(t, app.PublishConnector(ctx, marketapp.ConnectorPublication{Name: "talgent", Configuration: marketdomain.MCPConfiguration{Type: "http", URL: address}}))
 	mux := http.NewServeMux()
-	srv := connect.NewServer(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	srv := connect.NewServer()
 	marketplaceprivatev1connect.RegisterSelectionServiceHandler(srv, markettransport.NewSelectionHandler(app, "fixture-token"))
 	connecthttp.Mount(mux, srv)
 	server := httptest.NewServer(mux)

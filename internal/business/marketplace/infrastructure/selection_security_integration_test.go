@@ -27,16 +27,16 @@ func TestSensitiveSelectionIsAvailableOnlyToTrustedOwnerScopedExecution(t *testi
 	client := marketplaceprivatev1connect.NewSelectionServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
 	const owner = "e6c7e756-007d-5236-a492-7f4b9be0b2e8"
 	input := &marketplaceprivatev1.ReadPersonalPluginsRequest{}
-	_, err = client.ReadPersonalPlugins(as(t.Context(), owner), input)
+	_, err = client.ReadPersonalPlugins(delegated(t.Context(), owner), input)
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	selection, err := client.ReadPersonalPlugins(as(t.Context(), owner, "Authorization", "Bearer selection-test"), input)
+	selection, err := client.ReadPersonalPlugins(delegated(t.Context(), owner, "Authorization", "Bearer selection-test"), input)
 	require.NoError(t, err)
 	require.Equal(t, "sensitive-fixture", selection.Plugins[0].Configuration.AsMap()["token"])
-	absent, err := client.ReadPersonalPlugins(as(t.Context(), "cfe58e71-efc6-5336-8009-449ad568c42b", "Authorization", "Bearer selection-test"), &marketplaceprivatev1.ReadPersonalPluginsRequest{})
+	absent, err := client.ReadPersonalPlugins(delegated(t.Context(), "cfe58e71-efc6-5336-8009-449ad568c42b", "Authorization", "Bearer selection-test"), &marketplaceprivatev1.ReadPersonalPluginsRequest{})
 	require.NoError(t, err)
 	require.Empty(t, absent.Plugins)
-	_, err = client.ReadPersonalPlugins(as(t.Context(), owner, "Authorization", "Bearer selection-test", authn.HeaderNativeWorkID, "work"), input)
-	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err), "native credentials are rejected before owner delegation in this transport")
+	_, err = client.ReadPersonalPlugins(delegated(t.Context(), owner, "Authorization", "Bearer selection-test", authn.HeaderNativeWorkID, "work"), input)
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "native credentials never reach a private service")
 }
 
 func TestSensitiveDefaultsAreHiddenFromDiscoveryButRetainedForExecution(t *testing.T) {
@@ -55,7 +55,7 @@ func TestSensitiveDefaultsAreHiddenFromDiscoveryButRetainedForExecution(t *testi
 	require.NoError(t, err)
 	require.NotContains(t, string(distribution), "hidden-fixture-default")
 	private := marketplaceprivatev1connect.NewSelectionServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
-	execution, err := private.ResolvePlugin(as(t.Context(), "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "Authorization", "Bearer selection-test"), &marketplaceprivatev1.ResolvePluginRequest{Slug: "tools"})
+	execution, err := private.ResolvePlugin(delegated(t.Context(), "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "Authorization", "Bearer selection-test"), &marketplaceprivatev1.ResolvePluginRequest{Slug: "tools"})
 	require.NoError(t, err)
 	require.Equal(t, "hidden-fixture-default", execution.Plugin.Parameters["token"].Default.GetStringValue())
 	require.Contains(t, string(execution.Plugin.NativeEntry), "hidden-fixture-default")

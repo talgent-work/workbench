@@ -31,7 +31,7 @@ func TestServiceAccessResultsThroughAuthenticatedPublicAPI(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
-	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})))
+	}, authn.NewPrincipalInterceptor()))
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	client := agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
@@ -42,6 +42,7 @@ func TestServiceAccessResultsThroughAuthenticatedPublicAPI(t *testing.T) {
 			var info *connect.CallInfo
 			ctx, info = connect.NewClientContext(ctx)
 			info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+			info.RequestHeader().Set(authn.HeaderPrincipal, "user")
 			info.RequestHeader().Set(authn.HeaderSubject, actor)
 		}
 		return client.GetWorkServiceAccess(ctx, request)

@@ -85,7 +85,7 @@ func newAccessServer(t *testing.T) (*fakeStream, *recordingAccess, streamgateway
 	mux := http.NewServeMux()
 	path, handler := "/"+streamgatewaypublicv1connect.StreamGatewayServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(s, streamrpc.NewHandler(app))
-	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	}, authn.NewPrincipalInterceptor())
 	mux.Handle(path, handler)
 	srv, httpClient := newH2CTestServer(t, mux)
 	return stream, access, streamgatewaypublicv1connect.NewStreamGatewayServiceClient(connect.NewClient(connecthttp.NewTransport(httpClient, srv.URL)))
@@ -166,6 +166,7 @@ func TestClientCannotSupplyItsOwnReaderAdmission(t *testing.T) {
 	request := &streamgatewaypublicv1.WatchStreamRequest{AgentWorkId: "w1"}
 	ctx, info := connect.NewClientContext(ctx)
 	info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+	info.RequestHeader().Set(authn.HeaderPrincipal, "user")
 	info.RequestHeader().Set(authn.HeaderSubject, "290572ed-90f8-50b8-a98e-9cdbac589df3")
 	info.RequestHeader().Set(authn.HeaderReaderAdmission, "project=project-a")
 	stream, err := watch(client.WatchStream(ctx, request))

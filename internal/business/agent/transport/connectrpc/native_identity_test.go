@@ -48,7 +48,7 @@ func TestWorkCredentialAuthenticatesOnlyTheCurrentLiveSandbox(t *testing.T) {
 	repo := &rpcSessions{items: map[string]*domain.AgentWork{}}
 	require.NoError(t, repo.Save(ctx, session))
 	credentials := &sandboxCredentials{live: map[string]string{session.ID: "first-sandbox-credential"}}
-	app := &application.Application{Queries: application.Queries{VerifyWorkCredential: query.NewVerifyWorkCredentialHandler(&rpcAgents{items: map[string]*domain.AgentDefinition{agent.ID: agent}}, repo, credentials, application.AssembleWorkIdentity, awaitingResponse)}}
+	app := &application.Application{Queries: application.Queries{VerifyWorkCredential: query.NewVerifyWorkCredentialHandler(&rpcAgents{items: map[string]*domain.AgentDefinition{agent.ID: agent}}, repo, credentials, application.AssembleWorkIdentity, query.NewAdmitAgentActionHandler(repo, awaitingResponse))}}
 	mux := http.NewServeMux()
 	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "integration", FeedbackToken: "feedback"}, slog.Default(), nil)
 	server := httptest.NewServer(mux)
@@ -93,7 +93,7 @@ func TestWorkCredentialAuthenticatesOnlyTheCurrentLiveSandbox(t *testing.T) {
 }
 
 func TestInvalidWorkCredentialDoesNotReadWorkData(t *testing.T) {
-	handler := query.NewVerifyWorkCredentialHandler(nil, nil, &sandboxCredentials{}, application.AssembleWorkIdentity, awaitingResponse)
+	handler := query.NewVerifyWorkCredentialHandler(nil, nil, &sandboxCredentials{}, application.AssembleWorkIdentity, nil)
 	_, err := handler.Handle(context.Background(), query.VerifyWorkCredential{WorkID: "private-work", Credential: "forged"})
 	require.Error(t, err)
 }
@@ -115,7 +115,7 @@ func TestWorkCredentialForAnActionRequiresTheWorkToAct(t *testing.T) {
 	repo := &rpcSessions{items: map[string]*domain.AgentWork{}}
 	require.NoError(t, repo.Save(ctx, session))
 	verify := func(awaiting func(context.Context, string) (bool, error)) error {
-		handler := query.NewVerifyWorkCredentialHandler(&rpcAgents{items: map[string]*domain.AgentDefinition{agent.ID: agent}}, repo, &sandboxCredentials{live: map[string]string{session.ID: "credential"}}, application.AssembleWorkIdentity, awaiting)
+		handler := query.NewVerifyWorkCredentialHandler(&rpcAgents{items: map[string]*domain.AgentDefinition{agent.ID: agent}}, repo, &sandboxCredentials{live: map[string]string{session.ID: "credential"}}, application.AssembleWorkIdentity, query.NewAdmitAgentActionHandler(repo, awaiting))
 		_, err := handler.Handle(ctx, query.VerifyWorkCredential{WorkID: session.ID, Credential: "credential", RequireActing: true})
 		return err
 	}

@@ -529,9 +529,6 @@ data:
     trace-access:
       agent-address: http://127.0.0.1:8080
       agent-control-token: "${AGENT_CONTROL_TOKEN:}"
-    trace-authn:
-      enabled: "true"
-      mode: gateway-oidc
     kafka:
       brokers:
         - ${KAFKA_BROKER}
@@ -1734,6 +1731,8 @@ spec:
               port: 8080
           cacheDuration: 300s
         claimToHeaders:
+          - claim: principal
+            header: x-talgent-principal
           - claim: iss
             header: x-talgent-issuer
           - claim: sub
@@ -1748,6 +1747,21 @@ spec:
             header: x-talgent-avatar-url
           - claim: roles
             header: x-talgent-roles
+  # These routes admit people only: they neither map nor strip an agent's
+  # claim headers, so an agent token is refused here until the entry rewrites
+  # identity headers gateway-wide (talgent-work/orchestra#99).
+  authorization:
+    defaultAction: Deny
+    rules:
+      - name: people-only
+        action: Allow
+        principal:
+          jwt:
+            provider: account
+            claims:
+              - name: principal
+                values:
+                  - user
 ---
 # Account's browser sign-in endpoints. They run before a token exists, so no
 # JWT policy targets this route; every internal trust header a client sends is

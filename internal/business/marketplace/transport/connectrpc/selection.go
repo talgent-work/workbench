@@ -22,7 +22,7 @@ func (h *SelectionHandler) ReadPersonalPlugins(ctx context.Context, request *mar
 	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
 		return nil, err
 	}
-	actor, ok := authn.CurrentUserID(ctx)
+	actor, ok := authn.DelegatedUserID(info.RequestHeader())
 	if !ok || actor == "" {
 		return nil, connect.NewError(connect.CodePermissionDenied, "trusted owner required")
 	}
@@ -45,7 +45,7 @@ func (h *SelectionHandler) ResolvePlugin(ctx context.Context, request *marketpla
 	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
 		return nil, err
 	}
-	if actor, ok := authn.CurrentUserID(ctx); !ok || actor == "" {
+	if actor, ok := authn.DelegatedUserID(info.RequestHeader()); !ok || actor == "" {
 		return nil, connect.NewError(connect.CodePermissionDenied, "trusted owner required")
 	}
 	release, err := h.app.GetRelease(ctx, request.GetSlug())
@@ -63,7 +63,7 @@ func (h *SelectionHandler) ReadConnectorSelection(ctx context.Context, request *
 	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
 		return nil, err
 	}
-	actor, ok := authn.CurrentUserID(ctx)
+	actor, ok := authn.DelegatedUserID(info.RequestHeader())
 	if !ok || actor == "" {
 		return nil, connect.NewError(connect.CodePermissionDenied, "trusted owner required")
 	}

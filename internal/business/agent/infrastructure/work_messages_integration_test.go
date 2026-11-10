@@ -101,7 +101,7 @@ func TestWorkMessagesUseAuthorizedConversationAndRetainRetryIdentity(t *testing.
 		app := &application.Application{Commands: application.Commands{SendMessage: command.NewSendWorkMessageHandler(principals, input), ReplyToInteraction: command.NewReplyToWorkInteractionHandler(principals, reply)}}
 		handler := connecttest.Handler(func(s *connect.Server) {
 			agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
-		}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+		}, authn.NewPrincipalInterceptor())
 		server := httptest.NewServer(handler)
 		t.Cleanup(server.Close)
 		return agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
