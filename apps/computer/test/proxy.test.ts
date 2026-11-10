@@ -158,7 +158,7 @@ test('credentials are validated, kept 0600 outside every Work root, and DELETE f
     { gateway, model: { base_url: 'https://u:p@vendor.example/a', key: KEY } },
     { gateway, model: { base_url: 'https://vendor.example/a', key: '' } },
     { gateway, model: 'x' },
-    { gateway, api: { url: 'https://other.example/computer/v1/api' } },
+    { gateway, api: { url: 'https://other.example' } },
   ]) {
     const answer = await deliver(body)
     assert.equal(answer.status, 400, JSON.stringify(body))

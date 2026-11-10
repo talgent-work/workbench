@@ -52,8 +52,9 @@ const managedContentAddress = "https://workbench.example/api/v1/storage/content"
 // managedTelemetryAddress is the platform's public OTLP endpoint.
 const managedTelemetryAddress = "https://workbench.example/computer/v1/otel"
 
-// managedAPIAddress is where the same origin serves the entry's API.
-const managedAPIAddress = "https://workbench.example/computer/v1/api"
+// managedAPIAddress is the entry's origin, under which a Work calls
+// /api/<procedure>.
+const managedAPIAddress = "https://workbench.example"
 
 func managedRequest() domain.LaunchSpecification {
 	input := request()
@@ -384,11 +385,11 @@ func TestManagedComputersNeedTheGatewaysPublicHTTPSAddress(t *testing.T) {
 	}
 }
 
-// A Managed Work gets the entry's API where the platform serves it, and
+// A Managed Work calls the entry directly where the platform serves it, and
 // keeps what its start was realized with: the environment's platform_api
 // and the delivered api credential both follow the recorded start, not a
 // replica's current configuration.
-func TestManagedWorksGetTheNativeAPIOnlyWhereItIsServed(t *testing.T) {
+func TestManagedWorksCallTheEntryDirectlyOnlyWhereItIsServed(t *testing.T) {
 	ctx := context.Background()
 	relay := &relayFixture{}
 	server := httptest.NewServer(relay)
@@ -416,7 +417,7 @@ func TestManagedWorksGetTheNativeAPIOnlyWhereItIsServed(t *testing.T) {
 	require.NoError(t, with.open(ctx, unserved, "session"))
 	require.NotContains(t, relay.environment, "platform_api")
 
-	for _, address := range []string{"https://other.example/computer/v1/api", "http://workbench.example/computer/v1/api", "https://workbench.example/", "https://workbench.example/api?x=1"} {
+	for _, address := range []string{"https://other.example", "http://workbench.example", "https://workbench.example/api", "https://workbench.example?x=1"} {
 		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, API: address, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 		require.Error(t, err, address)
 	}

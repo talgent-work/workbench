@@ -33,7 +33,7 @@ beforeEach(async () => {
   await upstream.listen()
   credentials = {
     gateway: { url: `${upstream.origin}/computer/v1/mcp`, identityToken: IDENTITY_TOKEN, spaceToken: 'space' },
-    api: { url: `${upstream.origin}/computer/v1/api` },
+    api: { url: upstream.origin },
   }
   proxy = new LocalProxy({
     portFile: join(dir, 'state', 'proxy.json'),
@@ -57,10 +57,10 @@ const api = (path: string, body?: string, token = TOKEN, headers: Record<string,
   send(`${proxy.origin()}/w/w-1/api/${token}${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', ...headers }, body })
 
 test('a call reaches the entry under the Work\'s Identity Token, never one the process adds', async () => {
-  const answer = await api('/agent.public.v1.PersonalWorkService/ListLibraryFiles', '{"nameQuery":"report"}', TOKEN, { 'x-talgent-work-id': 'forged', authorization: 'Bearer x' })
+  const answer = await api('/api/agent.public.v1.PersonalWorkService/ListLibraryFiles', '{"nameQuery":"report"}', TOKEN, { 'x-talgent-work-id': 'forged', authorization: 'Bearer x' })
   assert.equal(answer.status, 200)
   const seen = upstream.last()
-  assert.equal(seen.url, '/computer/v1/api/agent.public.v1.PersonalWorkService/ListLibraryFiles')
+  assert.equal(seen.url, '/api/agent.public.v1.PersonalWorkService/ListLibraryFiles')
   assert.equal(seen.headers['x-talgent-work-id'], undefined, 'the entry takes the Identity Token alone')
   assert.equal(seen.headers['x-talgent-work-credential'], undefined)
   assert.equal(seen.headers['x-talgent-space-token'], 'space')
@@ -68,8 +68,8 @@ test('a call reaches the entry under the Work\'s Identity Token, never one the p
   assert.equal(seen.body, '{"nameQuery":"report"}')
 
   // An Access Link the Work was issued downloads the same way.
-  assert.equal((await api('/v1/storage/content?grant=signed')).status, 200)
-  assert.equal(upstream.last().url, '/computer/v1/api/v1/storage/content?grant=signed')
+  assert.equal((await api('/api/v1/storage/content?grant=signed')).status, 200)
+  assert.equal(upstream.last().url, '/api/v1/storage/content?grant=signed')
 })
 
 test('an Artifact command naming a file of the Work sends its bytes instead', async () => {

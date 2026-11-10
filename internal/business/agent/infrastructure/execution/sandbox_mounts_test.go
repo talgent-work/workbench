@@ -173,7 +173,7 @@ func TestStoredStartKeepsItsLocatedLayout(t *testing.T) {
 func TestSandboxConfigRefusesAnUninjectablePlatformAddress(t *testing.T) {
 	for name, environment := range map[string]map[string]string{
 		"the entry alone":         {platformAPIAddressEnv: "http://controlplane.talgent.svc.cluster.local"},
-		"Gateway alone":            {platformAPIAddressEnv: "", gatewayAddressEnv: "http://connector.talgent.svc.cluster.local"},
+		"Gateway alone":           {platformAPIAddressEnv: "", gatewayAddressEnv: "http://connector.talgent.svc.cluster.local"},
 		"the entry and a Gateway": {platformAPIAddressEnv: "http://controlplane.talgent.svc.cluster.local", gatewayAddressEnv: "http://connector.talgent.svc.cluster.local"},
 	} {
 		valid := config()
@@ -181,9 +181,9 @@ func TestSandboxConfigRefusesAnUninjectablePlatformAddress(t *testing.T) {
 		require.NoError(t, valid.Validate(), name)
 	}
 	for name, environment := range map[string]map[string]string{
-		"no platform address":   {platformAPIAddressEnv: ""},
-		"short entry host": {platformAPIAddressEnv: "http://controlplane"},
-		"short Gateway host":    {platformAPIAddressEnv: "http://controlplane.talgent.svc.cluster.local", gatewayAddressEnv: "http://connector"},
+		"no platform address": {platformAPIAddressEnv: ""},
+		"short entry host":    {platformAPIAddressEnv: "http://controlplane"},
+		"short Gateway host":  {platformAPIAddressEnv: "http://controlplane.talgent.svc.cluster.local", gatewayAddressEnv: "http://connector"},
 	} {
 		invalid := config()
 		invalid.Environment = environment

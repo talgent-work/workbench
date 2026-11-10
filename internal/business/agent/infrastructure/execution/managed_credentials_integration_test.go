@@ -16,11 +16,11 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 )
 
-// A Managed Work on a Model Configuration gets its key and its Gateway
-// credentials only through its machine's local proxy: they are delivered when
-// its environment runs, a rotated key is delivered again, and an admitted stop
-// withdraws them. Neither the key nor the Work credential is in the Work's
-// environment, its recorded specification or its launch command.
+// A Managed Work on a Model Configuration gets its key, its Identity Token
+// and its Space Token only through its machine's local proxy: they are
+// delivered when its environment runs, a rotated key is delivered again, and
+// an admitted stop withdraws them. None of them is in the Work's environment,
+// its recorded specification or its launch command.
 func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)

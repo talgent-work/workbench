@@ -19,7 +19,7 @@ func NewSelectionHandler(app *application.Application, token string) *SelectionH
 }
 func (h *SelectionHandler) ReadPersonalPlugins(ctx context.Context, request *marketplaceprivatev1.ReadPersonalPluginsRequest) (*marketplaceprivatev1.ReadPersonalPluginsResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
+	if err := h.authentication.authenticate(info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	actor, ok := authn.DelegatedUserID(info.RequestHeader())
@@ -42,7 +42,7 @@ func (h *SelectionHandler) ReadPersonalPlugins(ctx context.Context, request *mar
 }
 func (h *SelectionHandler) ResolvePlugin(ctx context.Context, request *marketplaceprivatev1.ResolvePluginRequest) (*marketplaceprivatev1.ResolvePluginResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
+	if err := h.authentication.authenticate(info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	if actor, ok := authn.DelegatedUserID(info.RequestHeader()); !ok || actor == "" {
@@ -60,7 +60,7 @@ func (h *SelectionHandler) ResolvePlugin(ctx context.Context, request *marketpla
 }
 func (h *SelectionHandler) ReadConnectorSelection(ctx context.Context, request *marketplaceprivatev1.ReadConnectorSelectionRequest) (*marketplaceprivatev1.ReadConnectorSelectionResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
+	if err := h.authentication.authenticate(info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	actor, ok := authn.DelegatedUserID(info.RequestHeader())

@@ -43,7 +43,7 @@ grep -q "AGENT_CORE_API_ACCESS is enabled or disabled, not 'off'" "$work/invalid
 }
 
 RENDERED="$work/rendered.yaml" SWITCHED="$work/switched.yaml" SERVER="$root_dir/deploy/opensandbox/server.yaml" python3 - <<'PYTHON'
-import json, os, sys
+import json, os, re, sys
 import yaml
 
 docs = [d for d in yaml.safe_load_all(open(os.environ["RENDERED"])) if d]
@@ -192,11 +192,26 @@ check(service_ports(docs, "controlplane") == ["http"],
 
 # Agents have one way in, the entry: no native API object, port, route or
 # switch is rendered, and one sandbox policy reaches only the entry.
+def native_ports(node):
+    """Every port field set to 8081, and every string that addresses :8081."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in ("port", "containerPort", "targetPort") and value in (8081, "8081"):
+                yield f"{key}: {value}"
+            yield from native_ports(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from native_ports(item)
+    elif isinstance(node, str) and re.search(r":8081(?![0-9])", node):
+        yield node
+
 for rendered, how in ((docs, "by default"), (switched, "with every switch set")):
     text = json.dumps(rendered)
-    for remnant in ("native-api", "native-authentication", "NATIVE_API", "8081", "GATEWAY_TOKEN", "gateway-token",
+    for remnant in ("native-api", "native-authentication", "NATIVE_API", "GATEWAY_TOKEN", "gateway-token",
                     "sandbox-native-api", "x-talgent-work-credential"):
         check(remnant not in text, f"{how} nothing renders {remnant}")
+    ports = list(native_ports(rendered))
+    check(not ports, f"{how} nothing serves or addresses the native API's port 8081, got {ports}")
 policies = [d["metadata"]["name"] for d in docs if d["kind"] == "NetworkPolicy" and where(d) == "talgent-sandbox"]
 check(policies == ["sandbox-boundary"], f"one sandbox policy bounds every sandbox, got {policies}")
 

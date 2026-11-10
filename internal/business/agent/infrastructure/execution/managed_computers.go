@@ -50,7 +50,7 @@ type ManagedComputers struct {
 // ManagedAddresses are the platform's public addresses a Managed Computer
 // reaches: Gateway, the platform Connector's HTTPS address, for its local
 // proxy; Content, where the same origin serves Access Links, for its Works'
-// inputs; API, where the same origin serves the entry's API, for its Works'
+// inputs; API, that same origin, where the entry serves its API, for its Works'
 // direct calls, or empty for none; and Telemetry, the platform's HTTPS OTLP
 // endpoint, for its Harness's telemetry.
 type ManagedAddresses struct {
@@ -77,8 +77,8 @@ func NewManagedComputers(client *http.Client, relayAddress string, addresses Man
 	}
 	api := ""
 	if addresses.API != "" {
-		if api, ok = onOrigin(gateway, addresses.API); !ok {
-			return nil, errors.New("agent: the entry's public API address must lie on the platform Connector's origin")
+		if api, ok = sameOrigin(gateway, addresses.API); !ok {
+			return nil, errors.New("agent: the entry's public API address must be the platform Connector's origin")
 		}
 	}
 	telemetry, err := url.Parse(addresses.Telemetry)
@@ -90,6 +90,17 @@ func NewManagedComputers(client *http.Client, relayAddress string, addresses Man
 	// Redirects would carry the control or execd token to another endpoint.
 	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &ManagedComputers{http: &h, relay: relay, gateway: strings.TrimRight(gateway.String(), "/"), content: content, api: api, telemetry: strings.TrimRight(telemetry.String(), "/"), token: controlToken, computers: computers, fileIdle: workFileIdle}, nil
+}
+
+// sameOrigin is address as a bare origin when it is origin's scheme and host
+// with no path, credentials, query or fragment: the entry, under which a
+// Work names each call's own path, such as /api/<procedure>.
+func sameOrigin(origin *url.URL, address string) (string, bool) {
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Scheme != origin.Scheme || parsed.Host != origin.Host || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || strings.Trim(parsed.Path, "/") != "" {
+		return "", false
+	}
+	return parsed.Scheme + "://" + parsed.Host, true
 }
 
 // onOrigin is address without a trailing slash when it names a path on

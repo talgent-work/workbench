@@ -64,7 +64,7 @@ func TestManagedWorkReceivesItsCurrentInputs(t *testing.T) {
 	input := readingInputs(managedRequest(), inputs)
 	record := f.launch(t, f.begin(t, input).ID)
 	require.Equal(t, []manifestFile{{Name: "brief.pdf", Size: 1024, UpdatedAt: "2026-11-02T10:00:00Z", URL: managedContentAddress + "?grant=first"}}, lastManifest(t, f.relay))
-	require.True(t, f.relay.afterDelivery[0], "the machine downloads with the Work credential delivered first")
+	require.True(t, f.relay.afterDelivery[0], "the manifest follows the credentials, whose gateway origin is the only one the machine downloads from; the downloads carry no identity")
 	require.Positive(t, f.storage.bound)
 	require.LessOrEqual(t, f.storage.bound, reconciliationAttemptTimeout, "a sync never holds up the start for long")
 	record, _, err := latestAllocation(ctx, f.db, input.WorkID)
