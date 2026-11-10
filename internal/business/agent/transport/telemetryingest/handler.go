@@ -19,13 +19,16 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // Prefix is where the controlplane serves the endpoint; the computer route
 // maps the machine's /computer/v1/otel to it, and Claude Code appends each
 // signal's OTLP path.
 const Prefix = "/v1/agent/telemetry"
+
+// headerWorkID names the Work whose run sends the telemetry. It only selects
+// the run whose telemetry token the request must present.
+const headerWorkID = "X-Talgent-Work-Id"
 
 // Signals the Harness exports; it exports no metrics.
 const (
@@ -70,7 +73,7 @@ func (h handler) serve(w http.ResponseWriter, r *http.Request, signal string, re
 		h.reject(w, r, http.StatusUnauthorized, "telemetry token required", nil)
 		return
 	}
-	attributes, err := h.attributions.RunTelemetryAttribution(r.Context(), r.Header.Get(authn.HeaderNativeWorkID), strings.TrimSpace(token))
+	attributes, err := h.attributions.RunTelemetryAttribution(r.Context(), r.Header.Get(headerWorkID), strings.TrimSpace(token))
 	switch {
 	case errors.Is(err, query.ErrTelemetryTokenRejected):
 		h.reject(w, r, http.StatusUnauthorized, "telemetry token rejected", nil)

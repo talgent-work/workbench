@@ -136,6 +136,17 @@ storage-maintenance-taskqueue:
   retry-delay-min: "10s"
   retry-delay-max: "5m"
   shutdown-timeout: "30s"
+# Account rotates signing keys hourly and forgets replaced refresh secrets
+# daily; a failed run is replaced by the next.
+account-maintenance-taskqueue:
+  redis-addr: "${REDIS_ADDR:127.0.0.1:6379}"
+  redis-password: "${REDIS_PASSWORD:}"
+  redis-db: 0
+  worker-concurrency: 1
+  queue-name: "account-maintenance"
+  retry-delay-min: "10s"
+  retry-delay-max: "5m"
+  shutdown-timeout: "30s"
 clickhouse:
   dsn: "${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}"
 # Trace runs in this process; native telemetry has its own database.
@@ -148,14 +159,12 @@ trace-access:
   project-access-address: "${TRACE_PROJECT_ACCESS_ADDRESS:}"
   agent-address: "${WORK_AGENT_ADDR:http://127.0.0.1:8080}"
   agent-control-token: "${AGENT_CONTROL_TOKEN:}"
-trace-authn:
-  enabled: "${AUTHENTICATION_ENABLED:true}"
-  mode: "gateway-oidc"
 account:
   issuer: "${ACCOUNT_ISSUER:http://localhost:3000/auth}"
   audience: "${ACCOUNT_AUDIENCE:talgent}"
   cookie-domain: "${ACCOUNT_COOKIE_DOMAIN:}"
   access-token-lifetime: "15m"
+  agent-token-lifetime: "168h"
   session-sliding-lifetime: "720h"
   session-absolute-lifetime: "2160h"
   key-rotation-interval: "720h"
@@ -169,7 +178,7 @@ account:
     api-base-url: "${ACCOUNT_GITHUB_API_BASE_URL:https://api.github.com}"
 account-mysql:
   dsn: "${ACCOUNT_MYSQL_DSN:talgent@tcp(127.0.0.1:3306)/talgent_account?charset=utf8mb4&parseTime=true}"
-agent-user-directory:
+agent-account:
   address: "${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}"
 # Storage owns every space on JuiceFS and NAS.
 storage:
@@ -211,11 +220,6 @@ agent-storage:
   token: "${STORAGE_AGENT_TOKEN:}"
 kubernetes:
   kubeconfig-path: "${KUBECONFIG_PATH:}"
-native-authentication:
-  # Agent verifies every Work credential: reads need its live sandbox,
-  # actions also need the Work Working and not awaiting a required response.
-  agent-address: "${AGENT_INTERNAL_ADDRESS:http://127.0.0.1:8080}"
-  agent-control-token: "${AGENT_CONTROL_TOKEN:}"
 agent-execution:
   sandbox-namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
   # Must equal the OpenSandbox server's sandbox_create_timeout_seconds
@@ -244,9 +248,10 @@ agent-execution:
     cpu: "2"
     memory: "2Gi"
   environment:
-    # The controlplane's native API, the platform service a sandbox reaches;
-    # its Credential Proxy adds the Work credential to every request to it.
-    TALGENT_API_ADDRESS: "${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}"
+    # The entry's public origin, where a sandbox's Agent calls the core's
+    # public APIs; its Credential Proxy adds the Work's Identity Token to
+    # every request to it. Empty gives sandboxes none.
+    TALGENT_API_ADDRESS: "${PLATFORM_API_ADDRESS:}"
     OTEL_EXPORTER_OTLP_ENDPOINT: "${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}"
   dispatcher:
     address: ${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}
@@ -270,7 +275,9 @@ agent-computer:
   # The platform Connector's public HTTPS address a Managed Computer's local
   # proxy reaches; required with relay-address.
   mcp-address: "${COMPUTER_MCP_ADDRESS:}"
-  api-address: "${COMPUTER_API_ADDRESS:}"
+  # The entry, where a Managed Work calls the core's public APIs through
+  # its local proxy; empty gives Managed Works none.
+  api-address: "${PLATFORM_API_ADDRESS:}"
   # Where the same Connector serves Access Links on its public origin, from
   # which a Managed Computer downloads its Works' inputs; required with
   # relay-address.
@@ -318,7 +325,3 @@ computer:
       limits.cpu: "2250m"
       limits.memory: "2368Mi"
       pods: "1"
-# The procedures an Agent reaches with its Work credential: directly, or
-# through the platform Connector where one is deployed.
-native-api:
-  addr: "${NATIVE_API_ADDR::8081}"

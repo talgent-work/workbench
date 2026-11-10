@@ -27,7 +27,13 @@ type LaunchSpecification struct {
 	// start, so a later rename changes no repeated registration.
 	ComputerName string
 	// ProjectID is the Work's Project; empty for a Work without one.
-	ProjectID               string
+	ProjectID string
+	// Subject is the Work's Subject; empty for a Work without one.
+	Subject WorkSubject
+	// Purpose is the purpose of the Work's AgentDefinition, which beginning
+	// the execution fills in; with the Work's other fixed facts it goes into
+	// the Work's Identity Token.
+	Purpose                 string
 	Capabilities            CapabilitySnapshot
 	HarnessSessionReference string
 	ContextMode             ContextMode

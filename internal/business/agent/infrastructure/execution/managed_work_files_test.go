@@ -146,7 +146,7 @@ func TestManagedInputsHandTheMachineTheWholeListOfAttachments(t *testing.T) {
 // Talgent Computer downloads inputs only from the origin it sends the Work's
 // identity to, so the content address must be there.
 func TestManagedComputersNeedTheContentAddressOnTheGatewaysOrigin(t *testing.T) {
-	for _, address := range []string{"", "https://elsewhere.example/computer/v1/storage/content", "http://workbench.example/computer/v1/storage/content", "https://workbench.example", "https://workbench.example/c?x=1"} {
+	for _, address := range []string{"", "https://elsewhere.example/api/v1/storage/content", "http://workbench.example/api/v1/storage/content", "https://workbench.example", "https://workbench.example/c?x=1"} {
 		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: address, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 		require.Error(t, err, address)
 	}

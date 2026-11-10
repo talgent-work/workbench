@@ -48,15 +48,6 @@ func AssembleAgentWorkEntity(session *domain.AgentWork, definition *domain.Agent
 	return result
 }
 
-func AssembleWorkIdentity(session *domain.AgentWork, definition *domain.AgentDefinition, subject string) query.WorkIdentity {
-	identity := query.WorkIdentity{AgentName: definition.AgentName, WorkID: session.ID, AgentID: session.AgentID, SubjectID: subject,
-		ProjectID: session.ProjectID, Subject: session.Subject, Purpose: definition.Purpose}
-	if workspace, ok := session.LocatedLayout.Workspace(); ok {
-		identity.Workspace = &workspace
-	}
-	return identity
-}
-
 func AssembleWorkPluginOption(release domain.PluginRelease, required bool) query.WorkPluginOption {
 	result := query.WorkPluginOption{Name: release.Slug, DisplayName: release.Slug, Required: required}
 	for _, component := range release.Agents {

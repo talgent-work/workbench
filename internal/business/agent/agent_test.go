@@ -11,7 +11,6 @@ import (
 	"github.com/go-jimu/components/ddd/message"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
 
-	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 
 	"connectrpc.com/connect/v2"
@@ -23,6 +22,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -106,8 +106,9 @@ func (unusedExecutionPort) StopExecution(context.Context, string, string) error 
 func storageStub() fx.Option {
 	return fx.Options(
 		fx.Supply(agent.StorageConfig{Address: "http://storage.invalid", Token: "storage-test"}),
-		fx.Supply(agent.UserDirectoryConfig{Address: "http://account.invalid"}),
+		fx.Supply(agent.AccountConfig{Address: "http://account.invalid"}),
 		fx.Decorate(func(command.StoragePort) command.StoragePort { return stubStorage{} }),
+		fx.Decorate(func(command.AccountPort) command.AccountPort { return &commandtest.Accounts{} }),
 	)
 }
 
@@ -136,12 +137,7 @@ func (stubStorage) RequestWorkReclamation(context.Context, string) error { retur
 func sessionStateTransport(t *testing.T) fx.Option {
 	t.Helper()
 	serverURL := middlewaretest.Environment(t, "TALGENT_TEST_NATS_URL")
-	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() query.DispatcherMessageLogPort { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }),
-		// The Library reads' native callers are verified by the native API in
-		// front; no test here reaches it.
-		fx.Provide(func() (*nativeauth.LiveWorkClient, error) {
-			return nativeauth.NewLiveWorkClient(http.DefaultClient, "http://agent.unused", "control")
-		}))
+	return fx.Options(fx.Supply(http.DefaultClient, agent.PluginCatalogConfig{Address: "http://127.0.0.1:1"}, pkgnats.Config{URL: serverURL}, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})), fx.Provide(pkgnats.NewLazyConn, func() query.DispatcherMessageLogPort { return unusedExecutionPort{} }, func() message.Publisher { return discardedMessages{} }))
 }
 
 // discardedMessages stands in for the Integration Message bus.

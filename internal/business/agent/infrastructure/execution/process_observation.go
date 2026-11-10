@@ -2,8 +2,6 @@ package execution
 
 import (
 	"context"
-	"crypto/subtle"
-	"errors"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -52,44 +50,5 @@ func sandboxAttachment(response *dispatcherprivatev1.ObserveProcessResponse) com
 		return command.AttachmentHeld
 	default:
 		return command.AttachmentDetached
-	}
-}
-
-var errWorkCredentialRejected = errors.New("agent: Work credential rejected")
-
-// VerifyWorkCredential verifies the native process credential issued to the
-// Work's current live environment. Retiring the execution revokes the
-// credential.
-func (q *ExecutionQueryRepository) VerifyWorkCredential(ctx context.Context, workID, credential string) error {
-	if strings.TrimSpace(workID) == "" || strings.TrimSpace(credential) == "" {
-		return errWorkCredentialRejected
-	}
-	record, found, err := q.records.live(ctx, workID)
-	if err != nil {
-		return err
-	}
-	if !found || record.SandboxID == "" {
-		return errWorkCredentialRejected
-	}
-	issued, err := issuedWorkCredential(record)
-	if err != nil {
-		return err
-	}
-	if issued == "" || subtle.ConstantTimeCompare([]byte(issued), []byte(credential)) != 1 {
-		return errWorkCredentialRejected
-	}
-	return nil
-}
-
-// issuedWorkCredential reads the Work credential that the execution's
-// realization recorded in its specification.
-func issuedWorkCredential(record executionRecord) (string, error) {
-	switch record.Realization {
-	case realizationCloud:
-		return cloudEnvironment{}.workCredential(record)
-	case realizationManaged:
-		return ManagedEnvironment{}.workCredential(record)
-	default:
-		return "", oops.With("realization", record.Realization).Errorf("agent: unknown execution realization")
 	}
 }

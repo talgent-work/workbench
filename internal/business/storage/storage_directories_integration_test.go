@@ -193,7 +193,7 @@ func TestOneReclamationRemovesAWorksDirectoriesAfterPublicationsFinish(t *testin
 	require.ErrorIs(t, err, domain.ErrDirectoryReclaimed, "it reads as reclaimed")
 	_, err = f.app.WorkspaceView(t.Context(), application.Layout{Workspace: named("workspace", "work", "never-started")}, "")
 	require.ErrorIs(t, err, domain.ErrDirectoryNotOpen, "unlike one never opened")
-	_, err = f.app.PublishArtifact(t.Context(), application.ArtifactSource{SpaceToken: token, WorkID: "work-1", Workspace: &layout, Path: "out.md"}, "out.md", false)
+	_, err = f.app.PublishArtifact(t.Context(), application.ArtifactSource{SpaceToken: token, WorkID: "work-1", WorkDirectory: "workspace", Path: "out.md"}, "out.md", false)
 	require.ErrorIs(t, err, domain.ErrDirectoryReclaimed, "a publication after reclamation finds no source")
 }
 

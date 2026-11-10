@@ -285,7 +285,7 @@ func TestRecoveryBeginsAnAdmittedStartWithoutNewAdmissionOrContext(t *testing.T)
 	}
 	require.Equal(t, 1, w.executions.Count())
 	launch := w.execution(t).Launch
-	launch.ComputerName, launch.PreparationBound = "", time.Time{}
+	launch.ComputerName, launch.Purpose, launch.PreparationBound = "", "", time.Time{}
 	require.Equal(t, original, launch)
 	require.Empty(t, sessions.admittedStarts(), "recovery must not admit a new request")
 	require.Equal(t, domain.WorkStarting, sessions.session.State)

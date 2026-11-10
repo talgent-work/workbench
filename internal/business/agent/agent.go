@@ -10,7 +10,6 @@ import (
 	domainevent "github.com/go-jimu/components/ddd/event"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 	"github.com/talgent-work/workbench/internal/pkg/eventlog"
-	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
@@ -27,10 +26,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
+	agentaccount "github.com/talgent-work/workbench/internal/business/agent/infrastructure/account"
 	agentcomputer "github.com/talgent-work/workbench/internal/business/agent/infrastructure/computer"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/userdirectory"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/workspacereading"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
@@ -49,9 +48,9 @@ func newComputerClient(httpClient *http.Client, config ComputerConfig, logger *s
 	return agentcomputer.NewClient(httpClient, config, logger)
 }
 
-// UserDirectoryConfig locates Account's User Directory, the people a Work
-// without a Project is shared with.
-type UserDirectoryConfig = userdirectory.Config
+// AccountConfig locates Account's private API: the User Directory and the
+// Agent Account Command.
+type AccountConfig = agentaccount.Config
 
 // RPCConfig separates control callers from execution-observation senders.
 type RPCConfig struct {
@@ -67,7 +66,7 @@ var Module = fx.Module("domain.agent",
 	fx.Invoke(registerDomainEventLifecycle),
 	fx.Invoke(fx.Annotate(RegisterRPCHandlers, fx.ParamTags(``, ``, ``, ``, `optional:"true"`))),
 	fx.Invoke(RegisterPersonalWorkHandlers),
-	fx.Provide(fx.Annotate(userdirectory.NewClient, fx.As(new(personalwork.AccountPort))), fx.Private),
+	fx.Provide(fx.Annotate(agentaccount.NewClient, fx.As(new(command.AccountPort)))),
 	fx.Provide(personalwork.New, fx.Private),
 	fx.Provide(newLiveStreamPublisher, newWorkStateUpdates),
 	fx.Provide(newDomainEventDispatcher, fx.Private),
@@ -138,15 +137,12 @@ var Module = fx.Module("domain.agent",
 		query.NewGetAgentDefinitionForPurposeHandler,
 		query.NewResolveAgentsHandler,
 		query.NewGetWorkHandler,
-		query.NewVerifyWorkCredentialHandler,
+		query.NewAdmitAgentActionHandler,
 		application.NewApplication,
 	),
 	fx.Provide(func() func(*domain.AgentDefinition) query.AgentDefinition { return application.AssembleAgentDefinition }, fx.Private),
 	fx.Provide(func() func(*domain.AgentWork, *domain.AgentDefinition) query.AgentWork {
 		return application.AssembleAgentWorkEntity
-	}, fx.Private),
-	fx.Provide(func() func(*domain.AgentWork, *domain.AgentDefinition, string) query.WorkIdentity {
-		return application.AssembleWorkIdentity
 	}, fx.Private),
 )
 
@@ -159,33 +155,26 @@ func newWorkAuthorizer(works query.WorkQueryRepository) access.WorkAuthorizer {
 // RegisterRPCHandlers mounts the work and private APIs on the controlplane
 // listener. recovery is nil where RecoveryModule is not composed.
 func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, config RPCConfig, logger *slog.Logger, recovery *application.Recovery) {
-	// A public service's person is the gateway-asserted identity alone.
-	public := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	// A public service admits the Principals its procedures declare.
+	public := connectserver.New(logger, authn.NewPrincipalInterceptor())
 	agentpublicv1connect.RegisterAgentWorkServiceHandler(public, transport.NewWorkHandler(app))
+	agentpublicv1connect.RegisterIdentityServiceHandler(public, transport.IdentityHandler{})
 	connectserver.Mount(mux, public)
 	private := connectserver.New(logger)
 	agentprivatev1connect.RegisterAgentServiceHandler(private, transport.NewAgentHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterWorkAccessServiceHandler(private, transport.NewWorkAccessHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterWorkspaceReadingServiceHandler(private, transport.NewWorkspaceReadingHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterWorkFactsServiceHandler(private, transport.NewWorkFactsHandler(app, config.ControlToken))
+	agentprivatev1connect.RegisterActingWorkServiceHandler(private, transport.NewActingWorkHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(private, transport.NewFeedbackHandler(app, recovery, config.FeedbackToken))
 	connectserver.Mount(mux, private)
 }
 
-// AgentLibraryProcedures are the Personal Library reads the Agent of a Work
-// without a Project makes, through the native API, for the Work's owner.
-var AgentLibraryProcedures = []string{
-	agentpublicv1connect.PersonalWorkServiceListLibraryFilesProcedure,
-	agentpublicv1connect.WorkFileServiceCreateWorkFileAccessLinkProcedure,
-}
-
 // RegisterPersonalWorkHandlers mounts a person's own Works and their files for
-// the gateway-asserted person, and the Library reads for an Agent acting for
-// its Work's owner.
-func RegisterPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.PersonalWorks, native *nativeauth.LiveWorkClient, logger *slog.Logger) {
-	server := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{
-		Enabled: true, NativeProcessVerifier: native, NativeProcedures: AgentLibraryProcedures,
-	}))
+// the person the entry verified, and the Library reads for an Agent acting for
+// the person its Work represents.
+func RegisterPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.PersonalWorks, logger *slog.Logger) {
+	server := connectserver.New(logger, authn.NewPrincipalInterceptor())
 	agentpublicv1connect.RegisterPersonalWorkServiceHandler(server, transport.NewPersonalWorkHandler(works))
 	agentpublicv1connect.RegisterWorkFileServiceHandler(server, transport.NewWorkFileHandler(works))
 	connectserver.Mount(mux, server)

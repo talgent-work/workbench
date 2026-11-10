@@ -62,7 +62,7 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	mux := http.NewServeMux()
 	path, handler := "/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		agentpublicv1connect.RegisterAgentWorkServiceHandler(s, transport.NewWorkHandler(app))
-	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	}, authn.NewPrincipalInterceptor())
 	mux.Handle(path, handler)
 	path, handler = "/"+agentprivatev1connect.ExecutionFeedbackServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		agentprivatev1connect.RegisterExecutionFeedbackServiceHandler(s, transport.NewFeedbackHandler(app, nil, "feedback-test"))
@@ -78,6 +78,7 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 			var info *connect.CallInfo
 			ctx, info = connect.NewClientContext(ctx)
 			info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+			info.RequestHeader().Set(authn.HeaderPrincipal, "user")
 			info.RequestHeader().Set(authn.HeaderSubject, actor)
 		}
 		return client.GetWorkPluginResults(ctx, request)

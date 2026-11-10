@@ -2,246 +2,196 @@ package authn
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"connectrpc.com/connect/v2"
-	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
+	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
-	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
-	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
+	computerpublicv1 "github.com/talgent-work/contracts/gen/go/computer/public/v1"
+	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 )
 
-func TestGatewayUserInterceptorResolvesSubjectAsUserID(t *testing.T) {
-	// Trusted gateway claims must become the user id used by product
-	// authorization; request bodies must not choose the actor.
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true})
-	ctx, info := connect.NewClientContext(context.Background())
-	req := &agentpublicv1.GetWorkRequest{}
-	info.RequestHeader().Set(HeaderAuthenticatedBy, "envoy")
-	info.RequestHeader().Set(HeaderIssuer, " https://auth.example.com ")
-	info.RequestHeader().Set(HeaderSubject, " 2c857667-a533-5efc-b6da-fc9cce51d31b ")
-	info.RequestHeader().Set(HeaderEmail, "jace@example.com")
-	info.RequestHeader().Set(HeaderDisplayName, "Jace")
-	info.RequestHeader().Set(HeaderAvatarURL, "https://example.com/avatar.png")
-	info.RequestHeader().Set(HeaderRoles, "admin, viewer,")
+const (
+	userID = "2c857667-a533-5efc-b6da-fc9cce51d31b"
+	workID = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4d"
+)
 
-	resp, err := client.GetWork(ctx, req)
-
-	require.NoError(t, err)
-	require.Equal(t, "2c857667-a533-5efc-b6da-fc9cce51d31b", resp.GetWork().GetWorkId())
+func method(file protoreflect.FileDescriptor, service, name string) protoreflect.MethodDescriptor {
+	return file.Services().ByName(protoreflect.Name(service)).Methods().ByName(protoreflect.Name(name))
 }
 
-func TestGatewayUserInterceptorRejectsBearerWithoutSubjectHeader(t *testing.T) {
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true})
-	ctx, info := connect.NewClientContext(context.Background())
-	req := &agentpublicv1.GetWorkRequest{}
-	info.RequestHeader().Set(HeaderAuthenticatedBy, "envoy")
-	info.RequestHeader().Set("Authorization", "Bearer eyJhbGciOiJub25lIn0.eyJzdWIiOiJzdWItMSJ9.") // gitleaks:allow (an unsigned fixture token)
+var (
+	// Declared for a user only.
+	userOnly = method(agentpublicv1.File_agent_public_v1_personal_work_proto, "PersonalWorkService", "StartPersonalWork")
+	// Declared for a user or an agent.
+	userOrAgent = method(agentpublicv1.File_agent_public_v1_personal_work_proto, "PersonalWorkService", "ListLibraryFiles")
+	// Declared for no caller: a private procedure no entry reaches.
+	undeclared = method(agentprivatev1.File_agent_private_v1_acting_work_proto, "ActingWorkService", "AdmitAgentAction")
+	// Declared anonymous.
+	anonymous = method(computerpublicv1.File_computer_public_v1_registration_proto, "RegistrationService", "StartRegistration")
+	// A user-only server-streaming procedure.
+	userStream = method(streamgatewaypublicv1.File_streamgateway_public_v1_streamgateway_proto, "StreamGatewayService", "WatchStream")
+)
 
-	_, err := client.GetWork(ctx, req)
+// noStream is a server stream the handlers under test never use.
+type noStream struct{}
 
-	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-}
+func (noStream) Receive(any) error  { return nil }
+func (noStream) SendHeaders() error { return nil }
+func (noStream) Send(any) error     { return nil }
 
-func TestGatewayUserInterceptorRequiresTrustedGatewayMarker(t *testing.T) {
-	// Protected browser calls must fail closed unless the trusted gateway marks
-	// the request as already authenticated.
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true})
-	ctx, info := connect.NewClientContext(context.Background())
-	req := &agentpublicv1.GetWorkRequest{}
-	info.RequestHeader().Set(HeaderIssuer, "https://auth.example.com")
-	info.RequestHeader().Set(HeaderSubject, "sub-1")
-
-	_, err := client.GetWork(ctx, req)
-
-	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-}
-
-func TestGatewayUserInterceptorRequiresOIDCSubject(t *testing.T) {
-	// Envoy-authenticated requests without a subject cannot produce a stable
-	// user id, so they must not reach protected handlers.
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true})
-
-	for name, headers := range map[string]map[string]string{
-		"missing subject": {
-			HeaderAuthenticatedBy: "envoy",
-			HeaderIssuer:          "https://auth.example.com",
-		},
-		"legacy string subject": {
-			HeaderAuthenticatedBy: "envoy",
-			HeaderIssuer:          "https://auth.example.com",
-			HeaderSubject:         "sub-1",
-		},
-		"composite subject": {
-			HeaderAuthenticatedBy: "envoy",
-			HeaderIssuer:          "https://auth.example.com",
-			HeaderSubject:         "oidc:https://auth.example.com#2c857667-a533-5efc-b6da-fc9cce51d31b",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctx, info := connect.NewClientContext(context.Background())
-			req := &agentpublicv1.GetWorkRequest{}
-			for key, value := range headers {
-				info.RequestHeader().Set(key, value)
-			}
-
-			_, err := client.GetWork(ctx, req)
-
-			require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-		})
-	}
-}
-
-func TestGatewayUserInterceptorAcceptsDelegatedInternalUser(t *testing.T) {
-	// Internal service calls carry service identity plus delegated user context,
-	// preserving the browser user through service-to-service hops.
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true})
-	ctx, info := connect.NewClientContext(context.Background())
-	req := &agentpublicv1.GetWorkRequest{}
-	info.RequestHeader().Set(HeaderServiceID, "work")
-	info.RequestHeader().Set(HeaderDelegatedUserID, "sub-1")
-
-	resp, err := client.GetWork(ctx, req)
-
-	require.NoError(t, err)
-	require.Equal(t, "sub-1", resp.GetWork().GetWorkId())
-}
-
-func TestGatewayUserInterceptorRejectsSpoofedDelegatedUser(t *testing.T) {
-	// Public clients must not be able to authenticate by sending only the
-	// delegated-user header; a service identity is required.
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true})
-	ctx, info := connect.NewClientContext(context.Background())
-	req := &agentpublicv1.GetWorkRequest{}
-	info.RequestHeader().Set(HeaderDelegatedUserID, "sub-1")
-
-	_, err := client.GetWork(ctx, req)
-
-	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-}
-
-func TestGatewayUserInterceptorAllowsExcludedServiceOnlyProcedure(t *testing.T) {
-	// Intent (real): selected internal service-only procedures perform their own
-	// service identity check and must not be rejected before reaching the handler.
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{
-		Enabled:            true,
-		ExcludedProcedures: []string{agentpublicv1connect.AgentWorkServiceGetWorkProcedure},
-	})
-	ctx, info := connect.NewClientContext(context.Background())
-	req := &agentpublicv1.GetWorkRequest{}
-	info.RequestHeader().Set(HeaderServiceID, "caller")
-
-	resp, err := client.GetWork(ctx, req)
-
-	require.NoError(t, err)
-	require.Equal(t, "anonymous", resp.GetWork().GetWorkId())
-}
-
-func TestGatewayUserInterceptorRejectsInvalidDelegatedUserID(t *testing.T) {
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true})
-
-	for name, userID := range map[string]string{
-		"empty":           "",
-		"prefixed user":   "oidc:https://auth.example.com#sub-1",
-		"contains marker": "issuer#sub-1",
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctx, info := connect.NewClientContext(context.Background())
-			req := &agentpublicv1.GetWorkRequest{}
-			info.RequestHeader().Set(HeaderServiceID, "work")
-			info.RequestHeader().Set(HeaderDelegatedUserID, userID)
-
-			_, err := client.GetWork(ctx, req)
-
-			require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-		})
-	}
-}
-
-func newGatewayAuthnTestClient(t *testing.T, cfg GatewayActorConfig) agentpublicv1connect.AgentWorkServiceClient {
+// call dispatches procedure with header through the interceptor and returns
+// the Principal its handler received, if it ran.
+func call(t *testing.T, interceptor connect.ServerInterceptor, procedure protoreflect.MethodDescriptor, header map[string]string) (principal Principal, ran bool, err error) {
 	t.Helper()
-
-	mux := http.NewServeMux()
-	path, handler := "/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {
-		agentpublicv1connect.RegisterAgentWorkServiceHandler(s, &authnTestAgentWorkService{})
-	}, NewConnectUnaryInterceptor(cfg))
-	mux.Handle(path, handler)
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-
-	return agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-}
-
-type authnTestAgentWorkService struct {
-	agentpublicv1connect.UnimplementedAgentWorkServiceHandler
-}
-
-func (s *authnTestAgentWorkService) GetWork(ctx context.Context, _ *agentpublicv1.GetWorkRequest) (*agentpublicv1.GetWorkResponse, error) {
-	userID, ok := CurrentUserID(ctx)
-	if !ok {
-		userID = "anonymous"
+	streamType := connect.StreamTypeUnary
+	if procedure.IsStreamingServer() {
+		streamType = connect.StreamTypeServer
 	}
-	return &agentpublicv1.GetWorkResponse{
-		Work: &agentpublicv1.WorkInfo{WorkId: userID},
-	}, nil
-}
-
-type nativeVerifierFixture struct {
-	reject bool
-	calls  int
-}
-
-func (v *nativeVerifierFixture) VerifyNativeProcess(_ context.Context, workID, credential string) (NativeProcess, error) {
-	v.calls++
-	if v.reject || workID != "work" || credential != "credential" {
-		return NativeProcess{}, connect.NewError(connect.CodeUnauthenticated, "")
+	path := "/" + string(procedure.Parent().FullName()) + "/" + string(procedure.Name())
+	server := connect.NewServer(interceptor)
+	server.Register(connect.Method{
+		Spec: connect.Spec{StreamType: streamType, Procedure: path, Schema: procedure},
+		Handler: func(ctx context.Context, _ connect.Spec, _ connect.ServerStream) error {
+			principal, _ = PrincipalFrom(ctx)
+			ran = true
+			return nil
+		},
+	})
+	info := new(connect.CallInfo)
+	for key, value := range header {
+		info.RequestHeader().Set(key, value)
 	}
-	return NativeProcess{SubjectID: "native-owner", ProjectID: "project"}, nil
+	err = server.Call(context.Background(), path, info, noStream{})
+	return principal, ran, err
 }
 
-func TestNativeCredentialOverridesCallerClaimedUser(t *testing.T) {
-	verifier := &nativeVerifierFixture{}
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true, NativeProcessVerifier: verifier, NativeProcedures: []string{agentpublicv1connect.AgentWorkServiceGetWorkProcedure}})
-	ctx, info := connect.NewClientContext(context.Background())
-	req := &agentpublicv1.GetWorkRequest{}
-	info.RequestHeader().Set(HeaderNativeWorkID, "work")
-	info.RequestHeader().Set(HeaderNativeCredential, "credential")
-	info.RequestHeader().Set(HeaderServiceID, "executor")
-	info.RequestHeader().Set(HeaderDelegatedUserID, "spoofed-owner")
-	response, err := client.GetWork(ctx, req)
+func userHeaders() map[string]string {
+	return map[string]string{
+		HeaderAuthenticatedBy: "envoy", HeaderPrincipal: "user", HeaderSubject: " " + userID + " ",
+		HeaderDisplayName: "Jace", HeaderRoles: "admin, viewer,",
+	}
+}
+
+func agentHeaders() map[string]string {
+	return map[string]string{
+		HeaderAuthenticatedBy: "envoy", HeaderPrincipal: "agent", HeaderSubject: workID,
+		HeaderProjectID: "project", HeaderAgentID: "agent-definition", HeaderPurpose: "review",
+		HeaderWorkSubjectKind: "case", HeaderWorkSubjectID: "case-1", HeaderRepresentedUserID: userID,
+	}
+}
+
+// A user's request speaks for exactly that user.
+func TestUserRequestSpeaksForItsUser(t *testing.T) {
+	principal, ran, err := call(t, NewPrincipalInterceptor(), userOnly, userHeaders())
 	require.NoError(t, err)
-	require.Equal(t, "native-owner", response.GetWork().GetWorkId())
-	verifier.reject = true
-	_, err = client.GetWork(ctx, req)
-	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err), "rejected proof must not fall through to service claims")
+	require.True(t, ran)
+	user, ok := principal.User()
+	require.True(t, ok)
+	require.Equal(t, userID, user.ID)
+	require.Equal(t, "Jace", user.DisplayName)
+	require.Equal(t, []string{"admin", "viewer"}, user.Roles)
+	_, isAgent := principal.Agent()
+	require.False(t, isAgent)
 }
 
-func TestIncompleteNativeCredentialCannotUseGatewayIdentity(t *testing.T) {
-	verifier := &nativeVerifierFixture{}
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true, NativeProcessVerifier: verifier, NativeProcedures: []string{agentpublicv1connect.AgentWorkServiceGetWorkProcedure}})
-	ctx, info := connect.NewClientContext(context.Background())
-	req := &agentpublicv1.GetWorkRequest{}
-	info.RequestHeader().Set(HeaderNativeWorkID, "work")
-	info.RequestHeader().Set(HeaderAuthenticatedBy, "envoy")
-	info.RequestHeader().Set(HeaderSubject, "2c857667-a533-5efc-b6da-fc9cce51d31b")
-	_, err := client.GetWork(ctx, req)
-	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	require.Zero(t, verifier.calls)
+// An agent's request speaks for its Work's Agent and never resolves a person,
+// not even the one it represents.
+func TestAgentRequestNeverResolvesAPerson(t *testing.T) {
+	principal, ran, err := call(t, NewPrincipalInterceptor(), userOrAgent, agentHeaders())
+	require.NoError(t, err)
+	require.True(t, ran)
+	agent, ok := principal.Agent()
+	require.True(t, ok)
+	require.Equal(t, Agent{WorkID: workID, ProjectID: "project", AgentID: "agent-definition", Purpose: "review", SubjectKind: "case", SubjectID: "case-1", RepresentedUserID: userID}, agent)
+	_, isUser := principal.User()
+	require.False(t, isUser)
+	ctx := WithPrincipal(context.Background(), principal)
+	_, found := CurrentUserID(ctx)
+	require.False(t, found, "an agent's request has no current user")
 }
 
-func TestNativeCredentialsCannotEnterUnlistedProcedures(t *testing.T) {
-	verifier := &nativeVerifierFixture{}
-	client := newGatewayAuthnTestClient(t, GatewayActorConfig{Enabled: true, NativeProcessVerifier: verifier})
-	ctx, info := connect.NewClientContext(context.Background())
-	request := &agentpublicv1.GetWorkRequest{}
-	info.RequestHeader().Set(HeaderNativeWorkID, "work")
-	info.RequestHeader().Set(HeaderNativeCredential, "credential")
-	info.RequestHeader().Set(HeaderAuthenticatedBy, "envoy")
-	info.RequestHeader().Set(HeaderSubject, "2c857667-a533-5efc-b6da-fc9cce51d31b")
-	_, err := client.GetWork(ctx, request)
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "valid native proof must not become a general user session")
+// A procedure admits only the Principals its contract declares; any other is
+// refused before the handler runs.
+func TestUndeclaredPrincipalIsRefusedBeforeTheHandler(t *testing.T) {
+	for name, tc := range map[string]struct {
+		procedure protoreflect.MethodDescriptor
+		header    map[string]string
+	}{
+		"agent on a user procedure":    {userOnly, agentHeaders()},
+		"user on undeclared procedure": {undeclared, userHeaders()},
+		"agent on a user stream":       {userStream, agentHeaders()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, ran, err := call(t, NewPrincipalInterceptor(), tc.procedure, tc.header)
+			require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+			require.False(t, ran)
+		})
+	}
+	_, ran, err := call(t, NewPrincipalInterceptor(), userStream, userHeaders())
+	require.NoError(t, err)
+	require.True(t, ran, "a declared stream admits its Principal")
+}
+
+// An anonymous procedure admits a caller without any identity, and gives the
+// handler no Principal.
+func TestAnonymousProcedureAdmitsWithoutPrincipal(t *testing.T) {
+	principal, ran, err := call(t, NewPrincipalInterceptor(), anonymous, nil)
+	require.NoError(t, err)
+	require.True(t, ran)
+	_, isUser := principal.User()
+	_, isAgent := principal.Agent()
+	require.False(t, isUser || isAgent, "the handler runs without a Principal")
+}
+
+// Only an identity the entry verified, naming a known Principal with its
+// required claims, establishes one.
+func TestUnverifiedIdentityIsUnauthenticated(t *testing.T) {
+	with := func(base map[string]string, key, value string) map[string]string {
+		header := map[string]string{}
+		for k, v := range base {
+			header[k] = v
+		}
+		if value == "" {
+			delete(header, key)
+		} else {
+			header[key] = value
+		}
+		return header
+	}
+	for name, header := range map[string]map[string]string{
+		"no entry marker":        with(userHeaders(), HeaderAuthenticatedBy, ""),
+		"no principal":           with(userHeaders(), HeaderPrincipal, ""),
+		"unknown principal":      with(userHeaders(), HeaderPrincipal, "service"),
+		"no subject":             with(userHeaders(), HeaderSubject, ""),
+		"non-uuid subject":       with(userHeaders(), HeaderSubject, "sub-1"),
+		"composite subject":      with(userHeaders(), HeaderSubject, "oidc:https://auth.example.com#"+userID),
+		"agent without purpose":  with(agentHeaders(), HeaderPurpose, ""),
+		"agent without its def":  with(agentHeaders(), HeaderAgentID, ""),
+		"invalid represented id": with(agentHeaders(), HeaderRepresentedUserID, "someone"),
+		"only a delegated user":  {HeaderDelegatedUserID: userID},
+		"only a service":         {HeaderServiceID: "work"},
+		"invalid delegated user": {HeaderServiceID: "work", HeaderDelegatedUserID: "issuer#sub-1"},
+		// A Work credential is no identity: Agents reach a service only
+		// through the entry.
+		"a Work credential": {"x-talgent-work-id": workID, "x-talgent-work-credential": "credential"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, ran, err := call(t, NewPrincipalInterceptor(), userOrAgent, header)
+			require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
+			require.False(t, ran)
+		})
+	}
+}
+
+// A trusted service's call on a person's behalf speaks for that user.
+func TestDelegatedServiceCallSpeaksForItsUser(t *testing.T) {
+	principal, _, err := call(t, NewPrincipalInterceptor(), userOnly, map[string]string{HeaderServiceID: "work", HeaderDelegatedUserID: "sub-1"})
+	require.NoError(t, err)
+	user, ok := principal.User()
+	require.True(t, ok)
+	require.Equal(t, "sub-1", user.ID)
 }

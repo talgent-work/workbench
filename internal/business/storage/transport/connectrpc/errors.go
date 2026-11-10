@@ -58,7 +58,7 @@ func mapError(err error) error {
 		return storageerror.New(connect.CodeNotFound, storageprivatev1.ErrorReason_ERROR_REASON_FILE_NOT_FOUND, err)
 	case errors.Is(err, application.ErrNameTaken):
 		return storageerror.New(connect.CodeAlreadyExists, storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN, err)
-	case errors.Is(err, application.ErrInvalidSource), errors.Is(err, domain.ErrSentContentWithWorkspace):
+	case errors.Is(err, application.ErrInvalidSource):
 		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_SOURCE, err)
 	case errors.Is(err, application.ErrInvalidWorkspacePath):
 		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_WORKSPACE_PATH, err)

@@ -15,4 +15,10 @@ var (
 	ErrRefreshSecretReused    = errors.New("refresh secret already replaced")
 	ErrRefreshSecretUnknown   = errors.New("refresh secret not held by session")
 	ErrConcurrentModification = errors.New("concurrent modification")
+	ErrInvalidAgentAccount    = errors.New("invalid agent account")
+	ErrAgentAccountNotFound   = errors.New("agent account not found")
+	// ErrAgentAccountExists means another request opened the Work's Agent
+	// Account first.
+	ErrAgentAccountExists      = errors.New("agent account already exists")
+	ErrAgentAccountFactsDiffer = errors.New("work facts differ from the agent account")
 )

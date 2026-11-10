@@ -48,8 +48,8 @@ func (c PlatformConnectorConfig) publication() (application.ConnectorPublication
 	if err != nil || (address.Scheme != "http" && address.Scheme != "https") || address.Host == "" || address.RawQuery != "" || address.Fragment != "" {
 		return application.ConnectorPublication{}, errors.New("marketplace: the platform Connector needs the Gateway's address")
 	}
-	// The sandbox's Credential Proxy adds the Work credential to every request
-	// to the Gateway; the configuration names none.
+	// The sandbox's Credential Proxy adds the Work's Identity Token to every
+	// request to the Gateway; the configuration names none.
 	configuration := domain.MCPConfiguration{Type: "http", URL: address.String() + "/mcp"}
 	return application.ConnectorPublication{Name: "talgent", Configuration: configuration,
 		Presentation: domain.CatalogPresentation{Description: c.Description, Category: c.Category}}, configuration.Validate()

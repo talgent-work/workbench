@@ -143,6 +143,11 @@ func (h *Handler) UninstallPlugin(ctx context.Context, request *marketplacepubli
 
 func mapError(err error) error {
 	switch {
+	// A caller that gave up, or ran out of time, is not a Marketplace failure.
+	case errors.Is(err, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, err.Error()).WithCause(err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, err.Error()).WithCause(err)
 	case errors.Is(err, application.ErrUnauthenticated):
 		return connect.NewError(connect.CodeUnauthenticated, err.Error()).WithCause(err)
 	case errors.Is(err, domain.ErrConcurrentModification):

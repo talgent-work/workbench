@@ -146,7 +146,7 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app))
-	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	}, authn.NewPrincipalInterceptor())
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	server := httptest.NewServer(mux)

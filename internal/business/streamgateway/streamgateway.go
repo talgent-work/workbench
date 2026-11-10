@@ -41,7 +41,7 @@ var Module = fx.Module(
 	)),
 	fx.Provide(query.NewWatchStream, query.NewListMessagesBySessionHandler, application.NewApplication),
 	fx.Invoke(func(app *application.Application, mux *http.ServeMux, logger *slog.Logger) {
-		server := connectserver.New(logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+		server := connectserver.New(logger, authn.NewPrincipalInterceptor())
 		streamgatewaypublicv1connect.RegisterStreamGatewayServiceHandler(server, streamrpc.NewHandler(app))
 		connectserver.Mount(mux, server)
 	}),

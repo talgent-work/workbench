@@ -93,6 +93,7 @@ func header(name, value string) connect.ClientInterceptor {
 func as(ctx context.Context, account string) context.Context {
 	ctx, info := connect.NewClientContext(ctx)
 	info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+	info.RequestHeader().Set(authn.HeaderPrincipal, "user")
 	info.RequestHeader().Set(authn.HeaderSubject, account)
 	return ctx
 }

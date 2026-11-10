@@ -24,8 +24,8 @@ import (
 // environment PUT and kept for the Work's life; the execution itself, and its
 // compute, is the run's processes only. The Work's credentials reach the
 // machine's local proxy, never its processes, through the relay's credentials
-// PUT; the proxy carries the Work credential to the platform Connector at its
-// public address. The Work's inputs reach the machine as a manifest of Access
+// PUT; the proxy carries the Work's Identity Token to the platform Connector
+// and the entry at their public addresses. The Work's inputs reach the machine as a manifest of Access
 // Links it downloads from the same origin (managed_inputs.go), and the Work's
 // files are read back through the relay (managed_files.go). A run's Harness
 // sends its telemetry to the platform's public telemetry endpoint
@@ -36,8 +36,8 @@ type ManagedComputers struct {
 	gateway string
 	// content is where the machine downloads an Access Link.
 	content string
-	// api is where the machine's local proxy sends its Works' native API
-	// calls; empty when Managed Works have none.
+	// api is where the machine's local proxy sends its Works' entry calls;
+	// empty when Managed Works have none.
 	api string
 	// telemetry is where a run's Harness sends its OTLP telemetry.
 	telemetry string
@@ -50,7 +50,7 @@ type ManagedComputers struct {
 // ManagedAddresses are the platform's public addresses a Managed Computer
 // reaches: Gateway, the platform Connector's HTTPS address, for its local
 // proxy; Content, where the same origin serves Access Links, for its Works'
-// inputs; API, where the same origin serves the native API, for its Works'
+// inputs; API, that same origin, where the entry serves its API, for its Works'
 // direct calls, or empty for none; and Telemetry, the platform's HTTPS OTLP
 // endpoint, for its Harness's telemetry.
 type ManagedAddresses struct {
@@ -65,20 +65,20 @@ func NewManagedComputers(client *http.Client, relayAddress string, addresses Man
 		return nil, errors.New("agent: HTTP client, Computer lookup, HTTP(S) relay address and control token are required for Managed Computers")
 	}
 	gateway, err := url.Parse(addresses.Gateway)
-	// The machine reaches it over the internet with the Work credential.
+	// The machine reaches it over the internet with the Work's Identity Token.
 	if err != nil || gateway.Scheme != "https" || gateway.Host == "" || gateway.User != nil || gateway.RawQuery != "" || gateway.Fragment != "" {
 		return nil, errors.New("agent: the platform Connector's public HTTPS address is required for Managed Computers")
 	}
-	// Talgent Computer sends the Work's identity only to that origin, for its
-	// inputs and its direct calls alike.
+	// Talgent Computer sends the Work's Identity Token only to that origin,
+	// and takes the Work's inputs only from it.
 	content, ok := onOrigin(gateway, addresses.Content)
 	if !ok {
 		return nil, errors.New("agent: the public content address, on the platform Connector's origin, is required for Managed Computers")
 	}
 	api := ""
 	if addresses.API != "" {
-		if api, ok = onOrigin(gateway, addresses.API); !ok {
-			return nil, errors.New("agent: the native API's public address must lie on the platform Connector's origin")
+		if api, ok = sameOrigin(gateway, addresses.API); !ok {
+			return nil, errors.New("agent: the entry's public API address must be the platform Connector's origin")
 		}
 	}
 	telemetry, err := url.Parse(addresses.Telemetry)
@@ -90,6 +90,17 @@ func NewManagedComputers(client *http.Client, relayAddress string, addresses Man
 	// Redirects would carry the control or execd token to another endpoint.
 	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &ManagedComputers{http: &h, relay: relay, gateway: strings.TrimRight(gateway.String(), "/"), content: content, api: api, telemetry: strings.TrimRight(telemetry.String(), "/"), token: controlToken, computers: computers, fileIdle: workFileIdle}, nil
+}
+
+// sameOrigin is address as a bare origin when it is origin's scheme and host
+// with no path, credentials, query or fragment: the entry, under which a
+// Work names each call's own path, such as /api/<procedure>.
+func sameOrigin(origin *url.URL, address string) (string, bool) {
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Scheme != origin.Scheme || parsed.Host != origin.Host || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || strings.Trim(parsed.Path, "/") != "" {
+		return "", false
+	}
+	return parsed.Scheme + "://" + parsed.Host, true
 }
 
 // onOrigin is address without a trailing slash when it names a path on
@@ -108,16 +119,12 @@ type managedSpecification struct {
 	ComputerID string `json:"managedComputerId"`
 	// AccessToken is the execd token every call of the Work presents.
 	AccessToken string `json:"accessToken"`
-	// WorkCredential is issued as on a Cloud and verified by
-	// ExecutionQueryRepository. It reaches only the machine's local proxy, in
-	// the Work's credentials, never Environment.
-	WorkCredential string `json:"workCredential"`
 	// ModelEndpoint is the Model Template's endpoint the start was realized
 	// with, where the local proxy sends the Work's model requests; empty on
 	// the machine's own Claude login. A Work with one opens its environment
 	// with model_proxy.
 	ModelEndpoint string `json:"modelEndpoint,omitempty"`
-	// APIAddress is the native API's public address the start was realized
+	// APIAddress is the entry's public API address the start was realized
 	// with; empty where the platform serves Managed Works none. A Work with
 	// one opens its environment with platform_api and is delivered it as
 	// its api credential, so both always agree.
@@ -156,11 +163,11 @@ func decodeManagedSpecification(record executionRecord) (managedSpecification, e
 // endpoint: Talgent Computer's local proxy sets ANTHROPIC_BASE_URL to itself,
 // and the run's proxy token in place of the key, for each process, and sends
 // the requests on to the endpoint recorded here.
-func managedSpecificationFor(request domain.LaunchSpecification, models command.PlatformCatalogPort, token, credential string) (managedSpecification, error) {
-	if strings.TrimSpace(request.ComputerID) == "" || strings.TrimSpace(token) == "" || strings.TrimSpace(credential) == "" {
+func managedSpecificationFor(request domain.LaunchSpecification, models command.PlatformCatalogPort, token string) (managedSpecification, error) {
+	if strings.TrimSpace(request.ComputerID) == "" || strings.TrimSpace(token) == "" {
 		return managedSpecification{}, domain.ErrExecutionRequest
 	}
-	spec := managedSpecification{ComputerID: request.ComputerID, AccessToken: token, WorkCredential: credential, Environment: map[string]string{
+	spec := managedSpecification{ComputerID: request.ComputerID, AccessToken: token, Environment: map[string]string{
 		"TALGENT_WORK_ID": request.WorkID,
 		// The bundled Claude Code follows the platform's release.
 		"DISABLE_AUTOUPDATER": "1",

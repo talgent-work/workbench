@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { output, Pipe } from './support/execd-client.ts'
-import { computerTarget } from './support/targets.ts'
+import { computerTarget, SETUP_HOOK } from './support/targets.ts'
 import { Upstream } from './support/upstream.ts'
+
+const IDENTITY_TOKEN = 'agent-identity-token'
 
 // The executable driven through its Gateway protocol, the black-box seam:
 // Talgent Computer runs as its own process behind a stand-in Gateway, the
@@ -14,7 +16,6 @@ import { Upstream } from './support/upstream.ts'
 // proxy. TALGENT_COMPUTER_MAIN runs it against the build.
 
 const KEY = 'sk-executable-model-key'
-const WORK_CREDENTIAL = 'executable-work-credential'
 const REPORT = '# Published from a Managed Work\n'
 
 let target: Awaited<ReturnType<typeof computerTarget>>
@@ -62,29 +63,30 @@ describe('the executable behind its Gateway', () => {
     scripts = await mkdtemp(join(tmpdir(), 'proxy-client-'))
     await writeFile(join(scripts, 'client.mjs'), CLIENT)
     target = await computerTarget({ machineEnv: { ANTHROPIC_API_KEY: 'machine-key' }, modelProxy: true })
-  })
+  }, SETUP_HOOK)
   after(async () => {
-    await target.close()
-    await upstream.close()
-    await rm(scripts, { recursive: true, force: true })
-  })
+    await target?.close()
+    await upstream?.close()
+    if (scripts !== undefined) await rm(scripts, { recursive: true, force: true })
+  }, SETUP_HOOK)
 
   test('a Work process reaches the model with the injected key, also after a restart, and never holds the key', async () => {
     const { client } = target
     await writeFile(join(target.gateway.workRoot, 'report.md'), REPORT)
-    // The MCP endpoint answers with a Storage content link the model fetches as it is.
+    // The MCP endpoint answers with a Storage Access Link the model fetches
+    // as it is: the link carries its own authority.
     upstream.answer = (url, response) => {
       if (url === '/computer/v1/mcp') {
-        response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ link: `${upstream.origin}/computer/v1/storage/content?token=signed` }))
+        response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ link: `${upstream.origin}/api/v1/storage/content?grant=signed` }))
         return true
       }
-      if (!url.startsWith('/computer/v1/storage/content')) return false
+      if (!url.startsWith('/api/v1/storage/content')) return false
       response.writeHead(200, { 'Content-Type': 'text/plain' }).end('stored bytes')
       return true
     }
     const credentials = {
       model: { base_url: `${upstream.origin}/anthropic`, key: KEY },
-      gateway: { url: `${upstream.origin}/computer/v1/mcp`, work_id: 'work-1', work_credential: WORK_CREDENTIAL },
+      gateway: { url: `${upstream.origin}/computer/v1/mcp`, identity_token: IDENTITY_TOKEN },
     }
     assert.equal((await client.call('PUT', '/credentials', credentials, '')).status, 204)
 
@@ -96,7 +98,7 @@ describe('the executable behind its Gateway', () => {
     assert.equal(env.ANTHROPIC_API_KEY, undefined)
     assert.match(env.ANTHROPIC_BASE_URL, /^http:\/\/127\.0\.0\.1:\d+\/w\/work-1\/model$/)
     assert.equal(env.ANTHROPIC_AUTH_TOKEN, env.TALGENT_PROXY_TOKEN)
-    for (const secret of [KEY, WORK_CREDENTIAL]) assert.ok(!JSON.stringify(env).includes(secret))
+    for (const secret of [KEY, IDENTITY_TOKEN]) assert.ok(!JSON.stringify(env).includes(secret))
 
     // The process keeps its proxy URL and token across a restart.
     first.detach()
@@ -105,16 +107,16 @@ describe('the executable behind its Gateway', () => {
     second.stdin('go\n')
     const rest = await second.until((frame) => frame.type === 'exit')
     assert.match(output(rest, 'stdout'), /STATUS 200 200 200\nCONTENT stored bytes\n/)
-    const content = upstream.seen.find((request) => request.url.startsWith('/computer/v1/storage/content'))
-    assert.equal(content?.url, '/computer/v1/storage/content?token=signed')
-    assert.equal(content?.headers['x-talgent-work-credential'], WORK_CREDENTIAL)
+    const content = upstream.seen.find((request) => request.url.startsWith('/api/v1/storage/content'))
+    assert.equal(content?.url, '/api/v1/storage/content?grant=signed')
+    assert.equal(content?.headers.authorization, undefined, 'an Access Link takes no identity')
     assert.deepEqual(rest.at(-1), { type: 'exit', exit_code: 0 })
 
     const model = upstream.seen.find((request) => request.url === '/anthropic/v1/messages')
     assert.equal(model?.headers.authorization, `Bearer ${KEY}`)
     const mcp = upstream.seen.find((request) => request.url === '/computer/v1/mcp')
-    assert.equal(mcp?.headers['x-talgent-work-credential'], WORK_CREDENTIAL)
-    assert.equal(mcp?.headers.authorization, undefined)
+    assert.equal(mcp?.headers['x-talgent-work-credential'], undefined)
+    assert.equal(mcp?.headers.authorization, `Bearer ${IDENTITY_TOKEN}`)
     const published = JSON.parse(mcp?.body ?? '{}') as { params: { arguments: Record<string, string> } }
     assert.equal(published.params.arguments.source_content, Buffer.from(REPORT).toString('base64'), 'the publication carries the file bytes')
 
@@ -122,7 +124,7 @@ describe('the executable behind its Gateway', () => {
     for (const file of await files(target.dataDir)) {
       if (file.endsWith(join('credentials', 'work-1.json'))) continue
       const text = await readFile(file, 'utf8').catch(() => '')
-      assert.ok(!text.includes(KEY) && !text.includes(WORK_CREDENTIAL), `${file} holds a secret`)
+      assert.ok(!text.includes(KEY) && !text.includes(IDENTITY_TOKEN), `${file} holds a secret`)
     }
     assert.equal((await client.call('DELETE', `/pty/${id}`)).status, 200)
   })

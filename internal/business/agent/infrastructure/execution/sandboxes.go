@@ -26,12 +26,6 @@ const sandboxSpecLabel = "talgent.io/spec"
 // a sandbox belongs to.
 const sandboxOwnershipLabel = "talgent.io/execution"
 
-// workCredentialEnv names, in the recorded sandbox specification, the native
-// process credential issued to one sandbox. It authorizes only while that
-// sandbox is its Work's live sandbox. It is kept out of the sandbox itself:
-// the Credential Proxy injects it into the requests to the platform.
-const workCredentialEnv = "TALGENT_WORK_CREDENTIAL"
-
 // SandboxOwner identifies the execution of a Work whose sandboxes carry its
 // ownership. It is an infrastructure identity for provider correlation only;
 // a Work has at most one live execution.
@@ -90,7 +84,7 @@ func (s *Sandboxes) submit(ctx context.Context, owner SandboxOwner, spec sdk.Cre
 	}
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	result, err := s.client.CreateSandbox(ctx, withoutWorkCredential(spec))
+	result, err := s.client.CreateSandbox(ctx, spec)
 	if err != nil && ctx.Err() == nil && isCreationRefused(err) {
 		return "", errors.Join(errCreationRefused, sandboxError(ctx, "create", err))
 	}
@@ -125,15 +119,6 @@ func (s *Sandboxes) podSandbox(ctx context.Context, owner SandboxOwner, id strin
 		return ending, nil
 	}
 	return domain.ObservedEnvironment{ID: id, Running: info.Status.State == sdk.StateRunning, LeaseExpiresAt: leaseExpiry(info)}, nil
-}
-
-// withoutWorkCredential is the specification as the sandbox receives it: the
-// Work credential stays with the platform and reaches it only
-// through the Credential Proxy.
-func withoutWorkCredential(spec sdk.CreateSandboxRequest) sdk.CreateSandboxRequest {
-	spec.Env = maps.Clone(spec.Env)
-	delete(spec.Env, workCredentialEnv)
-	return spec
 }
 
 // owned lists the sandboxes carrying the execution's exact ownership, each
@@ -318,14 +303,14 @@ func (s *Sandboxes) deleteLocked(ctx context.Context, owner SandboxOwner, id str
 	return false, clearErr
 }
 
-func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token, credential string) (sdk.CreateSandboxRequest, error) {
+func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token string) (sdk.CreateSandboxRequest, error) {
 	if err := validateStartRequest(request); err != nil {
 		return sdk.CreateSandboxRequest{}, err
 	}
 	if err := owner.validate(); err != nil || owner.WorkID != request.WorkID {
 		return sdk.CreateSandboxRequest{}, domain.ErrExecutionRequest
 	}
-	if strings.TrimSpace(token) == "" || strings.TrimSpace(credential) == "" {
+	if strings.TrimSpace(token) == "" {
 		return sdk.CreateSandboxRequest{}, domain.ErrExecutionRequest
 	}
 	model, provided := s.config.Models.ProvidedModel(request.WorkModel.ConfigurationID)
@@ -369,7 +354,6 @@ func (s *Sandboxes) specification(ctx context.Context, request domain.LaunchSpec
 	// The Work root, as a Managed Computer names it too, so the runtime
 	// plugin and preparation read the root from one variable everywhere.
 	env["TALGENT_WORK_ROOT"] = "/workspace"
-	env[workCredentialEnv] = credential
 	volumes, err := sandboxVolumes(request, mounts)
 	if err != nil {
 		return sdk.CreateSandboxRequest{}, err

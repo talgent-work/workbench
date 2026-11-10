@@ -23,6 +23,21 @@ CREATE TABLE IF NOT EXISTS `account` (
   FULLTEXT KEY `idx_username_search_ngram` (`username_search`) WITH PARSER ngram COMMENT 'User Directory containment search; bounds the candidates a LIKE on username then confirms'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Account aggregate: one person on the platform';
 
+CREATE TABLE IF NOT EXISTS `agent_account` (
+  `work_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'The Work whose Agent this is; the subject of every agent Identity Token for it',
+  `project_id` varchar(255) NOT NULL DEFAULT '' COMMENT 'The Work''s Project; empty for a Work without one',
+  `agent_id` varchar(255) NOT NULL DEFAULT '' COMMENT 'The Work''s AgentDefinition',
+  `purpose` varchar(255) NOT NULL DEFAULT '' COMMENT 'The purpose of the Work''s AgentDefinition',
+  `work_subject_kind` varchar(255) NOT NULL DEFAULT '' COMMENT 'The kind of the Work''s Subject; empty for a Work without one',
+  `work_subject_id` varchar(255) NOT NULL DEFAULT '' COMMENT 'The identity of the Work''s Subject',
+  `represented_user_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Account id of the person the Agent represents; empty for an Agent representing no one',
+  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Stored row version; the facts never change',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'First Identity Token request in Unix milliseconds',
+  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last update time in Unix milliseconds',
+  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; 0 means active',
+  PRIMARY KEY (`work_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent Account aggregate: the identity of one Work''s Agent, holding no secret';
+
 CREATE TABLE IF NOT EXISTS `agent_definition` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'AgentDefinition UUIDv7 identity',
   `purpose` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Internal definition purpose within its usage scope',

@@ -35,7 +35,7 @@ type Config struct {
 	// public origin, from which a Managed Computer downloads its Works'
 	// inputs; required with RelayAddress.
 	ContentAddress string `json:"content-address" yaml:"content-address" toml:"content-address"`
-	// APIAddress is where a Managed Work calls the native API directly, on
+	// APIAddress is where a Managed Work calls the entry's API directly, on
 	// the same public origin, through its local proxy; empty gives Managed
 	// Works no direct API, as where Agents reach the platform only through
 	// the Gateway.

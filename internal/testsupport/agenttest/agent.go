@@ -146,7 +146,7 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 		},
 	}
 	mux := http.NewServeMux()
-	public := connect.NewServer(authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	public := connect.NewServer(authn.NewPrincipalInterceptor())
 	agentpublicv1connect.RegisterAgentWorkServiceHandler(public, transport.NewWorkHandler(app))
 	connecthttp.Mount(mux, public)
 	private := connect.NewServer()

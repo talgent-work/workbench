@@ -128,8 +128,7 @@ environment_value() {
 # base's components/ that the deployment switches of the environment FILE...
 # turn on, failing on a value a switch does not take.
 k3s_switch_components() {
-  access_switch_component SANDBOX_NATIVE_API_ACCESS sandbox-without-native-api "$@" || return 1
-  access_switch_component COMPUTER_NATIVE_API_ACCESS computer-without-native-api "$@" || return 1
+  access_switch_component AGENT_CORE_API_ACCESS core-api-without-agents "$@" || return 1
   value_switch_component ADDITIONAL_ENTRY_HOST additional-entry-host "$@" || return 1
   value_switch_component CONTROLPLANE_PROFILE controlplane-profile "$@" || return 1
 }

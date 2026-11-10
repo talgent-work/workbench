@@ -5,9 +5,14 @@ import "errors"
 // ErrWorkNotActing refuses an action of a Work that does not act now.
 var ErrWorkNotActing = errors.New("agent: the Work is not acting")
 
-// Acts reports whether the Work may act for its person: it is Working and does
-// not await its person's required response. A reply delivered is not a
-// response resolved, so a Work still awaiting one does not act.
-func (s *AgentWork) Acts(awaitsRequiredResponse bool) bool {
-	return s.State == WorkWorking && !awaitsRequiredResponse
+// AdmitAgentAction admits an action of the Work's own Agent only while the
+// Work is Working and awaits no required response from its person (Acting
+// Work). A reply delivered is not a response resolved, so a Work still
+// awaiting one does not act; waiting briefly for that resolution is its
+// caller's (Reply resolution wait).
+func (s *AgentWork) AdmitAgentAction(awaitsRequiredResponse bool) error {
+	if s.State != WorkWorking || awaitsRequiredResponse {
+		return ErrWorkNotActing
+	}
+	return nil
 }

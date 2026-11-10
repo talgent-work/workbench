@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { output, Pipe, type Frame } from './support/execd-client.ts'
 import { posixOnly } from './support/platform.ts'
-import { computerTarget, eventually, execdTarget, exists, type Target } from './support/targets.ts'
+import { computerTarget, eventually, execdTarget, exists, SETUP_HOOK, type Target } from './support/targets.ts'
 
 // execd's pipe semantics, run against OpenSandbox execd itself when
 // EXECD_BINARY names it, and always against Talgent Computer relayed through
@@ -21,11 +21,12 @@ for (const { name, open } of targets) {
   describe(`execd pipe: ${name}`, () => {
     let target: Target
     const created: string[] = []
-    before(async () => { target = await open() })
+    before(async () => { target = await open() }, SETUP_HOOK)
     after(async () => {
+      if (target === undefined) return
       for (const id of created) await target.client.call('DELETE', `/pty/${id}`)
       await target.close()
-    })
+    }, SETUP_HOOK)
     const create = async (command: string) => {
       const id = await target.client.create(target.cwd, command)
       created.push(id)

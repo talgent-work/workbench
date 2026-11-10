@@ -5,13 +5,15 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
 import { CredentialStore } from '../src/proxy/credentials.ts'
 
+const IDENTITY_TOKEN = 'agent-identity-token'
+
 let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'credentials-')) })
 afterEach(() => rm(dir, { recursive: true, force: true }))
 
 const body = (key: string) => ({
   model: { base_url: 'https://vendor.example/anthropic', key },
-  gateway: { url: 'https://talgent.example/computer/v1/mcp', work_id: 'w-1', work_credential: 'cred' },
+  gateway: { url: 'https://talgent.example/computer/v1/mcp', identity_token: IDENTITY_TOKEN },
 })
 
 test('concurrent puts and deletes of a Work apply in call order; file and cache agree', async () => {
@@ -39,4 +41,19 @@ test('a put that fails validation changes nothing', async () => {
   await store.put('w-1', body('kept'))
   await assert.rejects(store.put('w-1', { gateway: {} }))
   assert.equal((await store.get('w-1'))?.model?.key, 'kept')
+})
+
+test('a redelivery that keeps the model takes the new Identity Token and keeps the held key', async () => {
+  const store = new CredentialStore({ dir })
+  await store.put('w-1', body('held-key'))
+  const { model: _model, ...withoutModel } = body('unused')
+  void _model
+  const renewed = { ...withoutModel, gateway: { ...withoutModel.gateway, identity_token: 'renewed-token' }, keep_model: true }
+  await store.put('w-1', renewed)
+  for (const reader of [store, new CredentialStore({ dir })]) {
+    const held = await reader.get('w-1')
+    assert.equal(held?.model?.key, 'held-key')
+    assert.equal(held?.gateway.identityToken, 'renewed-token')
+  }
+  await assert.rejects(store.put('w-1', { ...body('x'), keep_model: true }), /keep_model excludes model/)
 })

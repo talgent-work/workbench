@@ -15,10 +15,11 @@ func validateOption(opt Option) error {
 		{name: "agent-preparation-taskqueue", validate: opt.AgentPreparationTaskQueue.Validate},
 		{name: "storage-preview-taskqueue", validate: opt.StoragePreviewTaskQueue.Validate},
 		{name: "storage-maintenance-taskqueue", validate: opt.StorageMaintenanceTaskQueue.Validate},
+		{name: "account-maintenance-taskqueue", validate: opt.AccountMaintenanceTaskQueue.Validate},
 		{name: "marketplace", validate: opt.Marketplace.Validate},
 		{name: "agent-marketplace", validate: opt.AgentMarketplace.Validate},
 		{name: "account", validate: opt.Account.Validate},
-		{name: "agent-user-directory", validate: opt.AgentUserDirectory.Validate},
+		{name: "agent-account", validate: opt.AgentAccount.Validate},
 		{name: "trace-clickhouse", validate: opt.TraceClickHouse.Validate},
 		{name: "trace-access", validate: opt.TraceAccess.Validate},
 	} {

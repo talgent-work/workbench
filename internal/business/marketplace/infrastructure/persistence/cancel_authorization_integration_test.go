@@ -91,7 +91,7 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app))
-	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	}, authn.NewPrincipalInterceptor())
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	server := httptest.NewServer(mux)
@@ -128,6 +128,7 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	reconnectRequest := &marketplacepublicv1.CompleteProviderAuthorizationRequest{Provider: "github", Code: "test-code", State: "test-state"}
 	ctx, info := connect.NewClientContext(ctx)
 	info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+	info.RequestHeader().Set(authn.HeaderPrincipal, "user")
 	info.RequestHeader().Set(authn.HeaderSubject, owner)
 	_, err = client.CompleteProviderAuthorization(ctx, reconnectRequest)
 	require.Equal(t, connect.CodeAborted, connect.CodeOf(err), "reconnection must wait for the in-flight credential operation")
@@ -211,6 +212,7 @@ func personal(ctx context.Context, actor string) context.Context {
 	ctx, info := connect.NewClientContext(ctx)
 	if actor != "" {
 		info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+		info.RequestHeader().Set(authn.HeaderPrincipal, "user")
 		info.RequestHeader().Set(authn.HeaderSubject, actor)
 	}
 	return ctx

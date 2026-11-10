@@ -117,7 +117,7 @@ var ConnectionsModule = fx.Module(
 	TaskqueueModule,
 	fx.Invoke(func(params connectionHandlerParams) {
 		params.Mux.Handle(marketplacehttp.GitHubWebhookPath, params.Webhook)
-		server := connectserver.New(params.Logger, gatewayActor())
+		server := connectserver.New(params.Logger)
 		marketplaceprivatev1connect.RegisterCredentialServiceHandler(server, marketplaceconnect.NewCredentialHandler(params.App, params.Config.CredentialToken))
 		connectserver.Mount(params.Mux, server)
 	}),

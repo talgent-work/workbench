@@ -189,7 +189,8 @@ func (c *Connector) ProvideConnection() (Connector, error) {
 
 // validateWorkIdentityConfiguration admits the required platform Connector:
 // an HTTP MCP server with no headers or environment. The sandbox's
-// Credential Proxy supplies the Work credential; the configuration holds none.
+// Credential Proxy supplies the Work's Identity Token; the configuration
+// holds none.
 func validateWorkIdentityConfiguration(required bool, binding *ProviderAccessBinding, configuration MCPConfiguration) error {
 	if !required || binding != nil || configuration.Type != "http" || len(configuration.Environment) != 0 || len(configuration.Headers) != 0 {
 		return ErrInvalidConnector

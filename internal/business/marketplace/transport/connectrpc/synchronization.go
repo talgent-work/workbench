@@ -19,7 +19,7 @@ func NewSynchronizationHandler(app *application.CatalogSynchronization, token st
 }
 func (h *SynchronizationHandler) RequestSynchronization(ctx context.Context, req *marketplaceprivatev1.RequestSynchronizationRequest) (*marketplaceprivatev1.RequestSynchronizationResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
+	if err := h.authentication.authenticate(info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	run, err := h.app.Request(ctx, req.GetForce())
@@ -30,7 +30,7 @@ func (h *SynchronizationHandler) RequestSynchronization(ctx context.Context, req
 }
 func (h *SynchronizationHandler) GetSynchronization(ctx context.Context, req *marketplaceprivatev1.GetSynchronizationRequest) (*marketplaceprivatev1.GetSynchronizationResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	if err := h.authentication.authenticate(ctx, info.RequestHeader()); err != nil {
+	if err := h.authentication.authenticate(info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	run, err := h.app.Latest(ctx)

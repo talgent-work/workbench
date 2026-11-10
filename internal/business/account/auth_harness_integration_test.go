@@ -35,6 +35,8 @@ const (
 	audience = "talgent"
 )
 
+const agentTokenLifetime = 7 * 24 * time.Hour
+
 var lifetimes = domain.SessionLifetimes{Access: 15 * time.Minute, Sliding: 30 * 24 * time.Hour, Absolute: 90 * 24 * time.Hour}
 
 type clock struct {
@@ -124,7 +126,7 @@ func newHarness(t *testing.T) *harness {
 	keys, err := infrastructure.NewSigningKeys(engine, infrastructure.SigningKeyConfig{
 		Issuer: issuer, Audience: audience, MasterKey: make([]byte, 32),
 		Overlap: 10 * time.Minute, RotationInterval: 30 * 24 * time.Hour,
-		AccessLifetime: lifetimes.Access, VerificationRetention: lifetimes.Absolute, Now: c.Now,
+		LongestTokenLifetime: agentTokenLifetime, VerificationRetention: lifetimes.Absolute, Now: c.Now,
 	})
 	require.NoError(t, err)
 	github, err := infrastructure.NewGitHubIdentity(infrastructure.GitHubOAuthConfig{
@@ -135,8 +137,9 @@ func newHarness(t *testing.T) *harness {
 	sessions := infrastructure.NewLoginSessionRepository(engine)
 	app := application.NewApplication(application.Dependencies{
 		Accounts: infrastructure.NewAccountRepository(engine), Sessions: sessions, GitHub: github,
-		Tokens: keys, Retention: sessions, Directory: infrastructure.NewUserDirectoryQueries(engine),
+		Tokens: keys, Directory: infrastructure.NewUserDirectoryQueries(engine),
 		Lifetimes: lifetimes, Now: c.Now,
+		AgentAccounts: infrastructure.NewAgentAccountRepository(engine), AgentTokenLifetime: agentTokenLifetime,
 	})
 	require.NoError(t, app.RotateSigningKeys(context.Background()))
 	handler, err := accounthttp.NewHandler(app, accounthttp.Config{

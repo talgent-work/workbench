@@ -5,12 +5,10 @@ import (
 	"net/http"
 	"testing"
 
-	"connectrpc.com/connect/v2"
 	"github.com/go-jimu/components/ddd/message"
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/marketplace"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"go.uber.org/fx"
 	"xorm.io/xorm"
 )
@@ -22,9 +20,6 @@ func TestModuleWiring(t *testing.T) {
 		fx.Provide(fx.Annotate(func() componenttaskqueue.Enqueuer { return nil }, fx.ResultTags(`name:"marketplace"`))),
 		fx.Provide(fx.Annotate(func() *componenttaskqueue.SchemaRegistry { return nil }, fx.ResultTags(`name:"marketplace"`))),
 		fx.Provide(func() message.Publisher { return nil }),
-		fx.Provide(func() connect.ServerInterceptor {
-			return authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true})
-		}),
 	)
 	require.NoError(t, err)
 }

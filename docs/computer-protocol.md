@@ -189,8 +189,8 @@ request, WebSocket included, to the replica named by the connection record
 ```
 
 `model_proxy` is `true` for a Work whose model is a Model Configuration and absent for one on the
-machine's own Claude login. `platform_api` is `true` when the platform serves its native API to Managed
-Works (controlplane's `agent-computer.api-address`), and absent otherwise. `telemetry` is where the Work's Claude Code sends its telemetry (Work
+machine's own Claude login. `platform_api` is `true` when Managed Works call the core's public APIs at the
+entry (controlplane's `agent-computer.api-address`), and absent otherwise. `telemetry` is where the Work's Claude Code sends its telemetry (Work
 telemetry); a body without it names none.
 
 Talgent Computer creates the Work's directory once and keeps it for the Work's life, records the token
@@ -256,21 +256,26 @@ round undecided, reads the round and decides it; a decided round costs no furthe
 Computer from before reconciliation answers `404` and is below the Minimum Version: nothing proves its
 leftovers ended, so such a step fails.
 
-### Work credentials and the local proxy
+### A Work's credentials and the local proxy
 
 `PUT /relay/<computer-id>/works/<work-id>/credentials`, `X-Talgent-Control-Token`, body:
 
 ```json
 {"model": {"base_url": "https://vendor.example/anthropic", "key": "<Model Configuration key>"},
- "gateway": {"url": "https://<origin>/computer/v1/mcp", "work_id": "<work id>",
-             "work_credential": "<Work credential>", "space_token": "<Space Token, optional>"},
- "api": {"url": "https://<origin>/computer/v1/api"}}
+ "gateway": {"url": "https://<origin>/computer/v1/mcp",
+             "identity_token": "<the Work's agent Identity Token>",
+             "space_token": "<Space Token, optional>"},
+ "api": {"url": "https://<origin>"}}
 ```
 
 `gateway.url` is the platform Connector's public MCP address, controlplane's
-`agent-computer.mcp-address`. `api.url` is the native API's public address,
-`agent-computer.api-address`, on the origin of `gateway.url`; it is absent when the platform does not
-serve the native API to Managed Works. `model` is absent for a Work on the machine's own Claude login. It
+`agent-computer.mcp-address`. `gateway.identity_token` is the Work's agent Identity Token, which the
+platform delivers again a day before it expires; it is the Work's only identity, and the entry in
+front of both the Connector and the core verifies it. A redelivery for a Work whose Model Configuration
+the platform no longer provides sends `"keep_model": true` without `model`: Talgent Computer keeps
+the model it holds and takes the rest. `api.url` is the entry's public origin,
+`agent-computer.api-address`, where the core's public APIs answer under `/api/`; it is absent when
+Managed Works do not call them. `model` is absent for a Work on the machine's own Claude login. It
 answers `204`; repeating it replaces the Work's credentials (a rotated key), and `DELETE` on the
 same path, with the control token, forgets them. Like the environment `PUT`, the service checks
 the control token and relays it with an empty
@@ -291,22 +296,13 @@ running processes keep reaching it. Each run of a process gets a fresh token, an
 | Proxy path | Forwarded to |
 |---|---|
 | `/w/<work-id>/model/<rest>` | `model.base_url/<rest>`, query kept. `POST` of `<base path>/v1/messages` and `/v1/messages/count_tokens` carry `Authorization: Bearer <key>`, as a Cloud's Credential Proxy injects it |
-| `/w/<work-id>/mcp[/<rest>]` | `gateway.url[/<rest>]` with `X-Talgent-Work-Id`, `X-Talgent-Work-Credential` and, when set, `X-Talgent-Space-Token` |
-| `/w/<work-id>/api/<run token>/<procedure>` | `api.url/<procedure>`, query kept, with the same Work identity headers. The run token is in the path, so a plain HTTP client such as `curl` needs no credential header; another token answers `401`, a Work without `api` answers `404` |
-| `/w/<work-id>/content/<handle>` | `<origin of gateway.url>/computer/v1/storage/content?<query>` of the link the handle stands for, `GET` and `HEAD` only, with the same Work identity headers |
+| `/w/<work-id>/mcp[/<rest>]` | `gateway.url[/<rest>]` with `Authorization: Bearer <identity_token>` and, when set, `X-Talgent-Space-Token` |
+| `/w/<work-id>/api/<run token>/<path>` | `api.url/<path>`, such as `/api/<procedure>`, query kept, with the same Identity Token and, when set, `X-Talgent-Space-Token`. The run token is in the path, so a plain HTTP client such as `curl` needs no credential header; another token answers `401`, a Work without `api` answers `404` |
 
-The platform Connector answers a Managed Work's file link tools with Storage content links,
-`<origin>/computer/v1/storage/content?<query>`, whose query carries a short-lived capability; the
-content endpoint also needs the Work's identity, which a model fetching the link cannot add. In
-`/mcp` responses, JSON bodies up to 1 MiB and server-sent event streams line by line, the proxy
-rewrites every `<origin of gateway.url>/computer/v1/storage/content?<query>` to a local link
-`http://127.0.0.1:<port>/w/<work-id>/content/<handle>`. The query ends at the first character that is
-neither URL-unreserved nor `%`, `=`, `&`, `+`, with a JSON-escaped `\u0026` read as `&` and trailing
-`.` left outside the link. Each handle is random, unguessable, and bound to that Work and query; the
-proxy keeps at most 10,000 handles in memory, each for 20 minutes (longer than the link's own 15),
-forgetting the oldest first and all of them on restart. The content route takes no run token: it
-serves only a live handle issued for the Work in its path, ignores any query sent with it, and answers
-`404` otherwise.
+The platform Connector answers a Managed Work's file link tools with Storage Access Links, whose
+query carries a short-lived capability and which need no identity: a model fetches them as they are.
+Every `x-talgent-*` header a process sends is removed before forwarding; the proxy adds only those
+above.
 
 Every other proxy request presents the token of a run of that Work as `Authorization: Bearer <token>` (or
 `x-api-key: <token>`), which the proxy removes with any other credential header before forwarding;
@@ -341,7 +337,7 @@ not through the local proxy: `POST <endpoint>/v1/traces` and `POST <endpoint>/v1
 protobuf (`Content-Type: application/x-protobuf`, optionally `Content-Encoding: gzip`), at most 4 MiB
 as sent and 16 MiB decoded, rate limited per `X-Talgent-Work-Id`. The token is issued with each run of
 the Work and revoked when that run ends; it writes only that run's telemetry and grants nothing else.
-The Work credential and a Model Configuration key never travel this way.
+The Work's Identity Token and a Model Configuration key never travel this way.
 
 Agent answers `401` for a missing token or one that is not the Work's live run's, before reading the
 body; `415` for another content type or encoding; `413` and `400` for a body too large or not OTLP. It
@@ -357,13 +353,13 @@ refusal of the data as `400`, any other failure as `502`, and an unreachable Col
 
 ```json
 {"files": [{"name": "brief.pdf", "size": 1024, "updated_at": "2026-11-02T10:00:00Z",
-            "url": "https://<origin>/computer/v1/storage/content?..."}]}
+            "url": "https://<origin>/api/v1/storage/content?grant=..."}]}
 ```
 
 The manifest is the Work's whole input File Space as Agent lists it, replacing the previous one; the
 service checks the control token and relays it with an empty `token`, as for `/credentials`. It answers
 `202` and Talgent Computer brings `<work root>/inputs/` to the manifest: it downloads each file whose
-size or `updated_at` changed, with the Work's identity headers as the proxy's `/mcp` route sends them,
+size or `updated_at` changed, sending no identity since each Access Link carries its own authority,
 only from a `url` on the origin of the Work's `gateway.url`, and removes files no longer listed. Files
 are written atomically, with their modification time set to `updated_at`, and left read-only (`0444`,
 the directory `0555`). Processes run as the same OS user, so read-only is a mode only: a copy whose size
@@ -420,10 +416,11 @@ request to answer gets `202`. A call without a string `source_path` is forwarded
 `source_content`, and the platform Connector refuses it.
 
 On its `/api` route the proxy likewise completes a Connect JSON `POST` of
-`storage.private.v1.ArtifactService/CreateArtifact` or `ReplaceArtifact` whose body has a string
-`path` and no `content`: it reads `path` as above and forwards the body with `path` replaced by
-`content`, the file's bytes base64-encoded. A source failing the checks above is answered by the proxy
-as the native API refuses a Cloud Work's source, and never forwarded: `404`
+`/api/storage.public.v1.ArtifactService/CreateArtifact` or `ReplaceArtifact` whose body has a string
+`path` and no `content`: it reads `path` as above and forwards the body with `path` and the Work
+Directory (`work_directory` or `workDirectory`) replaced by `content`, the file's bytes
+base64-encoded. A source failing the checks above is answered by the proxy as the platform refuses
+a Cloud Work's source, and never forwarded: `404`
 `{"code":"not_found","message":"<reason>"}` when nothing is at `path`, otherwise `400`
 `{"code":"invalid_argument","message":"<reason>"}`. Any other body, a
 content-encoded one included, passes unchanged.

@@ -70,8 +70,8 @@ type environmentAuthority interface {
 	// launchLayout is where the Harness and its preparation run.
 	launchLayout() launchLayout
 	// specify fixes the environment's specification from the execution's
-	// LaunchSpecification, its execd access token and its Work credential.
-	specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token, credential string) (environmentSpecification, error)
+	// LaunchSpecification and its execd access token.
+	specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token string) (environmentSpecification, error)
 	// claim returns what is frozen with the specification from what
 	// Application supplied: the credential plan, or nil for none.
 	claim(record executionRecord, supply command.CreationSupply) ([]byte, error)

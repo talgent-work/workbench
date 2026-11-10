@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
@@ -68,4 +69,29 @@ func TestReadinessWithoutItsTimeIsRejected(t *testing.T) {
 	_, err := execution.ConfirmReady(domain.ReadinessReport{Prepared: true, Started: true}, time.Time{})
 	require.ErrorIs(t, err, domain.ErrInvalidExecution)
 	require.Equal(t, domain.ExecutionStarting, execution.State)
+}
+
+// Without its Identity Token a Work's credentials are never delivered, so no
+// Harness starts; at the Startup Deadline the start fails naming that step
+// (Work token issuance, Required Startup Steps).
+func TestUndeliveredCredentialsFailTheStartAtTheDeadline(t *testing.T) {
+	work := newSession(t)
+	execution := beginOf(t, work, domain.RealizationCloud)
+	seated := execution.Desk.SeatedAt
+	decide(t, execution, domain.EnvironmentObservation{}, seated)
+	require.True(t, commandtest.Submit(execution))
+	_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-1"})
+	require.NoError(t, err)
+	require.Equal(t, []domain.ExecutionStepKind{domain.StepDeliverCredentials}, kinds(decide(t, execution, runningEnvironment("env-1"), seated)))
+
+	late := decide(t, execution, runningEnvironment("env-1"), seated.Add(domain.StartupDeadline+time.Second))
+	require.NotContains(t, kinds(late), domain.StepPrepare, "no Harness starts without the credentials")
+	reason := "Startup Deadline reached before the Work's Identity Token and model credentials were delivered."
+	require.Equal(t, reason, execution.Outcome.StartFailure)
+	for _, report := range execution.Reports() {
+		_, err := work.ApplyExecutionReport(report)
+		require.NoError(t, err)
+	}
+	require.Equal(t, domain.WorkFailed, work.State)
+	require.Equal(t, reason, work.FailureReason)
 }

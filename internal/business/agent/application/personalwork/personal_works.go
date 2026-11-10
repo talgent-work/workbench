@@ -19,10 +19,10 @@ type PersonalWorks struct {
 	app       *application.Application
 	works     query.WorkQueryRepository
 	files     command.StoragePort
-	directory AccountPort
+	directory command.AccountPort
 }
 
-func New(app *application.Application, works query.WorkQueryRepository, files command.StoragePort, directory AccountPort) *PersonalWorks {
+func New(app *application.Application, works query.WorkQueryRepository, files command.StoragePort, directory command.AccountPort) *PersonalWorks {
 	return &PersonalWorks{app: app, works: works, files: files, directory: directory}
 }
 
@@ -163,7 +163,7 @@ const (
 )
 
 // SearchShareReaders finds people in the User Directory.
-func (p *PersonalWorks) SearchShareReaders(ctx context.Context, person Person, search string, limit int) ([]DirectoryUser, error) {
+func (p *PersonalWorks) SearchShareReaders(ctx context.Context, person Person, search string, limit int) ([]command.DirectoryUser, error) {
 	if person.self() == "" {
 		return nil, access.ErrAccessDenied
 	}
@@ -177,7 +177,7 @@ func (p *PersonalWorks) SearchShareReaders(ctx context.Context, person Person, s
 }
 
 // GetShareReaders shows people in the User Directory by identity.
-func (p *PersonalWorks) GetShareReaders(ctx context.Context, person Person, userIDs []string) ([]DirectoryUser, error) {
+func (p *PersonalWorks) GetShareReaders(ctx context.Context, person Person, userIDs []string) ([]command.DirectoryUser, error) {
 	if person.self() == "" {
 		return nil, access.ErrAccessDenied
 	}

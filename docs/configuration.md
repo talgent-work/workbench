@@ -57,7 +57,7 @@ this off.
 
 Account, Marketplace, Agent, Storage, Computer and Trace in one process. It listens on
 `http.addr` (`${CONTROLPLANE_HTTP_ADDR::8080}`) for the web API, sign-in and the services' private
-contracts, and on `native-api.addr` for Agents.
+contracts. Agents reach it only through the entry, under their Identity Tokens.
 
 ### Stores
 
@@ -83,7 +83,8 @@ Sign-in with GitHub and the session tokens the gateway validates.
 | `audience` | `${ACCOUNT_AUDIENCE:talgent}` | The tokens' `aud`; base fixed to `talgent`, as `web-auth` expects |
 | `cookie-domain` | `${ACCOUNT_COOKIE_DOMAIN:}` | Empty keeps cookies on the host; a parent domain lets one sign-in serve sibling entries |
 | `return-origins` | none | Base addresses of other entries a sign-in may return to, beside the one receiving GitHub's callback |
-| `access-token-lifetime` | `15m` | Lifetime of an access token |
+| `access-token-lifetime` | `15m` | Lifetime of a person's Identity Token |
+| `agent-token-lifetime` | `168h` | Lifetime of a Work's agent Identity Token, never refreshed; a retiring signing key stays published this long |
 | `session-sliding-lifetime` | `720h` | A session ends after this long unused |
 | `session-absolute-lifetime` | `2160h` | A session ends this long after sign-in; access ≤ sliding ≤ absolute |
 | `key-rotation-interval` | `720h` | How often a new signing key is made |
@@ -134,7 +135,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `native.binary` | `claude` | The Claude Code command in the sandbox image |
 | `image` | `${AGENT_NATIVE_IMAGE:}` | The sandbox image; base: `ghcr.io/talgent-work/sandbox:<tag>`, set when rendered |
 | `requests`, `limits` | `cpu: 250m`, `memory: 512Mi`; `cpu: "2"`, `memory: 2Gi` | The sandbox container's resources |
-| `environment.TALGENT_API_ADDRESS` | `${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}` | The platform API a sandbox calls, on the standard port: the only kind its Credential Proxy adds the Work credential to |
+| `environment.TALGENT_API_ADDRESS` | `${PLATFORM_API_ADDRESS:}` | The entry's public origin, where a sandbox's Agent calls the core's public APIs under its Identity Token, which its Credential Proxy adds; base: `WORKBENCH_ORIGIN`, empty with `AGENT_CORE_API_ACCESS=disabled` |
 | `environment.OTEL_EXPORTER_OTLP_ENDPOINT` | `${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}` | Where Claude Code sends its telemetry |
 | `dispatcher.address`, `dispatcher.token` | `${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}`, `${DISPATCHER_EXECUTION_CONTROL_TOKEN:}` | Dispatcher, which drives each run |
 | `lease.duration`, `lease.renewal-threshold` | `2h`, `1h` | How long a sandbox lives unless renewed, and how much of its lease remains when a running Work's sandbox is renewed; the threshold must stay below the duration and well above `agent-recovery.sweep-interval`. Before rolling back past the release that leases sandboxes, see [Operations](self-hosting.md#9-operations) |
@@ -162,8 +163,8 @@ How Agent reaches Computer and Managed Computers.
 | `address`, `token` | `${COMPUTER_ADDRESS:http://127.0.0.1:8080}`, `${COMPUTER_CONTROL_TOKEN:}` | | Computer's admission contract |
 | `relay-address` | `${COMPUTER_RELAY_ADDRESS:}` | `http://computer-gateway.talgent.svc.cluster.local:8085` | The Computer Gateway's relay; empty leaves Managed Computers unreachable. The keys below are required with it. |
 | `mcp-address` | `${COMPUTER_MCP_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/mcp` | HTTPS address of the platform Connector a Managed Work calls |
-| `content-address` | `${COMPUTER_CONTENT_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api/v1/storage/content` | Where a Managed Computer downloads its Works' inputs, Storage's Access Links; same origin as `mcp-address`. The base's is served by the `computer-api` rule, so with `COMPUTER_NATIVE_API_ACCESS=disabled` a profile names another |
-| `api-address` | `${COMPUTER_API_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api` | HTTPS address of the native API a Managed Work calls; same origin as `mcp-address`. Empty, Managed Works get no native API; a profile empties it with `COMPUTER_NATIVE_API_ACCESS=disabled` |
+| `content-address` | `${COMPUTER_CONTENT_ADDRESS:}` | `${WORKBENCH_ORIGIN}/api/v1/storage/content` | Where a Managed Computer downloads its Works' inputs, Storage's Access Links, which take no Identity Token; same origin as `mcp-address` |
+| `api-address` | `${PLATFORM_API_ADDRESS:}` | `WORKBENCH_ORIGIN` | The entry's public origin, where a Managed Work calls the core's public APIs through its local proxy, which adds its Identity Token. Empty, Managed Works get none, as with `AGENT_CORE_API_ACCESS=disabled` |
 | `workspace-file-address` | `${AGENT_WORKSPACE_FILE_ADDRESS:/api/v1/agent/workspace-files}` | | Where a browser reads a Managed Work's files |
 | `telemetry-address` | `${COMPUTER_TELEMETRY_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/otel` | HTTPS address a Managed Work's Claude Code sends telemetry to |
 | `telemetry-collector-address` | `${COMPUTER_TELEMETRY_COLLECTOR_ADDRESS:}` | `http://otel-collector:4318` | The Collector controlplane forwards that telemetry to |
@@ -175,17 +176,15 @@ How Agent reaches Computer and Managed Computers.
 | `agent-rpc.control-token`, `agent-rpc.feedback-token` | `${AGENT_CONTROL_TOKEN:}`, `${AGENT_FEEDBACK_TOKEN:}` | Admit the services that control Works and Dispatcher's reports |
 | `agent-storage.address`, `token` | `${STORAGE_ADDRESS:http://127.0.0.1:8080}`, `${STORAGE_AGENT_TOKEN:}` | Storage |
 | `agent-marketplace.address`, `credential-token` | `${MARKETPLACE_INTERNAL_ADDRESS:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Marketplace |
-| `agent-user-directory.address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's directory of people a Work is shared with |
+| `agent-account.address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's private API: the directory of people a Work is shared with, and each Work's Identity Token |
 | `agent-recovery.sweep-interval` | `60s` | How often obligations no event woke are checked; at most one minute |
 | `agent-recovery.inputs-refresh-interval` | `10m` | How often a Managed Work's inputs are synced again; inside `storage.link-ttl` |
 | `agent-credential-changes.consumer-group`, `agent-input-changes`, `agent-desk-assignments`, `agent-computer-presence` | `${AGENT_CREDENTIAL_CHANGES_GROUP:agent-credential-changes}`, `${AGENT_INPUT_CHANGES_GROUP:agent-input-changes}`, `${AGENT_DESK_ASSIGNMENTS_GROUP:agent-desk-assignments}`, `${AGENT_COMPUTER_PRESENCE_GROUP:agent-computer-presence}` | Kafka consumer groups; the same names when unset |
 | `agent-taskqueue` | queue `agent-recovery`, concurrency 16, retry `1s`–`60s` | Recovery tasks |
 | `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 8, retry `1s`–`60s` | Each execution's long step holds a worker while it runs |
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
+| `account-maintenance-taskqueue` | queue `account-maintenance`, concurrency 1 | Hourly signing key rotation and daily forgetting of replaced refresh secrets |
 | `storage-maintenance-taskqueue` | queue `storage-maintenance`, concurrency 2, retry `10s`–`5m` | Removal of reclaimed Directories' content, retried until removed; hourly lapse of Preview Copies |
-| `native-api.addr` | `${NATIVE_API_ADDR::8081}` | The API Agents call with their Work credential |
-| `native-api.gateway-token` | none | When set, only a platform Connector presenting it reaches the native API; empty, any caller with a current Work credential does. The base gives controlplane `GATEWAY_TOKEN` (Secret `native-execution-control`) for a profile to name |
-| `native-authentication.agent-address`, `agent-control-token` | `${AGENT_INTERNAL_ADDRESS:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent, which verifies each Work credential |
 
 ### marketplace
 
@@ -213,8 +212,6 @@ How Agent reaches Computer and Managed Computers.
 |---|---|---|
 | `trace-access.agent-address`, `agent-control-token` | `${WORK_AGENT_ADDR:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent's Work access, which admits readers of a Work's telemetry |
 | `trace-access.project-access-address` | `${TRACE_PROJECT_ACCESS_ADDRESS:}` | The Project access decision, served by a service built on the Workbench; empty in a Workbench deployment |
-| `trace-authn.enabled` | `${AUTHENTICATION_ENABLED:true}` | Require the gateway's identity on Trace queries; keep it on |
-| `trace-authn.mode` | `gateway-oidc` | The identity comes from the gateway's validated token |
 
 ## dispatcher
 

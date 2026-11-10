@@ -12,6 +12,8 @@ import { LocalProxy } from '../src/proxy/server.ts'
 import { send, Upstream } from './support/upstream.ts'
 import { posixModes } from './support/platform.ts'
 
+const IDENTITY_TOKEN = 'agent-identity-token'
+
 // Publication: the local proxy adds the
 // bytes of a publish_artifact or replace_artifact call's source_path, read
 // under the Work root, as source_content before the call reaches the
@@ -39,7 +41,7 @@ beforeEach(async () => {
     portFile: join(dir, 'state', 'proxy.json'),
     access: {
       tokenValid: async (_workId, token) => token === TOKEN,
-      credentials: async () => ({ gateway: { url: `${upstream.origin}/computer/v1/mcp`, workId: 'w-1', workCredential: 'cred' } }),
+      credentials: async () => ({ gateway: { url: `${upstream.origin}/computer/v1/mcp`, identityToken: IDENTITY_TOKEN } }),
       modelProxy: async () => false,
       workRoot: (workId) => join(dir, 'works', workId),
     },

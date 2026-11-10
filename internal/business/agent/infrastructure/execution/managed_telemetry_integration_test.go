@@ -37,7 +37,7 @@ func TestAManagedRunsTelemetryTokenAttributesOnlyThatRun(t *testing.T) {
 	require.Equal(t, map[string]string{"endpoint": managedTelemetryAddress, "token": token}, delivered)
 	encoded, err := json.Marshal(environment)
 	require.NoError(t, err)
-	for _, secret := range []string{token, spec.WorkCredential} {
+	for _, secret := range []string{token, "agent-token-" + input.WorkID} {
 		require.NotContains(t, string(encoded), secret, "Talgent Computer adds the token to the Harness's environment itself")
 	}
 	require.Equal(t, "talgent.agent_work_id="+input.WorkID+",talgent.computer_id="+managedComputerID+",talgent.computer_name=Studio%20Mac%2C%202,talgent.user_id=person-1", environment["OTEL_RESOURCE_ATTRIBUTES"])

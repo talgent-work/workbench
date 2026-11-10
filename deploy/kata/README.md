@@ -51,7 +51,7 @@ Pod labels, which is the backend CNI sees after Service DNAT. Agent provisioning
 excludes only the Service's ClusterIP from nft denies, never the node IP; nft
 blocks direct node traffic before host DNAT. Verify actual Service delivery and
 direct node port denials together.
-DNS and native API service exceptions follow the same two-layer policy check.
+DNS and Collector service exceptions follow the same two-layer policy check.
 
 Upstream egress exports the public MITM certificate and upstream execd bootstrap
 builds `/opt/opensandbox/merged-ca-certificates.pem`. The shared runtime directory

@@ -1,6 +1,7 @@
 package taskqueue
 
 import (
+	"errors"
 	"log/slog"
 
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
@@ -73,6 +74,14 @@ func logRefusedEnqueue(logger *slog.Logger) func(*asynq.Task, []asynq.Option, er
 				}
 			}
 		}
-		logger.Error("periodic task enqueue failed", slog.String("task_type", task.Type()), slog.String("queue", queue), slog.Any("error", err))
+		attrs := []any{slog.String("task_type", task.Type()), slog.String("queue", queue), slog.Any("error", err)}
+		// Every replica runs the scheduler, so on each tick all but one fire
+		// meet the winner's uniqueness lock: expected, kept as a trace for a
+		// lock an earlier fire never released, but not an error.
+		if errors.Is(err, asynq.ErrDuplicateTask) || errors.Is(err, asynq.ErrTaskIDConflict) {
+			logger.Info("periodic task enqueue skipped: its uniqueness lock is held", attrs...)
+			return
+		}
+		logger.Error("periodic task enqueue failed", attrs...)
 	}
 }

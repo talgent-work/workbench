@@ -94,7 +94,7 @@ func TestWorkCapabilityAPITracksNativeUpdatesAcrossDispatcherRecovery(t *testing
 		agent := &agentapp.Application{Harness: control, WorkPrincipals: permissions, WorkQueries: permissions}
 		handler = connecttest.Handler(func(s *connect.Server) {
 			agentpublicv1connect.RegisterAgentWorkServiceHandler(s, agenttransport.NewWorkHandler(agent))
-		}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+		}, authn.NewPrincipalInterceptor())
 		publicServer := httptest.NewServer(handler)
 		t.Cleanup(publicServer.Close)
 		unauthenticated := dispatcherprivatev1connect.NewExecutionServiceClient(connect.NewClient(connecthttp.NewTransport(privateServer.Client(), privateServer.URL, connecthttp.WithReadMaxBytes(0))))
@@ -108,6 +108,7 @@ func TestWorkCapabilityAPITracksNativeUpdatesAcrossDispatcherRecovery(t *testing
 		ctx, info := connect.NewClientContext(ctx)
 		if actor != "" {
 			info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+			info.RequestHeader().Set(authn.HeaderPrincipal, "user")
 			info.RequestHeader().Set(authn.HeaderSubject, actor)
 		}
 		return client.GetWorkCapabilities(ctx, request)

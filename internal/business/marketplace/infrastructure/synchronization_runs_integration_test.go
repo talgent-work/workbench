@@ -27,7 +27,6 @@ import (
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/business/marketplace/transport/taskprocessor"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 	runtimequeue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/middlewaretest"
@@ -75,8 +74,6 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 		return ctx
 	}
 	_, err = client.RequestSynchronization(t.Context(), &marketplaceprivatev1.RequestSynchronizationRequest{})
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	_, err = client.RequestSynchronization(platform(authn.HeaderNativeWorkID, "work"), &marketplaceprivatev1.RequestSynchronizationRequest{})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	first, err := client.RequestSynchronization(platform(), &marketplaceprivatev1.RequestSynchronizationRequest{})
 	require.NoError(t, err)

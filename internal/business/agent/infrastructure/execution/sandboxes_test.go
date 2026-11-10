@@ -29,7 +29,7 @@ import (
 
 const sandboxID = "a4147254-fb69-4e47-b96b-57c0e3d76fcf"
 
-// fixturePlatformAPIAddress is the native API every fixture sandbox reaches; it
+// fixturePlatformAPIAddress is the entry every fixture sandbox reaches; it
 // resolves through fixtureLookup without DNS.
 const fixturePlatformAPIAddress = "http://controlplane.talgent.svc.cluster.local"
 
@@ -61,7 +61,7 @@ func owner(r domain.LaunchSpecification) SandboxOwner {
 
 // submit allocates the fixture sandbox for the request's live allocation.
 func (s *Sandboxes) submitRequest(ctx context.Context, r domain.LaunchSpecification, token string) (string, error) {
-	spec, err := s.specification(ctx, r, testMounts, owner(r), token, "work-credential-fixture")
+	spec, err := s.specification(ctx, r, testMounts, owner(r), token)
 	if err != nil {
 		return "", err
 	}
@@ -70,7 +70,7 @@ func (s *Sandboxes) submitRequest(ctx context.Context, r domain.LaunchSpecificat
 
 // ownedRequest lists the sandboxes carrying the request's ownership.
 func (s *Sandboxes) ownedRequest(ctx context.Context, r domain.LaunchSpecification, token string) ([]string, error) {
-	spec, err := s.specification(ctx, r, testMounts, owner(r), token, "work-credential-fixture")
+	spec, err := s.specification(ctx, r, testMounts, owner(r), token)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +308,7 @@ func TestNativeSandboxSubmissionRetainsHomeAndWorkspaceWithoutExecutor(t *testin
 	require.Equal(t, 7200, *spec.Timeout, "every sandbox expires unless renewed")
 	require.Equal(t, "execd-secret", spec.Env["EXECD_ACCESS_TOKEN"])
 	require.Equal(t, input.WorkID, spec.Env["TALGENT_WORK_ID"])
-	require.NotContains(t, spec.Env, workCredentialEnv, "the Work credential reaches the Gateway through the Credential Proxy, never the sandbox")
+	require.NotContains(t, spec.Env, "TALGENT_WORK_CREDENTIAL", "a Work has no credential besides its Identity Token, which the Credential Proxy holds")
 	for _, retired := range []string{"TALGENT_EXECUTION_ID", "TALGENT_EXECUTION_PROOF", "TALGENT_AGENT_SESSION_ID"} {
 		require.NotContains(t, spec.Env, retired)
 	}
@@ -362,7 +362,7 @@ func TestSandboxOwnershipListingOmitsOtherSpecificationsAndDuplicates(t *testing
 func TestSandboxDeletionRechecksImmutableOwnershipBeforeDelete(t *testing.T) {
 	provider, _, fixture := sandboxClient(t)
 	input := request()
-	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "execd-secret", "work-credential-fixture")
+	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "execd-secret")
 	require.NoError(t, err)
 	fixture.pages = [][]sdk.SandboxInfo{{{ID: sandboxID, Metadata: spec.Metadata}}}
 	other := SandboxOwner{WorkID: input.WorkID, ID: "01900000-0000-7000-8000-000000000002"}

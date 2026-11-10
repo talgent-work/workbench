@@ -88,7 +88,7 @@ func newCloudStart(t *testing.T) *cloudStart {
 	connections, err := NewNativeConnections(p, p.credentials, http.DefaultClient, "http://dispatcher.invalid", "fixture")
 	require.NoError(t, err)
 	f.works, f.steps = works, newExecutionSteps(t, p, connections, f.readings, nil, f.now)
-	f.coordination = command.NewExecutionCoordination(f.now, works, f.steps.executions, f.steps.desks, f.steps.harness)
+	f.coordination = command.NewExecutionCoordination(f.now, works, commandtest.Definitions{}, f.steps.executions, f.steps.desks, f.steps.harness)
 	f.recovery = command.NewRecoverWorkHandler(f.now, works, f.steps.harness, command.NewInputAcceptance(works, &commandtest.InputBuffer{}), &commandtest.InputSettlements{}, nil)
 
 	definitions := infrastructure.NewAgentDefinitionRepository(db, f.now)

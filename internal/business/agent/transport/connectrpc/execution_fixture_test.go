@@ -200,7 +200,7 @@ func loadedExecution(saved domain.AgentExecution) *domain.AgentExecution {
 func executionWorld(now func() time.Time, works domain.AgentWorkRepository, computers command.ComputerPort, buffer command.DispatcherPort) (*syncEvents, *rpcExecutions, *command.ExecutionCoordination) {
 	events := &syncEvents{}
 	executions := &rpcExecutions{events: events, now: now}
-	coordination := command.NewExecutionCoordination(now, works, executions, computers, buffer)
+	coordination := command.NewExecutionCoordination(now, works, commandtest.Definitions{}, executions, computers, buffer)
 	logger := slog.Default()
 	events.subscribe(eventhandler.NewBeginExecution(coordination, logger))
 	events.subscribe(eventhandler.NewRequestProcessExit(coordination, logger))

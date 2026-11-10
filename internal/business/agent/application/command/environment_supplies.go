@@ -39,10 +39,11 @@ type EnvironmentSupplies struct {
 	repositories RepositorySupply
 	services     ServiceSupply
 	storage      StoragePort
+	accounts     AccountPort
 }
 
-func NewEnvironmentSupplies(repositories RepositorySupply, services ServiceSupply, storage StoragePort) *EnvironmentSupplies {
-	return &EnvironmentSupplies{repositories: repositories, services: services, storage: storage}
+func NewEnvironmentSupplies(repositories RepositorySupply, services ServiceSupply, storage StoragePort, accounts AccountPort) *EnvironmentSupplies {
+	return &EnvironmentSupplies{repositories: repositories, services: services, storage: storage, accounts: accounts}
 }
 
 // creation is what a Cloud execution's specification fixes: the Mount Grants
@@ -66,20 +67,25 @@ func (s *EnvironmentSupplies) creation(ctx context.Context, execution *domain.Ag
 	return supply, nil
 }
 
-// credentials is what a delivery hands the bound environment now: the Space
-// Token of the Work's publication target, the same on every opening, and on
-// a Cloud the current credentials of the repositories and service targets
-// the run may reach, with the access observed for each. A Work whose Agent
-// represents no person holds no personal authorization, so none of its
-// targets is supplied.
+// credentials is what a delivery hands the bound environment now: the Work's
+// Identity Token, which Account issues afresh for every delivery (Work token
+// issuance), the Space Token of the Work's publication target, the same on
+// every opening, and on a Cloud the current credentials of the repositories
+// and service targets the run may reach, with the access observed for each.
+// A Work whose Agent represents no person holds no personal authorization,
+// so none of its targets is supplied.
 func (s *EnvironmentSupplies) credentials(ctx context.Context, execution *domain.AgentExecution) (CredentialSupply, error) {
 	ctx, cancel := context.WithTimeout(ctx, supplyAttemptTimeout)
 	defer cancel()
+	identity, err := s.identityToken(ctx, execution.Launch)
+	if err != nil {
+		return CredentialSupply{}, err
+	}
 	token, err := s.storage.OpenDirectory(ctx, execution.Launch.LocatedLayout.PublicationTarget)
 	if err != nil {
 		return CredentialSupply{}, err
 	}
-	supply := CredentialSupply{SpaceToken: token}
+	supply := CredentialSupply{IdentityToken: identity, SpaceToken: token}
 	if execution.Realization != domain.RealizationCloud {
 		return supply, nil
 	}
@@ -97,6 +103,21 @@ func (s *EnvironmentSupplies) credentials(ctx context.Context, execution *domain
 	supply.Repositories, supply.Services = repositories.Credentials, services.Credentials
 	supply.Access = append(required.statuses(services), repositoryStatuses(repositories)...)
 	return supply, nil
+}
+
+// identityToken asks Account for the Work's agent Identity Token, stating the
+// Work's fixed facts as its start fixed them: its Project, AgentDefinition
+// and its purpose, Subject and the person its Agent represents.
+func (s *EnvironmentSupplies) identityToken(ctx context.Context, launch domain.LaunchSpecification) (IdentityToken, error) {
+	return s.accounts.IssueWorkIdentityToken(ctx, WorkIdentityFacts{
+		WorkID:            launch.WorkID,
+		ProjectID:         launch.ProjectID,
+		AgentID:           launch.AgentID,
+		Purpose:           launch.Purpose,
+		SubjectKind:       string(launch.Subject.Kind),
+		SubjectID:         launch.Subject.ID,
+		RepresentedPerson: launch.RepresentedPerson,
+	})
 }
 
 // inputs lists the located inputs' files, each with a fresh download Access

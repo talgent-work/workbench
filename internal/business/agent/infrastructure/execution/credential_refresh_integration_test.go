@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/contracts/gen/go/dispatcher/private/v1/dispatcherprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
@@ -82,7 +83,7 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	require.NoError(t, err)
 	steps := newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
 	counter := &countingRepositoryCredentials{}
-	supplies := command.NewEnvironmentSupplies(counter, authorizationcatalogtest.NoServices{}, directoryMounts{root: t.TempDir()})
+	supplies := command.NewEnvironmentSupplies(counter, authorizationcatalogtest.NoServices{}, directoryMounts{root: t.TempDir()}, &commandtest.Accounts{})
 	steps.handler = command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, steps.executions, steps.environment, steps.harness, steps.desks, supplies)
 	// Submission with the first delivery, then preparation with the Harness
 	// start and its connection.

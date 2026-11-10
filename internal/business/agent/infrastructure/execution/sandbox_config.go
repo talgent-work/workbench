@@ -61,7 +61,7 @@ func (c SandboxConfig) Validate() error {
 	if err := c.Lease.Validate(); err != nil || c.Lease.Duration < time.Second {
 		return errors.New("agent: the sandbox lease needs a duration of at least a second and a positive renewal threshold below it")
 	}
-	// Every Work reaches the platform, through its native API or the Gateway
+	// Every Work reaches the platform, through the entry or the Gateway
 	// where one is deployed, with the credentials the Credential Proxy adds.
 	if _, err := platformAddresses(c.Environment); err != nil {
 		return err

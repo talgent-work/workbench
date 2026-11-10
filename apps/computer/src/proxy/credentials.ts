@@ -5,15 +5,16 @@ import { isObject } from '../json.ts'
 import { isErrno } from '../store.ts'
 
 // A Work's credentials, which the platform delivers so the local proxy can
-// reach the model vendor and the Talgent MCP endpoint on the Work's behalf.
+// reach the model vendor and the platform on the Work's behalf: its Identity
+// Token goes as `Authorization: Bearer` with the Agent's platform requests.
 // They are kept outside every Work root, readable only by this user, and
 // never given to a process.
 export interface WorkCredentials {
   // Absent for a Work on the machine's own Claude login.
   model?: { baseUrl: string; key: string }
-  gateway: { url: string; workId: string; workCredential: string; spaceToken?: string }
-  // Where the Work's native API calls go, with the gateway's identity; absent
-  // where Works reach the platform only through the Gateway.
+  gateway: { url: string; identityToken: string; spaceToken?: string }
+  // Where the Work's entry calls go, with its Identity Token; absent where
+  // Works reach the platform only through the Gateway.
   api?: { url: string }
 }
 
@@ -35,10 +36,15 @@ export class CredentialStore {
     this.dir = options.dir
   }
 
-  // Validates and stores a Work's credentials, replacing earlier ones.
+  // Validates and stores a Work's credentials, replacing earlier ones. A
+  // body that asks to keep the model keeps the one held before, if any.
   async put(workId: string, body: unknown): Promise<void> {
-    const credentials = parseCredentials(body)
+    const { credentials, keepModel } = parseDelivery(body)
     await this.serialize(workId, async () => {
+      if (keepModel) {
+        const held = await this.read(workId)
+        if (held?.model !== undefined) credentials.model = held.model
+      }
       await mkdir(this.dir, { recursive: true, mode: 0o700 })
       await chmod(this.dir, 0o700)
       const tmp = join(this.dir, `.${workId}.${randomBytes(6).toString('hex')}.tmp`)
@@ -64,6 +70,16 @@ export class CredentialStore {
     const changes = this.changes
     const cached = this.cache.get(workId)
     if (cached !== undefined) return cached
+    const stored = await this.read(workId)
+    // A put or delete that ran meanwhile decides instead.
+    if (stored !== undefined && changes === this.changes && !this.pending.has(workId)) this.cache.set(workId, stored)
+    return stored
+  }
+
+  // The Work's stored credentials, from the cache or its file.
+  private async read(workId: string): Promise<WorkCredentials | undefined> {
+    const cached = this.cache.get(workId)
+    if (cached !== undefined) return cached
     let text: string
     try {
       text = await readFile(this.file(workId), 'utf8')
@@ -71,10 +87,7 @@ export class CredentialStore {
       if (isErrno(error, 'ENOENT')) return undefined
       throw error
     }
-    const stored = JSON.parse(text) as WorkCredentials
-    // A put or delete that ran meanwhile decides instead.
-    if (changes === this.changes && !this.pending.has(workId)) this.cache.set(workId, stored)
-    return stored
+    return JSON.parse(text) as WorkCredentials
   }
 
   private serialize(workId: string, change: () => Promise<void>): Promise<void> {
@@ -100,7 +113,17 @@ export class CredentialStore {
 const HEADER_VALUE = /^[\x21-\x7e]+$/
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
-export function parseCredentials(body: unknown): WorkCredentials {
+// A delivery's credentials, and whether it keeps the model held before: a
+// redelivery that brings a new Identity Token while the platform no longer
+// supplies the model key the Work started with.
+export function parseDelivery(body: unknown): { credentials: WorkCredentials; keepModel: boolean } {
+  const credentials = parseCredentials(body)
+  const keepModel = isObject(body) && body.keep_model === true
+  if (keepModel && credentials.model !== undefined) throw new InvalidCredentialsError('keep_model excludes model')
+  return { credentials, keepModel }
+}
+
+function parseCredentials(body: unknown): WorkCredentials {
   if (!isObject(body)) throw new InvalidCredentialsError('body must be an object')
   const { model, gateway, api } = body
   const result: WorkCredentials = { gateway: parseGateway(gateway) }
@@ -119,8 +142,8 @@ function parseModel(model: unknown): NonNullable<WorkCredentials['model']> {
   return { baseUrl: url.href, key: headerValue(model.key, 'model.key') }
 }
 
-// The native API lies on the gateway's origin, the only one the Work's
-// identity is sent to.
+// The entry lies on the gateway's origin, the only one the Work's Identity
+// Token is sent to.
 function parseApi(api: unknown, gatewayUrl: string): NonNullable<WorkCredentials['api']> {
   if (!isObject(api)) throw new InvalidCredentialsError('api must be an object')
   const url = parseUrl(api.url, 'api.url')
@@ -134,8 +157,7 @@ function parseGateway(gateway: unknown): WorkCredentials['gateway'] {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new InvalidCredentialsError('gateway.url must be an http(s) URL')
   const result: WorkCredentials['gateway'] = {
     url: url.href,
-    workId: headerValue(gateway.work_id, 'gateway.work_id'),
-    workCredential: headerValue(gateway.work_credential, 'gateway.work_credential'),
+    identityToken: headerValue(gateway.identity_token, 'gateway.identity_token'),
   }
   if (gateway.space_token !== undefined && gateway.space_token !== null && gateway.space_token !== '') {
     result.spaceToken = headerValue(gateway.space_token, 'gateway.space_token')

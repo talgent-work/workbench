@@ -73,7 +73,7 @@ func newRunsAt(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, 
 // from buffer.
 func newRunsWith(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, now func() time.Time, buffer command.DispatcherPort) *runs {
 	executions := execution.NewAgentExecutionRepository(db, now)
-	coordination := command.NewExecutionCoordination(now, works, executions, computertest.Checked(startupAuthority{}), buffer)
+	coordination := command.NewExecutionCoordination(now, works, commandtest.Definitions{}, executions, computertest.Checked(startupAuthority{}), buffer)
 	return &runs{t: t, now: now, executions: executions, coordination: coordination,
 		feedback: command.NewApplyExecutionFeedbackHandler(now, works, executions, coordination, buffer, &commandtest.InputSettlements{})}
 }
@@ -234,7 +234,8 @@ func (r *runs) latest(ctx context.Context, workID string) *domain.AgentExecution
 // seating fixes.
 func launchOf(run *domain.AgentExecution) domain.LaunchSpecification {
 	launch := run.Launch
-	launch.ComputerName, launch.PreparationBound = "", time.Time{}
+	// What beginning the execution fills in is not the Work's own.
+	launch.ComputerName, launch.Purpose, launch.PreparationBound = "", "", time.Time{}
 	return launch
 }
 

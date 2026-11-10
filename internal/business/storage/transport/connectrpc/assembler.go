@@ -6,7 +6,6 @@ import (
 	storageprivatev1 "github.com/talgent-work/contracts/gen/go/storage/private/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func namedFromProto(directory *storageprivatev1.Directory) application.Named {
@@ -55,27 +54,6 @@ func layoutFromProto(layout *storageprivatev1.WorkspaceLayout) application.Layou
 		mapped.Mounts = append(mapped.Mounts, application.Mount{Path: mount.GetPath(), Directory: namedFromProto(mount.GetDirectory())})
 	}
 	return mapped
-}
-
-// layoutFromIdentity is the Session Workspace a verified Work identity
-// carries, nil for a Work without one.
-func layoutFromIdentity(layout *authn.WorkspaceLayout) *application.Layout {
-	if layout == nil {
-		return nil
-	}
-	mapped := &application.Layout{Workspace: namedFromIdentity(layout.Workspace)}
-	for _, mount := range layout.Mounts {
-		mapped.Mounts = append(mapped.Mounts, application.Mount{Path: mount.Path, Directory: namedFromIdentity(mount.Directory)})
-	}
-	return mapped
-}
-
-func namedFromIdentity(directory authn.Directory) application.Named {
-	named := application.Named{Name: directory.Name}
-	for _, fact := range directory.Owner {
-		named.Owner = append(named.Owner, domain.OwnerFact{Condition: fact.Condition, Value: fact.Value})
-	}
-	return named
 }
 
 func directoryFileToProto(file application.DirectoryFile) *storageprivatev1.File {

@@ -117,7 +117,7 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	origin := time.Now().Add(-31 * time.Minute).UTC().Truncate(time.Millisecond)
 	works := infrastructure.NewAgentWorkRepository(observer, time.Now)
 	executions := execution.NewAgentExecutionRepository(observer, time.Now)
-	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return origin }, works, executions, command.NewExecutionCoordination(time.Now, works, executions, &computertest.Admission{}, port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
+	feedback := command.NewApplyExecutionFeedbackHandler(func() time.Time { return origin }, works, executions, command.NewExecutionCoordination(time.Now, works, commandtest.Definitions{}, executions, &computertest.Admission{}, port), &commandtest.InputBuffer{}, &commandtest.InputSettlements{})
 	// A Turn ending at origin leaves the Work idle since then.
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ObservationSequence: 1, Kind: command.TurnStarted, WorkID: ref, ProcessID: "process"}))
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{ObservationSequence: 2, Kind: command.TurnFinished, WorkID: ref, ProcessID: "process", TurnCompleted: false}))

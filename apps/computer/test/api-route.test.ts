@@ -7,13 +7,15 @@ import type { WorkCredentials } from '../src/proxy/credentials.ts'
 import { LocalProxy } from '../src/proxy/server.ts'
 import { send, Upstream } from './support/upstream.ts'
 
-// The native API route: a Work's plain HTTP client, such as curl, calls the
-// platform's native API through the local proxy with the run's token in the
-// path. The proxy adds the Work's identity, and for an Artifact command
+const IDENTITY_TOKEN = 'agent-identity-token'
+
+// The API route: a Work's plain HTTP client, such as curl, calls the core's
+// public APIs at the entry through the local proxy with the run's token in
+// the path. The proxy adds the Work's identity, and for an Artifact command
 // naming a file of the Work, sends the file's bytes as content instead.
 
 const TOKEN = 'run-token'
-const CREATE = '/storage.private.v1.ArtifactService/CreateArtifact'
+const CREATE = '/api/storage.public.v1.ArtifactService/CreateArtifact'
 
 let dir: string
 let upstream: Upstream
@@ -30,8 +32,8 @@ beforeEach(async () => {
   upstream = new Upstream()
   await upstream.listen()
   credentials = {
-    gateway: { url: `${upstream.origin}/computer/v1/mcp`, workId: 'w-1', workCredential: 'cred', spaceToken: 'space' },
-    api: { url: `${upstream.origin}/computer/v1/api` },
+    gateway: { url: `${upstream.origin}/computer/v1/mcp`, identityToken: IDENTITY_TOKEN, spaceToken: 'space' },
+    api: { url: upstream.origin },
   }
   proxy = new LocalProxy({
     portFile: join(dir, 'state', 'proxy.json'),
@@ -54,29 +56,29 @@ afterEach(async () => {
 const api = (path: string, body?: string, token = TOKEN, headers: Record<string, string> = {}) =>
   send(`${proxy.origin()}/w/w-1/api/${token}${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', ...headers }, body })
 
-test('a call reaches the native API with the Work identity, never one the process adds', async () => {
-  const answer = await api('/agent.public.v1.PersonalWorkService/ListLibraryFiles', '{"nameQuery":"report"}', TOKEN, { 'x-talgent-work-id': 'forged', authorization: 'Bearer x' })
+test('a call reaches the entry under the Work\'s Identity Token, never one the process adds', async () => {
+  const answer = await api('/api/agent.public.v1.PersonalWorkService/ListLibraryFiles', '{"nameQuery":"report"}', TOKEN, { 'x-talgent-work-id': 'forged', authorization: 'Bearer x' })
   assert.equal(answer.status, 200)
   const seen = upstream.last()
-  assert.equal(seen.url, '/computer/v1/api/agent.public.v1.PersonalWorkService/ListLibraryFiles')
-  assert.equal(seen.headers['x-talgent-work-id'], 'w-1')
-  assert.equal(seen.headers['x-talgent-work-credential'], 'cred')
+  assert.equal(seen.url, '/api/agent.public.v1.PersonalWorkService/ListLibraryFiles')
+  assert.equal(seen.headers['x-talgent-work-id'], undefined, 'the entry takes the Identity Token alone')
+  assert.equal(seen.headers['x-talgent-work-credential'], undefined)
   assert.equal(seen.headers['x-talgent-space-token'], 'space')
-  assert.equal(seen.headers.authorization, undefined)
+  assert.equal(seen.headers.authorization, `Bearer ${IDENTITY_TOKEN}`, 'the Work\'s Identity Token, never one the process adds')
   assert.equal(seen.body, '{"nameQuery":"report"}')
 
   // An Access Link the Work was issued downloads the same way.
-  assert.equal((await api('/v1/storage/content?grant=signed')).status, 200)
-  assert.equal(upstream.last().url, '/computer/v1/api/v1/storage/content?grant=signed')
+  assert.equal((await api('/api/v1/storage/content?grant=signed')).status, 200)
+  assert.equal(upstream.last().url, '/api/v1/storage/content?grant=signed')
 })
 
 test('an Artifact command naming a file of the Work sends its bytes instead', async () => {
-  assert.equal((await api(CREATE, '{"name":"report.md","path":"dist/report.md"}')).status, 200)
-  assert.deepEqual(JSON.parse(upstream.last().body), { name: 'report.md', content: Buffer.from('# Report\n').toString('base64') })
+  assert.equal((await api(CREATE, '{"name":"report.md","work_directory":"workspace","path":"dist/report.md"}')).status, 200)
+  assert.deepEqual(JSON.parse(upstream.last().body), { name: 'report.md', content: Buffer.from('# Report\n').toString('base64') }, 'content names no Work Directory')
   assert.equal((await api(CREATE, '{"name":"report.md","path":"/workspace/dist/report.md"}')).status, 200, 'the Cloud\'s /workspace path names the Work root')
 
   const before = upstream.seen.length
-  // Refused as the native API refuses a Cloud Work's source.
+  // Refused as Storage refuses a Cloud Work's source.
   for (const [path, status, code] of [['inputs/brief.md', 400, 'invalid_argument'], ['../outside.md', 400, 'invalid_argument'], ['missing.md', 404, 'not_found']] as const) {
     const refused = await api(CREATE, JSON.stringify({ name: 'x.md', path }))
     assert.equal(refused.status, status, path)

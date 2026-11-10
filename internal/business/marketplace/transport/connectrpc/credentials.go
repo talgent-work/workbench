@@ -10,7 +10,6 @@ import (
 	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type CredentialHandler struct {
@@ -24,7 +23,7 @@ func NewCredentialHandler(app *application.PersonalConnections, token string) *C
 
 func (h *CredentialHandler) SupplyRepositoryCredential(ctx context.Context, request *marketplaceprivatev1.SupplyRepositoryCredentialRequest) (*marketplaceprivatev1.SupplyRepositoryCredentialResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	if err := h.authenticate(ctx, info.RequestHeader()); err != nil {
+	if err := h.authenticate(info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	material, err := h.app.SupplyRepositoryCredential(ctx, application.RepositoryCredentialRequest{
@@ -38,7 +37,7 @@ func (h *CredentialHandler) SupplyRepositoryCredential(ctx context.Context, requ
 
 func (h *CredentialHandler) SupplyServiceCredential(ctx context.Context, request *marketplaceprivatev1.SupplyServiceCredentialRequest) (*marketplaceprivatev1.SupplyServiceCredentialResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	if err := h.authenticate(ctx, info.RequestHeader()); err != nil {
+	if err := h.authenticate(info.RequestHeader()); err != nil {
 		return nil, err
 	}
 	material, err := h.app.SupplyServiceCredential(ctx, application.ServiceCredentialRequest{OwnerUserID: request.GetOwnerUserId(), AuthorizationID: request.GetAuthorizationId(), Target: request.GetTarget()})
@@ -84,9 +83,8 @@ func credentialSupplyError(ctx context.Context, err error) error {
 	return connect.NewError(connect.CodeFailedPrecondition, "service credential unavailable")
 }
 
-func (h *CredentialHandler) authenticate(ctx context.Context, header *connect.Header) error {
-	_, native := authn.NativeProcessFromContext(ctx)
-	if h.token == "" || native || header.Get(authn.HeaderNativeWorkID) != "" || header.Get(authn.HeaderNativeCredential) != "" || subtle.ConstantTimeCompare([]byte(header.Get("Authorization")), []byte("Bearer "+h.token)) != 1 {
+func (h *CredentialHandler) authenticate(header *connect.Header) error {
+	if h.token == "" || subtle.ConstantTimeCompare([]byte(header.Get("Authorization")), []byte("Bearer "+h.token)) != 1 {
 		return connect.NewError(connect.CodePermissionDenied, "trusted credential consumer required")
 	}
 	return nil

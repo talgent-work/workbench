@@ -34,8 +34,8 @@ var (
 
 func (cloudEnvironment) launchLayout() launchLayout { return sandboxLayout }
 
-func (c cloudEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token, credential string) (environmentSpecification, error) {
-	spec, err := c.sandboxes.specification(ctx, request, mounts, owner, token, credential)
+func (c cloudEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, mounts domain.SandboxMounts, owner SandboxOwner, token string) (environmentSpecification, error) {
+	spec, err := c.sandboxes.specification(ctx, request, mounts, owner, token)
 	if err != nil {
 		return environmentSpecification{}, err
 	}
@@ -177,14 +177,6 @@ func (c cloudEnvironment) resolve(ctx context.Context, record executionRecord, c
 		return environment{}, environmentPending, err
 	}
 	return environment{endpoint: endpoint, token: spec.Env["EXECD_ACCESS_TOKEN"], client: execdClient}, environmentRunning, nil
-}
-
-func (cloudEnvironment) workCredential(record executionRecord) (string, error) {
-	var spec sdk.CreateSandboxRequest
-	if err := json.Unmarshal(record.SpecificationJSON, &spec); err != nil {
-		return "", oops.With("operation", "decode_execution_spec").Wrap(err)
-	}
-	return spec.Env[workCredentialEnv], nil
 }
 
 func (c cloudEnvironment) deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {

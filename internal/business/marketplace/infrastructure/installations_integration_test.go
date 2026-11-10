@@ -66,12 +66,12 @@ func setupWithCatalog(t *testing.T, catalog application.CatalogPort) (*xorm.Engi
 	app := application.NewApplication(repository, repository, catalog, infrastructure.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), Queries: infrastructure.NewConnectorRepository(db)})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app))
-	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	}, authn.NewPrincipalInterceptor())
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	selectionPath, selectionHandler := "/"+marketplaceprivatev1connect.SelectionServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplaceprivatev1connect.RegisterSelectionServiceHandler(s, transport.NewSelectionHandler(app, "selection-test"))
-	}, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
+	})
 	mux.Handle(selectionPath, selectionHandler)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -84,12 +84,19 @@ func as(ctx context.Context, user string, pairs ...string) context.Context {
 	ctx, info := connect.NewClientContext(ctx)
 	if user != "" {
 		info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
+		info.RequestHeader().Set(authn.HeaderPrincipal, "user")
 		info.RequestHeader().Set(authn.HeaderSubject, user)
 	}
 	for i := 0; i+1 < len(pairs); i += 2 {
 		info.RequestHeader().Set(pairs[i], pairs[i+1])
 	}
 	return ctx
+}
+
+// delegated is a trusted service's call on user's behalf, as Agent reads a
+// person's selection.
+func delegated(ctx context.Context, user string, pairs ...string) context.Context {
+	return as(ctx, "", append([]string{authn.HeaderServiceID, "agent", authn.HeaderDelegatedUserID, user}, pairs...)...)
 }
 
 func configuration(t *testing.T, values map[string]any) *structpb.Struct {

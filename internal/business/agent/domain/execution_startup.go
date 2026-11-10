@@ -26,6 +26,7 @@ const abandonmentMargin = time.Minute
 const (
 	startupEnvironmentIncomplete = "Startup Deadline reached before the execution environment was ready."
 	startupHarnessIncomplete     = "Startup Deadline reached before the Harness started."
+	startupCredentialsIncomplete = "Startup Deadline reached before the Work's Identity Token and model credentials were delivered."
 )
 
 // startRejectedReason is the failure of a start whose environment could not
@@ -244,7 +245,12 @@ func (e *AgentExecution) failStart() bool {
 		return false
 	}
 	reason := startupHarnessIncomplete
-	if !e.Process.Prepared {
+	switch {
+	case e.Environment == "":
+		reason = startupEnvironmentIncomplete
+	case !e.Credentials.Delivered:
+		reason = startupCredentialsIncomplete
+	case !e.Process.Prepared:
 		reason = startupEnvironmentIncomplete
 	}
 	e.Outcome.StartFailure = reason

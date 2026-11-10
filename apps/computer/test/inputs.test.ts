@@ -15,11 +15,12 @@ import { Works } from '../src/execd/works.ts'
 import type { WorkCredentials } from '../src/proxy/credentials.ts'
 import { posixModes } from './support/platform.ts'
 
+const IDENTITY_TOKEN = 'agent-identity-token'
+
 // Work inputs: manifests relayed to the
 // execd service, files fetched from a stand-in Storage on the platform's
 // origin into the Work root's read-only inputs directory.
 
-const WORK_CREDENTIAL = 'inputs-work-credential'
 
 // Serves /files/<name> from contents; a handler may take over a name.
 class Storage {
@@ -63,7 +64,7 @@ beforeEach(async () => {
   logs.length = 0
   storage = new Storage()
   await storage.listen()
-  credentials = { gateway: { url: `${storage.origin}/computer/v1/mcp`, workId: 'w-1', workCredential: WORK_CREDENTIAL, spaceToken: 'space-1' } }
+  credentials = { gateway: { url: `${storage.origin}/computer/v1/mcp`, identityToken: IDENTITY_TOKEN, spaceToken: 'space-1' } }
   inputs = new WorkInputs({
     recordsDir: join(dir, 'state', 'inputs'),
     credentials: { get: async () => credentials },
@@ -106,7 +107,7 @@ const submit = (files: Record<string, unknown>[]) => inputs.submit('w-1', root()
 const listing = async () => (await readdir(inputsDir())).sort()
 const read = (name: string) => readFile(join(inputsDir(), name), 'utf8')
 
-test('a manifest brings its files into a read-only inputs directory with the Work identity', async () => {
+test('a manifest brings its files into a read-only inputs directory, sending no identity with its Access Links', async () => {
   storage.contents.set('brief.pdf', 'brief v1')
   storage.contents.set('.hidden notes.txt', 'notes')
   await put([entry('brief.pdf'), entry('.hidden notes.txt')])
@@ -118,10 +119,8 @@ test('a manifest brings its files into a read-only inputs directory with the Wor
     await assert.rejects(writeFile(join(inputsDir(), 'new'), 'x'), { code: 'EACCES' })
   }
   const headers = storage.seen[0].headers
-  assert.equal(headers['x-talgent-work-id'], 'w-1')
-  assert.equal(headers['x-talgent-work-credential'], WORK_CREDENTIAL)
-  assert.equal(headers['x-talgent-space-token'], 'space-1')
-  for (const line of logs) assert.ok(!line.includes(WORK_CREDENTIAL) && !line.includes('secret-signature'), line)
+  for (const name of ['authorization', 'x-talgent-work-id', 'x-talgent-work-credential', 'x-talgent-space-token']) assert.equal(headers[name], undefined, name)
+  for (const line of logs) assert.ok(!line.includes(IDENTITY_TOKEN) && !line.includes('secret-signature'), line)
 })
 
 test('only changed files are fetched again, and unlisted ones are removed', async () => {
@@ -178,7 +177,7 @@ test('without credentials the downloads wait and run once the credentials arrive
   assert.deepEqual(await listing(), [])
   assert.equal(storage.seen.length, 0)
   assert.ok(logs.some((line) => line.includes('wait for the Work\'s credentials')))
-  credentials = { gateway: { url: `${storage.origin}/computer/v1/mcp`, workId: 'w-1', workCredential: WORK_CREDENTIAL } }
+  credentials = { gateway: { url: `${storage.origin}/computer/v1/mcp`, identityToken: IDENTITY_TOKEN } }
   inputs.credentialsDelivered('w-1')
   await inputs.settled('w-1')
   assert.equal(await read('a.txt'), 'a1')

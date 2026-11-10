@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -15,11 +16,11 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 )
 
-// A Managed Work on a Model Configuration gets its key and its Gateway
-// credentials only through its machine's local proxy: they are delivered when
-// its environment runs, a rotated key is delivered again, and an admitted stop
-// withdraws them. Neither the key nor the Work credential is in the Work's
-// environment, its recorded specification or its launch command.
+// A Managed Work on a Model Configuration gets its key, its Identity Token
+// and its Space Token only through its machine's local proxy: they are
+// delivered when its environment runs, a rotated key is delivered again, and
+// an admitted stop withdraws them. None of them is in the Work's environment,
+// its recorded specification or its launch command.
 func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
@@ -38,17 +39,17 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	f.relay.mu.Unlock()
 	require.True(t, modelProxy, "a Model Configuration's model is always reached through the local proxy")
 	require.JSONEq(t, `{"model":{"base_url":"https://model.example/anthropic","key":"`+fixtureModelKey+`"},
-		"gateway":{"url":"`+managedGatewayAddress+`","work_id":"`+input.WorkID+`","work_credential":"`+spec.WorkCredential+`","space_token":"space-token"},
+		"gateway":{"url":"`+managedGatewayAddress+`","identity_token":"agent-token-`+input.WorkID+`","space_token":"space-token"},
 		"api":{"url":"`+managedAPIAddress+`"}}`, delivered)
 	require.Equal(t, modelCredential{Key: fixtureModelKey}.digest(), record.ModelCredentialDigest)
-	require.Zero(t, record.CredentialsExpireAt, "nothing delivered expires")
+	requireTokenRenewal(t, record)
 	require.Equal(t, "fixture-primary", environment["ANTHROPIC_DEFAULT_OPUS_MODEL"], "the Model Template's environment reaches the Work")
 	for _, name := range []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"} {
 		require.NotContains(t, environment, name, "the local proxy sets the model endpoint and token per run")
 	}
 	encodedEnvironment, err := json.Marshal(environment)
 	require.NoError(t, err)
-	for _, secret := range []string{fixtureModelKey, spec.WorkCredential, "space-token"} {
+	for _, secret := range []string{fixtureModelKey, "agent-token-" + input.WorkID, "space-token"} {
 		require.NotContains(t, string(encodedEnvironment), secret)
 		require.NotContains(t, record.LaunchCommand, secret)
 		f.relay.mu.Lock()
@@ -132,4 +133,40 @@ func TestManagedFirstDeliveryNeedsTheModelConfigurationsKey(t *testing.T) {
 	defer f.relay.mu.Unlock()
 	require.Zero(t, f.relay.deliveries)
 	require.Equal(t, 1, f.relay.forgotten, "a failed first delivery withdraws whatever the machine held")
+}
+
+// requireTokenRenewal checks the delivery fell due a day before the Identity
+// Token it delivered expires, nothing else delivered expiring sooner.
+func requireTokenRenewal(t *testing.T, record executionRecord) {
+	t.Helper()
+	due := time.UnixMilli(record.CredentialsExpireAt)
+	require.WithinDuration(t, time.Now().Add(commandtest.AgentTokenLifetime-24*time.Hour), due, time.Minute)
+}
+
+// A redelivery while the platform no longer provides the Work's Model
+// Configuration still hands the machine the Work's new Identity Token, and
+// asks it to keep the model key it holds rather than fall back to the
+// machine's own Claude login (Work token issuance).
+func TestManagedRedeliveryRenewsTheTokenAndKeepsAWithdrawnModel(t *testing.T) {
+	ctx := context.Background()
+	f := newManagedWork(t)
+	input := managedRequest()
+	input.ContextMode = domain.ContextFresh
+	input.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
+	record := f.launch(t, f.begin(t, input).ID)
+	withdrawn, err := platformcatalog.NewCatalog([]command.ModelTemplate{fixtureModels().ProvidedModels()[0].Template}, []command.ModelConfiguration{{ID: "other", Name: "other", Template: "fixture-template", APIKey: "other-key"}})
+	require.NoError(t, err)
+	f.provisioning.managed.models = withdrawn
+
+	renewed := command.CredentialSupply{IdentityToken: command.IdentityToken{Token: "renewed-token", ExpiresAt: time.Now().Add(commandtest.AgentTokenLifetime)}, SpaceToken: "space-token"}
+	delivered, err := f.provisioning.managed.deliver(ctx, record, renewed, true, func(context.Context) error { return nil })
+	require.NoError(t, err)
+	require.Empty(t, delivered.ModelDigest, "the kept key is no longer the configuration's")
+	f.relay.mu.Lock()
+	defer f.relay.mu.Unlock()
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(f.relay.credentials, &body))
+	require.Equal(t, true, body["keep_model"])
+	require.NotContains(t, body, "model")
+	require.Equal(t, "renewed-token", body["gateway"].(map[string]any)["identity_token"])
 }

@@ -21,8 +21,6 @@ import (
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
-	"github.com/talgent-work/workbench/internal/pkg/nativeapi"
-	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 	pkgredis "github.com/talgent-work/workbench/internal/pkg/redis"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
@@ -32,11 +30,9 @@ import (
 // Option supplies the Workbench core's configuration tree while retaining
 // module resource names. An extension runs in its own process.
 type Option struct {
-	NativeAPI              nativeapi.Config             `json:"native-api" yaml:"native-api" toml:"native-api"`
 	AgentStorage           agent.StorageConfig          `json:"agent-storage" yaml:"agent-storage" toml:"agent-storage"`
-	AgentUserDirectory     agent.UserDirectoryConfig    `json:"agent-user-directory" yaml:"agent-user-directory" toml:"agent-user-directory"`
+	AgentAccount           agent.AccountConfig          `json:"agent-account" yaml:"agent-account" toml:"agent-account"`
 	Storage                storage.Config               `json:"storage" yaml:"storage" toml:"storage"`
-	NativeAuthentication   nativeauth.Config            `json:"native-authentication" yaml:"native-authentication" toml:"native-authentication"`
 	AgentRPC               agent.RPCConfig              `json:"agent-rpc" yaml:"agent-rpc" toml:"agent-rpc"`
 	AgentMarketplace       agent.PluginCatalogConfig    `json:"agent-marketplace" yaml:"agent-marketplace" toml:"agent-marketplace"`
 	AgentComputer          agent.ComputerConfig         `json:"agent-computer" yaml:"agent-computer" toml:"agent-computer"`
@@ -70,6 +66,9 @@ type Option struct {
 	// conversions one replica runs at once.
 	StoragePreviewTaskQueue     pkgtaskqueue.Config `name:"storage-preview" json:"storage-preview-taskqueue" toml:"storage-preview-taskqueue" yaml:"storage-preview-taskqueue"`
 	StorageMaintenanceTaskQueue pkgtaskqueue.Config `name:"storage-maintenance" json:"storage-maintenance-taskqueue" toml:"storage-maintenance-taskqueue" yaml:"storage-maintenance-taskqueue"`
+	// Account rotates signing keys hourly and forgets replaced refresh
+	// secrets daily.
+	AccountMaintenanceTaskQueue pkgtaskqueue.Config `name:"account-maintenance" json:"account-maintenance-taskqueue" toml:"account-maintenance-taskqueue" yaml:"account-maintenance-taskqueue"`
 	// ClickHouse holds Work message streams, read for Work turn results.
 	ClickHouse pkgclickhouse.Config `json:"clickhouse" toml:"clickhouse" yaml:"clickhouse"`
 
@@ -77,7 +76,6 @@ type Option struct {
 	// access decision and Agent's Work access through their contracts.
 	TraceClickHouse trace.ClickHouseConfig `json:"trace-clickhouse" toml:"trace-clickhouse" yaml:"trace-clickhouse"`
 	TraceAccess     trace.AccessConfig     `json:"trace-access" toml:"trace-access" yaml:"trace-access"`
-	TraceAuthn      trace.AuthnConfig      `json:"trace-authn" toml:"trace-authn" yaml:"trace-authn"`
 }
 
 func main() {
@@ -118,8 +116,6 @@ func main() {
 
 func appOptions(opt Option) []fx.Option {
 	return []fx.Option{
-		nativeauth.Module,
-		fx.Invoke(registerNativeAPI),
 		lifecyclelog.Option,
 		fx.StopTimeout(30 * time.Second),
 		fx.Supply(opt),
@@ -155,6 +151,7 @@ func appOptions(opt Option) []fx.Option {
 		pkgtaskqueue.NamedModule(marketplace.Queue),
 		pkgtaskqueue.NamedModule(storage.PreviewQueue),
 		pkgtaskqueue.NamedModule(storage.MaintenanceQueue),
+		pkgtaskqueue.NamedModule(account.MaintenanceQueue),
 		pkgtaskqueue.NamedModule(agent.RecoveryQueue),
 		pkgtaskqueue.NamedModule(agent.PreparationQueue),
 		internalpkg.HTTPModule,
