@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func TestServiceCredentialHTTPChecksAuthorityTargetAndCurrentGrant(t *testing.T) {
@@ -53,14 +52,12 @@ func TestServiceCredentialHTTPChecksAuthorityTargetAndCurrentGrant(t *testing.T)
 		require.NoError(t, err)
 		require.Equal(t, "first-provider-token", response.Token)
 	}
-	for _, scenario := range []string{"wrong consumer", "native workload", "foreign owner", "unsupported target"} {
+	for _, scenario := range []string{"wrong consumer", "foreign owner", "unsupported target"} {
 		r := request("github-api")
 		ctx, _ := consumer()
 		switch scenario {
 		case "wrong consumer":
 			ctx, _ = consumer("Authorization", "Bearer wrong")
-		case "native workload":
-			ctx, _ = consumer(authn.HeaderNativeWorkID, "work")
 		case "foreign owner":
 			r.OwnerUserId = "foreign"
 		case "unsupported target":

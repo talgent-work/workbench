@@ -39,7 +39,7 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	f.relay.mu.Unlock()
 	require.True(t, modelProxy, "a Model Configuration's model is always reached through the local proxy")
 	require.JSONEq(t, `{"model":{"base_url":"https://model.example/anthropic","key":"`+fixtureModelKey+`"},
-		"gateway":{"url":"`+managedGatewayAddress+`","work_id":"`+input.WorkID+`","identity_token":"agent-token-`+input.WorkID+`","work_credential":"`+spec.WorkCredential+`","space_token":"space-token"},
+		"gateway":{"url":"`+managedGatewayAddress+`","identity_token":"agent-token-`+input.WorkID+`","space_token":"space-token"},
 		"api":{"url":"`+managedAPIAddress+`"}}`, delivered)
 	require.Equal(t, modelCredential{Key: fixtureModelKey}.digest(), record.ModelCredentialDigest)
 	requireTokenRenewal(t, record)
@@ -49,7 +49,7 @@ func TestManagedWorkCredentialsReachOnlyTheLocalProxy(t *testing.T) {
 	}
 	encodedEnvironment, err := json.Marshal(environment)
 	require.NoError(t, err)
-	for _, secret := range []string{fixtureModelKey, spec.WorkCredential, "space-token"} {
+	for _, secret := range []string{fixtureModelKey, "agent-token-" + input.WorkID, "space-token"} {
 		require.NotContains(t, string(encodedEnvironment), secret)
 		require.NotContains(t, record.LaunchCommand, secret)
 		f.relay.mu.Lock()

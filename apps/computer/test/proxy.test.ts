@@ -19,14 +19,13 @@ import { posixModes } from './support/platform.ts'
 
 const IDENTITY_TOKEN = 'agent-identity-token'
 
-// Talgent Computer black-box tests of Work credentials and the local proxy:
+// Talgent Computer black-box tests of a Work's credentials and the local proxy:
 // credentials are delivered through the
 // execd service as the Gateway relays them, processes run through the shim,
 // and the proxy forwards to a stand-in vendor and MCP endpoint.
 
 const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url))
 const KEY = 'sk-model-key-0123456789'
-const WORK_CREDENTIAL = 'work-credential-abcdef'
 const SPACE_TOKEN = 'space-token-xyz'
 
 let dir: string
@@ -86,7 +85,7 @@ afterEach(async () => {
 
 const credentialsBody = (model = true) => ({
   ...(model ? { model: { base_url: `${upstream.origin}/anthropic`, key: KEY } } : {}),
-  gateway: { url: `${upstream.origin}/computer/v1/mcp`, work_id: 'w-1', identity_token: IDENTITY_TOKEN, work_credential: WORK_CREDENTIAL, space_token: SPACE_TOKEN },
+  gateway: { url: `${upstream.origin}/computer/v1/mcp`, identity_token: IDENTITY_TOKEN, space_token: SPACE_TOKEN },
 })
 
 const deliver = (body: unknown, workId = 'w-1', method = 'PUT') => service.request({ workId, method, path: '/credentials', token: '', body })
@@ -152,8 +151,8 @@ test('credentials are validated, kept 0600 outside every Work root, and DELETE f
     null,
     {},
     { gateway: { ...gateway, url: 'ftp://x/mcp' } },
-    { gateway: { ...gateway, work_credential: '' } },
-    { gateway: { ...gateway, work_id: 'a b' } },
+    { gateway: { ...gateway, identity_token: '' } },
+    { gateway: { ...gateway, identity_token: 'a b' } },
     { gateway, model: { base_url: 'http://vendor.example/anthropic', key: KEY } },
     { gateway, model: { base_url: 'https://vendor.example/a?x=1', key: KEY } },
     { gateway, model: { base_url: 'https://u:p@vendor.example/a', key: KEY } },
@@ -170,7 +169,7 @@ test('credentials are validated, kept 0600 outside every Work root, and DELETE f
   await assert.rejects(stat(file), { code: 'ENOENT' })
 })
 
-test('a run reaches the model only through the proxy; neither its environment nor any file holds the key or Work credential', async () => {
+test('a run reaches the model only through the proxy; neither its environment nor any file holds the key or Identity Token', async () => {
   await deliver(credentialsBody())
   const { id, env } = await runEnv()
   const token = env.TALGENT_PROXY_TOKEN
@@ -180,20 +179,20 @@ test('a run reaches the model only through the proxy; neither its environment no
   assert.equal(env.ANTHROPIC_AUTH_TOKEN, token)
   assert.equal(env.ANTHROPIC_API_KEY, undefined, 'the machine key is removed')
   const spawned = JSON.stringify(env)
-  for (const secret of [KEY, IDENTITY_TOKEN, WORK_CREDENTIAL, SPACE_TOKEN]) assert.ok(!spawned.includes(secret))
+  for (const secret of [KEY, IDENTITY_TOKEN, SPACE_TOKEN]) assert.ok(!spawned.includes(secret))
   // Every file Talgent Computer keeps, the Work root and process state
   // included, but the credentials file itself.
   const credentialsFile = join(dir, 'state', 'credentials', 'w-1.json')
   for (const file of await filesUnder(dir)) {
     if (file === credentialsFile) continue
     const text = await readFile(file, 'utf8').catch(() => '')
-    for (const secret of [KEY, IDENTITY_TOKEN, WORK_CREDENTIAL, SPACE_TOKEN, token]) assert.ok(!text.includes(secret) || (secret === token && file.endsWith('output.log')), `${file} holds a secret`)
+    for (const secret of [KEY, IDENTITY_TOKEN, SPACE_TOKEN, token]) assert.ok(!text.includes(secret) || (secret === token && file.endsWith('output.log')), `${file} holds a secret`)
   }
   const record = await readFile(join(processes.dir('w-1', id), 'proxy-token.json'), 'utf8')
   assert.ok(!record.includes(token), 'only the token hash is kept')
 })
 
-test('a Work the platform serves the native API to calls it through the proxy with its run token', async () => {
+test('a Work the platform serves the entry to calls it through the proxy with its run token', async () => {
   assert.equal((await service.request({ workId: 'w-api', method: 'PUT', path: '/', token: '', body: { access_token: 'tok', platform_api: true } })).status, 200)
   const { env } = await runEnv('w-api')
   assert.equal(env.TALGENT_API_ADDRESS, `${proxy.origin()}/w/w-api/api/${env.TALGENT_PROXY_TOKEN}`)
@@ -321,7 +320,7 @@ test('a streamed model response reaches the process as it arrives', async () => 
   assert.equal(await first.rest, 'event: message_stop\ndata: {}\n\n')
 })
 
-test('MCP requests go to the Talgent MCP endpoint with the Work\'s Identity Token and credential headers', async () => {
+test('MCP requests go to the Talgent MCP endpoint with the Work\'s Identity Token and Space Token alone', async () => {
   await deliver(credentialsBody())
   const { env } = await runEnv()
   const headers = { authorization: `Bearer ${env.TALGENT_PROXY_TOKEN}`, 'x-talgent-work-id': 'forged', 'content-type': 'application/json' }
@@ -329,8 +328,8 @@ test('MCP requests go to the Talgent MCP endpoint with the Work\'s Identity Toke
     assert.equal((await send(`${proxy.origin()}/w/w-1${path}`, { method: 'POST', headers, body: '{"jsonrpc":"2.0"}' })).status, 200)
     const seen = upstream.last()
     assert.equal(seen.url, expected)
-    assert.equal(seen.headers['x-talgent-work-id'], 'w-1')
-    assert.equal(seen.headers['x-talgent-work-credential'], WORK_CREDENTIAL)
+    assert.equal(seen.headers['x-talgent-work-id'], undefined, 'a client identity header never passes')
+    assert.equal(seen.headers['x-talgent-work-credential'], undefined)
     assert.equal(seen.headers['x-talgent-space-token'], SPACE_TOKEN)
     assert.equal(seen.headers.authorization, `Bearer ${IDENTITY_TOKEN}`, 'the run\'s token is replaced by the Work\'s Identity Token')
   }
@@ -416,7 +415,7 @@ test('undelivered credentials answer 503, unknown routes 404 and an unreachable 
   assert.equal(failed.status, 502)
   assert.ok(!failed.body.includes(KEY))
   assert.ok(logs.some((line) => line.includes('ECONNREFUSED')))
-  assert.ok(logs.every((line) => !line.includes(KEY) && !line.includes(WORK_CREDENTIAL)))
+  assert.ok(logs.every((line) => !line.includes(KEY) && !line.includes(IDENTITY_TOKEN)))
 })
 
 test('the proxy keeps its port across restarts and moves when it is taken', async () => {

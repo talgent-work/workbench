@@ -91,7 +91,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 				names = append(names, credential.Name)
 			}
 			f.external.vault.mu.Unlock()
-			require.Equal(t, []string{"model", identityTokenVaultEntry, workIDVaultEntry, workCredentialVaultEntry}, names, "the model and the Gateway identity, no Provider credential")
+			require.Equal(t, []string{"model", identityTokenVaultEntry}, names, "the model and the Work's Identity Token, no Provider credential")
 		}
 		current, err := f.works.Get(ctx, work.ID)
 		require.NoError(t, err)

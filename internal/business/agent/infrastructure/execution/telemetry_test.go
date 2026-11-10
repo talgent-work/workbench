@@ -20,7 +20,7 @@ func TestNativeLaunchTelemetryExportsWorkAttribution(t *testing.T) {
 	spanID, err := trace.SpanIDFromHex("1234567890123456")
 	require.NoError(t, err)
 	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled}))
-	spec, err := provider.specification(ctx, input, testMounts, owner(input), "test-token", "work-credential-fixture")
+	spec, err := provider.specification(ctx, input, testMounts, owner(input), "test-token")
 	require.NoError(t, err)
 	require.Equal(t, "00-12345678901234567890123456789012-1234567890123456-01", spec.Env["TRACEPARENT"])
 	require.NotContains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.execution_id", "telemetry is attributed per Work, never per process run")
@@ -32,7 +32,7 @@ func TestNativeLaunchTelemetryExportsWorkAttribution(t *testing.T) {
 	require.Equal(t, "1", spec.Env["CLAUDE_CODE_ENHANCED_TELEMETRY_BETA"])
 	require.NotContains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.computer_", "a start without a Computer names none")
 	input.TraceAttributes["talgent.project_id"] = "project-1,talgent.user_id=another-user"
-	_, err = provider.specification(ctx, input, testMounts, owner(input), "test-token", "work-credential-fixture")
+	_, err = provider.specification(ctx, input, testMounts, owner(input), "test-token")
 	require.Error(t, err, "resource delimiter injection must reject launch")
 }
 
@@ -44,7 +44,7 @@ func TestCloudTelemetryNamesItsComputer(t *testing.T) {
 	input := request()
 	input.ComputerID, input.ComputerName = "cloud-1", "Talgent Cloud, 一"
 	input.TraceAttributes = map[string]string{"talgent.agent_work_id": input.WorkID, "talgent.computer_id": "forged", "talgent.computer_name": "forged"}
-	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "test-token", "work-credential-fixture")
+	spec, err := provider.specification(context.Background(), input, testMounts, owner(input), "test-token")
 	require.NoError(t, err)
 	require.Equal(t, "talgent.agent_work_id="+input.WorkID+",talgent.computer_id=cloud-1,talgent.computer_name=Talgent%20Cloud%2C%20%E4%B8%80", spec.Env["OTEL_RESOURCE_ATTRIBUTES"])
 }

@@ -41,8 +41,8 @@ func PlatformConnectorLaunch(t testing.TB, dsn, binary, workID, mcpAddress strin
 }
 
 // platformConnector publishes the platform Connector at address in the
-// Marketplace and selects it as Agent does. The Work credential is never part
-// of the Connector record.
+// Marketplace and selects it as Agent does. The Work's Identity Token is never
+// part of the Connector record.
 func platformConnector(t testing.TB, dsn, address string) domain.SelectedConnector {
 	t.Helper()
 	db, err := xorm.NewEngine("mysql", dsn)

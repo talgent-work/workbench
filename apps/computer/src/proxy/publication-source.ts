@@ -6,7 +6,7 @@ import { Limit } from '../limit.ts'
 
 // A publication's source: the file of the Work a publication names, which
 // the platform cannot read on this machine, read by the local proxy for its
-// MCP route (publication.ts) and its native API route (api-publication.ts)
+// MCP route (publication.ts) and its entry route (api-publication.ts)
 // alike, within the platform's bounds on one request.
 
 export const MAX_SOURCE_BYTES = 64 * 1024 * 1024

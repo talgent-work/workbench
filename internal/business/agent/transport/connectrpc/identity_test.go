@@ -45,6 +45,7 @@ func TestAnAgentAsksWhoItIs(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, proto.Equal(&agentpublicv1.WhoAmIResponse{WorkId: work, ProjectId: "project", SubjectKind: "case", SubjectId: "case-1", Purpose: "work", AgentId: "definition"}, me), me.String())
 
-	_, err = client.WhoAmI(as("user", map[string]string{authn.HeaderSubject: "2c857667-a533-5efc-b6da-fc9cce51d31b"}), &agentpublicv1.WhoAmIRequest{})
+	person := "2c857667-a533-5efc-b6da-fc9cce51d31b"
+	_, err = client.WhoAmI(as("user", map[string]string{authn.HeaderSubject: person}), &agentpublicv1.WhoAmIRequest{})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 }

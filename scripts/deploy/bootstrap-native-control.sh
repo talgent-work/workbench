@@ -3,7 +3,7 @@ set -euo pipefail
 
 NS="${TALGENT_NAMESPACE:-talgent}"
 SECRET_NAME="native-execution-control"
-keys=(AGENT_CONTROL_TOKEN AGENT_FEEDBACK_TOKEN DISPATCHER_EXECUTION_CONTROL_TOKEN STORAGE_DIRECTORY_TOKEN STORAGE_AGENT_TOKEN STORAGE_CONTENT_TOKEN STORAGE_LINK_SECRET GATEWAY_TOKEN COMPUTER_CONTROL_TOKEN)
+keys=(AGENT_CONTROL_TOKEN AGENT_FEEDBACK_TOKEN DISPATCHER_EXECUTION_CONTROL_TOKEN STORAGE_DIRECTORY_TOKEN STORAGE_AGENT_TOKEN STORAGE_CONTENT_TOKEN STORAGE_LINK_SECRET COMPUTER_CONTROL_TOKEN)
 
 # Inspect lengths only; credential values never enter logs or command arguments.
 existing="$(kubectl -n "${NS}" get secret "${SECRET_NAME}" --ignore-not-found -o go-template='{{range $key, $value := .data}}{{printf "%s %d\n" $key (len $value)}}{{end}}')"

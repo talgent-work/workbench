@@ -13,7 +13,7 @@ afterEach(() => rm(dir, { recursive: true, force: true }))
 
 const body = (key: string) => ({
   model: { base_url: 'https://vendor.example/anthropic', key },
-  gateway: { url: 'https://talgent.example/computer/v1/mcp', work_id: 'w-1', identity_token: IDENTITY_TOKEN, work_credential: 'cred' },
+  gateway: { url: 'https://talgent.example/computer/v1/mcp', identity_token: IDENTITY_TOKEN },
 })
 
 test('concurrent puts and deletes of a Work apply in call order; file and cache agree', async () => {

@@ -231,7 +231,7 @@ type AccessGrant struct {
 }
 
 // AccessLink is an Access Link at the public address and as a path, which a
-// Work's sandbox resolves against the native API.
+// Work resolves against the entry's origin.
 type AccessLink struct {
 	URL, Path string
 }

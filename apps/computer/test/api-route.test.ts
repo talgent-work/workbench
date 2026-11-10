@@ -32,7 +32,7 @@ beforeEach(async () => {
   upstream = new Upstream()
   await upstream.listen()
   credentials = {
-    gateway: { url: `${upstream.origin}/computer/v1/mcp`, workId: 'w-1', identityToken: IDENTITY_TOKEN, workCredential: 'cred', spaceToken: 'space' },
+    gateway: { url: `${upstream.origin}/computer/v1/mcp`, identityToken: IDENTITY_TOKEN, spaceToken: 'space' },
     api: { url: `${upstream.origin}/computer/v1/api` },
   }
   proxy = new LocalProxy({
@@ -78,7 +78,7 @@ test('an Artifact command naming a file of the Work sends its bytes instead', as
   assert.equal((await api(CREATE, '{"name":"report.md","path":"/workspace/dist/report.md"}')).status, 200, 'the Cloud\'s /workspace path names the Work root')
 
   const before = upstream.seen.length
-  // Refused as the native API refuses a Cloud Work's source.
+  // Refused as Storage refuses a Cloud Work's source.
   for (const [path, status, code] of [['inputs/brief.md', 400, 'invalid_argument'], ['../outside.md', 400, 'invalid_argument'], ['missing.md', 404, 'not_found']] as const) {
     const refused = await api(CREATE, JSON.stringify({ name: 'x.md', path }))
     assert.equal(refused.status, status, path)

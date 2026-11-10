@@ -47,12 +47,12 @@ const managedComputerID = "01900000-0000-7000-8000-0000000000c1"
 const managedGatewayAddress = "https://workbench.example/computer/v1/mcp"
 
 // managedContentAddress is where the same Gateway serves Access Links.
-const managedContentAddress = "https://workbench.example/computer/v1/storage/content"
+const managedContentAddress = "https://workbench.example/api/v1/storage/content"
 
 // managedTelemetryAddress is the platform's public OTLP endpoint.
 const managedTelemetryAddress = "https://workbench.example/computer/v1/otel"
 
-// managedAPIAddress is where the same origin serves the native API.
+// managedAPIAddress is where the same origin serves the entry's API.
 const managedAPIAddress = "https://workbench.example/computer/v1/api"
 
 func managedRequest() domain.LaunchSpecification {
@@ -70,7 +70,7 @@ func managedRequest() domain.LaunchSpecification {
 func TestAManagedStartRealizesItsModelConfigurationWithoutEndpointOrKey(t *testing.T) {
 	configured := managedRequest()
 	configured.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
-	spec, err := managedSpecificationFor(configured, fixtureModels(), "execd-token", "work-credential")
+	spec, err := managedSpecificationFor(configured, fixtureModels(), "execd-token")
 	require.NoError(t, err)
 	require.Equal(t, "https://model.example/anthropic", spec.ModelEndpoint)
 	require.Equal(t, map[string]string{"TALGENT_WORK_ID": "session", "DISABLE_AUTOUPDATER": "1",
@@ -81,17 +81,16 @@ func TestAManagedStartRealizesItsModelConfigurationWithoutEndpointOrKey(t *testi
 	require.NotContains(t, string(encoded), fixtureModelKey, "the key is delivered, never recorded")
 
 	configured.WorkModel = domain.WorkModelSelection{ConfigurationID: "withdrawn"}
-	_, err = managedSpecificationFor(configured, fixtureModels(), "execd-token", "work-credential")
+	_, err = managedSpecificationFor(configured, fixtureModels(), "execd-token")
 	require.ErrorIs(t, err, errModelConfigurationNotProvided)
 }
 
 func TestManagedEnvironmentHoldsNoMountsVaultHomeOrPlatformCredentials(t *testing.T) {
-	spec, err := managedSpecificationFor(managedRequest(), fixtureModels(), "execd-token", "work-credential")
+	spec, err := managedSpecificationFor(managedRequest(), fixtureModels(), "execd-token")
 	require.NoError(t, err)
 	require.Equal(t, managedComputerID, spec.ComputerID)
 	require.Equal(t, map[string]string{"TALGENT_WORK_ID": "session", "DISABLE_AUTOUPDATER": "1"}, spec.Environment,
-		"the machine supplies HOME, PATH and the Work root; no model, CA, proxy placeholder or Work credential reaches it")
-	require.Equal(t, "work-credential", spec.WorkCredential, "the Work credential is issued and kept on the platform")
+		"the machine supplies HOME, PATH and the Work root; no model, CA, proxy placeholder or platform credential reaches it")
 	require.NoError(t, spec.attachTelemetry(context.Background(), managedRequest(), managedTelemetryAddress, "telemetry-token-fixture"))
 	encoded, err := json.Marshal(spec)
 	require.NoError(t, err)
@@ -102,7 +101,7 @@ func TestManagedEnvironmentHoldsNoMountsVaultHomeOrPlatformCredentials(t *testin
 	require.NoError(t, err)
 	_, err = decodeManagedSpecification(executionRecord{SpecificationJSON: cloud})
 	require.ErrorIs(t, err, domain.ErrExecutionRequest, "a Cloud sandbox specification is no Managed environment")
-	_, err = managedSpecificationFor(request(), fixtureModels(), "execd-token", "work-credential")
+	_, err = managedSpecificationFor(request(), fixtureModels(), "execd-token")
 	require.ErrorIs(t, err, domain.ErrExecutionRequest, "a Managed start names its Computer")
 }
 
@@ -112,7 +111,7 @@ func TestManagedEnvironmentHoldsNoMountsVaultHomeOrPlatformCredentials(t *testin
 func TestAManagedWorkOfAProjectNamesItsProjectAndNoKnowledgeRoot(t *testing.T) {
 	input := managedRequest()
 	input.ProjectID = "project"
-	spec, err := managedSpecificationFor(input, fixtureModels(), "execd-token", "work-credential")
+	spec, err := managedSpecificationFor(input, fixtureModels(), "execd-token")
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{"TALGENT_WORK_ID": "session", "DISABLE_AUTOUPDATER": "1", "TALGENT_PROJECT_ID": "project"}, spec.Environment)
 }
@@ -230,7 +229,7 @@ func TestManagedComputersReachTheWorkThroughTheRelay(t *testing.T) {
 	place := &managedPlace{}
 	managed, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", place)
 	require.NoError(t, err)
-	spec, err := managedSpecificationFor(managedRequest(), fixtureModels(), "execd-token", "work-credential")
+	spec, err := managedSpecificationFor(managedRequest(), fixtureModels(), "execd-token")
 	require.NoError(t, err)
 
 	require.NoError(t, managed.open(ctx, spec, "session"))
@@ -239,7 +238,7 @@ func TestManagedComputersReachTheWorkThroughTheRelay(t *testing.T) {
 	require.NotContains(t, relay.environment, "model_proxy", "the machine's own Claude login is not proxied")
 	configured := managedRequest()
 	configured.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
-	configuredSpec, err := managedSpecificationFor(configured, fixtureModels(), "execd-token", "work-credential")
+	configuredSpec, err := managedSpecificationFor(configured, fixtureModels(), "execd-token")
 	require.NoError(t, err)
 	require.NoError(t, managed.open(ctx, configuredSpec, "session"))
 	require.Equal(t, true, relay.environment["model_proxy"], "a Model Configuration's model always goes through the local proxy")
@@ -352,14 +351,14 @@ func TestManagedComputersDeliverAndForgetTheWorksCredentials(t *testing.T) {
 	spec, err := startedSpecification(managedRequest())
 	require.NoError(t, err)
 	credentials := workCredentials{Model: &workModelCredential{BaseURL: "https://model.example/anthropic", Key: "model-key"},
-		Gateway: workGatewayCredential{URL: managed.gateway, WorkID: "session", IdentityToken: "agent-token", WorkCredential: "work-credential", SpaceToken: "space"}}
+		Gateway: workGatewayCredential{URL: managed.gateway, IdentityToken: "agent-token", SpaceToken: "space"}}
 	require.NoError(t, managed.deliverCredentials(ctx, spec, "session", credentials))
 	require.Equal(t, map[string]any{"model": map[string]any{"base_url": "https://model.example/anthropic", "key": "model-key"},
-		"gateway": map[string]any{"url": managedGatewayAddress, "work_id": "session", "identity_token": "agent-token", "work_credential": "work-credential", "space_token": "space"}}, relay.credentials)
+		"gateway": map[string]any{"url": managedGatewayAddress, "identity_token": "agent-token", "space_token": "space"}}, relay.credentials)
 
 	credentials.Model, credentials.Gateway.SpaceToken = nil, ""
 	require.NoError(t, managed.deliverCredentials(ctx, spec, "session", credentials))
-	require.Equal(t, map[string]any{"gateway": map[string]any{"url": managedGatewayAddress, "work_id": "session", "identity_token": "agent-token", "work_credential": "work-credential"}}, relay.credentials,
+	require.Equal(t, map[string]any{"gateway": map[string]any{"url": managedGatewayAddress, "identity_token": "agent-token"}}, relay.credentials,
 		"the machine's own Claude login carries no model; a Work without an input source no Space Token")
 	require.NoError(t, managed.forgetCredentials(ctx, spec, "session"))
 	require.Nil(t, relay.credentials)
@@ -385,7 +384,7 @@ func TestManagedComputersNeedTheGatewaysPublicHTTPSAddress(t *testing.T) {
 	}
 }
 
-// A Managed Work gets the native API where the platform serves it, and
+// A Managed Work gets the entry's API where the platform serves it, and
 // keeps what its start was realized with: the environment's platform_api
 // and the delivered api credential both follow the recorded start, not a
 // replica's current configuration.
@@ -396,7 +395,7 @@ func TestManagedWorksGetTheNativeAPIOnlyWhereItIsServed(t *testing.T) {
 	defer server.Close()
 	started := func(machines *ManagedComputers) managedSpecification {
 		input := managedRequest()
-		specified, err := ManagedEnvironment{machines: machines, models: fixtureModels()}.specify(ctx, input, testMounts, owner(input), "execd-token", "work-credential")
+		specified, err := ManagedEnvironment{machines: machines, models: fixtureModels()}.specify(ctx, input, testMounts, owner(input), "execd-token")
 		require.NoError(t, err)
 		spec, err := decodeManagedSpecification(executionRecord{SpecificationJSON: specified.document})
 		require.NoError(t, err)
@@ -410,7 +409,7 @@ func TestManagedWorksGetTheNativeAPIOnlyWhereItIsServed(t *testing.T) {
 	served := started(with)
 	require.Equal(t, managedAPIAddress, served.APIAddress)
 	require.NoError(t, without.open(ctx, served, "session"))
-	require.Equal(t, true, relay.environment["platform_api"], "the start was realized with the native API")
+	require.Equal(t, true, relay.environment["platform_api"], "the start was realized with the entry's API")
 
 	unserved := started(without)
 	require.Empty(t, unserved.APIAddress)
@@ -449,7 +448,7 @@ func TestManagedModelDigestFollowsTheCurrentKey(t *testing.T) {
 // startedSpecification is the specification a start records, as
 // ManagedEnvironment.specify builds it, telemetry included.
 func startedSpecification(request domain.LaunchSpecification) (managedSpecification, error) {
-	spec, err := managedSpecificationFor(request, fixtureModels(), "execd-token", "work-credential")
+	spec, err := managedSpecificationFor(request, fixtureModels(), "execd-token")
 	if err != nil {
 		return spec, err
 	}

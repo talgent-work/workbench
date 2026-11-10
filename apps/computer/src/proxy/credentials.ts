@@ -12,9 +12,9 @@ import { isErrno } from '../store.ts'
 export interface WorkCredentials {
   // Absent for a Work on the machine's own Claude login.
   model?: { baseUrl: string; key: string }
-  gateway: { url: string; workId: string; identityToken: string; workCredential: string; spaceToken?: string }
-  // Where the Work's native API calls go, with the gateway's identity; absent
-  // where Works reach the platform only through the Gateway.
+  gateway: { url: string; identityToken: string; spaceToken?: string }
+  // Where the Work's entry calls go, with its Identity Token; absent where
+  // Works reach the platform only through the Gateway.
   api?: { url: string }
 }
 
@@ -142,8 +142,8 @@ function parseModel(model: unknown): NonNullable<WorkCredentials['model']> {
   return { baseUrl: url.href, key: headerValue(model.key, 'model.key') }
 }
 
-// The native API lies on the gateway's origin, the only one the Work's
-// identity is sent to.
+// The entry lies on the gateway's origin, the only one the Work's Identity
+// Token is sent to.
 function parseApi(api: unknown, gatewayUrl: string): NonNullable<WorkCredentials['api']> {
   if (!isObject(api)) throw new InvalidCredentialsError('api must be an object')
   const url = parseUrl(api.url, 'api.url')
@@ -157,9 +157,7 @@ function parseGateway(gateway: unknown): WorkCredentials['gateway'] {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new InvalidCredentialsError('gateway.url must be an http(s) URL')
   const result: WorkCredentials['gateway'] = {
     url: url.href,
-    workId: headerValue(gateway.work_id, 'gateway.work_id'),
     identityToken: headerValue(gateway.identity_token, 'gateway.identity_token'),
-    workCredential: headerValue(gateway.work_credential, 'gateway.work_credential'),
   }
   if (gateway.space_token !== undefined && gateway.space_token !== null && gateway.space_token !== '') {
     result.spaceToken = headerValue(gateway.space_token, 'gateway.space_token')

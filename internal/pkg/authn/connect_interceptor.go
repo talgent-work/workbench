@@ -40,6 +40,9 @@ const (
 	HeaderRuntimeInstanceID = "x-talgent-runtime-instance-id"
 	HeaderRuntimePurpose    = "x-talgent-runtime-purpose"
 	HeaderRuntimeOwnerRef   = "x-talgent-runtime-owner-ref"
+	// HeaderSpaceToken carries a Work Agent's Space Token on its Artifact
+	// commands: a capability beside its identity, never an identity.
+	HeaderSpaceToken = "x-talgent-space-token"
 )
 
 // The values of HeaderPrincipal.
@@ -48,37 +51,14 @@ const (
 	principalAgent = "agent"
 )
 
-// NativeProcessVerifier resolves a Work's native process credential.
-type NativeProcessVerifier interface {
-	VerifyNativeProcess(ctx context.Context, workID, credential string) (NativeProcess, error)
-}
-
-// Option configures the Principal interceptor.
-type Option func(*principalInterceptor)
-
-// WithNativeProcessVerifier lets a Work's native process, verified by its
-// Work credential, call as its Work's agent Principal. It goes with the native
-// API.
-func WithNativeProcessVerifier(verifier NativeProcessVerifier) Option {
-	return func(i *principalInterceptor) { i.native = verifier }
-}
-
 // NewPrincipalInterceptor establishes exactly one Principal for every request,
 // from the identity headers the entry writes or a trusted service's
 // delegation, and admits only the Principals the procedure's contract
 // declares (admission.v1.admits). A procedure that declares nothing refuses
 // every caller; an anonymous one admits a caller without a Principal. Both
 // unary and streaming procedures pass through it.
-func NewPrincipalInterceptor(options ...Option) connect.ServerInterceptor {
-	i := &principalInterceptor{}
-	for _, option := range options {
-		option(i)
-	}
-	return i.wrap
-}
-
-type principalInterceptor struct {
-	native NativeProcessVerifier
+func NewPrincipalInterceptor() connect.ServerInterceptor {
+	return admit
 }
 
 // headerReader is what the interceptor reads of a request's metadata, as both
@@ -87,7 +67,7 @@ type headerReader interface {
 	Get(key string) string
 }
 
-func (i *principalInterceptor) wrap(next connect.ServerFunc) connect.ServerFunc {
+func admit(next connect.ServerFunc) connect.ServerFunc {
 	return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
 		admission, declared := admissionOf(spec)
 		if !declared {
@@ -100,18 +80,7 @@ func (i *principalInterceptor) wrap(next connect.ServerFunc) connect.ServerFunc 
 		if info, ok := connect.CallInfoForServerContext(ctx); ok {
 			header = info.RequestHeader()
 		}
-		var principal Principal
-		var err error
-		// An identity the entry verified outranks native credentials, which
-		// reach a service only through the native API, never the entry.
-		if hasNativeCredential(header) && strings.TrimSpace(header.Get(HeaderAuthenticatedBy)) != "envoy" {
-			if spec.StreamType != connect.StreamTypeUnary {
-				return connect.NewError(connect.CodePermissionDenied, "native execution cannot access streaming procedures")
-			}
-			ctx, principal, err = i.authenticateNative(ctx, header)
-		} else {
-			principal, err = establish(header)
-		}
+		principal, err := establish(header)
 		if err != nil {
 			return err
 		}
@@ -238,26 +207,4 @@ func parseRoles(value string) []string {
 		}
 	}
 	return roles
-}
-
-func hasNativeCredential(header headerReader) bool {
-	return header.Get(HeaderNativeWorkID) != "" || header.Get(HeaderNativeCredential) != ""
-}
-
-// authenticateNative verifies a native process and speaks for its Work's
-// Agent; the process context stays beside it for the Artifact commands that
-// read its Session Workspace.
-func (i *principalInterceptor) authenticateNative(ctx context.Context, header headerReader) (context.Context, Principal, error) {
-	workID, credential := strings.TrimSpace(header.Get(HeaderNativeWorkID)), strings.TrimSpace(header.Get(HeaderNativeCredential))
-	if workID == "" || credential == "" || i.native == nil {
-		return ctx, Principal{}, connect.NewError(connect.CodeUnauthenticated, "complete native process credentials required")
-	}
-	process, err := i.native.VerifyNativeProcess(ctx, workID, credential)
-	if err != nil {
-		return ctx, Principal{}, err
-	}
-	return WithNativeProcess(ctx, process), AgentPrincipal(Agent{
-		WorkID: process.WorkID, ProjectID: process.ProjectID, AgentID: process.AgentID, Purpose: process.Purpose,
-		SubjectKind: process.WorkSubjectKind, SubjectID: process.WorkSubjectID, RepresentedUserID: process.SubjectID,
-	}), nil
 }

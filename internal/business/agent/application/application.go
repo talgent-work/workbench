@@ -43,7 +43,6 @@ type Queries struct {
 	GetWorkPreparation           *query.GetWorkPreparationHandler
 	ListSubmittedPreparations    *query.ListSubmittedPreparationsHandler
 	LocateWork                   *query.LocateWorkHandler
-	VerifyWorkCredential         *query.VerifyWorkCredentialHandler
 	AdmitAgentAction             *query.AdmitAgentActionHandler
 	GetAgentDefinitionForPurpose *query.GetAgentDefinitionForPurposeHandler
 	ListRecoveryWorks            *query.ListRecoveryWorksHandler
@@ -106,7 +105,6 @@ func NewApplication(
 	recovery *command.RecoverWorkHandler,
 	recoverySessions *query.ListRecoveryWorksHandler,
 	definition *query.GetAgentDefinitionForPurposeHandler,
-	identity *query.VerifyWorkCredentialHandler,
 	acting *query.AdmitAgentActionHandler,
 	locate *query.LocateWorkHandler,
 	endExecution *command.EndWorkExecutionHandler,
@@ -160,7 +158,6 @@ func NewApplication(
 			GetWorkPreparation:           preparation,
 			ListSubmittedPreparations:    submitted,
 			LocateWork:                   locate,
-			VerifyWorkCredential:         identity,
 			AdmitAgentAction:             acting,
 			GetAgentDefinitionForPurpose: definition,
 			ListRecoveryWorks:            recoverySessions,

@@ -64,7 +64,7 @@ func (p *Provisioning) specify(ctx context.Context, record executionRecord, supp
 	if err != nil {
 		return err
 	}
-	spec, err := authority.specify(ctx, launch, supply.Mounts, owner, rand.Text(), rand.Text())
+	spec, err := authority.specify(ctx, launch, supply.Mounts, owner, rand.Text())
 	if err != nil {
 		return err
 	}

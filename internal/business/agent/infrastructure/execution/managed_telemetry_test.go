@@ -32,7 +32,7 @@ func TestAManagedRunReportsTelemetryLikeACloudRun(t *testing.T) {
 	require.NoError(t, err)
 	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled}))
 
-	specified, err := environment.specify(ctx, input, testMounts, owner(input), "execd-token", "work-credential")
+	specified, err := environment.specify(ctx, input, testMounts, owner(input), "execd-token")
 	require.NoError(t, err)
 	spec, err := decodeManagedSpecification(executionRecord{SpecificationJSON: specified.document})
 	require.NoError(t, err)
@@ -54,10 +54,9 @@ func TestAManagedRunReportsTelemetryLikeACloudRun(t *testing.T) {
 	encoded, err := json.Marshal(env)
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded), spec.Telemetry.Token)
-	require.NotContains(t, string(encoded), "work-credential")
 	require.Equal(t, map[string]string{"talgent.agent_work_id": "session", "talgent.computer_id": managedComputerID, "talgent.computer_name": managedComputerName}, spec.Telemetry.Attributes)
 
-	again, err := environment.specify(ctx, input, testMounts, owner(input), "execd-token", "work-credential")
+	again, err := environment.specify(ctx, input, testMounts, owner(input), "execd-token")
 	require.NoError(t, err)
 	next, err := decodeManagedSpecification(executionRecord{SpecificationJSON: again.document})
 	require.NoError(t, err)

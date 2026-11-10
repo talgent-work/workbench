@@ -317,14 +317,6 @@ data:
           limits.cpu: "2250m"
           limits.memory: "2368Mi"
           pods: "1"
-    # The procedures an Agent reaches with its Work credential, from its
-    # sandbox through the Service's agent port.
-    native-api:
-      addr: "${NATIVE_API_ADDR::8081}"
-    native-authentication:
-      # Agent verifies every Work credential.
-      agent-address: "${AGENT_INTERNAL_ADDRESS:http://127.0.0.1:8080}"
-      agent-control-token: "${AGENT_CONTROL_TOKEN:}"
     agent-execution:
       sandbox-namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
       # Must equal the OpenSandbox server's sandbox_create_timeout_seconds
@@ -801,10 +793,6 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
-    # The native API, for a platform Connector where one is deployed.
-    - name: native
-      port: 8081
-      targetPort: 8081
   selector:
     app: controlplane
 ---
@@ -1097,13 +1085,6 @@ spec:
                 secretKeyRef:
                   name: native-execution-control
                   key: STORAGE_LINK_SECRET
-            # The token a platform Connector presents to the native API, for a
-            # controlplane profile's native-api.gateway-token.
-            - name: GATEWAY_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: native-execution-control
-                  key: GATEWAY_TOKEN
             - name: GITHUB_SCM_ENABLED
               valueFrom:
                 secretKeyRef:
@@ -1779,7 +1760,6 @@ spec:
         - x-talgent-service-id
         - x-talgent-delegated-user-id
         - x-talgent-delegated-actor-id
-        - x-talgent-gateway-token
         - x-talgent-reader-admission
         - x-talgent-runtime-instance-id
         - x-talgent-runtime-purpose

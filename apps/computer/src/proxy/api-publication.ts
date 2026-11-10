@@ -40,7 +40,9 @@ export async function completeArtifactCommand(request: IncomingMessage, root: st
   if (!isObject(message) || typeof message.path !== 'string' || message.content !== undefined) return { kind: 'pass', body: { chunks: [body] } }
   // The Work Directory names where the file is; content sent names none. A
   // Managed Work has one directory, its Work root, whatever the Work names.
-  const { path, work_directory: _directory, workDirectory: _camel, ...rest } = message
+  const { path, ...rest } = message
+  delete rest.work_directory
+  delete rest.workDirectory
   return holdingCompletion(async () => {
     const source = await readSource(root, path, 'path', MAX_REQUEST_BYTES - body.length)
     if ('refusal' in source) return { kind: 'refuse', message: source.refusal, missing: source.missing }

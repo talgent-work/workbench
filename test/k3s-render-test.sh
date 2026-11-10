@@ -43,7 +43,7 @@ grep -q "AGENT_CORE_API_ACCESS is enabled or disabled, not 'off'" "$work/invalid
 }
 
 RENDERED="$work/rendered.yaml" SWITCHED="$work/switched.yaml" SERVER="$root_dir/deploy/opensandbox/server.yaml" python3 - <<'PYTHON'
-import os, sys
+import json, os, sys
 import yaml
 
 docs = [d for d in yaml.safe_load_all(open(os.environ["RENDERED"])) if d]
@@ -158,7 +158,7 @@ def rules(rendered, route):
 identity_headers = {"x-talgent-" + h for h in (
     "authenticated-by", "issuer", "principal", "subject", "username", "email", "display-name", "avatar-url", "roles",
     "project-id", "agent-id", "purpose", "work-subject-kind", "work-subject-id", "represented-user-id",
-    "service-id", "delegated-user-id", "delegated-actor-id", "gateway-token", "reader-admission",
+    "service-id", "delegated-user-id", "delegated-actor-id", "reader-admission",
     "runtime-instance-id", "runtime-purpose", "runtime-owner-ref")}
 entry = find(docs, "ClientTrafficPolicy", "identity-headers")
 check(entry is not None and where(entry) == "envoy-gateway-system"
@@ -187,8 +187,18 @@ for section in ("agent-identity-api", "storage-artifact-api", "personal-work-api
     check(section in rules(docs, "web-api") and section in targets, f"web-auth validates the web-api rule {section}")
 check(find(docs, "BackendTrafficPolicy", "computer-api-rate-limit") is None and "computer-api" not in rules(docs, "computer"),
       "Managed Works reach the platform through the entry, not a computer-api rule")
-check(service_ports(docs, "controlplane") == ["http", "native"],
-      f"Service controlplane offers sandboxes no port, got {service_ports(docs, 'controlplane')}")
+check(service_ports(docs, "controlplane") == ["http"],
+      f"Service controlplane has one port, behind the entry, got {service_ports(docs, 'controlplane')}")
+
+# Agents have one way in, the entry: no native API object, port, route or
+# switch is rendered, and one sandbox policy reaches only the entry.
+for rendered, how in ((docs, "by default"), (switched, "with every switch set")):
+    text = json.dumps(rendered)
+    for remnant in ("native-api", "native-authentication", "NATIVE_API", "8081", "GATEWAY_TOKEN", "gateway-token",
+                    "sandbox-native-api", "x-talgent-work-credential"):
+        check(remnant not in text, f"{how} nothing renders {remnant}")
+policies = [d["metadata"]["name"] for d in docs if d["kind"] == "NetworkPolicy" and where(d) == "talgent-sandbox"]
+check(policies == ["sandbox-boundary"], f"one sandbox policy bounds every sandbox, got {policies}")
 
 # AGENT_CORE_API_ACCESS: enabled, the entry admits both Principals on the
 # core's routes, leaving admission to each procedure's declaration, and
@@ -223,8 +233,7 @@ check(hostnames(switched, "workbench-web") == ["workbench.example.com"],
 # CONTROLPLANE_PROFILE: empty, controlplane reads its defaults only; set, it
 # also reads controlplane_<profile>.yml of ConfigMap controlplane-profile
 # beside them, and the files of Secret controlplane-profile-secrets, if there
-# is one, under /etc/talgent/profile. Either way a profile may name the
-# platform Connector's token as ${GATEWAY_TOKEN}.
+# is one, under /etc/talgent/profile.
 def pod_spec(rendered, deployment):
     return find(rendered, "Deployment", deployment)["spec"]["template"]["spec"]
 
@@ -235,10 +244,6 @@ def mounted(rendered, deployment, path):
         return None
     return next(v for v in spec["volumes"] if v["name"] == mount["name"]), mount
 
-for rendered, how in ((docs, "by default"), (switched, "with CONTROLPLANE_PROFILE set")):
-    check(container_env(rendered, "controlplane").get("GATEWAY_TOKEN", {}).get("valueFrom")
-          == {"secretKeyRef": {"name": "native-execution-control", "key": "GATEWAY_TOKEN"}},
-          f"{how} controlplane reads GATEWAY_TOKEN from Secret native-execution-control")
 check("JIMU_PROFILES_ACTIVE" not in container_env(docs, "controlplane"), "by default controlplane activates no profile")
 check(mounted(docs, "controlplane", "/app/configs/controlplane")[0].get("configMap") == {"name": "controlplane-config"},
       "by default controlplane's configuration is ConfigMap controlplane-config alone")

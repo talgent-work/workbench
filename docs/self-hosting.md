@@ -207,12 +207,10 @@ and refuses a value a switch does not take. The defaults are the base as describ
 A profile is merged over controlplane's defaults: maps merge, lists replace
 ([configuration reference](configuration.md#how-a-process-reads-its-configuration)). Its
 `${NAME}` values read the environment as the defaults do, so values only the profile uses go in
-the environment file too; `GATEWAY_TOKEN` (Secret `native-execution-control`) is there for
-`native-api.gateway-token`. A deployment whose Agents reach the platform only through a
+the environment file too. A deployment whose Agents reach the platform only through a
 platform Connector turns `AGENT_CORE_API_ACCESS` off and, in its profile, sets the Connector's
 address (`agent-execution.environment.TALGENT_GATEWAY_ADDRESS`,
-`marketplace.platform-connector.gateway-address`), `native-api.gateway-token` and the
-`agent-computer` addresses above. After changing the profile ConfigMap or Secret,
+`marketplace.platform-connector.gateway-address`) and the `agent-computer` addresses above. After changing the profile ConfigMap or Secret,
 `kubectl -n talgent rollout restart deployment/controlplane`.
 
 ## 4. Secrets
@@ -258,7 +256,7 @@ The scripts create, once, and never replace:
 | Secret | Keys | Notes |
 |---|---|---|
 | `account-master-key` | `master-key` | 32 random bytes that seal Account's signing keys. Keep it: if it is lost or replaced, delete every row of the Account database's `signing_key` table and restart controlplane; everyone signs in again. |
-| `native-execution-control` | `AGENT_CONTROL_TOKEN`, `AGENT_FEEDBACK_TOKEN`, `DISPATCHER_EXECUTION_CONTROL_TOKEN`, `STORAGE_DIRECTORY_TOKEN`, `STORAGE_AGENT_TOKEN`, `STORAGE_CONTENT_TOKEN`, `STORAGE_LINK_SECRET`, `GATEWAY_TOKEN`, `COMPUTER_CONTROL_TOKEN` | Tokens between the services (`scripts/deploy/bootstrap-native-control.sh`). A release that adds a key adds it on the next deploy; present keys are never rotated. |
+| `native-execution-control` | `AGENT_CONTROL_TOKEN`, `AGENT_FEEDBACK_TOKEN`, `DISPATCHER_EXECUTION_CONTROL_TOKEN`, `STORAGE_DIRECTORY_TOKEN`, `STORAGE_AGENT_TOKEN`, `STORAGE_CONTENT_TOKEN`, `STORAGE_LINK_SECRET`, `COMPUTER_CONTROL_TOKEN` | Tokens between the services (`scripts/deploy/bootstrap-native-control.sh`). A release that adds a key adds it on the next deploy; present keys are never rotated, and a key no release reads stays unread. |
 | `opensandbox-api` | `api-key` | The OpenSandbox API key (`apply-opensandbox.sh`). After rotating it by hand, restart the OpenSandbox Server and controlplane. |
 
 ## 5. Models

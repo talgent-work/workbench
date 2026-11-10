@@ -42,10 +42,6 @@ type ExecutionQueryRepository interface {
 	ListCurrentPluginResults(ctx context.Context, workID string) ([]PluginResult, error)
 	ReadServiceAccess(ctx context.Context, workID string) ([]ServiceAccessObservation, error)
 	ReadRepositoryPreparation(ctx context.Context, workID string) ([]RepositoryPreparation, error)
-	// VerifyWorkCredential authenticates a native process by the credential
-	// execution infrastructure issued to the Work's current live sandbox.
-	// The credential is revoked with that sandbox; AgentWork takes no part.
-	VerifyWorkCredential(ctx context.Context, workID, credential string) error
 	// RunTelemetryAttribution authenticates the telemetry a Managed Work's
 	// run sends by the telemetry token issued to the Work's current live
 	// execution, and answers the resource attribution everything that run

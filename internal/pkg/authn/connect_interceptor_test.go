@@ -175,6 +175,9 @@ func TestUnverifiedIdentityIsUnauthenticated(t *testing.T) {
 		"only a delegated user":  {HeaderDelegatedUserID: userID},
 		"only a service":         {HeaderServiceID: "work"},
 		"invalid delegated user": {HeaderServiceID: "work", HeaderDelegatedUserID: "issuer#sub-1"},
+		// A Work credential is no identity: Agents reach a service only
+		// through the entry.
+		"a Work credential": {"x-talgent-work-id": workID, "x-talgent-work-credential": "credential"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, ran, err := call(t, NewPrincipalInterceptor(), userOrAgent, header)
@@ -191,59 +194,4 @@ func TestDelegatedServiceCallSpeaksForItsUser(t *testing.T) {
 	user, ok := principal.User()
 	require.True(t, ok)
 	require.Equal(t, "sub-1", user.ID)
-}
-
-type nativeVerifierFixture struct {
-	reject bool
-	calls  int
-}
-
-func (v *nativeVerifierFixture) VerifyNativeProcess(_ context.Context, workID, credential string) (NativeProcess, error) {
-	v.calls++
-	if v.reject || workID != "work" || credential != "credential" {
-		return NativeProcess{}, connect.NewError(connect.CodeUnauthenticated, "")
-	}
-	return NativeProcess{WorkID: "work", SubjectID: "native-owner", ProjectID: "project", AgentID: "agent-definition", Purpose: "review"}, nil
-}
-
-// A Work's native process speaks for its Work's Agent, whatever person the
-// caller claims, and reaches only procedures that admit an agent.
-func TestNativeProcessSpeaksForItsWorksAgent(t *testing.T) {
-	verifier := &nativeVerifierFixture{}
-	interceptor := NewPrincipalInterceptor(WithNativeProcessVerifier(verifier))
-	header := map[string]string{HeaderNativeWorkID: "work", HeaderNativeCredential: "credential", HeaderServiceID: "executor", HeaderDelegatedUserID: "spoofed-owner"}
-	principal, _, err := call(t, interceptor, userOrAgent, header)
-	require.NoError(t, err)
-	agent, ok := principal.Agent()
-	require.True(t, ok)
-	require.Equal(t, "native-owner", agent.RepresentedUserID)
-	_, ran, err := call(t, interceptor, userOnly, header)
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "valid native proof is no user session")
-	require.False(t, ran)
-	_, _, err = call(t, interceptor, userStream, header)
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "native execution reaches unary procedures only")
-	verifier.reject = true
-	_, _, err = call(t, interceptor, userOrAgent, header)
-	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err), "rejected proof must not fall through to service claims")
-}
-
-// An identity the entry verified outranks native credentials sent beside it,
-// which never reach a service through the entry.
-func TestEntryIdentityOutranksNativeCredentials(t *testing.T) {
-	verifier := &nativeVerifierFixture{}
-	header := agentHeaders()
-	header[HeaderNativeWorkID], header[HeaderNativeCredential] = "work", "forged"
-	principal, _, err := call(t, NewPrincipalInterceptor(WithNativeProcessVerifier(verifier)), userOrAgent, header)
-	require.NoError(t, err)
-	agent, ok := principal.Agent()
-	require.True(t, ok)
-	require.Equal(t, workID, agent.WorkID)
-	require.Zero(t, verifier.calls)
-}
-
-func TestIncompleteNativeCredentialIsUnauthenticated(t *testing.T) {
-	verifier := &nativeVerifierFixture{}
-	_, _, err := call(t, NewPrincipalInterceptor(WithNativeProcessVerifier(verifier)), userOrAgent, map[string]string{HeaderNativeWorkID: "work"})
-	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	require.Zero(t, verifier.calls)
 }

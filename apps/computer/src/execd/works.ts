@@ -9,7 +9,7 @@ import { InvalidTelemetryError, parseTelemetry, type WorkTelemetry } from './tel
 // token every call of the Work presents (kept as a hash), the variables
 // every process of the Work gets, and whether its model is a platform Model
 // Configuration its processes reach only through the local proxy, whether it
-// calls the platform's native API through the local proxy, and where its
+// calls the platform's entry through the local proxy, and where its
 // Claude Code sends its telemetry. It lives as long as the Work does.
 export interface WorkEnvironment {
   root: string

@@ -10,7 +10,6 @@ import (
 	domainevent "github.com/go-jimu/components/ddd/event"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 	"github.com/talgent-work/workbench/internal/pkg/eventlog"
-	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
@@ -138,16 +137,12 @@ var Module = fx.Module("domain.agent",
 		query.NewGetAgentDefinitionForPurposeHandler,
 		query.NewResolveAgentsHandler,
 		query.NewGetWorkHandler,
-		query.NewVerifyWorkCredentialHandler,
 		query.NewAdmitAgentActionHandler,
 		application.NewApplication,
 	),
 	fx.Provide(func() func(*domain.AgentDefinition) query.AgentDefinition { return application.AssembleAgentDefinition }, fx.Private),
 	fx.Provide(func() func(*domain.AgentWork, *domain.AgentDefinition) query.AgentWork {
 		return application.AssembleAgentWorkEntity
-	}, fx.Private),
-	fx.Provide(func() func(*domain.AgentWork, *domain.AgentDefinition, string) query.WorkIdentity {
-		return application.AssembleWorkIdentity
 	}, fx.Private),
 )
 
@@ -175,18 +170,11 @@ func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, confi
 	connectserver.Mount(mux, private)
 }
 
-// AgentLibraryProcedures are the Personal Library reads the Agent of a Work
-// without a Project makes, through the native API, for the Work's owner.
-var AgentLibraryProcedures = []string{
-	agentpublicv1connect.PersonalWorkServiceListLibraryFilesProcedure,
-	agentpublicv1connect.WorkFileServiceCreateWorkFileAccessLinkProcedure,
-}
-
 // RegisterPersonalWorkHandlers mounts a person's own Works and their files for
-// the gateway-asserted person, and the Library reads for an Agent acting for
-// its Work's owner.
-func RegisterPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.PersonalWorks, native *nativeauth.LiveWorkClient, logger *slog.Logger) {
-	server := connectserver.New(logger, authn.NewPrincipalInterceptor(authn.WithNativeProcessVerifier(native)))
+// the person the entry verified, and the Library reads for an Agent acting for
+// the person its Work represents.
+func RegisterPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.PersonalWorks, logger *slog.Logger) {
+	server := connectserver.New(logger, authn.NewPrincipalInterceptor())
 	agentpublicv1connect.RegisterPersonalWorkServiceHandler(server, transport.NewPersonalWorkHandler(works))
 	agentpublicv1connect.RegisterWorkFileServiceHandler(server, transport.NewWorkFileHandler(works))
 	connectserver.Mount(mux, server)

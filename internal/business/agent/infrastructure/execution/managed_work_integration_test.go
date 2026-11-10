@@ -429,8 +429,8 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	require.False(t, relay.modelProxy, "the machine's own Claude login needs no model proxy")
 	var spec managedSpecification
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
-	require.JSONEq(t, `{"gateway":{"url":"`+managedGatewayAddress+`","work_id":"`+input.WorkID+`","identity_token":"agent-token-`+input.WorkID+`","work_credential":"`+spec.WorkCredential+`","space_token":"space-token"},"api":{"url":"`+managedAPIAddress+`"}}`, string(relay.credentials),
-		"the machine's own Claude login gets the platform's credentials only: the Gateway's with its publication target's Space Token, and where the native API answers")
+	require.JSONEq(t, `{"gateway":{"url":"`+managedGatewayAddress+`","identity_token":"agent-token-`+input.WorkID+`","space_token":"space-token"},"api":{"url":"`+managedAPIAddress+`"}}`, string(relay.credentials),
+		"the machine's own Claude login gets the platform's credentials only: the Identity Token with its publication target's Space Token, and where the entry answers")
 	requireTokenRenewal(t, record)
 	require.Empty(t, record.ModelCredentialDigest)
 	require.Len(t, relay.created, 2)
@@ -447,10 +447,6 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	for _, call := range relay.calls {
 		require.True(t, strings.HasPrefix(call, http.MethodPut+" /relay/") || strings.Contains(call, "/relay/"+managedComputerID+"/works/"+input.WorkID) || call == http.MethodGet+" /relay/"+managedComputerID+"/reconciliation", call)
 	}
-
-	credentials := NewExecutionQueryRepository(db)
-	require.NoError(t, credentials.VerifyWorkCredential(ctx, input.WorkID, spec.WorkCredential))
-	require.Error(t, credentials.VerifyWorkCredential(ctx, input.WorkID, "forged"))
 
 	// The process exited and its Work retired the execution: its compute is
 	// released through the relay, and the Work's directory stays.

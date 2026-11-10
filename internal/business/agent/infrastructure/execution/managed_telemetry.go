@@ -15,7 +15,7 @@ import (
 // endpoint. It
 // authenticates with a telemetry token of its own, issued with the run's
 // execution and revoked with it, which writes only that run's telemetry:
-// never the Work credential or a model key, which no process of the Work
+// never the Work's Identity Token or a model key, which no process of the Work
 // holds. The endpoint replaces the resource attribution of everything sent
 // with the one recorded here, so a machine cannot attribute telemetry to
 // another Work, person or Computer.

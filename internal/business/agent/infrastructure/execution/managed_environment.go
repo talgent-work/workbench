@@ -22,8 +22,8 @@ import (
 // run's processes, whose deletion the execution's record keeps
 // (handles_released). Its Harness uses the machine's own git credentials, and
 // the machine's own Claude login or the Work's Model Configuration; the
-// Work's credentials (the Work credential for the platform Connector and any
-// Model Configuration key) are delivered to Talgent Computer's local proxy,
+// Work's credentials (its Identity Token for the platform and any Model
+// Configuration key) are delivered to Talgent Computer's local proxy,
 // which alone carries them (managed_credentials.go).
 type ManagedEnvironment struct {
 	// records are the executions, whose input owner and released handles
@@ -72,8 +72,8 @@ func (ManagedEnvironment) launchLayout() launchLayout { return machineLayout }
 // specify holds no mounts and no Provider credentials, so the execution uses
 // no authorization the platform would redeliver. It issues the run's own
 // telemetry token (managed_telemetry.go).
-func (m ManagedEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, _ domain.SandboxMounts, _ SandboxOwner, token, credential string) (environmentSpecification, error) {
-	spec, err := managedSpecificationFor(request, m.models, token, credential)
+func (m ManagedEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, _ domain.SandboxMounts, _ SandboxOwner, token string) (environmentSpecification, error) {
+	spec, err := managedSpecificationFor(request, m.models, token)
 	if err != nil {
 		return environmentSpecification{}, err
 	}
@@ -213,11 +213,4 @@ func (m ManagedEnvironment) remove(ctx context.Context, record executionRecord, 
 		return oops.With("operation", "record_released_handles").Wrap(err)
 	}
 	return nil
-}
-
-// workCredential is the one the Work's credentials deliver to the machine's
-// local proxy.
-func (ManagedEnvironment) workCredential(record executionRecord) (string, error) {
-	spec, err := decodeManagedSpecification(record)
-	return spec.WorkCredential, err
 }

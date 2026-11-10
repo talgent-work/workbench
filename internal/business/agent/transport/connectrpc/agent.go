@@ -308,19 +308,6 @@ func (h *AgentHandler) RespondToInteraction(ctx context.Context, req *agentpriva
 	return &agentprivatev1.RespondToInteractionResponse{}, nil
 }
 
-func (h *AgentHandler) VerifyWorkCredential(ctx context.Context, req *agentprivatev1.VerifyWorkCredentialRequest) (*agentprivatev1.VerifyWorkCredentialResponse, error) {
-	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
-		return nil, err
-	}
-	identity, err := h.application.Queries.VerifyWorkCredential.Handle(ctx, query.VerifyWorkCredential{WorkID: req.GetWorkId(), Credential: req.GetCredential(), RequireActing: req.GetRequireActing()})
-	if err != nil {
-		return nil, mapAgentError(err)
-	}
-	response := &agentprivatev1.VerifyWorkCredentialResponse{AgentName: identity.AgentName, WorkId: identity.WorkID, AgentId: identity.AgentID, SubjectId: identity.SubjectID, Workspace: workspaceLayoutToProto(identity.Workspace),
-		ProjectId: identity.ProjectID, Subject: subjectToProto(identity.Subject), Purpose: identity.Purpose}
-	return response, nil
-}
-
 // expectedVersion maps the optional observed Work version of a control request.
 func expectedVersion(value *int64) *int {
 	if value == nil {

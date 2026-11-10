@@ -13,7 +13,6 @@ import (
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func TestSensitiveSelectionIsAvailableOnlyToTrustedOwnerScopedExecution(t *testing.T) {
@@ -35,8 +34,6 @@ func TestSensitiveSelectionIsAvailableOnlyToTrustedOwnerScopedExecution(t *testi
 	absent, err := client.ReadPersonalPlugins(delegated(t.Context(), "cfe58e71-efc6-5336-8009-449ad568c42b", "Authorization", "Bearer selection-test"), &marketplaceprivatev1.ReadPersonalPluginsRequest{})
 	require.NoError(t, err)
 	require.Empty(t, absent.Plugins)
-	_, err = client.ReadPersonalPlugins(delegated(t.Context(), owner, "Authorization", "Bearer selection-test", authn.HeaderNativeWorkID, "work"), input)
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "native credentials never reach a private service")
 }
 
 func TestSensitiveDefaultsAreHiddenFromDiscoveryButRetainedForExecution(t *testing.T) {

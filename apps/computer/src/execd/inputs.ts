@@ -273,13 +273,13 @@ export class WorkInputs {
     if (this.waiting.get(workId) === job) this.waiting.delete(workId)
     const { gateway } = credentials
     const origin = new URL(gateway.url).origin
-    const headers: Record<string, string> = { 'X-Talgent-Work-Id': gateway.workId, 'X-Talgent-Work-Credential': gateway.workCredential }
-    if (gateway.spaceToken !== undefined) headers['X-Talgent-Space-Token'] = gateway.spaceToken
+    // An Access Link carries its own authority: no identity goes with it.
+    const headers: Record<string, string> = {}
     const limit = new Limit(DOWNLOADS_PER_WORK)
     let failed = false
     await Promise.all(stale.map((file) => limit.run(async () => {
       if (signal.aborted) return
-      // The Work's identity goes only to the platform that issued it.
+      // Only the platform that issued the manifest is trusted for its files.
       if (new URL(file.url).origin !== origin) return log(`Work ${workId} inputs: ${JSON.stringify(file.name)} is not on the platform's origin; skipped`)
       try {
         await this.fetchFile(file, dir, headers, signal)

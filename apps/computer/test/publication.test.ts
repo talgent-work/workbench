@@ -41,7 +41,7 @@ beforeEach(async () => {
     portFile: join(dir, 'state', 'proxy.json'),
     access: {
       tokenValid: async (_workId, token) => token === TOKEN,
-      credentials: async () => ({ gateway: { url: `${upstream.origin}/computer/v1/mcp`, workId: 'w-1', identityToken: IDENTITY_TOKEN, workCredential: 'cred' } }),
+      credentials: async () => ({ gateway: { url: `${upstream.origin}/computer/v1/mcp`, identityToken: IDENTITY_TOKEN } }),
       modelProxy: async () => false,
       workRoot: (workId) => join(dir, 'works', workId),
     },

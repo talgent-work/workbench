@@ -2,8 +2,7 @@
 // the standing read-only mount of every JuiceFS Directory, by Directory
 // owner, name and file path, and the extended attributes kept with each
 // file. The reader interprets owners itself and reads originals in place by
-// this layout alone. Beside it only the Access Link endpoint is published,
-// which the native API serves to Works.
+// this layout alone. Beside it only the Access Link endpoint is published.
 package storagepath
 
 import (
@@ -128,6 +127,6 @@ const (
 	AttributeContentType = "user.talgent.content_type"
 )
 
-// ContentPath is where Storage serves Access Links, on the platform's
-// public address and on the native API alike.
+// ContentPath is where Storage serves Access Links, below the platform's
+// public address.
 const ContentPath = "/v1/storage/content"

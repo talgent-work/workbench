@@ -96,7 +96,7 @@ func (s *defaultHomeSubmission) StartExecution(ctx context.Context, input domain
 	if err != nil {
 		return err
 	}
-	spec, err := s.provider.specification(ctx, input, mounts, owner(input), "default-home-execution-token", "work-credential-fixture")
+	spec, err := s.provider.specification(ctx, input, mounts, owner(input), "default-home-execution-token")
 	if err != nil {
 		return err
 	}

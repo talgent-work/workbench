@@ -21,8 +21,6 @@ import (
 	pkgkubernetes "github.com/talgent-work/workbench/internal/pkg/kubernetes"
 	"github.com/talgent-work/workbench/internal/pkg/lifecyclelog"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
-	"github.com/talgent-work/workbench/internal/pkg/nativeapi"
-	"github.com/talgent-work/workbench/internal/pkg/nativeauth"
 	pkgnats "github.com/talgent-work/workbench/internal/pkg/nats"
 	pkgredis "github.com/talgent-work/workbench/internal/pkg/redis"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
@@ -32,11 +30,9 @@ import (
 // Option supplies the Workbench core's configuration tree while retaining
 // module resource names. An extension runs in its own process.
 type Option struct {
-	NativeAPI              nativeapi.Config             `json:"native-api" yaml:"native-api" toml:"native-api"`
 	AgentStorage           agent.StorageConfig          `json:"agent-storage" yaml:"agent-storage" toml:"agent-storage"`
 	AgentAccount           agent.AccountConfig          `json:"agent-account" yaml:"agent-account" toml:"agent-account"`
 	Storage                storage.Config               `json:"storage" yaml:"storage" toml:"storage"`
-	NativeAuthentication   nativeauth.Config            `json:"native-authentication" yaml:"native-authentication" toml:"native-authentication"`
 	AgentRPC               agent.RPCConfig              `json:"agent-rpc" yaml:"agent-rpc" toml:"agent-rpc"`
 	AgentMarketplace       agent.PluginCatalogConfig    `json:"agent-marketplace" yaml:"agent-marketplace" toml:"agent-marketplace"`
 	AgentComputer          agent.ComputerConfig         `json:"agent-computer" yaml:"agent-computer" toml:"agent-computer"`
@@ -120,8 +116,6 @@ func main() {
 
 func appOptions(opt Option) []fx.Option {
 	return []fx.Option{
-		nativeauth.Module,
-		fx.Invoke(registerNativeAPI),
 		lifecyclelog.Option,
 		fx.StopTimeout(30 * time.Second),
 		fx.Supply(opt),

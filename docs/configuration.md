@@ -57,7 +57,7 @@ this off.
 
 Account, Marketplace, Agent, Storage, Computer and Trace in one process. It listens on
 `http.addr` (`${CONTROLPLANE_HTTP_ADDR::8080}`) for the web API, sign-in and the services' private
-contracts, and on `native-api.addr` for Agents.
+contracts. Agents reach it only through the entry, under their Identity Tokens.
 
 ### Stores
 
@@ -185,9 +185,6 @@ How Agent reaches Computer and Managed Computers.
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
 | `account-maintenance-taskqueue` | queue `account-maintenance`, concurrency 1 | Hourly signing key rotation and daily forgetting of replaced refresh secrets |
 | `storage-maintenance-taskqueue` | queue `storage-maintenance`, concurrency 2, retry `10s`–`5m` | Removal of reclaimed Directories' content, retried until removed; hourly lapse of Preview Copies |
-| `native-api.addr` | `${NATIVE_API_ADDR::8081}` | The API Agents call with their Work credential |
-| `native-api.gateway-token` | none | When set, only a platform Connector presenting it reaches the native API; empty, any caller with a current Work credential does. The base gives controlplane `GATEWAY_TOKEN` (Secret `native-execution-control`) for a profile to name |
-| `native-authentication.agent-address`, `agent-control-token` | `${AGENT_INTERNAL_ADDRESS:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent, which verifies each Work credential |
 
 ### marketplace
 

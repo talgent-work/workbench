@@ -220,11 +220,6 @@ agent-storage:
   token: "${STORAGE_AGENT_TOKEN:}"
 kubernetes:
   kubeconfig-path: "${KUBECONFIG_PATH:}"
-native-authentication:
-  # Agent verifies every Work credential: reads need its live sandbox,
-  # actions also need the Work Working and not awaiting a required response.
-  agent-address: "${AGENT_INTERNAL_ADDRESS:http://127.0.0.1:8080}"
-  agent-control-token: "${AGENT_CONTROL_TOKEN:}"
 agent-execution:
   sandbox-namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
   # Must equal the OpenSandbox server's sandbox_create_timeout_seconds
@@ -330,7 +325,3 @@ computer:
       limits.cpu: "2250m"
       limits.memory: "2368Mi"
       pods: "1"
-# The procedures an Agent reaches with its Work credential: directly, or
-# through the platform Connector where one is deployed.
-native-api:
-  addr: "${NATIVE_API_ADDR::8081}"

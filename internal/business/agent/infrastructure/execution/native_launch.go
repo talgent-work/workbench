@@ -307,7 +307,7 @@ func freshContext(starting *domain.StartingContext, sessionID string) []string {
 // Connector availability is filtered by the same rule. An available
 // Connector reaches the platform Connector's server with the Work's own identity
 // through Talgent Computer's local proxy, whose one /mcp endpoint adds the
-// Work credential and Space Token — the Talgent Connector is the only such
+// Work's Identity Token and Space Token — the Talgent Connector is the only such
 // Connector. The run's proxy URL and token stay variables the Harness
 // expands from its environment, so neither enters the launch command.
 func machineServer(connector domain.SelectedConnector) (map[string]any, bool) {
@@ -337,7 +337,7 @@ func nativeServer(connector domain.SelectedConnector) map[string]any {
 // sandboxConnectorURL is where a Cloud sandbox's Harness reaches a retained
 // Connector. The Talgent Connector, reached with the Work's own identity, is
 // served at the sandbox's Gateway address, which the Harness expands from its
-// environment: the Credential Proxy adds the Work credential only to requests
+// environment: the Credential Proxy adds the Work's Identity Token only to requests
 // to that address, and a Work keeps the Connector address of its creation
 // even after the deployment renames the Gateway. Where the sandbox names no
 // Gateway, the retained origin applies.

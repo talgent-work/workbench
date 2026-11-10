@@ -10,7 +10,6 @@ import (
 	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type CredentialHandler struct {
@@ -84,9 +83,8 @@ func credentialSupplyError(ctx context.Context, err error) error {
 	return connect.NewError(connect.CodeFailedPrecondition, "service credential unavailable")
 }
 
-func (h *CredentialHandler) authenticate(ctx context.Context, header *connect.Header) error {
-	_, native := authn.NativeProcessFromContext(ctx)
-	if h.token == "" || native || header.Get(authn.HeaderNativeWorkID) != "" || header.Get(authn.HeaderNativeCredential) != "" || subtle.ConstantTimeCompare([]byte(header.Get("Authorization")), []byte("Bearer "+h.token)) != 1 {
+func (h *CredentialHandler) authenticate(_ context.Context, header *connect.Header) error {
+	if h.token == "" || subtle.ConstantTimeCompare([]byte(header.Get("Authorization")), []byte("Bearer "+h.token)) != 1 {
 		return connect.NewError(connect.CodePermissionDenied, "trusted credential consumer required")
 	}
 	return nil
