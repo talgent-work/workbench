@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { output, Pipe } from './support/execd-client.ts'
-import { computerTarget } from './support/targets.ts'
+import { computerTarget, SETUP_HOOK } from './support/targets.ts'
 import { Upstream } from './support/upstream.ts'
 
 const IDENTITY_TOKEN = 'agent-identity-token'
@@ -63,12 +63,12 @@ describe('the executable behind its Gateway', () => {
     scripts = await mkdtemp(join(tmpdir(), 'proxy-client-'))
     await writeFile(join(scripts, 'client.mjs'), CLIENT)
     target = await computerTarget({ machineEnv: { ANTHROPIC_API_KEY: 'machine-key' }, modelProxy: true })
-  })
+  }, SETUP_HOOK)
   after(async () => {
-    await target.close()
-    await upstream.close()
-    await rm(scripts, { recursive: true, force: true })
-  })
+    await target?.close()
+    await upstream?.close()
+    if (scripts !== undefined) await rm(scripts, { recursive: true, force: true })
+  }, SETUP_HOOK)
 
   test('a Work process reaches the model with the injected key, also after a restart, and never holds the key', async () => {
     const { client } = target

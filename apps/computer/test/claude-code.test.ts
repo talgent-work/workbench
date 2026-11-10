@@ -107,8 +107,9 @@ test('parses the semver from claude --version output', () => {
 
 // A Managed Work speaks the protocol Dispatcher expects only on the Claude
 // Code the Cloud image runs: the package's exact dependency is that version,
-// and the one installed with it answers to it.
-test('the package bundles the Claude Code the sandbox image pins', async () => {
+// and the one installed with it answers to it. Copying and running the
+// executable takes over the suite's 3s per-case cap on a loaded Windows runner.
+test('the package bundles the Claude Code the sandbox image pins', { timeout: 20_000 }, async () => {
   const dockerfile = await readFile(join(PACKAGE_ROOT, '..', '..', 'deploy', 'sandbox', 'Dockerfile.base'), 'utf8')
   const pins = [...dockerfile.matchAll(/@anthropic-ai\/claude-code@([0-9][^\s\\]*)/g)].map((match) => match[1])
   assert.equal(pins.length, 1, 'the sandbox image pins one Claude Code')

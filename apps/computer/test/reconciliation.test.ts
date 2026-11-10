@@ -4,7 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { output, Pipe } from './support/execd-client.ts'
 import type { Decision, Inventory } from './support/gateway.ts'
-import { computerTarget, eventually, exists } from './support/targets.ts'
+import { computerTarget, eventually, exists, SETUP_HOOK } from './support/targets.ts'
 
 // Reconciliation on reconnecting, driven through the Gateway protocol against the
 // executable: every connection opens a round in which nothing new is
@@ -16,8 +16,8 @@ describe('reconciliation on reconnecting', () => {
   // What the stand-in platform decides on each connection; undefined leaves
   // the round pending for the test to decide.
   let decide: (inventory: Inventory) => Omit<Decision, 'round'> | undefined = () => ({})
-  before(async () => { target = await computerTarget({ reconcile: (inventory) => decide(inventory) }) })
-  after(() => target.close())
+  before(async () => { target = await computerTarget({ reconcile: (inventory) => decide(inventory) }) }, SETUP_HOOK)
+  after(() => target?.close(), SETUP_HOOK)
 
   test('nothing starts until the round is decided; named processes end and never run again', async () => {
     const { client, gateway, cwd } = target
@@ -123,8 +123,8 @@ describe('reconciliation on reconnecting', () => {
 describe('reconciliation as the platform announces it', () => {
   let target: Awaited<ReturnType<typeof computerTarget>>
   let decide: (inventory: Inventory) => Omit<Decision, 'round'> | undefined = () => ({})
-  before(async () => { target = await computerTarget({ reconcile: (inventory) => decide(inventory) }) })
-  after(() => target.close())
+  before(async () => { target = await computerTarget({ reconcile: (inventory) => decide(inventory) }) }, SETUP_HOOK)
+  after(() => target?.close(), SETUP_HOOK)
 
   test('an exited process is reported, so the platform can keep a stopped Harness from running again', async () => {
     const { client, gateway, cwd } = target

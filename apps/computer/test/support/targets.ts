@@ -30,6 +30,14 @@ export interface Target {
 const MAIN = process.env.TALGENT_COMPUTER_MAIN || fileURLToPath(new URL('../../src/main.ts', import.meta.url))
 const TOKEN = 'conformance-token'
 
+// How long a machine may take to start and connect. Starting src/main.ts
+// strips and loads every module, which on a loaded Windows runner takes about
+// two seconds; a hook that starts one runs with SETUP_HOOK so the suite's 3s
+// per-case cap (package.json) does not cancel it while the machine still
+// starts and leaks it.
+const MACHINE_START_MS = 15_000
+export const SETUP_HOOK = { timeout: MACHINE_START_MS + 5_000 }
+
 // OpenSandbox execd itself, from EXECD_BINARY.
 export async function execdTarget(binary: string): Promise<Target> {
   const root = await mkdtemp(join(tmpdir(), 'execd-conformance-'))
@@ -85,7 +93,19 @@ export async function computerTarget(
     return child
   }
   let machine = launch()
-  await withTimeout(gateway.connected(), 15_000, () => Buffer.concat(logs).toString())
+  const close = async () => {
+    await stop(machine)
+    await gateway.close()
+    await rm(root, { recursive: true, force: true })
+  }
+  // A machine that never connects is stopped here: nothing else holds it, and
+  // a live child or listening Gateway keeps the test file from ever exiting.
+  try {
+    await withTimeout(gateway.connected(), MACHINE_START_MS, () => Buffer.concat(logs).toString())
+  } catch (error) {
+    await close()
+    throw error
+  }
   return {
     name: 'talgent-computer',
     gateway,
@@ -103,19 +123,15 @@ export async function computerTarget(
       await gone
       await whileDown?.()
       machine = launch()
-      await withTimeout(gateway.connected(), 15_000, () => Buffer.concat(logs).toString())
+      await withTimeout(gateway.connected(), MACHINE_START_MS, () => Buffer.concat(logs).toString())
     },
     drop: async () => {
       const gone = gateway.disconnected()
       gateway.dropMachine()
       await gone
-      await withTimeout(gateway.connected(), 15_000, () => Buffer.concat(logs).toString())
+      await withTimeout(gateway.connected(), MACHINE_START_MS, () => Buffer.concat(logs).toString())
     },
-    close: async () => {
-      await stop(machine)
-      await gateway.close()
-      await rm(root, { recursive: true, force: true })
-    },
+    close,
   }
 }
 
