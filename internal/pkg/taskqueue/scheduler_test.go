@@ -52,7 +52,9 @@ func TestNewPeriodicTaskScheduler_AcceptsComponentPeriodicTasks(t *testing.T) {
 }
 
 // A periodic enqueue the provider refuses, such as one whose key an earlier,
-// unprocessed fire still holds, is logged with its task type, queue and cause:
+// unprocessed fire still holds, is logged with its task type, queue and cause,
+// at INFO since every other replica meets it on each tick; any other refusal is
+// an ERROR:
 // asynq otherwise drops the error and the periodic task stops without a trace.
 // The scheduler's options are checked rather than a live fire, because asynq
 // fires at most once a second and calling the handler is asynq's own contract.
@@ -71,8 +73,13 @@ func TestPeriodicSchedulerLogsRefusedEnqueue(t *testing.T) {
 				t.Fatal("the scheduler has no handler for refused enqueues")
 			}
 			handler(asynq.NewTask("taskqueue.periodic.v1", nil), tc.opts, asynq.ErrDuplicateTask)
+			handler(asynq.NewTask("taskqueue.periodic.v1", nil), tc.opts, errors.New("redis down"))
 			line := logs.String()
-			for _, part := range []string{"level=ERROR", `msg="periodic task enqueue failed"`, "task_type=taskqueue.periodic.v1", "queue=" + tc.queue, asynq.ErrDuplicateTask.Error()} {
+			for _, part := range []string{
+				"level=INFO", `msg="periodic task enqueue skipped: its uniqueness lock is held"`, asynq.ErrDuplicateTask.Error(),
+				"level=ERROR", `msg="periodic task enqueue failed"`, "redis down",
+				"task_type=taskqueue.periodic.v1", "queue=" + tc.queue,
+			} {
 				if !strings.Contains(line, part) {
 					t.Fatalf("refused enqueue log lacks %q: %s", part, line)
 				}

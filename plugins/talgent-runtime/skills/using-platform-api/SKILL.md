@@ -39,11 +39,11 @@ Each answers `{"artifact": {"name": ..., "sizeBytes": ...}}`, and DeleteArtifact
 The Personal Library is the Artifacts of your owner's Works and of the Works shared with them. Only the Agent of a Work done for a person, without a Project, reads it.
 
 1. **Search**: `agent.public.v1.PersonalWorkService/ListLibraryFiles` with `{"nameQuery": "<part of a name>"}`, and `"workId"` to narrow to one Work; both are optional. It answers `files`, newest first, each with `workId`, `name`, `sizeBytes`, `contentType` and `addedAt`, and `works` with each Work's `title`.
-2. **Get a link**: `agent.public.v1.WorkFileService/CreateWorkFileAccessLink` with `{"workId": "<workId>", "kind": "WORK_FILE_KIND_ARTIFACT", "name": "<name>", "disposition": "WORK_FILE_ACCESS_DISPOSITION_DOWNLOAD"}`. It answers `accessPath` and `expiresAt`.
+2. **Get a link**: `agent.public.v1.WorkFileService/CreateWorkFileAccessLink` with `{"workId": "<workId>", "kind": "WORK_FILE_KIND_ARTIFACT", "name": "<name>", "disposition": "WORK_FILE_ACCESS_DISPOSITION_DOWNLOAD"}`. It answers `accessUrl`, the link as a path on the entry, and `expiresAt`.
 3. **Download** within the link's lifetime, outside `inputs/`:
 
    ```sh
-   curl -fsS -o "$TALGENT_WORK_ROOT/<path>" "$TALGENT_API_ADDRESS<accessPath>"
+   curl -fsS -o "$TALGENT_WORK_ROOT/<path>" "$TALGENT_API_ADDRESS<accessUrl>"
    ```
 
 The copy is a snapshot for reference: it is not an Artifact of this Work and does not follow later changes.
