@@ -15,6 +15,8 @@ import { Works } from '../src/execd/works.ts'
 import type { WorkCredentials } from '../src/proxy/credentials.ts'
 import { posixModes } from './support/platform.ts'
 
+const IDENTITY_TOKEN = 'agent-identity-token'
+
 // Work inputs: manifests relayed to the
 // execd service, files fetched from a stand-in Storage on the platform's
 // origin into the Work root's read-only inputs directory.
@@ -63,7 +65,7 @@ beforeEach(async () => {
   logs.length = 0
   storage = new Storage()
   await storage.listen()
-  credentials = { gateway: { url: `${storage.origin}/computer/v1/mcp`, workId: 'w-1', workCredential: WORK_CREDENTIAL, spaceToken: 'space-1' } }
+  credentials = { gateway: { url: `${storage.origin}/computer/v1/mcp`, workId: 'w-1', identityToken: IDENTITY_TOKEN, workCredential: WORK_CREDENTIAL, spaceToken: 'space-1' } }
   inputs = new WorkInputs({
     recordsDir: join(dir, 'state', 'inputs'),
     credentials: { get: async () => credentials },
@@ -178,7 +180,7 @@ test('without credentials the downloads wait and run once the credentials arrive
   assert.deepEqual(await listing(), [])
   assert.equal(storage.seen.length, 0)
   assert.ok(logs.some((line) => line.includes('wait for the Work\'s credentials')))
-  credentials = { gateway: { url: `${storage.origin}/computer/v1/mcp`, workId: 'w-1', workCredential: WORK_CREDENTIAL } }
+  credentials = { gateway: { url: `${storage.origin}/computer/v1/mcp`, workId: 'w-1', identityToken: IDENTITY_TOKEN, workCredential: WORK_CREDENTIAL } }
   inputs.credentialsDelivered('w-1')
   await inputs.settled('w-1')
   assert.equal(await read('a.txt'), 'a1')

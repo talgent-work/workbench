@@ -352,14 +352,14 @@ func TestManagedComputersDeliverAndForgetTheWorksCredentials(t *testing.T) {
 	spec, err := startedSpecification(managedRequest())
 	require.NoError(t, err)
 	credentials := workCredentials{Model: &workModelCredential{BaseURL: "https://model.example/anthropic", Key: "model-key"},
-		Gateway: workGatewayCredential{URL: managed.gateway, WorkID: "session", WorkCredential: "work-credential", SpaceToken: "space"}}
+		Gateway: workGatewayCredential{URL: managed.gateway, WorkID: "session", IdentityToken: "agent-token", WorkCredential: "work-credential", SpaceToken: "space"}}
 	require.NoError(t, managed.deliverCredentials(ctx, spec, "session", credentials))
 	require.Equal(t, map[string]any{"model": map[string]any{"base_url": "https://model.example/anthropic", "key": "model-key"},
-		"gateway": map[string]any{"url": managedGatewayAddress, "work_id": "session", "work_credential": "work-credential", "space_token": "space"}}, relay.credentials)
+		"gateway": map[string]any{"url": managedGatewayAddress, "work_id": "session", "identity_token": "agent-token", "work_credential": "work-credential", "space_token": "space"}}, relay.credentials)
 
 	credentials.Model, credentials.Gateway.SpaceToken = nil, ""
 	require.NoError(t, managed.deliverCredentials(ctx, spec, "session", credentials))
-	require.Equal(t, map[string]any{"gateway": map[string]any{"url": managedGatewayAddress, "work_id": "session", "work_credential": "work-credential"}}, relay.credentials,
+	require.Equal(t, map[string]any{"gateway": map[string]any{"url": managedGatewayAddress, "work_id": "session", "identity_token": "agent-token", "work_credential": "work-credential"}}, relay.credentials,
 		"the machine's own Claude login carries no model; a Work without an input source no Space Token")
 	require.NoError(t, managed.forgetCredentials(ctx, spec, "session"))
 	require.Nil(t, relay.credentials)

@@ -136,6 +136,17 @@ storage-maintenance-taskqueue:
   retry-delay-min: "10s"
   retry-delay-max: "5m"
   shutdown-timeout: "30s"
+# Account rotates signing keys hourly and forgets replaced refresh secrets
+# daily; a failed run is replaced by the next.
+account-maintenance-taskqueue:
+  redis-addr: "${REDIS_ADDR:127.0.0.1:6379}"
+  redis-password: "${REDIS_PASSWORD:}"
+  redis-db: 0
+  worker-concurrency: 1
+  queue-name: "account-maintenance"
+  retry-delay-min: "10s"
+  retry-delay-max: "5m"
+  shutdown-timeout: "30s"
 clickhouse:
   dsn: "${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}"
 # Trace runs in this process; native telemetry has its own database.
@@ -156,6 +167,7 @@ account:
   audience: "${ACCOUNT_AUDIENCE:talgent}"
   cookie-domain: "${ACCOUNT_COOKIE_DOMAIN:}"
   access-token-lifetime: "15m"
+  agent-token-lifetime: "168h"
   session-sliding-lifetime: "720h"
   session-absolute-lifetime: "2160h"
   key-rotation-interval: "720h"
@@ -169,7 +181,7 @@ account:
     api-base-url: "${ACCOUNT_GITHUB_API_BASE_URL:https://api.github.com}"
 account-mysql:
   dsn: "${ACCOUNT_MYSQL_DSN:talgent@tcp(127.0.0.1:3306)/talgent_account?charset=utf8mb4&parseTime=true}"
-agent-user-directory:
+agent-account:
   address: "${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}"
 # Storage owns every space on JuiceFS and NAS.
 storage:

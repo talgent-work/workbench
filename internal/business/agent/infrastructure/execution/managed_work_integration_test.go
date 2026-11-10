@@ -429,9 +429,9 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	require.False(t, relay.modelProxy, "the machine's own Claude login needs no model proxy")
 	var spec managedSpecification
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
-	require.JSONEq(t, `{"gateway":{"url":"`+managedGatewayAddress+`","work_id":"`+input.WorkID+`","work_credential":"`+spec.WorkCredential+`","space_token":"space-token"},"api":{"url":"`+managedAPIAddress+`"}}`, string(relay.credentials),
+	require.JSONEq(t, `{"gateway":{"url":"`+managedGatewayAddress+`","work_id":"`+input.WorkID+`","identity_token":"agent-token-`+input.WorkID+`","work_credential":"`+spec.WorkCredential+`","space_token":"space-token"},"api":{"url":"`+managedAPIAddress+`"}}`, string(relay.credentials),
 		"the machine's own Claude login gets the platform's credentials only: the Gateway's with its publication target's Space Token, and where the native API answers")
-	require.Zero(t, record.CredentialsExpireAt)
+	requireTokenRenewal(t, record)
 	require.Empty(t, record.ModelCredentialDigest)
 	require.Len(t, relay.created, 2)
 	for _, process := range relay.created {

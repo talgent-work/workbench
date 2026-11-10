@@ -9,6 +9,8 @@ import type { WorkCredentials } from '../src/proxy/credentials.ts'
 import { LocalProxy } from '../src/proxy/server.ts'
 import { send, Upstream } from './support/upstream.ts'
 
+const IDENTITY_TOKEN = 'agent-identity-token'
+
 // Storage content links: MCP responses
 // get links to the platform's content endpoint rewritten to local handles of
 // the proxy's content route, which forwards them with the Work's identity.
@@ -27,7 +29,7 @@ beforeEach(async () => {
   now = 1_000_000
   upstream = new Upstream()
   await upstream.listen()
-  credentials = { gateway: { url: `${upstream.origin}/computer/v1/mcp`, workId: 'w-1', workCredential: WORK_CREDENTIAL, spaceToken: 'space-1' } }
+  credentials = { gateway: { url: `${upstream.origin}/computer/v1/mcp`, workId: 'w-1', identityToken: IDENTITY_TOKEN, workCredential: WORK_CREDENTIAL, spaceToken: 'space-1' } }
   proxy = new LocalProxy({
     portFile: join(dir, 'proxy.json'),
     access: {

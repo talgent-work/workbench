@@ -8,13 +8,15 @@ import (
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // Vault entries the Credential Proxy injects into every request to a platform
-// address: the Work's identity and credential, and the Space Token of its
-// input source when it has one.
+// address: the Work's Identity Token, its identity and credential, and the
+// Space Token of its input source when it has one.
 const (
+	identityTokenVaultEntry  = "identity-token"
 	workIDVaultEntry         = "work-id"
 	workCredentialVaultEntry = "work-credential"
 	spaceTokenVaultEntry     = "space-token"
@@ -57,13 +59,15 @@ func platformAddresses(environment map[string]string) ([]platformAddress, error)
 	return addresses, nil
 }
 
-// withPlatformCredentials adds the Work's platform identity, as the recorded
-// sandbox environment holds it, to the Vault plan. Like every credential,
-// none of it enters the workload: the Credential Proxy injects the
-// Work credential, and the Space Token when the Work has an input source,
-// into the requests sent to the platform addresses and into nothing else;
-// the native API admits the Space Token on Artifact commands only.
-func withPlatformCredentials(plan sdk.CredentialVaultCreateRequest, environment map[string]string, spaceToken string) (sdk.CredentialVaultCreateRequest, error) {
+// withPlatformCredentials adds the Work's platform identity to the Vault
+// plan: its Identity Token as supplied, and its Work credential as the
+// recorded sandbox environment holds it. Like every credential, none of it
+// enters the workload: the Credential Proxy injects the Identity Token as
+// `Authorization: Bearer`, the Work credential, and the Space Token when the
+// Work has an input source, into the requests sent to the platform addresses
+// and into nothing else; the native API admits the Space Token on Artifact
+// commands only.
+func withPlatformCredentials(plan sdk.CredentialVaultCreateRequest, environment map[string]string, identity command.IdentityToken, spaceToken string) (sdk.CredentialVaultCreateRequest, error) {
 	addresses, err := platformAddresses(environment)
 	if err != nil {
 		return sdk.CredentialVaultCreateRequest{}, err
@@ -72,10 +76,14 @@ func withPlatformCredentials(plan sdk.CredentialVaultCreateRequest, environment 
 	if strings.TrimSpace(workID) == "" || strings.TrimSpace(credential) == "" {
 		return sdk.CredentialVaultCreateRequest{}, errors.New("agent: a Work credential is required to reach the platform")
 	}
+	if strings.TrimSpace(identity.Token) == "" {
+		return sdk.CredentialVaultCreateRequest{}, errors.New("agent: the Work's Identity Token is required to reach the platform")
+	}
 	plan.Credentials = append(plan.Credentials,
+		sdk.Credential{Name: identityTokenVaultEntry, Source: sdk.InlineCredentialSource{Value: "Bearer " + identity.Token}},
 		sdk.Credential{Name: workIDVaultEntry, Source: sdk.InlineCredentialSource{Value: workID}},
 		sdk.Credential{Name: workCredentialVaultEntry, Source: sdk.InlineCredentialSource{Value: credential}})
-	headers := []sdk.CustomHeaderEntry{{Name: authn.HeaderNativeWorkID, Credential: workIDVaultEntry}, {Name: authn.HeaderNativeCredential, Credential: workCredentialVaultEntry}}
+	headers := []sdk.CustomHeaderEntry{{Name: "Authorization", Credential: identityTokenVaultEntry}, {Name: authn.HeaderNativeWorkID, Credential: workIDVaultEntry}, {Name: authn.HeaderNativeCredential, Credential: workCredentialVaultEntry}}
 	if spaceToken != "" {
 		plan.Credentials = append(plan.Credentials, sdk.Credential{Name: spaceTokenVaultEntry, Source: sdk.InlineCredentialSource{Value: spaceToken}})
 		headers = append(headers, sdk.CustomHeaderEntry{Name: authn.HeaderSpaceToken, Credential: spaceTokenVaultEntry})

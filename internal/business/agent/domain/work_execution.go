@@ -124,7 +124,7 @@ func (s *AgentWork) LaunchSpecification() LaunchSpecification {
 		RepositorySelection:    s.RepositorySelection.Clone(),
 		RemainingRepositories:  s.RemainingRepositories(),
 		AuthorizationSelection: s.AuthorizationSelection.Clone(),
-		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, ProjectID: s.ProjectID, Capabilities: s.CapabilitySnapshot.Clone(),
+		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, ProjectID: s.ProjectID, Subject: s.Subject, Capabilities: s.CapabilitySnapshot.Clone(),
 		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, LocatedLayout: s.LocatedLayout.Clone(),
 		AgentHarness: s.AgentHarnessReference, RepresentedPerson: s.RepresentedPerson, TraceAttributes: s.executionTraceAttributes(), StartingContext: s.StartingContext.clone(),
 	}

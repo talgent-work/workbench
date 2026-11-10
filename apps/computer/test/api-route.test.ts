@@ -7,6 +7,8 @@ import type { WorkCredentials } from '../src/proxy/credentials.ts'
 import { LocalProxy } from '../src/proxy/server.ts'
 import { send, Upstream } from './support/upstream.ts'
 
+const IDENTITY_TOKEN = 'agent-identity-token'
+
 // The native API route: a Work's plain HTTP client, such as curl, calls the
 // platform's native API through the local proxy with the run's token in the
 // path. The proxy adds the Work's identity, and for an Artifact command
@@ -30,7 +32,7 @@ beforeEach(async () => {
   upstream = new Upstream()
   await upstream.listen()
   credentials = {
-    gateway: { url: `${upstream.origin}/computer/v1/mcp`, workId: 'w-1', workCredential: 'cred', spaceToken: 'space' },
+    gateway: { url: `${upstream.origin}/computer/v1/mcp`, workId: 'w-1', identityToken: IDENTITY_TOKEN, workCredential: 'cred', spaceToken: 'space' },
     api: { url: `${upstream.origin}/computer/v1/api` },
   }
   proxy = new LocalProxy({
@@ -62,7 +64,7 @@ test('a call reaches the native API with the Work identity, never one the proces
   assert.equal(seen.headers['x-talgent-work-id'], 'w-1')
   assert.equal(seen.headers['x-talgent-work-credential'], 'cred')
   assert.equal(seen.headers['x-talgent-space-token'], 'space')
-  assert.equal(seen.headers.authorization, undefined)
+  assert.equal(seen.headers.authorization, `Bearer ${IDENTITY_TOKEN}`, 'the Work\'s Identity Token, never one the process adds')
   assert.equal(seen.body, '{"nameQuery":"report"}')
 
   // An Access Link the Work was issued downloads the same way.

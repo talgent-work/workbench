@@ -433,7 +433,7 @@ data:
       address: http://127.0.0.1:8080
     http:
       addr: :8080
-    agent-user-directory:
+    agent-account:
       address: http://127.0.0.1:8080
     account-mysql:
       dsn: ${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_ADDR})/${ACCOUNT_MYSQL_DATABASE}?charset=utf8mb4&parseTime=true
@@ -443,6 +443,7 @@ data:
       # Empty keeps the session cookies on the Workbench host.
       cookie-domain: ${ACCOUNT_COOKIE_DOMAIN}
       access-token-lifetime: 15m
+      agent-token-lifetime: 168h
       session-sliding-lifetime: 720h
       session-absolute-lifetime: 2160h
       key-rotation-interval: 720h
@@ -507,6 +508,17 @@ data:
       retry-delay-min: 10s
       shutdown-timeout: 30s
       worker-concurrency: 2
+    # Account rotates signing keys hourly and forgets replaced refresh
+    # secrets daily.
+    account-maintenance-taskqueue:
+      queue-name: account-maintenance
+      redis-addr: ${REDIS_ADDR}
+      redis-db: 0
+      redis-password: ${REDIS_PASSWORD:}
+      retry-delay-max: 5m
+      retry-delay-min: 10s
+      shutdown-timeout: 30s
+      worker-concurrency: 1
     clickhouse:
       dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}?database=default
     # Trace runs in this process with its own telemetry database; a

@@ -34,7 +34,7 @@ import (
 type Option struct {
 	NativeAPI              nativeapi.Config             `json:"native-api" yaml:"native-api" toml:"native-api"`
 	AgentStorage           agent.StorageConfig          `json:"agent-storage" yaml:"agent-storage" toml:"agent-storage"`
-	AgentUserDirectory     agent.UserDirectoryConfig    `json:"agent-user-directory" yaml:"agent-user-directory" toml:"agent-user-directory"`
+	AgentAccount           agent.AccountConfig          `json:"agent-account" yaml:"agent-account" toml:"agent-account"`
 	Storage                storage.Config               `json:"storage" yaml:"storage" toml:"storage"`
 	NativeAuthentication   nativeauth.Config            `json:"native-authentication" yaml:"native-authentication" toml:"native-authentication"`
 	AgentRPC               agent.RPCConfig              `json:"agent-rpc" yaml:"agent-rpc" toml:"agent-rpc"`
@@ -70,6 +70,9 @@ type Option struct {
 	// conversions one replica runs at once.
 	StoragePreviewTaskQueue     pkgtaskqueue.Config `name:"storage-preview" json:"storage-preview-taskqueue" toml:"storage-preview-taskqueue" yaml:"storage-preview-taskqueue"`
 	StorageMaintenanceTaskQueue pkgtaskqueue.Config `name:"storage-maintenance" json:"storage-maintenance-taskqueue" toml:"storage-maintenance-taskqueue" yaml:"storage-maintenance-taskqueue"`
+	// Account rotates signing keys hourly and forgets replaced refresh
+	// secrets daily.
+	AccountMaintenanceTaskQueue pkgtaskqueue.Config `name:"account-maintenance" json:"account-maintenance-taskqueue" toml:"account-maintenance-taskqueue" yaml:"account-maintenance-taskqueue"`
 	// ClickHouse holds Work message streams, read for Work turn results.
 	ClickHouse pkgclickhouse.Config `json:"clickhouse" toml:"clickhouse" yaml:"clickhouse"`
 
@@ -155,6 +158,7 @@ func appOptions(opt Option) []fx.Option {
 		pkgtaskqueue.NamedModule(marketplace.Queue),
 		pkgtaskqueue.NamedModule(storage.PreviewQueue),
 		pkgtaskqueue.NamedModule(storage.MaintenanceQueue),
+		pkgtaskqueue.NamedModule(account.MaintenanceQueue),
 		pkgtaskqueue.NamedModule(agent.RecoveryQueue),
 		pkgtaskqueue.NamedModule(agent.PreparationQueue),
 		internalpkg.HTTPModule,

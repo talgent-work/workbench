@@ -44,7 +44,7 @@ func TestOpenIssuesTokensForItsAccount(t *testing.T) {
 
 	claims, err := session.IssueIdentityToken(profile(t, "octocat"), now, lifetimes)
 	require.NoError(t, err)
-	require.Equal(t, session.AccountReference, claims.Subject)
+	require.Equal(t, string(session.AccountReference), claims.Subject)
 	require.Equal(t, PrincipalUser, claims.Principal)
 	require.Equal(t, session.ID, claims.SessionID)
 	require.Equal(t, now.Add(15*time.Minute), claims.ExpiresAt)

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/netip"
 	"testing"
+	"time"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
@@ -66,15 +68,18 @@ func TestASandboxMountsOnlyWhatItsLayoutLocated(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrExecutionRequest, "a grant for no located Directory fails the start")
 }
 
-// The Credential Proxy injects the Work credential, and the Space Token when
+// The Credential Proxy injects the Identity Token, the Work credential, and
+// the Space Token when
 // the Work has an input source, into the requests sent to the platform's
 // native API, and to the Gateway where one is deployed, and nothing else;
 // the sandbox never holds either.
 func TestWorkCredentialsAreInjectedOnlyIntoPlatformRequests(t *testing.T) {
+	identity := command.IdentityToken{Token: "agent-token", ExpiresAt: time.Now().Add(7 * 24 * time.Hour)}
 	const api, gateway = "http://controlplane.talgent.svc.cluster.local", "http://connector.talgent.svc.cluster.local"
-	plan, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: api, gatewayAddressEnv: gateway, "OTHER": "http://other.example.com"}), "space-token")
+	plan, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: api, gatewayAddressEnv: gateway, "OTHER": "http://other.example.com"}), identity, "space-token")
 	require.NoError(t, err)
 	require.Equal(t, []sdk.Credential{
+		{Name: identityTokenVaultEntry, Source: sdk.InlineCredentialSource{Value: "Bearer agent-token"}},
 		{Name: workIDVaultEntry, Source: sdk.InlineCredentialSource{Value: "work-1"}},
 		{Name: workCredentialVaultEntry, Source: sdk.InlineCredentialSource{Value: "credential-1"}},
 		{Name: spaceTokenVaultEntry, Source: sdk.InlineCredentialSource{Value: "space-token"}},
@@ -85,6 +90,7 @@ func TestWorkCredentialsAreInjectedOnlyIntoPlatformRequests(t *testing.T) {
 		hosts[binding.Name] = binding.Match.Hosts
 		require.Equal(t, []sdk.CredentialScheme{sdk.CredentialSchemeHTTP}, binding.Match.Schemes)
 		require.Equal(t, sdk.CredentialAuth{Type: sdk.CredentialAuthCustomHeaders, Headers: []sdk.CustomHeaderEntry{
+			{Name: "Authorization", Credential: identityTokenVaultEntry},
 			{Name: authn.HeaderNativeWorkID, Credential: workIDVaultEntry},
 			{Name: authn.HeaderNativeCredential, Credential: workCredentialVaultEntry},
 			{Name: authn.HeaderSpaceToken, Credential: spaceTokenVaultEntry},
@@ -94,7 +100,7 @@ func TestWorkCredentialsAreInjectedOnlyIntoPlatformRequests(t *testing.T) {
 	// The Vault reads a binding back normalized; the write is confirmed only
 	// when the plan already says what the readback will.
 	readback := sdk.CredentialVaultState{Revision: 1, Credentials: []sdk.CredentialMetadata{
-		{Name: workIDVaultEntry, SourceType: "inline"}, {Name: workCredentialVaultEntry, SourceType: "inline"}, {Name: spaceTokenVaultEntry, SourceType: "inline"},
+		{Name: identityTokenVaultEntry, SourceType: "inline"}, {Name: workIDVaultEntry, SourceType: "inline"}, {Name: workCredentialVaultEntry, SourceType: "inline"}, {Name: spaceTokenVaultEntry, SourceType: "inline"},
 	}}
 	for _, binding := range plan.Bindings {
 		normalized := binding.Match
@@ -103,24 +109,26 @@ func TestWorkCredentialsAreInjectedOnlyIntoPlatformRequests(t *testing.T) {
 	}
 	require.True(t, vaultMatches(&readback, plan, nil), "the Vault's normalized readback confirms the write")
 
-	alone, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: api}), "")
+	alone, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: api}), identity, "")
 	require.NoError(t, err)
-	require.Len(t, alone.Credentials, 2, "a Work without an input source has no Space Token")
+	require.Len(t, alone.Credentials, 3, "a Work without an input source has no Space Token")
 	require.Len(t, alone.Bindings, 1, "without a Gateway only the native API receives the credential")
-	_, err = withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("", map[string]string{platformAPIAddressEnv: api}), "")
+	_, err = withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("", map[string]string{platformAPIAddressEnv: api}), identity, "")
 	require.Error(t, err)
-	viaGateway, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: "", gatewayAddressEnv: gateway}), "")
+	viaGateway, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: "", gatewayAddressEnv: gateway}), identity, "")
 	require.NoError(t, err)
 	require.Len(t, viaGateway.Bindings, 1, "a Work reaching the platform through the Gateway alone gives only it the credential")
 	require.Equal(t, gatewayBinding, viaGateway.Bindings[0].Name)
-	_, err = withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", nil), "")
+	_, err = withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", nil), identity, "")
 	require.Error(t, err, "every Work reaches the platform")
+	_, err = withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: api}), command.IdentityToken{}, "")
+	require.Error(t, err, "no delivery reaches the platform without the Work's Identity Token")
 	// The Vault accepts only fully qualified hosts, so a short Service name or
 	// an address is refused here rather than by every credential delivery.
 	for _, address := range []string{"http://controlplane", "http://10.43.0.5", "http://controlplane.talgent.svc.cluster.local:8081", "ftp://controlplane.talgent.svc.cluster.local", "http://controlplane.talgent.svc.cluster.local/api"} {
-		_, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: address}), "")
+		_, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: address}), identity, "")
 		require.Error(t, err, address)
-		_, err = withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: api, gatewayAddressEnv: address}), "")
+		_, err = withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: api, gatewayAddressEnv: address}), identity, "")
 		require.Error(t, err, address)
 	}
 }

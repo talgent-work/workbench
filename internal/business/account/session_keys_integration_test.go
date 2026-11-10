@@ -95,18 +95,26 @@ func TestRetiringKeysStayPublishedUntilTheirTokensExpire(t *testing.T) {
 	d := h.device()
 	d.signIn("first")
 	oldKeyToken := d.cookie(accounthttp.AccessCookie, "/")
+	agentToken := h.issueAgentToken(newWorkID(), "")
 
 	h.clock.Advance(11 * time.Minute)
 	h.verify(oldKeyToken)
-	require.Equal(t, 2, published(), "the retiring key stays until its last token expires")
-
-	h.clock.Advance(15 * time.Minute)
-	require.NoError(t, h.app.RotateSigningKeys(ctx))
-	require.Equal(t, 1, published())
+	require.Equal(t, 2, published(), "the retiring key stays while its tokens may be valid")
 
 	// The successor signs now, and its tokens verify.
 	require.Equal(t, http.StatusNoContent, d.post("/auth/refresh", "application/json").StatusCode)
 	h.verify(d.cookie(accounthttp.AccessCookie, "/"))
+
+	// A person's token is long gone, but an agent's from the old key is
+	// still valid: the key stays published for the longest token lifetime.
+	h.clock.Advance(agentTokenLifetime - 12*time.Minute)
+	require.NoError(t, h.app.RotateSigningKeys(ctx))
+	require.Equal(t, 2, published())
+	h.verify(agentToken)
+
+	h.clock.Advance(12 * time.Minute)
+	require.NoError(t, h.app.RotateSigningKeys(ctx))
+	require.Equal(t, 1, published(), "the retiring key goes once its last token expired")
 }
 
 func TestConcurrentRotationProvisionsOneSuccessor(t *testing.T) {

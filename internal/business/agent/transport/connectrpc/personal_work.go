@@ -135,7 +135,7 @@ func (h *PersonalWorkHandler) GetShareReaders(ctx context.Context, request *agen
 	return &agentpublicv1.GetShareReadersResponse{Users: directoryUsersToProto(users)}, nil
 }
 
-func directoryUsersToProto(users []personalwork.DirectoryUser) []*agentpublicv1.DirectoryUser {
+func directoryUsersToProto(users []command.DirectoryUser) []*agentpublicv1.DirectoryUser {
 	out := make([]*agentpublicv1.DirectoryUser, 0, len(users))
 	for _, user := range users {
 		out = append(out, &agentpublicv1.DirectoryUser{UserId: user.UserID, Username: user.Username, DisplayName: user.DisplayName, AvatarUrl: user.AvatarURL})

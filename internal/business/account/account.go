@@ -1,5 +1,5 @@
 // Package account composes the Account context: GitHub sign-in, Login
-// Sessions, Identity Token keys and the User Directory.
+// Sessions, Agent Accounts, Identity Token keys and the User Directory.
 package account
 
 import (
@@ -27,6 +27,7 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
+	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 )
 
 // Database is the name of Account's own MySQL connection (talgent_account).
@@ -46,6 +47,9 @@ type Config struct {
 	// that receives GitHub's callback.
 	ReturnOrigins           []string `json:"return-origins" yaml:"return-origins" toml:"return-origins"`
 	AccessTokenLifetime     string   `json:"access-token-lifetime" yaml:"access-token-lifetime" toml:"access-token-lifetime"`
+	// AgentTokenLifetime bounds an agent's Identity Token, which is never
+	// refreshed and outlives any run.
+	AgentTokenLifetime      string   `json:"agent-token-lifetime" yaml:"agent-token-lifetime" toml:"agent-token-lifetime"`
 	SessionSlidingLifetime  string   `json:"session-sliding-lifetime" yaml:"session-sliding-lifetime" toml:"session-sliding-lifetime"`
 	SessionAbsoluteLifetime string   `json:"session-absolute-lifetime" yaml:"session-absolute-lifetime" toml:"session-absolute-lifetime"`
 	KeyRotationInterval     string   `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
@@ -68,6 +72,7 @@ type GitHubConfig struct {
 
 type policy struct {
 	lifetimes        domain.SessionLifetimes
+	agentToken       time.Duration
 	rotationInterval time.Duration
 	overlap          time.Duration
 }
@@ -80,6 +85,7 @@ func (c Config) policy() (policy, error) {
 		target *time.Duration
 	}{
 		{"access-token-lifetime", c.AccessTokenLifetime, &p.lifetimes.Access},
+		{"agent-token-lifetime", c.AgentTokenLifetime, &p.agentToken},
 		{"session-sliding-lifetime", c.SessionSlidingLifetime, &p.lifetimes.Sliding},
 		{"session-absolute-lifetime", c.SessionAbsoluteLifetime, &p.lifetimes.Absolute},
 		{"key-rotation-interval", c.KeyRotationInterval, &p.rotationInterval},
@@ -93,6 +99,9 @@ func (c Config) policy() (policy, error) {
 	}
 	if p.lifetimes.Access > p.lifetimes.Sliding || p.lifetimes.Sliding > p.lifetimes.Absolute {
 		return policy{}, errors.New("account config: lifetimes must satisfy access <= sliding <= absolute")
+	}
+	if p.agentToken < p.lifetimes.Access {
+		return policy{}, errors.New("account config: agent-token-lifetime must not be shorter than access-token-lifetime")
 	}
 	return p, nil
 }
@@ -152,7 +161,7 @@ func newRuntime(cfg Config) (runtime, error) {
 			MasterKey:             deriveKey(master, "signing-key-seal"),
 			Overlap:               p.overlap,
 			RotationInterval:      p.rotationInterval,
-			AccessLifetime:        p.lifetimes.Access,
+			LongestTokenLifetime:  max(p.lifetimes.Access, p.agentToken),
 			VerificationRetention: p.lifetimes.Absolute,
 		},
 		HTTP: accounthttp.Config{
@@ -175,13 +184,14 @@ func newRuntime(cfg Config) (runtime, error) {
 func newApplication(engine *xorm.Engine, p policy, keys *infrastructure.SigningKeys, github *infrastructure.GitHubIdentity) *application.Application {
 	sessions := infrastructure.NewLoginSessionRepository(engine)
 	return application.NewApplication(application.Dependencies{
-		Accounts:  infrastructure.NewAccountRepository(engine),
-		Sessions:  sessions,
-		GitHub:    github,
-		Tokens:    keys,
-		Retention: sessions,
-		Directory: infrastructure.NewUserDirectoryQueries(engine),
-		Lifetimes: p.lifetimes,
+		Accounts:           infrastructure.NewAccountRepository(engine),
+		Sessions:           sessions,
+		GitHub:             github,
+		Tokens:             keys,
+		Directory:          infrastructure.NewUserDirectoryQueries(engine),
+		Lifetimes:          p.lifetimes,
+		AgentAccounts:      infrastructure.NewAgentAccountRepository(engine),
+		AgentTokenLifetime: p.agentToken,
 	})
 }
 
@@ -207,6 +217,7 @@ func register(r registration) {
 	r.Mux.Handle(accounthttp.PathPrefix, r.Handler)
 	private := connectserver.New(r.Logger)
 	accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
+	accountprivatev1connect.RegisterAgentAccountServiceHandler(private, accountconnect.NewAgentAccounts(r.App))
 	connectserver.Mount(r.Mux, private)
 	// The browser reads who is signed in under the gateway-verified identity.
 	public := connectserver.New(r.Logger, authn.NewConnectUnaryInterceptor(authn.GatewayActorConfig{Enabled: true}))
@@ -223,6 +234,10 @@ var Module = fx.Module("domain.account",
 	fx.Provide(newGitHubIdentity, fx.Private),
 	fx.Provide(newApplication, fx.Private),
 	fx.Provide(newHTTPHandler, fx.Private),
+	fx.Provide(
+		fx.Annotate(newMaintenanceProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(MaintenanceQueue))),
+		fx.Annotate(newMaintenanceTasks, fx.ResultTags(pkgtaskqueue.PeriodicTasksTag(MaintenanceQueue))),
+	),
 	fx.Invoke(register),
-	fx.Invoke(registerMaintenance),
+	fx.Invoke(provisionSigningKey),
 )

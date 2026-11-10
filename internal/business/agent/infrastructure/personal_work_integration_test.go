@@ -4,6 +4,7 @@ package infrastructure_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -81,20 +82,24 @@ func caseFiles(caseID, name string) domain.Directory {
 	return domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:" + caseID}}, Name: name}
 }
 
-type knownPeople map[string]personalwork.DirectoryUser
+type knownPeople map[string]command.DirectoryUser
 
-func (k knownPeople) SearchUsers(context.Context, string, int) ([]personalwork.DirectoryUser, error) {
+func (k knownPeople) SearchUsers(context.Context, string, int) ([]command.DirectoryUser, error) {
 	return nil, nil
 }
 
-func (k knownPeople) GetUsers(_ context.Context, ids []string) ([]personalwork.DirectoryUser, error) {
-	var out []personalwork.DirectoryUser
+func (k knownPeople) GetUsers(_ context.Context, ids []string) ([]command.DirectoryUser, error) {
+	var out []command.DirectoryUser
 	for _, id := range ids {
 		if user, ok := k[id]; ok {
 			out = append(out, user)
 		}
 	}
 	return out, nil
+}
+
+func (knownPeople) IssueWorkIdentityToken(context.Context, command.WorkIdentityFacts) (command.IdentityToken, error) {
+	return command.IdentityToken{}, errors.New("personal Works issue no token here")
 }
 
 func personalWorksFixture(t *testing.T, db *xorm.Engine, spaces *librarySpaces) (*personalwork.PersonalWorks, *application.Application) {

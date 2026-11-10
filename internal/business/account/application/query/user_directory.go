@@ -11,8 +11,8 @@ type User struct {
 	AvatarURL   string
 }
 
-// UserDirectoryRepository reads the platform-wide directory of Accounts.
-type UserDirectoryRepository interface {
+// UserDirectoryQueryRepository reads the platform-wide directory of Accounts.
+type UserDirectoryQueryRepository interface {
 	// SearchByUsername matches usernames containing the term, ignoring case,
 	// ordered by username.
 	SearchByUsername(ctx context.Context, term string, limit int) ([]User, error)

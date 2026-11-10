@@ -32,7 +32,7 @@ func TestBeginExecutionStartsTheAdmittedStartOnce(t *testing.T) {
 			want := map[bool]domain.ExecutionRealization{false: domain.RealizationCloud, true: domain.RealizationManaged}[managed]
 			require.Equal(t, want, execution.Realization)
 			launch := w.work().LaunchSpecification()
-			launch.ComputerName = "Fixture Computer"
+			launch.ComputerName, launch.Purpose = "Fixture Computer", "test-purpose"
 			require.Equal(t, execution.PreparationBound(), execution.Launch.PreparationBound, "the launch carries the seated start's preparation bound")
 			launch.PreparationBound = execution.Launch.PreparationBound
 			require.Equal(t, launch, execution.Launch)

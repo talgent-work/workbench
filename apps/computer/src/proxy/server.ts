@@ -151,6 +151,7 @@ export class LocalProxy {
       target = below(gateway.url, rest, search)
       if (target === undefined) return notFound(response)
       addIdentity(headers, gateway)
+      addIdentityToken(headers, gateway)
       if (request.method === 'POST') {
         const completed = await completeRequest(request, this.access.workRoot(workId))
         if (completed.kind === 'answer') return answerRpc(response, completed.body)
@@ -193,6 +194,7 @@ export class LocalProxy {
     if (target === undefined) return notFound(response)
     const headers = requestHeaders(request.headers)
     addIdentity(headers, credentials.gateway)
+    addIdentityToken(headers, credentials.gateway)
     let body: ReadBody | undefined
     if (request.method === 'POST' && ARTIFACT_COMMANDS.has(path)) {
       const completed = await completeArtifactCommand(request, this.access.workRoot(workId))
@@ -244,6 +246,12 @@ export class LocalProxy {
 function answerRpc(response: ServerResponse, body: Buffer | undefined): void {
   if (body === undefined) return void response.writeHead(202).end()
   response.writeHead(200, { 'content-type': 'application/json', 'content-length': body.length }).end(body)
+}
+
+// The Work's Identity Token, which the platform's entry verifies on the
+// Agent's calls; an Access Link on the content path takes none.
+function addIdentityToken(headers: OutgoingHttpHeaders, gateway: WorkCredentials['gateway']): void {
+  headers.authorization = `Bearer ${gateway.identityToken}`
 }
 
 // The Work's identity, as the platform's MCP and content endpoints take it.

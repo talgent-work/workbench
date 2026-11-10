@@ -263,12 +263,16 @@ leftovers ended, so such a step fails.
 ```json
 {"model": {"base_url": "https://vendor.example/anthropic", "key": "<Model Configuration key>"},
  "gateway": {"url": "https://<origin>/computer/v1/mcp", "work_id": "<work id>",
+             "identity_token": "<the Work's agent Identity Token>",
              "work_credential": "<Work credential>", "space_token": "<Space Token, optional>"},
  "api": {"url": "https://<origin>/computer/v1/api"}}
 ```
 
 `gateway.url` is the platform Connector's public MCP address, controlplane's
-`agent-computer.mcp-address`. `api.url` is the native API's public address,
+`agent-computer.mcp-address`. `gateway.identity_token` is the Work's agent Identity Token, which the
+platform delivers again a day before it expires. A redelivery for a Work whose Model Configuration
+the platform no longer provides sends `"keep_model": true` without `model`: Talgent Computer keeps
+the model it holds and takes the rest. `api.url` is the native API's public address,
 `agent-computer.api-address`, on the origin of `gateway.url`; it is absent when the platform does not
 serve the native API to Managed Works. `model` is absent for a Work on the machine's own Claude login. It
 answers `204`; repeating it replaces the Work's credentials (a rotated key), and `DELETE` on the
@@ -291,9 +295,9 @@ running processes keep reaching it. Each run of a process gets a fresh token, an
 | Proxy path | Forwarded to |
 |---|---|
 | `/w/<work-id>/model/<rest>` | `model.base_url/<rest>`, query kept. `POST` of `<base path>/v1/messages` and `/v1/messages/count_tokens` carry `Authorization: Bearer <key>`, as a Cloud's Credential Proxy injects it |
-| `/w/<work-id>/mcp[/<rest>]` | `gateway.url[/<rest>]` with `X-Talgent-Work-Id`, `X-Talgent-Work-Credential` and, when set, `X-Talgent-Space-Token` |
-| `/w/<work-id>/api/<run token>/<procedure>` | `api.url/<procedure>`, query kept, with the same Work identity headers. The run token is in the path, so a plain HTTP client such as `curl` needs no credential header; another token answers `401`, a Work without `api` answers `404` |
-| `/w/<work-id>/content/<handle>` | `<origin of gateway.url>/computer/v1/storage/content?<query>` of the link the handle stands for, `GET` and `HEAD` only, with the same Work identity headers |
+| `/w/<work-id>/mcp[/<rest>]` | `gateway.url[/<rest>]` with `Authorization: Bearer <identity_token>`, `X-Talgent-Work-Id`, `X-Talgent-Work-Credential` and, when set, `X-Talgent-Space-Token` |
+| `/w/<work-id>/api/<run token>/<procedure>` | `api.url/<procedure>`, query kept, with the same Identity Token and Work identity headers. The run token is in the path, so a plain HTTP client such as `curl` needs no credential header; another token answers `401`, a Work without `api` answers `404` |
+| `/w/<work-id>/content/<handle>` | `<origin of gateway.url>/computer/v1/storage/content?<query>` of the link the handle stands for, `GET` and `HEAD` only, with the same Work identity headers and no Identity Token |
 
 The platform Connector answers a Managed Work's file link tools with Storage content links,
 `<origin>/computer/v1/storage/content?<query>`, whose query carries a short-lived capability; the

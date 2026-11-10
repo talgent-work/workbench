@@ -91,7 +91,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 				names = append(names, credential.Name)
 			}
 			f.external.vault.mu.Unlock()
-			require.Equal(t, []string{"model", workIDVaultEntry, workCredentialVaultEntry}, names, "the model and the Gateway identity, no Provider credential")
+			require.Equal(t, []string{"model", identityTokenVaultEntry, workIDVaultEntry, workCredentialVaultEntry}, names, "the model and the Gateway identity, no Provider credential")
 		}
 		current, err := f.works.Get(ctx, work.ID)
 		require.NoError(t, err)
@@ -267,7 +267,7 @@ func serviceCredentials(t *testing.T, services *command.ServiceAccess, workID st
 	targets := []command.ServiceRequirement{{Provider: "github", Service: "github", Target: "github-api"}, {Provider: "github", Service: "github", Target: "github-remote-mcp"}}
 	result, err := services.Resolve(t.Context(), "lifecycle-owner", workID, targets)
 	require.NoError(t, err)
-	supply := command.CredentialSupply{Services: result.Credentials}
+	supply := command.CredentialSupply{IdentityToken: command.IdentityToken{Token: "agent-token", ExpiresAt: time.Now().Add(7 * 24 * time.Hour)}, Services: result.Credentials}
 	for _, target := range targets {
 		status := command.ServiceAccessStatus{Service: target.Service, Target: target.Target, Status: "unavailable"}
 		for _, unavailable := range result.Unavailable {

@@ -17,15 +17,16 @@ const coordinationAttempts = 3
 // lost or reordered Domain Event leads to the same outcome, and the Work's
 // recovery repairs what a lost event left undone.
 type ExecutionCoordination struct {
-	now        func() time.Time
-	works      domain.AgentWorkRepository
-	executions domain.AgentExecutionRepository
-	computers  ComputerPort
-	buffer     DispatcherPort
+	now         func() time.Time
+	works       domain.AgentWorkRepository
+	definitions domain.AgentDefinitionRepository
+	executions  domain.AgentExecutionRepository
+	computers   ComputerPort
+	buffer      DispatcherPort
 }
 
-func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkRepository, executions domain.AgentExecutionRepository, computers ComputerPort, buffer DispatcherPort) *ExecutionCoordination {
-	return &ExecutionCoordination{now: now, works: works, executions: executions, computers: computers, buffer: buffer}
+func NewExecutionCoordination(now func() time.Time, works domain.AgentWorkRepository, definitions domain.AgentDefinitionRepository, executions domain.AgentExecutionRepository, computers ComputerPort, buffer DispatcherPort) *ExecutionCoordination {
+	return &ExecutionCoordination{now: now, works: works, definitions: definitions, executions: executions, computers: computers, buffer: buffer}
 }
 
 // Coordinate applies every report the Work's current execution made, its
@@ -87,8 +88,12 @@ func (c *ExecutionCoordination) begin(ctx context.Context, work *domain.AgentWor
 	if err != nil {
 		return err
 	}
+	definition, err := c.definitions.Get(ctx, work.AgentID)
+	if err != nil {
+		return err
+	}
 	launch := work.LaunchSpecification()
-	launch.ComputerName = place.Name
+	launch.ComputerName, launch.Purpose = place.Name, definition.Purpose
 	realization := domain.RealizationCloud
 	if work.OnManagedComputer() {
 		realization = domain.RealizationManaged

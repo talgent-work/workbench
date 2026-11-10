@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package account.task.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/account/task/v1;accounttaskv1";
+
+// RotateSigningKeysTaskV1 asks Account to provision the next signing key ahead
+// of use and forget retired ones. It runs every hour.
+message RotateSigningKeysTaskV1 {}
+
+// ForgetReplacedRefreshSecretsTaskV1 asks Account to forget the replaced
+// refresh secrets of expired Login Sessions. It runs every 24 hours.
+message ForgetReplacedRefreshSecretsTaskV1 {}

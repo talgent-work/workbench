@@ -44,8 +44,10 @@ type SigningKeyConfig struct {
 	Overlap time.Duration
 	// RotationInterval is how long a key signs before its successor takes over.
 	RotationInterval time.Duration
-	// AccessLifetime keeps a retiring key published until its last token expires.
-	AccessLifetime time.Duration
+	// LongestTokenLifetime keeps a retiring key published until the last token
+	// it signed expires, whichever Principal it spoke for (Keys outlive their
+	// tokens).
+	LongestTokenLifetime time.Duration
 	// VerificationRetention keeps a retired key for verifying sign-out of
 	// sessions it issued for, up to the absolute session lifetime.
 	VerificationRetention time.Duration
@@ -58,7 +60,7 @@ func (c SigningKeyConfig) validate() error {
 		return errors.New("account signing keys: issuer and audience are required")
 	case len(c.MasterKey) != 32:
 		return errors.New("account signing keys: master key must be 32 bytes")
-	case c.Overlap <= 0 || c.AccessLifetime <= 0 || c.RotationInterval <= 2*c.Overlap:
+	case c.Overlap <= 0 || c.LongestTokenLifetime <= 0 || c.RotationInterval <= 2*c.Overlap:
 		return errors.New("account signing keys: rotation interval must exceed twice the overlap, and lifetimes must be positive")
 	}
 	return nil
@@ -108,21 +110,29 @@ func (s *SigningKeys) Sign(ctx context.Context, claims domain.IdentityClaims) (s
 	if err != nil {
 		return "", err
 	}
-	token, err := jwt.NewBuilder().
+	builder := jwt.NewBuilder().
 		Issuer(s.cfg.Issuer).
-		Subject(string(claims.Subject)).
+		Subject(claims.Subject).
 		Audience([]string{s.cfg.Audience}).
 		IssuedAt(claims.IssuedAt).
 		Expiration(claims.ExpiresAt).
 		JwtID(uuid.NewString()).
-		Claim("sid", claims.SessionID).
-		Claim("principal", string(claims.Principal)).
-		Claim("preferred_username", claims.Profile.Username).
-		Claim("email", claims.Profile.Email).
-		Claim("name", claims.Profile.DisplayName).
-		Claim("picture", claims.Profile.AvatarURL).
-		Claim("roles", []string{}).
-		Build()
+		Claim("principal", string(claims.Principal))
+	switch claims.Principal {
+	case domain.PrincipalUser:
+		builder = builder.
+			Claim("sid", claims.SessionID).
+			Claim("preferred_username", claims.Profile.Username).
+			Claim("email", claims.Profile.Email).
+			Claim("name", claims.Profile.DisplayName).
+			Claim("picture", claims.Profile.AvatarURL).
+			Claim("roles", []string{})
+	case domain.PrincipalAgent:
+		builder = withAgentClaims(builder, claims.Work)
+	default:
+		return "", fmt.Errorf("account signing keys: unknown principal %q", claims.Principal)
+	}
+	token, err := builder.Build()
 	if err != nil {
 		return "", err
 	}
@@ -131,6 +141,24 @@ func (s *SigningKeys) Sign(ctx context.Context, claims domain.IdentityClaims) (s
 		return "", oops.With("operation", "identity_token.sign").With("kid", key.id).Wrap(err)
 	}
 	return string(signed), nil
+}
+
+// withAgentClaims adds an agent's fixed facts; a fact the Work lacks is left
+// out, so the gateway writes no header for it.
+func withAgentClaims(builder *jwt.Builder, work domain.WorkFacts) *jwt.Builder {
+	for _, claim := range []struct{ name, value string }{
+		{"project_id", work.ProjectID},
+		{"agent_id", work.AgentID},
+		{"purpose", work.Purpose},
+		{"work_subject_kind", work.Subject.Kind},
+		{"work_subject_id", work.Subject.ID},
+		{"for", string(work.RepresentedPerson)},
+	} {
+		if claim.value != "" {
+			builder = builder.Claim(claim.name, claim.value)
+		}
+	}
+	return builder
 }
 
 // signingKey is the newest key whose activation has passed. Before the first
@@ -219,7 +247,8 @@ func publicSet(keys []storedKey, include func(storedKey) bool) (jwk.Set, error) 
 
 // RotateKeys provisions the first key, or the successor of the signing key
 // once its interval is nearly over, published one overlap before it signs.
-// The successor's predecessor retires one access lifetime after the handover.
+// The successor's predecessor retires one longest token lifetime after the
+// handover.
 // Concurrent replicas race on the unique generation; the loser does nothing.
 func (s *SigningKeys) RotateKeys(ctx context.Context) error {
 	keys, err := s.load(ctx)
@@ -262,7 +291,7 @@ func (s *SigningKeys) provision(ctx context.Context, generation uint32, activate
 		return oops.With("operation", "signing_key.insert").With("generation", generation).Wrap(err)
 	}
 	if predecessor != nil {
-		retiresAt := activatesAt.Add(s.cfg.AccessLifetime)
+		retiresAt := activatesAt.Add(s.cfg.LongestTokenLifetime)
 		if _, err := tx.Exec(
 			"UPDATE signing_key SET retires_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND retires_at = 0 AND deleted_at = 0",
 			retiresAt.UnixMilli(), row.CreatedAt, predecessor.id,

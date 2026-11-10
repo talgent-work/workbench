@@ -7,6 +7,8 @@ import { output, Pipe } from './support/execd-client.ts'
 import { computerTarget } from './support/targets.ts'
 import { Upstream } from './support/upstream.ts'
 
+const IDENTITY_TOKEN = 'agent-identity-token'
+
 // The executable driven through its Gateway protocol, the black-box seam:
 // Talgent Computer runs as its own process behind a stand-in Gateway, the
 // platform delivers a Work's credentials over the tunnel, and a Work process
@@ -84,7 +86,7 @@ describe('the executable behind its Gateway', () => {
     }
     const credentials = {
       model: { base_url: `${upstream.origin}/anthropic`, key: KEY },
-      gateway: { url: `${upstream.origin}/computer/v1/mcp`, work_id: 'work-1', work_credential: WORK_CREDENTIAL },
+      gateway: { url: `${upstream.origin}/computer/v1/mcp`, work_id: 'work-1', identity_token: IDENTITY_TOKEN, work_credential: WORK_CREDENTIAL },
     }
     assert.equal((await client.call('PUT', '/credentials', credentials, '')).status, 204)
 
@@ -96,7 +98,7 @@ describe('the executable behind its Gateway', () => {
     assert.equal(env.ANTHROPIC_API_KEY, undefined)
     assert.match(env.ANTHROPIC_BASE_URL, /^http:\/\/127\.0\.0\.1:\d+\/w\/work-1\/model$/)
     assert.equal(env.ANTHROPIC_AUTH_TOKEN, env.TALGENT_PROXY_TOKEN)
-    for (const secret of [KEY, WORK_CREDENTIAL]) assert.ok(!JSON.stringify(env).includes(secret))
+    for (const secret of [KEY, IDENTITY_TOKEN, WORK_CREDENTIAL]) assert.ok(!JSON.stringify(env).includes(secret))
 
     // The process keeps its proxy URL and token across a restart.
     first.detach()
@@ -114,7 +116,7 @@ describe('the executable behind its Gateway', () => {
     assert.equal(model?.headers.authorization, `Bearer ${KEY}`)
     const mcp = upstream.seen.find((request) => request.url === '/computer/v1/mcp')
     assert.equal(mcp?.headers['x-talgent-work-credential'], WORK_CREDENTIAL)
-    assert.equal(mcp?.headers.authorization, undefined)
+    assert.equal(mcp?.headers.authorization, `Bearer ${IDENTITY_TOKEN}`)
     const published = JSON.parse(mcp?.body ?? '{}') as { params: { arguments: Record<string, string> } }
     assert.equal(published.params.arguments.source_content, Buffer.from(REPORT).toString('base64'), 'the publication carries the file bytes')
 

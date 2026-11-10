@@ -83,7 +83,8 @@ Sign-in with GitHub and the session tokens the gateway validates.
 | `audience` | `${ACCOUNT_AUDIENCE:talgent}` | The tokens' `aud`; base fixed to `talgent`, as `web-auth` expects |
 | `cookie-domain` | `${ACCOUNT_COOKIE_DOMAIN:}` | Empty keeps cookies on the host; a parent domain lets one sign-in serve sibling entries |
 | `return-origins` | none | Base addresses of other entries a sign-in may return to, beside the one receiving GitHub's callback |
-| `access-token-lifetime` | `15m` | Lifetime of an access token |
+| `access-token-lifetime` | `15m` | Lifetime of a person's Identity Token |
+| `agent-token-lifetime` | `168h` | Lifetime of a Work's agent Identity Token, never refreshed; a retiring signing key stays published this long |
 | `session-sliding-lifetime` | `720h` | A session ends after this long unused |
 | `session-absolute-lifetime` | `2160h` | A session ends this long after sign-in; access ≤ sliding ≤ absolute |
 | `key-rotation-interval` | `720h` | How often a new signing key is made |
@@ -175,13 +176,14 @@ How Agent reaches Computer and Managed Computers.
 | `agent-rpc.control-token`, `agent-rpc.feedback-token` | `${AGENT_CONTROL_TOKEN:}`, `${AGENT_FEEDBACK_TOKEN:}` | Admit the services that control Works and Dispatcher's reports |
 | `agent-storage.address`, `token` | `${STORAGE_ADDRESS:http://127.0.0.1:8080}`, `${STORAGE_AGENT_TOKEN:}` | Storage |
 | `agent-marketplace.address`, `credential-token` | `${MARKETPLACE_INTERNAL_ADDRESS:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Marketplace |
-| `agent-user-directory.address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's directory of people a Work is shared with |
+| `agent-account.address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's private API: the directory of people a Work is shared with, and each Work's Identity Token |
 | `agent-recovery.sweep-interval` | `60s` | How often obligations no event woke are checked; at most one minute |
 | `agent-recovery.inputs-refresh-interval` | `10m` | How often a Managed Work's inputs are synced again; inside `storage.link-ttl` |
 | `agent-credential-changes.consumer-group`, `agent-input-changes`, `agent-desk-assignments`, `agent-computer-presence` | `${AGENT_CREDENTIAL_CHANGES_GROUP:agent-credential-changes}`, `${AGENT_INPUT_CHANGES_GROUP:agent-input-changes}`, `${AGENT_DESK_ASSIGNMENTS_GROUP:agent-desk-assignments}`, `${AGENT_COMPUTER_PRESENCE_GROUP:agent-computer-presence}` | Kafka consumer groups; the same names when unset |
 | `agent-taskqueue` | queue `agent-recovery`, concurrency 16, retry `1s`–`60s` | Recovery tasks |
 | `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 8, retry `1s`–`60s` | Each execution's long step holds a worker while it runs |
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
+| `account-maintenance-taskqueue` | queue `account-maintenance`, concurrency 1 | Hourly signing key rotation and daily forgetting of replaced refresh secrets |
 | `storage-maintenance-taskqueue` | queue `storage-maintenance`, concurrency 2, retry `10s`–`5m` | Removal of reclaimed Directories' content, retried until removed; hourly lapse of Preview Copies |
 | `native-api.addr` | `${NATIVE_API_ADDR::8081}` | The API Agents call with their Work credential |
 | `native-api.gateway-token` | none | When set, only a platform Connector presenting it reaches the native API; empty, any caller with a current Work credential does. The base gives controlplane `GATEWAY_TOKEN` (Secret `native-execution-control`) for a profile to name |

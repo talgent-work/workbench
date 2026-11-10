@@ -47,6 +47,7 @@ func (h *ReconcileExecutionHandler) deliverCredentials(ctx context.Context, exec
 	if err != nil {
 		return false, err
 	}
+	delivery.ExpiresAt = supply.IdentityToken.redeliveryDue(delivery.ExpiresAt)
 	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
 		return execution.RecordCredentialDelivery(delivery), nil
 	})

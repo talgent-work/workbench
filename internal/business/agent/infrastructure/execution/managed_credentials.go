@@ -15,17 +15,19 @@ import (
 // A Managed Work's credentials are delivered to Talgent Computer, which keeps
 // them outside every Work root and gives them to no process: its local proxy
 // adds them to the requests a run's processes send through it.
-// The Work credential, with the Space Token of the Work's input source, goes
-// only to the platform Connector and the native API on its origin, and a
-// Model Configuration key only to its Model Template's endpoint. Provider
-// credentials stay with the platform.
+// The Work's Identity Token and Work credential, with the Space Token of the
+// Work's input source, go only to the platform Connector and the native API
+// on its origin, and a Model Configuration key only to its Model Template's
+// endpoint. Provider credentials stay with the platform.
 
 // workCredentials is the body of the relay's credentials PUT. It carries
 // secrets: it is never logged, recorded or echoed.
 type workCredentials struct {
-	// Model is absent on the machine's own Claude login.
-	Model   *workModelCredential  `json:"model,omitempty"`
-	Gateway workGatewayCredential `json:"gateway"`
+	// Model is absent on the machine's own Claude login, and when KeepModel
+	// asks the machine to keep the model it holds.
+	Model     *workModelCredential  `json:"model,omitempty"`
+	KeepModel bool                  `json:"keep_model,omitempty"`
+	Gateway   workGatewayCredential `json:"gateway"`
 	// API is where the Work's native API calls go, with the Gateway's
 	// identity; absent when Managed Works have no direct API.
 	API *workAPICredential `json:"api,omitempty"`
@@ -41,8 +43,11 @@ type workModelCredential struct {
 }
 
 type workGatewayCredential struct {
-	URL            string `json:"url"`
-	WorkID         string `json:"work_id"`
+	URL    string `json:"url"`
+	WorkID string `json:"work_id"`
+	// IdentityToken is the Work's agent Identity Token, which the local proxy
+	// sends as `Authorization: Bearer` with the Agent's platform requests.
+	IdentityToken  string `json:"identity_token"`
 	WorkCredential string `json:"work_credential"`
 	SpaceToken     string `json:"space_token,omitempty"`
 }
@@ -77,8 +82,9 @@ func (m *ManagedComputers) forgetCredentials(ctx context.Context, spec managedSp
 // current key is delivered only while it still belongs to the endpoint the
 // start was realized with; otherwise a redelivery keeps the key already
 // delivered, and a first delivery fails, since without a model the proxy
-// would leave the Harness on the machine's own Claude login. Nothing
-// delivered declares an expiry. The Work's inputs, whose downloads
+// would leave the Harness on the machine's own Claude login. Every delivery
+// carries the Work's new Identity Token (Work token issuance). The Work's
+// inputs, whose downloads
 // authenticate with the Work credential delivered here, are synced as their
 // own step once it is delivered.
 func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
@@ -93,29 +99,26 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord,
 	if err := holding(ctx); err != nil {
 		return deliveredCredentials{}, err
 	}
-	credentials := workCredentials{Gateway: workGatewayCredential{URL: m.machines.gateway, WorkID: record.SessionID, WorkCredential: spec.WorkCredential, SpaceToken: supply.SpaceToken}}
+	if supply.IdentityToken.Token == "" {
+		return deliveredCredentials{}, errors.New("agent: the Work's Identity Token is required to reach the platform")
+	}
+	credentials := workCredentials{Gateway: workGatewayCredential{URL: m.machines.gateway, WorkID: record.SessionID, IdentityToken: supply.IdentityToken.Token, WorkCredential: spec.WorkCredential, SpaceToken: supply.SpaceToken}}
 	if spec.APIAddress != "" {
 		credentials.API = &workAPICredential{URL: spec.APIAddress}
 	}
 	model := renewalCredential(m.models, admitted.WorkModel, spec.ModelEndpoint)
-	keep := false
 	if !admitted.WorkModel.MachineLogin {
 		switch {
 		case model.Key == "" && redelivery:
-			keep = true
+			credentials.KeepModel = true
 		case model.Key == "":
 			return deliveredCredentials{}, errModelConfigurationNotProvided
 		default:
 			credentials.Model = &workModelCredential{BaseURL: model.Endpoint, Key: model.Key}
 		}
 	}
-	if !keep {
-		if err := m.machines.deliverCredentials(ctx, spec, record.SessionID, credentials); err != nil {
-			return deliveredCredentials{}, err
-		}
-	}
-	if keep {
-		return deliveredCredentials{}, nil
+	if err := m.machines.deliverCredentials(ctx, spec, record.SessionID, credentials); err != nil {
+		return deliveredCredentials{}, err
 	}
 	// A stop admitted while delivering must not leave the credentials behind.
 	if err := holding(ctx); err != nil {

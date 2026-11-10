@@ -89,16 +89,19 @@ type CreationSupply struct {
 }
 
 // CredentialSupply is what a delivery hands the bound environment from
-// other authorities, obtained by Application: the Space Token of the Work's
-// publication target, with which its Agent publishes (Space Token in
-// sandbox), and, on a Cloud, the current credentials Marketplace supplied
-// for the repositories and service targets the run may reach, with the
-// access observed for each. A Managed Computer uses the machine's own.
+// other authorities, obtained by Application: the Work's Identity Token,
+// which the environment adds to its Agent's requests to the platform's entry
+// (Work token issuance), the Space Token of the Work's publication target,
+// with which its Agent publishes (Space Token in sandbox), and, on a Cloud,
+// the current credentials Marketplace supplied for the repositories and
+// service targets the run may reach, with the access observed for each. A
+// Managed Computer uses the machine's own.
 type CredentialSupply struct {
-	SpaceToken   string
-	Repositories []RepositoryAccessMaterial
-	Services     []ServiceAccessMaterial
-	Access       []ServiceAccessStatus
+	IdentityToken IdentityToken
+	SpaceToken    string
+	Repositories  []RepositoryAccessMaterial
+	Services      []ServiceAccessMaterial
+	Access        []ServiceAccessStatus
 }
 
 // ManagedInputs are the current files of a Managed Work's located inputs,

@@ -96,11 +96,11 @@ func newNativeWorkLifecycle(t *testing.T, ctx context.Context) *nativeWorkLifecy
 	harness := commandtest.NewHarness()
 	computers := &cloudDesks{}
 	services := &swappableServices{current: authorizationcatalogtest.NoServices{}}
-	supplies := command.NewEnvironmentSupplies(authorizationcatalogtest.NoRepositories{}, services, directoryMounts{root: t.TempDir()})
+	supplies := command.NewEnvironmentSupplies(authorizationcatalogtest.NoRepositories{}, services, directoryMounts{root: t.TempDir()}, &commandtest.Accounts{})
 	return &nativeWorkLifecycleFixture{
 		db: db, works: works, definitions: definitions, provisioning: provisioning, connections: connections, external: external, executions: executions, readings: readings, services: services,
 		reconcile:    command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, executions, environment, harness, computers, supplies),
-		coordination: command.NewExecutionCoordination(time.Now, works, executions, computers, harness),
+		coordination: command.NewExecutionCoordination(time.Now, works, definitions, executions, computers, harness),
 	}
 }
 

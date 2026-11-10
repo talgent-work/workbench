@@ -140,7 +140,7 @@ func (c *SandboxCredentials) write(ctx context.Context, record executionRecord, 
 	if err != nil {
 		return nil, none, "", err
 	}
-	if plan, err = withPlatformCredentials(plan, spec.Env, supply.SpaceToken); err != nil {
+	if plan, err = withPlatformCredentials(plan, spec.Env, supply.IdentityToken, supply.SpaceToken); err != nil {
 		return nil, none, "", err
 	}
 	client, err := c.client(ctx, record.SandboxID, true)

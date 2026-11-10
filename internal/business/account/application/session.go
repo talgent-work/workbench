@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 )
@@ -123,18 +122,20 @@ func (a *Application) revoke(ctx context.Context, reference SessionReference) er
 	return a.sessions.Save(ctx, session)
 }
 
-// RefreshSecretRetention forgets reuse evidence nothing can present anymore.
-type RefreshSecretRetention interface {
-	ForgetReplacedSecrets(ctx context.Context, expiredBefore time.Time, limit int) (int64, error)
-}
-
 const forgetBatch = 1000
 
-// ForgetExpiredRefreshSecrets drops replaced secrets of sessions past their
-// absolute expiry, one bounded batch per call.
-func (a *Application) ForgetExpiredRefreshSecrets(ctx context.Context) error {
-	_, err := a.retention.ForgetReplacedSecrets(ctx, a.now(), forgetBatch)
-	return err
+// ForgetReplacedRefreshSecrets drops the replaced secrets of sessions past
+// their absolute expiry, in bounded batches until none is left or ctx ends
+// (Refresh rotates once needs a replaced secret only until its session
+// expires).
+func (a *Application) ForgetReplacedRefreshSecrets(ctx context.Context) error {
+	now := a.now()
+	for {
+		forgotten, err := a.sessions.ForgetReplacedSecrets(ctx, now, forgetBatch)
+		if err != nil || forgotten < forgetBatch {
+			return err
+		}
+	}
 }
 
 // PublishedKeys is the JWKS the gateway validates Identity Tokens with.

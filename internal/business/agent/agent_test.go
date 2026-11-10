@@ -23,6 +23,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -106,8 +107,9 @@ func (unusedExecutionPort) StopExecution(context.Context, string, string) error 
 func storageStub() fx.Option {
 	return fx.Options(
 		fx.Supply(agent.StorageConfig{Address: "http://storage.invalid", Token: "storage-test"}),
-		fx.Supply(agent.UserDirectoryConfig{Address: "http://account.invalid"}),
+		fx.Supply(agent.AccountConfig{Address: "http://account.invalid"}),
 		fx.Decorate(func(command.StoragePort) command.StoragePort { return stubStorage{} }),
+		fx.Decorate(func(command.AccountPort) command.AccountPort { return &commandtest.Accounts{} }),
 	)
 }
 

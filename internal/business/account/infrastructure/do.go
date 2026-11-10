@@ -61,3 +61,19 @@ type signingKeyDO struct {
 }
 
 func (signingKeyDO) TableName() string { return "signing_key" }
+
+type agentAccountDO struct {
+	WorkID            string `xorm:"work_id pk"`
+	ProjectID         string `xorm:"project_id"`
+	AgentID           string `xorm:"agent_id"`
+	Purpose           string `xorm:"purpose"`
+	WorkSubjectKind   string `xorm:"work_subject_kind"`
+	WorkSubjectID     string `xorm:"work_subject_id"`
+	RepresentedUserID string `xorm:"represented_user_id"`
+	Version           int    `xorm:"'version'"`
+	CreatedAt         int64  `xorm:"created_at"`
+	UpdatedAt         int64  `xorm:"updated_at"`
+	DeletedAt         int64  `xorm:"deleted_at"`
+}
+
+func (agentAccountDO) TableName() string { return "agent_account" }

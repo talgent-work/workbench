@@ -17,6 +17,8 @@ import { LocalProxy } from '../src/proxy/server.ts'
 import { send, Upstream } from './support/upstream.ts'
 import { posixModes } from './support/platform.ts'
 
+const IDENTITY_TOKEN = 'agent-identity-token'
+
 // Talgent Computer black-box tests of Work credentials and the local proxy:
 // credentials are delivered through the
 // execd service as the Gateway relays them, processes run through the shim,
@@ -84,7 +86,7 @@ afterEach(async () => {
 
 const credentialsBody = (model = true) => ({
   ...(model ? { model: { base_url: `${upstream.origin}/anthropic`, key: KEY } } : {}),
-  gateway: { url: `${upstream.origin}/computer/v1/mcp`, work_id: 'w-1', work_credential: WORK_CREDENTIAL, space_token: SPACE_TOKEN },
+  gateway: { url: `${upstream.origin}/computer/v1/mcp`, work_id: 'w-1', identity_token: IDENTITY_TOKEN, work_credential: WORK_CREDENTIAL, space_token: SPACE_TOKEN },
 })
 
 const deliver = (body: unknown, workId = 'w-1', method = 'PUT') => service.request({ workId, method, path: '/credentials', token: '', body })
@@ -178,14 +180,14 @@ test('a run reaches the model only through the proxy; neither its environment no
   assert.equal(env.ANTHROPIC_AUTH_TOKEN, token)
   assert.equal(env.ANTHROPIC_API_KEY, undefined, 'the machine key is removed')
   const spawned = JSON.stringify(env)
-  for (const secret of [KEY, WORK_CREDENTIAL, SPACE_TOKEN]) assert.ok(!spawned.includes(secret))
+  for (const secret of [KEY, IDENTITY_TOKEN, WORK_CREDENTIAL, SPACE_TOKEN]) assert.ok(!spawned.includes(secret))
   // Every file Talgent Computer keeps, the Work root and process state
   // included, but the credentials file itself.
   const credentialsFile = join(dir, 'state', 'credentials', 'w-1.json')
   for (const file of await filesUnder(dir)) {
     if (file === credentialsFile) continue
     const text = await readFile(file, 'utf8').catch(() => '')
-    for (const secret of [KEY, WORK_CREDENTIAL, SPACE_TOKEN, token]) assert.ok(!text.includes(secret) || (secret === token && file.endsWith('output.log')), `${file} holds a secret`)
+    for (const secret of [KEY, IDENTITY_TOKEN, WORK_CREDENTIAL, SPACE_TOKEN, token]) assert.ok(!text.includes(secret) || (secret === token && file.endsWith('output.log')), `${file} holds a secret`)
   }
   const record = await readFile(join(processes.dir('w-1', id), 'proxy-token.json'), 'utf8')
   assert.ok(!record.includes(token), 'only the token hash is kept')
@@ -319,7 +321,7 @@ test('a streamed model response reaches the process as it arrives', async () => 
   assert.equal(await first.rest, 'event: message_stop\ndata: {}\n\n')
 })
 
-test('MCP requests go to the Talgent MCP endpoint with the Work credential headers', async () => {
+test('MCP requests go to the Talgent MCP endpoint with the Work\'s Identity Token and credential headers', async () => {
   await deliver(credentialsBody())
   const { env } = await runEnv()
   const headers = { authorization: `Bearer ${env.TALGENT_PROXY_TOKEN}`, 'x-talgent-work-id': 'forged', 'content-type': 'application/json' }
@@ -330,7 +332,7 @@ test('MCP requests go to the Talgent MCP endpoint with the Work credential heade
     assert.equal(seen.headers['x-talgent-work-id'], 'w-1')
     assert.equal(seen.headers['x-talgent-work-credential'], WORK_CREDENTIAL)
     assert.equal(seen.headers['x-talgent-space-token'], SPACE_TOKEN)
-    assert.equal(seen.headers.authorization, undefined)
+    assert.equal(seen.headers.authorization, `Bearer ${IDENTITY_TOKEN}`, 'the run\'s token is replaced by the Work\'s Identity Token')
   }
   const { space_token: _dropped, ...withoutSpace } = credentialsBody().gateway
   void _dropped

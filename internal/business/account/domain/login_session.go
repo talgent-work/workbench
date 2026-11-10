@@ -67,22 +67,6 @@ func (l SessionLifetimes) validate() error {
 	return nil
 }
 
-// Principal is the kind of subject an Identity Token speaks for.
-type Principal string
-
-const PrincipalUser Principal = "user"
-
-// IdentityClaims are what an Identity Token states; signing them is a
-// realization step outside the Aggregate.
-type IdentityClaims struct {
-	Subject   AccountID
-	Profile   Profile
-	Principal Principal
-	SessionID string
-	IssuedAt  time.Time
-	ExpiresAt time.Time
-}
-
 type LoginSessionState int
 
 const (
@@ -193,7 +177,7 @@ func (s *LoginSession) IssueIdentityToken(profile Profile, now time.Time, lifeti
 		expires = s.ExpiresAt
 	}
 	return IdentityClaims{
-		Subject:   s.AccountReference,
+		Subject:   string(s.AccountReference),
 		Profile:   profile,
 		Principal: PrincipalUser,
 		SessionID: s.ID,

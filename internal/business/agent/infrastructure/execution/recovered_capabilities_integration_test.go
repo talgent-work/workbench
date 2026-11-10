@@ -49,7 +49,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			works := infrastructure.NewAgentWorkRepository(db, time.Now)
 			work.DefinitionVersion = definition.Version
 			require.NoError(t, works.Save(ctx, work))
-			require.NoError(t, command.NewExecutionCoordination(time.Now, works, executions, &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID))
+			require.NoError(t, command.NewExecutionCoordination(time.Now, works, commandtest.Definitions{}, executions, &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID))
 			begun, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 			require.True(t, found)
@@ -66,7 +66,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 			require.Equal(t, snapshot.Connectors, recovered.CapabilitySnapshot.Connectors)
 			_, err = recovered.RecoverExecution()
 			require.NoError(t, err)
-			require.NoError(t, command.NewExecutionCoordination(time.Now, recoveredWorks, NewAgentExecutionRepository(reopened, time.Now), &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID), "recovery must reuse the admitted execution")
+			require.NoError(t, command.NewExecutionCoordination(time.Now, recoveredWorks, commandtest.Definitions{}, NewAgentExecutionRepository(reopened, time.Now), &cloudDesks{}, commandtest.NewHarness()).BeginExecution(ctx, work.ID), "recovery must reuse the admitted execution")
 			retained, found, err := provisioning.live(ctx, work.ID)
 			require.NoError(t, err)
 			require.True(t, found)

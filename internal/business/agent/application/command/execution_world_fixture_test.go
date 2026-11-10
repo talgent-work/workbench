@@ -26,6 +26,7 @@ type world struct {
 	computers    *commandtest.Computers
 	environment  *commandtest.Environment
 	storage      *commandtest.Storage
+	accounts     *commandtest.Accounts
 	settlements  *commandtest.InputSettlements
 	coordination *command.ExecutionCoordination
 	// lease is the platform's configured lease terms; zero leases nothing.
@@ -37,7 +38,8 @@ func newWorld(t *testing.T, work *domain.AgentWork) *world {
 	t.Helper()
 	w := &world{works: &feedbackSessionStore{session: work}, executions: &commandtest.Executions{}, harness: commandtest.NewHarness(),
 		computers: &commandtest.Computers{}, environment: &commandtest.Environment{}, storage: &commandtest.Storage{}, settlements: &commandtest.InputSettlements{}, at: time.Now()}
-	w.coordination = command.NewExecutionCoordination(w.now, w.works, w.executions, w.computers, w.harness)
+	w.accounts = &commandtest.Accounts{Now: w.now}
+	w.coordination = command.NewExecutionCoordination(w.now, w.works, commandtest.Definitions{}, w.executions, w.computers, w.harness)
 	return w
 }
 
@@ -46,7 +48,7 @@ func worldOver(t *testing.T, works *feedbackSessionStore) *world {
 	t.Helper()
 	w := newWorld(t, works.session)
 	w.works = works
-	w.coordination = command.NewExecutionCoordination(w.now, works, w.executions, w.computers, w.harness)
+	w.coordination = command.NewExecutionCoordination(w.now, works, commandtest.Definitions{}, w.executions, w.computers, w.harness)
 	return w
 }
 
@@ -62,7 +64,7 @@ func (w *world) feedback() *command.ApplyExecutionFeedbackHandler {
 }
 
 func (w *world) reconciliation() *command.ReconcileExecutionHandler {
-	return command.NewReconcileExecutionHandler(w.now, w.lease, commandtest.CreationWaits, w.executions, w.environment, w.harness, w.computers, commandtest.Supplies(w.storage))
+	return command.NewReconcileExecutionHandler(w.now, w.lease, commandtest.CreationWaits, w.executions, w.environment, w.harness, w.computers, commandtest.Supplies(w.storage, w.accounts))
 }
 
 // execution is the Work's most recently begun execution.

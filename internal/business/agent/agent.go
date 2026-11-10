@@ -27,10 +27,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
+	agentaccount "github.com/talgent-work/workbench/internal/business/agent/infrastructure/account"
 	agentcomputer "github.com/talgent-work/workbench/internal/business/agent/infrastructure/computer"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/execution"
 	agentstorage "github.com/talgent-work/workbench/internal/business/agent/infrastructure/storage"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/userdirectory"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/workspacereading"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 )
@@ -49,9 +49,9 @@ func newComputerClient(httpClient *http.Client, config ComputerConfig, logger *s
 	return agentcomputer.NewClient(httpClient, config, logger)
 }
 
-// UserDirectoryConfig locates Account's User Directory, the people a Work
-// without a Project is shared with.
-type UserDirectoryConfig = userdirectory.Config
+// AccountConfig locates Account's private API: the User Directory and the
+// Agent Account Command.
+type AccountConfig = agentaccount.Config
 
 // RPCConfig separates control callers from execution-observation senders.
 type RPCConfig struct {
@@ -67,7 +67,7 @@ var Module = fx.Module("domain.agent",
 	fx.Invoke(registerDomainEventLifecycle),
 	fx.Invoke(fx.Annotate(RegisterRPCHandlers, fx.ParamTags(``, ``, ``, ``, `optional:"true"`))),
 	fx.Invoke(RegisterPersonalWorkHandlers),
-	fx.Provide(fx.Annotate(userdirectory.NewClient, fx.As(new(personalwork.AccountPort))), fx.Private),
+	fx.Provide(fx.Annotate(agentaccount.NewClient, fx.As(new(command.AccountPort)))),
 	fx.Provide(personalwork.New, fx.Private),
 	fx.Provide(newLiveStreamPublisher, newWorkStateUpdates),
 	fx.Provide(newDomainEventDispatcher, fx.Private),

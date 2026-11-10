@@ -17,7 +17,7 @@ type UserDirectoryQueries struct {
 	engine *xorm.Engine
 }
 
-var _ query.UserDirectoryRepository = (*UserDirectoryQueries)(nil)
+var _ query.UserDirectoryQueryRepository = (*UserDirectoryQueries)(nil)
 
 func NewUserDirectoryQueries(engine *xorm.Engine) *UserDirectoryQueries {
 	return &UserDirectoryQueries{engine: engine}
