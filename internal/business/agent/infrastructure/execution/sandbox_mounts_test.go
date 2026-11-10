@@ -89,12 +89,13 @@ func TestWorkCredentialsAreInjectedOnlyIntoPlatformRequests(t *testing.T) {
 	for _, binding := range plan.Bindings {
 		hosts[binding.Name] = binding.Match.Hosts
 		require.Equal(t, []sdk.CredentialScheme{sdk.CredentialSchemeHTTP}, binding.Match.Schemes)
-		require.Equal(t, sdk.CredentialAuth{Type: sdk.CredentialAuthCustomHeaders, Headers: []sdk.CustomHeaderEntry{
-			{Name: "Authorization", Credential: identityTokenVaultEntry},
-			{Name: authn.HeaderNativeWorkID, Credential: workIDVaultEntry},
-			{Name: authn.HeaderNativeCredential, Credential: workCredentialVaultEntry},
-			{Name: authn.HeaderSpaceToken, Credential: spaceTokenVaultEntry},
-		}}, binding.Auth)
+		// The entry takes the Identity Token alone; the platform Connector
+		// still takes the Work credential beside it.
+		headers := []sdk.CustomHeaderEntry{{Name: "Authorization", Credential: identityTokenVaultEntry}, {Name: authn.HeaderSpaceToken, Credential: spaceTokenVaultEntry}}
+		if binding.Name == gatewayBinding {
+			headers = append(headers, sdk.CustomHeaderEntry{Name: authn.HeaderNativeWorkID, Credential: workIDVaultEntry}, sdk.CustomHeaderEntry{Name: authn.HeaderNativeCredential, Credential: workCredentialVaultEntry})
+		}
+		require.Equal(t, sdk.CredentialAuth{Type: sdk.CredentialAuthCustomHeaders, Headers: headers}, binding.Auth, binding.Name)
 	}
 	require.Equal(t, map[string][]string{platformAPIBinding: {"controlplane.talgent.svc.cluster.local"}, gatewayBinding: {"connector.talgent.svc.cluster.local"}}, hosts)
 	// The Vault reads a binding back normalized; the write is confirmed only
@@ -112,7 +113,7 @@ func TestWorkCredentialsAreInjectedOnlyIntoPlatformRequests(t *testing.T) {
 	alone, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: api}), identity, "")
 	require.NoError(t, err)
 	require.Len(t, alone.Credentials, 3, "a Work without an input source has no Space Token")
-	require.Len(t, alone.Bindings, 1, "without a Gateway only the native API receives the credential")
+	require.Len(t, alone.Bindings, 1, "without a Gateway only the entry receives the credential")
 	_, err = withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("", map[string]string{platformAPIAddressEnv: api}), identity, "")
 	require.Error(t, err)
 	viaGateway, err := withPlatformCredentials(sdk.CredentialVaultCreateRequest{}, sandboxEnvironment("credential-1", map[string]string{platformAPIAddressEnv: "", gatewayAddressEnv: gateway}), identity, "")

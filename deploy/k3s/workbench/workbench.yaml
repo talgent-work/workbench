@@ -266,16 +266,14 @@ data:
       # deployment with a platform Connector adds, on the origin Talgent
       # Computer connects to.
       mcp-address: "${WORKBENCH_ORIGIN}/computer/v1/mcp"
-      # Where a Managed Work calls the native API directly, through its
-      # local proxy: the computer route's computer-api rule. Empty, as a
-      # profile sets it where Agents reach the platform only through a Gateway
-      # (COMPUTER_NATIVE_API_ACCESS=disabled), gives Managed Works none.
-      api-address: "${WORKBENCH_ORIGIN}/computer/v1/api"
+      # The entry, where a Managed Work calls the core's public APIs through
+      # its local proxy, which adds its Identity Token. Empty where Agents
+      # reach the platform only through a Gateway (AGENT_CORE_API_ACCESS).
+      api-address: "${PLATFORM_API_ADDRESS:}"
       # Where Storage's Access Links are served on that origin, from which a
-      # Managed Computer downloads its Works' inputs: the native API's, through
-      # the computer-api rule. A deployment whose Agents reach the platform
-      # only through a Gateway names the Gateway's instead.
-      content-address: "${WORKBENCH_ORIGIN}/computer/v1/api/v1/storage/content"
+      # Managed Computer downloads its Works' inputs: the web-api route's
+      # storage-content-api rule, which takes no Identity Token.
+      content-address: "${WORKBENCH_ORIGIN}/api/v1/storage/content"
       # Where a reader's browser reaches Agent's links to a Managed Work's
       # files: the web-api route's agent-workspace-file rule.
       workspace-file-address: "${AGENT_WORKSPACE_FILE_ADDRESS:/api/v1/agent/workspace-files}"
@@ -355,10 +353,11 @@ data:
         cpu: "2"
         memory: "2Gi"
       environment:
-        # The controlplane's native API, the platform service a sandbox
-        # reaches, on the Service's agent port: the standard port, the only
-        # kind where the Credential Proxy adds the Work credential.
-        TALGENT_API_ADDRESS: "${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}"
+        # The entry, where a sandbox's Agent calls the core's public APIs;
+        # its Credential Proxy adds the Work's Identity Token to every request
+        # to it. Empty where Agents reach the platform only through a Gateway
+        # (AGENT_CORE_API_ACCESS).
+        TALGENT_API_ADDRESS: "${PLATFORM_API_ADDRESS:}"
         OTEL_EXPORTER_OTLP_ENDPOINT: "${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}"
       dispatcher:
         address: ${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}
@@ -806,11 +805,6 @@ spec:
     - name: native
       port: 8081
       targetPort: 8081
-    # The same native API for sandboxes, on the standard port, the only kind
-    # where their Credential Proxy adds the Work credential.
-    - name: agent
-      port: 80
-      targetPort: 8081
   selector:
     app: controlplane
 ---
@@ -1029,6 +1023,14 @@ spec:
             - configMapRef:
                 name: workbench-environment
           env:
+            # The entry's public origin, where Agents call the core's public
+            # APIs. AGENT_CORE_API_ACCESS=disabled empties it
+            # (components/core-api-without-agents).
+            - name: PLATFORM_API_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: workbench-environment
+                  key: WORKBENCH_ORIGIN
             # Every process reads the Redis password from one Secret; without
             # it they connect with none.
             - name: REDIS_PASSWORD
@@ -1392,12 +1394,6 @@ spec:
               replacePrefixMatch: /account.public.v1.SessionService
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
             set:
               - name: x-talgent-authenticated-by
                 value: envoy
@@ -1417,12 +1413,6 @@ spec:
               replacePrefixMatch: /agent.public.v1.AgentWorkService
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
             set:
               - name: x-talgent-authenticated-by
                 value: envoy
@@ -1442,12 +1432,6 @@ spec:
               replacePrefixMatch: /agent.public.v1.PersonalWorkService
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
             set:
               - name: x-talgent-authenticated-by
                 value: envoy
@@ -1467,12 +1451,49 @@ spec:
               replacePrefixMatch: /agent.public.v1.WorkFileService
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # A Work's Agent asks who it is.
+    - name: agent-identity-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.IdentityService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.IdentityService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # A Work's Agent publishes and deletes its Artifacts, with its Space Token;
+    # a publication carries up to 64 MiB.
+    - name: storage-artifact-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/storage.public.v1.ArtifactService
+      timeouts:
+        request: 300s
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /storage.public.v1.ArtifactService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
             set:
               - name: x-talgent-authenticated-by
                 value: envoy
@@ -1492,12 +1513,6 @@ spec:
               replacePrefixMatch: /computer.public.v1.ComputerService
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
             set:
               - name: x-talgent-authenticated-by
                 value: envoy
@@ -1517,12 +1532,6 @@ spec:
               replacePrefixMatch: /marketplace.public.v1.MarketplaceService
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
             set:
               - name: x-talgent-authenticated-by
                 value: envoy
@@ -1561,17 +1570,6 @@ spec:
               replacePrefixMatch: /v1/storage
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-username
-              - x-talgent-email
-              - x-talgent-display-name
-              - x-talgent-avatar-url
-              - x-talgent-roles
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
             set:
               - name: x-talgent-authenticated-by
                 value: envoy
@@ -1594,21 +1592,6 @@ spec:
             path:
               type: ReplacePrefixMatch
               replacePrefixMatch: /v1/agent/workspace-files
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-issuer
-              - x-talgent-subject
-              - x-talgent-username
-              - x-talgent-email
-              - x-talgent-display-name
-              - x-talgent-avatar-url
-              - x-talgent-roles
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
       backendRefs:
         - name: controlplane
           port: 8080
@@ -1628,13 +1611,6 @@ spec:
               replacePrefixMatch: /streamgateway.public.v1.StreamGatewayService
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
-              - x-talgent-reader-admission
             set:
               - name: x-talgent-authenticated-by
                 value: envoy
@@ -1654,12 +1630,6 @@ spec:
               replacePrefixMatch: /trace.public.v1.TraceQueryService
         - type: RequestHeaderModifier
           requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
             set:
               - name: x-talgent-authenticated-by
                 value: envoy
@@ -1707,9 +1677,21 @@ spec:
       kind: HTTPRoute
       name: web-api
       sectionName: trace-api
-  # Account issues Identity Tokens; the gateway validates them against
-  # Account's published keys and forwards their claims as x-talgent-* headers;
-  # every context authorizes on those claims itself.
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: agent-identity-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: storage-artifact-api
+  # Account issues both Principals' Identity Tokens; the gateway validates
+  # them against Account's published keys and writes their claims as
+  # x-talgent-* headers, a claim the token lacks writing none, after the
+  # ClientTrafficPolicy identity-headers removed any a client sent. Each
+  # service admits the Principals its procedures declare, and every context
+  # authorizes on those claims itself. AGENT_CORE_API_ACCESS=disabled admits
+  # people only (components/core-api-without-agents).
   jwt:
     providers:
       - name: account
@@ -1747,28 +1729,64 @@ spec:
             header: x-talgent-avatar-url
           - claim: roles
             header: x-talgent-roles
-  # These routes admit people only: they neither map nor strip an agent's
-  # claim headers, so an agent token is refused here until the entry rewrites
-  # identity headers gateway-wide (talgent-work/orchestra#99).
-  authorization:
-    defaultAction: Deny
-    rules:
-      - name: people-only
-        action: Allow
-        principal:
-          jwt:
-            provider: account
-            claims:
-              - name: principal
-                values:
-                  - user
+          - claim: project_id
+            header: x-talgent-project-id
+          - claim: agent_id
+            header: x-talgent-agent-id
+          - claim: purpose
+            header: x-talgent-purpose
+          - claim: work_subject_kind
+            header: x-talgent-work-subject-kind
+          - claim: work_subject_id
+            header: x-talgent-work-subject-id
+          - claim: for
+            header: x-talgent-represented-user-id
+---
+# Every request through the entry loses the identity headers a client sent
+# before routing, so only the gateway's JWT validation and its routes write
+# them: the verified identity, and a trusted service's delegation, which
+# only reaches a service from inside the cluster. Capabilities, such as the
+# Space Token, pass through. It sits beside the Gateway, which the
+# deployment provides (docs/self-hosting.md).
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: identity-headers
+  namespace: envoy-gateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+  headers:
+    earlyRequestHeaders:
+      remove:
+        - x-talgent-authenticated-by
+        - x-talgent-issuer
+        - x-talgent-principal
+        - x-talgent-subject
+        - x-talgent-username
+        - x-talgent-email
+        - x-talgent-display-name
+        - x-talgent-avatar-url
+        - x-talgent-roles
+        - x-talgent-project-id
+        - x-talgent-agent-id
+        - x-talgent-purpose
+        - x-talgent-work-subject-kind
+        - x-talgent-work-subject-id
+        - x-talgent-represented-user-id
+        - x-talgent-service-id
+        - x-talgent-delegated-user-id
+        - x-talgent-delegated-actor-id
+        - x-talgent-gateway-token
+        - x-talgent-reader-admission
+        - x-talgent-runtime-instance-id
+        - x-talgent-runtime-purpose
+        - x-talgent-runtime-owner-ref
 ---
 # Account's browser sign-in endpoints. They run before a token exists, so no
-# JWT policy targets this route; every internal trust header a client sends is
-# stripped so private service trust cannot be forged from outside. (Gateway API
-# allows 16 removals; the native Work credential headers, and the Space Token
-# sent beside them, are omitted because only Connect handlers read them, never
-# /auth.)
+# JWT policy targets this route.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -1791,26 +1809,6 @@ spec:
         - path:
             type: Exact
             value: /auth/github/callback
-      filters:
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-issuer
-              - x-talgent-subject
-              - x-talgent-username
-              - x-talgent-email
-              - x-talgent-display-name
-              - x-talgent-avatar-url
-              - x-talgent-roles
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
-              - x-talgent-reader-admission
-              - x-talgent-runtime-instance-id
-              - x-talgent-runtime-purpose
-              - x-talgent-runtime-owner-ref
       backendRefs:
         - name: controlplane
           port: 8080
@@ -1821,26 +1819,6 @@ spec:
         - path:
             type: PathPrefix
             value: /auth/
-      filters:
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-issuer
-              - x-talgent-subject
-              - x-talgent-username
-              - x-talgent-email
-              - x-talgent-display-name
-              - x-talgent-avatar-url
-              - x-talgent-roles
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
-              - x-talgent-reader-admission
-              - x-talgent-runtime-instance-id
-              - x-talgent-runtime-purpose
-              - x-talgent-runtime-owner-ref
       backendRefs:
         - name: controlplane
           port: 8080
@@ -1848,7 +1826,7 @@ spec:
 # What Talgent Computer reaches before and without a browser sign-in: device
 # code registration, its outbound connection and its installer. No JWT policy
 # targets this route; the device code and the Computer Credential are checked
-# by Computer, and every internal trust header a client sends is stripped.
+# by Computer.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -1873,34 +1851,14 @@ spec:
             path:
               type: ReplacePrefixMatch
               replacePrefixMatch: /computer.public.v1.RegistrationService
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-issuer
-              - x-talgent-subject
-              - x-talgent-username
-              - x-talgent-email
-              - x-talgent-display-name
-              - x-talgent-avatar-url
-              - x-talgent-roles
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
-              - x-talgent-reader-admission
-              - x-talgent-runtime-instance-id
-              - x-talgent-runtime-purpose
-              - x-talgent-runtime-owner-ref
       backendRefs:
         - name: controlplane
           port: 8080
     # A Managed Work's Claude Code sends its OTLP telemetry here, with its
     # run's telemetry token and its Work identity. Agent checks the token,
     # puts the run's own attribution on everything sent and forwards it to
-    # the OTel Collector, so no JWT policy targets it; the internal trust
-    # headers the gateway asserts are stripped, the credentials a caller
-    # presents itself pass.
+    # the OTel Collector, so no JWT policy targets it; the credentials a
+    # caller presents itself pass.
     - name: computer-telemetry
       matches:
         - path:
@@ -1914,71 +1872,9 @@ spec:
             path:
               type: ReplacePrefixMatch
               replacePrefixMatch: /v1/agent/telemetry
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-issuer
-              - x-talgent-subject
-              - x-talgent-username
-              - x-talgent-email
-              - x-talgent-display-name
-              - x-talgent-avatar-url
-              - x-talgent-roles
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
-              - x-talgent-reader-admission
-              - x-talgent-runtime-instance-id
-              - x-talgent-runtime-purpose
-              - x-talgent-runtime-owner-ref
       backendRefs:
         - name: controlplane
           port: 8080
-    # A Managed Work calls the controlplane's native API here, through
-    # Talgent Computer's local proxy, which adds its Work credential and
-    # Space Token, as a sandbox's Credential Proxy does in the cluster. The
-    # native API admits each call by that credential, so no JWT policy
-    # targets it; every other internal trust header is stripped.
-    # COMPUTER_NATIVE_API_ACCESS=disabled removes it, where Agents reach the
-    # platform only through a Gateway.
-    - name: computer-api
-      matches:
-        - path:
-            type: PathPrefix
-            value: /computer/v1/api
-      timeouts:
-        request: 300s
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-issuer
-              - x-talgent-subject
-              - x-talgent-username
-              - x-talgent-email
-              - x-talgent-display-name
-              - x-talgent-avatar-url
-              - x-talgent-roles
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
-              - x-talgent-reader-admission
-              - x-talgent-runtime-instance-id
-              - x-talgent-runtime-purpose
-              - x-talgent-runtime-owner-ref
-      backendRefs:
-        - name: controlplane
-          port: 8081
-    # The connection lives as long as the machine stays up.
     - name: computer-connection
       matches:
         - path:
@@ -1987,26 +1883,6 @@ spec:
       timeouts:
         request: 0s
         backendRequest: 0s
-      filters:
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            remove:
-              - x-talgent-authenticated-by
-              - x-talgent-issuer
-              - x-talgent-subject
-              - x-talgent-username
-              - x-talgent-email
-              - x-talgent-display-name
-              - x-talgent-avatar-url
-              - x-talgent-roles
-              - x-talgent-service-id
-              - x-talgent-delegated-user-id
-              - x-talgent-delegated-actor-id
-              - x-talgent-gateway-token
-              - x-talgent-reader-admission
-              - x-talgent-runtime-instance-id
-              - x-talgent-runtime-purpose
-              - x-talgent-runtime-owner-ref
       backendRefs:
         - name: computer-gateway
           port: 8085
@@ -2080,37 +1956,6 @@ spec:
                   type: Distinct
           limit:
             requests: 120
-            unit: Minute
-        - limit:
-            requests: 6000
-            unit: Minute
----
-apiVersion: gateway.envoyproxy.io/v1alpha1
-kind: BackendTrafficPolicy
-metadata:
-  name: computer-api-rate-limit
-  namespace: talgent
-spec:
-  # Each Managed Work's native API calls, its input downloads among them, are
-  # limited on their own, by the Work identity its local proxy or Talgent
-  # Computer adds. A shared ceiling above them bounds
-  # requests with made-up identities, each of which the native API checks
-  # against the Work's live run. The native API bounds each request's size.
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: computer
-      sectionName: computer-api
-  rateLimit:
-    type: Local
-    local:
-      rules:
-        - clientSelectors:
-            - headers:
-                - name: x-talgent-work-id
-                  type: Distinct
-          limit:
-            requests: 300
             unit: Minute
         - limit:
             requests: 6000

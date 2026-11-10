@@ -17,8 +17,7 @@ TALGENT_IMAGE_TAG=v0.0.0 bash "$root_dir/scripts/deploy/render-k3s.sh" --placeho
 # The placeholders with every switch turned, as a deployment's environment
 # file outside the repository.
 switched=(
-  SANDBOX_NATIVE_API_ACCESS=disabled
-  COMPUTER_NATIVE_API_ACCESS=disabled
+  AGENT_CORE_API_ACCESS=disabled
   ADDITIONAL_ENTRY_HOST=entry.example.org
   CONTROLPLANE_PROFILE=example
 )
@@ -31,13 +30,13 @@ TALGENT_ENVIRONMENT_FILE="$work/switched.env" TALGENT_IMAGE_TAG=v0.0.0 \
   || { cat "$work/switched.log" >&2; exit 1; }
 
 # A switch refuses a value it does not take instead of rendering its default.
-sed 's/^SANDBOX_NATIVE_API_ACCESS=.*/SANDBOX_NATIVE_API_ACCESS=off/' "$work/switched.env" > "$work/invalid.env"
+sed 's/^AGENT_CORE_API_ACCESS=.*/AGENT_CORE_API_ACCESS=off/' "$work/switched.env" > "$work/invalid.env"
 if TALGENT_ENVIRONMENT_FILE="$work/invalid.env" TALGENT_IMAGE_TAG=v0.0.0 \
   bash "$root_dir/scripts/deploy/render-k3s.sh" "$root_dir/deploy/k3s/workbench" > /dev/null 2> "$work/invalid.log"; then
-  echo "expected: the render refuses SANDBOX_NATIVE_API_ACCESS=off" >&2
+  echo "expected: the render refuses AGENT_CORE_API_ACCESS=off" >&2
   exit 1
 fi
-grep -q "SANDBOX_NATIVE_API_ACCESS is enabled or disabled, not 'off'" "$work/invalid.log" || {
+grep -q "AGENT_CORE_API_ACCESS is enabled or disabled, not 'off'" "$work/invalid.log" || {
   echo "expected: the render names the switch and the value it refuses, got:" >&2
   cat "$work/invalid.log" >&2
   exit 1
@@ -66,8 +65,10 @@ for name, namespace in named("NetworkPolicy"):
     if name != "gotenberg-isolation":
         check(namespace == "talgent-sandbox", f"NetworkPolicy {name} is in talgent-sandbox, got {namespace}")
 check(("gotenberg-isolation", "talgent") in named("NetworkPolicy"), "Gotenberg keeps its no-egress policy in talgent")
-check({"sandbox-boundary", "sandbox-native-api"} <= {n for n, _ in named("NetworkPolicy")},
-      "the sandbox policies sandbox-boundary and sandbox-native-api are rendered")
+# A sandbox reaches the platform only through the entry, at its public
+# origin: one policy fences it, opening no platform service.
+check({n for n, ns in named("NetworkPolicy") if ns == "talgent-sandbox"} == {"sandbox-boundary"},
+      f"sandbox-boundary is the only sandbox policy, got {named('NetworkPolicy')}")
 
 check(("talgent-sandbox", None) in named("Namespace"), "the base creates namespace talgent-sandbox")
 # The Cloud's execution quota counts only sandboxes; every namespace still
@@ -147,38 +148,62 @@ def container_env(rendered, deployment):
 def service_ports(rendered, name):
     return [p["name"] for p in find(rendered, "Service", name)["spec"]["ports"]]
 
-# SANDBOX_NATIVE_API_ACCESS: enabled, a sandbox reaches controlplane's native
-# API on the Service's agent port; disabled, no policy, port or address leads
-# it there.
-check(service_ports(docs, "controlplane") == ["http", "native", "agent"],
-      f"by default Service controlplane has the ports http, native and agent, got {service_ports(docs, 'controlplane')}")
-check("NATIVE_PLATFORM_API_ADDRESS" not in container_env(docs, "controlplane"),
-      "by default controlplane gives sandboxes the native API's address")
-check(find(switched, "NetworkPolicy", "sandbox-native-api") is None,
-      "SANDBOX_NATIVE_API_ACCESS=disabled renders no NetworkPolicy sandbox-native-api")
-check(find(switched, "NetworkPolicy", "sandbox-boundary") is not None,
-      "SANDBOX_NATIVE_API_ACCESS=disabled keeps NetworkPolicy sandbox-boundary")
-check(service_ports(switched, "controlplane") == ["http", "native"],
-      f"SANDBOX_NATIVE_API_ACCESS=disabled leaves Service controlplane the ports http and native, got {service_ports(switched, 'controlplane')}")
-check(container_env(switched, "controlplane").get("NATIVE_PLATFORM_API_ADDRESS") == {"name": "NATIVE_PLATFORM_API_ADDRESS", "value": ""},
-      "SANDBOX_NATIVE_API_ACCESS=disabled gives sandboxes no native API address")
-
-# COMPUTER_NATIVE_API_ACCESS: enabled, a Managed Work calls the native API
-# through the computer route's computer-api rule, under its own rate limit;
-# disabled, neither is rendered and the route's other rules stay.
 def rules(rendered, route):
     return [r["name"] for r in find(rendered, "HTTPRoute", route)["spec"]["rules"]]
 
-computer_rules = ["computer-registration", "computer-telemetry", "computer-api", "computer-connection"]
-check(rules(docs, "computer") == computer_rules,
-      f"by default the computer route has the rules {computer_rules}, got {rules(docs, 'computer')}")
-check(find(docs, "BackendTrafficPolicy", "computer-api-rate-limit") is not None,
-      "by default BackendTrafficPolicy computer-api-rate-limit limits the computer-api rule")
-without_api = [r for r in computer_rules if r != "computer-api"]
-check(rules(switched, "computer") == without_api,
-      f"COMPUTER_NATIVE_API_ACCESS=disabled leaves the computer route the rules {without_api}, got {rules(switched, 'computer')}")
-check(find(switched, "BackendTrafficPolicy", "computer-api-rate-limit") is None,
-      "COMPUTER_NATIVE_API_ACCESS=disabled renders no BackendTrafficPolicy computer-api-rate-limit")
+# The entry: Account's Identity Tokens of both Principals are validated by one
+# provider, which writes every claim as its header, after one gateway-wide
+# rule removed every identity header a client sent; no route keeps a list of
+# its own. Capabilities pass through.
+identity_headers = {"x-talgent-" + h for h in (
+    "authenticated-by", "issuer", "principal", "subject", "username", "email", "display-name", "avatar-url", "roles",
+    "project-id", "agent-id", "purpose", "work-subject-kind", "work-subject-id", "represented-user-id",
+    "service-id", "delegated-user-id", "delegated-actor-id", "gateway-token", "reader-admission",
+    "runtime-instance-id", "runtime-purpose", "runtime-owner-ref")}
+entry = find(docs, "ClientTrafficPolicy", "identity-headers")
+check(entry is not None and where(entry) == "envoy-gateway-system"
+      and entry["spec"]["targetRefs"] == [{"group": "gateway.networking.k8s.io", "kind": "Gateway", "name": "public"}],
+      "ClientTrafficPolicy identity-headers targets the Gateway public in its namespace")
+removed = set((entry or {}).get("spec", {}).get("headers", {}).get("earlyRequestHeaders", {}).get("remove", []))
+check(removed == identity_headers, f"the entry removes every identity header a client sends, got {sorted(removed ^ identity_headers)} differing")
+check("x-talgent-space-token" not in removed, "the Space Token, a capability, passes through the entry")
+for route in (d for d in docs if d["kind"] == "HTTPRoute"):
+    for rule in route["spec"]["rules"]:
+        for f in rule.get("filters", []):
+            check(not f.get("requestHeaderModifier", {}).get("remove"),
+                  f"route {route['metadata']['name']} rule {rule['name']} removes no header of its own")
+auth = find(docs, "SecurityPolicy", "web-auth")
+providers = auth["spec"]["jwt"]["providers"]
+check(len(providers) == 1, "web-auth validates both Principals with one provider")
+claims = {c["claim"]: c["header"] for c in providers[0]["claimToHeaders"]}
+want_claims = {"principal": "x-talgent-principal", "iss": "x-talgent-issuer", "sub": "x-talgent-subject",
+               "preferred_username": "x-talgent-username", "email": "x-talgent-email", "name": "x-talgent-display-name",
+               "picture": "x-talgent-avatar-url", "roles": "x-talgent-roles", "project_id": "x-talgent-project-id",
+               "agent_id": "x-talgent-agent-id", "purpose": "x-talgent-purpose", "work_subject_kind": "x-talgent-work-subject-kind",
+               "work_subject_id": "x-talgent-work-subject-id", "for": "x-talgent-represented-user-id"}
+check(claims == want_claims, f"web-auth writes every claim as its header, got {claims}")
+targets = {t["sectionName"] for t in auth["spec"]["targetRefs"]}
+for section in ("agent-identity-api", "storage-artifact-api", "personal-work-api", "work-file-api"):
+    check(section in rules(docs, "web-api") and section in targets, f"web-auth validates the web-api rule {section}")
+check(find(docs, "BackendTrafficPolicy", "computer-api-rate-limit") is None and "computer-api" not in rules(docs, "computer"),
+      "Managed Works reach the platform through the entry, not a computer-api rule")
+check(service_ports(docs, "controlplane") == ["http", "native"],
+      f"Service controlplane offers sandboxes no port, got {service_ports(docs, 'controlplane')}")
+
+# AGENT_CORE_API_ACCESS: enabled, the entry admits both Principals on the
+# core's routes, leaving admission to each procedure's declaration, and
+# Agents call the core at the entry's public origin; disabled, it admits
+# people only and Agents get no address for the core.
+check("authorization" not in auth["spec"], "by default web-auth admits both Principals")
+check(container_env(docs, "controlplane").get("PLATFORM_API_ADDRESS", {}).get("valueFrom")
+      == {"configMapKeyRef": {"name": "workbench-environment", "key": "WORKBENCH_ORIGIN"}},
+      "by default Agents call the core at the entry's public origin")
+people_only = find(switched, "SecurityPolicy", "web-auth")["spec"].get("authorization")
+check(people_only == {"defaultAction": "Deny", "rules": [{"name": "people-only", "action": "Allow",
+      "principal": {"jwt": {"provider": "account", "claims": [{"name": "principal", "values": ["user"]}]}}}]},
+      f"AGENT_CORE_API_ACCESS=disabled admits only user tokens on the core's routes, got {people_only}")
+check(container_env(switched, "controlplane").get("PLATFORM_API_ADDRESS") == {"name": "PLATFORM_API_ADDRESS", "value": ""},
+      f"AGENT_CORE_API_ACCESS=disabled gives Agents no address for the core, got {container_env(switched, 'controlplane').get('PLATFORM_API_ADDRESS')}")
 
 # ADDITIONAL_ENTRY_HOST: empty, every route serves WORKBENCH_HOST only; set,
 # the web-api, auth and computer routes serve that host too, while the

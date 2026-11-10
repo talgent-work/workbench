@@ -253,9 +253,10 @@ agent-execution:
     cpu: "2"
     memory: "2Gi"
   environment:
-    # The controlplane's native API, the platform service a sandbox reaches;
-    # its Credential Proxy adds the Work credential to every request to it.
-    TALGENT_API_ADDRESS: "${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}"
+    # The entry's public origin, where a sandbox's Agent calls the core's
+    # public APIs; its Credential Proxy adds the Work's Identity Token to
+    # every request to it. Empty gives sandboxes none.
+    TALGENT_API_ADDRESS: "${PLATFORM_API_ADDRESS:}"
     OTEL_EXPORTER_OTLP_ENDPOINT: "${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}"
   dispatcher:
     address: ${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}
@@ -279,7 +280,9 @@ agent-computer:
   # The platform Connector's public HTTPS address a Managed Computer's local
   # proxy reaches; required with relay-address.
   mcp-address: "${COMPUTER_MCP_ADDRESS:}"
-  api-address: "${COMPUTER_API_ADDRESS:}"
+  # The entry, where a Managed Work calls the core's public APIs through
+  # its local proxy; empty gives Managed Works none.
+  api-address: "${PLATFORM_API_ADDRESS:}"
   # Where the same Connector serves Access Links on its public origin, from
   # which a Managed Computer downloads its Works' inputs; required with
   # relay-address.

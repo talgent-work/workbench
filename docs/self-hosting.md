@@ -23,7 +23,7 @@ untrusted.
 | Entry | HTTPRoutes `workbench-web`, `web-api`, `auth`, `computer`; Envoy Gateway SecurityPolicy `web-auth` and rate limits | |
 | Budget | LimitRange `application-requests` | ResourceQuota `agent-executions`, LimitRange `application-requests` |
 | Permissions | | Roles of controlplane (reads the quota, observes BatchSandboxes) and of the OpenSandbox Server (manages sandboxes), bound to their ServiceAccounts in `talgent` |
-| Network | NetworkPolicy `gotenberg-isolation` | NetworkPolicies `sandbox-boundary`, `sandbox-native-api` |
+| Network | NetworkPolicy `gotenberg-isolation` | NetworkPolicy `sandbox-boundary` |
 
 The sandbox namespace's objects are in `deploy/k3s/workbench/sandbox.yaml`, its budget in
 `agent-capacity.yaml`. The sandboxes' claims have the names Storage grants them
@@ -37,15 +37,13 @@ Containers are not part of the base; the cluster provides them.
 NetworkPolicies fence only untrusted workloads; no policy restricts a platform service, so a
 service you add to `talgent` reaches the others without a rule.
 
-- **Sandboxes.** Both policies select every Pod in `talgent-sandbox`. `sandbox-boundary` admits
+- **Sandboxes.** `sandbox-boundary` selects every Pod in `talgent-sandbox`. It admits
   connections only from controlplane, dispatcher and the OpenSandbox Server, on execd's port 44772
   and the egress sidecar's 18080. Outbound, it allows the internet with every private and
   reserved IPv4 range denied, the DNS Pods (`k8s-app: kube-dns` in `kube-system`) and the
-  Collector's port 4318. `sandbox-native-api` adds controlplane's native API, port 8081. A rule
-  for a platform service names its namespace and its Pods' labels, because the policy sees the
-  Pod behind a Service. A deployment that sends sandboxes to another platform service instead
-  turns `SANDBOX_NATIVE_API_ACCESS` off ([switches](#switches)), which drops
-  `sandbox-native-api`, and adds a policy of its own in `talgent-sandbox`.
+  Collector's port 4318. A sandbox reaches the platform only through the entry, at
+  `WORKBENCH_ORIGIN`, which must therefore resolve to an address outside the denied ranges; no
+  policy opens a platform service to it.
 - **Gotenberg.** It renders untrusted documents, so `gotenberg-isolation` denies all of its
   outbound traffic, DNS included; links in a document cannot reach the internal network.
 
@@ -71,7 +69,9 @@ The base and its scripts are built for [k3s](https://k3s.io) with Flannel:
 - **Envoy Gateway.** The routes attach to the Gateway `public` in the namespace
   `envoy-gateway-system`, listener `http`; the base labels its namespace
   `gateway-access: shared-web` for a listener that admits routes by label. The base also uses
-  Envoy Gateway's `SecurityPolicy` and `BackendTrafficPolicy`. Terminate HTTPS in front of the
+  Envoy Gateway's `SecurityPolicy` and `BackendTrafficPolicy`, and puts the `ClientTrafficPolicy`
+  `identity-headers` beside the Gateway: it removes every identity header a client sends, for
+  the whole Gateway, before Envoy validates Identity Tokens and writes them. Terminate HTTPS in front of the
   listener: session cookies are `Secure`, and Marketplace archives and Managed Computers need an
   `https://` origin. Do not buffer responses or limit read time on the way: Work messages stream
   as server-sent events and Talgent Computer holds a WebSocket. A Gateway that fits, with the
@@ -167,8 +167,7 @@ ACCOUNT_COOKIE_DOMAIN=
 MARKETPLACE_ARCHIVE_BASE_URL=https://workbench.example.com/marketplace/archives
 NAS_SERVER=192.0.2.20
 NAS_SHARE=/exports/talgent
-SANDBOX_NATIVE_API_ACCESS=enabled
-COMPUTER_NATIVE_API_ACCESS=enabled
+AGENT_CORE_API_ACCESS=enabled
 ADDITIONAL_ENTRY_HOST=
 CONTROLPLANE_PROFILE=
 ```
@@ -185,7 +184,7 @@ CONTROLPLANE_PROFILE=
 | `ACCOUNT_COOKIE_DOMAIN` | Empty keeps session cookies on the Workbench host; a parent domain shares one sign-in with sibling entries |
 | `MARKETPLACE_ARCHIVE_BASE_URL` | Where Works download owned Plugin archives: `<origin>/marketplace/archives` |
 | `NAS_SERVER`, `NAS_SHARE` | The NFS export of PersistentVolume `talgent-nas-root` |
-| `SANDBOX_NATIVE_API_ACCESS`, `COMPUTER_NATIVE_API_ACCESS`, `ADDITIONAL_ENTRY_HOST`, `CONTROLPLANE_PROFILE` | Deployment switches, below |
+| `AGENT_CORE_API_ACCESS`, `ADDITIONAL_ENTRY_HOST`, `CONTROLPLANE_PROFILE` | Deployment switches, below |
 
 The file may also set any `${NAME}` the service configuration reads, such as `LOG_LEVEL` or
 `K8S_DNS_SERVICE_IP`; the [configuration reference](configuration.md) lists them. Passwords
@@ -201,8 +200,7 @@ and refuses a value a switch does not take. The defaults are the base as describ
 
 | Key | Default | Turned |
 |---|---|---|
-| `SANDBOX_NATIVE_API_ACCESS` | `enabled`: sandboxes call controlplane's native API on Service `controlplane`'s port `agent` | `disabled`: no NetworkPolicy `sandbox-native-api`, no port `agent`, and sandboxes get no `TALGENT_API_ADDRESS` (`NATIVE_PLATFORM_API_ADDRESS` is empty) |
-| `COMPUTER_NATIVE_API_ACCESS` | `enabled`: Managed Works call the native API through the `computer` route's `computer-api` rule | `disabled`: no `computer-api` rule and no BackendTrafficPolicy `computer-api-rate-limit`. A controlplane profile then sets [`agent-computer`](configuration.md#agent-computer) `api-address` empty and `content-address` to a route that serves Access Links |
+| `AGENT_CORE_API_ACCESS` | `enabled`: the entry admits both Principals on the core's routes, each procedure admitting what its contract declares, and Agents, in sandboxes and on Managed Computers, call the core's public APIs at `WORKBENCH_ORIGIN` under their own Identity Tokens | `disabled`: `web-auth` admits only user tokens, and Agents get no address for the core (`PLATFORM_API_ADDRESS` is empty), as where a platform Connector carries every Agent call |
 | `ADDITIONAL_ENTRY_HOST` | empty: every route serves `WORKBENCH_HOST` only | a host name: the `web-api`, `auth` and `computer` routes serve it too; `workbench-web` stays on `WORKBENCH_HOST`. Add the host to the proxy in front of the Gateway |
 | `CONTROLPLANE_PROFILE` | empty: controlplane reads its defaults only | a profile name: controlplane also reads `controlplane_<profile>.yml` from ConfigMap `controlplane-profile`, which you provide, and mounts Secret `controlplane-profile-secrets`, if present, at `/etc/talgent/profile` (mode 0400) |
 
@@ -211,7 +209,7 @@ A profile is merged over controlplane's defaults: maps merge, lists replace
 `${NAME}` values read the environment as the defaults do, so values only the profile uses go in
 the environment file too; `GATEWAY_TOKEN` (Secret `native-execution-control`) is there for
 `native-api.gateway-token`. A deployment whose Agents reach the platform only through a
-platform Connector turns both access switches off and, in its profile, sets the Connector's
+platform Connector turns `AGENT_CORE_API_ACCESS` off and, in its profile, sets the Connector's
 address (`agent-execution.environment.TALGENT_GATEWAY_ADDRESS`,
 `marketplace.platform-connector.gateway-address`), `native-api.gateway-token` and the
 `agent-computer` addresses above. After changing the profile ConfigMap or Secret,

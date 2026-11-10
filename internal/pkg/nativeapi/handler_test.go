@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/storage/public/v1/storagepublicv1connect"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/nativeapi"
 )
@@ -34,8 +34,8 @@ var (
 	calls = nativeapi.Calls{
 		Procedures: []string{"/talgent.test.v1.CommandService/Change", "/talgent.test.v1.CommandService/Record"},
 		SpaceTokenProcedures: []string{
-			storageprivatev1connect.ArtifactServiceCreateArtifactProcedure, storageprivatev1connect.ArtifactServiceReplaceArtifactProcedure,
-			storageprivatev1connect.ArtifactServiceDeleteArtifactProcedure,
+			storagepublicv1connect.ArtifactServiceCreateArtifactProcedure, storagepublicv1connect.ArtifactServiceReplaceArtifactProcedure,
+			storagepublicv1connect.ArtifactServiceDeleteArtifactProcedure,
 		},
 	}
 )
@@ -142,9 +142,9 @@ func TestSpaceTokensTravelOnlyWithArtifactCommands(t *testing.T) {
 	require.NoError(t, err)
 	withToken := map[string]string{authn.HeaderNativeWorkID: "work", authn.HeaderNativeCredential: "secret", authn.HeaderGatewayToken: gatewayToken, authn.HeaderSpaceToken: "space"}
 	for _, procedure := range []string{
-		storageprivatev1connect.ArtifactServiceCreateArtifactProcedure,
-		storageprivatev1connect.ArtifactServiceReplaceArtifactProcedure,
-		storageprivatev1connect.ArtifactServiceDeleteArtifactProcedure,
+		storagepublicv1connect.ArtifactServiceCreateArtifactProcedure,
+		storagepublicv1connect.ArtifactServiceReplaceArtifactProcedure,
+		storagepublicv1connect.ArtifactServiceDeleteArtifactProcedure,
 	} {
 		require.Equal(t, http.StatusOK, post(h, procedure, withToken).Code, procedure)
 	}
@@ -231,7 +231,7 @@ func TestAWorkReachesANativeAPIWithoutAGatewayDirectly(t *testing.T) {
 	interactive, err := nativeapi.NewHandler(controlplane, "", verifier{interactive: true}, calls, nativeapi.ReadProcedures{Verifier: verifier{interactive: true}})
 	require.NoError(t, err)
 	withToken := map[string]string{authn.HeaderNativeWorkID: "work", authn.HeaderNativeCredential: "secret", authn.HeaderSpaceToken: "space"}
-	require.Equal(t, http.StatusOK, post(interactive, storageprivatev1connect.ArtifactServiceCreateArtifactProcedure, withToken).Code)
+	require.Equal(t, http.StatusOK, post(interactive, storagepublicv1connect.ArtifactServiceCreateArtifactProcedure, withToken).Code)
 	require.Equal(t, http.StatusOK, post(interactive, calls.Procedures[0], withToken).Code)
 	request := httptest.NewRequest(http.MethodGet, nativeapi.AccessLinkPath+"?grant=signed", nil)
 	for key, value := range withToken {
@@ -241,7 +241,7 @@ func TestAWorkReachesANativeAPIWithoutAGatewayDirectly(t *testing.T) {
 	interactive.ServeHTTP(recorder, request)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, []reached{
-		{storageprivatev1connect.ArtifactServiceCreateArtifactProcedure, "project-a", "", "space"},
+		{storagepublicv1connect.ArtifactServiceCreateArtifactProcedure, "project-a", "", "space"},
 		{calls.Procedures[0], "project-a", "", ""},
 		{nativeapi.AccessLinkPath, "project-a", "", ""},
 	}, forwarded, "a Space Token travels only with Artifact commands")

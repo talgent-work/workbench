@@ -175,9 +175,9 @@ func TestPublicationIsExplicitAndMeetsRetriesByItsOwnSemantics(t *testing.T) {
 	f := newFixture(t)
 	artifacts := named("artifacts", "subject", "case:1")
 	token := f.open(fileSpace(artifacts))
-	layout := f.workspace("work-1", nil)
+	f.workspace("work-1", nil)
 	f.workspaceFile("work-1", "dist/report.md", "draft")
-	source := application.ArtifactSource{SpaceToken: token, WorkID: "work-1", Workspace: &layout, Path: "dist/report.md"}
+	source := application.ArtifactSource{SpaceToken: token, WorkID: "work-1", WorkDirectory: "workspace", Path: "dist/report.md"}
 
 	created, err := f.app.PublishArtifact(t.Context(), source, "report.md", false)
 	require.NoError(t, err)
@@ -201,7 +201,7 @@ func TestPublicationIsExplicitAndMeetsRetriesByItsOwnSemantics(t *testing.T) {
 	require.NotContains(t, f.files(artifacts), "report.md")
 	status, _, _ := f.get(share.URL)
 	require.Equal(t, http.StatusGone, status)
-	_, err = f.app.PublishArtifact(t.Context(), application.ArtifactSource{SpaceToken: "forged", WorkID: "work-1", Workspace: &layout, Path: "dist/report.md"}, "x.md", false)
+	_, err = f.app.PublishArtifact(t.Context(), application.ArtifactSource{SpaceToken: "forged", WorkID: "work-1", WorkDirectory: "workspace", Path: "dist/report.md"}, "x.md", false)
 	require.ErrorIs(t, err, domain.ErrSpaceTokenRejected, "the Space Token alone names the File Space")
 }
 
@@ -211,7 +211,7 @@ func TestPublicationRefusesWhatIsNotOneWorkspaceFile(t *testing.T) {
 	f := newFixture(t)
 	artifacts := named("artifacts", "subject", "case:1")
 	token := f.open(fileSpace(artifacts))
-	layout := f.workspace("work-1", map[string]application.Located{"inputs": fileSpace(caseInputs)})
+	f.workspace("work-1", map[string]application.Located{"inputs": fileSpace(caseInputs)})
 	f.workspaceFile("work-1", "site/index.html", "<html>")
 	workspace := f.folder(workDirectory("work-1", "workspace"))
 	secret := filepath.Join(t.TempDir(), "secret")
@@ -220,14 +220,20 @@ func TestPublicationRefusesWhatIsNotOneWorkspaceFile(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Dir(secret), filepath.Join(workspace, "linked")))
 
 	for _, path := range []string{"../other", "site", "leak.md", "linked/secret", "inputs/brief.md", "missing.md"} {
-		source := application.ArtifactSource{SpaceToken: token, WorkID: "work-1", Workspace: &layout, Path: path}
+		source := application.ArtifactSource{SpaceToken: token, WorkID: "work-1", WorkDirectory: "workspace", Path: path}
 		_, err := f.app.PublishArtifact(t.Context(), source, "out.md", false)
-		if path == "missing.md" {
-			require.ErrorIs(t, err, application.ErrSourceNotFound)
+		// A Directory mounted in the Work Directory is an empty mount point
+		// in Storage's space.
+		if path == "missing.md" || path == "inputs/brief.md" {
+			require.ErrorIs(t, err, application.ErrSourceNotFound, "path %q", path)
 		} else {
 			require.ErrorIs(t, err, application.ErrInvalidSource, "path %q", path)
 		}
 	}
+	// A Directory of the Work that outlives it is no Work Directory.
+	f.upload(named("inputs", "work", "work-1"), f.open(fileSpace(named("inputs", "work", "work-1"))), "brief.md", "b", false)
+	_, err := f.app.PublishArtifact(t.Context(), application.ArtifactSource{SpaceToken: token, WorkID: "work-1", WorkDirectory: "inputs", Path: "brief.md"}, "out.md", false)
+	require.ErrorIs(t, err, application.ErrInvalidSource, "a permanent Directory is no publication source")
 	require.Empty(t, f.files(artifacts))
 }
 

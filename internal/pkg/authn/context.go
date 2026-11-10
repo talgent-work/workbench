@@ -31,7 +31,7 @@ type Agent struct {
 	SubjectKind string
 	SubjectID   string
 	// RepresentedUserID is the Account the Agent represents; empty for an
-	// Agent that represents no one, such as the PM Coordinator.
+	// Agent that represents no one.
 	RepresentedUserID string
 }
 

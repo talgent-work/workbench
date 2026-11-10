@@ -14,68 +14,49 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/storageerror"
 )
 
-var workspaceLayout = &authn.WorkspaceLayout{
-	Workspace: authn.Directory{Owner: []authn.OwnerFact{{Condition: "work", Value: "work-1"}}, Name: "workspace"},
-	Mounts:    []authn.MountedDirectory{{Path: "inputs", Directory: authn.Directory{Owner: []authn.OwnerFact{{Condition: "subject", Value: "case:1"}}, Name: "inputs"}}},
+// agentOf is a request of the agent Principal for work.
+func agentOf(work string) context.Context {
+	return authn.WithPrincipal(context.Background(), authn.AgentPrincipal(authn.Agent{WorkID: work, AgentID: "agent", Purpose: "work"}))
 }
 
-// Only a verified Work Agent with a Session Workspace publishes Artifacts,
-// from its own workspace into the File Space its Space Token names; nothing
-// about them comes from the request.
-func TestArtifactCommandsTakeTheWorkAgentFromItsVerifiedIdentity(t *testing.T) {
-	header := new(connect.Header)
-	header.Set(authn.HeaderSpaceToken, " space ")
-	work := authn.NativeProcess{WorkID: "work-1", Purpose: "work", Workspace: workspaceLayout}
-
-	source, err := workAgent(authn.WithNativeProcess(context.Background(), work), header, true)
+// A Work Agent's Artifact command speaks for its own Work, into the File
+// Space its Space Token names; the Work never comes from the request, and a
+// person changes no Artifact here.
+func TestArtifactCommandsTakeTheWorkFromTheAgentPrincipal(t *testing.T) {
+	source, err := publishingAgent(agentOf("work-1"), " space ", " workspace ", "dist/out.md", nil)
 	require.NoError(t, err)
-	require.Equal(t, "work-1", source.WorkID)
-	require.Equal(t, "space", source.SpaceToken)
-	require.Equal(t, &application.Layout{
-		Workspace: application.Named{Owner: []domain.OwnerFact{{Condition: "work", Value: "work-1"}}, Name: "workspace"},
-		Mounts: []application.Mount{{Path: "inputs", Directory: application.Named{
-			Owner: []domain.OwnerFact{{Condition: "subject", Value: "case:1"}}, Name: "inputs",
-		}}},
-	}, source.Workspace)
+	require.Equal(t, application.ArtifactSource{SpaceToken: "space", WorkID: "work-1", WorkDirectory: "workspace", Path: "dist/out.md"}, source)
 
-	for name, ctx := range map[string]context.Context{
-		"no verified identity":         context.Background(),
-		"a Work without its workspace": authn.WithNativeProcess(context.Background(), authn.NativeProcess{WorkID: "work-1", Purpose: "work"}),
-	} {
-		_, err := workAgent(ctx, header, true)
+	sent, err := publishingAgent(agentOf("work-1"), "space", "", "", []byte{})
+	require.NoError(t, err)
+	require.NotNil(t, sent.Content, "an empty file sent stays content")
+
+	person := authn.WithPrincipal(context.Background(), authn.UserPrincipal(authn.AuthenticatedUser{ID: "owner"}))
+	for name, ctx := range map[string]context.Context{"no Principal": context.Background(), "a person": person} {
+		_, err := workAgent(ctx, "space")
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), name)
 	}
-}
-
-// Content a Work sent needs no Session Workspace; a workspace file does.
-func TestSentContentNeedsNoWorkspace(t *testing.T) {
-	header := new(connect.Header)
-	header.Set(authn.HeaderSpaceToken, "space")
-	managed := authn.WithNativeProcess(context.Background(), authn.NativeProcess{WorkID: "work-1", Purpose: "project_coordination"})
-
-	source, err := publishingAgent(managed, header, "", []byte{})
-	require.NoError(t, err)
-	require.Equal(t, "work-1", source.WorkID)
-	require.Nil(t, source.Workspace)
-	require.NotNil(t, source.Content, "an empty file sent stays content")
-
-	_, err = publishingAgent(managed, header, "out.md", nil)
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	_, err = publishingAgent(context.Background(), header, "", []byte("x"))
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 }
 
 // Each Directory refusal reaches its caller with a reason of its own.
 func TestDirectoryRefusalsCarryTheirReason(t *testing.T) {
 	for err, want := range map[error]storageprivatev1.ErrorReason{
-		domain.ErrInvalidLocator:           storageprivatev1.ErrorReason_ERROR_REASON_INVALID_LOCATOR,
-		domain.ErrDirectoryNotOpen:         storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN,
-		domain.ErrDirectoryNotAllocated:    storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED,
-		domain.ErrDirectoryReclaimed:       storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED,
-		domain.ErrPermanentDirectory:       storageprivatev1.ErrorReason_ERROR_REASON_PERMANENT_DIRECTORY,
-		domain.ErrSentContentWithWorkspace: storageprivatev1.ErrorReason_ERROR_REASON_INVALID_SOURCE,
-		application.ErrNameTaken:           storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN,
+		domain.ErrInvalidLocator:        storageprivatev1.ErrorReason_ERROR_REASON_INVALID_LOCATOR,
+		domain.ErrDirectoryNotOpen:      storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN,
+		domain.ErrDirectoryNotAllocated: storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_ALLOCATED,
+		domain.ErrDirectoryReclaimed:    storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED,
+		domain.ErrPermanentDirectory:    storageprivatev1.ErrorReason_ERROR_REASON_PERMANENT_DIRECTORY,
+		application.ErrNameTaken:        storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN,
 	} {
 		require.Equal(t, want, storageerror.ReasonOf(mapError(err)), err.Error())
 	}
+}
+
+// An Artifact command refuses in the public contract's vocabulary: a reason
+// it names keeps its detail, a private-only one travels without one.
+func TestArtifactRefusalsSpeakThePublicContract(t *testing.T) {
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN, storageerror.ReasonOf(mapArtifactError(application.ErrNameTaken)))
+	refused := mapArtifactError(domain.ErrPermanentDirectory)
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(refused))
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_UNSPECIFIED, storageerror.ReasonOf(refused))
 }

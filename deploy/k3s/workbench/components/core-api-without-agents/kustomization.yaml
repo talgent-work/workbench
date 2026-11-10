@@ -1,0 +1,40 @@
+# AGENT_CORE_API_ACCESS=disabled: the entry admits only people on the core's
+# product routes, and Agents get no address for them; a deployment that sends
+# every Agent call through its platform Connector instead names it in a
+# controlplane profile.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: SecurityPolicy
+      name: web-auth
+    patch: |-
+      - op: add
+        path: /spec/authorization
+        value:
+          defaultAction: Deny
+          rules:
+            - name: people-only
+              action: Allow
+              principal:
+                jwt:
+                  provider: account
+                  claims:
+                    - name: principal
+                      values:
+                        - user
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: controlplane
+        namespace: talgent
+      spec:
+        template:
+          spec:
+            containers:
+              - name: controlplane
+                env:
+                  - name: PLATFORM_API_ADDRESS
+                    value: ""
+                    valueFrom: null

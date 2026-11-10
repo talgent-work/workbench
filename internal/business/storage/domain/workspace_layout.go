@@ -15,9 +15,6 @@ var (
 	// ErrInvalidPublicationSource means a publication source is not one path
 	// below the Work Directory outside every Directory mounted in it.
 	ErrInvalidPublicationSource = errors.New("storage: publication source must be one regular file of the Session Workspace outside every Directory mounted in it")
-	// ErrSentContentWithWorkspace means a Work with a Session Workspace sent
-	// content to publish; it publishes a file of that workspace instead.
-	ErrSentContentWithWorkspace = errors.New("storage: a Work with a Session Workspace publishes a file of its workspace, not content it sends")
 )
 
 // MaxSentContentBytes bounds the content a Work without a Session Workspace

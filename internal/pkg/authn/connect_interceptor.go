@@ -57,8 +57,8 @@ type NativeProcessVerifier interface {
 type Option func(*principalInterceptor)
 
 // WithNativeProcessVerifier lets a Work's native process, verified by its
-// Work credential, call as its Work's agent Principal. It exists only while
-// the native API does (talgent-work/orchestra#101).
+// Work credential, call as its Work's agent Principal. It goes with the native
+// API.
 func WithNativeProcessVerifier(verifier NativeProcessVerifier) Option {
 	return func(i *principalInterceptor) { i.native = verifier }
 }
@@ -102,7 +102,9 @@ func (i *principalInterceptor) wrap(next connect.ServerFunc) connect.ServerFunc 
 		}
 		var principal Principal
 		var err error
-		if hasNativeCredential(header) {
+		// An identity the entry verified outranks native credentials, which
+		// reach a service only through the native API, never the entry.
+		if hasNativeCredential(header) && strings.TrimSpace(header.Get(HeaderAuthenticatedBy)) != "envoy" {
 			if spec.StreamType != connect.StreamTypeUnary {
 				return connect.NewError(connect.CodePermissionDenied, "native execution cannot access streaming procedures")
 			}

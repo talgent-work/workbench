@@ -22,10 +22,12 @@ func TestSandboxesAndTheExecutionQuotaShareTheSandboxNamespace(t *testing.T) {
 	require.Equal(t, "runs", option.Computer.Cloud.Namespace)
 }
 
-// From the sandbox namespace, a platform service resolves by service.namespace.
+// A sandbox reaches the platform at the entry's public origin, and the
+// Collector by Service and namespace.
 func TestASandboxReachesPlatformServicesByServiceAndNamespace(t *testing.T) {
+	t.Setenv("PLATFORM_API_ADDRESS", "https://workbench.example.com")
 	environment := loadDefaults(t).AgentExecution.Environment
-	require.Equal(t, "http://controlplane.talgent", environment["TALGENT_API_ADDRESS"])
+	require.Equal(t, "https://workbench.example.com", environment["TALGENT_API_ADDRESS"])
 	require.Equal(t, "http://otel-collector.talgent:4318", environment["OTEL_EXPORTER_OTLP_ENDPOINT"])
 }
 

@@ -135,7 +135,7 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `native.binary` | `claude` | The Claude Code command in the sandbox image |
 | `image` | `${AGENT_NATIVE_IMAGE:}` | The sandbox image; base: `ghcr.io/talgent-work/sandbox:<tag>`, set when rendered |
 | `requests`, `limits` | `cpu: 250m`, `memory: 512Mi`; `cpu: "2"`, `memory: 2Gi` | The sandbox container's resources |
-| `environment.TALGENT_API_ADDRESS` | `${NATIVE_PLATFORM_API_ADDRESS:http://controlplane.talgent}` | The platform API a sandbox calls, on the standard port: the only kind its Credential Proxy adds the Work credential to |
+| `environment.TALGENT_API_ADDRESS` | `${PLATFORM_API_ADDRESS:}` | The entry's public origin, where a sandbox's Agent calls the core's public APIs under its Identity Token, which its Credential Proxy adds; base: `WORKBENCH_ORIGIN`, empty with `AGENT_CORE_API_ACCESS=disabled` |
 | `environment.OTEL_EXPORTER_OTLP_ENDPOINT` | `${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}` | Where Claude Code sends its telemetry |
 | `dispatcher.address`, `dispatcher.token` | `${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}`, `${DISPATCHER_EXECUTION_CONTROL_TOKEN:}` | Dispatcher, which drives each run |
 | `lease.duration`, `lease.renewal-threshold` | `2h`, `1h` | How long a sandbox lives unless renewed, and how much of its lease remains when a running Work's sandbox is renewed; the threshold must stay below the duration and well above `agent-recovery.sweep-interval`. Before rolling back past the release that leases sandboxes, see [Operations](self-hosting.md#9-operations) |
@@ -163,8 +163,8 @@ How Agent reaches Computer and Managed Computers.
 | `address`, `token` | `${COMPUTER_ADDRESS:http://127.0.0.1:8080}`, `${COMPUTER_CONTROL_TOKEN:}` | | Computer's admission contract |
 | `relay-address` | `${COMPUTER_RELAY_ADDRESS:}` | `http://computer-gateway.talgent.svc.cluster.local:8085` | The Computer Gateway's relay; empty leaves Managed Computers unreachable. The keys below are required with it. |
 | `mcp-address` | `${COMPUTER_MCP_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/mcp` | HTTPS address of the platform Connector a Managed Work calls |
-| `content-address` | `${COMPUTER_CONTENT_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api/v1/storage/content` | Where a Managed Computer downloads its Works' inputs, Storage's Access Links; same origin as `mcp-address`. The base's is served by the `computer-api` rule, so with `COMPUTER_NATIVE_API_ACCESS=disabled` a profile names another |
-| `api-address` | `${COMPUTER_API_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/api` | HTTPS address of the native API a Managed Work calls; same origin as `mcp-address`. Empty, Managed Works get no native API; a profile empties it with `COMPUTER_NATIVE_API_ACCESS=disabled` |
+| `content-address` | `${COMPUTER_CONTENT_ADDRESS:}` | `${WORKBENCH_ORIGIN}/api/v1/storage/content` | Where a Managed Computer downloads its Works' inputs, Storage's Access Links, which take no Identity Token; same origin as `mcp-address` |
+| `api-address` | `${PLATFORM_API_ADDRESS:}` | `WORKBENCH_ORIGIN` | The entry's public origin, where a Managed Work calls the core's public APIs through its local proxy, which adds its Identity Token. Empty, Managed Works get none, as with `AGENT_CORE_API_ACCESS=disabled` |
 | `workspace-file-address` | `${AGENT_WORKSPACE_FILE_ADDRESS:/api/v1/agent/workspace-files}` | | Where a browser reads a Managed Work's files |
 | `telemetry-address` | `${COMPUTER_TELEMETRY_ADDRESS:}` | `${WORKBENCH_ORIGIN}/computer/v1/otel` | HTTPS address a Managed Work's Claude Code sends telemetry to |
 | `telemetry-collector-address` | `${COMPUTER_TELEMETRY_COLLECTOR_ADDRESS:}` | `http://otel-collector:4318` | The Collector controlplane forwards that telemetry to |

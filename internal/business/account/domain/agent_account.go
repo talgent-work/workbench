@@ -38,8 +38,8 @@ type WorkFacts struct {
 	AgentID   string
 	Purpose   string
 	Subject   WorkSubject
-	// RepresentedPerson is empty for an Agent that represents no one, such as
-	// the PM Coordinator (No person for an unrepresented Agent).
+	// RepresentedPerson is empty for an Agent that represents no one (No
+	// person for an unrepresented Agent).
 	RepresentedPerson AccountID
 }
 

@@ -18,6 +18,7 @@ import (
 	"xorm.io/xorm"
 
 	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
+	"github.com/talgent-work/contracts/gen/go/storage/public/v1/storagepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/application/query"
 	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"
@@ -26,6 +27,7 @@ import (
 	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
 	"github.com/talgent-work/workbench/internal/business/storage/transport/taskprocessor"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 	pkgmysql "github.com/talgent-work/workbench/internal/pkg/mysql"
 	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
@@ -60,7 +62,7 @@ type Config struct {
 	// MaxUploadBytes bounds one upload; zero means 1 GiB.
 	MaxUploadBytes int64 `json:"max-upload-bytes" yaml:"max-upload-bytes" toml:"max-upload-bytes"`
 	// Control tokens of the callers of Storage's private contracts. A Work
-	// Agent's Artifact commands carry its verified Work identity instead.
+	// Agent's Artifact commands carry its agent Principal instead.
 	// AgentToken admits Agent, the core's caller, to the Directory and
 	// Sandbox Mount contracts.
 	AgentToken string `json:"agent-token" yaml:"agent-token" toml:"agent-token"`
@@ -241,14 +243,6 @@ func mechanisms(config Config, queries query.DirectoryQueryRepository, tasks app
 // content.
 const artifactMessageOverhead = 64 << 10
 
-// AgentArtifactProcedures are the Work Agent's Artifact commands, each taking
-// its Space Token beside its Work credential.
-var AgentArtifactProcedures = []string{
-	storageprivatev1connect.ArtifactServiceCreateArtifactProcedure,
-	storageprivatev1connect.ArtifactServiceReplaceArtifactProcedure,
-	storageprivatev1connect.ArtifactServiceDeleteArtifactProcedure,
-}
-
 func registerHandlers(app *application.Application, config Config, mux *http.ServeMux, logger *slog.Logger) {
 	server := connectserver.New(logger)
 	storageprivatev1connect.RegisterDirectoryServiceHandler(server, storageconnect.NewDirectoryHandler(app, append([]string{config.AgentToken}, config.DirectoryTokens...), config.ContentTokens))
@@ -262,11 +256,11 @@ func registerHandlers(app *application.Application, config Config, mux *http.Ser
 	storagehttp.Register(mux, app, limit)
 }
 
-// mountArtifactService serves the Work Agent's Artifact commands; a
-// publication carries at most the content a Work sends, with room for the
-// rest of its message.
+// mountArtifactService serves the Work Agent's Artifact commands to the
+// agent Principals the contract admits; a publication carries at most the
+// content a Work sends, with room for the rest of its message.
 func mountArtifactService(mux connecthttp.ServeMux, app *application.Application, logger *slog.Logger) {
-	server := connectserver.New(logger)
-	storageprivatev1connect.RegisterArtifactServiceHandler(server, storageconnect.NewArtifactHandler(app))
+	server := connectserver.New(logger, authn.NewPrincipalInterceptor())
+	storagepublicv1connect.RegisterArtifactServiceHandler(server, storageconnect.NewArtifactHandler(app))
 	connectserver.Mount(mux, server, connecthttp.WithReadMaxBytes(app.SentContentLimit()+artifactMessageOverhead))
 }

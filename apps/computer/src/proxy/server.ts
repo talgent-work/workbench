@@ -192,9 +192,11 @@ export class LocalProxy {
     if (credentials.api === undefined) return notFound(response)
     const target = below(credentials.api.url, path, search)
     if (target === undefined) return notFound(response)
+    // The entry takes the Work's Identity Token alone, and the Space Token
+    // its Artifact commands write with.
     const headers = requestHeaders(request.headers)
-    addIdentity(headers, credentials.gateway)
     addIdentityToken(headers, credentials.gateway)
+    addSpaceToken(headers, credentials.gateway)
     let body: ReadBody | undefined
     if (request.method === 'POST' && ARTIFACT_COMMANDS.has(path)) {
       const completed = await completeArtifactCommand(request, this.access.workRoot(workId))
@@ -252,6 +254,11 @@ function answerRpc(response: ServerResponse, body: Buffer | undefined): void {
 // Agent's calls; an Access Link on the content path takes none.
 function addIdentityToken(headers: OutgoingHttpHeaders, gateway: WorkCredentials['gateway']): void {
   headers.authorization = `Bearer ${gateway.identityToken}`
+}
+
+// The Space Token of the Work's input source, a capability, not an identity.
+function addSpaceToken(headers: OutgoingHttpHeaders, gateway: WorkCredentials['gateway']): void {
+  if (gateway.spaceToken !== undefined) headers['x-talgent-space-token'] = gateway.spaceToken
 }
 
 // The Work's identity, as the platform's MCP and content endpoints take it.

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 
 	sdk "github.com/alibaba/OpenSandbox/sdks/sandbox/go"
@@ -25,7 +26,7 @@ const (
 )
 
 // The platform addresses a sandbox may reach, each named by the environment
-// variable that tells its Agent where: the native API, and the platform
+// variable that tells its Agent where: the entry, and the platform
 // Connector where the deployment runs one. A deployment sets at least one.
 const (
 	platformAPIAddressEnv = "TALGENT_API_ADDRESS"
@@ -63,10 +64,9 @@ func platformAddresses(environment map[string]string) ([]platformAddress, error)
 // plan: its Identity Token as supplied, and its Work credential as the
 // recorded sandbox environment holds it. Like every credential, none of it
 // enters the workload: the Credential Proxy injects the Identity Token as
-// `Authorization: Bearer`, the Work credential, and the Space Token when the
-// Work has an input source, into the requests sent to the platform addresses
-// and into nothing else; the native API admits the Space Token on Artifact
-// commands only.
+// `Authorization: Bearer`, and the Space Token when the Work has an input
+// source, into the requests sent to the platform addresses and into nothing
+// else; only the platform Connector also receives the Work credential.
 func withPlatformCredentials(plan sdk.CredentialVaultCreateRequest, environment map[string]string, identity command.IdentityToken, spaceToken string) (sdk.CredentialVaultCreateRequest, error) {
 	addresses, err := platformAddresses(environment)
 	if err != nil {
@@ -83,12 +83,19 @@ func withPlatformCredentials(plan sdk.CredentialVaultCreateRequest, environment 
 		sdk.Credential{Name: identityTokenVaultEntry, Source: sdk.InlineCredentialSource{Value: "Bearer " + identity.Token}},
 		sdk.Credential{Name: workIDVaultEntry, Source: sdk.InlineCredentialSource{Value: workID}},
 		sdk.Credential{Name: workCredentialVaultEntry, Source: sdk.InlineCredentialSource{Value: credential}})
-	headers := []sdk.CustomHeaderEntry{{Name: "Authorization", Credential: identityTokenVaultEntry}, {Name: authn.HeaderNativeWorkID, Credential: workIDVaultEntry}, {Name: authn.HeaderNativeCredential, Credential: workCredentialVaultEntry}}
+	// The entry takes the Identity Token alone; the platform Connector still
+	// takes the Work credential beside it.
+	entry := []sdk.CustomHeaderEntry{{Name: "Authorization", Credential: identityTokenVaultEntry}}
 	if spaceToken != "" {
 		plan.Credentials = append(plan.Credentials, sdk.Credential{Name: spaceTokenVaultEntry, Source: sdk.InlineCredentialSource{Value: spaceToken}})
-		headers = append(headers, sdk.CustomHeaderEntry{Name: authn.HeaderSpaceToken, Credential: spaceTokenVaultEntry})
+		entry = append(entry, sdk.CustomHeaderEntry{Name: authn.HeaderSpaceToken, Credential: spaceTokenVaultEntry})
 	}
+	connector := append(slices.Clone(entry), sdk.CustomHeaderEntry{Name: authn.HeaderNativeWorkID, Credential: workIDVaultEntry}, sdk.CustomHeaderEntry{Name: authn.HeaderNativeCredential, Credential: workCredentialVaultEntry})
 	for _, address := range addresses {
+		headers := entry
+		if address.binding == gatewayBinding {
+			headers = connector
+		}
 		plan.Bindings = append(plan.Bindings, sdk.CredentialBinding{Name: address.binding,
 			Match: sdk.CredentialMatch{Schemes: []sdk.CredentialScheme{sdk.CredentialScheme(address.origin.Scheme)}, Hosts: []string{strings.ToLower(address.origin.Hostname())},
 				// Spelled as the Vault normalizes them, so the readback that

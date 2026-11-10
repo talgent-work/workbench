@@ -40,8 +40,8 @@ func (h *harness) agentAccounts() accountprivatev1connect.AgentAccountServiceCli
 
 func issueRequest(work, project, represented string) *accountprivatev1.IssueWorkIdentityTokenRequest {
 	return &accountprivatev1.IssueWorkIdentityTokenRequest{
-		WorkId: work, ProjectId: project, AgentId: "agent-1", Purpose: "intent-work",
-		WorkSubjectKind: "intent", WorkSubjectId: "intent-1", RepresentedUserId: represented,
+		WorkId: work, ProjectId: project, AgentId: "agent-1", Purpose: "case-work",
+		WorkSubjectKind: "case", WorkSubjectId: "case-1", RepresentedUserId: represented,
 	}
 }
 
@@ -74,8 +74,8 @@ func TestAgentAccountIssuesTheWorksAgentToken(t *testing.T) {
 		require.NoError(t, token.Get(name, &value), name)
 		claims[name] = value
 	}
-	require.Equal(t, map[string]string{"principal": "agent", "project_id": "project-1", "agent_id": "agent-1", "purpose": "intent-work",
-		"work_subject_kind": "intent", "work_subject_id": "intent-1", "for": person}, claims)
+	require.Equal(t, map[string]string{"principal": "agent", "project_id": "project-1", "agent_id": "agent-1", "purpose": "case-work",
+		"work_subject_kind": "case", "work_subject_id": "case-1", "for": person}, claims)
 	require.False(t, token.Has("sid"), "an agent token names no Login Session")
 	expires, _ := token.Expiration()
 	require.Equal(t, h.clock.Now().Add(agentTokenLifetime).Unix(), expires.Unix(), "valid seven days")
