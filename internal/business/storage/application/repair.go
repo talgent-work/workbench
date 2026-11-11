@@ -40,6 +40,16 @@ func (a *Application) RepairMappedView(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
+// PrepareMappedView creates the folders that standing readers' volumes
+// show, before anything is mapped beneath them.
+func (a *Application) PrepareMappedView(ctx context.Context) error {
+	backend, ok := a.backends[domain.BackendJuiceFS]
+	if !ok {
+		return nil
+	}
+	return backend.PrepareMappedView(ctx)
+}
+
 // repairMapping aligns one mapped path while its Directory still has it.
 func (a *Application) repairMapping(ctx context.Context, backend DirectoryBackendPort, id domain.DirectoryID, path domain.MappedPath) error {
 	return a.mappedChange(ctx, backend, id, func(directory *domain.Directory) error {

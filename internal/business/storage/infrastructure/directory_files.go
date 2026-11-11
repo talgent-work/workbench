@@ -55,6 +55,9 @@ type DirectoryLayout struct {
 	// MappedView holds the Mapped View, outside every Directory; empty on a
 	// file system that keeps none.
 	MappedView string
+	// StandingPaths are the mapped paths that standing readers' volumes
+	// show: their folders always exist, emptied or not.
+	StandingPaths []string
 	// Claim is the shared volume claim sandboxes mount Directories from, and
 	// ClaimRoot where Root lies within it.
 	Claim, ClaimRoot string

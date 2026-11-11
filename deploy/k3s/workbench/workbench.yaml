@@ -230,8 +230,11 @@ data:
       # Callers of whole content; each maps only beneath its mapping-prefix,
       # and an empty prefix maps nowhere.
       content-callers:
+        # Project Knowledge maps the Done Intents it reads beneath
+        # project-originals, which talgent-juicefs-view-project-originals
+        # shows read-only.
         - token: "${STORAGE_CONTENT_TOKEN:}"
-          mapping-prefix: ""
+          mapping-prefix: project-originals
       # Sandboxes mount each Directory from its backend's claim by subPath.
       mounts:
         nas-claim: talgent-nas-root
@@ -623,6 +626,51 @@ spec:
   selector:
     matchLabels:
       talgent.io/storage: juicefs-originals
+---
+# The same JuiceFS filesystem, claimed read-only at one mapped path of
+# Storage's Mapped View: project-originals, the mapping prefix of the
+# content caller above, for its standing reader. Storage creates the folder
+# at start and keeps it.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: talgent-juicefs-view-project-originals
+  labels:
+    talgent.io/storage: juicefs-view-project-originals
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - enable-xattr
+    - subdir=/talgent/assets/mapped-view/project-originals
+  csi:
+    driver: csi.juicefs.com
+    volumeHandle: talgent-juicefs-view-project-originals-rustfs
+    fsType: juicefs
+    readOnly: true
+    nodePublishSecretRef:
+      name: talgent-juicefs-secret
+      namespace: talgent
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: talgent-juicefs-view-project-originals
+  namespace: talgent
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 100Gi
+  selector:
+    matchLabels:
+      talgent.io/storage: juicefs-view-project-originals
 ---
 # NAS Directories, which Storage alone allocates: directories/<owner>/<name>
 # under the share, with Storage's own staging and locks under storage/. A

@@ -118,3 +118,19 @@ func statusError(status int) error {
 	}
 	return nil
 }
+
+// A mapping prefix is a standing path: its folder exists before anything is
+// mapped beneath it, and neither unmapping nor a repair removes it emptied.
+func TestTheStandingPathStaysForItsVolume(t *testing.T) {
+	f := newFixture(t)
+	require.NoError(t, f.app.PrepareMappedView(t.Context()))
+	require.DirExists(t, f.viewOf("view"))
+	inputs := fileSpace(named("inputs", "subject", "case:3"))
+	require.NoError(t, f.mapAt(inputs, "view/p1/case-3"))
+	require.NoError(t, f.app.UnmapDirectory(t.Context(), inputs.Directory, "view/p1/case-3", viewPrefix))
+	require.NoDirExists(t, f.viewOf("view/p1"))
+	require.DirExists(t, f.viewOf("view"), "the last unmapping leaves the standing path")
+	require.NoError(t, os.RemoveAll(f.viewOf("view")))
+	require.NoError(t, f.app.RepairMappedView(t.Context()))
+	require.DirExists(t, f.viewOf("view"), "a repair restores it")
+}

@@ -19,7 +19,7 @@ untrusted.
 |---|---|---|
 | Services | `controlplane` (2 replicas), `dispatcher` (2), `streamgateway` (2), `computer-gateway` (1), `workbench-web` (1); `otel-collector` (OTel Collector, writes to ClickHouse), `gotenberg` (renders office previews); the OpenSandbox Server `opensandbox` | Sandbox Pods, which OpenSandbox creates |
 | Configuration | ConfigMap `workbench-environment` (the deployment's environment), one ConfigMap per service, `agent-models` (Model Templates), `opensandbox-workload-template` (the sandbox Pod template) | |
-| Storage | Claims `talgent-juicefs-root`, `talgent-juicefs-originals` (JuiceFS) and `talgent-nas-root` (NFS) | Claims `talgent-nas-root` and `talgent-juicefs-directories`, bound to their own PersistentVolumes `talgent-nas-root-sandbox` and `talgent-juicefs-directories-sandbox` over the same NFS export and JuiceFS file system |
+| Storage | Claims `talgent-juicefs-root`, `talgent-juicefs-originals`, `talgent-juicefs-view-project-originals` (JuiceFS; the last shows the mapped path `project-originals` read-only) and `talgent-nas-root` (NFS) | Claims `talgent-nas-root` and `talgent-juicefs-directories`, bound to their own PersistentVolumes `talgent-nas-root-sandbox` and `talgent-juicefs-directories-sandbox` over the same NFS export and JuiceFS file system |
 | Entry | HTTPRoutes `workbench-web`, `web-api`, `auth`, `computer`; Envoy Gateway SecurityPolicy `web-auth` and rate limits | |
 | Budget | LimitRange `application-requests` | ResourceQuota `agent-executions`, LimitRange `application-requests` |
 | Permissions | | Roles of controlplane (reads the quota, observes BatchSandboxes) and of the OpenSandbox Server (manages sandboxes), bound to their ServiceAccounts in `talgent` |

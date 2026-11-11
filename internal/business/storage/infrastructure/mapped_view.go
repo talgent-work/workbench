@@ -98,7 +98,31 @@ func (f *DirectoryFiles) UnmapFiles(ctx context.Context, mapped domain.MappedPat
 	if err := os.RemoveAll(view); err != nil {
 		return operation.Wrap(err)
 	}
-	return operation.Wrap(removeEmptyParents(filepath.Join(f.layout.Root, filepath.FromSlash(f.layout.MappedView)), view))
+	return operation.Wrap(f.removeEmptyParents(view))
+}
+
+// PrepareMappedView creates the folder of each standing path, which a
+// standing reader's volume shows before anything is mapped beneath it.
+func (f *DirectoryFiles) PrepareMappedView(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for _, standing := range f.layout.StandingPaths {
+		view, err := f.view(domain.MappedPath(standing))
+		if err == nil {
+			err = os.MkdirAll(view, directoryMode)
+		}
+		if err != nil {
+			return oops.With("operation", "storage.prepare_mapped_view", "mapped_path", standing).Wrap(err)
+		}
+	}
+	return nil
+}
+
+// standing reports whether a folder of the Mapped View, relative to its
+// root, is a standing path.
+func (f *DirectoryFiles) standing(relative string) bool {
+	return slices.Contains(f.layout.StandingPaths, relative)
 }
 
 // unlinkMapped removes the link at relative from each mapped path, before
@@ -158,25 +182,35 @@ func (f *DirectoryFiles) PruneMappedView(ctx context.Context, mapped []domain.Ma
 	if f.layout.MappedView == "" {
 		return oops.With("operation", "storage.prune_mapped_view").Wrap(errNoMappedView)
 	}
+	if err := f.PrepareMappedView(ctx); err != nil {
+		return err
+	}
 	root := filepath.Join(f.layout.Root, filepath.FromSlash(f.layout.MappedView))
 	if !exists(root) {
 		return nil
 	}
 	held := make(map[string]bool, len(mapped))
 	above := map[string]bool{}
-	for _, path := range mapped {
-		held[string(path)] = true
+	for _, path := range append(append([]domain.MappedPath(nil), mapped...), standingPaths(f.layout.StandingPaths)...) {
 		for parent := filepath.ToSlash(filepath.Dir(string(path))); parent != "."; parent = filepath.ToSlash(filepath.Dir(parent)) {
 			above[parent] = true
 		}
 	}
-	return oops.With("operation", "storage.prune_mapped_view").Wrap(pruneFolder(ctx, root, "", held, above))
+	for _, path := range mapped {
+		held[string(path)] = true
+	}
+	for _, standing := range f.layout.StandingPaths {
+		if !held[standing] {
+			above[standing] = true
+		}
+	}
+	return oops.With("operation", "storage.prune_mapped_view").Wrap(f.pruneFolder(ctx, root, "", held, above))
 }
 
 // pruneFolder prunes the folder at relative beneath root: a mapped path is
-// kept whole, a folder above one is pruned in turn and removed once empty,
-// and anything else goes.
-func pruneFolder(ctx context.Context, root, relative string, held, above map[string]bool) error {
+// kept whole, a folder above one or a standing path is pruned in turn and,
+// unless standing, removed once empty, and anything else goes.
+func (f *DirectoryFiles) pruneFolder(ctx context.Context, root, relative string, held, above map[string]bool) error {
 	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(relative)))
 	if err != nil {
 		return err
@@ -190,8 +224,11 @@ func pruneFolder(ctx context.Context, root, relative string, held, above map[str
 		switch {
 		case held[child]:
 		case above[child] && entry.IsDir():
-			if err := pruneFolder(ctx, root, child, held, above); err != nil {
+			if err := f.pruneFolder(ctx, root, child, held, above); err != nil {
 				return err
+			}
+			if f.standing(child) {
+				continue
 			}
 			if err := unix.Rmdir(full); err != nil && !errors.Is(err, unix.ENOTEMPTY) && !errors.Is(err, unix.EEXIST) && !errors.Is(err, unix.ENOENT) {
 				return err
@@ -313,10 +350,14 @@ func removeEntry(name string) error {
 	return nil
 }
 
-// removeEmptyParents removes each folder above name up to root while it is
-// empty.
-func removeEmptyParents(root, name string) error {
+// removeEmptyParents removes each folder above name up to the Mapped View's
+// root while it is empty, stopping at a standing path.
+func (f *DirectoryFiles) removeEmptyParents(name string) error {
+	root := filepath.Join(f.layout.Root, filepath.FromSlash(f.layout.MappedView))
 	for parent := filepath.Dir(name); parent != root && strings.HasPrefix(parent, root+string(filepath.Separator)); parent = filepath.Dir(parent) {
+		if relative, err := filepath.Rel(root, parent); err != nil || f.standing(filepath.ToSlash(relative)) {
+			return err
+		}
 		err := unix.Rmdir(parent)
 		if errors.Is(err, unix.ENOTEMPTY) || errors.Is(err, unix.EEXIST) {
 			return nil
@@ -340,6 +381,14 @@ func sameFile(a, b string) bool {
 func exists(name string) bool {
 	_, err := os.Lstat(name)
 	return err == nil
+}
+
+func standingPaths(paths []string) []domain.MappedPath {
+	mapped := make([]domain.MappedPath, 0, len(paths))
+	for _, path := range paths {
+		mapped = append(mapped, domain.MappedPath(path))
+	}
+	return mapped
 }
 
 func sortedKeys(files map[string]string) []string {

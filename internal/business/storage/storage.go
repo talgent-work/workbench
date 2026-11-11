@@ -119,6 +119,18 @@ func (c Config) contentCallers() ([]storageconnect.ContentCaller, error) {
 	return callers, nil
 }
 
+// mappingPrefixes are the configured mapping prefixes, each the mapped path
+// a standing reader's volume shows.
+func (c Config) mappingPrefixes() []string {
+	var prefixes []string
+	for _, caller := range c.ContentCallers {
+		if caller.MappingPrefix != "" {
+			prefixes = append(prefixes, caller.MappingPrefix)
+		}
+	}
+	return prefixes
+}
+
 // MountConfig names the claims sandboxes mount Directories from, one per
 // backend; each Directory is granted as its own subPath.
 type MountConfig struct {
@@ -185,7 +197,7 @@ var Module = fx.Module(
 		fx.Annotate(applicationtask.NewLapsePreviewCopies, fx.ResultTags(pkgtaskqueue.PeriodicTaskTag(MaintenanceQueue))),
 		fx.Annotate(applicationtask.NewRepairMappedView, fx.ResultTags(pkgtaskqueue.PeriodicTaskTag(MaintenanceQueue))),
 	),
-	fx.Invoke(registerHandlers),
+	fx.Invoke(registerHandlers, prepareMappedView),
 )
 
 // nativeSandboxUID is the user of the native sandbox image.
@@ -202,6 +214,12 @@ const MaintenanceQueue = applicationtask.MaintenanceQueue
 func newApplication(config Config, engine *xorm.Engine, renderings, maintenance componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
 	tasks := application.TaskLanes{Renderings: renderings, Maintenance: maintenance}
 	return assemble(config, infrastructure.NewDirectoryRepository(engine), infrastructure.NewDirectoryQueries(engine), tasks, bus, logger)
+}
+
+// prepareMappedView creates the standing paths' folders at start, which the
+// standing readers' volumes need before anything is mapped.
+func prepareMappedView(lifecycle fx.Lifecycle, app *application.Application) {
+	lifecycle.Append(fx.Hook{OnStart: app.PrepareMappedView})
 }
 
 func newRenderPreviewProcessor(app *application.Application, logger *slog.Logger) *taskprocessor.RenderPreviewProcessor {
@@ -262,7 +280,7 @@ func mechanisms(config Config, queries query.DirectoryQueryRepository, tasks app
 		PreviewQueries:   previews,
 		Backends: application.DirectoryBackends{
 			domain.BackendJuiceFS: infrastructure.NewDirectoryFiles(infrastructure.DirectoryLayout{
-				Root: config.PersistentRoot, Published: juiceFSDirectories, Private: juiceFSPrivate, MappedView: juiceFSMappedView,
+				Root: config.PersistentRoot, Published: juiceFSDirectories, Private: juiceFSPrivate, MappedView: juiceFSMappedView, StandingPaths: config.mappingPrefixes(),
 				Claim: config.Mounts.JuiceFSClaim, ClaimRoot: config.Mounts.JuiceFSRoot, SandboxUID: uid,
 			}),
 			domain.BackendNAS: infrastructure.NewDirectoryFiles(infrastructure.DirectoryLayout{
