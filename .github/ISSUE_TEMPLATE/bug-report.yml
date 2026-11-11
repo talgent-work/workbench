@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in Talgent Workbench does not work as documented.
+labels: ["kind/bug", "status/needs-triage"]
+body:
+  - type: input
+    id: release
+    attributes:
+      label: Release
+      description: The Workbench release you run, such as v0.3.1.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Works and the Agent
+        - Files, Artifacts and Library
+        - Usage
+        - Marketplace, Plugins and Connectors
+        - Models
+        - Talgent Computer
+        - Sign-in
+        - Deployment and configuration
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: did
+    attributes:
+      label: What you did
+      description: The steps that lead to the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: Include error messages and relevant logs. Remove secrets, tokens and personal data first.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Kubernetes distribution and version, browser, or the operating system that runs Talgent Computer, as they apply.

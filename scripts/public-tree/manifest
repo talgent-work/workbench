@@ -16,6 +16,7 @@ core plugins
 core deploy/k3s/workbench
 core docs
 core README.md
+core SECURITY.md
 
 public gen
 public deploy/controlplane
