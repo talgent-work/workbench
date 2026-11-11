@@ -5,9 +5,9 @@
   <img alt="Talgent Workbench" src="docs/assets/logo-light.png" width="420">
 </picture>
 
-### Every person in the enterprise works with their own Agent.
+### Your own Agent, ready for real work.
 
-Self-hosted. Claude Code native. Every Work in its own sandbox on your Kubernetes.
+Open-source managed agents you host yourself. Every Work in its own sandbox, on your infrastructure.
 
 [![Release](https://img.shields.io/github/v/release/talgent-work/workbench?sort=semver&color=6a4cf5)](https://github.com/talgent-work/workbench/releases/latest)
 [![License](https://img.shields.io/github/license/talgent-work/workbench?color=blue)](LICENSE)
@@ -20,13 +20,14 @@ Self-hosted. Claude Code native. Every Work in its own sandbox on your Kubernete
 
 </div>
 
-AI has made individuals faster; most companies are still waiting. Talgent Workbench brings that
-speed inside the company, under its own control. Every employee gets an AI Agent of their own,
-built on Claude Code: start a Work, hand it files, follow what it does as it happens and get the
-results back. Run several Works at once, and the same team takes on more.
+Talgent Workbench gives everyone an AI Agent of their own. Start a Work, hand it files, follow
+what it does as it happens and get the results back. Run several Works at once, and do more than
+you could alone.
 
-Workbench runs in your own environment. Each Work gets an isolated sandbox, access is granted per
-person, and every run's cost is in sight.
+Workbench is a managed agent platform that runs in your own environment instead of a vendor's
+cloud. It hosts every Agent's runtime for you: a sandbox for each Work, sessions that resume where
+they stopped, credentials kept out of reach, access granted per person and every run's cost in
+sight.
 
 ## What you can do
 
@@ -41,13 +42,13 @@ you revoke it.
 your Library, next to what others have shared with you. Office documents, PDFs and images preview
 in the browser.
 
-**Extend it from the Marketplace.** Add Claude Code Plugins and Connectors your company offers, and
-authorize your own GitHub account for the repositories a Work checks out.
+**Extend it from the Marketplace.** Add the Plugins (Skills and specialist Agents) and Connectors
+your Workbench offers, and authorize your own GitHub account for the repositories a Work checks out.
 
 **See what it costs.** Token use over time, by kind and by model, and the Works that used the most.
 
 **Run on your own machine.** Connect a laptop or a workstation with Talgent Computer and run Works
-there, with that machine's files and Claude login.
+there, with that machine's own files and sign-in.
 
 <table>
   <tr>
@@ -56,23 +57,25 @@ there, with that machine's files and Claude login.
   </tr>
   <tr>
     <td width="50%"><img alt="Usage: token use over time by kind and by model" src="docs/assets/usage.webp"><p align="center"><sub>Usage down to the token</sub></p></td>
-    <td width="50%"><img alt="Marketplace: Claude Code Plugins by category" src="docs/assets/marketplace.webp"><p align="center"><sub>Plugins and Connectors from the Marketplace</sub></p></td>
+    <td width="50%"><img alt="Marketplace: Plugins by category" src="docs/assets/marketplace.webp"><p align="center"><sub>Plugins and Connectors from the Marketplace</sub></p></td>
   </tr>
 </table>
 
 <sub>Screenshots show sample data.</sub>
 
-## Built for the enterprise
+## Why Workbench
 
-- **Your environment.** Deploy on your own Kubernetes cluster. One deployment serves one company,
-  and its data stays there.
+- **Your environment.** Deploy on your own Kubernetes cluster, or run Works on your own machine.
+  Your files and results stay with you.
 - **Isolated by default.** Every Work runs in its own sandbox, cut off from your private network.
   Credentials and model keys never enter it.
-- **Any model.** Offer the models you choose, from any vendor endpoint Claude Code can use. People
-  pick one when they start a Work.
-- **Governed access.** People sign in with GitHub; each Work, file and share belongs to a person
-  and reaches only who it is meant for.
-- **Open source.** Apache-2.0. Read the code that runs your Agents.
+- **Any model.** Offer the models you choose: Claude, DeepSeek, Qwen, Kimi, GLM, MiniMax, or any
+  other vendor with an Anthropic-compatible API, each with its own key. People pick one when they
+  start a Work.
+- **Yours alone.** Each Work, file and share belongs to the person who made it and reaches only
+  who it is meant for.
+- **Open source.** Apache-2.0. Read and audit the code that runs your Agents, with no lock-in to
+  one vendor's cloud or model.
 
 ## From every person to the whole company: Talgent Orchestra
 
