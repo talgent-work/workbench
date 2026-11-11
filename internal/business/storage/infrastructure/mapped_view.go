@@ -108,7 +108,7 @@ func (f *DirectoryFiles) PrepareMappedView(ctx context.Context) error {
 		return err
 	}
 	for _, standing := range f.layout.StandingPaths {
-		view, err := f.view(domain.MappedPath(standing))
+		view, err := f.view(standing)
 		if err == nil {
 			err = os.MkdirAll(view, directoryMode)
 		}
@@ -122,7 +122,7 @@ func (f *DirectoryFiles) PrepareMappedView(ctx context.Context) error {
 // standing reports whether a folder of the Mapped View, relative to its
 // root, is a standing path.
 func (f *DirectoryFiles) standing(relative string) bool {
-	return slices.Contains(f.layout.StandingPaths, relative)
+	return slices.Contains(f.layout.StandingPaths, domain.MappedPath(relative))
 }
 
 // unlinkMapped removes the link at relative from each mapped path, before
@@ -191,7 +191,7 @@ func (f *DirectoryFiles) PruneMappedView(ctx context.Context, mapped []domain.Ma
 	}
 	held := make(map[string]bool, len(mapped))
 	above := map[string]bool{}
-	for _, path := range append(append([]domain.MappedPath(nil), mapped...), standingPaths(f.layout.StandingPaths)...) {
+	for _, path := range append(append([]domain.MappedPath(nil), mapped...), f.layout.StandingPaths...) {
 		for parent := filepath.ToSlash(filepath.Dir(string(path))); parent != "."; parent = filepath.ToSlash(filepath.Dir(parent)) {
 			above[parent] = true
 		}
@@ -200,8 +200,8 @@ func (f *DirectoryFiles) PruneMappedView(ctx context.Context, mapped []domain.Ma
 		held[string(path)] = true
 	}
 	for _, standing := range f.layout.StandingPaths {
-		if !held[standing] {
-			above[standing] = true
+		if !held[string(standing)] {
+			above[string(standing)] = true
 		}
 	}
 	return oops.With("operation", "storage.prune_mapped_view").Wrap(f.pruneFolder(ctx, root, "", held, above))
@@ -381,14 +381,6 @@ func sameFile(a, b string) bool {
 func exists(name string) bool {
 	_, err := os.Lstat(name)
 	return err == nil
-}
-
-func standingPaths(paths []string) []domain.MappedPath {
-	mapped := make([]domain.MappedPath, 0, len(paths))
-	for _, path := range paths {
-		mapped = append(mapped, domain.MappedPath(path))
-	}
-	return mapped
 }
 
 func sortedKeys(files map[string]string) []string {

@@ -121,11 +121,11 @@ func (c Config) contentCallers() ([]storageconnect.ContentCaller, error) {
 
 // mappingPrefixes are the configured mapping prefixes, each the mapped path
 // a standing reader's volume shows.
-func (c Config) mappingPrefixes() []string {
-	var prefixes []string
+func (c Config) mappingPrefixes() []domain.MappedPath {
+	var prefixes []domain.MappedPath
 	for _, caller := range c.ContentCallers {
 		if caller.MappingPrefix != "" {
-			prefixes = append(prefixes, caller.MappingPrefix)
+			prefixes = append(prefixes, domain.MappedPath(caller.MappingPrefix))
 		}
 	}
 	return prefixes
