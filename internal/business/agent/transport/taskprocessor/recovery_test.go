@@ -57,7 +57,7 @@ func recovery(t *testing.T, environments *observed) (*application.Recovery, stri
 	})
 	require.NoError(t, err)
 	repository := executions{execution: queued}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, repository, environments, nil, unseated{}, nil)
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, repository, environments, nil, unseated{}, nil, nil)
 	return application.NewRecovery(&application.Application{}, nil, repository, nil, reconciliation, nil, nil), queued.ID
 }
 

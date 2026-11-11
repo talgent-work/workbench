@@ -89,7 +89,7 @@ type recoveryFixture struct {
 
 func newRecoveryFixture(app *application.Application, lookups executionLookups, storage command.StoragePort) *recoveryFixture {
 	f := &recoveryFixture{executions: &commandtest.Executions{}, environment: &commandtest.Environment{}, enqueuer: &recordingEnqueuer{}}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, commandtest.Supplies(&commandtest.Storage{}, &commandtest.Accounts{}))
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, commandtest.Supplies(&commandtest.Storage{}, &commandtest.Accounts{}), nil)
 	f.recovery = application.NewRecovery(app, f.enqueuer, f.executions, lookups, reconciliation, storage, nil)
 	return f
 }

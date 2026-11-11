@@ -55,6 +55,14 @@ the attempt that exhausts it logs an error naming what failed and why:
 - Dispatcher gives up an exit fact Agent keeps failing to take after about five minutes, and
   the next connection delivers it again. It gives up an input flush after 30 failed buffer
   reads. The sandbox observer gives up a wake after 10 failed retries.
+- Syncing a Managed Work's input copies stops after 30 failed attempts, about three sweep
+  wakes, and logs `input copy sync abandoned` with the execution and its Work. The execution
+  records the cause in `agent_execution.inputs_sync_abandoned`. Before, the sweep retried it
+  every minute for as long as the run lasted. The copies are not synced or refreshed again
+  until a file in the Work's inputs changes, which starts a new sync.
+- A Resume a Managed Work is owed on its Computer's reconnection stops after 30 retries that
+  fail without an answer, and logs `owed resume abandoned` with the Work and its Computer. The
+  input stays buffered, and the Work's next Resume reads it.
 
 A start whose own request can never succeed now fails on its first attempt, naming the cause.
 An example is a retained Plugin release whose native entry names another plugin. Before, such
@@ -62,10 +70,12 @@ a start retried until its Startup Deadline. A start that misses its Startup Dead
 the step that failed last as well, such as `Last error: creating the execution environment
 failed.`
 
-To upgrade, apply `deploy/middleware/migrations/20261111-execution-start-causes.sql` to the
-database named by `AGENT_MYSQL_DATABASE` before you deploy. It adds
-`agent_execution.rejection_reason` and `startup_setback`, and you can apply it again safely.
-The previous release ignores both columns, so a rollback needs only the previous images.
+To upgrade, apply `deploy/middleware/migrations/20261111-execution-start-causes.sql` and
+`deploy/middleware/migrations/20261111-retry-ceilings.sql` to the database named by
+`AGENT_MYSQL_DATABASE` before you deploy. They add `agent_execution.rejection_reason`,
+`startup_setback`, `inputs_sync_failures` and `inputs_sync_abandoned`, and
+`agent_session.reach_resume_failures`, and you can apply them again safely. The previous release ignores these columns, so a rollback needs only the previous
+images.
 
 ### A removed catalog source is retired
 
