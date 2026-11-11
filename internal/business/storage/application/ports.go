@@ -206,6 +206,10 @@ type DirectoryBackendPort interface {
 	// UnmapFiles removes a mapped path's files and the folders it emptied.
 	// The caller holds the lock of the Directory mapped there.
 	UnmapFiles(ctx context.Context, path domain.MappedPath) error
+	// PruneMappedView removes every file and folder of the Mapped View that
+	// lies neither at or inside one of the mapped paths nor above one. The
+	// caller holds the Mapped View's lock.
+	PruneMappedView(ctx context.Context, mapped []domain.MappedPath) error
 }
 
 // DirectoryBackends are the realizations by the Backend they keep.

@@ -33,6 +33,8 @@ type DirectoryQueryRepository interface {
 	// MappingsAround are the mappings whose paths are, lie inside or lie
 	// above the path, with their Directories.
 	MappingsAround(ctx context.Context, path domain.MappedPath) ([]Mapping, error)
+	// Mappings are every mapping with its Directory, by path.
+	Mappings(ctx context.Context) ([]Mapping, error)
 }
 
 // PreviewCopyQueryRepository reads Preview Copy facts the Preview Copy

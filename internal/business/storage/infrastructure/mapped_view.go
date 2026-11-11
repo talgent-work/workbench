@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -146,6 +147,60 @@ func (f *DirectoryFiles) clearMapped(mappings []domain.MappedPath) error {
 		}
 		if err := pruneView(view, nil); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// PruneMappedView removes every entry of the Mapped View outside the mapped
+// paths and the folders above them, then each such folder left empty.
+func (f *DirectoryFiles) PruneMappedView(ctx context.Context, mapped []domain.MappedPath) error {
+	if f.layout.MappedView == "" {
+		return oops.With("operation", "storage.prune_mapped_view").Wrap(errNoMappedView)
+	}
+	root := filepath.Join(f.layout.Root, filepath.FromSlash(f.layout.MappedView))
+	held := make(map[string]bool, len(mapped))
+	above := map[string]bool{}
+	for _, path := range mapped {
+		held[string(path)] = true
+		for parent := filepath.ToSlash(filepath.Dir(string(path))); parent != "."; parent = filepath.ToSlash(filepath.Dir(parent)) {
+			above[parent] = true
+		}
+	}
+	err := pruneFolder(ctx, root, "", held, above)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return oops.With("operation", "storage.prune_mapped_view").Wrap(err)
+}
+
+// pruneFolder prunes the folder at relative beneath root: a mapped path is
+// kept whole, a folder above one is pruned in turn and removed once empty,
+// and anything else goes.
+func pruneFolder(ctx context.Context, root, relative string, held, above map[string]bool) error {
+	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(relative)))
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		child := path.Join(relative, entry.Name())
+		full := filepath.Join(root, filepath.FromSlash(child))
+		switch {
+		case held[child]:
+		case above[child] && entry.IsDir():
+			if err := pruneFolder(ctx, root, child, held, above); err != nil {
+				return err
+			}
+			if err := unix.Rmdir(full); err != nil && !errors.Is(err, unix.ENOTEMPTY) && !errors.Is(err, unix.EEXIST) && !errors.Is(err, unix.ENOENT) {
+				return err
+			}
+		default:
+			if err := os.RemoveAll(full); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

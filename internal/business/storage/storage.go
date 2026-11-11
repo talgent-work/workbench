@@ -183,6 +183,7 @@ var Module = fx.Module(
 		fx.Annotate(newRenderPreviewProcessor, fx.As(new(componenttaskqueue.Processor)), fx.ResultTags(pkgtaskqueue.ProcessorTag(PreviewQueue))),
 		fx.Annotate(newMaintenanceProcessors, fx.ResultTags(pkgtaskqueue.ProcessorsTag(MaintenanceQueue))),
 		fx.Annotate(applicationtask.NewLapsePreviewCopies, fx.ResultTags(pkgtaskqueue.PeriodicTaskTag(MaintenanceQueue))),
+		fx.Annotate(applicationtask.NewRepairMappedView, fx.ResultTags(pkgtaskqueue.PeriodicTaskTag(MaintenanceQueue))),
 	),
 	fx.Invoke(registerHandlers),
 )
@@ -195,7 +196,7 @@ const nativeSandboxUID = 1000
 const PreviewQueue = applicationtask.Queue
 
 // MaintenanceQueue is the taskqueue module Storage removes reclaimed content
-// and lapsed Preview Copies on.
+// and lapsed Preview Copies and repairs the Mapped View on.
 const MaintenanceQueue = applicationtask.MaintenanceQueue
 
 func newApplication(config Config, engine *xorm.Engine, renderings, maintenance componenttaskqueue.Enqueuer, bus integrationmessage.Publisher, logger *slog.Logger) (*application.Application, error) {
@@ -211,6 +212,7 @@ func newMaintenanceProcessors(app *application.Application, logger *slog.Logger)
 	return []componenttaskqueue.Processor{
 		taskprocessor.NewRemoveReclaimedContentProcessor(app, logger),
 		taskprocessor.NewLapsePreviewCopiesProcessor(app),
+		taskprocessor.NewRepairMappedViewProcessor(app),
 	}
 }
 

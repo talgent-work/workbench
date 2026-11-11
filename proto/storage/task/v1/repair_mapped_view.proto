@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package storage.task.v1;
+
+option go_package = "github.com/talgent-work/workbench/gen/storage/task/v1;storagetaskv1";
+
+// RepairMappedViewTaskV1 asks Storage to align every mapped path of the
+// Mapped View with its Directory's files and remove whatever no mapping
+// holds. It runs every hour.
+message RepairMappedViewTaskV1 {}

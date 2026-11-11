@@ -64,6 +64,15 @@ func (r *DirectoryQueries) MappingsAround(ctx context.Context, path domain.Mappe
 	return mappingsFromDO(rows)
 }
 
+// Mappings reads every mapping by path.
+func (r *DirectoryQueries) Mappings(ctx context.Context) ([]query.Mapping, error) {
+	var rows []mappingDO
+	if err := r.engine.Context(ctx).Cols(mappingColumns...).Asc("path").Find(&rows); err != nil {
+		return nil, oops.With("operation", "storage.mappings.all").Wrap(err)
+	}
+	return mappingsFromDO(rows)
+}
+
 func mappingsFromDO(rows []mappingDO) ([]query.Mapping, error) {
 	mappings := make([]query.Mapping, 0, len(rows))
 	for _, row := range rows {

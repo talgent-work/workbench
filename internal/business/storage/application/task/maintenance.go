@@ -13,12 +13,14 @@ import (
 )
 
 // MaintenanceQueue is the lane Storage removes reclaimed content and lapsed
-// Preview Copies on, apart from the renderings that hold the preview lane.
+// Preview Copies and repairs the Mapped View on, apart from the renderings
+// that hold the preview lane.
 const MaintenanceQueue = "storage-maintenance"
 
 const (
 	RemoveReclaimedContentType taskqueue.TaskType = "storage.directory.remove-reclaimed-content.v1"
 	LapsePreviewCopiesType     taskqueue.TaskType = "storage.preview.lapse.v1"
+	RepairMappedViewType       taskqueue.TaskType = "storage.mapped-view.repair.v1"
 )
 
 // RemoveReclaimedContent names the reclaimed Directory whose content goes.
@@ -81,4 +83,28 @@ func NewLapsePreviewCopies() (taskqueue.PeriodicTask, error) {
 	}
 	return taskqueue.NewPeriodicTask(string(LapsePreviewCopiesType), schedule, queued,
 		taskqueue.WithMaxRetry(0), taskqueue.WithTimeout(LapseInterval), taskqueue.WithUnique(LapseInterval*9/10))
+}
+
+// RepairInterval is how often the Mapped View is repaired.
+const RepairInterval = time.Hour
+
+// NewRepairMappedView is the periodic task repairing the Mapped View every
+// hour at half past, UTC, apart from the lapse on the hour. Every replica's
+// scheduler fires it; uniqueness keeps one run per hour, and a failed run is
+// replaced by the next.
+func NewRepairMappedView() (taskqueue.PeriodicTask, error) {
+	schedule, err := taskqueue.CronSchedule("30 * * * *", taskqueue.WithLocation("UTC"))
+	if err != nil {
+		return taskqueue.PeriodicTask{}, err
+	}
+	payload, err := proto.Marshal(&storagetaskv1.RepairMappedViewTaskV1{})
+	if err != nil {
+		return taskqueue.PeriodicTask{}, err
+	}
+	queued, err := taskqueue.New(taskqueue.Definition{Type: RepairMappedViewType, Queue: MaintenanceQueue}, payload)
+	if err != nil {
+		return taskqueue.PeriodicTask{}, err
+	}
+	return taskqueue.NewPeriodicTask(string(RepairMappedViewType), schedule, queued,
+		taskqueue.WithMaxRetry(0), taskqueue.WithTimeout(RepairInterval), taskqueue.WithUnique(RepairInterval*9/10))
 }
