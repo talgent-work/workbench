@@ -81,3 +81,26 @@ func TestAWorkStoppedBeyondReachWithInputAwaitsTheReconnection(t *testing.T) {
 		})
 	}
 }
+
+// A retry of an owed Resume that fails without an answer is counted; the
+// failure that reaches ReachResumeAttempts spends the mark, so the Work's
+// recovery stops retrying it. A refusal, or a new mark, starts the count
+// again.
+func TestAnOwedResumeIsSpentAfterItsRetriesKeepFailing(t *testing.T) {
+	work := &domain.AgentWork{State: domain.WorkStopped}
+	require.False(t, work.RecordResumeRetryFailure(), "an unmarked Work counts nothing")
+	require.True(t, work.RefuseResume(domain.ErrComputerUnreachable))
+	for attempt := 1; attempt < domain.ReachResumeAttempts; attempt++ {
+		require.False(t, work.RecordResumeRetryFailure(), "attempt %d is below the ceiling", attempt)
+		require.True(t, work.ReachResumeDue)
+	}
+	require.Equal(t, domain.ReachResumeAttempts-1, work.ReachResumeFailures)
+	require.True(t, work.RecordResumeRetryFailure(), "the failure at the ceiling spends the mark")
+	require.False(t, work.ReachResumeDue)
+	require.Zero(t, work.ReachResumeFailures)
+
+	require.True(t, work.RefuseResume(domain.ErrComputerUnreachable))
+	require.False(t, work.RecordResumeRetryFailure())
+	require.True(t, work.RefuseResume(domain.ErrComputerFull), "a refusal spends the mark and its failures")
+	require.Zero(t, work.ReachResumeFailures)
+}

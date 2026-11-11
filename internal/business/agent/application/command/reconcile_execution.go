@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -28,10 +29,16 @@ type ReconcileExecutionHandler struct {
 	// supplies obtains what the environment steps hand the environment from
 	// Storage and Marketplace.
 	supplies *EnvironmentSupplies
+	// logger shows a terminal outcome nothing else retries, such as an
+	// abandoned input sync.
+	logger *slog.Logger
 }
 
-func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, creationWaits domain.CreationWaits, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, supplies *EnvironmentSupplies) *ReconcileExecutionHandler {
-	return &ReconcileExecutionHandler{now: now, lease: lease, creationWaits: creationWaits, executions: executions, environments: environments, harness: harness, computers: computers, supplies: supplies}
+func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, creationWaits domain.CreationWaits, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, supplies *EnvironmentSupplies, logger *slog.Logger) *ReconcileExecutionHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &ReconcileExecutionHandler{now: now, lease: lease, creationWaits: creationWaits, executions: executions, environments: environments, harness: harness, computers: computers, supplies: supplies, logger: logger}
 }
 
 // reconcileRounds bounds the decisions one reconciliation makes: after a step
