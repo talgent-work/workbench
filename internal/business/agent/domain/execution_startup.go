@@ -123,9 +123,15 @@ func (e *AgentExecution) RecordCreationAnswer(answer CreationAnswer) (bool, erro
 		e.Environment = answer.EnvironmentID
 		return true, nil
 	}
-	e.Outcome.Rejected = true
-	e.record(ExecutionStartRejected{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt})
+	e.reject("")
 	return true, nil
+}
+
+// reject rejects its start, naming the cause when one is known (Creation
+// refusal).
+func (e *AgentExecution) reject(cause string) {
+	e.Outcome.Rejected, e.Outcome.RejectionReason = true, cause
+	e.record(ExecutionStartRejected{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt, Reason: cause})
 }
 
 // RecordCredentialDelivery records the credentials delivered into its bound
@@ -252,6 +258,10 @@ func (e *AgentExecution) failStart() bool {
 		reason = startupCredentialsIncomplete
 	case !e.Process.Prepared:
 		reason = startupEnvironmentIncomplete
+	}
+	if e.StartupSetback != "" {
+		// The last setback is why the step did not complete.
+		reason += " Last error: " + e.StartupSetback + "."
 	}
 	e.Outcome.StartFailure = reason
 	e.record(ExecutionStartFailed{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt, Reason: reason})

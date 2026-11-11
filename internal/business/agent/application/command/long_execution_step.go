@@ -64,10 +64,10 @@ func (h *ReconcileExecutionHandler) RunLongStep(ctx context.Context, executionID
 func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domain.AgentExecution) error {
 	supply, err := h.supplies.creation(ctx, execution)
 	if err != nil {
-		return err
+		return h.failed(ctx, execution.ID, "obtaining the environment's mounts and repository access", err)
 	}
 	if err := h.environments.PrepareCreation(ctx, execution, supply); err != nil {
-		return err
+		return h.failed(ctx, execution.ID, "specifying the execution environment", err)
 	}
 	submitting, err := execution.RecordSubmission(h.now(), h.creationWaits)
 	if err != nil || !submitting {
@@ -82,11 +82,36 @@ func (h *ReconcileExecutionHandler) submit(ctx context.Context, execution *domai
 	}
 	answer, err := h.environments.SubmitCreation(ctx, submitted)
 	if err != nil {
-		return err
+		return h.failed(ctx, submitted.ID, "creating the execution environment", err)
 	}
 	return h.record(ctx, submitted.ID, func(execution *domain.AgentExecution) (bool, error) {
 		return execution.RecordCreationAnswer(answer)
 	})
+}
+
+// failed records a failed attempt at a long step. A definite failure, which
+// no retry can change, ends the start at once naming its cause, and nothing
+// is left to retry. Any other failure is returned for its task's bounded
+// retry, its step recorded as the start's latest setback, so a start that
+// misses its Startup Deadline names what kept failing. The recorded cause
+// names the step and the class of failure only: the error itself may carry
+// what the Work's owners must not see, and goes to the log.
+func (h *ReconcileExecutionHandler) failed(ctx context.Context, executionID, step string, err error) error {
+	if cause, definite := domain.DefiniteStartCause(err); definite {
+		return h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
+			return execution.FailDefinitely(step + ": " + cause), nil
+		})
+	}
+	if ctx.Err() != nil || errors.Is(err, ErrEnvironmentActionRefused) {
+		return err
+	}
+	setback := step + " failed"
+	if errors.Is(err, context.DeadlineExceeded) {
+		setback = step + " timed out"
+	}
+	return errors.Join(err, h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
+		return execution.RecordStartupSetback(setback), nil
+	}))
 }
 
 // prepare sees the in-environment preparation (Plugins, then the repositories
@@ -106,13 +131,13 @@ func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *doma
 	defer cancel()
 	if !execution.Process.PreparationEnded {
 		report, err := h.environments.Prepare(bounded, execution, h.holding(execution))
-		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil && bounded.Err() != nil {
 			// The Startup Deadline passed while it prepared; the execution's
 			// next reconciliation records the failure.
 			return nil
 		}
 		if err != nil {
-			return err
+			return h.failed(ctx, executionID, "preparing the execution environment", err)
 		}
 		if err := h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
 			return execution.RecordPreparation(report)
@@ -127,7 +152,7 @@ func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *doma
 	defer release()
 	processID, err := h.environments.Launch(launch, execution, h.holding(execution))
 	if err != nil {
-		return err
+		return h.failed(ctx, executionID, "launching the Harness", err)
 	}
 	launched := false
 	if err := h.record(ctx, executionID, func(execution *domain.AgentExecution) (bool, error) {
@@ -142,5 +167,8 @@ func (h *ReconcileExecutionHandler) prepare(ctx context.Context, execution *doma
 	if execution, err = h.executions.Get(ctx, executionID); err != nil {
 		return err
 	}
-	return h.environments.Connect(launch, execution)
+	if err := h.environments.Connect(launch, execution); err != nil {
+		return h.failed(ctx, executionID, "connecting the Harness", err)
+	}
+	return nil
 }

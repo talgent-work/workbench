@@ -80,10 +80,12 @@ func (ExecutionStartFailed) Kind() EventKind { return EventKindExecutionStartFai
 func (e ExecutionStartFailed) Key() string   { return e.WorkID }
 
 // ExecutionStartRejected reports that the environment's creation was
-// definitely refused or failed while nothing was bound.
+// definitely refused or failed while nothing was bound; Reason names the
+// cause when it is known.
 type ExecutionStartRejected struct {
 	WorkID          string
 	StartAdmittedAt time.Time
+	Reason          string
 }
 
 func (ExecutionStartRejected) Kind() EventKind { return EventKindExecutionStartRejected }
@@ -155,7 +157,7 @@ func (e *AgentExecution) Reports() []Event {
 		reports = append(reports, ExecutionStartFailed{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt, Reason: e.Outcome.StartFailure})
 	}
 	if e.Outcome.Rejected {
-		reports = append(reports, ExecutionStartRejected{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt})
+		reports = append(reports, ExecutionStartRejected{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt, Reason: e.Outcome.RejectionReason})
 	}
 	if e.Outcome.Abandoned {
 		reports = append(reports, ExecutionStartAbandoned{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt})

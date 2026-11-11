@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // sandboxSecretEnvironment names credentials the sandbox only ever receives as
@@ -28,7 +29,7 @@ var modelManagedEnvironment = []string{
 
 // errModelConfigurationNotProvided reports that an admitted start names a Model
 // Configuration the platform no longer provides, so no sandbox can expand it.
-var errModelConfigurationNotProvided = errors.New("agent: the Work's model configuration is not provided")
+var errModelConfigurationNotProvided = fmt.Errorf("%w: it is not provided", domain.ErrModelConfigurationWithdrawn)
 
 // validateModelTemplates checks what every provided Model Template brings
 // into a run's environment: an endpoint the credential Vault can bind its key

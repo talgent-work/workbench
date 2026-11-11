@@ -114,15 +114,17 @@ type InputSync struct {
 }
 
 // ExecutionOutcome is what the execution established about its start, each
-// reported to its Work: a Startup Deadline failure naming the earliest
-// incomplete Required Startup Step, a rejected or abandoned start, or the
-// loss of its environment.
+// reported to its Work: a start failure naming the earliest incomplete
+// Required Startup Step or the definite cause that keeps it from completing,
+// a rejected start with its cause when one is known, an abandoned start, or
+// the loss of its environment.
 type ExecutionOutcome struct {
-	StartFailure string
-	Rejected     bool
-	Abandoned    bool
-	Lost         bool
-	LossReason   string
+	StartFailure    string
+	Rejected        bool
+	RejectionReason string
+	Abandoned       bool
+	Lost            bool
+	LossReason      string
 }
 
 // RetirementCause is how the Work's execution ended, which alone retires an
@@ -177,7 +179,11 @@ type AgentExecution struct {
 	ExitRequest     ExitRequest
 	Credentials     CredentialDelivery
 	Inputs          InputSync
-	Outcome         ExecutionOutcome
+	// StartupSetback names the cause of the latest failed attempt at one of
+	// its long startup steps, which may pass; empty once none failed. A start
+	// failure at its Startup Deadline carries it.
+	StartupSetback string
+	Outcome        ExecutionOutcome
 	State           ExecutionState `validate:"oneof=queued starting running retired released"`
 	Retirement      RetirementCause
 	RetiredAt       time.Time
