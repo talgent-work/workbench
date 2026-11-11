@@ -20,8 +20,6 @@ type catalogCommand struct {
 	workspace            string
 	timeout              time.Duration
 	certificateAuthority string
-	// environment adds a source's access, such as its SSH command.
-	environment []string
 }
 
 func (c catalogCommand) execute(ctx context.Context, binary string, arguments ...string) ([]byte, error) {
@@ -29,11 +27,10 @@ func (c catalogCommand) execute(ctx context.Context, binary string, arguments ..
 	defer cancel()
 	command := exec.CommandContext(ctx, binary, arguments...)
 	command.Dir = c.workspace
-	command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + c.home, "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh", "LANG=C.UTF-8"}
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + c.home, "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https", "LANG=C.UTF-8"}
 	if c.certificateAuthority != "" {
 		command.Env = append(command.Env, "GIT_SSL_CAINFO="+c.certificateAuthority, "NODE_EXTRA_CA_CERTS="+c.certificateAuthority, "npm_config_cafile="+c.certificateAuthority)
 	}
-	command.Env = append(command.Env, c.environment...)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Cancel = func() error {
 		if command.Process == nil {

@@ -2,9 +2,7 @@
 # (JIMU_PROFILES_ACTIVE) and reads controlplane_<profile>.yml beside its
 # defaults, merged over them: maps merge, lists replace. The deployment
 # provides ConfigMap controlplane-profile holding that file; controlplane does
-# not start without it. Files the profile names that must stay secret, such
-# as a private catalog source's SSH key, go in Secret
-# controlplane-profile-secrets, mounted at /etc/talgent/profile when present.
+# not start without it.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 patches:
@@ -38,20 +36,6 @@ patches:
                   name: controlplane-config
               - configMap:
                   name: controlplane-profile
-      - op: add
-        path: /spec/template/spec/containers/0/volumeMounts/-
-        value:
-          mountPath: /etc/talgent/profile
-          name: profile-secrets
-          readOnly: true
-      - op: add
-        path: /spec/template/spec/volumes/-
-        value:
-          name: profile-secrets
-          secret:
-            secretName: controlplane-profile-secrets
-            optional: true
-            defaultMode: 0400
 replacements:
   - source:
       kind: ConfigMap

@@ -2,7 +2,6 @@ package task
 
 import (
 	"context"
-	"math"
 	"time"
 
 	"github.com/go-jimu/components/taskqueue"
@@ -31,9 +30,21 @@ type RemoveReclaimedContent struct {
 // removalAttempt bounds one removal of a Directory's content.
 const removalAttempt = 30 * time.Minute
 
+// RemovalRetries bounds the failed attempts of one removal: with the
+// maintenance lane's delays, about two hours.
+const RemovalRetries = 25
+
+// RemovalDeadline bounds one removal however long publications copying from
+// its Directory hold it, which do not count as failed attempts. Once it
+// passes, each attempt fails at once until RemovalRetries are exhausted.
+const RemovalDeadline = 6 * time.Hour
+
 // RequestContentRemoval enqueues the removal keyed by the Directory's owner
 // and name, so a repeated reclamation is absorbed by the queued removal. It
-// retries until the content is removed: a removal is never abandoned.
+// retries until the content is removed, at most RemovalRetries times and
+// not past RemovalDeadline; a removal that ends unremoved is a reclamation
+// failure its processor logs. A later reclamation of the Work queues it
+// again.
 func RequestContentRemoval(ctx context.Context, enqueuer taskqueue.Enqueuer, removal RemoveReclaimedContent, key string) error {
 	payload, err := proto.Marshal(&storagetaskv1.RemoveReclaimedContentTaskV1{Directory: directoryMessage(removal.Directory)})
 	if err != nil {
@@ -44,7 +55,7 @@ func RequestContentRemoval(ctx context.Context, enqueuer taskqueue.Enqueuer, rem
 	if err != nil {
 		return err
 	}
-	options := []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(math.MaxInt32), taskqueue.WithTimeout(removalAttempt)}
+	options := []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(RemovalRetries), taskqueue.WithTimeout(removalAttempt), taskqueue.WithDeadline(time.Now().Add(RemovalDeadline))}
 	if err := taskqueue.NewEnqueueOptions(options...).Validate(); err != nil {
 		return err
 	}

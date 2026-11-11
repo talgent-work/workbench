@@ -22,13 +22,13 @@ func TestPreparationUpdatesAnInstalledPluginToThePinnedRelease(t *testing.T) {
 	require.NoError(t, err)
 	calls := filepath.Join(t.TempDir(), "calls")
 	results := runPluginPreparation(t, workspace, fakeClaude(t, calls, ""), fixtureAllocationID)
-	require.Equal(t, []pluginInstallationResult{{Slug: "talgent-runtime", Installed: true}}, results)
+	require.Equal(t, []pluginInstallationResult{{Slug: "talgent", Installed: true}}, results)
 	require.Equal(t, []string{
 		"plugin marketplace add --scope project " + filepath.Join(workspace, ".claude", "talgent", "talgent-work-fixture"),
-		"plugin install --scope project talgent-runtime@talgent-work-fixture",
-		"plugin update --scope project talgent-runtime@talgent-work-fixture",
+		"plugin install --scope project talgent@talgent-work-fixture",
+		"plugin update --scope project talgent@talgent-work-fixture",
 	}, strings.Split(strings.TrimSpace(readFile(t, calls)), "\n"))
-	require.Equal(t, map[string]bool{"talgent-runtime@talgent-work-fixture": true}, enabledPlugins(t, workspace))
+	require.Equal(t, map[string]bool{"talgent@talgent-work-fixture": true}, enabledPlugins(t, workspace))
 }
 
 // A Plugin that cannot reach its pinned release is not reported installed:
@@ -37,13 +37,13 @@ func TestPreparationReportsAPluginThatCannotUpdateAsNotInstalled(t *testing.T) {
 	requireNodeAndFlock(t)
 	workspace := t.TempDir()
 	results := runPluginPreparation(t, workspace, fakeClaude(t, filepath.Join(t.TempDir(), "calls"), "update"), fixtureAllocationID)
-	require.Equal(t, []pluginInstallationResult{{Slug: "talgent-runtime", Reason: "installation_failed"}}, results)
-	require.Equal(t, map[string]bool{"talgent-runtime@talgent-work-fixture": false}, enabledPlugins(t, workspace))
+	require.Equal(t, []pluginInstallationResult{{Slug: "talgent", Reason: "installation_failed"}}, results)
+	require.Equal(t, map[string]bool{"talgent@talgent-work-fixture": false}, enabledPlugins(t, workspace))
 }
 
 func runPluginPreparation(t *testing.T, workspace, binary, allocation string) []pluginInstallationResult {
 	t.Helper()
-	catalog := `{"name":"talgent-work-fixture","owner":{"name":"Talgent"},"plugins":[{"name":"talgent-runtime","version":"0.1.1","source":{"source":"url","url":"https://example.com/marketplace.git","sha":"0123456789abcdef0123456789abcdef01234567"}}]}`
+	catalog := `{"name":"talgent-work-fixture","owner":{"name":"Talgent"},"plugins":[{"name":"talgent","version":"0.1.1","source":{"source":"url","url":"https://example.com/marketplace.git","sha":"0123456789abcdef0123456789abcdef01234567"}}]}`
 	receipt := storageKey(request().WorkID + ":" + allocation)[:32]
 	process := exec.Command("node", "-e", nativePreparation, binary, catalog, receipt, "", "600")
 	process.Dir, process.Env = workspace, append(os.Environ(), "HOME="+t.TempDir())

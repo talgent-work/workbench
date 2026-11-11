@@ -114,7 +114,7 @@ func (s *AgentWork) ApplyExecutionReport(report Event) (bool, error) {
 	case ExecutionStartFailed:
 		err = s.failAtStartupDeadline(r.Reason)
 	case ExecutionStartRejected:
-		err = s.confirmStartRejected()
+		err = s.confirmStartRejected(r.Reason)
 	case ExecutionStartAbandoned:
 		s.confirmStartAbandoned()
 	case ExecutionEnvironmentLost:
@@ -302,8 +302,9 @@ func (s *AgentWork) HoldsActiveProcess() bool {
 
 // confirmStartRejected applies the report that the start's environment could
 // not be created: the Work becomes Failed without a stop or an exit, naming
-// its execution environment, and its execution retires (Rejected start).
-func (s *AgentWork) confirmStartRejected() error {
+// its execution environment and the cause when one is known, and its
+// execution retires (Rejected start).
+func (s *AgentWork) confirmStartRejected(cause string) error {
 	p := s.HarnessProcess
 	if p.StartRejected || p.ended() || p.EnvironmentLost {
 		return nil
@@ -312,7 +313,11 @@ func (s *AgentWork) confirmStartRejected() error {
 		return ErrInvalidWork
 	}
 	p.StartRejected = true
-	s.recordFailure(startRejectedReason)
+	reason := startRejectedReason
+	if cause != "" {
+		reason = strings.TrimSuffix(startRejectedReason, ".") + ": " + cause + "."
+	}
+	s.recordFailure(reason)
 	s.requestComputeRelease()
 	return nil
 }

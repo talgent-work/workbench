@@ -59,6 +59,7 @@ type CreateWork struct {
 // and its recovery; no request record is kept.
 type CreateWorkHandler struct {
 	now           func() time.Time
+	builtIns      domain.BuiltInPlugins
 	catalog       MarketplacePort
 	computers     ComputerPort
 	models        query.ModelConfigurations
@@ -68,8 +69,8 @@ type CreateWorkHandler struct {
 	prepare       *PrepareWorkExecutionHandler
 }
 
-func NewCreateWorkHandler(now func() time.Time, agents domain.AgentDefinitionRepository, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog MarketplacePort, computers ComputerPort, prepare *PrepareWorkExecutionHandler) *CreateWorkHandler {
-	return &CreateWorkHandler{now: now, catalog: catalog, computers: computers, agents: agents, sessions: sessions, authorization: authorization, models: models, prepare: prepare}
+func NewCreateWorkHandler(now func() time.Time, builtIns domain.BuiltInPlugins, agents domain.AgentDefinitionRepository, sessions domain.AgentWorkRepository, authorization access.WorkAuthorizer, models query.ModelConfigurations, catalog MarketplacePort, computers ComputerPort, prepare *PrepareWorkExecutionHandler) *CreateWorkHandler {
+	return &CreateWorkHandler{now: now, builtIns: builtIns, catalog: catalog, computers: computers, agents: agents, sessions: sessions, authorization: authorization, models: models, prepare: prepare}
 }
 
 // creationAttempts bounds retries after a competing change of the

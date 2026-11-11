@@ -35,7 +35,7 @@ import (
 
 func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 	db := catalogDatabase(t)
-	store, err := infrastructure.NewCatalogStore(db, t.TempDir(), "talgent", "Talgent")
+	store, err := infrastructure.NewCatalogStore(db, t.TempDir(), "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
 	root := t.TempDir()
 	writeMetadata(t, root, "plugins/valid/.claude-plugin/plugin.json", `{"name":"actual","version":"1.0.0"}`)

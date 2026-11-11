@@ -44,7 +44,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	lost := errors.New("registration committed; acknowledgement lost")
 	registrar := registrationLostAcknowledgement{AgentWorkRepository: sessions, err: lost}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
-	create := command.NewCreateWorkHandler(time.Now, agents, registrar, auth, models, commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), command.NewPrepareWorkExecutionHandler(sessions, auth, agentquery.ModelConfigurations{}))
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, registrar, auth, models, commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), command.NewPrepareWorkExecutionHandler(sessions, auth, agentquery.ModelConfigurations{}))
 	prepareNew := func(ctx context.Context, creation command.CreateWork, input command.PrepareWorkExecution) (string, error) {
 		creation.SubjectID, creation.RequestID, creation.InitialExecution = input.SubjectID, input.RequestID, &input
 		return create.Handle(ctx, creation)
@@ -79,7 +79,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.Empty(t, observed, "no repository has a checkout outcome yet")
 
 	buffer := &commandtest.InputBuffer{}
-	create = command.NewCreateWorkHandler(time.Now, agents, sessions, auth, models, commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), command.NewPrepareWorkExecutionHandler(sessions, auth, agentquery.ModelConfigurations{}))
+	create = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, auth, models, commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), command.NewPrepareWorkExecutionHandler(sessions, auth, agentquery.ModelConfigurations{}))
 	// The start's execution reports its checkout before the Harness starts;
 	// an unreachable repository degrades.
 	ref := session.ID

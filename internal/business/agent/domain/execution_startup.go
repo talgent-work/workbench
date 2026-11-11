@@ -120,12 +120,18 @@ func (e *AgentExecution) RecordCreationAnswer(answer CreationAnswer) (bool, erro
 		return answered, nil
 	}
 	if !answer.Refused {
-		e.Environment = answer.EnvironmentID
+		e.Environment, e.StartupSetback = answer.EnvironmentID, ""
 		return true, nil
 	}
-	e.Outcome.Rejected = true
-	e.record(ExecutionStartRejected{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt})
+	e.reject("")
 	return true, nil
+}
+
+// reject rejects its start, naming the cause when one is known (Creation
+// refusal).
+func (e *AgentExecution) reject(cause string) {
+	e.Outcome.Rejected, e.Outcome.RejectionReason = true, cause
+	e.record(ExecutionStartRejected{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt, Reason: cause})
 }
 
 // RecordCredentialDelivery records the credentials delivered into its bound
@@ -166,27 +172,6 @@ func (e *AgentExecution) RecordCredentialsWithdrawn() bool {
 	return true
 }
 
-// MarkInputsChanged records an input change its Managed Computer has not
-// received, so its copies are synced again (Input copy sync).
-func (e *AgentExecution) MarkInputsChanged() bool {
-	if e.Retired() || e.Realization != RealizationManaged {
-		return false
-	}
-	e.Inputs.Due++
-	return true
-}
-
-// RecordInputSync records that its Managed Computer received the input
-// changes due when the sync began, at syncedAt.
-func (e *AgentExecution) RecordInputSync(synced int64, syncedAt time.Time) bool {
-	if e.Realization != RealizationManaged || syncedAt.IsZero() {
-		return false
-	}
-	e.Inputs.Due = max(e.Inputs.Due-synced, 0)
-	e.Inputs.SyncedAt = syncedAt.UTC()
-	return true
-}
-
 // RecordLaunch records the Harness process launched into its bound
 // environment while it admits the launch (Admit environment action); a
 // second process is never recorded.
@@ -197,7 +182,7 @@ func (e *AgentExecution) RecordLaunch(processID string) (bool, error) {
 	if e.Process.ID != "" || !e.AdmitEnvironmentAction(e.Environment) {
 		return false, nil
 	}
-	e.Process.ID = processID
+	e.Process.ID, e.StartupSetback = processID, ""
 	return true, nil
 }
 
@@ -252,6 +237,10 @@ func (e *AgentExecution) failStart() bool {
 		reason = startupCredentialsIncomplete
 	case !e.Process.Prepared:
 		reason = startupEnvironmentIncomplete
+	}
+	if e.StartupSetback != "" {
+		// The last setback is why the step did not complete.
+		reason += " Last error: " + e.StartupSetback + "."
 	}
 	e.Outcome.StartFailure = reason
 	e.record(ExecutionStartFailed{WorkID: e.WorkID, StartAdmittedAt: e.StartAdmittedAt, Reason: reason})

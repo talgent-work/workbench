@@ -27,7 +27,7 @@ func TestCreationRetainsPersonalOwner(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = otherDB.Close() })
 	works := infrastructure.NewAgentWorkRepository(otherDB, time.Now)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(otherDB).WorkOwners), deploymentModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(otherDB, deploymentModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, works, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(otherDB).WorkOwners), deploymentModels(), commandtest.StartCatalog(&identityCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(otherDB, deploymentModels()))
 	id, err := handler.Handle(t.Context(), f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)

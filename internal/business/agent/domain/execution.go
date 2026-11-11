@@ -106,23 +106,18 @@ type CredentialDelivery struct {
 	Withdrawn bool
 }
 
-// InputSync is, on a Managed Computer, the input changes its machine has not
-// received yet and when its copies were last synced.
-type InputSync struct {
-	Due      int64
-	SyncedAt time.Time
-}
-
 // ExecutionOutcome is what the execution established about its start, each
-// reported to its Work: a Startup Deadline failure naming the earliest
-// incomplete Required Startup Step, a rejected or abandoned start, or the
-// loss of its environment.
+// reported to its Work: a start failure naming the earliest incomplete
+// Required Startup Step or the definite cause that keeps it from completing,
+// a rejected start with its cause when one is known, an abandoned start, or
+// the loss of its environment.
 type ExecutionOutcome struct {
-	StartFailure string
-	Rejected     bool
-	Abandoned    bool
-	Lost         bool
-	LossReason   string
+	StartFailure    string
+	Rejected        bool
+	RejectionReason string
+	Abandoned       bool
+	Lost            bool
+	LossReason      string
 }
 
 // RetirementCause is how the Work's execution ended, which alone retires an
@@ -177,13 +172,18 @@ type AgentExecution struct {
 	ExitRequest     ExitRequest
 	Credentials     CredentialDelivery
 	Inputs          InputSync
-	Outcome         ExecutionOutcome
-	State           ExecutionState `validate:"oneof=queued starting running retired released"`
-	Retirement      RetirementCause
-	RetiredAt       time.Time
-	ReleasedAt      time.Time
-	Events          EventCollection
-	Version         int `validate:"gte=0"`
+	// StartupSetback names the cause of the latest failed attempt at one of
+	// its long startup steps, which may pass; empty while none failed since
+	// its start last progressed (bound, prepared or launched). A start failure
+	// at its Startup Deadline carries it.
+	StartupSetback string
+	Outcome        ExecutionOutcome
+	State          ExecutionState `validate:"oneof=queued starting running retired released"`
+	Retirement     RetirementCause
+	RetiredAt      time.Time
+	ReleasedAt     time.Time
+	Events         EventCollection
+	Version        int `validate:"gte=0"`
 }
 
 // ExecutionBeginning is what Begin takes from an admitted start: the Work's

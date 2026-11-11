@@ -22,6 +22,9 @@ type Environment struct {
 	Observation domain.EnvironmentObservation
 	Observed    func(execution *domain.AgentExecution) domain.EnvironmentObservation
 	ObserveErr  error
+	// SpecifyErr fails PrepareCreation, as a specification that cannot be
+	// fixed.
+	SpecifyErr error
 	// Answer is SubmitCreation's answer; SubmitErr loses it. SubmitFunc runs
 	// while the creation waits for its answer.
 	Answer     domain.CreationAnswer
@@ -81,7 +84,7 @@ func (e *Environment) PrepareCreation(_ context.Context, _ *domain.AgentExecutio
 	defer e.mu.Unlock()
 	e.Specified++
 	e.Creations = append(e.Creations, supply)
-	return nil
+	return e.SpecifyErr
 }
 
 func (e *Environment) SubmitCreation(ctx context.Context, execution *domain.AgentExecution) (domain.CreationAnswer, error) {

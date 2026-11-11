@@ -40,3 +40,22 @@ func loadDefaults(t *testing.T) Option {
 	require.NoError(t, loader.Load(&option, loader.WithConfigurationDirectory(directory, "defaults"), loader.WithConfigFilePrefix("controlplane")))
 	return option
 }
+
+// Every Work loads the core plugin and the core API plugin, and a Work of a
+// Project loads nothing more unless a deployment's profile adds the Project
+// scope's plugins.
+func TestEveryWorkLoadsTheCorePluginsByDefault(t *testing.T) {
+	builtIns, err := loadDefaults(t).AgentBuiltInPlugins.Plugins()
+	require.NoError(t, err)
+	require.Equal(t, []string{"talgent", "talgent-api"}, builtIns.Required(""))
+	require.Equal(t, []string{"talgent", "talgent-api"}, builtIns.Required("project"))
+}
+
+// A deployment whose Agents have no direct access to the core's API empties
+// AGENT_API_PLUGIN, and its Works load the core plugin alone.
+func TestWithoutDirectAPIAccessWorksLoadNoAPIPlugin(t *testing.T) {
+	t.Setenv("AGENT_API_PLUGIN", "")
+	builtIns, err := loadDefaults(t).AgentBuiltInPlugins.Plugins()
+	require.NoError(t, err)
+	require.Equal(t, []string{"talgent"}, builtIns.Required(""))
+}

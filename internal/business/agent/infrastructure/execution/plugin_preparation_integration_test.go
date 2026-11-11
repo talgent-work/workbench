@@ -36,6 +36,7 @@ func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.
 	defer cancel()
 	attachedHandle := make(chan string, 1)
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ping", func(http.ResponseWriter, *http.Request) {})
 	mux.HandleFunc("POST /pty", func(w http.ResponseWriter, r *http.Request) {
 		reservations.Add(1)
 		var request struct{ Cwd, Command string }

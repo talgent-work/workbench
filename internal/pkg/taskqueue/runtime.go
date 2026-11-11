@@ -124,6 +124,7 @@ func NewWorker(
 		ShutdownTimeout: shutdown,
 		RetryDelayFunc:  retryDelay(cfg),
 		IsFailure:       func(err error) bool { return !errors.Is(err, ErrRetryLater) },
+		ErrorHandler:    exhaustionLog(logger),
 		// A retry becomes runnable only when the provider next checks delayed
 		// tasks; check as often as the shortest configured delay so the delay
 		// is not stretched to the provider's five-second default.
@@ -147,6 +148,25 @@ func NewWorker(
 
 	appendRunnerLifecycle(lc, worker)
 	return worker, nil
+}
+
+// exhaustionLog logs, as an error, every failure that ends a task: one that
+// exhausted its retry ceiling, or one that asked to skip retries. The provider
+// archives such a task, and nothing else shows that it gave up. Earlier
+// failures are retried and logged by the processor chain.
+func exhaustionLog(logger *slog.Logger) asynq.ErrorHandlerFunc {
+	return func(ctx context.Context, task *asynq.Task, err error) {
+		retried, _ := asynq.GetRetryCount(ctx)
+		ceiling, _ := asynq.GetMaxRetry(ctx)
+		skipped := errors.Is(err, asynq.SkipRetry)
+		if retried < ceiling && !skipped {
+			return
+		}
+		id, _ := asynq.GetTaskID(ctx)
+		queue, _ := asynq.GetQueueName(ctx)
+		logger.ErrorContext(ctx, "task retries exhausted", slog.String("task_type", task.Type()), slog.String("task_id", id), slog.String("queue", queue),
+			slog.Int("retried", retried), slog.Int("max_retry", ceiling), slog.Bool("skipped_retry", skipped), slog.Any("error", err))
+	}
 }
 
 // retryDelay doubles from the configured minimum up to the maximum, with up to

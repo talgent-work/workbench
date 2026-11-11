@@ -23,7 +23,7 @@ import (
 func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
 	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
 	work, err := f.sessions.Get(ctx, id)
@@ -93,7 +93,7 @@ func TestWorkDisconnectionPersistsAndRunningWorksAreFoundByComputer(t *testing.T
 func TestAReachResumeMarkPersistsAndIsFoundByComputer(t *testing.T) {
 	ctx := context.Background()
 	f := newWorkCreationFixture(t)
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
 	id, err := handler.Handle(ctx, f.request)
 	require.NoError(t, err)
 	// The Work recovery its creation wakes hands off its initial task input.
@@ -118,10 +118,12 @@ func TestAReachResumeMarkPersistsAndIsFoundByComputer(t *testing.T) {
 	work, err = f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.True(t, work.RefuseResume(domain.ErrComputerUnreachable))
+	require.False(t, work.RecordResumeRetryFailure())
 	require.NoError(t, f.sessions.Save(ctx, work))
 	work, err = f.sessions.Get(ctx, id)
 	require.NoError(t, err)
 	require.True(t, work.ReachResumeDue)
+	require.Equal(t, 1, work.ReachResumeFailures, "a failed retry of the owed Resume counts toward its ceiling")
 	marked, err = works.ListReachResumeWorkIDs(ctx, work.ComputerID, "", 10)
 	require.NoError(t, err)
 	require.Equal(t, []string{id}, marked)

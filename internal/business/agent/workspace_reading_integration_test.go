@@ -164,7 +164,7 @@ func startWorkspaceReading(t *testing.T, ctx context.Context) *workspaceReading 
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }),
 		fx.Decorate(func(workspacereading.StorageViews) workspacereading.StorageViews { return storage }),
-		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, computers, testCloud("4", "4Gi", "64")),
+		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, computers, testCloud("4", "4Gi", "64")),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(func() kubernetes.Interface { return kube }),

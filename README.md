@@ -139,6 +139,7 @@ moves by two days and every owner is told. The EU pricing rules are kept for the
 |---|---|
 | Deploying on Kubernetes | [Self-hosting guide](docs/self-hosting.md) |
 | Every setting of every process | [Configuration reference](docs/configuration.md) |
+| What an upgrade asks of an operator | [Release notes](docs/release-notes.md) |
 | Processes, stores and repository layout | [Architecture](docs/architecture.md) |
 | Building, testing and releases | [Development](docs/development.md) |
 | Talgent Computer and its gateway | [Talgent Computer protocol](docs/computer-protocol.md) |

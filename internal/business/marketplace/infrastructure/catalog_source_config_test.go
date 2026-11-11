@@ -15,35 +15,37 @@ func acquisition(sources ...infrastructure.CatalogSource) infrastructure.Catalog
 	return infrastructure.CatalogAcquisitionConfig{Workers: 1, RequestTimeoutSeconds: 5, ArchiveBaseURL: "https://catalog.example.invalid/marketplace/archives", Sources: named}
 }
 
-var deployKey = &infrastructure.CatalogSourceCredentials{SSHKeyFile: "/etc/talgent/marketplace-sources/private/ssh-privatekey", KnownHostsFile: "/etc/talgent/marketplace-sources/known_hosts"}
-
-// A private catalog is read with a deploy key from a mounted Secret; its
-// packages reach Works only as the platform's own archives, so it must be
-// owned, and a source address never carries a credential itself.
-func TestCatalogSourceCredentialsRules(t *testing.T) {
+// Every catalog source is public: it is read over HTTPS without credentials,
+// and its address never carries a credential itself.
+func TestCatalogSourceAddressRules(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		source infrastructure.CatalogSource
-		valid  bool
+		name  string
+		uri   string
+		valid bool
 	}{
-		{"an owned SSH source with a deploy key", infrastructure.CatalogSource{Name: "private", URI: "git@github.com:example/private-marketplace.git", Owned: true, Credentials: deployKey}, true},
-		{"an ssh:// source with a deploy key", infrastructure.CatalogSource{Name: "private", URI: "ssh://git@git.example.invalid/catalog.git#main", Owned: true, Credentials: deployKey}, true},
-		{"a public HTTPS source without credentials", infrastructure.CatalogSource{Name: "public", URI: "https://github.com/talgent-work/marketplace.git"}, true},
-		{"a credentialed source that is not owned", infrastructure.CatalogSource{Name: "private", URI: "git@github.com:example/private-marketplace.git", Credentials: deployKey}, false},
-		{"a deploy key for an HTTPS source", infrastructure.CatalogSource{Name: "private", URI: "https://github.com/example/private-marketplace.git", Owned: true, Credentials: deployKey}, false},
-		{"a deploy key without known hosts", infrastructure.CatalogSource{Name: "private", URI: "git@github.com:example/private-marketplace.git", Owned: true, Credentials: &infrastructure.CatalogSourceCredentials{SSHKeyFile: deployKey.SSHKeyFile}}, false},
-		{"a relative key file", infrastructure.CatalogSource{Name: "private", URI: "git@github.com:example/private-marketplace.git", Owned: true, Credentials: &infrastructure.CatalogSourceCredentials{SSHKeyFile: "ssh-privatekey", KnownHostsFile: deployKey.KnownHostsFile}}, false},
-		{"a token in the address", infrastructure.CatalogSource{Name: "private", URI: "https://x-access-token:secret@github.com/example/private-marketplace.git"}, false},
-		{"a token in the query", infrastructure.CatalogSource{Name: "private", URI: "https://catalog.example.invalid/marketplace.json?token=secret"}, false},
+		{"a public HTTPS repository", "https://github.com/talgent-work/marketplace.git", true},
+		{"a public HTTPS repository at a ref", "https://git.example.invalid/catalog.git#main", true},
+		{"a public HTTPS catalog file", "https://catalog.example.invalid/marketplace.json", true},
+		{"a GitHub repository shorthand", "talgent-work/marketplace", true},
+		{"a catalog directory on disk", "/srv/catalogs/marketplace", true},
+		{"a token in the address", "https://x-access-token:secret@github.com/example/marketplace.git", false},
+		{"a token in the query", "https://catalog.example.invalid/marketplace.json?token=secret", false},
+		{"an scp-like SSH address", "git@github.com:example/secret-marketplace.git", false},
+		{"an ssh:// address", "ssh://git@git.example.invalid/secret-catalog.git#main", false},
+		{"a plain HTTP address", "http://catalog.example.invalid/secret-marketplace.git", false},
+		{"a git protocol address", "git://git.example.invalid/secret-catalog.git", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := acquisition(tc.source).Validate()
-			if tc.valid {
-				require.NoError(t, err)
-				return
+			for _, owned := range []bool{false, true} {
+				err := acquisition(infrastructure.CatalogSource{Name: "source", URI: tc.uri, Owned: owned}).Validate()
+				if tc.valid {
+					require.NoError(t, err)
+					continue
+				}
+				require.Error(t, err)
+				require.Contains(t, err.Error(), `"source"`, "a refusal names the source")
+				require.NotContains(t, err.Error(), "secret", "a refusal never echoes the source address")
 			}
-			require.Error(t, err)
-			require.NotContains(t, err.Error(), "secret", "a refusal never echoes the source address")
 		})
 	}
 }

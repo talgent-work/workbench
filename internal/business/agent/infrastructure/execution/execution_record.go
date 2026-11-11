@@ -73,8 +73,17 @@ type executionRecord struct {
 	InputsDue int64 `xorm:"'inputs_due'"`
 	// InputsSyncedAt is when, in Unix milliseconds, a Managed execution's
 	// inputs were last synced; zero before the first.
-	InputsSyncedAt  int64  `xorm:"'inputs_synced_at'"`
-	StartFailure    string `xorm:"'start_failure'"`
+	InputsSyncedAt int64 `xorm:"'inputs_synced_at'"`
+	// InputsSyncFailures counts the failed input sync attempts since the
+	// last sync or change; InputsSyncAbandoned names why the sync stopped
+	// once they reached the ceiling.
+	InputsSyncFailures  int    `xorm:"'inputs_sync_failures'"`
+	InputsSyncAbandoned string `xorm:"'inputs_sync_abandoned'"`
+	StartFailure        string `xorm:"'start_failure'"`
+	// RejectionReason names why the start was rejected, when known.
+	RejectionReason string `xorm:"'rejection_reason'"`
+	// StartupSetback names the latest failed attempt at a long startup step.
+	StartupSetback  string `xorm:"'startup_setback'"`
 	Abandoned       bool   `xorm:"'abandoned'"`
 	EnvironmentLost bool   `xorm:"'environment_lost'"`
 	LossReason      string `xorm:"'loss_reason'"`

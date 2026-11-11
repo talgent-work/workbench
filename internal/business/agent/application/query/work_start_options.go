@@ -39,6 +39,9 @@ type WorkModelOption struct {
 type WorkStartOptionsQuery struct {
 	SubjectID, WorkID string
 	EmployeeID        string
+	// ProjectID is the new Work's Project, whose scope's Built-in Plugins it
+	// loads; empty for a Work without one.
+	ProjectID string
 	// RequiredPlugins are what the caller's new Work requires beside the
 	// definition's; they are offered as required.
 	RequiredPlugins []string

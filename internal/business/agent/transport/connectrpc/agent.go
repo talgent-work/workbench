@@ -428,7 +428,7 @@ func (h *AgentHandler) GetWorkStartOptions(ctx context.Context, request *agentpr
 		return nil, err
 	}
 	value, err := h.application.GetWorkStartOptions(ctx, query.WorkStartOptionsQuery{
-		SubjectID: request.GetSubjectId(), WorkID: request.GetWorkId(), EmployeeID: request.GetEmployeeId(), RequiredPlugins: slices.Clone(request.GetRequiredPlugins()),
+		SubjectID: request.GetSubjectId(), WorkID: request.GetWorkId(), EmployeeID: request.GetEmployeeId(), ProjectID: request.GetProjectId(), RequiredPlugins: slices.Clone(request.GetRequiredPlugins()),
 	})
 	if err != nil {
 		return nil, mapAgentError(err)

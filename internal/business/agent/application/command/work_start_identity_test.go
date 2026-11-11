@@ -60,7 +60,7 @@ func creationFixture(t *testing.T, computer command.ComputerPort) (*sessionStore
 	require.NoError(t, err)
 	store := &sessionStore{}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})
-	handler := command.NewCreateWorkHandler(time.Now, agentStore{agent}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computer, store.preparation(models))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computer, store.preparation(models))
 	request := command.CreateWork{AgentID: agent.ID, SubjectID: "caller",
 		InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/work", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Do the work"}}}
 	return store, handler, request

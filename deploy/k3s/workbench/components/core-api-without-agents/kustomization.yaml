@@ -1,5 +1,6 @@
 # AGENT_CORE_API_ACCESS=disabled: the entry admits only people on the core's
-# product routes, and Agents get no address for them; a deployment that sends
+# product routes, Agents get no address for them, and no Work loads the core
+# API plugin that teaches them those routes; a deployment that sends
 # every Agent call through its platform Connector instead names it in a
 # controlplane profile.
 apiVersion: kustomize.config.k8s.io/v1alpha1
@@ -38,3 +39,5 @@ patches:
                   - name: PLATFORM_API_ADDRESS
                     value: ""
                     valueFrom: null
+                  - name: AGENT_API_PLUGIN
+                    value: ""

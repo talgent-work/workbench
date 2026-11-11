@@ -19,8 +19,11 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 			return query.WorkStartOptions{}, err
 		}
 		value.DefaultStartupAgent = work.Capabilities.StartupAgent
+		// The Work's own scopes decide its Built-in Plugins, not the request's
+		// Project.
+		builtIns := a.BuiltInPlugins.Required(work.ProjectID)
 		for _, plugin := range work.Capabilities.Plugins {
-			value.Plugins = append(value.Plugins, AssembleWorkPluginOption(plugin.Release, false))
+			value.Plugins = append(value.Plugins, AssembleWorkPluginOption(plugin.Release, slices.Contains(builtIns, plugin.Release.Slug)))
 		}
 		for _, connector := range work.Capabilities.Connectors {
 			value.Connectors = append(value.Connectors, domain.ConnectorOption{Name: connector.Name, Required: connector.Required, IncludedByDefault: true, UnavailableOnManaged: !connector.AvailableOnManaged()})
@@ -44,7 +47,7 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 		}
 		base = definition.ProvideCapabilities()
 	}
-	base.RequiredPlugins = domain.WithRequiredPlugins(base.RequiredPlugins, input.RequiredPlugins)
+	base.RequiredPlugins = a.BuiltInPlugins.ComposeRequiredPlugins(input.ProjectID, base.RequiredPlugins, input.RequiredPlugins)
 	personal, err := a.Catalog.ListPersonalPlugins(ctx, input.SubjectID)
 	if err != nil {
 		return query.WorkStartOptions{}, err

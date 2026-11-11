@@ -8,7 +8,8 @@ import "errors"
 // or a Working Work stopped beyond reach with input awaiting processing,
 // marks the Stopped Work ReachResumeDue; its Computer's reconnection then
 // requests the Resume once, so input that arrived meanwhile is read without
-// anyone asking again. Every admitted start clears the mark.
+// anyone asking again. Every admitted start clears the mark, and so do
+// ReachResumeAttempts retries that failed without an answer.
 
 // RefuseResume applies its Computer's refusal of a Resume: a Stopped Work
 // refused because its Computer is unreachable records ReachResumeDue and
@@ -27,7 +28,7 @@ func (s *AgentWork) RefuseResume(refusal error) bool {
 	if refusal == nil || !s.ReachResumeDue {
 		return false
 	}
-	s.ReachResumeDue = false
+	s.spendReachResume()
 	return true
 }
 
@@ -43,8 +44,36 @@ func (s *AgentWork) ResumeOnReconnection(inputPending bool) (resume, changed boo
 	if s.State == WorkStopped && inputPending {
 		return true, false
 	}
-	s.ReachResumeDue = false
+	s.spendReachResume()
 	return false, true
+}
+
+// ReachResumeAttempts bounds the retries of an owed Resume that fail without
+// an answer, such as a Work the platform cannot read or an admission that
+// errs. The Work's recovery retries the Resume on every sweep while its
+// Computer is reachable; the failure reaching the ceiling spends the mark, and
+// the input stays buffered for the Work's next Resume.
+const ReachResumeAttempts = 30
+
+// RecordResumeRetryFailure records a retry of its owed Resume that failed
+// without an answer. It reports whether this failure reached
+// ReachResumeAttempts and spent the mark; any other failure changes the Work
+// only while it is marked.
+func (s *AgentWork) RecordResumeRetryFailure() (spent bool) {
+	if !s.ReachResumeDue {
+		return false
+	}
+	s.ReachResumeFailures++
+	if s.ReachResumeFailures < ReachResumeAttempts {
+		return false
+	}
+	s.spendReachResume()
+	return true
+}
+
+// spendReachResume clears the mark together with its failed retries.
+func (s *AgentWork) spendReachResume() {
+	s.ReachResumeDue, s.ReachResumeFailures = false, 0
 }
 
 // awaitReconnection marks a Managed Work just stopped beyond reach while

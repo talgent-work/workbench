@@ -49,6 +49,9 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	var spec struct{ Env map[string]string }
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
 	processAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/ping" {
+			return // execd answers
+		}
 		if r.URL.Path == "/pty/preparation-handle/ws" {
 			websocket.Handler(func(ws *websocket.Conn) {
 				defer ws.Close()
@@ -84,7 +87,7 @@ func TestConnectedWorkReconnectsWithoutDeliveringCredentials(t *testing.T) {
 	steps := newExecutionSteps(t, provisioning, connections, unread{}, nil, time.Now)
 	counter := &countingRepositoryCredentials{}
 	supplies := command.NewEnvironmentSupplies(counter, authorizationcatalogtest.NoServices{}, directoryMounts{root: t.TempDir()}, &commandtest.Accounts{})
-	steps.handler = command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, steps.executions, steps.environment, steps.harness, steps.desks, supplies)
+	steps.handler = command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, steps.executions, steps.environment, steps.harness, steps.desks, supplies, nil)
 	// Submission with the first delivery, then preparation with the Harness
 	// start and its connection.
 	for range 2 {

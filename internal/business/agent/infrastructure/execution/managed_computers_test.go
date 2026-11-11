@@ -107,7 +107,7 @@ func TestManagedEnvironmentHoldsNoMountsVaultHomeOrPlatformCredentials(t *testin
 }
 
 // A Work of a Project on a Managed Computer mounts no Directory: its
-// environment names its Project, from which the runtime plugin points it to
+// environment names its Project, from which the core plugin points it to
 // the platform Connector's tools, and sets no TALGENT_KNOWLEDGE_ROOT.
 func TestAManagedWorkOfAProjectNamesItsProjectAndNoKnowledgeRoot(t *testing.T) {
 	input := managedRequest()

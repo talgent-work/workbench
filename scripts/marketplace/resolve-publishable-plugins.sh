@@ -9,7 +9,7 @@ SOURCE_ROOT="${TALGENT_PLUGIN_SOURCE_ROOT:-plugins}"
 
 if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
   plugin_ids="$(
-    printf '%s\n' "${INPUT_PLUGIN_ID:-talgent-runtime}" |
+    printf '%s\n' "${INPUT_PLUGIN_ID:-talgent}" |
       tr ',' '\n' |
       awk '{$1=$1}; NF {print}' |
       sort -u

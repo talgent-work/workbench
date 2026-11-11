@@ -3,6 +3,7 @@ package execution
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -37,9 +38,8 @@ func (c NativeLaunchConfig) preparationCommand(layout launchLayout, harness doma
 	name := "talgent-work-" + storageKey(request.WorkID)
 	entries := make([]json.RawMessage, 0, len(request.Capabilities.Plugins))
 	for _, plugin := range request.Capabilities.Plugins {
-		var entry struct{ Name, Version string }
-		if err := json.Unmarshal(plugin.Release.NativeEntry, &entry); err != nil || entry.Name != plugin.Release.Slug || (entry.Version != "" && entry.Version != plugin.Release.Version) {
-			return "", "", domain.ErrExecutionRequest
+		if err := nativeEntryMatches(plugin.Release); err != nil {
+			return "", "", err
 		}
 		entries = append(entries, plugin.Release.NativeEntry)
 	}
@@ -67,4 +67,31 @@ func (c NativeLaunchConfig) preparationCommand(layout launchLayout, harness doma
 // prepares.
 func withCheckoutPlan(command string, plan []byte) string {
 	return "talgent_checkout_plan=" + shellWord(string(plan)) + "; " + command
+}
+
+// nativeEntryMatches checks that a retained release's native entry installs
+// that release: its name is the release's slug and its version, when it names
+// one, the release's. A mismatch is the start's definite failure, naming the
+// release and what its entry says; nothing else of the entry is shown.
+func nativeEntryMatches(release domain.PluginRelease) error {
+	invalid := func(why string) error {
+		return domain.InvalidLaunchSpecification(fmt.Sprintf("Plugin release %s %s is invalid: its native entry %s", release.Slug, release.Version, why))
+	}
+	var entry struct{ Name, Version string }
+	switch {
+	case json.Unmarshal(release.NativeEntry, &entry) != nil:
+		return invalid("is unreadable")
+	case entry.Name != release.Slug:
+		return invalid("is named " + escaped(entry.Name))
+	case entry.Version != "" && entry.Version != release.Version:
+		return invalid("is version " + entry.Version)
+	}
+	return nil
+}
+
+// escaped is text from a catalog as a reason shows it: its control
+// characters escaped.
+func escaped(text string) string {
+	quoted := strconv.Quote(text)
+	return quoted[1 : len(quoted)-1]
 }

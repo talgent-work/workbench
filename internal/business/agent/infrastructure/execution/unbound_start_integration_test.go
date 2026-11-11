@@ -73,6 +73,12 @@ func newUnboundStart(t *testing.T, settle func(*lifecycleFixture)) *cloudStart {
 // creation not yet submitted.
 func newCloudStart(t *testing.T) *cloudStart {
 	t.Helper()
+	return newCloudStartWith(t, domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"})
+}
+
+// newCloudStartWith is newCloudStart for a Work with the capabilities given.
+func newCloudStartWith(t *testing.T, capabilities domain.CapabilitySnapshot) *cloudStart {
+	t.Helper()
 	ctx := context.Background()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
@@ -100,7 +106,7 @@ func newCloudStart(t *testing.T) *cloudStart {
 	f.admission = domain.StartAdmission{AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 	admission := f.admission
 	admission.AdmittedAt = f.now()
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(), Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task"}}, admission)
+	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(), Capabilities: capabilities}, admission)
 	require.NoError(t, err)
 	work.DefinitionVersion = definition.Version
 	require.NoError(t, works.Save(ctx, work))

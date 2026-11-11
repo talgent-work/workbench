@@ -89,7 +89,7 @@ type recoveryFixture struct {
 
 func newRecoveryFixture(app *application.Application, lookups executionLookups, storage command.StoragePort) *recoveryFixture {
 	f := &recoveryFixture{executions: &commandtest.Executions{}, environment: &commandtest.Environment{}, enqueuer: &recordingEnqueuer{}}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, commandtest.Supplies(&commandtest.Storage{}, &commandtest.Accounts{}))
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, commandtest.Supplies(&commandtest.Storage{}, &commandtest.Accounts{}), nil)
 	f.recovery = application.NewRecovery(app, f.enqueuer, f.executions, lookups, reconciliation, storage, nil)
 	return f
 }
@@ -168,7 +168,7 @@ func TestWakingAWorkAlsoWakesItsUnreleasedExecution(t *testing.T) {
 	for _, options := range f.enqueuer.options {
 		retries, set := options.MaxRetry()
 		require.True(t, set)
-		require.Greater(t, retries, 1_000_000, "a recovery obligation is never abandoned")
+		require.Equal(t, agenttask.RecoveryRetries, retries, "a wake that keeps failing ends at its ceiling; the sweep wakes the object again")
 		require.Positive(t, options.Timeout())
 	}
 	require.NoError(t, f.recovery.WakeWork(context.Background(), "work-without-execution"))

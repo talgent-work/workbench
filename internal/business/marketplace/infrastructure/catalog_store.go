@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -24,19 +25,20 @@ type SourceReleases = application.SourceReleases
 type CatalogStore struct {
 	engine                 *xorm.Engine
 	directory, name, owner string
+	logger                 *slog.Logger
 }
 
 var _ application.CatalogPort = (*CatalogStore)(nil)
 var _ application.CatalogPublicationPort = (*CatalogStore)(nil)
 
-func NewCatalogStore(engine *xorm.Engine, directory, name, owner string) (*CatalogStore, error) {
-	if engine == nil || !filepath.IsAbs(directory) || name == "" || owner == "" {
-		return nil, errors.New("marketplace: database, catalog path, name and owner are required")
+func NewCatalogStore(engine *xorm.Engine, directory, name, owner string, logger *slog.Logger) (*CatalogStore, error) {
+	if engine == nil || !filepath.IsAbs(directory) || name == "" || owner == "" || logger == nil {
+		return nil, errors.New("marketplace: database, catalog path, name, owner and logger are required")
 	}
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, err
 	}
-	return &CatalogStore{engine: engine, directory: directory, name: name, owner: owner}, nil
+	return &CatalogStore{engine: engine, directory: directory, name: name, owner: owner, logger: logger}, nil
 }
 func (s *CatalogStore) Publish(ctx context.Context, sources []SourceReleases) error {
 	lock := flock.New(filepath.Join(s.directory, "catalog.lock"))
@@ -48,7 +50,7 @@ func (s *CatalogStore) Publish(ctx context.Context, sources []SourceReleases) er
 		return ctx.Err()
 	}
 	defer lock.Unlock()
-	return application.PublishCatalog(ctx, s, sources)
+	return application.PublishCatalog(ctx, s, sources, s.logger)
 }
 func (s *CatalogStore) PublishedRelease(ctx context.Context, source, slug, version string) (*application.PluginRelease, error) {
 	var row catalogReleaseDO
@@ -70,7 +72,8 @@ func (s *CatalogStore) RetainRelease(ctx context.Context, release application.Pl
 	now := time.Now().UnixMilli()
 	// Publication identity remains source + slug + version. The UUID is only a
 	// database locator; duplicate inserts must agree on the immutable content.
-	_, err = s.engine.Context(ctx).Exec(`INSERT INTO marketplace_plugin_release (id,source,slug,release_version,metadata,version,created_at,updated_at,deleted_at) VALUES (?,?,?,?,?,1,?,?,0) ON DUPLICATE KEY UPDATE id=id`, uuid.Must(uuid.NewV7()).String(), release.Source, release.Slug, release.Version, string(encoded), now, now)
+	// A release retired with its source comes back when the source does.
+	_, err = s.engine.Context(ctx).Exec(`INSERT INTO marketplace_plugin_release (id,source,slug,release_version,metadata,version,created_at,updated_at,deleted_at) VALUES (?,?,?,?,?,1,?,?,0) ON DUPLICATE KEY UPDATE version=IF(deleted_at=0,version,version+1),updated_at=IF(deleted_at=0,updated_at,VALUES(updated_at)),deleted_at=0`, uuid.Must(uuid.NewV7()).String(), release.Source, release.Slug, release.Version, string(encoded), now, now)
 	if err != nil {
 		return oops.With("operation", "marketplace.release.retain").Wrap(err)
 	}

@@ -3,6 +3,7 @@
 package infrastructure_test
 
 import (
+	"log/slog"
 	"testing"
 
 	"connectrpc.com/connect/v2"
@@ -37,7 +38,7 @@ func TestSensitiveSelectionIsAvailableOnlyToTrustedOwnerScopedExecution(t *testi
 }
 
 func TestSensitiveDefaultsAreHiddenFromDiscoveryButRetainedForExecution(t *testing.T) {
-	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
+	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
 	release := catalogRelease("owned", "tools", "1")
 	release.NativeEntry = []byte(`{"name":"tools","version":"1","userConfig":{"token":{"sensitive":true,"default":"hidden-fixture-default"}}}`)

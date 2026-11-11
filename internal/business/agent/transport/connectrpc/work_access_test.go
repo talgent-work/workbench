@@ -63,7 +63,7 @@ func newAccessFixtureWith(t *testing.T, views application.WorkspaceReadingPort) 
 
 	dispatcher.Subscribe(eventhandler.NewWorkAccessWithdrawals(f.withdrawals, slog.Default()))
 	app := &application.Application{Definitions: agents, Works: sessions, WorkPrincipals: ownerAuthorization{sessions}, WorkQueries: sessionViews{sessions: sessions}, Logger: slog.Default(),
-		Commands:   application.Commands{CreateWork: command.NewCreateWorkHandler(time.Now, agents, sessions, ownerAuthorization{sessions}, query.NewModelConfigurations(), nil, nil, nil)},
+		Commands:   application.Commands{CreateWork: command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, ownerAuthorization{sessions}, query.NewModelConfigurations(), nil, nil, nil)},
 		Queries:    application.Queries{GetWorkView: query.NewGetWorkViewHandler(ownerAuthorization{sessions}, sessionViews{sessions: sessions})},
 		Workspaces: views,
 	}

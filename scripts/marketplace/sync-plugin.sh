@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copies one plugin into the public marketplace checkout and updates its entry
+# alone, so other repositories' publications into the same marketplace stay as
+# they are. The entry is a git-subdir source at the release tag publish.sh
+# pushes, `<plugin>-v<version>`.
 set -euo pipefail
 
 ROOT_DIR="$(git rev-parse --show-toplevel)"
@@ -6,19 +10,10 @@ PLUGIN_ID="${TALGENT_PLUGIN_ID:-${1:-}}"
 MARKETPLACE_DIR="${TALGENT_MARKETPLACE_DIR:-.marketplace-publish}"
 VERSION_BUMP="${TALGENT_VERSION_BUMP:-patch}"
 SOURCE_URL="${TALGENT_PLUGIN_SOURCE_URL:-https://github.com/talgent-work/marketplace.git}"
-SOURCE_REF="${TALGENT_PLUGIN_SOURCE_REF:-}"
-# git-subdir entries point Works at the public repository's tag; relative
-# entries are read by the platform with the catalog's own access and reach
-# Works as its archives, as a private marketplace's must.
-SOURCE_KIND="${TALGENT_PLUGIN_SOURCE_KIND:-git-subdir}"
 
 case "${VERSION_BUMP}" in
   patch|minor) ;;
   *) echo "TALGENT_VERSION_BUMP must be patch or minor" >&2; exit 2 ;;
-esac
-case "${SOURCE_KIND}" in
-  git-subdir|relative) ;;
-  *) echo "TALGENT_PLUGIN_SOURCE_KIND must be git-subdir or relative" >&2; exit 2 ;;
 esac
 
 if [ -z "${PLUGIN_ID}" ]; then
@@ -65,6 +60,16 @@ next_version() {
   else
     printf '%s.%s.%s\n' "${major}" "${minor}" "$((patch + 1))"
   fi
+}
+
+# version_below a b: whether x.y.z version a orders before b.
+version_below() {
+  local a_major a_minor a_patch b_major b_minor b_patch
+  IFS=. read -r a_major a_minor a_patch <<<"$1"
+  IFS=. read -r b_major b_minor b_patch <<<"$2"
+  (( a_major != b_major )) && { (( a_major < b_major )); return; }
+  (( a_minor != b_minor )) && { (( a_minor < b_minor )); return; }
+  (( a_patch < b_patch ))
 }
 
 update_json_file() {
@@ -121,6 +126,10 @@ else
   fi
 fi
 require_version "${current_version}"
+# The plugin's own manifest names the version it starts from: a first
+# publication takes it, and no release goes below it.
+source_version="$(jq -r '.version // "0.0.0"' "${SOURCE_PLUGIN_JSON}")"
+require_version "${source_version}"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
@@ -143,12 +152,18 @@ promote_release="false"
 if [ "${VERSION_BUMP}" = "minor" ] && [ "${current_version##*.}" != "0" ]; then
   promote_release="true"
 fi
+if version_below "${current_version}" "${source_version}"; then
+  content_changed="true"
+fi
 if [ "${content_changed}" = "false" ] && [ "${promote_release}" = "false" ]; then
   printf 'plugin_id=%s\nversion=%s\nchanged=false\n' "${PLUGIN_ID}" "${current_version}"
   exit 0
 fi
 
 new_version="$(next_version "${current_version}")"
+if version_below "${new_version}" "${source_version}"; then
+  new_version="${source_version}"
+fi
 
 rm -rf "${TARGET_DIR}"
 mkdir -p "$(dirname "${TARGET_DIR}")"
@@ -156,31 +171,20 @@ cp -a "${SOURCE_DIR}" "${TARGET_DIR}"
 
 update_json_file "${PLUGIN_JSON}" --arg version "${new_version}" '.version = $version'
 source_path="plugins/${PLUGIN_ID}"
-SOURCE_REF="${SOURCE_REF:-${PLUGIN_ID}-v${new_version}}"
-source_manifest="$(jq '{description, displayName, author} | with_entries(select(.value != null and .value != ""))' "${SOURCE_PLUGIN_JSON}")"
+source_manifest="$(jq '{description, displayName, author, license} | with_entries(select(.value != null and .value != ""))' "${SOURCE_PLUGIN_JSON}")"
 update_json_file "${MARKETPLACE_JSON}" \
   --arg name "${PLUGIN_ID}" \
   --arg version "${new_version}" \
   --arg source_url "${SOURCE_URL}" \
-  --arg source_ref "${SOURCE_REF}" \
   --arg source_path "${source_path}" \
-  --arg source_kind "${SOURCE_KIND}" \
   --argjson source_manifest "${source_manifest}" '
     def plugin_source:
-      if $source_kind == "relative" then ("./" + $source_path)
-      else {
-        source: "git-subdir",
-        url: $source_url,
-        path: $source_path,
-        ref: $source_ref
-      } end;
-    def generated_entry:
-      ({name: $name, source: plugin_source, version: $version} + $source_manifest);
+      {source: "git-subdir", url: $source_url, path: $source_path, ref: ($name + "-v" + $version)};
 
     if any(.plugins[]; .name == $name) then
-        (.plugins[] | select(.name == $name)) |= (. + {version: $version, source: plugin_source})
+        (.plugins[] | select(.name == $name)) |= (. + $source_manifest + {version: $version, source: plugin_source})
       else
-        .plugins += [generated_entry]
+        .plugins += [{name: $name, source: plugin_source, version: $version} + $source_manifest]
       end
   '
 

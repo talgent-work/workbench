@@ -49,8 +49,14 @@ func WithRequiredPlugins(definition, caller []string) []string {
 }
 
 func (c CapabilityConfiguration) Validate() error {
+	return validateRequiredPlugins(c.RequiredPlugins)
+}
+
+// validateRequiredPlugins admits a list of Required Plugin slugs, each a
+// valid Plugin name named once.
+func validateRequiredPlugins(slugs []string) error {
 	seen := map[string]bool{}
-	for _, slug := range c.RequiredPlugins {
+	for _, slug := range slugs {
 		if !pluginconfig.ValidPluginName(slug) || seen[slug] {
 			return ErrInvalidCapabilities
 		}

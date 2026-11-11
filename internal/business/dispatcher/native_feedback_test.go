@@ -1,7 +1,9 @@
 package dispatcher
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -58,6 +60,32 @@ func TestRefusedExitFactIsNotRetried(t *testing.T) {
 		t.Fatal("a refused exit fact kept the stream waiting")
 	}
 	require.Len(t, reporter.kinds(), 1)
+}
+
+// An exit fact Agent keeps failing to take is retried up to its ceiling, then
+// given up as undelivered with an error, so the stream ends unacknowledged
+// and a later connection redelivers it, instead of retrying for as long as
+// this replica reads the stream.
+func TestAnExitFactAgentKeepsFailingIsGivenUpAtItsCeiling(t *testing.T) {
+	reporter := &scriptedReporter{err: errors.New("agent unavailable")}
+	var logs bytes.Buffer
+	queue := newFeedbackQueue(reporter, slog.New(slog.NewJSONHandler(&logs, nil)))
+	queue.retryBase, queue.exitAttempts = time.Millisecond, 4
+	defer queue.close()
+	queue.push(command.ExecutionObservation{WorkID: "work", ProcessID: "process", Kind: command.ExecutionExited})
+	select {
+	case <-queue.undelivered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the exit fact was retried past its ceiling")
+	}
+	require.Len(t, reporter.kinds(), 4)
+	select {
+	case <-queue.exited:
+		t.Fatal("an undelivered exit fact is not acknowledged")
+	default:
+	}
+	require.Contains(t, logs.String(), `"level":"ERROR","msg":"native exit fact not delivered"`)
+	require.Contains(t, logs.String(), `"error":"agent unavailable"`)
 }
 
 // A full queue drops superseded progress before any other observation and

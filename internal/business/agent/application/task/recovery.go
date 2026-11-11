@@ -6,7 +6,6 @@
 package task
 
 import (
-	"math"
 	"strings"
 	"time"
 
@@ -26,12 +25,29 @@ const (
 // RecoveryAttemptTimeout bounds one attempt of a task on the recovery queue.
 const RecoveryAttemptTimeout = 2 * time.Minute
 
-// Persistent is the policy of a task that is never abandoned: a recovery
-// obligation, or a request whose delivery Agent took on. The worker's retry
-// delay bounds how often a failing task is retried; timeout bounds one
-// attempt.
-func Persistent(timeout time.Duration) []taskqueue.EnqueueOption {
-	return []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(math.MaxInt32), taskqueue.WithTimeout(timeout)}
+// RecoveryRetries bounds the retries of one wake of a recovery task. A wake
+// that exhausts them is archived with its last error, which the worker logs
+// as an error; the obligation itself stays on its object, so the periodic
+// sweep wakes it again once per interval, and the next wake replaces the
+// archived task. An execution's long step ends no later than its Startup
+// Deadline, which fails the start naming its last setback.
+const RecoveryRetries = 10
+
+// Recovery is the policy of a recovery task: at most RecoveryRetries retries,
+// each attempt bounded by timeout.
+func Recovery(timeout time.Duration) []taskqueue.EnqueueOption {
+	return []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(RecoveryRetries), taskqueue.WithTimeout(timeout)}
+}
+
+// ReclamationRetries bounds the delivery of a Work Reclamation Request: with
+// the recovery queue's delays, Storage may be away for about twenty minutes.
+// Agent keeps no reclamation obligation, so a request that exhausts them is
+// a terminal reclamation failure, logged as an error naming the Work.
+const ReclamationRetries = 25
+
+// Reclamation is the policy of a Work Reclamation Request task.
+func Reclamation() []taskqueue.EnqueueOption {
+	return []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(ReclamationRetries), taskqueue.WithTimeout(RecoveryAttemptTimeout)}
 }
 
 const (

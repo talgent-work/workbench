@@ -190,7 +190,7 @@ func (e *AgentExecution) bind(observation EnvironmentObservation) []ExecutionSte
 			if i := slices.IndexFunc(live, func(o ObservedEnvironment) bool { return o.Running }); i >= 0 {
 				first = live[i]
 			}
-			e.Environment = first.ID
+			e.Environment, e.StartupSetback = first.ID, ""
 		}
 	}
 	return deleteOthers(observation, e.Environment)
@@ -271,18 +271,6 @@ func (e *AgentExecution) credentialsDue(observation EnvironmentObservation, now 
 		return true
 	}
 	return observation.ModelDigest != "" && observation.ModelDigest != e.Credentials.Digest
-}
-
-// inputsDue reports a Managed Computer's input copies a change left due, or
-// synced longer ago than their refresh interval (Managed input copies).
-func (e *AgentExecution) inputsDue(observation EnvironmentObservation, now time.Time) bool {
-	if e.Realization != RealizationManaged {
-		return false
-	}
-	if e.Inputs.Due > 0 || e.Inputs.SyncedAt.IsZero() {
-		return true
-	}
-	return observation.InputsRefresh > 0 && !now.Before(e.Inputs.SyncedAt.Add(observation.InputsRefresh))
 }
 
 // release deletes every environment a retired execution owns that is not

@@ -32,11 +32,6 @@ export function pluginPresentation(plugin: PresentablePlugin) {
   };
 }
 
-// The core runtime Plugin is required by every person's Agent definition; it
-// is always enabled and cannot be installed or removed personally.
-export const platformPluginSlugs: readonly string[] = ["talgent-runtime"];
-export const isPlatformPlugin = (slug: string) => platformPluginSlugs.includes(slug);
-
 export function groupPluginsByCategory<T extends PresentablePlugin>(plugins: T[]) {
   const groups = new Map<string, T[]>();
   for (const plugin of plugins) {

@@ -200,9 +200,9 @@ and refuses a value a switch does not take. The defaults are the base as describ
 
 | Key | Default | Turned |
 |---|---|---|
-| `AGENT_CORE_API_ACCESS` | `enabled`: the entry admits both Principals on the core's routes, each procedure admitting what its contract declares, and Agents, in sandboxes and on Managed Computers, call the core's public APIs at `WORKBENCH_ORIGIN` under their own Identity Tokens | `disabled`: `web-auth` admits only user tokens, and Agents get no address for the core (`PLATFORM_API_ADDRESS` is empty), as where a platform Connector carries every Agent call |
+| `AGENT_CORE_API_ACCESS` | `enabled`: the entry admits both Principals on the core's routes, each procedure admitting what its contract declares, and Agents, in sandboxes and on Managed Computers, call the core's public APIs at `WORKBENCH_ORIGIN` under their own Identity Tokens | `disabled`: `web-auth` admits only user tokens, and Agents get no address for the core (`PLATFORM_API_ADDRESS` is empty), and no Work loads the core API plugin `talgent-api` (`AGENT_API_PLUGIN` is empty), as where a platform Connector carries every Agent call |
 | `ADDITIONAL_ENTRY_HOST` | empty: every route serves `WORKBENCH_HOST` only | a host name: the `web-api`, `auth` and `computer` routes serve it too; `workbench-web` stays on `WORKBENCH_HOST`. Add the host to the proxy in front of the Gateway |
-| `CONTROLPLANE_PROFILE` | empty: controlplane reads its defaults only | a profile name: controlplane also reads `controlplane_<profile>.yml` from ConfigMap `controlplane-profile`, which you provide, and mounts Secret `controlplane-profile-secrets`, if present, at `/etc/talgent/profile` (mode 0400) |
+| `CONTROLPLANE_PROFILE` | empty: controlplane reads its defaults only | a profile name: controlplane also reads `controlplane_<profile>.yml` from ConfigMap `controlplane-profile`, which you provide |
 
 A profile is merged over controlplane's defaults: maps merge, lists replace
 ([configuration reference](configuration.md#how-a-process-reads-its-configuration)). Its
@@ -210,7 +210,8 @@ A profile is merged over controlplane's defaults: maps merge, lists replace
 the environment file too. A deployment whose Agents reach the platform only through a
 platform Connector turns `AGENT_CORE_API_ACCESS` off and, in its profile, sets the Connector's
 address (`agent-execution.environment.TALGENT_GATEWAY_ADDRESS`,
-`marketplace.platform-connector.gateway-address`) and the `agent-computer` addresses above. After changing the profile ConfigMap or Secret,
+`marketplace.platform-connector.gateway-address`) and the `agent-computer` addresses above. A deployment whose Works of a Project load a plugin of
+its own lists it in its profile's `agent-built-in-plugins.project`. After changing the profile ConfigMap,
 `kubectl -n talgent rollout restart deployment/controlplane`.
 
 ## 4. Secrets
@@ -431,11 +432,24 @@ controlplane's log).
 
 ## 9. Operations
 
-- **Upgrading.** Check out the new release and deploy it as in [section 7](#7-deploy); the
-  schema step creates what the release adds. A release that adds a key to `environment.env`
-  needs it in the environment: deploy once with `TALGENT_ENVIRONMENT_FILE` setting it. Services may be upgraded one at a time with
-  `kubectl -n talgent set image deploy/<service> <service>=<image>`; record the image you
-  replace, it is the rollback target.
+- **Upgrading.** Read the [release notes](release-notes.md) for what a release asks of you
+  first, such as a data migration, and follow its order. Check out the new release and deploy it
+  as in [section 7](#7-deploy); the schema step creates what the release adds. A release that adds
+  a key to `environment.env` needs it in the environment: deploy once with
+  `TALGENT_ENVIRONMENT_FILE` setting it.
+  - Upgrade every Workbench service image together: `controlplane`, `dispatcher`,
+    `streamgateway`, `computer-gateway` and `workbench-web`. Extensions check each service's
+    contracts version when they start, so a service left on the previous image keeps them from
+    starting. Deploying with `TALGENT_IMAGE_TAG` does this; record the images you replace, they
+    are the rollback target.
+  - Apply a release's migrations while no one is starting a Work. A start in flight across a
+    migration may be rejected; its Work then needs a Restart.
+  - Before a migration that points stored data at a catalog Plugin, synchronize the catalog and
+    confirm it lists that Plugin: `scripts/deploy/request-catalog-sync.sh` reads the agent
+    control token from Secret `native-execution-control`, port-forwards to `controlplane:8080`,
+    calls `marketplace.private.v1.SynchronizationService/RequestSynchronization` (a `POST` with
+    `Content-Type: application/json`), and waits at most `CATALOG_SYNC_TIMEOUT_SECONDS`
+    (default 600) for the run, exiting 0 only when it succeeded.
 - **Objects a release drops.** Deploying applies the manifests without pruning, so delete what
   a release no longer renders once nothing uses it. The release with the Mapped View drops the
   read-only claim of every Directory: once no workload mounts it,
@@ -478,4 +492,11 @@ controlplane's log).
 - **Marketplace.** controlplane synchronizes its catalog sources
   ([`marketplace.synchronization`](configuration.md#marketplace)). Release
   metadata lives in the Workbench database and archives in `talgent/marketplace/` on the JuiceFS
-  volume; keep both, since Works keep using the releases they started with.
+  volume; keep both, since Works keep using the releases they started with. Removing a source
+  from the configuration retires it at the next synchronization: its releases leave the
+  catalog and the database, and each of its archives that no configured source's release
+  shares is deleted and no longer served at `/marketplace/archives/`. controlplane logs each
+  retired release and removed archive. A Work takes up the current release of its Plugins by
+  slug at each start, Resume or Restart; a Plugin no configured source lists any more fails to
+  install there, and the rest of the start proceeds. Adding the source back publishes it
+  again.

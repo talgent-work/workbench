@@ -3,8 +3,8 @@ import { Button, Dropdown, Label, Tooltip } from "@heroui/react";
 import type { InstalledPlugin, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { AlertTriangle, ChevronRight, Lock, MoreHorizontal, Plus } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { useInstalledPlugins, usePluginActions, usePluginCatalog } from "../../lib/marketplace-catalog";
-import { groupPluginsByCategory, isPlatformPlugin, pluginPresentation } from "../../lib/marketplace-plugins";
+import { useAlwaysEnabledPlugins, useInstalledPlugins, usePluginActions, usePluginCatalog } from "../../lib/marketplace-catalog";
+import { groupPluginsByCategory, pluginPresentation } from "../../lib/marketplace-plugins";
 import { marketplacePaths } from "../../lib/marketplace-routes";
 import { notify } from "../../lib/notifications";
 import { installationNeedsSetup, missingRequired } from "../../lib/plugin-parameters";
@@ -18,6 +18,7 @@ const matches = (plugin: PluginSummary, query: string) => `${pluginPresentation(
 export function PluginList({ category }: { category?: string }) {
   const catalog = usePluginCatalog();
   const installed = useInstalledPlugins();
+  const required = useAlwaysEnabledPlugins();
   const [query, setQuery] = useState("");
   const [removing, setRemoving] = useState<{ plugin: PluginSummary; installed: InstalledPlugin } | null>(null);
   const actions = usePluginActions();
@@ -36,7 +37,7 @@ export function PluginList({ category }: { category?: string }) {
     {catalog.data && catalog.data.length > 0 && (groups.length === 0 ? <NothingMatches onClear={() => setQuery("")} />
       : groups.map(group => <section key={group.category} className="mk-section" aria-label={group.category}>
         {!category && <Link className="mk-section-head" to={marketplacePaths.pluginCategory(group.category)}>{group.category}<ChevronRight size={18} aria-hidden="true" /></Link>}
-        <ul className="mk-rows">{(category ? group.plugins : group.plugins.slice(0, 6)).map(plugin => <PluginRow key={plugin.slug} plugin={plugin} installed={installed.data?.get(plugin.slug)} onUninstall={value => setRemoving({ plugin, installed: value })} />)}</ul>
+        <ul className="mk-rows">{(category ? group.plugins : group.plugins.slice(0, 6)).map(plugin => <PluginRow key={plugin.slug} plugin={plugin} alwaysEnabled={required.isAlwaysEnabled(plugin.slug)} requiredPending={required.isPending} installed={installed.data?.get(plugin.slug)} onUninstall={value => setRemoving({ plugin, installed: value })} />)}</ul>
       </section>))}
     <ConfirmDialog isOpen={removing !== null} onOpenChange={open => { if (!open) setRemoving(null); }} title={`Uninstall ${removing ? pluginPresentation(removing.plugin).name : ""}?`} confirmLabel="Uninstall" onConfirm={() => { if (removing) uninstall(removing); }}>
       <p>Your saved settings are removed. Works already running keep it. Connectors and connected Providers aren’t affected.</p>
@@ -44,7 +45,7 @@ export function PluginList({ category }: { category?: string }) {
   </>;
 }
 
-function PluginRow({ plugin, installed, onUninstall }: { plugin: PluginSummary; installed?: InstalledPlugin; onUninstall: (installed: InstalledPlugin) => void }) {
+function PluginRow({ plugin, alwaysEnabled, requiredPending, installed, onUninstall }: { plugin: PluginSummary; alwaysEnabled: boolean; requiredPending: boolean; installed?: InstalledPlugin; onUninstall: (installed: InstalledPlugin) => void }) {
   const navigate = useNavigate();
   const actions = usePluginActions();
   const { name } = pluginPresentation(plugin);
@@ -68,7 +69,7 @@ function PluginRow({ plugin, installed, onUninstall }: { plugin: PluginSummary; 
       <PluginIcon plugin={plugin} />
       <span className="mk-row-text"><strong>{name}{needsSetup && <AlertTriangle size={13} className="text-warning" aria-label="Needs attention" />}</strong><span>{installed && !installed.enabled ? "Disabled" : plugin.description}</span></span>
     </Link>
-    {isPlatformPlugin(plugin.slug) ? <Tooltip><Tooltip.Trigger aria-label="Always enabled" className="mk-row-lock"><Lock size={16} /></Tooltip.Trigger><Tooltip.Content>Always enabled</Tooltip.Content></Tooltip>
+    {alwaysEnabled ? <Tooltip><Tooltip.Trigger aria-label="Always enabled" className="mk-row-lock"><Lock size={16} /></Tooltip.Trigger><Tooltip.Content>Always enabled</Tooltip.Content></Tooltip>
       : installed ? <Dropdown><Button size="sm" variant="ghost" isIconOnly aria-label={`${name} options`}><MoreHorizontal size={18} /></Button>
         <Dropdown.Popover placement="bottom end"><Dropdown.Menu aria-label={`${name} options`} onAction={key => {
           if (key === "open") navigate(marketplacePaths.plugin(plugin.slug));
@@ -79,6 +80,6 @@ function PluginRow({ plugin, installed, onUninstall }: { plugin: PluginSummary; 
           <Dropdown.Item id="toggle" textValue={installed.enabled ? "Disable" : "Enable"}><Label>{installed.enabled ? "Disable" : "Enable"}</Label></Dropdown.Item>
           <Dropdown.Item id="uninstall" textValue="Uninstall" variant="danger"><Label>Uninstall…</Label></Dropdown.Item>
         </Dropdown.Menu></Dropdown.Popover></Dropdown>
-        : <Button size="sm" variant="ghost" isIconOnly isPending={actions.install.isPending} aria-label={missingRequired(plugin.parameters, {}).length ? `Set up ${name}` : `Install ${name}`} onPress={install}><Plus size={20} strokeWidth={1.75} /></Button>}
+        : <Button size="sm" variant="ghost" isIconOnly isPending={actions.install.isPending} isDisabled={requiredPending} aria-label={missingRequired(plugin.parameters, {}).length ? `Set up ${name}` : `Install ${name}`} onPress={install}><Plus size={20} strokeWidth={1.75} /></Button>}
   </li>;
 }

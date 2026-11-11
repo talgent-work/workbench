@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/execd"
@@ -36,15 +37,25 @@ func (n *NativeConnections) discardPluginPreparation(ctx context.Context, record
 	return nil
 }
 
+// execdReadiness bounds the wait for a fresh environment's execd, which starts
+// about a second after its sandbox runs. It stays well inside the Startup
+// Deadline; an execd that has not answered by then fails the attempt, naming
+// it, for the step's bounded retry.
+const execdReadiness = time.Minute
+
 // startPreparation creates the preparation process with the start's checkout
 // plan: the repositories its LaunchSpecification leaves to it, fixed when the
-// process is created.
+// process is created. It is the first command into a fresh environment, so it
+// waits for execd to answer first.
 func (n *NativeConnections) startPreparation(ctx context.Context, record *executionRecord, client *execd.Client, launch domain.LaunchSpecification) error {
 	if record.PreparationCommand == "" {
 		return domain.ErrExecutionRequest
 	}
 	encoded, err := json.Marshal(checkoutPlan(launch))
 	if err != nil {
+		return err
+	}
+	if err := client.AwaitReady(ctx, execdReadiness); err != nil {
 		return err
 	}
 	id, err := client.Create(ctx, "/workspace", withCheckoutPlan(record.PreparationCommand, encoded))

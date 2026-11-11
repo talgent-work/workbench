@@ -32,5 +32,5 @@ Images build with `scripts/deploy/build-and-push-images.sh` (see the
 Every merge to the main branch is a release `vX.Y.Z`. That one version names the Go module, the
 npm packages (`@talgent/workbench-ui`, which takes `@talgent/contracts` from the web app
 that hosts it, and `@talgent/computer`), the images under `ghcr.io/talgent-work`, the Kubernetes base with
-its schema, and the core runtime plugin.
+its schema, and the core plugins.
 

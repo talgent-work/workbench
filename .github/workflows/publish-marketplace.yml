@@ -15,7 +15,7 @@ on:
       plugin_id:
         required: false
         type: string
-        default: talgent-runtime
+        default: talgent
         description: Comma-separated plugin directory name(s) under plugins/ to publish.
       dry_run:
         required: false
@@ -31,14 +31,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The plugins publish to the public marketplace as git-subdir entries.
+  # The core plugins publish to the public marketplace, which other
+  # repositories publish their plugins into too. scripts/marketplace/
+  # publish.sh touches only these plugins' entries and packages, retires the
+  # plugins they supersede, and publishes again onto main when another
+  # repository pushed meanwhile; the concurrency group below serializes only
+  # this repository's runs.
+  #
+  # Pushing needs the repository secret MARKETPLACE_DEPLOY_KEY: the private
+  # half of a deploy key with write access to talgent-work/marketplace. A dry
+  # run needs none.
   publish:
     runs-on: ubuntu-latest
     env:
       MARKETPLACE_REPOSITORY: talgent-work/marketplace
       TALGENT_MARKETPLACE_DIR: .marketplace-publish
-      TALGENT_PLUGIN_SOURCE_KIND: git-subdir
-      TALGENT_PLUGIN_SOURCE_URL: https://github.com/talgent-work/marketplace.git
       TALGENT_PLUGIN_SOURCE_ROOT: ${{ inputs.source_ref != '' && '.plugin-source/plugins' || 'plugins' }}
     steps:
     - uses: actions/checkout@v6
@@ -100,7 +107,7 @@ jobs:
       run: |
         test -n "${DEPLOY_KEY}" || { echo "::error::MARKETPLACE_DEPLOY_KEY is required to publish ${MARKETPLACE_REPOSITORY}"; exit 1; }
 
-    - name: Checkout authoritative marketplace repository
+    - name: Checkout public marketplace repository
       if: steps.plugin.outputs.publishable == 'true'
       uses: actions/checkout@v6
       with:
@@ -109,84 +116,14 @@ jobs:
         path: .marketplace-publish
         ssh-key: ${{ secrets.MARKETPLACE_DEPLOY_KEY }}
 
-    - name: Sync selected plugins
+    - name: Publish selected plugins
       if: steps.plugin.outputs.publishable == 'true'
-      id: sync
       env:
         TALGENT_VERSION_BUMP: ${{ steps.mode.outputs.version_bump }}
-        PLUGIN_IDS: ${{ steps.plugin.outputs.plugin_ids }}
-      run: |
-        set -euo pipefail
-        output="$(TALGENT_PLUGIN_IDS="${PLUGIN_IDS}" bash scripts/marketplace/sync-plugins.sh)"
-        printf '%s\n' "$output"
-        if [ -z "$output" ]; then
-          echo "::error::sync script did not print any published plugin rows"
-          exit 1
-        fi
-        {
-          echo "published_plugins<<EOF"
-          printf '%s\n' "$output"
-          echo "EOF"
-        } >> "$GITHUB_OUTPUT"
-
-    - name: Validate marketplace
-      if: steps.plugin.outputs.publishable == 'true'
-      env:
-        TALGENT_REQUIRE_PLUGIN: "true"
-        PLUGIN_IDS: ${{ steps.plugin.outputs.plugin_ids }}
-      run: |
-        set -euo pipefail
-        while IFS= read -r plugin_id; do
-          [ -n "${plugin_id}" ] || continue
-          PLUGIN_ID="${plugin_id}"
-          TALGENT_PLUGIN_ID="${PLUGIN_ID}" bash scripts/marketplace/validate.sh
-        done <<<"${PLUGIN_IDS}"
-
-    - name: Publish marketplace
-      if: steps.plugin.outputs.publishable == 'true'
-      env:
-        DRY_RUN: ${{ steps.mode.outputs.dry_run }}
-        PUBLISHED_PLUGINS: ${{ steps.sync.outputs.published_plugins }}
+        TALGENT_DRY_RUN: ${{ steps.mode.outputs.dry_run }}
+        TALGENT_PLUGIN_IDS: ${{ steps.plugin.outputs.plugin_ids }}
       run: |
         set -euo pipefail
         git -C "${TALGENT_MARKETPLACE_DIR}" config user.name "github-actions[bot]"
         git -C "${TALGENT_MARKETPLACE_DIR}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-        changed_plugins="$(printf '%s\n' "${PUBLISHED_PLUGINS}" | awk -F'\t' '$3 == "true" {print}')"
-        changed_count="$(printf '%s\n' "${changed_plugins}" | sed '/^$/d' | wc -l | tr -d ' ')"
-
-        if git -C "${TALGENT_MARKETPLACE_DIR}" status --porcelain | grep -q .; then
-          echo "Marketplace changes:"
-          git -C "${TALGENT_MARKETPLACE_DIR}" status --short
-          git -C "${TALGENT_MARKETPLACE_DIR}" diff --stat
-        else
-          echo "Marketplace is already current."
-          exit 0
-        fi
-
-        if [ "${DRY_RUN}" = "true" ]; then
-          echo "Dry run requested; not committing marketplace changes."
-          exit 0
-        fi
-
-        if [ "${changed_count}" = "0" ]; then
-          echo "::error::Marketplace has file changes but no changed plugin rows."
-          exit 1
-        fi
-
-        git -C "${TALGENT_MARKETPLACE_DIR}" add .
-        if [ "${changed_count}" = "1" ]; then
-          commit_plugin_id="$(printf '%s\n' "${changed_plugins}" | awk -F'\t' 'NR == 1 {print $1}')"
-          commit_version="$(printf '%s\n' "${changed_plugins}" | awk -F'\t' 'NR == 1 {print $2}')"
-          git -C "${TALGENT_MARKETPLACE_DIR}" commit -m "feat(${commit_plugin_id}): publish v${commit_version}"
-        else
-          git -C "${TALGENT_MARKETPLACE_DIR}" commit -m "feat(marketplace): publish ${changed_count} plugins"
-        fi
-        publication_refs=(main)
-        while IFS=$'\t' read -r plugin_id version changed; do
-          [ "${changed}" = "true" ] || continue
-          tag_name="${plugin_id}-v${version}"
-          git -C "${TALGENT_MARKETPLACE_DIR}" tag "${tag_name}"
-          publication_refs+=("${tag_name}")
-        done <<<"${PUBLISHED_PLUGINS}"
-        git -C "${TALGENT_MARKETPLACE_DIR}" push --atomic origin "${publication_refs[@]}"
+        bash scripts/marketplace/publish.sh

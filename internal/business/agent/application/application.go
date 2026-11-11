@@ -59,8 +59,11 @@ type Application struct {
 	WorkQueries      query.WorkQueryRepository
 	ExecutionQueries query.ExecutionQueryRepository
 	// Workspaces serves workspace browsing; Storage owns a Cloud Work's view.
-	Workspaces        WorkspaceReadingPort
-	Models            query.ModelConfigurations
+	Workspaces WorkspaceReadingPort
+	Models     query.ModelConfigurations
+	// BuiltInPlugins are what the deployment requires of every new Work by
+	// scope; Start Work offers them as required.
+	BuiltInPlugins    domain.BuiltInPlugins
 	Definitions       domain.AgentDefinitionRepository
 	DefinitionQueries query.AgentDefinitionQueryRepository
 	Logger            *slog.Logger
@@ -77,6 +80,7 @@ func NewApplication(
 	sessions domain.AgentWorkRepository,
 	workspaces WorkspaceReadingPort,
 	models query.ModelConfigurations,
+	builtIns domain.BuiltInPlugins,
 	definitions domain.AgentDefinitionRepository,
 	definitionQueries query.AgentDefinitionQueryRepository,
 	logger *slog.Logger,
@@ -122,6 +126,7 @@ func NewApplication(
 		Works:             sessions,
 		Workspaces:        workspaces,
 		Models:            models,
+		BuiltInPlugins:    builtIns,
 		Definitions:       definitions,
 		DefinitionQueries: definitionQueries,
 		Logger:            logger,

@@ -116,9 +116,9 @@ func (r *Recovery) enqueue(ctx context.Context, timeout time.Duration) func(task
 		if err != nil {
 			return err
 		}
-		// Recovery never gives up: a removal or closure obligation cannot be
-		// abandoned.
-		options := agenttask.Persistent(timeout)
+		// One wake retries a bounded number of times; the obligation stays
+		// on its object, and the periodic sweep wakes it again.
+		options := agenttask.Recovery(timeout)
 		if err := taskqueue.NewEnqueueOptions(options...).Validate(); err != nil {
 			return err
 		}

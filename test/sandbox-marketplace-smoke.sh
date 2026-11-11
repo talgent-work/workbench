@@ -14,8 +14,8 @@ TASK_NETWORK="$(docker network create --internal "talgent-marketplace-smoke-$$")
 TASK_CONTAINER="talgent-marketplace-smoke-$$"
 TASK_FIXTURE="$(mktemp -d)"
 mkdir -p "$TASK_FIXTURE/.claude-plugin"
-cp -a "$TASK_ROOT/plugins/talgent-runtime" "$TASK_FIXTURE/talgent-runtime"
-printf '%s\n' '{"name":"talgent-smoke","owner":{"name":"Fixture"},"plugins":[{"name":"talgent-runtime","source":"./talgent-runtime"}]}' > "$TASK_FIXTURE/.claude-plugin/marketplace.json"
+cp -a "$TASK_ROOT/plugins/talgent" "$TASK_FIXTURE/talgent"
+printf '%s\n' '{"name":"talgent-smoke","owner":{"name":"Fixture"},"plugins":[{"name":"talgent","source":"./talgent"}]}' > "$TASK_FIXTURE/.claude-plugin/marketplace.json"
 chmod -R a+rX "$TASK_FIXTURE"
 cleanup() {
   docker rm -f "$TASK_CONTAINER" >/dev/null 2>&1 || true
@@ -43,7 +43,7 @@ export TASK_CATALOG_IP="$task_catalog_ip"
 openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/catalog-key.pem -out /tmp/catalog-cert.pem -days 1 -subj /CN=catalog-fixture -addext "subjectAltName=IP:$task_catalog_ip" >/dev/null 2>&1
 python3 - <<'PACKAGE'
 import hashlib,json,os,pathlib,zipfile
-root=pathlib.Path('/tmp/fixture-marketplace/talgent-runtime')
+root=pathlib.Path('/tmp/fixture-marketplace/talgent')
 archive=pathlib.Path('/tmp/catalog-output/plugin.zip')
 with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as package:
     for file in root.rglob('*'):
@@ -85,11 +85,11 @@ export NODE_EXTRA_CA_CERTS=/tmp/catalog-cert.pem
 export DISABLE_AUTOUPDATER=1
 cd /tmp/smoke-work
 env HOME=/tmp/smoke-home claude plugin marketplace add /tmp/published-marketplace
-env HOME=/tmp/smoke-home claude plugin install talgent-runtime@talgent-smoke-published --scope project
+env HOME=/tmp/smoke-home claude plugin install talgent@talgent-smoke-published --scope project
 node - <<'VERIFY'
 const fs=require('node:fs');
 const assert=require('node:assert/strict');
-const installed=JSON.parse(fs.readFileSync('/tmp/smoke-home/.claude/plugins/installed_plugins.json')).plugins['talgent-runtime@talgent-smoke-published'][0];
+const installed=JSON.parse(fs.readFileSync('/tmp/smoke-home/.claude/plugins/installed_plugins.json')).plugins['talgent@talgent-smoke-published'][0];
 assert.equal(installed.scope,'project');
 assert.equal(installed.projectPath,'/tmp/smoke-work');
 assert.ok(fs.existsSync(installed.installPath+'/agents/talgent-work-executor.md'));

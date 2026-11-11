@@ -67,6 +67,9 @@ type nativeExecution struct {
 	written map[string]bool
 	// flushDue marks buffered input that could not be written yet.
 	flushDue bool
+	// flushFailures counts the flushes in a row that could not read the
+	// buffer and retried themselves.
+	flushFailures int
 	// flushQueued coalesces buffer notifications into one pending flush.
 	flushQueued atomic.Bool
 	// unsettled holds settlements whose removal from the buffer failed.

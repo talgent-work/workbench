@@ -87,16 +87,19 @@ type agentWorkDO struct {
 	DisconnectedSince int64 `xorm:"disconnected_since bigint"`
 	// ReachResumeDue marks a Resume refused while the Work's Managed
 	// Computer was unreachable, retried once on its reconnection.
-	ReachResumeDue   bool   `xorm:"reach_resume_due"`
-	StopRequest      string `xorm:"stop_request varchar(128)"`
-	CloseRequest     string `xorm:"close_request varchar(128)"`
-	EndRequest       string `xorm:"end_request"`
-	FailureReason    string `xorm:"failure_reason text"`
-	VisibilityPublic bool   `xorm:"visibility_public"`
-	Version          int    `xorm:"'version' int"`
-	CreatedAt        int64  `xorm:"created_at bigint"`
-	UpdatedAt        int64  `xorm:"updated_at bigint"`
-	DeletedAt        int64  `xorm:"deleted_at bigint"`
+	ReachResumeDue bool `xorm:"reach_resume_due"`
+	// ReachResumeFailures counts the retries of the owed Resume that failed
+	// without an answer.
+	ReachResumeFailures int    `xorm:"reach_resume_failures"`
+	StopRequest         string `xorm:"stop_request varchar(128)"`
+	CloseRequest        string `xorm:"close_request varchar(128)"`
+	EndRequest          string `xorm:"end_request"`
+	FailureReason       string `xorm:"failure_reason text"`
+	VisibilityPublic    bool   `xorm:"visibility_public"`
+	Version             int    `xorm:"'version' int"`
+	CreatedAt           int64  `xorm:"created_at bigint"`
+	UpdatedAt           int64  `xorm:"updated_at bigint"`
+	DeletedAt           int64  `xorm:"deleted_at bigint"`
 }
 
 func (agentWorkDO) TableName() string { return "agent_session" }

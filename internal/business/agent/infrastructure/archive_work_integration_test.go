@@ -74,7 +74,7 @@ func TestExecutionArchiveRPCRequiresAStoppedWork(t *testing.T) {
 	require.Equal(t, domain.WorkClosed, closed.State)
 	require.Equal(t, before.LocatedLayout, closed.LocatedLayout)
 	require.Equal(t, before.HarnessProcess, closed.HarnessProcess, "archive keeps the last process facts")
-	create := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, authorization, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
+	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, authorization, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
 	created, err := create.Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: before.ProjectID, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID})
 	require.NoError(t, err)
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(archive("owner", "control", created)), "a newly admitted Starting Work cannot be archived")

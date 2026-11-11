@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/pem"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -79,7 +80,7 @@ func TestArchiveSynchronizationParallelIncrementalAndFailureRetention(t *testing
 	}
 	entries := []map[string]any{entry("alpha", "1.0.0", "/shared.zip"), entry("charlie", "1.0.0", "/second.zip"), entry("beta", "1.0.0", "/shared.zip")}
 	writeCatalog(t, source, "upstream", entries)
-	store, e := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
+	store, e := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent", slog.Default())
 	require.NoError(t, e)
 	config := infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 5, CertificateAuthority: certificate, Sources: map[string]infrastructure.CatalogSource{"upstream": {URI: source}}}
 	syncer, e := infrastructure.NewCatalogSynchronizer(config, store)
@@ -156,7 +157,7 @@ func TestAcquisitionDeadlinePublishesCompletedPlugins(t *testing.T) {
 		entries = append(entries, map[string]any{"name": name, "version": "1.0.0", "source": map[string]any{"source": "archive", "url": server.URL + "/" + name + ".zip", "sha256": hex.EncodeToString(digest[:])}})
 	}
 	writeCatalog(t, source, "upstream", entries)
-	store, e := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
+	store, e := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent", slog.Default())
 	require.NoError(t, e)
 	syncer, e := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 10, CertificateAuthority: certificate, Sources: map[string]infrastructure.CatalogSource{"upstream": {URI: source}}}, store)
 	require.NoError(t, e)
@@ -181,7 +182,7 @@ func TestUnchangedManifestVersionReusesRelease(t *testing.T) {
 	writeMetadata(t, source, "plugin/.claude-plugin/plugin.json", `{"name":"owned","version":"1.0.0"}`)
 	writeMetadata(t, source, "plugin/skills/check/SKILL.md", "Original")
 	writeCatalog(t, source, "owned", []map[string]any{{"name": "catalog-alias", "version": "1.0.0", "description": "Alias title", "source": "./plugin"}, {"name": "owned", "description": "Canonical title", "source": "./plugin"}})
-	store, e := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
+	store, e := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent", slog.Default())
 	require.NoError(t, e)
 	syncer, e := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 5, ArchiveBaseURL: "https://example.invalid/archives", Sources: map[string]infrastructure.CatalogSource{"owned": {URI: source, Owned: true}}}, store)
 	require.NoError(t, e)

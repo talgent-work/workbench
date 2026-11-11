@@ -99,7 +99,7 @@ func (s *AgentWork) begin(admission StartAdmission, mode ContextMode) error {
 	s.HarnessProcess = admission.process(mode, waitingSince)
 	s.StopRequestReference, s.EndRequestReference, s.FailureReason = "", "", ""
 	s.StopReason = ""
-	s.ReachResumeDue = false
+	s.spendReachResume()
 	s.State = WorkStarting
 	s.admitStart()
 	return nil

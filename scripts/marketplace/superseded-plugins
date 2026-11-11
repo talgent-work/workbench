@@ -1,0 +1,5 @@
+# <successor> <superseded>: publishing the successor removes the superseded
+# plugin's entry and package from the public marketplace (publish.sh). Its
+# release tags stay, for the Works that started with it. Delete a line once
+# the marketplace no longer lists its superseded plugin.
+talgent talgent-runtime

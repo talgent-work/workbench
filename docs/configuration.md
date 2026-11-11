@@ -177,6 +177,7 @@ How Agent reaches Computer and Managed Computers.
 | `agent-rpc.control-token`, `agent-rpc.feedback-token` | `${AGENT_CONTROL_TOKEN:}`, `${AGENT_FEEDBACK_TOKEN:}` | Admit the services that control Works and Dispatcher's reports |
 | `agent-storage.address`, `token` | `${STORAGE_ADDRESS:http://127.0.0.1:8080}`, `${STORAGE_AGENT_TOKEN:}` | Storage |
 | `agent-marketplace.address`, `credential-token` | `${MARKETPLACE_INTERNAL_ADDRESS:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Marketplace |
+| `agent-built-in-plugins.platform`, `agent-built-in-plugins.project` | `[talgent, "${AGENT_API_PLUGIN:talgent-api}"]`, `[]` | Built-in Plugins by slug: every new Work loads the platform list, and a new Work of a Project loads the project list too. They are required like a Plugin a definition requires: a person's selection cannot drop them, and a person's saved values or the release defaults configure them. A Work keeps what it was created with. A profile sets a list whole, since lists replace. `talgent-api` teaches Agents the core's public API; an empty `AGENT_API_PLUGIN`, as `AGENT_CORE_API_ACCESS=disabled` sets, leaves it out, and a blank entry names no Plugin |
 | `agent-account.address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's private API: the directory of people a Work is shared with, and each Work's Identity Token |
 | `agent-recovery.sweep-interval` | `60s` | How often obligations no event woke are checked; at most one minute |
 | `agent-recovery.inputs-refresh-interval` | `10m` | How often a Managed Work's inputs are synced again; inside `storage.link-ttl` |
@@ -185,7 +186,7 @@ How Agent reaches Computer and Managed Computers.
 | `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 8, retry `1s`–`60s` | Each execution's long step holds a worker while it runs |
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
 | `account-maintenance-taskqueue` | queue `account-maintenance`, concurrency 1 | Hourly signing key rotation and daily forgetting of replaced refresh secrets |
-| `storage-maintenance-taskqueue` | queue `storage-maintenance`, concurrency 2, retry `10s`–`5m` | Removal of reclaimed Directories' content, retried until removed; hourly lapse of Preview Copies |
+| `storage-maintenance-taskqueue` | queue `storage-maintenance`, concurrency 2, retry `10s`–`5m` | Removal of reclaimed Directories' content, retried at most 25 times within 6 hours; hourly lapse of Preview Copies |
 
 ### marketplace
 
@@ -197,7 +198,7 @@ How Agent reaches Computer and Managed Computers.
 | `synchronization.acquisition.request-timeout-seconds` | 120 | One request |
 | `synchronization.acquisition.archive-base-url` | `${MARKETPLACE_ARCHIVE_BASE_URL:}` | HTTPS base address Works download owned archives from: `<origin>/marketplace/archives` |
 | `synchronization.acquisition.certificate-authority` | none | A CA bundle file for the sources |
-| `synchronization.acquisition.sources.<name>` | `claude-plugins-official` (priority 10), `talgent` (owned, priority 100) | Catalog sources keyed by name, so a profile adds sources beside these: git `uri`, `priority` (the higher wins a Plugin both list), `owned` (archives served from this deployment), and for a private SSH source `credentials.ssh-key-file` and `credentials.known-hosts-file` |
+| `synchronization.acquisition.sources.<name>` | `claude-plugins-official` (priority 10), `talgent` (owned, priority 100) | Catalog sources keyed by name, so a profile adds sources beside these: `uri`, `priority` (the higher wins a Plugin both list), `owned` (archives served from this deployment). Every source is public and read without credentials: `uri` is an HTTPS git repository or `marketplace.json` address with no credential or query, a GitHub `owner/repo`, or a catalog directory on disk; SSH and other protocols are refused at startup, as are SSH package remotes listed by a catalog when synchronized. A source removed here is retired at the next synchronization: its releases and catalog entries are withdrawn and its archives no configured source shares are deleted |
 | `provider-connectors[]` | none; base registers `github` | Connectors people install, each authenticated by a Provider: `name`, `description`, `category`, `provider`, `target`, `authentication`, a `command` with `args` or a `type` with `url` and `headers`, and `credential-environment` |
 | `platform-connector.gateway-address` | `${NATIVE_GATEWAY_ADDRESS:}` | The MCP server every Work connects to as the platform Connector, with `description` and `category`; empty publishes none |
 | `directory` | `${MARKETPLACE_DIRECTORY:/mnt/talgent/marketplace}` | Where owned archives are kept |

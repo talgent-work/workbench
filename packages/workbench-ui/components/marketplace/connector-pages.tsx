@@ -3,9 +3,9 @@ import { Alert, Button, Card, Dropdown, Label, Switch, Tooltip } from "@heroui/r
 import type { Connector } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { ChevronRight, KeyRound, Lock, MoreHorizontal, Plus } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { installStatusLabel, pluginStatus, connectorStatus, useConnector, useConnectorActions, useConnectors, useInstalledPlugins, usePluginCatalog } from "../../lib/marketplace-catalog";
+import { installStatusLabel, pluginStatus, connectorStatus, useConnector, useConnectorActions, useConnectors, useAlwaysEnabledPlugins, useInstalledPlugins, usePluginCatalog } from "../../lib/marketplace-catalog";
 import { providerName, serviceLabel, useConnectProvider } from "../../lib/marketplace-connections";
-import { isPlatformPlugin, pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
+import { pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
 import { marketplacePaths } from "../../lib/marketplace-routes";
 import { notify } from "../../lib/notifications";
 import { ConnectorIcon, PluginIcon, ProviderIcon } from "./marketplace-icons";
@@ -106,6 +106,7 @@ export function ConnectorPage({ name }: { name: string }) {
   const commands = useConnectorCommands();
   const catalog = usePluginCatalog();
   const installedPlugins = useInstalledPlugins();
+  const required = useAlwaysEnabledPlugins();
   const { pathname } = useLocation();
   const [confirm, setConfirm] = useState(false);
   const connector = detail.data?.connector;
@@ -157,7 +158,7 @@ export function ConnectorPage({ name }: { name: string }) {
         const release = releases.get(item.slug);
         return <li key={item.slug} className="mk-group-link"><Link to={marketplacePaths.plugin(item.slug)}>
           {release ? <PluginIcon plugin={release} size={32} /> : <ConnectorIcon name={item.slug} size={32} />}
-          <span className="mk-row-text"><strong>{release ? pluginPresentation(release).name : pluginDisplayName(item.slug)}<span className="mk-kind">Plugin</span></strong><span>{installStatusLabel[pluginStatus(isPlatformPlugin(item.slug), installedPlugins.data?.get(item.slug))]}</span></span>
+          <span className="mk-row-text"><strong>{release ? pluginPresentation(release).name : pluginDisplayName(item.slug)}<span className="mk-kind">Plugin</span></strong><span>{installStatusLabel[pluginStatus(required.isAlwaysEnabled(item.slug), installedPlugins.data?.get(item.slug))]}</span></span>
           <ChevronRight size={16} className="mk-muted ml-auto" aria-hidden="true" />
         </Link></li>;
       })}</ul></Card>
