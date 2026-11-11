@@ -184,12 +184,12 @@ type AgentExecution struct {
 	// failure at its Startup Deadline carries it.
 	StartupSetback string
 	Outcome        ExecutionOutcome
-	State           ExecutionState `validate:"oneof=queued starting running retired released"`
-	Retirement      RetirementCause
-	RetiredAt       time.Time
-	ReleasedAt      time.Time
-	Events          EventCollection
-	Version         int `validate:"gte=0"`
+	State          ExecutionState `validate:"oneof=queued starting running retired released"`
+	Retirement     RetirementCause
+	RetiredAt      time.Time
+	ReleasedAt     time.Time
+	Events         EventCollection
+	Version        int `validate:"gte=0"`
 }
 
 // ExecutionBeginning is what Begin takes from an admitted start: the Work's
