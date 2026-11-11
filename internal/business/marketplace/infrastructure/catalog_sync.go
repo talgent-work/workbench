@@ -40,7 +40,7 @@ func (c CatalogAcquisitionConfig) Validate() error {
 		if !catalogName.MatchString(source.Name) || strings.TrimSpace(source.URI) == "" || strings.HasPrefix(source.URI, "-") {
 			return fmt.Errorf("marketplace: invalid catalog source %q", source.Name)
 		}
-		if e := validateSourceAccess(source); e != nil {
+		if e := validateSourceAddress(source); e != nil {
 			return e
 		}
 		if source.Owned {
@@ -137,11 +137,7 @@ type catalogLocation struct {
 }
 
 func (s *CatalogSynchronizer) readSource(ctx context.Context, a *catalogAcquisition, source CatalogSource) (SourceReleases, error) {
-	access, e := a.forSource(source)
-	if e != nil {
-		return SourceReleases{}, e
-	}
-	location, e := access.catalog(ctx, source.URI)
+	location, e := a.catalog(ctx, source.URI)
 	if e != nil {
 		return SourceReleases{}, e
 	}

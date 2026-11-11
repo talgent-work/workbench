@@ -147,3 +147,23 @@ func TestCatalogSynchronization(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "3.0.0", updated.Version, "another Plugin still updates during the failed refresh")
 }
+
+// Packages are read without credentials, so a catalog entry naming an SSH
+// remote fails without reaching an SSH client.
+func TestCatalogPackageOverSSHIsRefused(t *testing.T) {
+	client := t.TempDir()
+	called := filepath.Join(client, "called")
+	require.NoError(t, os.WriteFile(filepath.Join(client, "ssh"), []byte("#!/bin/sh\ntouch '"+called+"'\nexit 255\n"), 0o755))
+	t.Setenv("PATH", client+string(os.PathListSeparator)+os.Getenv("PATH"))
+	external := t.TempDir()
+	writeCatalog(t, external, "external-catalog", []map[string]any{{"name": "ssh-plugin", "source": map[string]any{"source": "url", "url": "git@git.example.invalid:example/plugin.git"}}})
+	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
+	require.NoError(t, err)
+	synchronizer, err := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 1, RequestTimeoutSeconds: 5,
+		Sources: map[string]infrastructure.CatalogSource{"external": {URI: external}}}, store)
+	require.NoError(t, err)
+	require.Error(t, synchronizer.SynchronizeCatalog(t.Context(), false))
+	require.NoFileExists(t, called, "no SSH client is run")
+	_, err = store.Get(t.Context(), "ssh-plugin")
+	require.ErrorIs(t, err, application.ErrReleaseNotFound)
+}
