@@ -77,8 +77,9 @@ your Workbench offers, and authorize your own GitHub account for the repositorie
 
 - **Your environment.** Deploy Workbench on your own Kubernetes cluster and run Works there or on
   your own computers. Your files and results stay with you.
-- **Isolated by default.** Every Work runs in its own sandbox, cut off from your private network.
-  Credentials and model keys never enter it.
+- **Isolated by default.** Every cloud Work runs in its own sandbox, cut off from your private
+  network, and on your own computer you decide how far the Agent may reach. Credentials and model
+  keys never enter a Work.
 - **Any model.** Offer the models you choose: Claude, DeepSeek, Qwen, Kimi, GLM, MiniMax, or any
   other vendor with an Anthropic-compatible API, each with its own key. People pick one when they
   start a Work.
