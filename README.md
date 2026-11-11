@@ -7,7 +7,7 @@
 
 ### Your own Agent, ready for real work.
 
-Open-source managed agents you host yourself. Every Work in its own sandbox, on your infrastructure.
+Open-source managed agents you host yourself. Run every Work in a cloud sandbox, or on your own machine.
 
 [![Release](https://img.shields.io/github/v/release/talgent-work/workbench?sort=semver&color=6a4cf5)](https://github.com/talgent-work/workbench/releases/latest)
 [![License](https://img.shields.io/github/license/talgent-work/workbench?color=blue)](LICENSE)
@@ -29,6 +29,19 @@ cloud. It hosts every Agent's runtime for you: a sandbox for each Work, sessions
 they stopped, credentials kept out of reach, access granted per person and every run's cost in
 sight.
 
+## Two ways to run a Work
+
+Each time you start a Work, choose where it runs: hosted in Workbench's cloud, or on a computer of
+your own that Workbench manages. Everything else stays the same: the live conversation, the Library,
+Usage, Plugins and sharing.
+
+| | Cloud (hosted) | Managed Computer |
+|---|---|---|
+| **Where it runs** | In a fresh sandbox on your Workbench's Kubernetes cluster | On your own Mac, Linux or Windows machine, connected with Talgent Computer |
+| **Best for** | Work that should run any time, with nothing to set up and no machine left on | Work that needs the files, tools and apps already on your machine |
+| **Isolation** | Its own sandbox, cut off from your private network; credentials and model keys never enter it | You choose how much the Agent may do there, and can confine it to the operating system's sandbox on macOS and Linux |
+| **Setup** | None for you; the deployment provides it | Install `@talgent/computer` from npm and connect the machine from your Computers page. It needs only an outbound connection and keeps itself up to date |
+
 ## What you can do
 
 **Hand work to your Agent.** Describe the task, attach files, pick a repository, a model and the
@@ -47,9 +60,6 @@ your Workbench offers, and authorize your own GitHub account for the repositorie
 
 **See what it costs.** Token use over time, by kind and by model, and the Works that used the most.
 
-**Run on your own machine.** Connect a laptop or a workstation with Talgent Computer and run Works
-there, with that machine's own files and sign-in.
-
 <table>
   <tr>
     <td width="50%"><img alt="New work: an instruction, a repository, the model and the Plugins the Work loads" src="docs/assets/new-work.webp"><p align="center"><sub>Start a Work with what it needs</sub></p></td>
@@ -65,8 +75,8 @@ there, with that machine's own files and sign-in.
 
 ## Why Workbench
 
-- **Your environment.** Deploy on your own Kubernetes cluster, or run Works on your own machine.
-  Your files and results stay with you.
+- **Your environment.** Deploy Workbench on your own Kubernetes cluster and run Works there or on
+  your own computers. Your files and results stay with you.
 - **Isolated by default.** Every Work runs in its own sandbox, cut off from your private network.
   Credentials and model keys never enter it.
 - **Any model.** Offer the models you choose: Claude, DeepSeek, Qwen, Kimi, GLM, MiniMax, or any
