@@ -230,9 +230,9 @@ data:
       # Callers of whole content; each maps only beneath its mapping-prefix,
       # and an empty prefix maps nowhere.
       content-callers:
-        # Project Knowledge maps the Done Intents it reads beneath
-        # project-originals, which talgent-juicefs-view-project-originals
-        # shows read-only.
+        # This caller maps beneath project-originals, which
+        # talgent-juicefs-view-project-originals shows read-only to its
+        # standing reader.
         - token: "${STORAGE_CONTENT_TOKEN:}"
           mapping-prefix: project-originals
       # Sandboxes mount each Directory from its backend's claim by subPath.
