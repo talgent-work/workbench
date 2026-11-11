@@ -190,7 +190,7 @@ func (e *AgentExecution) bind(observation EnvironmentObservation) []ExecutionSte
 			if i := slices.IndexFunc(live, func(o ObservedEnvironment) bool { return o.Running }); i >= 0 {
 				first = live[i]
 			}
-			e.Environment = first.ID
+			e.Environment, e.StartupSetback = first.ID, ""
 		}
 	}
 	return deleteOthers(observation, e.Environment)

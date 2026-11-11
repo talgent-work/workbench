@@ -180,8 +180,9 @@ type AgentExecution struct {
 	Credentials     CredentialDelivery
 	Inputs          InputSync
 	// StartupSetback names the cause of the latest failed attempt at one of
-	// its long startup steps, which may pass; empty once none failed. A start
-	// failure at its Startup Deadline carries it.
+	// its long startup steps, which may pass; empty while none failed since
+	// its start last progressed (bound, prepared or launched). A start failure
+	// at its Startup Deadline carries it.
 	StartupSetback string
 	Outcome        ExecutionOutcome
 	State          ExecutionState `validate:"oneof=queued starting running retired released"`

@@ -109,7 +109,7 @@ func (e *AgentExecution) RecordPreparation(report PreparationReport) (bool, erro
 	if e.Environment == "" || e.Process.PreparationEnded {
 		return false, nil
 	}
-	e.Process.PreparationEnded = true
+	e.Process.PreparationEnded, e.StartupSetback = true, ""
 	installed := make(map[string]PluginInstallation, len(report.Installations))
 	for _, installation := range report.Installations {
 		installed[installation.Slug] = installation

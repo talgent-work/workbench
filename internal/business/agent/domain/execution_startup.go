@@ -120,7 +120,7 @@ func (e *AgentExecution) RecordCreationAnswer(answer CreationAnswer) (bool, erro
 		return answered, nil
 	}
 	if !answer.Refused {
-		e.Environment = answer.EnvironmentID
+		e.Environment, e.StartupSetback = answer.EnvironmentID, ""
 		return true, nil
 	}
 	e.reject("")
@@ -203,7 +203,7 @@ func (e *AgentExecution) RecordLaunch(processID string) (bool, error) {
 	if e.Process.ID != "" || !e.AdmitEnvironmentAction(e.Environment) {
 		return false, nil
 	}
-	e.Process.ID = processID
+	e.Process.ID, e.StartupSetback = processID, ""
 	return true, nil
 }
 

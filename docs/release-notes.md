@@ -40,6 +40,33 @@ or retry those starts afterwards. To upgrade:
 Rolling back takes the reverse rewrite, `talgent` back to `talgent-runtime` in the same places,
 with the previous images.
 
+### Retries end, and a failed start names its cause
+
+No background retry runs without end any more. Each one stops at a ceiling or a deadline, and
+the attempt that exhausts it logs an error naming what failed and why:
+
+- A recovery task (an execution's reconciliation or long step, a Work's recovery) retries at
+  most 10 times per wake. The recovery sweep wakes the object again on its next interval.
+- A Work Reclamation Request retries at most 25 times, then logs `work reclamation failed` with
+  the Work. The removal of a reclaimed Directory's content retries at most 25 times within 6
+  hours, then logs `reclaimed content removal failed`. Neither is retried afterwards, so treat
+  either log as a reclamation left to an operator.
+- Every task worker logs `task retries exhausted` for a task it gives up.
+- Dispatcher gives up an exit fact Agent keeps failing to take after about five minutes, and
+  the next connection delivers it again. It gives up an input flush after 30 failed buffer
+  reads. The sandbox observer gives up a wake after 10 failed retries.
+
+A start whose own request can never succeed now fails on its first attempt, naming the cause.
+An example is a retained Plugin release whose native entry names another plugin. Before, such
+a start retried until its Startup Deadline. A start that misses its Startup Deadline now names
+the step that failed last as well, such as `Last error: creating the execution environment
+failed.`
+
+To upgrade, apply `deploy/middleware/migrations/20261111-execution-start-causes.sql` to the
+database named by `AGENT_MYSQL_DATABASE` before you deploy. It adds
+`agent_execution.rejection_reason` and `startup_setback`, and you can apply it again safely.
+The previous release ignores both columns, so a rollback needs only the previous images.
+
 ### Breaking: Marketplace Sources take no credentials
 
 Every catalog source is public: an HTTPS address with no credentials or query, a GitHub
