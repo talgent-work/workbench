@@ -97,6 +97,7 @@ Credential Proxy adds; the core API plugin (`plugins/talgent-api`) teaches it th
 |---|---|
 | Deploying on Kubernetes | [Self-hosting guide](docs/self-hosting.md) |
 | Every process's settings | [Configuration reference](docs/configuration.md) |
+| What an upgrade asks of an operator | [Release notes](docs/release-notes.md) |
 | Talgent Computer and the Computer Gateway | [Talgent Computer protocol](docs/computer-protocol.md) |
 | The web app | [apps/workbench-web](apps/workbench-web/README.md) |
 

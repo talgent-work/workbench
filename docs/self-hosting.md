@@ -432,8 +432,9 @@ controlplane's log).
 
 ## 9. Operations
 
-- **Upgrading.** Check out the new release and deploy it as in [section 7](#7-deploy); the
-  schema step creates what the release adds. A release that adds a key to `environment.env`
+- **Upgrading.** Read the [release notes](release-notes.md) for what a release asks of you
+  first, such as a data migration. Check out the new release and deploy it as in
+  [section 7](#7-deploy); the schema step creates what the release adds. A release that adds a key to `environment.env`
   needs it in the environment: deploy once with `TALGENT_ENVIRONMENT_FILE` setting it. Services may be upgraded one at a time with
   `kubectl -n talgent set image deploy/<service> <service>=<image>`; record the image you
   replace, it is the rollback target.
