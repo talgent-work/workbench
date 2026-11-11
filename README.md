@@ -13,7 +13,7 @@ Open-source managed agents you host yourself. Run every Work in a cloud sandbox,
 [![License](https://img.shields.io/github/license/talgent-work/workbench?color=blue)](LICENSE)
 [![npm @talgent/computer](https://img.shields.io/npm/v/@talgent/computer?label=%40talgent%2Fcomputer&logo=npm)](https://www.npmjs.com/package/@talgent/computer)
 
-[Website](https://talgent.work) · [Get started](#get-started) · [Documentation](#documentation) ·
+**[Live demo](https://workbench.talgent.work)** · [Website](https://talgent.work) · [Get started](#get-started) · [Documentation](#documentation) ·
 [Releases](https://github.com/talgent-work/workbench/releases) · [Report a bug](https://github.com/talgent-work/workbench/issues/new/choose)
 
 <img alt="A Work in Talgent Workbench: the conversation with the Agent, its progress, Artifacts and token usage" src="docs/assets/work.webp" width="900">
@@ -126,6 +126,8 @@ moves by two days and every owner is told. The EU pricing rules are kept for the
 
 ## Get started
 
+- **Try it now** in the [live demo](https://workbench.talgent.work): sign in with GitHub and start a
+  Work.
 - **Deploy Workbench** on your Kubernetes cluster with the [self-hosting guide](docs/self-hosting.md).
 - **Connect your machine** with Talgent Computer: install `@talgent/computer` from npm and follow
   the Computers page of your Workbench (macOS, Linux and Windows).
