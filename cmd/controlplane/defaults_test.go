@@ -41,11 +41,21 @@ func loadDefaults(t *testing.T) Option {
 	return option
 }
 
-// Every Work loads the core plugin, and a Work of a Project loads nothing
-// more unless a deployment's profile adds the Project scope's plugins.
-func TestEveryWorkLoadsTheCorePluginByDefault(t *testing.T) {
-	option := loadDefaults(t)
-	require.Equal(t, []string{"talgent-runtime"}, option.AgentBuiltInPlugins.Platform)
-	require.Empty(t, option.AgentBuiltInPlugins.Project)
-	require.NoError(t, option.AgentBuiltInPlugins.Validate())
+// Every Work loads the core plugin and the core API plugin, and a Work of a
+// Project loads nothing more unless a deployment's profile adds the Project
+// scope's plugins.
+func TestEveryWorkLoadsTheCorePluginsByDefault(t *testing.T) {
+	builtIns, err := loadDefaults(t).AgentBuiltInPlugins.Plugins()
+	require.NoError(t, err)
+	require.Equal(t, []string{"talgent", "talgent-api"}, builtIns.Required(""))
+	require.Equal(t, []string{"talgent", "talgent-api"}, builtIns.Required("project"))
+}
+
+// A deployment whose Agents have no direct access to the core's API empties
+// AGENT_API_PLUGIN, and its Works load the core plugin alone.
+func TestWithoutDirectAPIAccessWorksLoadNoAPIPlugin(t *testing.T) {
+	t.Setenv("AGENT_API_PLUGIN", "")
+	builtIns, err := loadDefaults(t).AgentBuiltInPlugins.Plugins()
+	require.NoError(t, err)
+	require.Equal(t, []string{"talgent"}, builtIns.Required(""))
 }

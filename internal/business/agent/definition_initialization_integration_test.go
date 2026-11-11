@@ -47,7 +47,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
 	// Every Work loads the core plugin; every Work of a Project also loads
 	// the caller's plugin.
-	builtIns := agent.BuiltInPluginsConfig{Platform: []string{"talgent-runtime"}, Project: []string{"caller-plugin"}}
+	builtIns := agent.BuiltInPluginsConfig{Platform: []string{"talgent"}, Project: []string{"caller-plugin"}}
 	startModule := func() (agentprivatev1connect.AgentServiceClient, func()) {
 		t.Helper()
 		db, err := xorm.NewEngine("mysql", dsn)
@@ -98,9 +98,9 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 	optionsRequestInfo.RequestHeader().Set("Authorization", "Bearer control")
 	options, err := client.GetWorkStartOptions(optionsRequestCtx, optionsRequest)
 	require.NoError(t, err)
-	require.Equal(t, "talgent-runtime:personal-work-executor", options.DefaultStartupAgent)
+	require.Equal(t, "talgent:personal-work-executor", options.DefaultStartupAgent)
 	require.Len(t, options.Plugins, 1)
-	require.Equal(t, "talgent-runtime", options.Plugins[0].Name)
+	require.Equal(t, "talgent", options.Plugins[0].Name)
 	require.True(t, options.Plugins[0].Required, "the platform scope's Built-in Plugin is required")
 	// A new Work of a Project is offered the Project scope's plugin as well.
 	projectOptions, err := client.GetWorkStartOptions(sessionControlRequest(ctx), &agentprivatev1.GetWorkStartOptionsRequest{SubjectId: "caller", EmployeeId: "caller", ProjectId: "project-a"})

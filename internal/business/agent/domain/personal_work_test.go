@@ -98,7 +98,7 @@ func TestAnEmployeeDefinitionRepresentsItsPersonPrivately(t *testing.T) {
 	require.Equal(t, "jack", definition.RepresentedPerson())
 	require.True(t, definition.RepresentsHuman())
 	require.False(t, definition.Visibility.Public, "its Works start private")
-	require.Equal(t, "talgent-runtime:personal-work-executor", definition.ProvideCapabilities().StartupAgent)
+	require.Equal(t, "talgent:personal-work-executor", definition.ProvideCapabilities().StartupAgent)
 	require.Empty(t, definition.ProvideCapabilities().RequiredPlugins, "the deployment's Built-in Plugins supply the core plugin")
 }
 

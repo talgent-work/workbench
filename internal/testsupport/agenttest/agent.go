@@ -44,7 +44,7 @@ const Token = "control"
 var ErrCapacityUnavailable = domain.ErrCapacityUnavailable
 
 // Plugin is a released Plugin the stand-in catalog resolves beside the core
-// runtime plugin, talgent-runtime, with the Agents it declares.
+// plugin, talgent, with the Agents it declares.
 type Plugin struct {
 	Slug   string
 	Agents []string
@@ -65,10 +65,10 @@ type Config struct {
 	// Models are the deployment's model configurations, the first the
 	// default; nil provides one, "fixture".
 	Models []Model
-	// Plugins the catalog releases beside the core runtime plugin.
+	// Plugins the catalog releases beside the core plugin.
 	Plugins []Plugin
 	// PluginConfiguration is a user's configuration of their enabled core
-	// runtime plugin; nil configures none.
+	// plugin; nil configures none.
 	PluginConfiguration func(user string) map[string]any
 	// Marketplace is the address of a Marketplace (see Marketplace) that
 	// offers each user's repositories and service authorizations. Without
@@ -128,8 +128,8 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	authorizer := access.NewWorkAuthorizer(queries.WorkOwners)
 	start := startCatalog{catalog: catalog, connections: repositories}
 	prepare := command.NewPrepareWorkExecutionHandler(works, authorizer, models)
-	// The deployment's default: every Work requires the core runtime plugin.
-	builtIns, err := domain.NewBuiltInPlugins([]string{"talgent-runtime"}, nil)
+	// The deployment's default: every Work requires the core plugin.
+	builtIns, err := domain.NewBuiltInPlugins([]string{"talgent"}, nil)
 	require.NoError(t, err)
 	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
 	app := &application.Application{

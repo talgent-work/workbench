@@ -181,5 +181,5 @@ func (unusedExecutionPort) GetWorkCapabilities(context.Context, string) (command
 }
 
 // defaultBuiltIns is the deployment's default: every Work requires the core
-// runtime plugin.
-var defaultBuiltIns = agent.BuiltInPluginsConfig{Platform: []string{"talgent-runtime"}}
+// plugin, talgent.
+var defaultBuiltIns = agent.BuiltInPluginsConfig{Platform: []string{"talgent"}}

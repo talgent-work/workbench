@@ -8,7 +8,7 @@ const (
 	EmployeeWorkPurpose = "work"
 	// EmployeeScopeKind is the usage scope of a person's employee definition.
 	EmployeeScopeKind    = "employee"
-	employeeStartupAgent = "talgent-runtime:personal-work-executor"
+	employeeStartupAgent = "talgent:personal-work-executor"
 )
 
 // EmployeeDefinitionInput is the definition a person's Agent starts with:

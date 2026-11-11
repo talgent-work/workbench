@@ -74,7 +74,7 @@ The processes share these stores:
 The browser signs in through Account; Envoy Gateway validates the session token against
 Account's published keys and passes the identity on, and each context authorizes on it. An Agent
 reaches the platform's API from its sandbox with its Work's credential, which the sandbox's
-Credential Proxy adds; the core runtime plugin (`plugins/talgent-runtime`) teaches it the calls.
+Credential Proxy adds; the core API plugin (`plugins/talgent-api`) teaches it the calls.
 
 ## Repository
 
@@ -86,7 +86,7 @@ Credential Proxy adds; the core runtime plugin (`plugins/talgent-runtime`) teach
 | `apps/workbench-web/` | The web app |
 | `apps/computer/` | Talgent Computer |
 | `packages/workbench-ui/` | The pages and components the web app is built from (`@talgent/workbench-ui`) |
-| `plugins/talgent-runtime/` | The core runtime plugin every Work loads |
+| `plugins/talgent/` | The core plugin every Work loads |
 | `configs/` | Each process's default configuration |
 | `deploy/` | Kubernetes base, schemas, sandbox image, OpenSandbox and Kata assets |
 | `scripts/` | Deployment, image build and maintenance scripts |
@@ -128,7 +128,7 @@ Images build with `scripts/deploy/build-and-push-images.sh` (see the
 Every merge to the main branch is a release `vX.Y.Z`. That one version names the Go module, the
 npm packages (`@talgent/workbench-ui`, which takes `@talgent/contracts` from the web app
 that hosts it, and `@talgent/computer`), the images under `ghcr.io/talgent-work`, the Kubernetes base with
-its schema, and the core runtime plugin.
+its schema, and the core plugins.
 
 ## Contributing
 

@@ -34,7 +34,7 @@ func (modulePluginCatalog) ResolvePlugin(_ context.Context, subject, slug string
 	if subject == "" {
 		return domain.PluginRelease{}, errors.New("fixture: release selection requires a subject")
 	}
-	roles := map[string][]string{"custom": {"custom:base", "custom:author"}, "talgent-runtime": {"talgent-runtime:personal-work-executor"}, "caller-plugin": {"caller-plugin:case-executor", "caller-plugin:coordinator", "caller-plugin:reviewer"}}
+	roles := map[string][]string{"custom": {"custom:base", "custom:author"}, "talgent": {"talgent:personal-work-executor"}, "caller-plugin": {"caller-plugin:case-executor", "caller-plugin:coordinator", "caller-plugin:reviewer"}}
 	names, ok := roles[slug]
 	if !ok {
 		return domain.PluginRelease{}, errors.New("fixture: unknown release")

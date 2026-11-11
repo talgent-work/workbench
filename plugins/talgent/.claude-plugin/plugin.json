@@ -1,0 +1,9 @@
+{
+  "name": "talgent",
+  "version": "0.1.0",
+  "description": "Talgent's core plugin for its Agents: the product context, the Personal Work role and the Skills every Work acts through.",
+  "author": {
+    "name": "Talgent"
+  },
+  "license": "Apache-2.0"
+}

@@ -155,7 +155,7 @@ func decodeManagedSpecification(record executionRecord) (managedSpecification, e
 // machine supplies HOME, the bundled Claude Code on PATH and
 // TALGENT_WORK_ROOT, and the Harness uses the machine's own git credentials:
 // no mounts, no egress Vault, no CA bundle and no credential placeholders.
-// Without read-only mounts, TALGENT_PROJECT_ID tells the runtime plugin a
+// Without read-only mounts, TALGENT_PROJECT_ID tells the core plugin a
 // Work of a Project, which reads its Project's reference files through the
 // platform Connector; TALGENT_KNOWLEDGE_ROOT is never set. On
 // the machine's own Claude login nothing model-related is set. With a Model

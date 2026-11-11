@@ -28,7 +28,7 @@ func TestLocatedLayoutsReachTheNativeSandbox(t *testing.T) {
 	ensure := func(scope, owner, purpose string) *domain.AgentDefinition {
 		t.Helper()
 		definitions := &nativeDefaultDefinition{}
-		_, err := command.NewEnsureAgentDefinitionHandler(definitions, definitions).Handle(ctx, suppliedRoleDefinition(scope, owner, purpose, "talgent-runtime", ""))
+		_, err := command.NewEnsureAgentDefinitionHandler(definitions, definitions).Handle(ctx, suppliedRoleDefinition(scope, owner, purpose, "talgent", ""))
 		require.NoError(t, err)
 		return definitions.value
 	}
@@ -36,7 +36,7 @@ func TestLocatedLayoutsReachTheNativeSandbox(t *testing.T) {
 	submit := func(definition *domain.AgentDefinition, project, subject string) mounts {
 		t.Helper()
 		forward := &defaultHomeSubmission{provider: provider, root: t.TempDir()}
-		snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.Capabilities.RequiredPlugins}, []domain.PluginRelease{{Slug: "talgent-runtime", Source: "fixture", Version: "1", RetrievalRef: "fixture:runtime", NativeEntry: []byte(`{"name":"talgent-runtime","version":"1"}`)}})
+		snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.Capabilities.RequiredPlugins}, []domain.PluginRelease{{Slug: "talgent", Source: "fixture", Version: "1", RetrievalRef: "fixture:runtime", NativeEntry: []byte(`{"name":"talgent","version":"1"}`)}})
 		require.NoError(t, err)
 		created, isNew, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", StartingUser: "owner",
 			Capabilities: snapshot, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},

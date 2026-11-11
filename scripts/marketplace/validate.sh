@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 MARKETPLACE_DIR="${TALGENT_MARKETPLACE_DIR:-.marketplace-publish}"
-PLUGIN_ID="${TALGENT_PLUGIN_ID:-${TALGENT_RUNTIME_PLUGIN_ID:-talgent-runtime}}"
+PLUGIN_ID="${TALGENT_PLUGIN_ID:-${TALGENT_RUNTIME_PLUGIN_ID:-talgent}}"
 REQUIRE_PLUGIN="${TALGENT_REQUIRE_PLUGIN:-${TALGENT_REQUIRE_RUNTIME_PLUGIN:-false}}"
 SOURCE_KIND="${TALGENT_PLUGIN_SOURCE_KIND:-git-subdir}"
 
@@ -72,12 +72,12 @@ if [ "${REQUIRE_PLUGIN}" = "true" ] || [ "${plugin_count}" != "0" ]; then
     echo "${PLUGIN_ID} source must be remote git-subdir" >&2
     exit 2
   fi
-  if [[ "${PLUGIN_ID}" = "talgent-runtime" && "${plugin_source_url}" != "https://github.com/talgent-work/marketplace.git" ]]; then
+  if [[ "${PLUGIN_ID}" = "talgent" && "${plugin_source_url}" != "https://github.com/talgent-work/marketplace.git" ]]; then
     echo "${PLUGIN_ID} source must come from https://github.com/talgent-work/marketplace.git" >&2
     exit 2
   fi
-  if [[ "${PLUGIN_ID}" = "talgent-runtime" && "${plugin_source_path}" != "plugins/talgent-runtime" ]]; then
-    echo "${PLUGIN_ID} source path must be plugins/talgent-runtime" >&2
+  if [[ "${PLUGIN_ID}" = "talgent" && "${plugin_source_path}" != "plugins/talgent" ]]; then
+    echo "${PLUGIN_ID} source path must be plugins/talgent" >&2
     exit 2
   fi
   plugin_json="${MARKETPLACE_PATH}/plugins/${PLUGIN_ID}/.claude-plugin/plugin.json"

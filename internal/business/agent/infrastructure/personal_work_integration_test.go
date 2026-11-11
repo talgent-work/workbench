@@ -254,17 +254,17 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.ErrorIs(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}), domain.ErrWorkFilesClosed)
 }
 
-// personalStartupCatalog publishes the core runtime plugin as a fixed release
+// personalStartupCatalog publishes the core plugin as a fixed release
 // with a typed sensitive option. Agent still owns composition, validation,
 // persistence and public redaction.
 type personalStartupCatalog struct{ creationCatalog }
 
 func (*personalStartupCatalog) ListPersonalPlugins(context.Context, string) ([]domain.PersonalPlugin, error) {
-	return []domain.PersonalPlugin{{Slug: "talgent-runtime", Enabled: true}}, nil
+	return []domain.PersonalPlugin{{Slug: "talgent", Enabled: true}}, nil
 }
 
 func (*personalStartupCatalog) ResolvePlugin(_ context.Context, _ string, slug string) (domain.PluginRelease, error) {
-	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"talgent-runtime","version":"1"}`), Agents: []domain.AgentComponent{{Name: "talgent-runtime:personal-work-executor", Description: "Personal Work executor"}}, Parameters: pluginconfig.ParameterDeclarations{"token": {Type: "string", Title: "Token", Description: "Fixture token", Sensitive: true}}}, nil
+	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"talgent","version":"1"}`), Agents: []domain.AgentComponent{{Name: "talgent:personal-work-executor", Description: "Personal Work executor"}}, Parameters: pluginconfig.ParameterDeclarations{"token": {Type: "string", Title: "Token", Description: "Fixture token", Sensitive: true}}}, nil
 }
 
 func (*personalStartupCatalog) ListAccessibleRepositories(context.Context, string) ([]domain.AccessibleRepository, error) {

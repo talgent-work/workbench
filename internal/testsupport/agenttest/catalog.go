@@ -12,12 +12,12 @@ import (
 )
 
 // catalog is the Marketplace's Plugin and Connector catalog: every user has
-// the core runtime plugin enabled, with a sensitive "token" option, and the
+// the core plugin enabled, with a sensitive "token" option, and the
 // platform Connector; the caller's Plugins resolve beside it.
 type catalog struct{ config Config }
 
 func (c *catalog) ListPersonalPlugins(_ context.Context, user string) ([]domain.PersonalPlugin, error) {
-	plugin := domain.PersonalPlugin{Slug: "talgent-runtime", Enabled: true}
+	plugin := domain.PersonalPlugin{Slug: "talgent", Enabled: true}
 	if c.config.PluginConfiguration != nil {
 		plugin.Configuration = pluginconfig.Configuration(c.config.PluginConfiguration(user))
 	}
@@ -35,8 +35,8 @@ func (c *catalog) ResolvePlugin(_ context.Context, _ string, slug string) (domai
 		}
 		return release, nil
 	}
-	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"talgent-runtime","version":"1"}`),
-		Agents:     []domain.AgentComponent{{Name: "talgent-runtime:personal-work-executor", Description: "Personal Work executor"}},
+	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"talgent","version":"1"}`),
+		Agents:     []domain.AgentComponent{{Name: "talgent:personal-work-executor", Description: "Personal Work executor"}},
 		Parameters: pluginconfig.ParameterDeclarations{"token": {Type: "string", Title: "Token", Description: "Fixture token", Sensitive: true}}}, nil
 }
 

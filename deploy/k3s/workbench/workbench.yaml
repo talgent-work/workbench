@@ -432,7 +432,10 @@ data:
     # Project scope's.
     agent-built-in-plugins:
       platform:
-        - talgent-runtime
+        - talgent
+        # The core API plugin teaches Agents the core's public API; a deployment
+        # whose Agents have no direct access to it empties AGENT_API_PLUGIN.
+        - "${AGENT_API_PLUGIN:talgent-api}"
       project: []
     http:
       addr: :8080

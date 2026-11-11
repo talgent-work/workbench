@@ -60,12 +60,12 @@ write_marketplace_manifest() {
         }
       },
       {
-        name: "talgent-runtime",
+        name: "talgent",
         version: "1.2.3",
         source: {
           source: "git-subdir",
           url: "https://github.com/talgent-work/marketplace.git",
-          path: "plugins/talgent-runtime"
+          path: "plugins/talgent"
         }
       }
     ]
@@ -73,13 +73,13 @@ write_marketplace_manifest() {
 }
 
 # Intent: publishing a non-runtime plugin must copy plugins/<id>, bump only that
-# plugin, and not publish talgent-runtime content under the selected id.
+# plugin, and not publish talgent content under the selected id.
 test_syncs_selected_non_runtime_plugin() {
   local repo="${TMP_ROOT}/non-runtime"
   init_fixture_repo "${repo}"
   write_plugin "${repo}" "demo-plugin" "new demo plugin content"
   write_plugin "${repo}/.marketplace-publish" "demo-plugin" "old marketplace content"
-  write_plugin "${repo}/.marketplace-publish" "talgent-runtime" "runtime content"
+  write_plugin "${repo}/.marketplace-publish" "talgent" "runtime content"
   write_marketplace_manifest "${repo}" "demo-plugin"
 
   local output
@@ -95,7 +95,7 @@ test_syncs_selected_non_runtime_plugin() {
   assert_eq "0.0.1" "$(jq -r '.plugins[] | select(.name == "demo-plugin") | .version' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "marketplace version"
   assert_eq "demo-plugin-v0.0.1" "$(jq -r '.plugins[] | select(.name == "demo-plugin") | .source.ref' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "immutable version tag"
   assert_eq "new demo plugin content" "$(cat "${repo}/.marketplace-publish/plugins/demo-plugin/agents/main.md")" "published content"
-  assert_eq "1.2.3" "$(jq -r '.plugins[] | select(.name == "talgent-runtime") | .version' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "runtime marketplace version"
+  assert_eq "1.2.3" "$(jq -r '.plugins[] | select(.name == "talgent") | .version' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "runtime marketplace version"
 
   (
     cd "${repo}"
@@ -185,7 +185,7 @@ test_resolves_publishable_plugins_after_deletion() {
   local repo="${TMP_ROOT}/deleted-plus-runtime"
   init_fixture_repo "${repo}"
   write_plugin "${repo}" "retired-plugin" "old retired content"
-  write_plugin "${repo}" "talgent-runtime" "old runtime content"
+  write_plugin "${repo}" "talgent" "old runtime content"
   (
     cd "${repo}"
     git add .
@@ -193,7 +193,7 @@ test_resolves_publishable_plugins_after_deletion() {
   )
 
   rm -rf "${repo}/plugins/retired-plugin"
-  printf '%s\n' "new runtime content" >"${repo}/plugins/talgent-runtime/agents/main.md"
+  printf '%s\n' "new runtime content" >"${repo}/plugins/talgent/agents/main.md"
   (
     cd "${repo}"
     git add .
@@ -208,11 +208,11 @@ test_resolves_publishable_plugins_after_deletion() {
     EVENT_NAME=push BEFORE_SHA="${before_sha}" AFTER_SHA="${after_sha}" bash scripts/marketplace/resolve-publishable-plugins.sh
   )"
 
-  assert_eq "talgent-runtime" "${output}" "publishable plugin output"
+  assert_eq "talgent" "${output}" "publishable plugin output"
 }
 
 # Intent: missing plugin selection should fail loudly instead of falling back to
-# talgent-runtime and publishing the wrong plugin.
+# talgent and publishing the wrong plugin.
 test_requires_plugin_id() {
   local repo="${TMP_ROOT}/missing-id"
   init_fixture_repo "${repo}"
@@ -280,8 +280,8 @@ test_workflow_uses_selected_plugin() {
   if ! grep -q "repository: talgent-work/marketplace" "${workflow}" || ! grep -q "TALGENT_PLUGIN_SOURCE_KIND: git-subdir" "${workflow}"; then
     fail "publish workflow does not publish to the public marketplace as git-subdir entries"
   fi
-  if grep -Eq "sync-talgent-runtime.sh|feat\\(talgent-runtime\\)|talgent-runtime-v\\$\\{MARKETPLACE_VERSION\\}" "${workflow}"; then
-    fail "publish workflow still hard-codes talgent-runtime publishing"
+  if grep -Eq "sync-talgent.sh|feat\\(talgent\\)|talgent-v\\$\\{MARKETPLACE_VERSION\\}" "${workflow}"; then
+    fail "publish workflow still hard-codes talgent publishing"
   fi
 }
 

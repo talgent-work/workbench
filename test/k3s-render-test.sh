@@ -230,6 +230,25 @@ check(people_only == {"defaultAction": "Deny", "rules": [{"name": "people-only",
 check(container_env(switched, "controlplane").get("PLATFORM_API_ADDRESS") == {"name": "PLATFORM_API_ADDRESS", "value": ""},
       f"AGENT_CORE_API_ACCESS=disabled gives Agents no address for the core, got {container_env(switched, 'controlplane').get('PLATFORM_API_ADDRESS')}")
 
+# The same switch decides the platform scope's core API plugin: the
+# controlplane's configuration, with its placeholders filled from the
+# container's environment, holds talgent-api by default and not when Agents
+# have no direct access to the core.
+def built_in_platform(rendered):
+    config = yaml.safe_load(find(rendered, "ConfigMap", "controlplane-config")["data"]["defaults.yml"])
+    env = container_env(rendered, "controlplane")
+    def fill(entry):
+        def value(match):
+            name, _, default = match.group(1).partition(":")
+            return env[name].get("value", "") if name in env else default
+        return re.sub(r"\$\{(.*?)\}", value, entry)
+    return [slug for slug in map(fill, config["agent-built-in-plugins"]["platform"]) if slug.strip()]
+
+check(built_in_platform(docs) == ["talgent", "talgent-api"],
+      f"by default every Work loads talgent and talgent-api, got {built_in_platform(docs)}")
+check(built_in_platform(switched) == ["talgent"],
+      f"AGENT_CORE_API_ACCESS=disabled leaves talgent-api out of the platform scope, got {built_in_platform(switched)}")
+
 # ADDITIONAL_ENTRY_HOST: empty, every route serves WORKBENCH_HOST only; set,
 # the web-api, auth and computer routes serve that host too, while the
 # Workbench's pages stay on its own.

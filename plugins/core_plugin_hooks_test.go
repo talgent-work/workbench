@@ -8,20 +8,20 @@ import (
 	"testing"
 )
 
-// runtimePlugin is the core runtime plugin every Work runs.
-const runtimePlugin = "talgent-runtime"
+// corePlugin is the core plugin every Work runs.
+const corePlugin = "talgent"
 
-const productContextHook = runtimePlugin + "/hooks/product-context.mjs"
+const productContextHook = corePlugin + "/hooks/product-context.mjs"
 
 // Every Work starts with the core product, and only with it: the core plugin
 // knows no Project, so neither a knowledge mount nor a Project changes it.
 func TestEveryWorkStartsWithTheCoreProduct(t *testing.T) {
 	work := t.TempDir()
-	core := runHook(t, runtimePlugin, productContextHook, "TALGENT_WORK_ROOT="+work)
+	core := runHook(t, corePlugin, productContextHook, "TALGENT_WORK_ROOT="+work)
 	if !strings.HasPrefix(core, "# Talgent\n") {
 		t.Fatalf("a Work gets no core product:\n%s", core)
 	}
-	withProject := runHook(t, runtimePlugin, productContextHook, "TALGENT_WORK_ROOT="+work, "TALGENT_KNOWLEDGE_ROOT="+work, "TALGENT_PROJECT_ID=project")
+	withProject := runHook(t, corePlugin, productContextHook, "TALGENT_WORK_ROOT="+work, "TALGENT_KNOWLEDGE_ROOT="+work, "TALGENT_PROJECT_ID=project")
 	if withProject != core {
 		t.Fatalf("a knowledge mount and a Project change the core product:\n%s", withProject)
 	}

@@ -15,7 +15,7 @@ on:
       plugin_id:
         required: false
         type: string
-        default: talgent-runtime
+        default: talgent
         description: Comma-separated plugin directory name(s) under plugins/ to publish.
       dry_run:
         required: false

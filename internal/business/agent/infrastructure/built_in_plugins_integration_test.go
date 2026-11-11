@@ -28,9 +28,9 @@ import (
 )
 
 const (
-	platformPlugin = "talgent-runtime"
+	platformPlugin = "talgent"
 	projectPlugin  = "project-plugin"
-	personalRole   = "talgent-runtime:personal-work-executor"
+	personalRole   = "talgent:personal-work-executor"
 	projectRole    = "project-plugin:coordinator"
 )
 
