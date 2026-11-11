@@ -171,6 +171,16 @@ type DirectoryBackendPort interface {
 	// RemoveReclaimed removes the Directory's content once no publication
 	// copies from it, or returns ErrPublicationInProgress.
 	RemoveReclaimed(ctx context.Context, directory domain.DirectoryID) error
+	// Lock takes the Directory's lock exclusively, across every process on
+	// the file system, until the returned release runs.
+	Lock(ctx context.Context, directory domain.DirectoryID) (func(), error)
+	// MapFiles aligns a mapped path of the Mapped View with the Directory's
+	// files: each appears there as the same file, and nothing else stays.
+	// The caller holds the Directory's lock.
+	MapFiles(ctx context.Context, directory domain.DirectoryID, path domain.MappedPath) error
+	// UnmapFiles removes a mapped path's files and the folders it emptied.
+	// The caller holds the lock of the Directory mapped there.
+	UnmapFiles(ctx context.Context, path domain.MappedPath) error
 }
 
 // DirectoryBackends are the realizations by the Backend they keep.

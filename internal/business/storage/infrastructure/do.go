@@ -7,11 +7,13 @@ type directoryDO struct {
 	Lifetime   string `xorm:"lifetime"`
 	State      string `xorm:"state"`
 	SpaceToken string `xorm:"space_token"`
-	WorkID     string `xorm:"work_id"`
-	Version    int    `xorm:"'version'"`
-	CreatedAt  int64  `xorm:"created_at"`
-	UpdatedAt  int64  `xorm:"updated_at"`
-	DeletedAt  int64  `xorm:"deleted_at"`
+	// GrantedReadWrite is 1 once a read-write Mount Grant was issued.
+	GrantedReadWrite uint8  `xorm:"granted_read_write"`
+	WorkID           string `xorm:"work_id"`
+	Version          int    `xorm:"'version'"`
+	CreatedAt        int64  `xorm:"created_at"`
+	UpdatedAt        int64  `xorm:"updated_at"`
+	DeletedAt        int64  `xorm:"deleted_at"`
 }
 
 func (directoryDO) TableName() string { return "storage_directory" }
@@ -30,3 +32,13 @@ type shareLinkDO struct {
 }
 
 func (shareLinkDO) TableName() string { return "storage_share_link" }
+
+// mappingDO is one Directory Mapping; its row exists while the mapping does.
+type mappingDO struct {
+	Path          string `xorm:"path pk"`
+	OwnerKey      string `xorm:"owner_key"`
+	DirectoryName string `xorm:"directory_name"`
+	CreatedAt     int64  `xorm:"created_at"`
+}
+
+func (mappingDO) TableName() string { return "storage_directory_mapping" }

@@ -14,12 +14,16 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
-// directoriesMigration is the one-off script that replaces File Spaces with
-// Directories; it and this test are removed once every environment ran it.
-const directoriesMigration = "../../../deploy/middleware/migrations/20261108-storage-directories.sql"
+// directoryMigrations are the one-off scripts that replace File Spaces with
+// Directories, then add Directory Mappings; each and its part of this test
+// are removed once every environment ran it.
+var directoryMigrations = []string{
+	"../../../deploy/middleware/migrations/20261108-storage-directories.sql",
+	"../../../deploy/middleware/migrations/20261111-storage-directory-mappings.sql",
+}
 
-// The script drops the File Space tables and leaves exactly the current
-// schema's Directory tables; applying it again changes nothing.
+// The scripts drop the File Space tables and leave exactly the current
+// schema's Directory tables; applying them again changes nothing.
 func TestDirectoriesMigrationLeavesOnlyTheDirectoryTables(t *testing.T) {
 	db, err := sql.Open("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
@@ -41,17 +45,19 @@ func TestDirectoriesMigrationLeavesOnlyTheDirectoryTables(t *testing.T) {
 	_, err = conn.ExecContext(ctx, "CREATE TABLE storage_share_link (`token` varchar(64) NOT NULL, `owner` varchar(255) NOT NULL DEFAULT '', `target_kind` varchar(16) NOT NULL DEFAULT '', PRIMARY KEY (`token`))")
 	require.NoError(t, err)
 
-	script, err := os.ReadFile(directoriesMigration)
-	require.NoError(t, err)
 	for range 2 {
-		_, err = conn.ExecContext(ctx, string(script))
-		require.NoError(t, err, "the script is repeatable")
+		for _, migration := range directoryMigrations {
+			script, err := os.ReadFile(migration)
+			require.NoError(t, err)
+			_, err = conn.ExecContext(ctx, string(script))
+			require.NoError(t, err, "%s is repeatable", migration)
+		}
 	}
 
 	var spaces int
 	require.NoError(t, conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'storage_file_space'").Scan(&spaces))
 	require.Zero(t, spaces, "the File Space table is gone")
-	for _, table := range []string{"storage_directory", "storage_share_link"} {
+	for _, table := range []string{"storage_directory", "storage_share_link", "storage_directory_mapping"} {
 		require.Equal(t, tableColumns(t, conn, current, table), tableColumns(t, conn, scratch, table), table)
 	}
 }

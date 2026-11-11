@@ -63,7 +63,18 @@ func (a *Application) grantMount(ctx context.Context, located domain.LocatedDire
 	if err != nil {
 		return MountGrant{}, err
 	}
-	admission, err := directory.GrantMount(request.ReadOnly, request.MountPoints)
+	var admission domain.MountAdmission
+	if request.ReadOnly {
+		admission, err = directory.GrantMount(true, request.MountPoints)
+	} else {
+		// A read-write grant is recorded before the mount exists, so a
+		// mapping and it exclude each other through the Directory's version.
+		directory, err = a.changeDirectory(ctx, located.ID, func(directory *domain.Directory) error {
+			var grantErr error
+			admission, grantErr = directory.GrantMount(false, request.MountPoints)
+			return grantErr
+		})
+	}
 	if err != nil {
 		return MountGrant{}, err
 	}

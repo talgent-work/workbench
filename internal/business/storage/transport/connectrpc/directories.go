@@ -15,19 +15,27 @@ import (
 // DirectoryHandler serves the Directory contracts to the contexts that
 // locate Directories, each authenticated by its control token. Callers of
 // File Spaces reach the whole contract; callers that only replace and
-// consult whole content reach opening, content replacement and reading, and
-// the Directory file query.
+// consult whole content reach opening, content replacement and reading, the
+// Directory file query, and mapping beneath their own mapping prefix.
 type DirectoryHandler struct {
 	application *application.Application
 	directory   []string
-	content     []string
+	content     []ContentCaller
+}
+
+// ContentCaller is a caller of the whole-content part, authenticated by its
+// control token, with the mapping prefix configured for it; the zero prefix
+// maps nowhere.
+type ContentCaller struct {
+	Token  string
+	Prefix domain.MappingPrefix
 }
 
 var _ storageprivatev1connect.DirectoryServiceHandler = (*DirectoryHandler)(nil)
 
 // NewDirectoryHandler admits directory's tokens to the whole contract and
-// content's tokens to the whole-content part of it.
-func NewDirectoryHandler(app *application.Application, directory, content []string) *DirectoryHandler {
+// content's callers to the whole-content part of it.
+func NewDirectoryHandler(app *application.Application, directory []string, content []ContentCaller) *DirectoryHandler {
 	return &DirectoryHandler{application: app, directory: directory, content: content}
 }
 
@@ -39,8 +47,43 @@ func (h *DirectoryHandler) directoryCaller(ctx context.Context) error {
 
 // contentCaller admits a caller of the whole-content part.
 func (h *DirectoryHandler) contentCaller(ctx context.Context) error {
+	_, err := h.mappingPrefix(ctx)
+	return err
+}
+
+// mappingPrefix admits a caller of the whole-content part with the mapping
+// prefix configured for its token; a caller of the whole contract has none.
+func (h *DirectoryHandler) mappingPrefix(ctx context.Context) (domain.MappingPrefix, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	return authenticateAny(info.RequestHeader().Get("Authorization"), append(append([]string(nil), h.directory...), h.content...))
+	header := info.RequestHeader().Get("Authorization")
+	for _, caller := range h.content {
+		if authenticate(header, caller.Token) == nil {
+			return caller.Prefix, nil
+		}
+	}
+	return domain.MappingPrefix{}, authenticateAny(header, h.directory)
+}
+
+func (h *DirectoryHandler) MapDirectory(ctx context.Context, request *storageprivatev1.MapDirectoryRequest) (*storageprivatev1.MapDirectoryResponse, error) {
+	prefix, err := h.mappingPrefix(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.application.MapDirectory(ctx, locatedFromProto(request.GetDirectory()), request.GetPath(), prefix); err != nil {
+		return nil, mapError(err)
+	}
+	return &storageprivatev1.MapDirectoryResponse{}, nil
+}
+
+func (h *DirectoryHandler) UnmapDirectory(ctx context.Context, request *storageprivatev1.UnmapDirectoryRequest) (*storageprivatev1.UnmapDirectoryResponse, error) {
+	prefix, err := h.mappingPrefix(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.application.UnmapDirectory(ctx, namedFromProto(request.GetDirectory()), request.GetPath(), prefix); err != nil {
+		return nil, mapError(err)
+	}
+	return &storageprivatev1.UnmapDirectoryResponse{}, nil
 }
 
 func (h *DirectoryHandler) OpenDirectory(ctx context.Context, request *storageprivatev1.OpenDirectoryRequest) (*storageprivatev1.OpenDirectoryResponse, error) {

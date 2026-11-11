@@ -5,6 +5,7 @@ package storage
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"path"
@@ -69,10 +70,10 @@ type Config struct {
 	// DirectoryTokens admit further callers to the whole Directory contract,
 	// for the Directories they locate; none is required.
 	DirectoryTokens []string `json:"directory-tokens" yaml:"directory-tokens" toml:"directory-tokens"`
-	// ContentTokens admit callers that replace and consult whole
-	// content: opening, content replacement and reading, and the Directory
-	// file query; none is required.
-	ContentTokens []string `json:"content-tokens" yaml:"content-tokens" toml:"content-tokens"`
+	// ContentCallers admit callers that replace and consult whole content:
+	// opening, content replacement and reading, the Directory file query,
+	// and mapping beneath their own mapping prefix; none is required.
+	ContentCallers []ContentCallerConfig `json:"content-callers" yaml:"content-callers" toml:"content-callers"`
 	// Mounts names the shared volume claims Mount Grants point into.
 	Mounts MountConfig `json:"mounts" yaml:"mounts" toml:"mounts"`
 	// Preview is Storage's preview configuration.
@@ -84,6 +85,38 @@ type Config struct {
 	// sends; zero means domain.MaxSentContentBytes. It is unexported because
 	// only tests lower it, to exercise the bound without sending 64 MiB.
 	sentContentBytes int
+}
+
+// ContentCallerConfig is one caller of the whole-content part: its control
+// token, and the mapped path beneath which it maps, empty when it maps
+// nowhere. Prefixes never overlap, so no caller places files in, or
+// occupies paths of, another caller's tree.
+type ContentCallerConfig struct {
+	Token         string `json:"token" yaml:"token" toml:"token"`
+	MappingPrefix string `json:"mapping-prefix" yaml:"mapping-prefix" toml:"mapping-prefix"`
+}
+
+// contentCallers are the configured callers with their admitted prefixes.
+func (c Config) contentCallers() ([]storageconnect.ContentCaller, error) {
+	callers := make([]storageconnect.ContentCaller, 0, len(c.ContentCallers))
+	var prefixes []domain.MappedPath
+	for _, caller := range c.ContentCallers {
+		prefix, err := domain.NewMappingPrefix(caller.MappingPrefix)
+		if err != nil {
+			return nil, fmt.Errorf("storage: mapping prefix %q is not a mapped path", caller.MappingPrefix)
+		}
+		if caller.MappingPrefix != "" {
+			mapped := domain.MappedPath(caller.MappingPrefix)
+			for _, other := range prefixes {
+				if mapped.Overlaps(other) {
+					return nil, fmt.Errorf("storage: mapping prefixes %q and %q overlap", other, mapped)
+				}
+			}
+			prefixes = append(prefixes, mapped)
+		}
+		callers = append(callers, storageconnect.ContentCaller{Token: caller.Token, Prefix: prefix})
+	}
+	return callers, nil
 }
 
 // MountConfig names the claims sandboxes mount Directories from, one per
@@ -123,6 +156,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxUploadBytes < 0 {
 		return errors.New("storage: max upload bytes must not be negative")
+	}
+	if _, err := c.contentCallers(); err != nil {
+		return err
 	}
 	return c.Preview.validate()
 }
@@ -185,8 +221,11 @@ const (
 	juiceFSDirectories = "assets/directories"
 	juiceFSPrivate     = "assets/storage"
 	juiceFSPreviews    = "assets/previews"
-	nasDirectories     = "directories"
-	nasPrivate         = "storage"
+	// juiceFSMappedView holds the Mapped View; a standing reader's volume
+	// shows one mapped path beneath it.
+	juiceFSMappedView = "assets/mapped-view"
+	nasDirectories    = "directories"
+	nasPrivate        = "storage"
 )
 
 // assemble builds Storage's application over its mechanisms; unset link
@@ -221,7 +260,7 @@ func mechanisms(config Config, queries query.DirectoryQueryRepository, tasks app
 		PreviewQueries:   previews,
 		Backends: application.DirectoryBackends{
 			domain.BackendJuiceFS: infrastructure.NewDirectoryFiles(infrastructure.DirectoryLayout{
-				Root: config.PersistentRoot, Published: juiceFSDirectories, Private: juiceFSPrivate,
+				Root: config.PersistentRoot, Published: juiceFSDirectories, Private: juiceFSPrivate, MappedView: juiceFSMappedView,
 				Claim: config.Mounts.JuiceFSClaim, ClaimRoot: config.Mounts.JuiceFSRoot, SandboxUID: uid,
 			}),
 			domain.BackendNAS: infrastructure.NewDirectoryFiles(infrastructure.DirectoryLayout{
@@ -245,7 +284,9 @@ const artifactMessageOverhead = 64 << 10
 
 func registerHandlers(app *application.Application, config Config, mux *http.ServeMux, logger *slog.Logger) {
 	server := connectserver.New(logger)
-	storageprivatev1connect.RegisterDirectoryServiceHandler(server, storageconnect.NewDirectoryHandler(app, append([]string{config.AgentToken}, config.DirectoryTokens...), config.ContentTokens))
+	// Validated when the application was assembled.
+	content, _ := config.contentCallers()
+	storageprivatev1connect.RegisterDirectoryServiceHandler(server, storageconnect.NewDirectoryHandler(app, append([]string{config.AgentToken}, config.DirectoryTokens...), content))
 	storageprivatev1connect.RegisterSandboxMountServiceHandler(server, storageconnect.NewSandboxMountHandler(app, config.AgentToken))
 	connectserver.Mount(mux, server)
 	mountArtifactService(mux, app, logger)

@@ -66,8 +66,19 @@ func mapError(err error) error {
 		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_NAME, err)
 	case errors.Is(err, domain.ErrInvalidLocator):
 		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_LOCATOR, err)
+	case errors.Is(err, domain.ErrMappingOutsidePrefix):
+		return storageerror.New(connect.CodePermissionDenied, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX, err)
+	case errors.Is(err, domain.ErrMappingOverlaps):
+		return storageerror.New(connect.CodeAlreadyExists, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OVERLAPS, err)
+	case errors.Is(err, domain.ErrGrantedReadWrite):
+		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_GRANTED_READ_WRITE, err)
+	case errors.Is(err, domain.ErrBackendNotMappable):
+		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_BACKEND_NOT_MAPPABLE, err)
+	case errors.Is(err, domain.ErrDirectoryMapped):
+		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED, err)
 	case errors.Is(err, application.ErrInvalidRequest), errors.Is(err, domain.ErrSharerRequired), errors.Is(err, domain.ErrFileWriterRequired),
-		errors.Is(err, domain.ErrInvalidContentPath), errors.Is(err, domain.ErrInvalidMountPoint), errors.Is(err, domain.ErrInvalidWorkspaceLayout):
+		errors.Is(err, domain.ErrInvalidContentPath), errors.Is(err, domain.ErrInvalidMountPoint), errors.Is(err, domain.ErrInvalidWorkspaceLayout),
+		errors.Is(err, domain.ErrInvalidMappedPath):
 		return storageerror.New(connect.CodeInvalidArgument, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST, err)
 	case errors.Is(err, domain.ErrDirectoryNotOpen):
 		return storageerror.New(connect.CodeFailedPrecondition, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_NOT_OPEN, err)

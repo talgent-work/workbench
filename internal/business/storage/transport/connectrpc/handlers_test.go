@@ -47,6 +47,12 @@ func TestDirectoryRefusalsCarryTheirReason(t *testing.T) {
 		domain.ErrDirectoryReclaimed:    storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED,
 		domain.ErrPermanentDirectory:    storageprivatev1.ErrorReason_ERROR_REASON_PERMANENT_DIRECTORY,
 		application.ErrNameTaken:        storageprivatev1.ErrorReason_ERROR_REASON_NAME_TAKEN,
+		domain.ErrMappingOutsidePrefix:  storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OUTSIDE_PREFIX,
+		domain.ErrMappingOverlaps:       storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OVERLAPS,
+		domain.ErrGrantedReadWrite:      storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_GRANTED_READ_WRITE,
+		domain.ErrBackendNotMappable:    storageprivatev1.ErrorReason_ERROR_REASON_BACKEND_NOT_MAPPABLE,
+		domain.ErrDirectoryMapped:       storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED,
+		domain.ErrInvalidMappedPath:     storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST,
 	} {
 		require.Equal(t, want, storageerror.ReasonOf(mapError(err)), err.Error())
 	}

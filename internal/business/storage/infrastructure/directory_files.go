@@ -52,6 +52,9 @@ type DirectoryLayout struct {
 	// Private holds staged content, locks and content being removed,
 	// outside every Directory.
 	Private string
+	// MappedView holds the Mapped View, outside every Directory; empty on a
+	// file system that keeps none.
+	MappedView string
 	// Claim is the shared volume claim sandboxes mount Directories from, and
 	// ClaimRoot where Root lies within it.
 	Claim, ClaimRoot string

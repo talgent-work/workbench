@@ -2,8 +2,10 @@ package infrastructure
 
 import (
 	"context"
+	"strings"
 
 	"github.com/samber/oops"
+	"xorm.io/builder"
 	"xorm.io/xorm"
 
 	"github.com/talgent-work/workbench/internal/business/storage/application/query"
@@ -41,4 +43,39 @@ func (r *DirectoryQueries) WorkDirectories(ctx context.Context, workID string) (
 		})
 	}
 	return directories, nil
+}
+
+// MappingsAround reads the mapping at the path, those above it by their
+// exact ancestor paths, and those inside it by the key range of paths
+// beginning with "<path>/": "/" sorts right before "0" in utf8mb4_bin.
+func (r *DirectoryQueries) MappingsAround(ctx context.Context, path domain.MappedPath) ([]query.Mapping, error) {
+	around := []any{string(path)}
+	for ancestor := string(path); strings.Contains(ancestor, "/"); {
+		ancestor = ancestor[:strings.LastIndex(ancestor, "/")]
+		around = append(around, ancestor)
+	}
+	var rows []mappingDO
+	err := r.engine.Context(ctx).Cols(mappingColumns...).
+		Where(builder.Or(builder.In("path", around...), builder.And(builder.Gt{"path": string(path) + "/"}, builder.Lt{"path": string(path) + "0"}))).
+		Asc("path").Find(&rows)
+	if err != nil {
+		return nil, oops.With("operation", "storage.mappings.around").Wrap(err)
+	}
+	return mappingsFromDO(rows)
+}
+
+func mappingsFromDO(rows []mappingDO) ([]query.Mapping, error) {
+	mappings := make([]query.Mapping, 0, len(rows))
+	for _, row := range rows {
+		id, err := directoryIDFromDO(row.OwnerKey, row.DirectoryName)
+		if err != nil {
+			return nil, err
+		}
+		path, err := domain.ParseMappedPath(row.Path)
+		if err != nil {
+			return nil, oops.With("mapped_path", row.Path).Wrap(err)
+		}
+		mappings = append(mappings, query.Mapping{Path: path, Directory: id})
+	}
+	return mappings, nil
 }
