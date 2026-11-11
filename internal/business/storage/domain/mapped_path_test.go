@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,7 +32,8 @@ func allocatedSpace(t *testing.T, backend Backend) *Directory {
 
 func TestAMappedPathIsACleanRelativePathOfVisibleElements(t *testing.T) {
 	require.Equal(t, MappedPath("view/p1/i1/inputs"), mapped(t, "view/p1/i1/inputs"))
-	for _, raw := range []string{"", ".", "..", "/view", "view/", "view//a", "view/../a", "view/.hidden", ".view", "a\\b", "a\x00b"} {
+	for _, raw := range []string{"", ".", "..", "/view", "view/", "view//a", "view/../a", "view/.hidden", ".view", "a\\b", "a\x00b",
+		"view/a ", "view/ a", "view/\xff", strings.Repeat("a", MaxMappedPathCharacters+1)} {
 		_, err := ParseMappedPath(raw)
 		require.ErrorIs(t, err, ErrInvalidMappedPath, raw)
 	}
@@ -102,4 +104,9 @@ func TestReclamationEndsEveryMapping(t *testing.T) {
 	require.NoError(t, d.Reclaim())
 	require.Empty(t, d.Mappings)
 	require.ErrorIs(t, d.Map("view/a", prefix(t, "view"), true), ErrDirectoryReclaimed)
+}
+
+func TestOnlyAJuiceFSDirectoryIsAdmittedForMapping(t *testing.T) {
+	require.NoError(t, located(t, owner(t, "subject", "case:1"), "inputs", BackendJuiceFS, LifetimePermanent).AdmitMapping())
+	require.ErrorIs(t, located(t, owner(t, "subject", "case:1"), "notes", BackendNAS, LifetimePermanent).AdmitMapping(), ErrBackendNotMappable)
 }

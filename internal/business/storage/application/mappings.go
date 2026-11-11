@@ -12,6 +12,9 @@ import (
 // as the same files. Every change of a Directory's mappings and files runs
 // under its lock, so a mapping's files follow its record: a mapping is
 // recorded before its files appear, and its files go before its record.
+// Mapping and unmapping also hold the Mapped View's lock, taken after the
+// Directory's, so the paths found disjoint stay disjoint until recorded and
+// no folder one mapping empties is removed under another being made.
 
 // MapDirectory maps a located Directory at a mapped path beneath the
 // caller's prefix, opening the Directory first when it was never opened.
@@ -29,11 +32,19 @@ func (a *Application) MapDirectory(ctx context.Context, request Located, rawPath
 	if err != nil {
 		return err
 	}
+	if err := located.AdmitMapping(); err != nil {
+		return err
+	}
 	directory, err := a.open(ctx, located)
 	if err != nil {
 		return err
 	}
 	return a.underLock(ctx, directory, func(backend DirectoryBackendPort) error {
+		unlockView, err := backend.LockMappedView(ctx)
+		if err != nil {
+			return err
+		}
+		defer unlockView()
 		around, err := a.directoryQueries.MappingsAround(ctx, path)
 		if err != nil {
 			return err
@@ -81,6 +92,11 @@ func (a *Application) UnmapDirectory(ctx context.Context, named Named, rawPath s
 		if !current.MappedAt(path) {
 			return nil
 		}
+		unlockView, err := backend.LockMappedView(ctx)
+		if err != nil {
+			return err
+		}
+		defer unlockView()
 		if err := backend.UnmapFiles(ctx, path); err != nil {
 			return err
 		}

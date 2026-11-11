@@ -4,8 +4,10 @@
 --
 -- When: before deploying the release whose Storage maps Directories. The
 -- previous Storage ignores both, so the script may run while it still serves.
--- Every existing Directory starts as never granted read-write; a Directory a
--- read-write mount wrote earlier lies on the NAS, which is never mapped.
+-- Every existing Directory starts as never granted read-write. The default
+-- Work Layout mounts JuiceFS Directories read-only, so only a custom layout
+-- could have mounted one read-write before; on the development environment,
+-- the only one this runs on, none did.
 -- Repeatable: yes. The column is added only when it is missing, and the
 -- table is created only when missing.
 -- Rollback: roll back the Storage image; the column and table may stay.

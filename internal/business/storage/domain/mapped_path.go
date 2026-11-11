@@ -3,6 +3,8 @@ package domain
 import (
 	"errors"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 var (
@@ -26,18 +28,22 @@ var (
 )
 
 // MappedPath is a clean relative path in the Mapped View, chosen and
-// interpreted only by the caller that maps there: "/"-separated elements,
-// none empty, "." or "..", none starting with "." and none holding "\" or
-// NUL.
+// interpreted only by the caller that maps there: at most
+// MaxMappedPathCharacters, "/"-separated elements, none empty, "." or "..",
+// none starting with "." or with or ending in white space, and none holding
+// "\\" or NUL.
 type MappedPath string
+
+// MaxMappedPathCharacters bounds a mapped path, as its record keeps it.
+const MaxMappedPathCharacters = 512
 
 // ParseMappedPath admits a mapped path.
 func ParseMappedPath(raw string) (MappedPath, error) {
-	if !cleanRelative(raw) {
+	if !cleanRelative(raw) || !utf8.ValidString(raw) || utf8.RuneCountInString(raw) > MaxMappedPathCharacters {
 		return "", ErrInvalidMappedPath
 	}
 	for element := range strings.SplitSeq(raw, "/") {
-		if strings.HasPrefix(element, ".") {
+		if strings.HasPrefix(element, ".") || strings.TrimFunc(element, unicode.IsSpace) != element {
 			return "", ErrInvalidMappedPath
 		}
 	}

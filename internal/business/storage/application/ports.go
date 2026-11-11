@@ -174,6 +174,10 @@ type DirectoryBackendPort interface {
 	// Lock takes the Directory's lock exclusively, across every process on
 	// the file system, until the returned release runs.
 	Lock(ctx context.Context, directory domain.DirectoryID) (func(), error)
+	// LockMappedView takes the Mapped View's one lock exclusively, across
+	// every process on the file system; a holder of a Directory's lock may
+	// take it, never the reverse.
+	LockMappedView(ctx context.Context) (func(), error)
 	// MapFiles aligns a mapped path of the Mapped View with the Directory's
 	// files: each appears there as the same file, and nothing else stays.
 	// The caller holds the Directory's lock.

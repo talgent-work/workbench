@@ -31,6 +31,18 @@ func (f *DirectoryFiles) Lock(ctx context.Context, id domain.DirectoryID) (func(
 	return f.lock(ctx, id, unix.LOCK_EX)
 }
 
+// mappedViewLock names the Mapped View's lock among the Directories' locks;
+// no Directory key, a hex digest, has its form.
+const mappedViewLock = "mapped-view"
+
+// LockMappedView takes the Mapped View's lock exclusively.
+func (f *DirectoryFiles) LockMappedView(ctx context.Context) (func(), error) {
+	if f.layout.MappedView == "" {
+		return nil, errNoMappedView
+	}
+	return f.lockNamed(ctx, mappedViewLock, unix.LOCK_EX)
+}
+
 // view is a mapped path's folder on the file system.
 func (f *DirectoryFiles) view(mapped domain.MappedPath) (string, error) {
 	if f.layout.MappedView == "" {

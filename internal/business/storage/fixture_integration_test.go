@@ -53,6 +53,8 @@ type fixture struct {
 	nas *interruptibleBackend
 	// rpc calls the Directory contract over Connect.
 	rpc storageprivatev1connect.DirectoryServiceClient
+	// mounts calls the Sandbox Mount contract over Connect as Agent, token "a".
+	mounts storageprivatev1connect.SandboxMountServiceClient
 	// converter stands for Gotenberg; queue for the task lanes.
 	converter *fakeConverter
 	queue     *fakeQueue
@@ -100,8 +102,11 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	require.NoError(t, err)
 	rpc := connectserver.New(slog.Default())
 	storageprivatev1connect.RegisterDirectoryServiceHandler(rpc, storageconnect.NewDirectoryHandler(f.app, []string{config.AgentToken, "i"}, content))
+	storageprivatev1connect.RegisterSandboxMountServiceHandler(rpc, storageconnect.NewSandboxMountHandler(f.app, config.AgentToken))
 	connectserver.Mount(mux, rpc)
-	f.rpc = storageprivatev1connect.NewDirectoryServiceClient(connect.NewClient(connecthttp.NewTransport(f.server.Client(), f.server.URL)))
+	client := connect.NewClient(connecthttp.NewTransport(f.server.Client(), f.server.URL))
+	f.rpc = storageprivatev1connect.NewDirectoryServiceClient(client)
+	f.mounts = storageprivatev1connect.NewSandboxMountServiceClient(client)
 	return f
 }
 

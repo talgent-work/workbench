@@ -143,6 +143,16 @@ type LocatedDirectory struct {
 
 // NewLocatedDirectory admits a located Directory. A Work lifetime needs an
 // owner that names its Work, so reclamation can find it.
+// AdmitMapping refuses, before it is opened, a located Directory whose
+// backend keeps no Mapped View; the first allocation still decides, so the
+// Directory's Map checks again.
+func (l LocatedDirectory) AdmitMapping() error {
+	if l.Backend != BackendJuiceFS {
+		return ErrBackendNotMappable
+	}
+	return nil
+}
+
 func NewLocatedDirectory(id DirectoryID, backend Backend, lifetime Lifetime) (LocatedDirectory, error) {
 	if id.Owner.IsZero() || !backend.Valid() || !lifetime.Valid() {
 		return LocatedDirectory{}, ErrInvalidLocator

@@ -4,6 +4,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -93,6 +94,8 @@ func TestReadWriteGrantsAndMappingsExcludeEachOther(t *testing.T) {
 	require.NoError(t, f.mapAt(shown, "view/p1/case-3/inputs"))
 	_, err = f.app.AcquireMounts(t.Context(), "work-1", []application.MountRequest{{Directory: shown}})
 	require.ErrorIs(t, err, domain.ErrDirectoryMapped)
+	_, err = f.mounts.AcquireMounts(f.as("a"), &storageprivatev1.AcquireMountsRequest{WorkId: "work-1", Mounts: []*storageprivatev1.MountRequest{{Directory: locatedProto(shown)}}})
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_MAPPED, storageerror.ReasonOf(err))
 	_, err = f.app.AcquireMounts(t.Context(), "work-1", []application.MountRequest{{Directory: shown, ReadOnly: true}})
 	require.NoError(t, err, "a mapped Directory still mounts read-only")
 
@@ -101,24 +104,56 @@ func TestReadWriteGrantsAndMappingsExcludeEachOther(t *testing.T) {
 	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_GRANTED_READ_WRITE, storageerror.ReasonOf(err))
 }
 
-// Overlapping paths, NAS Directories and reclaimed Directories are refused.
+// Overlapping paths, NAS Directories and reclaimed Directories are refused,
+// each with its contract reason.
 func TestMappingsRefuseOverlapsTheNASAndReclaimedDirectories(t *testing.T) {
 	f := newFixture(t)
+	mapping := func(located application.Located, path string) storageprivatev1.ErrorReason {
+		_, err := f.rpc.MapDirectory(f.as("k"), &storageprivatev1.MapDirectoryRequest{Directory: locatedProto(located), Path: path})
+		if err == nil {
+			return storageprivatev1.ErrorReason_ERROR_REASON_UNSPECIFIED
+		}
+		return storageerror.ReasonOf(err)
+	}
 	inputs := fileSpace(named("inputs", "subject", "case:4"))
+	artifacts := fileSpace(named("artifacts", "subject", "case:4"))
 	require.NoError(t, f.mapAt(inputs, "view/p1/case-4"))
 	for _, path := range []string{"view/p1/case-4", "view/p1/case-4/inputs", "view/p1"} {
-		require.ErrorIs(t, f.mapAt(fileSpace(named("artifacts", "subject", "case:4")), path), domain.ErrMappingOverlaps, path)
+		require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_MAPPING_OVERLAPS, mapping(artifacts, path), path)
 	}
-	require.NoError(t, f.mapAt(fileSpace(named("artifacts", "subject", "case:4")), "view/p1/case-40"), "a sibling path is apart")
+	require.NoError(t, f.mapAt(artifacts, "view/p1/case-40"), "a sibling path is apart")
 
 	nas := application.Located{Directory: named("notes", "subject", "case:4"), Backend: domain.BackendNAS, Lifetime: domain.LifetimePermanent}
-	require.ErrorIs(t, f.mapAt(nas, "view/p2/notes"), domain.ErrBackendNotMappable)
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_BACKEND_NOT_MAPPABLE, mapping(nas, "view/p2/notes"))
+	require.NoDirExists(t, f.folder(nas), "a refused mapping opens nothing")
 
 	outputs := application.Located{Directory: named("outputs", "work", "work-9"), Backend: domain.BackendJuiceFS, Lifetime: domain.LifetimeWork}
 	f.open(outputs)
 	require.NoError(t, f.app.RequestWorkReclamation(t.Context(), "work-9"))
-	require.ErrorIs(t, f.mapAt(outputs, "view/p3/outputs"), domain.ErrDirectoryReclaimed)
-	require.ErrorIs(t, f.mapAt(inputs, "view/../escape"), domain.ErrInvalidMappedPath)
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_DIRECTORY_RECLAIMED, mapping(outputs, "view/p3/outputs"))
+	require.Equal(t, storageprivatev1.ErrorReason_ERROR_REASON_INVALID_REQUEST, mapping(inputs, "view/../escape"))
+}
+
+// Directories mapped at the same time at nested paths never both hold
+// their mapping: one of them is refused as overlapping.
+func TestConcurrentMappingsAtNestedPathsNeverOverlap(t *testing.T) {
+	f := newFixture(t)
+	for round := range 5 {
+		outer := fileSpace(named("inputs", "subject", fmt.Sprintf("outer:%d", round)))
+		inner := fileSpace(named("inputs", "subject", fmt.Sprintf("inner:%d", round)))
+		f.open(outer)
+		f.open(inner)
+		results := make(chan error, 2)
+		go func() { results <- f.mapAt(outer, fmt.Sprintf("view/race-%d", round)) }()
+		go func() { results <- f.mapAt(inner, fmt.Sprintf("view/race-%d/inner", round)) }()
+		first, second := <-results, <-results
+		require.True(t, first == nil != (second == nil), "exactly one maps: %v, %v", first, second)
+		for _, err := range []error{first, second} {
+			if err != nil {
+				require.ErrorIs(t, err, domain.ErrMappingOverlaps)
+			}
+		}
+	}
 }
 
 // The Connect handler admits a mapping only beneath the prefix configured

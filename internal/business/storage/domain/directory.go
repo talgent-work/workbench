@@ -141,6 +141,10 @@ func (d *Directory) GrantMount(readOnly bool, mountPoints []string) (MountAdmiss
 	return admission, nil
 }
 
+// RecordsReadWrite reports whether issuing a grant of this access changes
+// the Directory: the first read-write grant records that it was granted.
+func (d *Directory) RecordsReadWrite(readOnly bool) bool { return !readOnly && !d.GrantedReadWrite }
+
 // Map adds a mapped path beneath the caller's prefix while Allocated on
 // JuiceFS and never granted read-write, on the supplied fact that the path
 // overlaps no other mapping. Mapping it again at the same path changes

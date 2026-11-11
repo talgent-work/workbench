@@ -295,7 +295,13 @@ func (f *DirectoryFiles) areaPath(area string, id domain.DirectoryID) string {
 // lock takes the Directory's lock in mode, waiting while another holder, in
 // this or any other process on the file system, keeps it.
 func (f *DirectoryFiles) lock(ctx context.Context, id domain.DirectoryID, mode int) (func(), error) {
-	fd, err := f.openLock(id)
+	return f.lockNamed(ctx, key(id), mode)
+}
+
+// lockNamed takes the lock of the name in the locks area in mode, waiting
+// while another holder keeps it.
+func (f *DirectoryFiles) lockNamed(ctx context.Context, name string, mode int) (func(), error) {
+	fd, err := f.openLock(name)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +325,7 @@ func (f *DirectoryFiles) lock(ctx context.Context, id domain.DirectoryID, mode i
 
 // tryLock takes the Directory's lock exclusively or reports EWOULDBLOCK.
 func (f *DirectoryFiles) tryLock(id domain.DirectoryID) (func(), error) {
-	fd, err := f.openLock(id)
+	fd, err := f.openLock(key(id))
 	if err != nil {
 		return nil, err
 	}
@@ -334,13 +340,13 @@ func releaser(fd int) func() {
 	return func() { _ = unix.Flock(fd, unix.LOCK_UN); unix.Close(fd) }
 }
 
-func (f *DirectoryFiles) openLock(id domain.DirectoryID) (int, error) {
+func (f *DirectoryFiles) openLock(name string) (int, error) {
 	locks, err := openDirectory(f.layout.Root, f.private(locksArea), true, privateMode)
 	if err != nil {
 		return -1, oops.With("operation", "storage.lock").Wrap(err)
 	}
 	defer unix.Close(locks)
-	fd, err := unix.Openat(locks, key(id), unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	fd, err := unix.Openat(locks, name, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if err != nil {
 		return -1, oops.With("operation", "storage.lock").Wrap(err)
 	}
