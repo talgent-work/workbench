@@ -182,6 +182,9 @@ func (d *Directory) Unmap(path MappedPath, prefix MappingPrefix) error {
 	return nil
 }
 
+// Mapped reports whether it is mapped at any path.
+func (d *Directory) Mapped() bool { return len(d.Mappings) > 0 }
+
 // MappedAt reports whether it is mapped at the path.
 func (d *Directory) MappedAt(path MappedPath) bool { return slices.Contains(d.Mappings, path) }
 

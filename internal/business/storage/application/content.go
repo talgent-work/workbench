@@ -37,7 +37,13 @@ func (a *Application) ReplaceContent(ctx context.Context, named Named, token str
 	if err != nil {
 		return err
 	}
-	return backend.ReplaceContent(ctx, id, files)
+	return a.mappedChange(ctx, backend, id, func(directory *domain.Directory) error {
+		// Admitted again under the lock: a reclamation may have come between.
+		if err := directory.AdmitContentReplacement(token); err != nil {
+			return err
+		}
+		return a.carriedOut(ctx, id, backend.ReplaceContent(ctx, id, files, directory.Mappings))
+	})
 }
 
 // ReadContent reads files of a Directory's current content by clean relative

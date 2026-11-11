@@ -33,7 +33,15 @@ var (
 	// ErrPublicationInProgress means a publication still copies from a
 	// reclaimed Directory, so its content stays for a later attempt.
 	ErrPublicationInProgress = errors.New("storage: a publication still copies from the Directory")
+	// ErrMappedViewBehind means a change was carried out in the Directory but
+	// did not reach every mapped path, which shows fewer files until the
+	// Mapped View is repaired.
+	ErrMappedViewBehind = errors.New("storage: the Mapped View is behind its Directory until repaired")
 )
+
+// StagedContent names content staged completely on a Directory's backend,
+// not yet visible; Commit makes it a file, and Discard removes it.
+type StagedContent string
 
 // FileAttributes are the facts kept with a file besides its name, content
 // and times: who uploaded an Attachment, which Work published an Artifact,
@@ -135,23 +143,35 @@ type DirectoryBackendPort interface {
 	// List lists the files Storage wrote directly into the Directory.
 	List(ctx context.Context, directory domain.DirectoryID) ([]StoredFile, error)
 	Stat(ctx context.Context, position domain.FilePosition) (StoredFile, error)
-	// Write stages the content completely, then makes it visible at the
-	// position in one atomic step with its origin. A Create refuses a taken
-	// position with ErrNameTaken; a Replace refuses an absent one with
-	// ErrFileNotFound and keeps the previous content on failure.
-	Write(ctx context.Context, position domain.FilePosition, content io.Reader, attributes FileAttributes, replace bool) (StoredFile, error)
-	Rename(ctx context.Context, from, to domain.FilePosition) (StoredFile, error)
+	// Stage writes the content completely, with its origin, where no reader
+	// sees it.
+	Stage(ctx context.Context, content io.Reader, attributes FileAttributes) (StagedContent, error)
+	// Discard removes staged content that was not committed.
+	Discard(staged StagedContent)
+	// Commit makes staged content visible at the position in one atomic
+	// step. A Create refuses a taken position with ErrNameTaken; a Replace
+	// refuses an absent one with ErrFileNotFound and keeps the previous
+	// content on failure.
+	//
+	// Every file command and content replacement takes the mapped paths of
+	// its Directory, whose lock the caller holds, and follows them there:
+	// a link that goes is removed before the Directory changes, and one that
+	// comes is made after, so an interruption leaves the Mapped View with
+	// fewer files, never more. A change carried out whose new link was not
+	// made returns its result with ErrMappedViewBehind.
+	Commit(ctx context.Context, staged StagedContent, position domain.FilePosition, replace bool, mappings []domain.MappedPath) (StoredFile, error)
+	Rename(ctx context.Context, from, to domain.FilePosition, mappings []domain.MappedPath) (StoredFile, error)
 	// Remove deletes the file and reports whether this call removed one; an
 	// absent file is already removed.
-	Remove(ctx context.Context, position domain.FilePosition) (bool, error)
+	Remove(ctx context.Context, position domain.FilePosition, mappings []domain.MappedPath) (bool, error)
 	Open(ctx context.Context, position domain.FilePosition) (OpenedFile, error)
 	// Inspect finds the content structure Preview Policy judges, with the
 	// facts of the same content.
 	Inspect(ctx context.Context, position domain.FilePosition) (StoredFile, domain.ContentStructure, error)
 	// ReplaceContent stages the files as the Directory's whole new content,
 	// switches it in in one atomic step and removes every earlier content
-	// before returning.
-	ReplaceContent(ctx context.Context, directory domain.DirectoryID, files []ContentFile) error
+	// before returning. The caller holds the Directory's lock.
+	ReplaceContent(ctx context.Context, directory domain.DirectoryID, files []ContentFile, mappings []domain.MappedPath) error
 	// ReadContent reads the given files of the current content, every file
 	// when none is given; a path the content lacks is left out.
 	ReadContent(ctx context.Context, directory domain.DirectoryID, paths []domain.ContentPath) ([]ContentFile, error)

@@ -32,11 +32,58 @@ func (a *Application) RequestWorkReclamation(ctx context.Context, workID string)
 	return errors.Join(failures...)
 }
 
+// reclaim records the reclamation at once. A mapped Directory's is
+// recorded under its lock, removing its mappings' files and emptied folders
+// from the Mapped View first, so none stays readable through a mapping once
+// the record is gone. An unmapped one takes no lock: a publication copying
+// from it holds its lock until the copy ends, and only the removal of its
+// content waits for that. A mapping recorded in between leaves files no
+// record holds, which the Mapped View repair removes.
 func (a *Application) reclaim(ctx context.Context, id domain.DirectoryID) error {
-	if _, err := a.changeDirectory(ctx, id, (*domain.Directory).Reclaim); err != nil {
+	directory, err := a.directories.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !directory.Mapped() {
+		if _, err := a.changeDirectory(ctx, id, (*domain.Directory).Reclaim); err != nil {
+			return err
+		}
+		return a.requestRemoval(ctx, id)
+	}
+	backend, err := a.backends.of(directory)
+	if err != nil {
+		return err
+	}
+	err = a.mappedChange(ctx, backend, id, func(directory *domain.Directory) error {
+		if err := a.endMappings(ctx, backend, directory); err != nil {
+			return err
+		}
+		_, err := a.changeDirectory(ctx, id, (*domain.Directory).Reclaim)
+		return err
+	})
+	if err != nil {
 		return err
 	}
 	return a.requestRemoval(ctx, id)
+}
+
+// endMappings removes the files of each of the Directory's mappings under
+// the Mapped View's lock; the caller holds the Directory's.
+func (a *Application) endMappings(ctx context.Context, backend DirectoryBackendPort, directory *domain.Directory) error {
+	if !directory.Mapped() {
+		return nil
+	}
+	unlockView, err := backend.LockMappedView(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlockView()
+	for _, path := range directory.Mappings {
+		if err := backend.UnmapFiles(ctx, path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // requestRemoval queues the removal of a reclaimed Directory's content.

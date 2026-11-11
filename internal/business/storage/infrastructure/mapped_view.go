@@ -12,6 +12,7 @@ import (
 	"github.com/samber/oops"
 	"golang.org/x/sys/unix"
 
+	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
 
@@ -97,6 +98,57 @@ func (f *DirectoryFiles) UnmapFiles(ctx context.Context, mapped domain.MappedPat
 		return operation.Wrap(err)
 	}
 	return operation.Wrap(removeEmptyParents(filepath.Join(f.layout.Root, filepath.FromSlash(f.layout.MappedView)), view))
+}
+
+// unlinkMapped removes the link at relative from each mapped path, before
+// the Directory's file goes or changes.
+func (f *DirectoryFiles) unlinkMapped(mappings []domain.MappedPath, relative string) error {
+	for _, mapped := range mappings {
+		view, err := f.view(mapped)
+		if err != nil {
+			return err
+		}
+		if err := removeEntry(filepath.Join(view, filepath.FromSlash(relative))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// linkMapped links the file at a position into each mapped path once it is
+// in place. A link not made leaves the Mapped View behind, which the repair
+// aligns; the change itself was carried out.
+func (f *DirectoryFiles) linkMapped(mappings []domain.MappedPath, position domain.FilePosition) error {
+	source := filepath.Join(f.folder(position.Directory), position.Name)
+	var failures []error
+	for _, mapped := range mappings {
+		view, err := f.view(mapped)
+		if err == nil {
+			err = linkInto(view, position.Name, source)
+		}
+		if err != nil {
+			failures = append(failures, oops.With("mapped_path", string(mapped)).Wrap(err))
+		}
+	}
+	if len(failures) > 0 {
+		return errors.Join(append(failures, application.ErrMappedViewBehind)...)
+	}
+	return nil
+}
+
+// clearMapped removes every file and folder from each mapped path, keeping
+// its own folder, before the Directory's whole content is replaced.
+func (f *DirectoryFiles) clearMapped(mappings []domain.MappedPath) error {
+	for _, mapped := range mappings {
+		view, err := f.view(mapped)
+		if err != nil {
+			return err
+		}
+		if err := pruneView(view, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // mappedFiles are the Directory's files by the relative path a mapping
