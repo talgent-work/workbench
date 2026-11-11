@@ -159,6 +159,9 @@ func (f *DirectoryFiles) PruneMappedView(ctx context.Context, mapped []domain.Ma
 		return oops.With("operation", "storage.prune_mapped_view").Wrap(errNoMappedView)
 	}
 	root := filepath.Join(f.layout.Root, filepath.FromSlash(f.layout.MappedView))
+	if !exists(root) {
+		return nil
+	}
 	held := make(map[string]bool, len(mapped))
 	above := map[string]bool{}
 	for _, path := range mapped {
@@ -167,11 +170,7 @@ func (f *DirectoryFiles) PruneMappedView(ctx context.Context, mapped []domain.Ma
 			above[parent] = true
 		}
 	}
-	err := pruneFolder(ctx, root, "", held, above)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	return oops.With("operation", "storage.prune_mapped_view").Wrap(err)
+	return oops.With("operation", "storage.prune_mapped_view").Wrap(pruneFolder(ctx, root, "", held, above))
 }
 
 // pruneFolder prunes the folder at relative beneath root: a mapped path is

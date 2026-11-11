@@ -49,35 +49,52 @@ func TestOneRepairAlignsEveryMappedPath(t *testing.T) {
 	f.requireShowsDirectory(inputs, "view/p1/case-1/inputs", "a.md", "b.md")
 }
 
-// A repair running while files are written, replaced and deleted never
-// leaves a stale file behind, and the view ends aligned.
-func TestRepairRunsAlongsideConcurrentWrites(t *testing.T) {
+// A repair running while files are written, replaced and deleted, and
+// while other Directories are mapped and unmapped, never leaves a stale
+// file behind, and the view ends aligned.
+func TestRepairRunsAlongsideConcurrentWritesAndMappings(t *testing.T) {
 	f := newFixture(t)
 	inputs := fileSpace(named("inputs", "subject", "case:2"))
 	token := f.open(inputs)
 	require.NoError(t, f.mapAt(inputs, "view/p1/case-2"))
 
-	var writes sync.WaitGroup
-	writes.Add(1)
+	failures := make(chan error, 64)
+	var work sync.WaitGroup
+	work.Add(2)
 	go func() {
-		defer writes.Done()
+		defer work.Done()
 		for i := range 20 {
 			name := fmt.Sprintf("f%d.md", i%5)
-			if _, err := os.Stat(filepath.Join(f.folder(inputs), name)); err == nil {
-				if i%2 == 0 {
-					require.NoError(t, f.app.DeleteFile(t.Context(), at(inputs.Directory, name), token, "user-1"))
-				} else {
-					require.Equal(t, 200, f.upload(inputs.Directory, token, name, fmt.Sprint(i), true).StatusCode)
-				}
-				continue
+			_, statErr := os.Stat(filepath.Join(f.folder(inputs), name))
+			switch {
+			case statErr == nil && i%2 == 0:
+				failures <- f.app.DeleteFile(t.Context(), at(inputs.Directory, name), token, "user-1")
+			case statErr == nil:
+				failures <- statusError(f.upload(inputs.Directory, token, name, fmt.Sprint(i), true).StatusCode)
+			default:
+				failures <- statusError(f.upload(inputs.Directory, token, name, fmt.Sprint(i), false).StatusCode)
 			}
-			require.Equal(t, 200, f.upload(inputs.Directory, token, name, fmt.Sprint(i), false).StatusCode)
+		}
+	}()
+	go func() {
+		defer work.Done()
+		for i := range 10 {
+			other := fileSpace(named("inputs", "subject", fmt.Sprintf("other:%d", i)))
+			path := fmt.Sprintf("view/p2/other-%d", i)
+			failures <- f.mapAt(other, path)
+			if i%2 == 0 {
+				failures <- f.app.UnmapDirectory(t.Context(), other.Directory, path, viewPrefix)
+			}
 		}
 	}()
 	for range 5 {
 		require.NoError(t, f.app.RepairMappedView(t.Context()))
 	}
-	writes.Wait()
+	work.Wait()
+	close(failures)
+	for err := range failures {
+		require.NoError(t, err)
+	}
 
 	var present []string
 	entries, err := os.ReadDir(f.folder(inputs))
@@ -86,4 +103,18 @@ func TestRepairRunsAlongsideConcurrentWrites(t *testing.T) {
 		present = append(present, entry.Name())
 	}
 	f.requireShowsDirectory(inputs, "view/p1/case-2", present...)
+	for i := range 10 {
+		if i%2 == 0 {
+			require.NoDirExists(t, f.viewOf(fmt.Sprintf("view/p2/other-%d", i)))
+		} else {
+			require.DirExists(t, f.viewOf(fmt.Sprintf("view/p2/other-%d", i)), "a mapping made during a repair stays")
+		}
+	}
+}
+
+func statusError(status int) error {
+	if status != 200 {
+		return fmt.Errorf("upload answered %d", status)
+	}
+	return nil
 }

@@ -9,9 +9,9 @@ import (
 )
 
 // RepairMappedView aligns every mapped path with its Directory's files,
-// linking what an interrupted change left missing, then removes whatever
-// no mapping holds, such as the files of a mapping whose removal was
-// interrupted. Each mapping is aligned under its Directory's lock and the
+// linking what an interrupted change or unmapping left missing, then
+// removes whatever no mapping holds, such as folders an interrupted removal
+// left empty or entries no mapping ever made. Each mapping is aligned under its Directory's lock and the
 // Mapped View's, as a mapping is made, so writes go on meanwhile; one
 // failing mapping leaves the others repaired and fails the run, which the
 // next hour's replaces.
