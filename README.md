@@ -74,13 +74,41 @@ there, with that machine's files and Claude login.
   and reaches only who it is meant for.
 - **Open source.** Apache-2.0. Read the code that runs your Agents.
 
-## From every person to the whole company
+## From every person to the whole company: Talgent Orchestra
 
-Workbench gives every person their own Agent. **Talgent Orchestra**, built on Workbench, connects
-those Agents across a company's projects: goals with owners, a coordinator that keeps every Agent in
-step, and finished work that becomes company knowledge.
+Workbench gives every person an Agent of their own. When work outgrows one person, **Talgent
+Orchestra**, built on Workbench, brings those Agents together across a company's projects, so
+every change reaches the people it affects and finished work becomes company knowledge.
+
+<div align="center">
+<img alt="Every goal of a project on one board, each with its owner, priority and status" src="docs/assets/goal-board.webp" width="900">
+</div>
+
+- **Goals with an owner.** Every goal of a project on one board, with its owner, its priority and
+  the Agents working on it.
+- **A coordinator that keeps every Agent in step.** It knows how the goals depend on each other.
+  When one changes, the owners of the others hear about it, and their Agents adjust.
+- **Decisions you can trace.** Every decision the coordinator makes is on a timeline, with what it
+  rested on, what it did and how that went.
+- **Knowledge that compounds.** Finished work becomes pages the whole project learns from, every
+  statement traced to the work it came from.
+
+Say Marketing's Agent moves checkout to show prices in EUR. The coordinator sees that invoices and
+the Q4 report depend on it, and asks Billing and Finance. Billing needs two more days, so the launch
+moves by two days and every owner is told. The EU pricing rules are kept for the next time.
+
+<table>
+  <tr>
+    <td width="50%"><img alt="A coordinator's decision on the timeline, opened to show its inputs, its actions and each action's outcome" src="docs/assets/decision-chain.webp"><p align="center"><sub>Every decision, with its inputs and outcomes</sub></p></td>
+    <td width="50%"><img alt="What a project knows: its pages and the finished work they came from" src="docs/assets/company-knowledge.webp"><p align="center"><sub>What the project has learned, and from where</sub></p></td>
+  </tr>
+</table>
+
+<div align="center">
 
 **[Discover Talgent Orchestra at talgent.work →](https://talgent.work)**
+
+</div>
 
 ## Get started
 

@@ -87,7 +87,7 @@ EXTENSION_TERM = re.compile(
     r"|MCP\s+Gateway|mcp-gateway|mcpgateway|Action\s+Calls?|[Ww]iki)\b"
 )
 # The root README introduces the extension by its product name only.
-PRODUCT_NAME = re.compile(r"\bTalgent[ \t]+(Orchestra)\b")
+PRODUCT_NAME = re.compile(r"\bTalgent\s+(Orchestra)\b")
 # A test's stated intent ("Intent:", "Intent (real):") is the English word.
 TEST_INTENT_LABEL = re.compile(r"\bIntent(?: \(\w+\))?:")
 ACCOUNT = re.compile(r"jacexh")
