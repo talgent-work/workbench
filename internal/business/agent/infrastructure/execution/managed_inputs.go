@@ -26,7 +26,10 @@ import (
 // marker (inputs_due): a new Managed execution starts due, a File Change
 // Published Fact for its located inputs adds to it, and a sync clears only the
 // marks it read, so a change during a sync stays due. The recovery sweep
-// finds a due execution and syncs it again. The located inputs Directory,
+// finds a due execution and syncs it again, counting each failed attempt
+// (inputs_sync_failures); the attempt that reaches domain.InputSyncAttempts
+// records why the sync was abandoned (inputs_sync_abandoned), and nothing
+// syncs again until a later change. The located inputs Directory,
 // recorded with the execution when it begins (inputs_directory), lets a
 // change find its executions by an indexed query.
 //

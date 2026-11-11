@@ -33,10 +33,10 @@ This release changes stored data and every service image, so upgrade in this ord
 
    Do not go on until the catalog lists `talgent`: the rename migration points stored
    references at it.
-2. **Apply both migrations, with no Work starting.** Apply
-   `deploy/middleware/migrations/20261111-core-plugin-rename.sql` and
-   `deploy/middleware/migrations/20261111-execution-start-causes.sql` as described below. Apply
-   them when no one is starting a Work: a start in flight across the migration may be rejected,
+2. **Apply the migrations, with no Work starting.** Apply
+   `deploy/middleware/migrations/20261111-core-plugin-rename.sql`,
+   `20261111-execution-start-causes.sql` and `20261111-retry-ceilings.sql` as described below.
+   Apply them when no one is starting a Work: a start in flight across the migration may be rejected,
    and its Work then needs a Restart.
 3. **Upgrade every service image together.** Deploy the release's images of `controlplane`,
    `dispatcher`, `streamgateway`, `computer-gateway` and `workbench-web` at once, as in
@@ -92,6 +92,14 @@ the attempt that exhausts it logs an error naming what failed and why:
 - Dispatcher gives up an exit fact Agent keeps failing to take after about five minutes, and
   the next connection delivers it again. It gives up an input flush after 30 failed buffer
   reads. The sandbox observer gives up a wake after 10 failed retries.
+- Syncing a Managed Work's input copies stops after 30 failed attempts, about three sweep
+  wakes, and logs `input copy sync abandoned` with the execution and its Work. The execution
+  records the cause in `agent_execution.inputs_sync_abandoned`. Before, the sweep retried it
+  every minute for as long as the run lasted. The copies are not synced or refreshed again
+  until a file in the Work's inputs changes, which starts a new sync.
+- A Resume a Managed Work is owed on its Computer's reconnection stops after 30 retries that
+  fail without an answer, and logs `owed resume abandoned` with the Work and its Computer. The
+  input stays buffered, and the Work's next Resume reads it.
 
 A start whose own request can never succeed now fails on its first attempt, naming the cause.
 An example is a retained Plugin release whose native entry names another plugin. Before, such
@@ -103,11 +111,35 @@ A start into a fresh sandbox no longer spends a retry on execd starting late: be
 command it waits up to a minute for execd to answer. An execd that does not answer by then fails
 the attempt as `execd: not ready`.
 
-To upgrade, apply `deploy/middleware/migrations/20261111-execution-start-causes.sql` to the
-database named by `AGENT_MYSQL_DATABASE` before you deploy, beside the rename script
-([upgrade order](#upgrade-in-this-order)). It adds
-`agent_execution.rejection_reason` and `startup_setback`, and you can apply it again safely.
-The previous release ignores both columns, so a rollback needs only the previous images.
+To upgrade, apply `deploy/middleware/migrations/20261111-execution-start-causes.sql` and
+`deploy/middleware/migrations/20261111-retry-ceilings.sql` to the database named by
+`AGENT_MYSQL_DATABASE` before you deploy, beside the rename script
+([upgrade order](#upgrade-in-this-order)). They add `agent_execution.rejection_reason`,
+`startup_setback`, `inputs_sync_failures` and `inputs_sync_abandoned`, and
+`agent_session.reach_resume_failures`, and you can apply them again safely. The previous release ignores these columns, so a rollback needs only the previous
+images.
+
+### A removed catalog source is retired
+
+Removing a source from `marketplace.synchronization.acquisition.sources` now withdraws it at
+the next synchronization. Its releases and catalog entries are soft-deleted, and each archive
+of it that no configured source's release shares is deleted from the marketplace directory, so
+`/marketplace/archives/<sha256>.zip` stops serving it. Before, they stayed, and the archives of
+a removed private source stayed downloadable without sign-in. controlplane logs
+`catalog retired a release of a removed source` and
+`catalog removed an archive only a removed source referenced` for each.
+
+A Work that started with a Plugin of a removed source takes up the current release by slug at
+its next start, Resume or Restart. Where no configured source lists that Plugin, its
+installation fails and the rest of the start proceeds. Nothing to do when upgrading: the first
+synchronization of this release retires the sources removed before it, and adding a source back
+publishes it again.
+
+### First-party plugins are published from their own version
+
+`scripts/marketplace/publish.sh` publishes a plugin's first release at the version its
+`plugin.json` names, and never below it. It published `talgent` and `talgent-api` at `0.0.1`
+although they name `0.1.0`; their next publication is `0.1.0`.
 
 ### Breaking: Marketplace Sources take no credentials
 

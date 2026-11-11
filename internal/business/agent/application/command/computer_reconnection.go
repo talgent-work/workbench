@@ -43,7 +43,8 @@ func NewComputerReconnectionHandler(computers ComputerPort, sessions domain.Agen
 // Reconnected reconciles a Managed Computer that is reachable now and retries
 // the Resumes its marked Works are owed. A Work that cannot be retried now
 // holds back neither the others nor the fact: its failure is logged, and its
-// recovery retries it while the mark stays. A failed reconciliation or
+// recovery retries it while the mark stays, at most
+// domain.ReachResumeAttempts times. A failed reconciliation or
 // listing is returned for the fact's retry.
 func (h *ComputerReconnectionHandler) Reconnected(ctx context.Context, computerID string) error {
 	reachable, err := h.reachable(ctx, computerID)
@@ -99,10 +100,38 @@ func (h *ComputerReconnectionHandler) reachable(ctx context.Context, computerID 
 	return place.Managed && !place.Removed && place.Reachable, nil
 }
 
-// retryResume supplies the Work's buffered input to its mark and, when the
+// retryResume retries the owed Resume once and, when the retry failed
+// without an answer, counts the failure on the Work. The failure reaching
+// domain.ReachResumeAttempts spends the mark, so nothing retries it again,
+// and is logged as an error naming the Work and its Computer; the input
+// stays buffered for the Work's next Resume.
+func (h *ComputerReconnectionHandler) retryResume(ctx context.Context, workID string) error {
+	err := h.requestResume(ctx, workID)
+	if err == nil || ctx.Err() != nil {
+		return err
+	}
+	var work *domain.AgentWork
+	spent := false
+	recorded := h.applyToWork(ctx, workID, func(current *domain.AgentWork) bool {
+		work, spent = current, false
+		if !current.ReachResumeDue {
+			return false
+		}
+		spent = current.RecordResumeRetryFailure()
+		return true
+	})
+	if recorded != nil || !spent {
+		return errors.Join(err, recorded)
+	}
+	h.logger.ErrorContext(ctx, "owed resume abandoned", slog.String("work_id", workID), slog.String("computer_id", work.ComputerID),
+		slog.Int("attempts", domain.ReachResumeAttempts), slog.Any("error", err))
+	return nil
+}
+
+// requestResume supplies the Work's buffered input to its mark and, when the
 // Work wants it, requests the Resume once more and supplies the Computer's
 // refusal. An admitted start clears the mark itself.
-func (h *ComputerReconnectionHandler) retryResume(ctx context.Context, workID string) error {
+func (h *ComputerReconnectionHandler) requestResume(ctx context.Context, workID string) error {
 	work, err := h.sessions.Get(ctx, workID)
 	if err != nil || !work.ReachResumeDue {
 		return err
@@ -132,17 +161,22 @@ func (h *ComputerReconnectionHandler) retryResume(ctx context.Context, workID st
 	return h.refused(ctx, workID, err)
 }
 
-// refused supplies the retried Resume's refusal to the Work, retried on a
-// concurrent change. The admission may have applied it already, which then
-// changes nothing.
+// refused supplies the retried Resume's refusal to the Work. The admission
+// may have applied it already, which then changes nothing.
 func (h *ComputerReconnectionHandler) refused(ctx context.Context, workID string, refusal error) error {
+	return h.applyToWork(ctx, workID, func(work *domain.AgentWork) bool { return work.RefuseResume(refusal) })
+}
+
+// applyToWork applies a change to the Work as it is now and saves it when it
+// changed, retried on a concurrent change.
+func (h *ComputerReconnectionHandler) applyToWork(ctx context.Context, workID string, apply func(*domain.AgentWork) bool) error {
 	var err error
 	for range reachAttempts {
 		var work *domain.AgentWork
 		if work, err = h.sessions.Get(ctx, workID); err != nil {
 			return err
 		}
-		if !work.RefuseResume(refusal) {
+		if !apply(work) {
 			return nil
 		}
 		if err = h.sessions.Save(ctx, work); !errors.Is(err, domain.ErrConcurrentModification) {

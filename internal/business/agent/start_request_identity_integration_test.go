@@ -16,6 +16,7 @@ import (
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
+	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 // creation is a CreateWork request of the employee's Work about the subject.
@@ -52,12 +53,22 @@ func (c *oneRoomCloud) awaitState(t *testing.T, ctx context.Context, workID stri
 	require.Eventually(t, func() bool { return c.workState(t, ctx, workID) == want }, 10*time.Second, 50*time.Millisecond, "the Work reaches %s", want)
 }
 
-// awaitReleased waits until the Work's current start released its compute
-// and its Desk left.
+// awaitReleased waits until the Work's current start released its compute,
+// its Desk left and the Work applied that release. The Work learns of the
+// release from its execution's ExecutionReleased report, after the execution
+// recorded it; until then its current start still holds the Desk, so a
+// repeated start answers that admission and a new one is refused while the
+// reclamation is pending.
 func (c *oneRoomCloud) awaitReleased(t *testing.T, ctx context.Context, workID string) {
 	t.Helper()
 	c.runs.await(t, ctx, workID, func(e *domain.AgentExecution) bool { return e.State == domain.ExecutionReleased }, "the run's compute is released")
 	require.Eventually(t, func() bool { return c.desks(t, "occupied") == 0 }, 10*time.Second, 50*time.Millisecond, "the run's Desk leaves")
+	works := infrastructure.NewAgentWorkRepository(c.db, time.Now)
+	require.Eventually(t, func() bool {
+		work, err := works.Get(ctx, workID)
+		require.NoError(t, err)
+		return work.HarnessProcess != nil && work.HarnessProcess.ComputeReclaimed
+	}, 10*time.Second, 50*time.Millisecond, "the Work applies the release")
 }
 
 // fail ends the Work's current run before it became ready.

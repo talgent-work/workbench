@@ -67,11 +67,11 @@ var Module = fx.Module("domain.marketplace",
 	SynchronizationModule,
 	pkgtaskqueue.Bind(Queue),
 	pkgmysql.Bind(Database),
-	fx.Provide(func(config Config, engine *xorm.Engine) (*infrastructure.CatalogStore, error) {
+	fx.Provide(func(config Config, engine *xorm.Engine, logger *slog.Logger) (*infrastructure.CatalogStore, error) {
 		if err := config.Validate(); err != nil {
 			return nil, err
 		}
-		return infrastructure.NewCatalogStore(engine, config.Directory, config.Name, config.Owner)
+		return infrastructure.NewCatalogStore(engine, config.Directory, config.Name, config.Owner, logger)
 	}),
 	fx.Provide(fx.Annotate(infrastructure.NewInstalledPluginRepository,
 		fx.As(new(domain.InstalledPluginRepository)), fx.As(new(query.InstalledPluginQueryRepository)),

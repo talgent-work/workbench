@@ -4,6 +4,7 @@ package infrastructure_test
 
 import (
 	"encoding/json"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,7 +18,7 @@ func catalogRelease(source, slug, version string) application.PluginRelease {
 }
 
 func TestCatalogSelectsWholeReleaseAndOwnedSourcePrecedesPriority(t *testing.T) {
-	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
+	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
 	sources := []infrastructure.SourceReleases{
 		{Source: application.CatalogSource{Name: "external", Priority: 999}, Releases: []application.PluginRelease{catalogRelease("external", "shared", "9.0.0"), catalogRelease("external", "zeta", "1.0.0")}},

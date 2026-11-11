@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -66,19 +67,41 @@ func (h *ReconcileExecutionHandler) renewLease(ctx context.Context, execution *d
 }
 
 // syncInputs syncs a Managed Computer's input copies from the current files
-// of its Work's located inputs and records the changes it covered.
+// of its Work's located inputs and records the changes it covered. A failed
+// attempt is counted on the execution (Input copy retry) and returned for its
+// wake's retry, until the attempt that reaches the ceiling abandons the sync:
+// that outcome is recorded and logged as an error, and nothing is left to
+// retry. The recorded cause names the class of failure only; the error may
+// carry what the Work's owners must not see, and goes to the log.
 func (h *ReconcileExecutionHandler) syncInputs(ctx context.Context, execution *domain.AgentExecution) (bool, error) {
 	inputs, err := h.supplies.inputs(ctx, execution.Launch.LocatedLayout.Inputs)
-	if err != nil {
+	if err == nil {
+		var synced int64
+		if synced, err = h.environments.SyncInputs(ctx, execution, inputs, h.holding(execution)); err == nil {
+			return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
+				return execution.RecordInputSync(synced, h.now()), nil
+			})
+		}
+	}
+	if ctx.Err() != nil || errors.Is(err, ErrEnvironmentActionRefused) {
 		return false, err
 	}
-	synced, err := h.environments.SyncInputs(ctx, execution, inputs, h.holding(execution))
-	if err != nil {
-		return false, err
+	cause := "syncing the input copies failed"
+	if errors.Is(err, context.DeadlineExceeded) {
+		cause = "syncing the input copies timed out"
 	}
-	return h.recorded(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
-		return execution.RecordInputSync(synced, h.now()), nil
+	abandoned := false
+	recordErr := h.record(ctx, execution.ID, func(execution *domain.AgentExecution) (bool, error) {
+		var changed bool
+		changed, abandoned = execution.RecordInputSyncFailure(cause)
+		return changed, nil
 	})
+	if recordErr != nil || !abandoned {
+		return false, errors.Join(err, recordErr)
+	}
+	h.logger.ErrorContext(ctx, "input copy sync abandoned", slog.String("execution_id", execution.ID), slog.String("work_id", execution.WorkID),
+		slog.Int("attempts", domain.InputSyncAttempts), slog.Any("error", err))
+	return true, nil
 }
 
 func (h *ReconcileExecutionHandler) withdraw(ctx context.Context, execution *domain.AgentExecution) (bool, error) {

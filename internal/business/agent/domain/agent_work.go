@@ -269,7 +269,10 @@ type AgentWork struct {
 	// Resume it refused as unreachable, or a stop beyond reach with input
 	// awaiting. The Resume is requested once more when the machine
 	// reconnects, if input awaits then (reach_resume.go).
-	ReachResumeDue        bool
+	ReachResumeDue bool
+	// ReachResumeFailures counts the retries of the owed Resume that failed
+	// without an answer; the one reaching ReachResumeAttempts spends the mark.
+	ReachResumeFailures   int
 	StopReason            StopReason `validate:"omitempty,oneof=user_stopped waiting_timeout completed disconnected"`
 	StopRequestReference  string
 	CloseRequestReference string

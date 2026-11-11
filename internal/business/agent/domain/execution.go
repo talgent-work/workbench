@@ -106,13 +106,6 @@ type CredentialDelivery struct {
 	Withdrawn bool
 }
 
-// InputSync is, on a Managed Computer, the input changes its machine has not
-// received yet and when its copies were last synced.
-type InputSync struct {
-	Due      int64
-	SyncedAt time.Time
-}
-
 // ExecutionOutcome is what the execution established about its start, each
 // reported to its Work: a start failure naming the earliest incomplete
 // Required Startup Step or the definite cause that keeps it from completing,

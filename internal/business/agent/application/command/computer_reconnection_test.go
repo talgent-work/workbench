@@ -1,8 +1,10 @@
 package command_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -66,6 +68,8 @@ type reconnectionFixture struct {
 	resume         *command.ResumeWorkHandler
 	reconciliation *reconciliations
 	reconnection   *command.ComputerReconnectionHandler
+	// logs holds what the reconnection logged, as JSON lines.
+	logs bytes.Buffer
 }
 
 func newReconnectionFixture(t *testing.T, buffered bool) *reconnectionFixture {
@@ -81,7 +85,7 @@ func newReconnectionFixture(t *testing.T, buffered bool) *reconnectionFixture {
 	f.resume = command.NewResumeWorkHandler(time.Now, sessions, agents, sessionAccess{}, f.computer, querytest.ProvidedModels(), commandtest.UnchangedPlugins{})
 	place := &presencePlace{description: command.ComputerDescription{Managed: true, Reachable: true}}
 	var err error
-	f.reconnection, err = command.NewComputerReconnectionHandler(place, sessions, agents, markedWorks{sessions: sessions}, f.buffer, f.resume, f.reconciliation, nil)
+	f.reconnection, err = command.NewComputerReconnectionHandler(place, sessions, agents, markedWorks{sessions: sessions}, f.buffer, f.resume, f.reconciliation, slog.New(slog.NewJSONHandler(&f.logs, nil)))
 	require.NoError(t, err)
 	// The person's message resumes the Work while its machine is away.
 	err = f.resume.Handle(context.Background(), command.StartWork{SubjectID: "owner", WorkID: sessions.session.ID, RequestID: uuid.NewString()})
@@ -201,6 +205,31 @@ func TestTheWorksRecoveryRetriesAnOwedResumeTheReconnectionMissed(t *testing.T) 
 	require.NoError(t, reconnection.RetryOwedResume(ctx, away.sessions.session.ID))
 	require.True(t, away.sessions.session.ReachResumeDue, "a machine still away keeps the mark")
 	require.Zero(t, away.computer.admitted)
+}
+
+// An owed Resume whose retries keep failing without an answer is spent at
+// ReachResumeAttempts: the failure reaching it logs an error naming the Work
+// and its Computer, and the Work's recovery stops retrying it.
+func TestAnOwedResumeWhoseRetriesKeepFailingIsSpent(t *testing.T) {
+	ctx := context.Background()
+	f := newReconnectionFixture(t, true)
+	f.buffer.Err = errors.New("the buffer is unavailable")
+	for range domain.ReachResumeAttempts - 1 {
+		require.ErrorIs(t, f.reconnection.RetryOwedResume(ctx, f.sessions.session.ID), f.buffer.Err)
+	}
+	require.True(t, f.sessions.session.ReachResumeDue)
+	require.NotContains(t, f.logs.String(), "owed resume abandoned")
+	require.NoError(t, f.reconnection.Reconnected(ctx, f.sessions.session.ComputerID), "a reconnection's retry counts too")
+	require.False(t, f.sessions.session.ReachResumeDue, "the failure reaching the ceiling spends the mark")
+	require.Contains(t, f.logs.String(), `"level":"ERROR","msg":"owed resume abandoned"`)
+	require.Contains(t, f.logs.String(), `"work_id":"`+f.sessions.session.ID+`"`)
+	require.Contains(t, f.logs.String(), `"computer_id":"`+f.sessions.session.ComputerID+`"`)
+	require.Contains(t, f.logs.String(), `"error":"the buffer is unavailable"`)
+
+	f.buffer.Err = nil
+	require.NoError(t, f.reconnection.RetryOwedResume(ctx, f.sessions.session.ID))
+	require.Equal(t, domain.WorkStopped, f.sessions.session.State, "a spent Resume is not retried")
+	require.Zero(t, f.computer.admitted)
 }
 
 // A message that reaches a Working Work during the Disconnection grace waits in

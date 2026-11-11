@@ -323,6 +323,46 @@ func TestReconciliationSyncsChangedInputs(t *testing.T) {
 	require.Zero(t, w.execution(t).Inputs.Due, "the sync is recorded")
 }
 
+// Input copy retry: a sync that keeps failing is attempted at most
+// InputSyncAttempts times across wakes. The attempt that reaches the ceiling
+// records why the sync was abandoned, logs it as an error naming the
+// execution and its Work, and ends the wake's retries; later wakes leave it
+// until a later change starts a new attempt.
+func TestAnInputSyncThatKeepsFailingIsAbandonedAtItsCeiling(t *testing.T) {
+	ctx := context.Background()
+	w := boundWorld(t)
+	w.environment.Observation = running("environment")
+	w.change(t, func(execution *domain.AgentExecution) {
+		execution.Realization = domain.RealizationManaged
+		require.True(t, execution.MarkInputsChanged())
+	})
+	w.environment.StepErr = errors.New("machine relay unavailable")
+	for range domain.InputSyncAttempts - 1 {
+		_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID)
+		require.Error(t, err, "a failure below the ceiling is retried")
+	}
+	require.NotContains(t, w.logs.String(), "input copy sync abandoned")
+	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID)
+	require.NoError(t, err, "the abandoned sync leaves nothing to retry")
+	execution := w.execution(t)
+	require.Equal(t, "Input copies not synced after 30 attempts. Last error: syncing the input copies failed.", execution.Inputs.Abandoned)
+	require.Contains(t, w.logs.String(), `"level":"ERROR","msg":"input copy sync abandoned"`)
+	require.Contains(t, w.logs.String(), `"execution_id":"`+execution.ID+`"`)
+	require.Contains(t, w.logs.String(), `"work_id":"`+execution.WorkID+`"`)
+	require.Contains(t, w.logs.String(), `"error":"machine relay unavailable"`)
+
+	_, err = w.reconciliation().Reconcile(ctx, execution.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.InputSyncAttempts, w.environment.Synced, "a later wake leaves the abandoned sync")
+
+	w.environment.StepErr = nil
+	w.change(t, func(execution *domain.AgentExecution) { require.True(t, execution.MarkInputsChanged()) })
+	_, err = w.reconciliation().Reconcile(ctx, execution.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.InputSyncAttempts+1, w.environment.Synced, "a later change syncs again")
+	require.Empty(t, w.execution(t).Inputs.Abandoned)
+}
+
 // A long step no longer decided is not taken.
 func TestALongStepNoLongerDecidedIsNotTaken(t *testing.T) {
 	w := boundWorld(t)

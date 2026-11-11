@@ -62,6 +62,16 @@ next_version() {
   fi
 }
 
+# version_below a b: whether x.y.z version a orders before b.
+version_below() {
+  local a_major a_minor a_patch b_major b_minor b_patch
+  IFS=. read -r a_major a_minor a_patch <<<"$1"
+  IFS=. read -r b_major b_minor b_patch <<<"$2"
+  (( a_major != b_major )) && { (( a_major < b_major )); return; }
+  (( a_minor != b_minor )) && { (( a_minor < b_minor )); return; }
+  (( a_patch < b_patch ))
+}
+
 update_json_file() {
   local file="$1"
   shift
@@ -116,6 +126,10 @@ else
   fi
 fi
 require_version "${current_version}"
+# The plugin's own manifest names the version it starts from: a first
+# publication takes it, and no release goes below it.
+source_version="$(jq -r '.version // "0.0.0"' "${SOURCE_PLUGIN_JSON}")"
+require_version "${source_version}"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
@@ -138,12 +152,18 @@ promote_release="false"
 if [ "${VERSION_BUMP}" = "minor" ] && [ "${current_version##*.}" != "0" ]; then
   promote_release="true"
 fi
+if version_below "${current_version}" "${source_version}"; then
+  content_changed="true"
+fi
 if [ "${content_changed}" = "false" ] && [ "${promote_release}" = "false" ]; then
   printf 'plugin_id=%s\nversion=%s\nchanged=false\n' "${PLUGIN_ID}" "${current_version}"
   exit 0
 fi
 
 new_version="$(next_version "${current_version}")"
+if version_below "${new_version}" "${source_version}"; then
+  new_version="${source_version}"
+fi
 
 rm -rf "${TARGET_DIR}"
 mkdir -p "$(dirname "${TARGET_DIR}")"

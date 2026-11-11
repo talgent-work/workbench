@@ -172,27 +172,6 @@ func (e *AgentExecution) RecordCredentialsWithdrawn() bool {
 	return true
 }
 
-// MarkInputsChanged records an input change its Managed Computer has not
-// received, so its copies are synced again (Input copy sync).
-func (e *AgentExecution) MarkInputsChanged() bool {
-	if e.Retired() || e.Realization != RealizationManaged {
-		return false
-	}
-	e.Inputs.Due++
-	return true
-}
-
-// RecordInputSync records that its Managed Computer received the input
-// changes due when the sync began, at syncedAt.
-func (e *AgentExecution) RecordInputSync(synced int64, syncedAt time.Time) bool {
-	if e.Realization != RealizationManaged || syncedAt.IsZero() {
-		return false
-	}
-	e.Inputs.Due = max(e.Inputs.Due-synced, 0)
-	e.Inputs.SyncedAt = syncedAt.UTC()
-	return true
-}
-
 // RecordLaunch records the Harness process launched into its bound
 // environment while it admits the launch (Admit environment action); a
 // second process is never recorded.

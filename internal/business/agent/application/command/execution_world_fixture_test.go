@@ -1,7 +1,9 @@
 package command_test
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -32,6 +34,8 @@ type world struct {
 	// lease is the platform's configured lease terms; zero leases nothing.
 	lease domain.LeaseTerms
 	at    time.Time
+	// logs holds what the use cases logged, as JSON lines.
+	logs bytes.Buffer
 }
 
 func newWorld(t *testing.T, work *domain.AgentWork) *world {
@@ -64,7 +68,7 @@ func (w *world) feedback() *command.ApplyExecutionFeedbackHandler {
 }
 
 func (w *world) reconciliation() *command.ReconcileExecutionHandler {
-	return command.NewReconcileExecutionHandler(w.now, w.lease, commandtest.CreationWaits, w.executions, w.environment, w.harness, w.computers, commandtest.Supplies(w.storage, w.accounts))
+	return command.NewReconcileExecutionHandler(w.now, w.lease, commandtest.CreationWaits, w.executions, w.environment, w.harness, w.computers, commandtest.Supplies(w.storage, w.accounts), slog.New(slog.NewJSONHandler(&w.logs, nil)))
 }
 
 // execution is the Work's most recently begun execution.
