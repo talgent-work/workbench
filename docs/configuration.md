@@ -186,7 +186,7 @@ How Agent reaches Computer and Managed Computers.
 | `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 8, retry `1s`–`60s` | Each execution's long step holds a worker while it runs |
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
 | `account-maintenance-taskqueue` | queue `account-maintenance`, concurrency 1 | Hourly signing key rotation and daily forgetting of replaced refresh secrets |
-| `storage-maintenance-taskqueue` | queue `storage-maintenance`, concurrency 2, retry `10s`–`5m` | Removal of reclaimed Directories' content, retried until removed; hourly lapse of Preview Copies |
+| `storage-maintenance-taskqueue` | queue `storage-maintenance`, concurrency 2, retry `10s`–`5m` | Removal of reclaimed Directories' content, retried at most 25 times within 6 hours; hourly lapse of Preview Copies |
 
 ### marketplace
 

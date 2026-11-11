@@ -21,7 +21,8 @@ type ContentRemoval interface {
 // RemoveReclaimedContentProcessor removes one reclaimed Directory's content.
 // A publication still copying from it retries the removal after the lane's
 // retry delay without counting as a failure; any other failure retries too,
-// until the content is removed.
+// within the removal's ceiling and deadline. The last attempt's failure ends
+// the reclamation of that Directory's content, logged as an error.
 type RemoveReclaimedContentProcessor struct {
 	app    ContentRemoval
 	logger *slog.Logger
@@ -44,6 +45,15 @@ func (p *RemoveReclaimedContentProcessor) Process(ctx context.Context, queued ta
 		return taskqueue.ErrSkipRetry
 	}
 	err = p.app.RemoveReclaimedContent(ctx, removal)
+	if err == nil {
+		return nil
+	}
+	if pkgtaskqueue.LastAttempt(ctx) {
+		work, _ := removal.Directory.Owner.Work()
+		execution, _ := taskqueue.ExecutionInfoFromContext(ctx)
+		p.logger.ErrorContext(ctx, "reclaimed content removal failed", slog.String("work_id", work), slog.String("directory", removal.Directory.Name), slog.String("task_id", execution.TaskID()), slog.Any("error", err))
+		return err
+	}
 	if errors.Is(err, application.ErrPublicationInProgress) {
 		return fmt.Errorf("%w: %w", pkgtaskqueue.ErrRetryLater, err)
 	}
