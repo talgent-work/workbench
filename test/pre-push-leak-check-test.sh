@@ -86,6 +86,21 @@ if check || ! grep -q "README.md:1: extension term: ${leak^}" "$output"; then
   cat "$output" >&2
   exit 1
 fi
+# The public demo may be linked; any other deployment of the product's domain may not.
+# Both are spelled apart so this file does not carry them.
+domain="talgent"".work"
+echo "Try https://workbench.$domain." > "$repo/README.md"
+if ! check; then
+  echo "FAIL: the public demo's address was refused" >&2
+  cat "$output" >&2
+  exit 1
+fi
+echo "Try https://staging.$domain." > "$repo/README.md"
+if check || ! grep -q "README.md:1: deployment domain: staging.$domain" "$output"; then
+  echo "FAIL: a deployment subdomain other than the public demo passed" >&2
+  cat "$output" >&2
+  exit 1
+fi
 mkdir -p "$repo/docs"
 printf 'public scripts\npublic .githooks\ncore README.md\ncore docs\n' > "$repo/scripts/public-tree/manifest"
 echo "A neutral readme." > "$repo/README.md"
