@@ -65,11 +65,12 @@ func (*builtInCatalog) ReadConnectorSelection(context.Context, string) (command.
 }
 
 type builtInFixture struct {
+	db    *xorm.Engine
 	works *personalwork.PersonalWorks
 	app   *application.Application
 }
 
-func newBuiltInFixture(t *testing.T, builtIns domain.BuiltInPlugins, catalog *builtInCatalog) builtInFixture {
+func newBuiltInFixture(t *testing.T, builtIns domain.BuiltInPlugins, catalog commandtest.PluginCatalog) builtInFixture {
 	t.Helper()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
@@ -82,7 +83,7 @@ func newBuiltInFixture(t *testing.T, builtIns domain.BuiltInPlugins, catalog *bu
 	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), options, start, computertest.Checked(startupAuthority{}), creationPreparation(db, options))
 	app := &application.Application{Definitions: definitions, DefinitionQueries: lookup, Works: sessions, WorkQueries: infrastructure.NewWorkQueryRepository(db), Catalog: start, Models: options, BuiltInPlugins: builtIns,
 		Commands: application.Commands{EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup), CreateWork: create}}
-	return builtInFixture{works: personalwork.New(app, infrastructure.NewWorkQueryRepository(db), &librarySpaces{}, knownPeople{}), app: app}
+	return builtInFixture{db: db, works: personalwork.New(app, infrastructure.NewWorkQueryRepository(db), &librarySpaces{}, knownPeople{}), app: app}
 }
 
 // startPersonal starts a Personal Work for the person and returns the
