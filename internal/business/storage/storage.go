@@ -234,9 +234,8 @@ func newMaintenanceProcessors(app *application.Application, logger *slog.Logger)
 	}
 }
 
-// Layouts of Storage's file systems: the published Directories of each,
-// beside Storage's own areas. JuiceFS publishes its Directories as the
-// originals mount; the preview area lies beside them.
+// Layouts of Storage's file systems: the Directories of each, beside
+// Storage's own areas: on JuiceFS, the preview area and the Mapped View.
 const (
 	juiceFSDirectories = "assets/directories"
 	juiceFSPrivate     = "assets/storage"

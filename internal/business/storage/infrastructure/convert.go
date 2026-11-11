@@ -6,7 +6,6 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 func directoryToDO(directory *domain.Directory) *directoryDO {
@@ -34,13 +33,9 @@ func shareLinkToDO(id domain.DirectoryID, link *domain.ShareLink) *shareLinkDO {
 // directoryIDFromDO reads a Directory's identity from its stored owner key
 // and name.
 func directoryIDFromDO(key, name string) (domain.DirectoryID, error) {
-	written, err := storagepath.ParseOwner(key)
+	facts, err := parseOwnerElement(key)
 	if err != nil {
 		return domain.DirectoryID{}, oops.With("owner_key", key).Wrap(err)
-	}
-	facts := make([]domain.OwnerFact, 0, len(written))
-	for _, fact := range written {
-		facts = append(facts, domain.OwnerFact{Condition: fact.Condition, Value: fact.Value})
 	}
 	owner, err := domain.NewDirectoryOwner(facts)
 	if err != nil {

@@ -585,48 +585,6 @@ spec:
     matchLabels:
       talgent.io/storage: juicefs-root
 ---
-# The same JuiceFS filesystem, claimed read-only for Storage's standing
-# originals mount (Storage's Originals Mount Contract).
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: talgent-juicefs-originals
-  labels:
-    talgent.io/storage: juicefs-originals
-spec:
-  capacity:
-    storage: 100Gi
-  accessModes:
-    - ReadOnlyMany
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
-  mountOptions:
-    - enable-xattr
-  csi:
-    driver: csi.juicefs.com
-    volumeHandle: talgent-juicefs-originals-rustfs
-    fsType: juicefs
-    readOnly: true
-    nodePublishSecretRef:
-      name: talgent-juicefs-secret
-      namespace: talgent
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: talgent-juicefs-originals
-  namespace: talgent
-spec:
-  accessModes:
-    - ReadOnlyMany
-  storageClassName: ""
-  resources:
-    requests:
-      storage: 100Gi
-  selector:
-    matchLabels:
-      talgent.io/storage: juicefs-originals
----
 # The same JuiceFS filesystem, claimed read-only at one mapped path of
 # Storage's Mapped View: project-originals, the mapping prefix of the
 # content caller above, for its standing reader. Storage creates the folder

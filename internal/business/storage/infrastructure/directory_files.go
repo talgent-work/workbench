@@ -17,7 +17,6 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 const (
@@ -84,19 +83,9 @@ func NewDirectoryFiles(layout DirectoryLayout) *DirectoryFiles {
 	return &DirectoryFiles{layout: layout, now: time.Now}
 }
 
-// ownerFacts is the owner's facts as the published layout writes them.
-func ownerFacts(owner domain.DirectoryOwner) []storagepath.OwnerFact {
-	facts := owner.Facts()
-	written := make([]storagepath.OwnerFact, 0, len(facts))
-	for _, fact := range facts {
-		written = append(written, storagepath.OwnerFact{Condition: fact.Condition, Value: fact.Value})
-	}
-	return written
-}
-
 // ownerKey is the owner's one path element.
 func ownerKey(owner domain.DirectoryOwner) string {
-	return storagepath.Owner(ownerFacts(owner))
+	return OwnerElement(owner.Facts())
 }
 
 // relative is a Directory's folder relative to Root.

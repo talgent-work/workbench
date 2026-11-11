@@ -18,7 +18,7 @@ import (
 )
 
 // PreviewCopies keeps Preview Copies in the JuiceFS preview area, outside
-// every Directory, so the originals mount never shows them. Each content has
+// every Directory, so no mount of a Directory shows them. Each content has
 // <digest>.pdf, its rendering, or <digest>.failed, the reason the converter
 // could not render it, both made when their outcome was settled; and
 // <digest>.rendering while a rendering requested then has no outcome. A

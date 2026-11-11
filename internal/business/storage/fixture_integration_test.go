@@ -31,7 +31,6 @@ import (
 	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/connectserver"
-	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -198,14 +197,11 @@ func (f *fixture) files(directory application.Named) map[string]application.Dire
 
 // folder is where a Directory lies on its file system in these tests.
 func (f *fixture) folder(located application.Located) string {
-	facts := make([]storagepath.OwnerFact, 0, len(located.Directory.Owner))
-	for _, fact := range located.Directory.Owner {
-		facts = append(facts, storagepath.OwnerFact{Condition: fact.Condition, Value: fact.Value})
-	}
+	owner := infrastructure.OwnerElement(located.Directory.Owner)
 	if located.Backend == domain.BackendNAS {
-		return filepath.Join(f.working, nasDirectories, storagepath.Directory(facts, located.Directory.Name))
+		return filepath.Join(f.working, nasDirectories, owner, located.Directory.Name)
 	}
-	return filepath.Join(f.persistent, juiceFSDirectories, storagepath.Directory(facts, located.Directory.Name))
+	return filepath.Join(f.persistent, juiceFSDirectories, owner, located.Directory.Name)
 }
 
 // workspace mounts a Work's Session Workspace with Directories mounted in it
