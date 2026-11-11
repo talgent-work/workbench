@@ -45,13 +45,16 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 	port := &sessionCommandRecorder{}
 	hard := corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("10"), corev1.ResourceRequestsMemory: resource.MustParse("10Gi")}
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
+	// Every Work loads the core plugin; every Work of a Project also loads
+	// the caller's plugin.
+	builtIns := agent.BuiltInPluginsConfig{Platform: []string{"talgent-runtime"}, Project: []string{"caller-plugin"}}
 	startModule := func() (agentprivatev1connect.AgentServiceClient, func()) {
 		t.Helper()
 		db, err := xorm.NewEngine("mysql", dsn)
 		require.NoError(t, err)
 		mux := http.NewServeMux()
 		app := fx.New(agent.Module, sessionStateTransport(t), moduleCatalog(), fx.NopLogger, storageStub(),
-			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
+			fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, builtIns), computertest.Option(&computertest.Admission{}),
 			fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 			fx.Provide(func() kubernetes.Interface { return fake.NewClientset(quota.DeepCopy()) }),
 			fx.Provide(func() command.DispatcherPort { return port }),
@@ -71,14 +74,14 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 		return agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0)))), stop
 	}
 	client, stop := startModule()
-	// A caller ensures a Project's own definition with its own plugin and
-	// startup role, owned by the Project's Owner and public within the Project.
+	// A caller ensures a Project's own definition with a startup role of the
+	// Project scope's plugin, owned by the Project's Owner and public within the Project.
 	ensureProjectDefinition := func(projectID, purpose, owner string) (*agentprivatev1.EnsureAgentDefinitionResponse, error) {
 		response, err := client.EnsureAgentDefinition(sessionControlRequest(ctx), &agentprivatev1.EnsureAgentDefinitionRequest{
 			Owners:         []string{owner},
 			UsageScope:     &agentprivatev1.UsageScope{Kind: "project", Reference: projectID},
 			Purpose:        purpose,
-			Capabilities:   &agentprivatev1.Capabilities{RequiredPlugins: []string{"talgent-runtime", "caller-plugin"}, StartupAgent: "caller-plugin:coordinator"},
+			Capabilities:   &agentprivatev1.Capabilities{StartupAgent: "caller-plugin:coordinator"},
 			VisibilityRule: &agentprivatev1.VisibilityRule{Public: true},
 		})
 		if err != nil {
@@ -96,7 +99,16 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 	options, err := client.GetWorkStartOptions(optionsRequestCtx, optionsRequest)
 	require.NoError(t, err)
 	require.Equal(t, "talgent-runtime:personal-work-executor", options.DefaultStartupAgent)
-	require.Equal(t, "talgent-runtime", options.Plugins[len(options.Plugins)-1].Name)
+	require.Len(t, options.Plugins, 1)
+	require.Equal(t, "talgent-runtime", options.Plugins[0].Name)
+	require.True(t, options.Plugins[0].Required, "the platform scope's Built-in Plugin is required")
+	// A new Work of a Project is offered the Project scope's plugin as well.
+	projectOptions, err := client.GetWorkStartOptions(sessionControlRequest(ctx), &agentprivatev1.GetWorkStartOptionsRequest{SubjectId: "caller", EmployeeId: "caller", ProjectId: "project-a"})
+	require.NoError(t, err)
+	require.Len(t, projectOptions.Plugins, 2)
+	for _, plugin := range projectOptions.Plugins {
+		require.True(t, plugin.Required, plugin.Name)
+	}
 	_, err = client.GetAgentDefinitionForPurpose(sessionControlRequest(ctx), &agentprivatev1.GetAgentDefinitionForPurposeRequest{UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "caller"}, Purpose: "work"})
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "capability discovery cannot initialize the definition")
 	_, err = client.EnsureAgentDefinition(ctx, &agentprivatev1.EnsureAgentDefinitionRequest{Owners: []string{"owner"}, UsageScope: &agentprivatev1.UsageScope{Kind: "project", Reference: "fresh-project"}, Purpose: "project_coordination"})
@@ -220,7 +232,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 		fresh[purpose] = definition
 	}
 	require.Equal(t, "caller-plugin:coordinator", fresh["project_coordination"].Capabilities.StartupAgent)
-	require.Equal(t, []string{"talgent-runtime", "caller-plugin"}, fresh["project_coordination"].Capabilities.RequiredPlugins, "the Project's Agent runs the caller's plugin beside the core one")
+	require.Empty(t, fresh["project_coordination"].Capabilities.RequiredPlugins, "the Project scope supplies the caller's plugin")
 	require.Equal(t, []string{projectOwner}, fresh["project_coordination"].Owners)
 	// A project-scoped definition's Works are started on its Owner's
 	// authority; the same Subject locates the same durable Work across a

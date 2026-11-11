@@ -128,10 +128,13 @@ func New(t testing.TB, dsn string, cfg Config) *Agent {
 	authorizer := access.NewWorkAuthorizer(queries.WorkOwners)
 	start := startCatalog{catalog: catalog, connections: repositories}
 	prepare := command.NewPrepareWorkExecutionHandler(works, authorizer, models)
-	create := command.NewCreateWorkHandler(time.Now, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
+	// The deployment's default: every Work requires the core runtime plugin.
+	builtIns, err := domain.NewBuiltInPlugins([]string{"talgent-runtime"}, nil)
+	require.NoError(t, err)
+	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, works, authorizer, models, start, computertest.Checked(admission{admit: cfg.Admit}), prepare)
 	app := &application.Application{
 		WorkQueries: queries, Catalog: start, Definitions: definitions, DefinitionQueries: lookup,
-		Works: works, WorkPrincipals: authorizer, Models: models,
+		Works: works, WorkPrincipals: authorizer, Models: models, BuiltInPlugins: builtIns,
 		Commands: application.Commands{
 			EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup),
 			CreateWork:            create,

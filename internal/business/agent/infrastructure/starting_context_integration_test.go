@@ -21,7 +21,7 @@ import (
 // across reloads; a source Work of another definition creates nothing.
 func TestStartingContextSurvivesReload(t *testing.T) {
 	f := newWorkDefinitionFixture(t, "owner")
-	handler := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
+	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
 	base := f.request
 	base.InitialExecution = nil
 	create := func(subject string, starting *domain.StartingContextSource) (string, error) {

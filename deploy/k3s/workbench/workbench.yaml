@@ -428,6 +428,12 @@ data:
     agent-marketplace:
       credential-token: "${AGENT_CONTROL_TOKEN:}"
       address: http://127.0.0.1:8080
+    # The Plugins every Work of a scope requires, by slug; a profile adds the
+    # Project scope's.
+    agent-built-in-plugins:
+      platform:
+        - talgent-runtime
+      project: []
     http:
       addr: :8080
     agent-account:

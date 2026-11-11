@@ -210,7 +210,8 @@ A profile is merged over controlplane's defaults: maps merge, lists replace
 the environment file too. A deployment whose Agents reach the platform only through a
 platform Connector turns `AGENT_CORE_API_ACCESS` off and, in its profile, sets the Connector's
 address (`agent-execution.environment.TALGENT_GATEWAY_ADDRESS`,
-`marketplace.platform-connector.gateway-address`) and the `agent-computer` addresses above. After changing the profile ConfigMap or Secret,
+`marketplace.platform-connector.gateway-address`) and the `agent-computer` addresses above. A deployment whose Works of a Project load a plugin of
+its own lists it in its profile's `agent-built-in-plugins.project`. After changing the profile ConfigMap or Secret,
 `kubectl -n talgent rollout restart deployment/controlplane`.
 
 ## 4. Secrets

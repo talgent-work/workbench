@@ -67,7 +67,7 @@ func (f workCreationFixture) creation(registrar domain.AgentWorkRepository, comp
 	if registrar == nil {
 		registrar = f.sessions
 	}
-	return command.NewCreateWorkHandler(time.Now, f.agents, registrar, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), deploymentModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computer, creationPreparation(f.db, deploymentModels()))
+	return command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, registrar, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(f.db).WorkOwners), deploymentModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computer, creationPreparation(f.db, deploymentModels()))
 }
 
 // A repeated creation returns the Work its request identity derives,

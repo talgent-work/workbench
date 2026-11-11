@@ -65,7 +65,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 		creation.InitialExecution = &preparation
 		creation.RequestID = preparation.RequestID
 		creation.Subject, creation.ProjectID = domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, projectID
-		id, e := command.NewCreateWorkHandler(time.Now, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels())).Handle(ctx, creation)
+		id, e := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels())).Handle(ctx, creation)
 		require.NoError(t, e)
 		if stopped {
 			require.NoError(t, command.NewInputAcceptance(f.sessions, &commandtest.InputBuffer{}).HandOffInitialTaskInput(ctx, id))

@@ -38,7 +38,7 @@ import (
 func TestModuleMountsAuthenticatedSessionAPI(t *testing.T) {
 	mux := http.NewServeMux()
 	app := fx.New(agent.Module, sessionStateTransport(t), fx.NopLogger, storageStub(),
-		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}), computertest.Option(&computertest.Admission{}),
+		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns), computertest.Option(&computertest.Admission{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return nil }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(func() kubernetes.Interface { return fake.NewClientset() }),
 		fx.Provide(func() command.DispatcherPort { return unusedExecutionPort{} }),
@@ -179,3 +179,7 @@ func (unusedExecutionPort) ListRootTurnResults(context.Context, string) ([]query
 func (unusedExecutionPort) GetWorkCapabilities(context.Context, string) (command.WorkCapabilities, error) {
 	panic("unexpected capability query")
 }
+
+// defaultBuiltIns is the deployment's default: every Work requires the core
+// runtime plugin.
+var defaultBuiltIns = agent.BuiltInPluginsConfig{Platform: []string{"talgent-runtime"}}

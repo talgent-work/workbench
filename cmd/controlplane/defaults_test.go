@@ -40,3 +40,12 @@ func loadDefaults(t *testing.T) Option {
 	require.NoError(t, loader.Load(&option, loader.WithConfigurationDirectory(directory, "defaults"), loader.WithConfigFilePrefix("controlplane")))
 	return option
 }
+
+// Every Work loads the core plugin, and a Work of a Project loads nothing
+// more unless a deployment's profile adds the Project scope's plugins.
+func TestEveryWorkLoadsTheCorePluginByDefault(t *testing.T) {
+	option := loadDefaults(t)
+	require.Equal(t, []string{"talgent-runtime"}, option.AgentBuiltInPlugins.Platform)
+	require.Empty(t, option.AgentBuiltInPlugins.Project)
+	require.NoError(t, option.AgentBuiltInPlugins.Validate())
+}

@@ -44,7 +44,7 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 		}
 		base = definition.ProvideCapabilities()
 	}
-	base.RequiredPlugins = domain.WithRequiredPlugins(base.RequiredPlugins, input.RequiredPlugins)
+	base.RequiredPlugins = a.BuiltInPlugins.ComposeRequiredPlugins(input.ProjectID, base.RequiredPlugins, input.RequiredPlugins)
 	personal, err := a.Catalog.ListPersonalPlugins(ctx, input.SubjectID)
 	if err != nil {
 		return query.WorkStartOptions{}, err

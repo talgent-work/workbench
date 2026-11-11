@@ -18,6 +18,7 @@ func validateOption(opt Option) error {
 		{name: "account-maintenance-taskqueue", validate: opt.AccountMaintenanceTaskQueue.Validate},
 		{name: "marketplace", validate: opt.Marketplace.Validate},
 		{name: "agent-marketplace", validate: opt.AgentMarketplace.Validate},
+		{name: "agent-built-in-plugins", validate: opt.AgentBuiltInPlugins.Validate},
 		{name: "account", validate: opt.Account.Validate},
 		{name: "agent-account", validate: opt.AgentAccount.Validate},
 		{name: "trace-clickhouse", validate: opt.TraceClickHouse.Validate},
