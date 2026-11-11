@@ -86,6 +86,7 @@ test-scripts:
 	bash test/next-version-test.sh
 	bash test/sandbox-dockerfile-test.sh
 	bash test/marketplace-sync-test.sh
+	bash test/marketplace-publish-test.sh
 	bash test/pre-push-leak-check-test.sh
 	bash test/k3s-render-test.sh
 

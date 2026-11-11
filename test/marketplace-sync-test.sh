@@ -72,14 +72,14 @@ write_marketplace_manifest() {
   }' >"${root}/.marketplace-publish/.claude-plugin/marketplace.json"
 }
 
-# Intent: publishing a non-runtime plugin must copy plugins/<id>, bump only that
-# plugin, and not publish talgent content under the selected id.
-test_syncs_selected_non_runtime_plugin() {
-  local repo="${TMP_ROOT}/non-runtime"
+# Intent: publishing a plugin must copy plugins/<id>, bump only that plugin, and
+# not publish talgent content under the selected id.
+test_syncs_selected_plugin_alone() {
+  local repo="${TMP_ROOT}/selected"
   init_fixture_repo "${repo}"
   write_plugin "${repo}" "demo-plugin" "new demo plugin content"
   write_plugin "${repo}/.marketplace-publish" "demo-plugin" "old marketplace content"
-  write_plugin "${repo}/.marketplace-publish" "talgent" "runtime content"
+  write_plugin "${repo}/.marketplace-publish" "talgent" "core content"
   write_marketplace_manifest "${repo}" "demo-plugin"
 
   local output
@@ -95,7 +95,7 @@ test_syncs_selected_non_runtime_plugin() {
   assert_eq "0.0.1" "$(jq -r '.plugins[] | select(.name == "demo-plugin") | .version' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "marketplace version"
   assert_eq "demo-plugin-v0.0.1" "$(jq -r '.plugins[] | select(.name == "demo-plugin") | .source.ref' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "immutable version tag"
   assert_eq "new demo plugin content" "$(cat "${repo}/.marketplace-publish/plugins/demo-plugin/agents/main.md")" "published content"
-  assert_eq "1.2.3" "$(jq -r '.plugins[] | select(.name == "talgent") | .version' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "runtime marketplace version"
+  assert_eq "1.2.3" "$(jq -r '.plugins[] | select(.name == "talgent") | .version' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "core marketplace version"
 
   (
     cd "${repo}"
@@ -182,10 +182,10 @@ test_syncs_multiple_selected_plugins() {
 # Intent: plugin deletions in the same push must not block publishing other
 # changed plugins that still exist in the repository.
 test_resolves_publishable_plugins_after_deletion() {
-  local repo="${TMP_ROOT}/deleted-plus-runtime"
+  local repo="${TMP_ROOT}/deleted-plus-core"
   init_fixture_repo "${repo}"
   write_plugin "${repo}" "retired-plugin" "old retired content"
-  write_plugin "${repo}" "talgent" "old runtime content"
+  write_plugin "${repo}" "talgent" "old core content"
   (
     cd "${repo}"
     git add .
@@ -193,11 +193,11 @@ test_resolves_publishable_plugins_after_deletion() {
   )
 
   rm -rf "${repo}/plugins/retired-plugin"
-  printf '%s\n' "new runtime content" >"${repo}/plugins/talgent/agents/main.md"
+  printf '%s\n' "new core content" >"${repo}/plugins/talgent/agents/main.md"
   (
     cd "${repo}"
     git add .
-    git commit -qm "update runtime and remove retired plugin"
+    git commit -qm "update core and remove retired plugin"
   )
 
   local before_sha after_sha output
@@ -230,58 +230,25 @@ test_requires_plugin_id() {
   fi
 }
 
-# Intent: a private marketplace lists its packages relative to itself, so the
-# platform reads them with the catalog's deploy key and republishes them as its
-# own archives; Works never need the key.
-test_syncs_private_plugin_as_relative_source() {
-  local repo="${TMP_ROOT}/private"
-  init_fixture_repo "${repo}"
-  write_plugin "${repo}" "private-plugin" "private content"
-  mkdir -p "${repo}/.marketplace-publish/.claude-plugin"
-  jq -n '{name: "private-marketplace", owner: {name: "Talgent"}, plugins: []}' >"${repo}/.marketplace-publish/.claude-plugin/marketplace.json"
-
-  local output
-  output="$(cd "${repo}" && TALGENT_PLUGIN_ID=private-plugin TALGENT_PLUGIN_SOURCE_KIND=relative bash scripts/marketplace/sync-plugin.sh)"
-  assert_eq "true" "$(printf '%s\n' "${output}" | awk -F= '$1 == "changed" {print $2}')" "private publication"
-  assert_eq "./plugins/private-plugin" "$(jq -r '.plugins[] | select(.name == "private-plugin") | .source' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "relative package source"
-  assert_eq "0.0.1" "$(jq -r '.plugins[] | select(.name == "private-plugin") | .version' "${repo}/.marketplace-publish/.claude-plugin/marketplace.json")" "private catalog version"
-  (
-    cd "${repo}"
-    TALGENT_PLUGIN_ID=private-plugin TALGENT_PLUGIN_SOURCE_KIND=relative TALGENT_REQUIRE_PLUGIN=true bash scripts/marketplace/validate.sh >/dev/null
-  )
-  if (cd "${repo}" && TALGENT_PLUGIN_ID=private-plugin TALGENT_REQUIRE_PLUGIN=true bash scripts/marketplace/validate.sh >/dev/null 2>&1); then
-    fail "a relative entry passed public git-subdir validation"
-  fi
-}
-
-# Intent: the GitHub Actions publisher must be wired to the selected plugin id,
-# otherwise non-runtime plugin pushes will still skip or publish runtime tags.
+# Intent: the GitHub Actions publisher must be wired to the selected plugin ids
+# and publish through publish.sh, which survives other repositories' pushes.
 test_workflow_uses_selected_plugin() {
   local workflow="${ROOT_DIR}/.github/workflows/publish-marketplace.yml"
 
   if ! grep -q "'plugins/\\*\\*'" "${workflow}"; then
     fail "publish workflow does not trigger for plugins/**"
   fi
-  if ! grep -q "scripts/marketplace/sync-plugins.sh" "${workflow}"; then
-    fail "publish workflow does not call sync-plugins.sh"
+  if ! grep -q "scripts/marketplace/publish.sh" "${workflow}"; then
+    fail "publish workflow does not call publish.sh"
   fi
   if ! grep -q "scripts/marketplace/resolve-publishable-plugins.sh" "${workflow}"; then
     fail "publish workflow does not resolve publishable plugins"
   fi
-  if ! grep -Fq 'TALGENT_PLUGIN_ID="${PLUGIN_ID}"' "${workflow}"; then
-    fail "publish workflow does not pass TALGENT_PLUGIN_ID"
-  fi
-  if ! grep -Fq 'TALGENT_PLUGIN_IDS="${PLUGIN_IDS}"' "${workflow}"; then
+  if ! grep -Fq 'TALGENT_PLUGIN_IDS: ${{ steps.plugin.outputs.plugin_ids }}' "${workflow}"; then
     fail "publish workflow does not pass TALGENT_PLUGIN_IDS"
   fi
-  if grep -q "supports one changed plugin per run" "${workflow}"; then
-    fail "publish workflow still rejects multiple changed plugins"
-  fi
-  if ! grep -q "repository: talgent-work/marketplace" "${workflow}" || ! grep -q "TALGENT_PLUGIN_SOURCE_KIND: git-subdir" "${workflow}"; then
-    fail "publish workflow does not publish to the public marketplace as git-subdir entries"
-  fi
-  if grep -Eq "sync-talgent.sh|feat\\(talgent\\)|talgent-v\\$\\{MARKETPLACE_VERSION\\}" "${workflow}"; then
-    fail "publish workflow still hard-codes talgent publishing"
+  if ! grep -q "repository: talgent-work/marketplace" "${workflow}"; then
+    fail "publish workflow does not publish to the public marketplace"
   fi
 }
 
@@ -301,11 +268,10 @@ test_publishes_selected_source_with_current_rules() {
 }
 
 test_publishes_selected_source_with_current_rules
-test_syncs_selected_non_runtime_plugin
+test_syncs_selected_plugin_alone
 test_sync_reports_unchanged_plugin
 test_syncs_multiple_selected_plugins
 test_resolves_publishable_plugins_after_deletion
 test_requires_plugin_id
-test_syncs_private_plugin_as_relative_source
 test_workflow_uses_selected_plugin
 echo "marketplace sync tests passed"
