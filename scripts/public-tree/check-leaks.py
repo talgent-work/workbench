@@ -9,7 +9,8 @@ repository:
   - private network addresses outside the documentation ranges (RFC 5737);
     network ranges such as 10.0.0.0/8 and the k3s defaults 10.42/10.43 pass
   - private host names (*.lan, *.internal, *.local, *.ts.net, ...)
-  - deployment subdomains of the product's own domain
+  - deployment subdomains of the product's own domain, except the public
+    demo (workbench.talgent.work)
   - every pattern of the local file TALGENT_LEAK_PATTERNS_FILE (default
     ~/.config/talgent/leak-patterns), which names one environment's concrete
     values and therefore never enters the repository
@@ -72,6 +73,8 @@ PUBLIC_HOSTS = {"host.docker.internal", "svc.cluster.local"}
 DEPLOYMENT_SUBDOMAIN = re.compile(r"(?<![\w.@-])(?:[a-z0-9-]+\.)+talgent\.work\b(?![\w-])")
 # An extended attribute named after the product, not a host.
 ATTRIBUTE_NAMES = {"user.talgent.work"}
+# The public demo that anyone may try, linked from the README.
+PUBLIC_DEPLOYMENTS = {"workbench.talgent.work"}
 
 ADR = re.compile(r"\bADRs?[ -]?\d{2,4}\b|\badr/\d{4}")
 ISSUE = re.compile(r"(?<![\w&#/])#[1-9]\d{1,3}(?![\w%])|/issues/\d+|/pull/\d+")
@@ -172,7 +175,7 @@ def everywhere_findings(text):
             continue
         yield m.start(), "private host name", m.group(0)
     for m in DEPLOYMENT_SUBDOMAIN.finditer(text):
-        if m.group(0) not in ATTRIBUTE_NAMES:
+        if m.group(0) not in ATTRIBUTE_NAMES | PUBLIC_DEPLOYMENTS:
             yield m.start(), "deployment domain", m.group(0)
 
 
