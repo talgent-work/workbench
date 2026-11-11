@@ -31,8 +31,9 @@ var (
 	// ErrInvalidRequest means a required identity is missing.
 	ErrInvalidRequest = errors.New("storage: invalid request")
 	// ErrPublicationInProgress means a publication still copies from a
-	// reclaimed Directory, so its content stays for a later attempt.
-	ErrPublicationInProgress = errors.New("storage: a publication still copies from the Directory")
+	// reclaimed Directory, or a change admitted before its reclamation still
+	// holds it, so its content stays for a later attempt.
+	ErrPublicationInProgress = errors.New("storage: a publication or a change still holds the Directory")
 	// ErrMappedViewBehind means a change was carried out in the Directory but
 	// did not reach every mapped path, which shows fewer files until the
 	// Mapped View is repaired.

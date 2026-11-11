@@ -67,6 +67,9 @@ func TestFileChangesReachTheMappedPaths(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "a, revised", string(content))
 
+	_, err = f.app.RenameFile(t.Context(), at(inputs.Directory, "b.md"), token, "a.md", "user-1")
+	require.ErrorIs(t, err, application.ErrNameTaken)
+	both("a.md", "b.md")
 	_, err = f.app.RenameFile(t.Context(), at(inputs.Directory, "b.md"), token, "c.md", "user-1")
 	require.NoError(t, err)
 	both("a.md", "c.md")

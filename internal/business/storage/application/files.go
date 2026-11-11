@@ -233,7 +233,7 @@ func (a *Application) writeFile(ctx context.Context, backend DirectoryBackendPor
 	// was not.
 	defer backend.Discard(staged)
 	var stored StoredFile
-	err = a.mappedChange(ctx, backend, position.Directory, func(directory *domain.Directory) error {
+	err = a.fileChange(ctx, backend, position.Directory, func(directory *domain.Directory) error {
 		if !replace {
 			if err := a.clearStaleShareLinks(ctx, backend, position); err != nil {
 				return err
@@ -260,6 +260,17 @@ func (a *Application) mappedChange(ctx context.Context, backend DirectoryBackend
 		return err
 	}
 	return change(directory)
+}
+
+// fileChange is a mappedChange of a file command admitted before the lock,
+// admitted again under it.
+func (a *Application) fileChange(ctx context.Context, backend DirectoryBackendPort, id domain.DirectoryID, change func(*domain.Directory) error) error {
+	return a.mappedChange(ctx, backend, id, func(directory *domain.Directory) error {
+		if err := directory.AdmitCommit(); err != nil {
+			return err
+		}
+		return change(directory)
+	})
 }
 
 // carriedOut accepts a change carried out in the Directory whose mapped
@@ -317,7 +328,7 @@ func (a *Application) RenameFile(ctx context.Context, at Position, token, newNam
 	}
 	var stored StoredFile
 	var recorded *domain.Directory
-	err = a.mappedChange(ctx, backend, from.Directory, func(directory *domain.Directory) error {
+	err = a.fileChange(ctx, backend, from.Directory, func(directory *domain.Directory) error {
 		// A rename only succeeds onto a free name, so the links active there
 		// now were left by an unrecorded deletion; links created once the
 		// renamed file is there stay.
@@ -373,7 +384,7 @@ func (a *Application) DeleteFile(ctx context.Context, at Position, token, actorU
 // publishes the deletion by writer; deleting an absent file changes nothing
 // and publishes nothing.
 func (a *Application) deleteFile(ctx context.Context, backend DirectoryBackendPort, position domain.FilePosition, writer domain.FileWriter) error {
-	return a.mappedChange(ctx, backend, position.Directory, func(directory *domain.Directory) error {
+	return a.fileChange(ctx, backend, position.Directory, func(directory *domain.Directory) error {
 		return a.removeFile(ctx, backend, directory, position, writer)
 	})
 }

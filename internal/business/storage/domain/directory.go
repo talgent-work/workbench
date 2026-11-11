@@ -188,6 +188,11 @@ func (d *Directory) Mapped() bool { return len(d.Mappings) > 0 }
 // MappedAt reports whether it is mapped at the path.
 func (d *Directory) MappedAt(path MappedPath) bool { return slices.Contains(d.Mappings, path) }
 
+// AdmitCommit admits again, under the Directory's lock, a file change
+// admitted before it: only while Allocated, so none lands in a Directory
+// reclaimed meanwhile.
+func (d *Directory) AdmitCommit() error { return d.admitUse() }
+
 // AdmitFileWrite admits a Create, Replace, Rename or Delete only while
 // Allocated, only on its own Space Token and only when the command names its
 // writer. Whether the target position is free is answered by its backend

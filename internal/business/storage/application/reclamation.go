@@ -32,23 +32,34 @@ func (a *Application) RequestWorkReclamation(ctx context.Context, workID string)
 	return errors.Join(failures...)
 }
 
-// reclaim records the reclamation at once. A mapped Directory's is
-// recorded under its lock, removing its mappings' files and emptied folders
-// from the Mapped View first, so none stays readable through a mapping once
-// the record is gone. An unmapped one takes no lock: a publication copying
-// from it holds its lock until the copy ends, and only the removal of its
-// content waits for that. A mapping recorded in between leaves files no
-// record holds, which the Mapped View repair removes.
+// errMapped stops the reclamation of a mapped Directory recorded without
+// its lock, which then takes the lock to end its mappings first.
+var errMapped = errors.New("storage: the Directory is mapped")
+
+// reclaim records the reclamation at once. An unmapped Directory's is
+// recorded without its lock: a publication copying from it holds its lock
+// until the copy ends, and only the removal of its content waits for that.
+// Whether it is mapped is decided in the same versioned change, so a
+// mapping recorded meanwhile makes it retry, and once reclaimed it is never
+// mapped. A mapped Directory's is recorded under its lock, removing its
+// mappings' files and emptied folders from the Mapped View first, so none
+// stays readable through a mapping once the record is gone.
 func (a *Application) reclaim(ctx context.Context, id domain.DirectoryID) error {
+	_, err := a.changeDirectory(ctx, id, func(directory *domain.Directory) error {
+		if directory.Mapped() {
+			return errMapped
+		}
+		return directory.Reclaim()
+	})
+	if err == nil {
+		return a.requestRemoval(ctx, id)
+	}
+	if !errors.Is(err, errMapped) {
+		return err
+	}
 	directory, err := a.directories.Get(ctx, id)
 	if err != nil {
 		return err
-	}
-	if !directory.Mapped() {
-		if _, err := a.changeDirectory(ctx, id, (*domain.Directory).Reclaim); err != nil {
-			return err
-		}
-		return a.requestRemoval(ctx, id)
 	}
 	backend, err := a.backends.of(directory)
 	if err != nil {

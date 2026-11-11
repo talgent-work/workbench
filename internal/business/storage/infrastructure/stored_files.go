@@ -161,13 +161,17 @@ func (f *DirectoryFiles) Rename(ctx context.Context, from, to domain.FilePositio
 		return application.StoredFile{}, operation.Wrap(err)
 	}
 	err = unix.Renameat2(fd, from.Name, fd, to.Name, unix.RENAME_NOREPLACE)
-	switch {
-	case errors.Is(err, unix.ENOENT):
-		return application.StoredFile{}, application.ErrFileNotFound
-	case errors.Is(err, unix.EEXIST):
-		return application.StoredFile{}, application.ErrNameTaken
-	case err != nil:
-		return application.StoredFile{}, operation.Wrap(err)
+	if err != nil {
+		// A refused rename changed nothing, so the file is shown again.
+		relinked := f.linkMapped(mappings, from)
+		switch {
+		case errors.Is(err, unix.ENOENT):
+			return application.StoredFile{}, application.ErrFileNotFound
+		case errors.Is(err, unix.EEXIST):
+			return application.StoredFile{}, errors.Join(application.ErrNameTaken, relinked)
+		default:
+			return application.StoredFile{}, operation.Wrap(errors.Join(err, relinked))
+		}
 	}
 	if err := unix.Fsync(fd); err != nil {
 		return application.StoredFile{}, operation.Wrap(err)

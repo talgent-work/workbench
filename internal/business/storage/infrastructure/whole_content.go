@@ -148,14 +148,16 @@ func (f *DirectoryFiles) ReplaceContent(ctx context.Context, id domain.Directory
 	if err := syncDirectory(space); err != nil {
 		return operation.Wrap(err)
 	}
-	if err := f.removeEarlier(id, content); err != nil {
-		return err
-	}
+	// The mapped paths were emptied before the switch, so aligning them now
+	// links only the current content, never an earlier one.
 	var behind []error
 	for _, mapped := range mappings {
 		if err := f.MapFiles(ctx, id, mapped); err != nil {
 			behind = append(behind, err)
 		}
+	}
+	if err := f.removeEarlier(id, content); err != nil {
+		return err
 	}
 	if len(behind) > 0 {
 		return errors.Join(append(behind, application.ErrMappedViewBehind)...)
