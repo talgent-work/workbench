@@ -49,7 +49,8 @@ func (releaseCatalog) ReadConnectorSelection(context.Context, string) (command.C
 // definition, a Work and personal installations resolves talgent after the
 // script: the definition requires it and starts with its role, the Work's
 // next start takes up its current release from a catalog that lists only
-// talgent, and each person's installation keeps its state and values. Applying
+// talgent, and each person's installation keeps its state and values; a
+// person who already installed talgent keeps that installation alone. Applying
 // the script again changes nothing.
 func TestCorePluginRenameMigrationResolvesTalgentEverywhere(t *testing.T) {
 	const (
@@ -74,6 +75,12 @@ func TestCorePluginRenameMigrationResolvesTalgentEverywhere(t *testing.T) {
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO marketplace_installed_plugin (id, user_id, slug, state, configuration) VALUES (?, 'alice', 'other', 1, '{}')`, uuid.NewString())
 	require.NoError(t, err)
+	// carol already installed talgent: that installation stays and her
+	// talgent-runtime one goes, leaving one installation per slug.
+	for _, row := range [][3]any{{"talgent-runtime", 2, `{"mode":"old"}`}, {"talgent", 1, `{"mode":"new"}`}} {
+		_, err = db.ExecContext(ctx, `INSERT INTO marketplace_installed_plugin (id, user_id, slug, state, configuration) VALUES (?, 'carol', ?, ?, ?)`, uuid.NewString(), row[0], row[1], row[2])
+		require.NoError(t, err)
+	}
 
 	script, err := os.ReadFile(corePluginRenameMigration)
 	require.NoError(t, err)
@@ -117,7 +124,7 @@ func TestCorePluginRenameMigrationResolvesTalgentEverywhere(t *testing.T) {
 		migrated = append(migrated, fmt.Sprintf("%s %s %d %s", user, slug, state, configuration))
 	}
 	require.NoError(t, rows.Err())
-	require.Equal(t, []string{`alice talgent 1 {"token":"secret"}`, `bob talgent 2 {}`}, migrated)
+	require.Equal(t, []string{`alice talgent 1 {"token":"secret"}`, `bob talgent 2 {}`, `carol talgent 1 {"mode":"new"}`}, migrated)
 }
 
 func currentCatalog(slug, role string) command.MarketplacePort {

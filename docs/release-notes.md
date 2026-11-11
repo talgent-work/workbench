@@ -23,7 +23,10 @@ Every Work loads both by default: `agent-built-in-plugins.platform` is `[talgent
 Stored uses of the old slug are rewritten by
 `deploy/middleware/migrations/20261111-core-plugin-rename.sql`: AgentDefinitions' required
 Plugins and Startup Agents, Works' retained Plugins and Startup Agents, and personal
-installations. Existing Works do not gain `talgent-api`. To upgrade:
+installations; a person who already installed `talgent` keeps that installation and loses the
+`talgent-runtime` one. Existing Works do not gain `talgent-api`. Executions queued or starting
+when the script runs still reference `talgent-runtime`, so upgrade while no Work is starting,
+or retry those starts afterwards. To upgrade:
 
 1. Make sure the catalog lists `talgent`: controlplane synchronizes its sources every
    `marketplace.synchronization.interval-seconds`, or start a synchronization through

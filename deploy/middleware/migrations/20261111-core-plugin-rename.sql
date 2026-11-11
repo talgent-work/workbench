@@ -14,8 +14,9 @@
 -- changes. A retained release keeps its catalog entry and archive reference:
 -- each start, Resume or Restart takes up the current release of its Plugins
 -- from the catalog by slug, so the catalog must list talgent before a Work
--- starts again. A person who already has an installation of talgent keeps it
--- and their talgent-runtime installation stays as it was. Per-run history
+-- starts again. A person who already has an installation of talgent keeps it,
+-- and their talgent-runtime installation is removed, so each person has one
+-- installation per slug. Per-run history
 -- (agent_execution, execution_plugin_result) and the catalog's own tables are
 -- left: each start writes new runs, and the next catalog synchronization
 -- publishes talgent.
@@ -30,8 +31,12 @@
 -- controlplane at once.
 -- Repeatable: yes. Each step changes only rows that still name
 -- talgent-runtime.
+-- Executions queued or starting while the script runs still name
+-- talgent-runtime; apply it with no Work starting, or retry those starts
+-- afterwards.
 -- Rollback: the symmetric rewrite, talgent back to talgent-runtime, in the
--- same three places, together with rolling back the controlplane image.
+-- same three places, together with rolling back the controlplane image; a
+-- removed duplicate talgent-runtime installation is not restored.
 -- Removal: delete this script, and the integration test that runs it
 -- (internal/business/agent/infrastructure/core_plugin_rename_migration_integration_test.go),
 -- once every environment has applied it.
@@ -71,6 +76,18 @@ SET @statement = IF(@present,
        ON renamed.user_id = installed.user_id AND renamed.slug = ''talgent''
       SET installed.slug = ''talgent''
     WHERE installed.slug = ''talgent-runtime'' AND renamed.id IS NULL',
+  'DO 0');
+PREPARE step FROM @statement;
+EXECUTE step;
+DEALLOCATE PREPARE step;
+
+-- marketplace_installed_plugin: a talgent-runtime installation the step above
+-- left has a talgent installation beside it, which wins.
+SET @statement = IF(@present,
+  'DELETE stale FROM marketplace_installed_plugin stale
+     JOIN marketplace_installed_plugin kept
+       ON kept.user_id = stale.user_id AND kept.slug = ''talgent''
+    WHERE stale.slug = ''talgent-runtime''',
   'DO 0');
 PREPARE step FROM @statement;
 EXECUTE step;
