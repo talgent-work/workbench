@@ -8,16 +8,18 @@ import (
 )
 
 type AgentWork struct {
-	Progress                *WorkProgress
-	AgentName               string
-	StopReason              domain.StopReason
-	Waiting                 bool
-	Version                 int
-	StopRequestID           string
-	ID                      string
-	AgentID                 string
-	State                   domain.WorkState
-	Capabilities            domain.CapabilitySnapshot
+	Progress      *WorkProgress
+	AgentName     string
+	StopReason    domain.StopReason
+	Waiting       bool
+	Version       int
+	StopRequestID string
+	ID            string
+	AgentID       string
+	State         domain.WorkState
+	Capabilities  domain.CapabilitySnapshot
+	// ProjectID is the Work's Project; empty for a Work without one.
+	ProjectID               string
 	HarnessSessionReference string
 	RequiredResponse        bool
 	FailureReason           string

@@ -80,8 +80,10 @@ func newBuiltInFixture(t *testing.T, builtIns domain.BuiltInPlugins, catalog com
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	lookup := infrastructure.NewAgentDefinitionQueryRepository(db)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), options, start, computertest.Checked(startupAuthority{}), creationPreparation(db, options))
-	app := &application.Application{Definitions: definitions, DefinitionQueries: lookup, Works: sessions, WorkQueries: infrastructure.NewWorkQueryRepository(db), Catalog: start, Models: options, BuiltInPlugins: builtIns,
+	authorizer := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
+	create := command.NewCreateWorkHandler(time.Now, builtIns, definitions, sessions, authorizer, options, start, computertest.Checked(startupAuthority{}), creationPreparation(db, options))
+	app := &application.Application{Queries: application.Queries{GetWork: agentquery.NewGetWorkHandler(definitions, sessions, authorizer, application.AssembleAgentWorkEntity, nil)},
+		Definitions: definitions, DefinitionQueries: lookup, Works: sessions, WorkQueries: infrastructure.NewWorkQueryRepository(db), Catalog: start, Models: options, BuiltInPlugins: builtIns,
 		Commands: application.Commands{EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup), CreateWork: create}}
 	return builtInFixture{db: db, works: personalwork.New(app, infrastructure.NewWorkQueryRepository(db), &librarySpaces{}, knownPeople{}), app: app}
 }
@@ -214,4 +216,24 @@ func TestASlugFromSeveralLayersIsLoadedOnce(t *testing.T) {
 	options, err := f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob", ProjectID: "project", RequiredPlugins: []string{platformPlugin, projectPlugin}})
 	require.NoError(t, err)
 	require.Len(t, options.Plugins, 2)
+}
+
+// Start options for an existing Work report the Built-in Plugins of the Work's
+// own scopes as required: a Work of a Project its platform and Project scope's,
+// a Personal Work only the platform scope's although the request names a
+// Project and the Work retains the Project scope's slug as a personal choice.
+func TestStartOptionsOfAnExistingWorkReportItsBuiltInPluginsAsRequired(t *testing.T) {
+	catalog := &builtInCatalog{personal: map[string][]domain.PersonalPlugin{"alice": {{Slug: projectPlugin, Enabled: true}}}}
+	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, []string{projectPlugin}), catalog)
+	projectWork, err := f.createProjectWork(f.projectDefinition(t, projectRole), "caller-plugin")
+	require.NoError(t, err)
+	options, err := f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "owner", WorkID: projectWork})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{platformPlugin: true, projectPlugin: true, "caller-plugin": false}, requiredOptions(options))
+
+	id, err := f.works.Start(context.Background(), personalwork.StartPersonalWork{Person: personalwork.Person{UserID: "alice", DisplayName: "alice"}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
+	require.NoError(t, err)
+	options, err = f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "alice", WorkID: id, ProjectID: "project"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{platformPlugin: true, projectPlugin: false}, requiredOptions(options))
 }

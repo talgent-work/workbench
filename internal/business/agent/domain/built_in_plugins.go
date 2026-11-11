@@ -17,7 +17,7 @@ type BuiltInPlugins struct {
 // once within its scope.
 func NewBuiltInPlugins(platform, project []string) (BuiltInPlugins, error) {
 	for _, scope := range [][]string{platform, project} {
-		if err := (CapabilityConfiguration{RequiredPlugins: scope}).Validate(); err != nil {
+		if err := validateRequiredPlugins(scope); err != nil {
 			return BuiltInPlugins{}, err
 		}
 	}
