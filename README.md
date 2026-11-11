@@ -1,14 +1,32 @@
-# Talgent Workbench
+<div align="center">
 
-**Every person in the enterprise works with their own Agent.**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+  <img alt="Talgent Workbench" src="docs/assets/logo-light.png" width="420">
+</picture>
+
+### Every person in the enterprise works with their own Agent.
+
+Self-hosted. Claude Code native. Every Work in its own sandbox on your Kubernetes.
+
+[![Release](https://img.shields.io/github/v/release/talgent-work/workbench?sort=semver&color=6a4cf5)](https://github.com/talgent-work/workbench/releases/latest)
+[![License](https://img.shields.io/github/license/talgent-work/workbench?color=blue)](LICENSE)
+[![Go](https://img.shields.io/github/go-mod/go-version/talgent-work/workbench?logo=go&logoColor=white)](go.mod)
+[![npm @talgent/computer](https://img.shields.io/npm/v/@talgent/computer?label=%40talgent%2Fcomputer&logo=npm)](https://www.npmjs.com/package/@talgent/computer)
+
+[Website](https://talgent.work) · [Self-hosting](docs/self-hosting.md) ·
+[Configuration](docs/configuration.md) · [Releases](https://github.com/talgent-work/workbench/releases) ·
+[Report a bug](https://github.com/talgent-work/workbench/issues/new/choose)
+
+<img alt="A Work in Talgent Workbench: the conversation with the Agent, its progress, Artifacts and token usage" src="docs/assets/work.webp" width="900">
+
+</div>
 
 Talgent Workbench is a self-hosted platform where people hand work to an AI Agent that runs
 Claude Code natively. A person starts a Work, gives it files, follows what the Agent does as it
 happens, and keeps, finds and shares what it produced, while the deployment sees what every Work
 cost. Works run in isolated cloud sandboxes on your Kubernetes cluster, or on a person's own
 machine. One deployment serves one enterprise.
-
-Product introduction: [talgent.work](https://talgent.work).
 
 ## Features
 
@@ -35,6 +53,21 @@ Product introduction: [talgent.work](https://talgent.work).
   npm; macOS, Linux and Windows) and run your Works there, with the machine's own Claude login
   and files.
 - **Sign-in** with GitHub.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img alt="New work: an instruction, a repository, the model and the Plugins the Work loads" src="docs/assets/new-work.webp"><p align="center"><sub>Start a Work with the model, repository and Plugins it needs</sub></p></td>
+    <td width="50%"><img alt="Library: Artifacts of a person's Works and of the Works shared with them" src="docs/assets/library.webp"><p align="center"><sub>Find every Artifact in your Library</sub></p></td>
+  </tr>
+  <tr>
+    <td width="50%"><img alt="Usage: token use over time by kind and by model" src="docs/assets/usage.webp"><p align="center"><sub>See what your Works cost, by token kind and model</sub></p></td>
+    <td width="50%"><img alt="Marketplace: native Claude Code Plugins by category" src="docs/assets/marketplace.webp"><p align="center"><sub>Add Plugins and Connectors from the Marketplace</sub></p></td>
+  </tr>
+</table>
+
+<sub>Screenshots show sample data.</sub>
 
 ## Architecture
 
@@ -132,9 +165,10 @@ its schema, and the core runtime plugin.
 
 ## Contributing
 
-Report bugs as [GitHub issues](https://github.com/talgent-work/workbench/issues): what you did,
-what you expected, what happened, and the release you run. The project does not accept outside
-pull requests.
+Report bugs and request features as [GitHub issues](https://github.com/talgent-work/workbench/issues/new/choose);
+the forms ask for what you did, what you expected, what happened, and the release you run. Report
+security vulnerabilities privately, as [SECURITY.md](SECURITY.md) describes. The project does not
+accept outside pull requests.
 
 ## License
 
