@@ -3,6 +3,7 @@ import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from 
 import type { Connector, InstalledPlugin, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { marketplaceClient } from "./client";
 import { useCurrentUser } from "./account-service";
+import { personalWorkStartSource } from "./personal-work-service";
 
 // Marketplace reads and personal changes. Catalog data is platform-wide; every
 // personal query is keyed by the signed-in user so another session never
@@ -64,6 +65,16 @@ export function useInstalledPlugins(options: ReadOptions = {}) {
       cursor = page.nextCursor;
     }
   } });
+}
+
+// What every Work the person starts must load, the deployment's Built-in
+// Plugins among them, is always enabled and cannot be installed or removed
+// personally. The server's start options decide it, sharing their cache with
+// the Start Work form; until they load nothing is known to be required.
+export function useAlwaysEnabledPlugins() {
+  const options = useQuery({ queryKey: ["work-start-options", ...personalWorkStartSource.key], queryFn: ({ signal }) => personalWorkStartSource.loadOptions(signal), retry: false });
+  const required = new Set(options.data?.plugins.filter(plugin => plugin.required).map(plugin => plugin.name));
+  return { isPending: options.isPending, isAlwaysEnabled: (slug: string) => required.has(slug) };
 }
 
 export function useConnectors() {

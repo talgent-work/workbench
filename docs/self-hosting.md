@@ -433,11 +433,23 @@ controlplane's log).
 ## 9. Operations
 
 - **Upgrading.** Read the [release notes](release-notes.md) for what a release asks of you
-  first, such as a data migration. Check out the new release and deploy it as in
-  [section 7](#7-deploy); the schema step creates what the release adds. A release that adds a key to `environment.env`
-  needs it in the environment: deploy once with `TALGENT_ENVIRONMENT_FILE` setting it. Services may be upgraded one at a time with
-  `kubectl -n talgent set image deploy/<service> <service>=<image>`; record the image you
-  replace, it is the rollback target.
+  first, such as a data migration, and follow its order. Check out the new release and deploy it
+  as in [section 7](#7-deploy); the schema step creates what the release adds. A release that adds
+  a key to `environment.env` needs it in the environment: deploy once with
+  `TALGENT_ENVIRONMENT_FILE` setting it.
+  - Upgrade every Workbench service image together: `controlplane`, `dispatcher`,
+    `streamgateway`, `computer-gateway` and `workbench-web`. Extensions check each service's
+    contracts version when they start, so a service left on the previous image keeps them from
+    starting. Deploying with `TALGENT_IMAGE_TAG` does this; record the images you replace, they
+    are the rollback target.
+  - Apply a release's migrations while no one is starting a Work. A start in flight across a
+    migration may be rejected; its Work then needs a Restart.
+  - Before a migration that points stored data at a catalog Plugin, synchronize the catalog and
+    confirm it lists that Plugin: `scripts/deploy/request-catalog-sync.sh` reads the agent
+    control token from Secret `native-execution-control`, port-forwards to `controlplane:8080`,
+    calls `marketplace.private.v1.SynchronizationService/RequestSynchronization` (a `POST` with
+    `Content-Type: application/json`), and waits at most `CATALOG_SYNC_TIMEOUT_SECONDS`
+    (default 600) for the run, exiting 0 only when it succeeded.
 - **Objects a release drops.** Deploying applies the manifests without pruning, so delete what
   a release no longer renders once nothing uses it. The release with the Mapped View drops the
   read-only claim of every Directory: once no workload mounts it,

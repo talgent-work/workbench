@@ -3,8 +3,8 @@ import { Alert, Button, Card, Chip, Dropdown, Label, Link as HeroLink, Switch } 
 import type { InstalledPlugin, PluginRelease } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { ChevronRight, Lock, MoreHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useInstalledPlugins, usePluginActions } from "../../lib/marketplace-catalog";
-import { isPlatformPlugin, pluginPresentation } from "../../lib/marketplace-plugins";
+import { useAlwaysEnabledPlugins, useInstalledPlugins, usePluginActions } from "../../lib/marketplace-catalog";
+import { pluginPresentation } from "../../lib/marketplace-plugins";
 import { marketplacePaths } from "../../lib/marketplace-routes";
 import { notify } from "../../lib/notifications";
 import { draftsFrom, missingRequired, parameterLabel, parseParameters, type ParameterDrafts, type ParameterErrors } from "../../lib/plugin-parameters";
@@ -25,7 +25,8 @@ export function PluginPage({ plugin }: { plugin: PluginRelease }) {
   const [errors, setErrors] = useState<ParameterErrors>({});
   const [confirm, setConfirm] = useState(false);
   const form = useRef<HTMLFormElement>(null);
-  const platform = isPlatformPlugin(plugin.slug);
+  const required = useAlwaysEnabledPlugins();
+  const platform = required.isAlwaysEnabled(plugin.slug);
   const saved = { configuration: installed?.configuration, redacted: installed?.redactedParameters };
   const missing = installed ? missingRequired(plugin.parameters, saved) : [];
   const values = { ...draftsFrom(installed?.configuration), ...drafts };
@@ -62,7 +63,7 @@ export function PluginPage({ plugin }: { plugin: PluginRelease }) {
       <div className="mk-detail-title"><h2>{presentation.name}</h2><p className="mk-meta"><span>{presentation.category}</span><span>Version {plugin.version}</span></p></div>
       <div className="mk-detail-actions">
         {platform ? <span className="mk-muted mk-inline"><Lock size={15} aria-hidden="true" />Always enabled</span>
-          : !installed ? <Button variant="primary" isPending={actions.install.isPending} isDisabled={installedPlugins.isPending} onPress={submit}>Install</Button>
+          : !installed ? <Button variant="primary" isPending={actions.install.isPending} isDisabled={installedPlugins.isPending || required.isPending} onPress={submit}>Install</Button>
           : <>
             <Switch isSelected={installed.enabled} isDisabled={actions.setEnabled.isPending} onChange={() => toggle(installed)} aria-label={`Enable ${presentation.name}`}><Switch.Control><Switch.Thumb /></Switch.Control></Switch>
             <Dropdown><Button size="sm" variant="ghost" isIconOnly aria-label={`More actions for ${presentation.name}`}><MoreHorizontal size={18} /></Button>
@@ -112,7 +113,7 @@ export function PluginPage({ plugin }: { plugin: PluginRelease }) {
       </Link></li> : <li key={server.name}><CapIcon kind="mcp" /><span className="mk-row-text"><strong>{server.name}</strong><span>Loads with this plugin · not in the Connector catalog</span></span></li>;
     })}</Group>}
 
-    {!platform && hasSettings && <section className="mk-section">
+    {!platform && !required.isPending && hasSettings && <section className="mk-section">
       <h3 className="mk-section-title">Settings</h3>
       <Card className="mk-group mk-settings-card">
         <form ref={form} noValidate className="mk-form" onSubmit={event => { event.preventDefault(); submit(); }}>

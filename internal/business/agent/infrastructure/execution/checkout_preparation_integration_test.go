@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,6 +38,7 @@ func preparationServer(t *testing.T, report string, exit int) (*execd.Client, *s
 	t.Helper()
 	var created string
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ping", func(http.ResponseWriter, *http.Request) {})
 	mux.HandleFunc("POST /pty", func(w http.ResponseWriter, r *http.Request) {
 		var body struct{ Cwd, Command string }
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -56,6 +58,48 @@ func preparationServer(t *testing.T, report string, exit int) (*execd.Client, *s
 	client, err := execd.NewClient(server.Client(), server.URL, "fixture-token")
 	require.NoError(t, err)
 	return client, &created
+}
+
+// A fresh sandbox's execd answers only some time after the sandbox runs; the
+// preparation's first command waits for it instead of failing.
+func TestPreparationWaitsForExecdBeforeItsFirstCommand(t *testing.T) {
+	ctx := t.Context()
+	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	launch := request()
+	launch.WorkID = uuid.NewString()
+	record := preparedRecord(t, db, launch)
+	var pings, earlyCommands atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ping", func(w http.ResponseWriter, r *http.Request) {
+		if pings.Add(1) < 3 {
+			w.WriteHeader(http.StatusBadGateway)
+		}
+	})
+	mux.HandleFunc("POST /pty", func(w http.ResponseWriter, r *http.Request) {
+		if pings.Load() < 3 {
+			earlyCommands.Add(1)
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write([]byte(`{"session_id":"prepare-1"}`))
+	})
+	mux.Handle("GET /pty/prepare-1/ws", websocket.Handler(func(ws *websocket.Conn) {
+		defer ws.Close()
+		_ = websocket.Message.Send(ws, `{"type":"exit","exit_code":0}`)
+	}))
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	client, err := execd.NewClient(server.Client(), server.URL, "fixture-token")
+	require.NoError(t, err)
+	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
+
+	_, err = n.prepareEnvironment(ctx, &record, client, launch)
+
+	require.NoError(t, err)
+	require.Zero(t, earlyCommands.Load(), "no command reaches execd before it answers")
+	require.Equal(t, "prepare-1", record.PreparationProcessID)
 }
 
 // preparedRecord inserts the live execution record of a start launched with

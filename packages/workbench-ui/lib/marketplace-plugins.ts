@@ -32,13 +32,6 @@ export function pluginPresentation(plugin: PresentablePlugin) {
   };
 }
 
-// The core plugins are the platform scope's Built-in Plugins by default: every
-// Work loads them, so they are always enabled and cannot be installed or
-// removed personally. A deployment without the core API plugin lists it as
-// such too; it does nothing there.
-export const platformPluginSlugs: readonly string[] = ["talgent", "talgent-api"];
-export const isPlatformPlugin = (slug: string) => platformPluginSlugs.includes(slug);
-
 export function groupPluginsByCategory<T extends PresentablePlugin>(plugins: T[]) {
   const groups = new Map<string, T[]>();
   for (const plugin of plugins) {

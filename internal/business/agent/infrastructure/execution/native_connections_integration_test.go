@@ -74,6 +74,9 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	require.NoError(t, json.Unmarshal(record.SpecificationJSON, &spec))
 	var reserved, preparations int
 	processAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/ping" {
+			return // execd answers
+		}
 		if r.URL.Path == "/pty/preparation-handle/ws" {
 			websocket.Handler(func(ws *websocket.Conn) {
 				defer ws.Close()
