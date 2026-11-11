@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
 # controlplane: the Go service of the root Dockerfile, on Debian, because
-# Marketplace synchronizes catalogs with git and npm and reads a private
-# catalog source over SSH with its deploy key. BINARY picks the binary's
-# source as in the root Dockerfile: "builder" compiles it, "prebuilt" (CI) takes
-# bin/controlplane; both compile with scripts/image-binaries.sh.
+# Marketplace synchronizes catalogs with git, over HTTPS only, and npm. BINARY
+# picks the binary's source as in the root Dockerfile: "builder" compiles it,
+# "prebuilt" (CI) takes bin/controlplane; both compile with
+# scripts/image-binaries.sh.
 ARG BINARY=builder
 
 FROM --platform=$BUILDPLATFORM golang:1.26.10 AS builder
@@ -26,7 +26,7 @@ FROM ${BINARY} AS binary
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git npm openssh-client \
+    && apt-get install -y --no-install-recommends ca-certificates git npm \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=binary /out/controlplane /app/controlplane

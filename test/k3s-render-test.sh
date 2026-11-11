@@ -247,8 +247,8 @@ check(hostnames(switched, "workbench-web") == ["workbench.example.com"],
 
 # CONTROLPLANE_PROFILE: empty, controlplane reads its defaults only; set, it
 # also reads controlplane_<profile>.yml of ConfigMap controlplane-profile
-# beside them, and the files of Secret controlplane-profile-secrets, if there
-# is one, under /etc/talgent/profile.
+# beside them. Neither mounts a Secret for the profile: nothing it configures
+# reads one.
 def pod_spec(rendered, deployment):
     return find(rendered, "Deployment", deployment)["spec"]["template"]["spec"]
 
@@ -269,11 +269,9 @@ configuration = mounted(switched, "controlplane", "/app/configs/controlplane")[0
 check(configuration.get("projected", {}).get("sources") == [{"configMap": {"name": "controlplane-config"}},
                                                            {"configMap": {"name": "controlplane-profile"}}],
       f"CONTROLPLANE_PROFILE puts ConfigMap controlplane-profile beside controlplane-config, got {configuration}")
-profile_secrets = mounted(switched, "controlplane", "/etc/talgent/profile")
-check(profile_secrets is not None and profile_secrets[1].get("readOnly") is True
-      and profile_secrets[0].get("secret", {}).get("secretName") == "controlplane-profile-secrets"
-      and profile_secrets[0]["secret"].get("optional") is True,
-      f"CONTROLPLANE_PROFILE mounts the optional Secret controlplane-profile-secrets read-only at /etc/talgent/profile, got {profile_secrets}")
+volume_names = lambda rendered: [v["name"] for v in pod_spec(rendered, "controlplane")["volumes"]]
+check(volume_names(switched) == volume_names(docs),
+      f"CONTROLPLANE_PROFILE mounts no volume beside the configuration, such as a Secret for the profile, got {volume_names(switched)}")
 
 if failures:
     print("\n".join(f"expected: {f}" for f in failures), file=sys.stderr)

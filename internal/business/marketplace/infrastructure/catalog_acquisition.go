@@ -29,9 +29,7 @@ type catalogAcquisition struct {
 	root    string
 	command catalogCommand
 	http    *http.Client
-	// scope keeps a private source's results apart from unauthenticated reads.
-	scope  string
-	shared *acquisitionCalls
+	shared  *acquisitionCalls
 }
 
 func newCatalogAcquisition(config CatalogAcquisitionConfig) (*catalogAcquisition, error) {
@@ -51,7 +49,6 @@ func (a *catalogAcquisition) close() { a.http.CloseIdleConnections(); os.RemoveA
 // One acquisition per immutable reference, shared by all workers and sources.
 // A failed acquisition is also shared: workers do not cause a retry storm.
 func (a *catalogAcquisition) once(ctx context.Context, key string, fetch func() (acquisitionResult, error)) (acquisitionResult, error) {
-	key = a.scope + key
 	a.shared.mu.Lock()
 	call, found := a.shared.calls[key]
 	if !found {
@@ -127,7 +124,8 @@ func (a *catalogAcquisition) revision(ctx context.Context, remote, ref string) (
 		ref = "HEAD"
 	}
 	result, e := a.once(ctx, "revision:"+remote+":"+ref, func() (acquisitionResult, error) {
-		if !strings.HasPrefix(remote, "https://") && !strings.HasPrefix(remote, "git@") && !strings.HasPrefix(remote, "ssh://") {
+		// Packages, like sources, are read without credentials: HTTPS only.
+		if !strings.HasPrefix(remote, "https://") {
 			return acquisitionResult{}, errors.New("marketplace: invalid git source")
 		}
 		output, e := a.command.execute(ctx, "git", "ls-remote", "--exit-code", "--", remote, ref, ref+"^{}")
