@@ -30,7 +30,8 @@ func (q *reclamationQueue) Enqueue(_ context.Context, task taskqueue.Task, opts 
 }
 
 // A Cloud Work reaching Closed queues its one Work Reclamation Request task,
-// retried until Storage accepts the request; a Managed Work mounted no
+// retried a bounded number of times until Storage accepts the request; a
+// Managed Work mounted no
 // Directory to reclaim, and other events request nothing.
 func TestClosedWorkRequestsReclamation(t *testing.T) {
 	queue := &reclamationQueue{}
@@ -45,7 +46,7 @@ func TestClosedWorkRequestsReclamation(t *testing.T) {
 	require.Equal(t, "agent:workspace-reclamation:work-1", queue.queued[0].ID())
 	retries, set := queue.options[0].MaxRetry()
 	require.True(t, set)
-	require.Greater(t, retries, 1_000_000, "a queued request is delivered however long Storage is away")
+	require.Equal(t, agenttask.ReclamationRetries, retries, "a request Storage keeps refusing ends at its ceiling")
 	require.Positive(t, queue.options[0].Timeout())
 }
 

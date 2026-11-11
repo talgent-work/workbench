@@ -10,6 +10,7 @@ import (
 	agenttaskv1 "github.com/talgent-work/workbench/gen/agent/task/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
+	pkgtaskqueue "github.com/talgent-work/workbench/internal/pkg/taskqueue"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -28,7 +29,14 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 			return &agenttaskv1.RequestWorkspaceReclamationTaskV1{}
 		},
 			func(ctx context.Context, p *agenttaskv1.RequestWorkspaceReclamationTaskV1) error {
-				return recovery.SendWorkReclamation(ctx, p.GetWorkId())
+				err := recovery.SendWorkReclamation(ctx, p.GetWorkId())
+				if err != nil && pkgtaskqueue.LastAttempt(ctx) {
+					// Agent keeps no reclamation obligation: the request
+					// ends here, and only this error shows it.
+					execution, _ := taskqueue.ExecutionInfoFromContext(ctx)
+					logger.ErrorContext(ctx, "work reclamation failed", slog.String("work_id", p.GetWorkId()), slog.String("task_id", execution.TaskID()), slog.Any("error", err))
+				}
+				return err
 			}),
 		processor(logger, agenttask.SweepRecoveryType, func() *agenttaskv1.SweepRecoveryTaskV1 { return &agenttaskv1.SweepRecoveryTaskV1{} },
 			func(ctx context.Context, _ *agenttaskv1.SweepRecoveryTaskV1) error { return recovery.Sweep(ctx) }),

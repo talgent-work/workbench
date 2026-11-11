@@ -13,8 +13,9 @@ import (
 // WorkReclamations requests reclamation of a Cloud Work's Directories once
 // the Work reaches Closed (Request Work reclamation). Agent keeps no
 // reclamation obligation: the request is queued as a task that delivers it
-// through Storage's contract until Storage accepts it, and Storage owns its
-// completion.
+// through Storage's contract until Storage accepts it, at most
+// ReclamationRetries times, and Storage owns its completion. A request that
+// exhausts them ends as a reclamation failure its processor logs.
 //
 // The request is handed to the task queue before the closure that records
 // WorkClosed commits, not after it as an in-memory reaction would: a closure
@@ -46,9 +47,10 @@ func (h *WorkReclamations) Request(ctx context.Context, events []domainevent.Eve
 		if err != nil {
 			return err
 		}
-		// The task is retried until Storage accepts the request; its key
-		// collapses a repeated hand-off into the task already queued.
-		if err := h.enqueuer.Enqueue(ctx, task, agenttask.Persistent(agenttask.RecoveryAttemptTimeout)...); err != nil {
+		// The task is retried, up to its ceiling, until Storage accepts the
+		// request; its key collapses a repeated hand-off into the task
+		// already queued.
+		if err := h.enqueuer.Enqueue(ctx, task, agenttask.Reclamation()...); err != nil {
 			return err
 		}
 	}

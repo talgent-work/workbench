@@ -168,7 +168,7 @@ func TestWakingAWorkAlsoWakesItsUnreleasedExecution(t *testing.T) {
 	for _, options := range f.enqueuer.options {
 		retries, set := options.MaxRetry()
 		require.True(t, set)
-		require.Greater(t, retries, 1_000_000, "a recovery obligation is never abandoned")
+		require.Equal(t, agenttask.RecoveryRetries, retries, "a wake that keeps failing ends at its ceiling; the sweep wakes the object again")
 		require.Positive(t, options.Timeout())
 	}
 	require.NoError(t, f.recovery.WakeWork(context.Background(), "work-without-execution"))
