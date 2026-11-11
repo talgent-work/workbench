@@ -195,6 +195,35 @@ test_dry_run_pushes_nothing() {
   echo "dry run pushes nothing: PASS"
 }
 
+test_a_first_publication_starts_from_the_plugin_version() {
+  seed_marketplace first
+  local rows
+  rows="$(publish first talgent,talgent-api TALGENT_VERSION_BUMP=patch 2>/dev/null)" || fail "publication failed"
+  [[ "${rows}" == $'talgent\t0.1.0\ttrue\ntalgent-api\t0.1.0\ttrue' ]] ||
+    fail "a first patch publication takes plugin.json's 0.1.0, got ${rows}"
+  [[ "$(entry first talgent | jq -r .source.ref)" == "talgent-v0.1.0" ]] || fail "the release tag names 0.1.0"
+  echo "a first publication starts from the plugin version: PASS"
+}
+
+test_a_publication_never_goes_below_the_plugin_version() {
+  seed_marketplace below
+  # talgent was published at 0.0.1 with the very content of plugins/talgent.
+  local checkout="${work}/below-checkout"
+  cp -a "${ROOT_DIR}/plugins/talgent" "${checkout}/plugins/talgent"
+  jq '.version = "0.0.1"' "${checkout}/plugins/talgent/.claude-plugin/plugin.json" > "${checkout}/p" &&
+    mv "${checkout}/p" "${checkout}/plugins/talgent/.claude-plugin/plugin.json"
+  jq --arg url "${PUBLIC_URL}" '.plugins += [{name: "talgent", version: "0.0.1", source: {source: "git-subdir", url: $url, path: "plugins/talgent", ref: "talgent-v0.0.1"}}]' \
+    "${checkout}/.claude-plugin/marketplace.json" > "${checkout}/m" && mv "${checkout}/m" "${checkout}/.claude-plugin/marketplace.json"
+  git_quiet -C "${checkout}" add .
+  git_quiet -C "${checkout}" commit -qm "feat(talgent): publish v0.0.1"
+  git_quiet -C "${checkout}" push -q origin HEAD:main
+  local rows
+  rows="$(publish below talgent TALGENT_VERSION_BUMP=patch 2>/dev/null)" || fail "publication failed"
+  [[ "${rows}" == $'talgent\t0.1.0\ttrue' ]] || fail "a release below plugin.json's version is raised to it, got ${rows}"
+  [[ "$(entry below talgent | jq -r .version)" == "0.1.0" ]] || fail "talgent is listed at 0.1.0, got $(entry below talgent)"
+  echo "a publication never goes below the plugin version: PASS"
+}
+
 test_an_unchanged_plugin_publishes_nothing() {
   seed_marketplace again
   publish again talgent >/dev/null 2>&1 || fail "first publication"
@@ -214,5 +243,7 @@ test_publication_survives_a_concurrent_push
 test_a_refused_push_on_an_unmoved_main_fails_at_once
 test_retries_are_bounded
 test_dry_run_pushes_nothing
+test_a_first_publication_starts_from_the_plugin_version
+test_a_publication_never_goes_below_the_plugin_version
 test_an_unchanged_plugin_publishes_nothing
 echo "marketplace publish test passed"

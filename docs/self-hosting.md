@@ -480,4 +480,11 @@ controlplane's log).
 - **Marketplace.** controlplane synchronizes its catalog sources
   ([`marketplace.synchronization`](configuration.md#marketplace)). Release
   metadata lives in the Workbench database and archives in `talgent/marketplace/` on the JuiceFS
-  volume; keep both, since Works keep using the releases they started with.
+  volume; keep both, since Works keep using the releases they started with. Removing a source
+  from the configuration retires it at the next synchronization: its releases leave the
+  catalog and the database, and each of its archives that no configured source's release
+  shares is deleted and no longer served at `/marketplace/archives/`. controlplane logs each
+  retired release and removed archive. A Work takes up the current release of its Plugins by
+  slug at each start, Resume or Restart; a Plugin no configured source lists any more fails to
+  install there, and the rest of the start proceeds. Adding the source back publishes it
+  again.

@@ -70,7 +70,7 @@ func TestCatalogSynchronization(t *testing.T) {
 	writeCatalog(t, external, "external-catalog", []map[string]any{{"name": "catalog-alias", "source": map[string]any{"source": "url", "url": server.URL + "/plugin.git"}}})
 	content := t.TempDir()
 	db := catalogDatabase(t)
-	store, err := infrastructure.NewCatalogStore(db, content, "talgent", "Talgent")
+	store, err := infrastructure.NewCatalogStore(db, content, "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
 	mux.Handle(marketplacehttp.ContentPath, marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorRepositories{}), slog.Default()))
 	synchronizer, err := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 45,
@@ -157,7 +157,7 @@ func TestCatalogPackageOverSSHIsRefused(t *testing.T) {
 	t.Setenv("PATH", client+string(os.PathListSeparator)+os.Getenv("PATH"))
 	external := t.TempDir()
 	writeCatalog(t, external, "external-catalog", []map[string]any{{"name": "ssh-plugin", "source": map[string]any{"source": "url", "url": "git@git.example.invalid:example/plugin.git"}}})
-	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
+	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
 	synchronizer, err := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 1, RequestTimeoutSeconds: 5,
 		Sources: map[string]infrastructure.CatalogSource{"external": {URI: external}}}, store)

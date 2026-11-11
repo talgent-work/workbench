@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
@@ -30,6 +31,21 @@ type CatalogPublicationPort interface {
 	PublishedRelease(context.Context, string, string, string) (*PluginRelease, error)
 	RetainRelease(context.Context, PluginRelease) error
 	CommitCatalog(context.Context, []SourceReleases) error
+	// RetireSources withdraws everything of each source not named: its
+	// releases, its catalog entries, and each archive no remaining release
+	// references. Retiring an already retired source changes nothing.
+	RetireSources(ctx context.Context, configured []string) (SourceRetirement, error)
+}
+
+// SourceRetirement is what one publication withdrew of removed sources.
+type SourceRetirement struct {
+	Releases []RetiredRelease
+	// Archives are the digests of the archives removed from the content store.
+	Archives []string
+}
+
+type RetiredRelease struct {
+	Source, Slug, Version string
 }
 
 type PluginSyncFailure struct {
@@ -43,8 +59,10 @@ func (e *PluginSyncFailure) Error() string {
 func (e *PluginSyncFailure) Unwrap() error { return e.Cause }
 
 // PublishCatalog applies release decisions independently, then makes the complete
-// selected view visible in one commit. A partial failure is reported after commit.
-func PublishCatalog(ctx context.Context, store CatalogPublicationPort, sources []SourceReleases) error {
+// selected view visible in one commit. The sources given are the configured
+// ones: once the view no longer lists any other source, everything of those
+// is retired. A partial failure is reported after commit.
+func PublishCatalog(ctx context.Context, store CatalogPublicationPort, sources []SourceReleases, logger *slog.Logger) error {
 	var failures []error
 	output := make([]SourceReleases, 0, len(sources))
 	policy := domain.PluginReleasePolicy{}
@@ -119,6 +137,22 @@ func PublishCatalog(ctx context.Context, store CatalogPublicationPort, sources [
 		output = append(output, next)
 	}
 	if err := store.CommitCatalog(ctx, output); err != nil {
+		return err
+	}
+	configured := make([]string, 0, len(sources))
+	for _, source := range sources {
+		configured = append(configured, source.Source.Name)
+	}
+	retired, err := store.RetireSources(ctx, configured)
+	// What was withdrawn before a failure is reported too; the next
+	// publication retires the rest.
+	for _, release := range retired.Releases {
+		logger.InfoContext(ctx, "catalog retired a release of a removed source", "source", release.Source, "slug", release.Slug, "version", release.Version)
+	}
+	for _, digest := range retired.Archives {
+		logger.InfoContext(ctx, "catalog removed an archive only a removed source referenced", "sha256", digest)
+	}
+	if err != nil {
 		return err
 	}
 	return errors.Join(failures...)

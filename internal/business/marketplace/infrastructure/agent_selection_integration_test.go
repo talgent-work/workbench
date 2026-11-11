@@ -4,6 +4,7 @@ package infrastructure_test
 
 import (
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"connectrpc.com/connect/v2"
@@ -69,7 +70,7 @@ func TestAgentUsesStartingUserPluginsThroughMarketplaceContract(t *testing.T) {
 }
 
 func TestNewReleaseValidationPreservesOldSelectionAndPersonalConfiguration(t *testing.T) {
-	store, err := marketplaceinfra.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
+	store, err := marketplaceinfra.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
 	release := catalogRelease("owned", "reviewer", "1.0.0")
 	release.Parameters = map[string]marketplaceapp.ParameterDeclaration{"paths": {Type: "string", Title: "Paths", Description: "Paths", Multiple: true}, "flag": {Type: "boolean", Title: "Flag", Description: "Flag", Default: true}}

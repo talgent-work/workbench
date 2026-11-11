@@ -4,6 +4,7 @@ package infrastructure_test
 
 import (
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 )
 
 func TestCatalogPartialFailureClassificationAndDatabaseQueries(t *testing.T) {
-	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent")
+	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), t.TempDir(), "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
 	source := application.CatalogSource{Name: "owned", Owned: true}
 	a, b := catalogRelease("owned", "alpha", "1"), catalogRelease("owned", "beta", "1")

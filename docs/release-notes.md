@@ -67,6 +67,28 @@ database named by `AGENT_MYSQL_DATABASE` before you deploy. It adds
 `agent_execution.rejection_reason` and `startup_setback`, and you can apply it again safely.
 The previous release ignores both columns, so a rollback needs only the previous images.
 
+### A removed catalog source is retired
+
+Removing a source from `marketplace.synchronization.acquisition.sources` now withdraws it at
+the next synchronization. Its releases and catalog entries are soft-deleted, and each archive
+of it that no configured source's release shares is deleted from the marketplace directory, so
+`/marketplace/archives/<sha256>.zip` stops serving it. Before, they stayed, and the archives of
+a removed private source stayed downloadable without sign-in. controlplane logs
+`catalog retired a release of a removed source` and
+`catalog removed an archive only a removed source referenced` for each.
+
+A Work that started with a Plugin of a removed source takes up the current release by slug at
+its next start, Resume or Restart. Where no configured source lists that Plugin, its
+installation fails and the rest of the start proceeds. Nothing to do when upgrading: the first
+synchronization of this release retires the sources removed before it, and adding a source back
+publishes it again.
+
+### First-party plugins are published from their own version
+
+`scripts/marketplace/publish.sh` publishes a plugin's first release at the version its
+`plugin.json` names, and never below it. It published `talgent` and `talgent-api` at `0.0.1`
+although they name `0.1.0`; their next publication is `0.1.0`.
+
 ### Breaking: Marketplace Sources take no credentials
 
 Every catalog source is public: an HTTPS address with no credentials or query, a GitHub
