@@ -60,10 +60,15 @@ func (m *NativeExecutions) run(entry *nativeExecution, client *execd.Client) {
 }
 
 // awaitExitAcknowledgement gives the stream up once Agent applied the exit
-// fact. A handover or takeover before that redelivers it from the snapshot.
+// fact. A handover or takeover before that redelivers it from the snapshot,
+// and so does the next connection when its delivery was given up.
 func (m *NativeExecutions) awaitExitAcknowledgement(ctx context.Context, entry *nativeExecution) {
 	select {
 	case <-entry.feedback.exited:
+	case <-entry.feedback.undelivered:
+		m.endAbandoned(entry)
+		m.reportConnectionEnded(entry.target)
+		return
 	case <-ctx.Done():
 		if errors.Is(context.Cause(ctx), errHandover) {
 			return

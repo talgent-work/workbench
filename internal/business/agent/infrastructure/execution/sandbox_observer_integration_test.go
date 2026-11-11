@@ -146,6 +146,45 @@ func TestSandboxObservationRetriesAFailedWake(t *testing.T) {
 	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return attempts == 2 }, 10*time.Second, 20*time.Millisecond)
 }
 
+// A wake that keeps failing is retried up to its ceiling, then given up with
+// an error naming the sandbox's ownership; the recovery sweep still wakes
+// every unreleased execution.
+func TestSandboxObservationGivesUpAWakeAtItsCeiling(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	provider, _, _ := sandboxClient(t)
+	p := NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
+	input := request()
+	allocation, err := register(ctx, p, input, testMounts)
+	require.NoError(t, err)
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), observedKinds)
+	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("late", correlation(SandboxOwner{WorkID: input.WorkID, ID: allocation.ID})), metav1.CreateOptions{})
+	require.NoError(t, err)
+	var mu sync.Mutex
+	attempts := 0
+	wake := func(context.Context, string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		attempts++
+		return errors.New("redis unavailable")
+	}
+	logs := &syncBuffer{}
+	observer, err := NewSandboxObserver(client, "talgent", db, wake, slog.New(slog.NewJSONHandler(logs, nil)))
+	require.NoError(t, err)
+	observer.retryBase, observer.retryMax, observer.retries = time.Millisecond, 5*time.Millisecond, 3
+	go func() { _ = observer.Run(ctx) }()
+	require.Eventually(t, func() bool { return bytes.Contains([]byte(logs.String()), []byte("sandbox observation abandoned")) }, 2*time.Second, 10*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, 4, attempts, "one attempt and three retries, no more")
+	require.Contains(t, logs.String(), `"level":"ERROR"`)
+	require.Contains(t, logs.String(), `"error":"redis unavailable"`)
+}
+
 // Only talgent.io/execution marks a sandbox's ownership: the observer selects
 // sandboxes by it, and a sandbox without it wakes nothing, even when it
 // carries the session label and another label naming the execution.

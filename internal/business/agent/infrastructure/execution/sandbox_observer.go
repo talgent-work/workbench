@@ -39,21 +39,31 @@ type SandboxObserver struct {
 	records   records
 	wake      func(context.Context, string) error
 	logger    *slog.Logger
+	// retryBase and retryMax bound the delay before a failed observation is
+	// retried, and retries how often it is; tests shorten them.
+	retryBase, retryMax time.Duration
+	retries             int
 }
+
+// observationRetries bounds the retries of one failed observation: with
+// delays doubling from a second to a minute, about five minutes. One that
+// exhausts them is logged as an error and dropped; the recovery sweep still
+// wakes every unreleased execution once per interval.
+const observationRetries = 10
 
 func NewSandboxObserver(client dynamic.Interface, namespace string, db *xorm.Engine, wake func(context.Context, string) error, logger *slog.Logger) (*SandboxObserver, error) {
 	if client == nil || namespace == "" || db == nil || wake == nil || logger == nil {
 		return nil, errors.New("agent: sandbox observation needs a client, namespace, records and wake")
 	}
-	return &SandboxObserver{client: client, namespace: namespace, records: records{db: db}, wake: wake, logger: logger}, nil
+	return &SandboxObserver{client: client, namespace: namespace, records: records{db: db}, wake: wake, logger: logger, retryBase: time.Second, retryMax: time.Minute, retries: observationRetries}, nil
 }
 
 // Run observes sandboxes and their Pods until ctx ends. Each observation is
-// queued by the value of the ownership label it carries; a failed lookup or wake is retried
-// with backoff, because a retired execution's late sandbox is woken by
-// nothing else.
+// queued by the value of the ownership label it carries; a failed lookup or
+// wake is retried with backoff, at most retries times, so a retired
+// execution's late sandbox is woken before the next sweep.
 func (o *SandboxObserver) Run(ctx context.Context) error {
-	labels := workqueue.NewTypedRateLimitingQueue(workqueue.NewTypedItemExponentialFailureRateLimiter[string](time.Second, time.Minute))
+	labels := workqueue.NewTypedRateLimitingQueue(workqueue.NewTypedItemExponentialFailureRateLimiter[string](o.retryBase, o.retryMax))
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(o.client, 0, o.namespace, func(options *metav1.ListOptions) {
 		options.LabelSelector = sandboxOwnershipLabel
 	})
@@ -105,6 +115,8 @@ func (o *SandboxObserver) next(ctx context.Context, labels workqueue.TypedRateLi
 		err = o.wake(attempt, execution)
 	}
 	switch {
+	case err != nil && labels.NumRequeues(label) >= o.retries:
+		o.logger.ErrorContext(attempt, "sandbox observation abandoned", slog.String("ownership_label", label), slog.Int("retries", o.retries), slog.Any("error", err))
 	case err != nil:
 		o.logger.WarnContext(attempt, "sandbox observation will be retried", slog.String("ownership_label", label), slog.Any("error", err))
 		labels.AddRateLimited(label)

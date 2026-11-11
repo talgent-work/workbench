@@ -40,8 +40,13 @@ func (e *nativeExecution) cancelling() bool {
 }
 
 // flushRetry is how soon a flush that could not read the buffer runs again;
-// an idle Work has no other trigger.
-const flushRetry = time.Second
+// an idle Work has no other trigger. flushRetries bounds how often in a row:
+// a flush that exhausts them is given up with an error, and the input stays
+// due for the Work's next trigger (new input, readiness or a Turn's end).
+const (
+	flushRetry   = time.Second
+	flushRetries = 30
+)
 
 // flush writes every buffered entry the current connection has not written,
 // in order and back to back, without waiting for any to be processed. It runs
@@ -59,10 +64,17 @@ func (m *NativeExecutions) flush(ctx context.Context, e *nativeExecution) error 
 	entries, err := m.buffer.Entries(bounded, e.target.WorkID)
 	if err != nil {
 		e.flushDue = true
+		if e.flushFailures >= flushRetries {
+			e.flushFailures = 0
+			m.logger.ErrorContext(ctx, "input buffer flush given up", "agent_work_id", e.target.WorkID, "retries", flushRetries, "error", err)
+			return nil
+		}
+		e.flushFailures++
 		m.logger.WarnContext(ctx, "input buffer read failed", "agent_work_id", e.target.WorkID, "error", err)
 		time.AfterFunc(flushRetry, func() { m.requestFlush(e.target.WorkID) })
 		return nil
 	}
+	e.flushFailures = 0
 	e.mirror(entries)
 	var written []string
 	// Entries written before a failed write are recorded too, so whichever

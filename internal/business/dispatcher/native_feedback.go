@@ -18,8 +18,14 @@ const (
 	// latest snapshots, which nothing would replace. Observations are hints; Agent's recovery
 	// observation of the process restores readiness, turns, interactions and
 	// completed inputs a dropped one carried.
-	feedbackCapacity  = 1024
-	feedbackAttempts  = 3
+	feedbackCapacity = 1024
+	feedbackAttempts = 3
+	// exitAttempts bounds the delivery of the exit fact on one connection:
+	// with delays doubling to exitRetryCeiling, about five minutes. A fact
+	// still undelivered then ends the stream unacknowledged; the snapshot
+	// keeps it, and the connection Agent's recovery makes next delivers it
+	// again.
+	exitAttempts      = 32
 	feedbackTimeout   = 10 * time.Second
 	exitRetryCeiling  = 10 * time.Second
 	feedbackRetryBase = 500 * time.Millisecond
@@ -28,7 +34,7 @@ const (
 // feedbackQueue delivers one Work's observations to Agent in order, apart from
 // reading the stream, so a slow Agent never stops the reader. An
 // observation is a hint and is retried a few times; the exit fact is retried
-// until Agent acknowledges it.
+// until Agent acknowledges it, up to exitAttempts.
 type feedbackQueue struct {
 	reporter command.ExecutionFeedbackReporter
 	logger   *slog.Logger
@@ -42,14 +48,20 @@ type feedbackQueue struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
-	// exited is closed once Agent acknowledges the exit fact.
-	exited   chan struct{}
-	exitOnce sync.Once
+	// exited is closed once Agent acknowledges the exit fact; undelivered
+	// once its delivery is given up at its ceiling.
+	exited      chan struct{}
+	exitOnce    sync.Once
+	undelivered chan struct{}
+	// retryBase and exitAttempts are feedbackRetryBase and exitAttempts,
+	// shortened only by tests.
+	retryBase    time.Duration
+	exitAttempts int
 }
 
 func newFeedbackQueue(reporter command.ExecutionFeedbackReporter, logger *slog.Logger) *feedbackQueue {
 	ctx, cancel := context.WithCancel(context.Background())
-	q := &feedbackQueue{reporter: reporter, logger: logger, idle: true, wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), exited: make(chan struct{}), ctx: ctx, cancel: cancel}
+	q := &feedbackQueue{reporter: reporter, logger: logger, idle: true, wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), exited: make(chan struct{}), undelivered: make(chan struct{}), ctx: ctx, cancel: cancel, retryBase: feedbackRetryBase, exitAttempts: exitAttempts}
 	go q.run()
 	return q
 }
@@ -151,12 +163,13 @@ func (q *feedbackQueue) run() {
 	}
 }
 
-// deliver reports false only when the queue stops before an exit fact is
-// acknowledged; the resuming replica redelivers it. Agent refusing the exit
-// fact is permanent: it is logged and the stream ends as if acknowledged.
+// deliver reports false when the queue stops before an exit fact is
+// acknowledged, or gives the exit fact up at its ceiling; the resuming
+// replica or the next connection redelivers it. Agent refusing the exit fact
+// is permanent: it is logged and the stream ends as if acknowledged.
 func (q *feedbackQueue) deliver(observation command.ExecutionObservation) bool {
 	exit := observation.Kind == command.ExecutionExited
-	delay := feedbackRetryBase
+	delay := q.retryBase
 	for attempt := 1; ; attempt++ {
 		ctx, cancel := context.WithTimeout(q.ctx, feedbackTimeout)
 		err := q.reporter.ReportExecution(ctx, observation)
@@ -176,6 +189,11 @@ func (q *feedbackQueue) deliver(observation command.ExecutionObservation) bool {
 		if !exit && (rejected || attempt >= feedbackAttempts) {
 			q.logger.Warn("native feedback not delivered", "agent_work_id", observation.WorkID, "kind", observation.Kind, "error", err)
 			return true
+		}
+		if exit && attempt >= q.exitAttempts {
+			q.logger.Error("native exit fact not delivered", "agent_work_id", observation.WorkID, "process_id", observation.ProcessID, "attempts", attempt, "error", err)
+			close(q.undelivered)
+			return false
 		}
 		q.logger.Warn("native feedback delivery failed; retrying", "agent_work_id", observation.WorkID, "kind", observation.Kind, "attempt", attempt, "error", err)
 		select {
