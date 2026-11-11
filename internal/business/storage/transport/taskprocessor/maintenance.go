@@ -50,6 +50,31 @@ func (p *RemoveReclaimedContentProcessor) Process(ctx context.Context, queued ta
 	return err
 }
 
+// MappedViewRepair is the use case the repair task delegates to.
+type MappedViewRepair interface {
+	RepairMappedView(ctx context.Context) error
+}
+
+// RepairMappedViewProcessor repairs the Mapped View; a failed run is
+// replaced by the next hour's.
+type RepairMappedViewProcessor struct {
+	app MappedViewRepair
+}
+
+var _ taskqueue.Processor = (*RepairMappedViewProcessor)(nil)
+
+func NewRepairMappedViewProcessor(app MappedViewRepair) *RepairMappedViewProcessor {
+	return &RepairMappedViewProcessor{app: app}
+}
+
+func (*RepairMappedViewProcessor) TaskType() taskqueue.TaskType {
+	return applicationtask.RepairMappedViewType
+}
+
+func (p *RepairMappedViewProcessor) Process(ctx context.Context, _ taskqueue.Task) error {
+	return p.app.RepairMappedView(ctx)
+}
+
 // PreviewLapse is the use case the lapse task delegates to.
 type PreviewLapse interface {
 	LapsePreviewCopies(ctx context.Context) error

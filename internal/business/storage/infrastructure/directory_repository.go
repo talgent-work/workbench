@@ -20,12 +20,15 @@ const (
 )
 
 var (
-	directoryColumns = []string{"owner_key", "name", "backend", "lifetime", "state", "space_token", "version"}
+	directoryColumns = []string{"owner_key", "name", "backend", "lifetime", "state", "space_token", "granted_read_write", "version"}
+	mappingColumns   = []string{"path", "owner_key", "directory_name"}
 	shareLinkColumns = []string{"token", "owner_key", "directory_name", "target_name", "created_by", "state", "created_at"}
 )
 
-// DirectoryRepository persists Directories with their Share Links; the
-// Directory row's version serializes every change of one Directory.
+// DirectoryRepository persists Directories with their Share Links and
+// Directory Mappings; the Directory row's version serializes every change of
+// one Directory, and a mapped path's key keeps two Directories from being
+// mapped at one path.
 type DirectoryRepository struct {
 	engine *xorm.Engine
 }
@@ -59,7 +62,13 @@ func (r *DirectoryRepository) get(ctx context.Context, condition string, values 
 	if err != nil {
 		return nil, oops.With("operation", "storage.share_links.list", "owner_key", row.OwnerKey).Wrap(err)
 	}
-	return directoryFromDO(row, links)
+	var mappings []mappingDO
+	err = r.engine.Context(ctx).Cols(mappingColumns...).
+		Where("owner_key = ? AND directory_name = ?", row.OwnerKey, row.Name).Asc("path").Find(&mappings)
+	if err != nil {
+		return nil, oops.With("operation", "storage.mappings.list", "owner_key", row.OwnerKey).Wrap(err)
+	}
+	return directoryFromDO(row, links, mappings)
 }
 
 func (r *DirectoryRepository) GetByShareToken(ctx context.Context, token string) (*domain.Directory, error) {
@@ -107,7 +116,7 @@ func saveDirectory(tx *xorm.Session, row *directoryDO, directory *domain.Directo
 			return oops.With("operation", "storage.directory.insert", "owner_key", row.OwnerKey).Wrap(err)
 		}
 	} else {
-		affected, err := tx.Cols("state", "updated_at").Incr("version").
+		affected, err := tx.Cols("state", "granted_read_write", "updated_at").Incr("version").
 			Where("owner_key = ? AND name = ? AND version = ? AND deleted_at = 0", row.OwnerKey, row.Name, directory.Version).Update(row)
 		if err != nil {
 			return oops.With("operation", "storage.directory.update", "owner_key", row.OwnerKey).Wrap(err)
@@ -126,6 +135,39 @@ func saveDirectory(tx *xorm.Session, row *directoryDO, directory *domain.Directo
 			data.Token, data.OwnerKey, data.DirectoryName, data.TargetName, data.CreatedBy, data.State, data.CreatedAt, now)
 		if err != nil {
 			return oops.With("operation", "storage.share_link.save", "owner_key", row.OwnerKey).Wrap(err)
+		}
+	}
+	return saveMappings(tx, row, directory, now)
+}
+
+// saveMappings makes the Directory's mapping rows its mapped paths. A path
+// another Directory holds refuses the save as an overlap.
+func saveMappings(tx *xorm.Session, row *directoryDO, directory *domain.Directory, now int64) error {
+	var stored []mappingDO
+	if err := tx.Cols("path").Where("owner_key = ? AND directory_name = ?", row.OwnerKey, row.Name).Find(&stored); err != nil {
+		return oops.With("operation", "storage.mappings.list", "owner_key", row.OwnerKey).Wrap(err)
+	}
+	kept := make(map[string]bool, len(stored))
+	for _, mapping := range stored {
+		if directory.MappedAt(domain.MappedPath(mapping.Path)) {
+			kept[mapping.Path] = true
+			continue
+		}
+		if _, err := tx.Where("path = ? AND owner_key = ? AND directory_name = ?", mapping.Path, row.OwnerKey, row.Name).Delete(new(mappingDO)); err != nil {
+			return oops.With("operation", "storage.mapping.delete", "owner_key", row.OwnerKey).Wrap(err)
+		}
+	}
+	for _, path := range directory.Mappings {
+		if kept[string(path)] {
+			continue
+		}
+		_, err := tx.Insert(&mappingDO{Path: string(path), OwnerKey: row.OwnerKey, DirectoryName: row.Name, CreatedAt: now})
+		var duplicate *drivermysql.MySQLError
+		if errors.As(err, &duplicate) && duplicate.Number == mysqlDuplicateEntry {
+			return domain.ErrMappingOverlaps
+		}
+		if err != nil {
+			return oops.With("operation", "storage.mapping.insert", "owner_key", row.OwnerKey).Wrap(err)
 		}
 	}
 	return nil

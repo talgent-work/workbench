@@ -18,12 +18,23 @@ type WorkDirectory struct {
 	State    domain.DirectoryState
 }
 
+// Mapping is one Directory Mapping: a mapped path with its Directory.
+type Mapping struct {
+	Path      domain.MappedPath
+	Directory domain.DirectoryID
+}
+
 // DirectoryQueryRepository reads Directory facts the Directory Repository's
 // Get does not serve.
 type DirectoryQueryRepository interface {
 	// WorkDirectories are the Directories whose owner names the Work and
 	// whose lifetime is that Work's, whatever their state.
 	WorkDirectories(ctx context.Context, workID string) ([]WorkDirectory, error)
+	// MappingsAround are the mappings whose paths are, lie inside or lie
+	// above the path, with their Directories.
+	MappingsAround(ctx context.Context, path domain.MappedPath) ([]Mapping, error)
+	// Mappings are every mapping with its Directory, by path.
+	Mappings(ctx context.Context) ([]Mapping, error)
 }
 
 // PreviewCopyQueryRepository reads Preview Copy facts the Preview Copy

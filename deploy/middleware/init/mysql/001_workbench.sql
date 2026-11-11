@@ -455,6 +455,7 @@ CREATE TABLE IF NOT EXISTS `storage_directory` (
   `lifetime` varchar(16) NOT NULL DEFAULT '' COMMENT 'Lifetime fixed at first allocation: work|permanent',
   `state` varchar(16) NOT NULL DEFAULT '' COMMENT 'Lifecycle: allocating|allocated|reclaimed',
   `space_token` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Credential every file command and content replacement presents',
+  `granted_read_write` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1 once a read-write Mount Grant was issued, never cleared; such a Directory is never mapped',
   `work_id` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Value of the owner''s work fact, empty when it names no Work; selects a Work''s Directories for reclamation',
   `version` int unsigned NOT NULL DEFAULT '0' COMMENT 'Optimistic lock version serializing the Directory changes',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Opening timestamp (ms)',
@@ -479,6 +480,15 @@ CREATE TABLE IF NOT EXISTS `storage_share_link` (
   PRIMARY KEY (`token`),
   KEY `idx_directory_deleted_at_created_at` (`owner_key`, `directory_name`, `deleted_at`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Share Links of Storage Directories';
+
+CREATE TABLE IF NOT EXISTS `storage_directory_mapping` (
+  `path` varchar(512) COLLATE utf8mb4_bin NOT NULL COMMENT 'Mapped path in the Mapped View, chosen by the caller; no other mapping is at, inside or above it',
+  `owner_key` varchar(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Owner of the mapped Directory',
+  `directory_name` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Name of the mapped Directory',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Mapping timestamp (ms)',
+  PRIMARY KEY (`path`),
+  KEY `idx_directory` (`owner_key`, `directory_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Directory Mappings of Storage Directories into the Mapped View; a row is removed when its mapping ends';
 
 CREATE TABLE IF NOT EXISTS `marketplace_sync_run` (
   `id` varchar(36) NOT NULL COMMENT 'UUIDv7 operation identity',

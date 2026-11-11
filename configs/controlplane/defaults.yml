@@ -193,8 +193,11 @@ storage:
   # Callers beyond Agent; an empty token admits no one.
   directory-tokens:
     - "${STORAGE_DIRECTORY_TOKEN:}"
-  content-tokens:
-    - "${STORAGE_CONTENT_TOKEN:}"
+  # Callers of whole content; each maps only beneath its mapping-prefix,
+  # and an empty prefix maps nowhere.
+  content-callers:
+    - token: "${STORAGE_CONTENT_TOKEN:}"
+      mapping-prefix: ""
   # Sandboxes mount each Directory from its backend's claim by subPath.
   mounts:
     nas-claim: "${K8S_NAS_PVC_NAME:talgent-nas-root}"

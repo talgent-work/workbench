@@ -99,14 +99,11 @@ func filesUnder(directory string) ([]domain.ContentPath, error) {
 }
 
 // ReplaceContent stages the files aside, moves them into the Directory,
-// switches it to them in one rename and removes every earlier content,
-// holding the Directory's lock so its replacements run one at a time.
-func (f *DirectoryFiles) ReplaceContent(ctx context.Context, id domain.DirectoryID, files []application.ContentFile) error {
-	unlock, err := f.lock(ctx, id, unix.LOCK_EX)
-	if err != nil {
-		return err
-	}
-	defer unlock()
+// switches it to them in one rename and removes every earlier content; its
+// caller holds the Directory's lock, so its replacements run one at a time.
+// Each mapped path is emptied before the switch and shows the new content
+// after it.
+func (f *DirectoryFiles) ReplaceContent(ctx context.Context, id domain.DirectoryID, files []application.ContentFile, mappings []domain.MappedPath) error {
 	operation := oops.With("operation", "storage.replace_content", "directory", f.relative(id))
 	space := f.folder(id)
 	if _, err := os.Lstat(space); err != nil {
@@ -133,6 +130,9 @@ func (f *DirectoryFiles) ReplaceContent(ctx context.Context, id domain.Directory
 	if err := os.MkdirAll(filepath.Join(space, contentsFolder), directoryMode); err != nil {
 		return operation.Wrap(err)
 	}
+	if err := f.clearMapped(mappings); err != nil {
+		return operation.Wrap(err)
+	}
 	switched := filepath.Join(space, contentsFolder, content)
 	if err := os.Rename(staged, switched); err != nil {
 		return operation.Wrap(err)
@@ -148,7 +148,21 @@ func (f *DirectoryFiles) ReplaceContent(ctx context.Context, id domain.Directory
 	if err := syncDirectory(space); err != nil {
 		return operation.Wrap(err)
 	}
-	return f.removeEarlier(id, content)
+	// The mapped paths were emptied before the switch, so aligning them now
+	// links only the current content, never an earlier one.
+	var behind []error
+	for _, mapped := range mappings {
+		if err := f.MapFiles(ctx, id, mapped); err != nil {
+			behind = append(behind, err)
+		}
+	}
+	if err := f.removeEarlier(id, content); err != nil {
+		return err
+	}
+	if len(behind) > 0 {
+		return errors.Join(append(behind, application.ErrMappedViewBehind)...)
+	}
+	return nil
 }
 
 func writeContentFile(content string, file application.ContentFile) error {

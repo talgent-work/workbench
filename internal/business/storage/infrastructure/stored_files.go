@@ -73,27 +73,33 @@ func (f *DirectoryFiles) Stat(ctx context.Context, position domain.FilePosition)
 	return statAt(fd, position)
 }
 
-// Write stages the content, then commits it; staged content that cannot be
-// committed is discarded, and staging sweeps what a crash leaves.
-func (f *DirectoryFiles) Write(ctx context.Context, position domain.FilePosition, content io.Reader, attributes application.FileAttributes, replace bool) (application.StoredFile, error) {
-	pending := f.private(pendingArea)
-	staged, err := stage(ctx, f.layout.Root, pending, content, attributes, f.now())
-	if err != nil {
-		return application.StoredFile{}, err
-	}
-	stored, err := f.commit(ctx, staged, position, replace)
-	if err != nil {
-		discard(f.layout.Root, pending, staged)
-		return application.StoredFile{}, err
-	}
-	return stored, nil
+// Stage writes the content into the pending area; staging sweeps what a
+// crash leaves there.
+func (f *DirectoryFiles) Stage(ctx context.Context, content io.Reader, attributes application.FileAttributes) (application.StagedContent, error) {
+	staged, err := stage(ctx, f.layout.Root, f.private(pendingArea), content, attributes, f.now())
+	return application.StagedContent(staged), err
 }
 
-func (f *DirectoryFiles) commit(ctx context.Context, staged string, position domain.FilePosition, replace bool) (application.StoredFile, error) {
+// Discard removes staged content at once; should that fail, the pending
+// sweep removes it later.
+func (f *DirectoryFiles) Discard(staged application.StagedContent) {
+	discard(f.layout.Root, f.private(pendingArea), string(staged))
+}
+
+// Commit renames the staged content to the position. A replacement first
+// removes the replaced file's links from the mapped paths; the committed
+// file is linked there once it is in place.
+func (f *DirectoryFiles) Commit(ctx context.Context, content application.StagedContent, position domain.FilePosition, replace bool, mappings []domain.MappedPath) (application.StoredFile, error) {
 	if err := ctx.Err(); err != nil {
 		return application.StoredFile{}, err
 	}
+	staged := string(content)
 	operation := oops.With("operation", "storage.commit", "directory", f.relative(position.Directory))
+	if replace {
+		if err := f.unlinkMapped(mappings, position.Name); err != nil {
+			return application.StoredFile{}, operation.Wrap(err)
+		}
+	}
 	pending, err := openDirectory(f.layout.Root, f.private(pendingArea), false, 0)
 	if err != nil {
 		return application.StoredFile{}, operation.Wrap(err)
@@ -129,10 +135,16 @@ func (f *DirectoryFiles) commit(ctx context.Context, staged string, position dom
 	if err := unix.Fsync(target); err != nil {
 		return application.StoredFile{}, operation.Wrap(err)
 	}
-	return statAt(target, position)
+	stored, err := statAt(target, position)
+	if err != nil {
+		return application.StoredFile{}, err
+	}
+	return stored, f.linkMapped(mappings, position)
 }
 
-func (f *DirectoryFiles) Rename(ctx context.Context, from, to domain.FilePosition) (application.StoredFile, error) {
+// Rename removes the file's links from the mapped paths, renames it and
+// links it there at its new name.
+func (f *DirectoryFiles) Rename(ctx context.Context, from, to domain.FilePosition, mappings []domain.MappedPath) (application.StoredFile, error) {
 	if err := ctx.Err(); err != nil {
 		return application.StoredFile{}, err
 	}
@@ -145,22 +157,34 @@ func (f *DirectoryFiles) Rename(ctx context.Context, from, to domain.FilePositio
 		return application.StoredFile{}, operation.Wrap(err)
 	}
 	defer unix.Close(fd)
-	err = unix.Renameat2(fd, from.Name, fd, to.Name, unix.RENAME_NOREPLACE)
-	switch {
-	case errors.Is(err, unix.ENOENT):
-		return application.StoredFile{}, application.ErrFileNotFound
-	case errors.Is(err, unix.EEXIST):
-		return application.StoredFile{}, application.ErrNameTaken
-	case err != nil:
+	if err := f.unlinkMapped(mappings, from.Name); err != nil {
 		return application.StoredFile{}, operation.Wrap(err)
+	}
+	err = unix.Renameat2(fd, from.Name, fd, to.Name, unix.RENAME_NOREPLACE)
+	if err != nil {
+		// A refused rename changed nothing, so the file is shown again.
+		relinked := f.linkMapped(mappings, from)
+		switch {
+		case errors.Is(err, unix.ENOENT):
+			return application.StoredFile{}, application.ErrFileNotFound
+		case errors.Is(err, unix.EEXIST):
+			return application.StoredFile{}, errors.Join(application.ErrNameTaken, relinked)
+		default:
+			return application.StoredFile{}, operation.Wrap(errors.Join(err, relinked))
+		}
 	}
 	if err := unix.Fsync(fd); err != nil {
 		return application.StoredFile{}, operation.Wrap(err)
 	}
-	return statAt(fd, to)
+	stored, err := statAt(fd, to)
+	if err != nil {
+		return application.StoredFile{}, err
+	}
+	return stored, f.linkMapped(mappings, to)
 }
 
-func (f *DirectoryFiles) Remove(ctx context.Context, position domain.FilePosition) (bool, error) {
+// Remove removes the file's links from the mapped paths, then the file.
+func (f *DirectoryFiles) Remove(ctx context.Context, position domain.FilePosition, mappings []domain.MappedPath) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
@@ -173,6 +197,9 @@ func (f *DirectoryFiles) Remove(ctx context.Context, position domain.FilePositio
 		return false, operation.Wrap(err)
 	}
 	defer unix.Close(fd)
+	if err := f.unlinkMapped(mappings, position.Name); err != nil {
+		return false, operation.Wrap(err)
+	}
 	// Of concurrent deletions only the one whose unlink succeeds removed it.
 	err = unix.Unlinkat(fd, position.Name, 0)
 	if errors.Is(err, unix.ENOENT) {

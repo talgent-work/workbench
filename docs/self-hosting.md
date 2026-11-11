@@ -19,7 +19,7 @@ untrusted.
 |---|---|---|
 | Services | `controlplane` (2 replicas), `dispatcher` (2), `streamgateway` (2), `computer-gateway` (1), `workbench-web` (1); `otel-collector` (OTel Collector, writes to ClickHouse), `gotenberg` (renders office previews); the OpenSandbox Server `opensandbox` | Sandbox Pods, which OpenSandbox creates |
 | Configuration | ConfigMap `workbench-environment` (the deployment's environment), one ConfigMap per service, `agent-models` (Model Templates), `opensandbox-workload-template` (the sandbox Pod template) | |
-| Storage | Claims `talgent-juicefs-root`, `talgent-juicefs-originals` (JuiceFS) and `talgent-nas-root` (NFS) | Claims `talgent-nas-root` and `talgent-juicefs-directories`, bound to their own PersistentVolumes `talgent-nas-root-sandbox` and `talgent-juicefs-directories-sandbox` over the same NFS export and JuiceFS file system |
+| Storage | Claims `talgent-juicefs-root`, `talgent-juicefs-view-project-originals` (JuiceFS; the last shows the mapped path `project-originals` read-only) and `talgent-nas-root` (NFS) | Claims `talgent-nas-root` and `talgent-juicefs-directories`, bound to their own PersistentVolumes `talgent-nas-root-sandbox` and `talgent-juicefs-directories-sandbox` over the same NFS export and JuiceFS file system |
 | Entry | HTTPRoutes `workbench-web`, `web-api`, `auth`, `computer`; Envoy Gateway SecurityPolicy `web-auth` and rate limits | |
 | Budget | LimitRange `application-requests` | ResourceQuota `agent-executions`, LimitRange `application-requests` |
 | Permissions | | Roles of controlplane (reads the quota, observes BatchSandboxes) and of the OpenSandbox Server (manages sandboxes), bound to their ServiceAccounts in `talgent` |
@@ -436,6 +436,11 @@ controlplane's log).
   needs it in the environment: deploy once with `TALGENT_ENVIRONMENT_FILE` setting it. Services may be upgraded one at a time with
   `kubectl -n talgent set image deploy/<service> <service>=<image>`; record the image you
   replace, it is the rollback target.
+- **Objects a release drops.** Deploying applies the manifests without pruning, so delete what
+  a release no longer renders once nothing uses it. The release with the Mapped View drops the
+  read-only claim of every Directory: once no workload mounts it,
+  `kubectl -n talgent delete pvc talgent-juicefs-originals` and then
+  `kubectl delete pv talgent-juicefs-originals` (its reclaim policy keeps the volume otherwise).
 - **Rolling back.** `kubectl -n talgent rollout undo deploy/<service>`, or set the previous
   image.
 - **Rolling back past sandbox leases.** controlplane creates every sandbox with an expiry

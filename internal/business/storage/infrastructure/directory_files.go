@@ -17,7 +17,6 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 const (
@@ -52,6 +51,12 @@ type DirectoryLayout struct {
 	// Private holds staged content, locks and content being removed,
 	// outside every Directory.
 	Private string
+	// MappedView holds the Mapped View, outside every Directory; empty on a
+	// file system that keeps none.
+	MappedView string
+	// StandingPaths are the mapped paths that standing readers' volumes
+	// show: their folders always exist, emptied or not.
+	StandingPaths []domain.MappedPath
 	// Claim is the shared volume claim sandboxes mount Directories from, and
 	// ClaimRoot where Root lies within it.
 	Claim, ClaimRoot string
@@ -78,19 +83,9 @@ func NewDirectoryFiles(layout DirectoryLayout) *DirectoryFiles {
 	return &DirectoryFiles{layout: layout, now: time.Now}
 }
 
-// ownerFacts is the owner's facts as the published layout writes them.
-func ownerFacts(owner domain.DirectoryOwner) []storagepath.OwnerFact {
-	facts := owner.Facts()
-	written := make([]storagepath.OwnerFact, 0, len(facts))
-	for _, fact := range facts {
-		written = append(written, storagepath.OwnerFact{Condition: fact.Condition, Value: fact.Value})
-	}
-	return written
-}
-
 // ownerKey is the owner's one path element.
 func ownerKey(owner domain.DirectoryOwner) string {
-	return storagepath.Owner(ownerFacts(owner))
+	return ownerElement(owner.Facts())
 }
 
 // relative is a Directory's folder relative to Root.
@@ -292,7 +287,13 @@ func (f *DirectoryFiles) areaPath(area string, id domain.DirectoryID) string {
 // lock takes the Directory's lock in mode, waiting while another holder, in
 // this or any other process on the file system, keeps it.
 func (f *DirectoryFiles) lock(ctx context.Context, id domain.DirectoryID, mode int) (func(), error) {
-	fd, err := f.openLock(id)
+	return f.lockNamed(ctx, key(id), mode)
+}
+
+// lockNamed takes the lock of the name in the locks area in mode, waiting
+// while another holder keeps it.
+func (f *DirectoryFiles) lockNamed(ctx context.Context, name string, mode int) (func(), error) {
+	fd, err := f.openLock(name)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +317,7 @@ func (f *DirectoryFiles) lock(ctx context.Context, id domain.DirectoryID, mode i
 
 // tryLock takes the Directory's lock exclusively or reports EWOULDBLOCK.
 func (f *DirectoryFiles) tryLock(id domain.DirectoryID) (func(), error) {
-	fd, err := f.openLock(id)
+	fd, err := f.openLock(key(id))
 	if err != nil {
 		return nil, err
 	}
@@ -331,13 +332,13 @@ func releaser(fd int) func() {
 	return func() { _ = unix.Flock(fd, unix.LOCK_UN); unix.Close(fd) }
 }
 
-func (f *DirectoryFiles) openLock(id domain.DirectoryID) (int, error) {
+func (f *DirectoryFiles) openLock(name string) (int, error) {
 	locks, err := openDirectory(f.layout.Root, f.private(locksArea), true, privateMode)
 	if err != nil {
 		return -1, oops.With("operation", "storage.lock").Wrap(err)
 	}
 	defer unix.Close(locks)
-	fd, err := unix.Openat(locks, key(id), unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	fd, err := unix.Openat(locks, name, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if err != nil {
 		return -1, oops.With("operation", "storage.lock").Wrap(err)
 	}

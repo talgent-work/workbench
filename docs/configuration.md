@@ -109,7 +109,8 @@ Directories on JuiceFS and the NAS, links and previews.
 | `upload-link-ttl` | `2m` | An upload must start within it |
 | `max-upload-bytes` | 1073741824 (1 GiB) | Largest upload |
 | `agent-token` | `${STORAGE_AGENT_TOKEN:}` | Required. Admits Agent to Storage's private contracts |
-| `directory-tokens`, `content-tokens` | `${STORAGE_DIRECTORY_TOKEN:}`, `${STORAGE_CONTENT_TOKEN:}` | Admit further callers: the whole Directory contract, or only opening, whole-content replacement and reading, and the Directory file query; an empty token admits no one |
+| `directory-tokens` | `${STORAGE_DIRECTORY_TOKEN:}` | Admit further callers to the whole Directory contract; an empty token admits no one |
+| `content-callers` | `token: ${STORAGE_CONTENT_TOKEN:}`, `mapping-prefix: ""` | Admit further callers to opening, whole-content replacement and reading, the Directory file query, and mapping beneath their `mapping-prefix`, a mapped path no other caller's prefix overlaps; an empty token admits no one, and an empty prefix maps nowhere |
 | `mounts.nas-claim` | `${K8S_NAS_PVC_NAME:talgent-nas-root}` | Required. The NAS claim sandboxes mount each NAS Directory from by subPath, in their namespace (`SANDBOX_NAMESPACE`) |
 | `mounts.juicefs-claim` | `${K8S_JUICEFS_PVC_NAME:talgent-juicefs-directories}` | Required. The JuiceFS claim sandboxes mount each JuiceFS Directory from by subPath, in their namespace |
 | `mounts.juicefs-root` | `talgent` | Where `persistent-root` lies within the JuiceFS claim |

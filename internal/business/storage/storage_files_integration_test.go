@@ -19,7 +19,6 @@ import (
 	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 func TestADirectoryOpensOnceAndAdmitsWritesOnlyOnItsToken(t *testing.T) {
@@ -273,13 +272,12 @@ func TestAShareLinkIntoAReclaimedDirectoryAnswersReclaimed(t *testing.T) {
 	require.Equal(t, http.StatusGone, status)
 }
 
-// Files keep their origin on the file itself, laid out as the originals
-// mount publishes them.
+// Files keep their origin on the file itself.
 func TestFilesKeepTheirOriginOnTheFileItself(t *testing.T) {
 	f := newFixture(t)
 	f.upload(caseInputs, f.open(fileSpace(caseInputs)), "brief.md", "b", false)
 	buf := make([]byte, 64)
-	n, err := unix.Getxattr(filepath.Join(f.persistent, storagepath.OriginalsSubPath[len("talgent/"):], "subject=case:1", "inputs", "brief.md"), storagepath.AttributeUploader, buf)
+	n, err := unix.Getxattr(filepath.Join(f.folder(fileSpace(caseInputs)), "brief.md"), "user.talgent.uploader", buf)
 	require.NoError(t, err)
 	require.Equal(t, "user-1", string(buf[:n]))
 }

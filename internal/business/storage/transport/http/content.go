@@ -14,7 +14,6 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 // ContentApplication is the Storage use cases these endpoints delegate to.
@@ -27,7 +26,7 @@ type ContentApplication interface {
 // Endpoints serving each link.
 const (
 	UploadPath  = "/v1/storage/uploads"
-	ContentPath = storagepath.ContentPath
+	ContentPath = "/v1/storage/content"
 	SharePrefix = "/v1/storage/shares/"
 )
 

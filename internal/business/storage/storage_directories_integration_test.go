@@ -214,7 +214,7 @@ func TestAPermanentDirectoryRefusesReclamation(t *testing.T) {
 	require.Zero(t, f.queue.size(applicationtask.RemoveReclaimedContentType))
 }
 
-// Owners are laid out as the published originals layout writes them.
+// Directories are laid out by their owner element and name.
 func TestDirectoriesAreLaidOutByOwnerAndName(t *testing.T) {
 	f := newFixture(t)
 	odd := fileSpace(named("inputs", "person", "a/b,c", "project", "p 1"))

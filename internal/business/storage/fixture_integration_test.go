@@ -16,17 +16,21 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/go-jimu/components/ddd/message"
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
+	"github.com/talgent-work/contracts/gen/go/storage/private/v1/storageprivatev1connect"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	applicationtask "github.com/talgent-work/workbench/internal/business/storage/application/task"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
 	"github.com/talgent-work/workbench/internal/business/storage/infrastructure"
+	storageconnect "github.com/talgent-work/workbench/internal/business/storage/transport/connectrpc"
 	storagehttp "github.com/talgent-work/workbench/internal/business/storage/transport/http"
-	"github.com/talgent-work/workbench/internal/pkg/storagepath"
+	"github.com/talgent-work/workbench/internal/pkg/connectserver"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 )
 
@@ -46,6 +50,10 @@ type fixture struct {
 	directories *interruptibleDirectories
 	// nas can be made to fail allocations, as an interrupted allocation.
 	nas *interruptibleBackend
+	// rpc calls the Directory contract over Connect.
+	rpc storageprivatev1connect.DirectoryServiceClient
+	// mounts calls the Sandbox Mount contract over Connect as Agent, token "a".
+	mounts storageprivatev1connect.SandboxMountServiceClient
 	// converter stands for Gotenberg; queue for the task lanes.
 	converter *fakeConverter
 	queue     *fakeQueue
@@ -78,7 +86,7 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	config := Config{
 		PersistentRoot: f.persistent, WorkingRoot: f.working, SandboxUID: f.sandboxUID,
 		PublicBaseURL: f.server.URL, LinkSecret: "link-secret",
-		AgentToken: "a", DirectoryTokens: []string{"i"}, ContentTokens: []string{"k"},
+		AgentToken: "a", DirectoryTokens: []string{"i"}, ContentCallers: []ContentCallerConfig{{Token: "k", MappingPrefix: "view"}},
 		Mounts:  MountConfig{NASClaim: "nas-root", JuiceFSClaim: "juicefs-inputs", JuiceFSRoot: "talgent"},
 		Preview: PreviewConfig{GotenbergAddress: f.converter.server.URL},
 	}
@@ -89,7 +97,35 @@ func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
 	ports.Backends[domain.BackendNAS] = f.nas
 	f.app = assembleWith(config, f.directories, ports, slog.Default())
 	storagehttp.Register(mux, f.app, fixtureMaxUploadBytes)
+	content, err := config.contentCallers()
+	require.NoError(t, err)
+	rpc := connectserver.New(slog.Default())
+	storageprivatev1connect.RegisterDirectoryServiceHandler(rpc, storageconnect.NewDirectoryHandler(f.app, []string{config.AgentToken, "i"}, content))
+	storageprivatev1connect.RegisterSandboxMountServiceHandler(rpc, storageconnect.NewSandboxMountHandler(f.app, config.AgentToken))
+	connectserver.Mount(mux, rpc)
+	client := connect.NewClient(connecthttp.NewTransport(f.server.Client(), f.server.URL))
+	f.rpc = storageprivatev1connect.NewDirectoryServiceClient(client)
+	f.mounts = storageprivatev1connect.NewSandboxMountServiceClient(client)
 	return f
+}
+
+// viewPrefix is the mapping prefix of the content caller "k".
+var viewPrefix = func() domain.MappingPrefix {
+	prefix, err := domain.NewMappingPrefix("view")
+	if err != nil {
+		panic(err)
+	}
+	return prefix
+}()
+
+// mapAt maps a located Directory at a mapped path beneath "view".
+func (f *fixture) mapAt(located application.Located, path string) error {
+	return f.app.MapDirectory(f.t.Context(), located, path, viewPrefix)
+}
+
+// viewOf is where a mapped path lies on JuiceFS.
+func (f *fixture) viewOf(path string) string {
+	return filepath.Join(f.persistent, juiceFSMappedView, filepath.FromSlash(path))
 }
 
 // named is a Directory named by its owner's facts, condition then value.
@@ -161,14 +197,17 @@ func (f *fixture) files(directory application.Named) map[string]application.Dire
 
 // folder is where a Directory lies on its file system in these tests.
 func (f *fixture) folder(located application.Located) string {
-	facts := make([]storagepath.OwnerFact, 0, len(located.Directory.Owner))
+	// The owners these tests use need no escaping: condition=value, joined
+	// by ",".
+	facts := make([]string, 0, len(located.Directory.Owner))
 	for _, fact := range located.Directory.Owner {
-		facts = append(facts, storagepath.OwnerFact{Condition: fact.Condition, Value: fact.Value})
+		facts = append(facts, fact.Condition+"="+fact.Value)
 	}
+	owner := strings.Join(facts, ",")
 	if located.Backend == domain.BackendNAS {
-		return filepath.Join(f.working, nasDirectories, storagepath.Directory(facts, located.Directory.Name))
+		return filepath.Join(f.working, nasDirectories, owner, located.Directory.Name)
 	}
-	return filepath.Join(f.persistent, juiceFSDirectories, storagepath.Directory(facts, located.Directory.Name))
+	return filepath.Join(f.persistent, juiceFSDirectories, owner, located.Directory.Name)
 }
 
 // workspace mounts a Work's Session Workspace with Directories mounted in it

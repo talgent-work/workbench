@@ -10,7 +10,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/talgent-work/workbench/internal/business/storage/application"
-	"github.com/talgent-work/workbench/internal/pkg/storagepath"
 )
 
 // openDirectory opens a directory relative to root without following any
@@ -54,10 +53,21 @@ func openChildDirectory(parent int, name string, create bool, mode uint32) (int,
 	return fd, err
 }
 
-// attributeDigest is the content's SHA-256, Storage's own and unpublished.
-const attributeDigest = "user.talgent.digest"
+// Extended attributes kept with each file, which the Mapped View carries to
+// its readers. Values are UTF-8 text; an absent attribute means the fact was
+// not recorded.
+const (
+	// attributeUploader is the account id of the human who uploaded an Attachment.
+	attributeUploader = "user.talgent.uploader"
+	// attributeWork is the Work that published an Artifact.
+	attributeWork = "user.talgent.work"
+	// attributeContentType is the media type declared at upload.
+	attributeContentType = "user.talgent.content_type"
+	// attributeDigest is the content's SHA-256, Storage's own and unpublished.
+	attributeDigest = "user.talgent.digest"
+)
 
-var attributeKeys = []string{storagepath.AttributeUploader, storagepath.AttributeWork, storagepath.AttributeContentType, attributeDigest}
+var attributeKeys = []string{attributeUploader, attributeWork, attributeContentType, attributeDigest}
 
 // maxAttributeBytes bounds one attribute value, so every value written is
 // read back whole.
@@ -65,10 +75,10 @@ const maxAttributeBytes = 512
 
 func writeAttributes(fd int, attributes application.FileAttributes) error {
 	for key, value := range map[string]string{
-		storagepath.AttributeUploader:    attributes.UploaderUserID,
-		storagepath.AttributeWork:        attributes.WorkID,
-		storagepath.AttributeContentType: attributes.ContentType,
-		attributeDigest:                  attributes.ContentDigest,
+		attributeUploader:    attributes.UploaderUserID,
+		attributeWork:        attributes.WorkID,
+		attributeContentType: attributes.ContentType,
+		attributeDigest:      attributes.ContentDigest,
 	} {
 		if value == "" {
 			continue
@@ -99,9 +109,9 @@ func readAttributes(fd int) (application.FileAttributes, error) {
 		}
 	}
 	return application.FileAttributes{
-		UploaderUserID: values[storagepath.AttributeUploader],
-		WorkID:         values[storagepath.AttributeWork],
-		ContentType:    values[storagepath.AttributeContentType],
+		UploaderUserID: values[attributeUploader],
+		WorkID:         values[attributeWork],
+		ContentType:    values[attributeContentType],
 		ContentDigest:  values[attributeDigest],
 	}, nil
 }

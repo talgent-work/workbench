@@ -26,10 +26,12 @@ const (
 )
 
 // Directory is one owner's space under a name, kept on one backend for one
-// lifetime, with the Share Links into it. Where it is mounted and what it is
-// for belong to its caller. Renames, deletions and Share Link changes of one
-// Directory are serialized here, so every active Share Link points at the
-// File position its file was last moved to through Storage.
+// lifetime, with the Share Links into it and the mapped paths it is mapped
+// at. Where it is mounted and what it is for belong to its caller. Renames,
+// deletions and Share Link changes of one Directory are serialized here, so
+// every active Share Link points at the File position its file was last
+// moved to through Storage; a read-write grant and a mapping exclude each
+// other here.
 type Directory struct {
 	ID         DirectoryID
 	Backend    Backend
@@ -37,7 +39,12 @@ type Directory struct {
 	SpaceToken string
 	State      DirectoryState
 	ShareLinks []*ShareLink
-	Version    int
+	// Mappings are the mapped paths its files are shown at.
+	Mappings []MappedPath
+	// GrantedReadWrite records that a read-write Mount Grant was ever
+	// issued; once set, it is never cleared.
+	GrantedReadWrite bool
+	Version          int
 }
 
 // NewDirectory establishes the Directory a located Directory names, with the
@@ -107,11 +114,16 @@ type MountAdmission struct {
 	MountPoints []MountPoint
 }
 
-// GrantMount issues a Mount Grant while Allocated. A grant is issued, never
-// held: nothing records or revokes it.
+// GrantMount issues a Mount Grant while Allocated: a read-only one, or a
+// read-write one while it has no mappings, recording that it was granted
+// read-write. A grant is issued, never held: nothing records which mounts
+// exist or revokes one.
 func (d *Directory) GrantMount(readOnly bool, mountPoints []string) (MountAdmission, error) {
 	if err := d.admitUse(); err != nil {
 		return MountAdmission{}, err
+	}
+	if !readOnly && len(d.Mappings) > 0 {
+		return MountAdmission{}, ErrDirectoryMapped
 	}
 	admission := MountAdmission{Directory: d.ID, ReadOnly: readOnly}
 	for _, raw := range mountPoints {
@@ -123,8 +135,63 @@ func (d *Directory) GrantMount(readOnly bool, mountPoints []string) (MountAdmiss
 			admission.MountPoints = append(admission.MountPoints, point)
 		}
 	}
+	if !readOnly {
+		d.GrantedReadWrite = true
+	}
 	return admission, nil
 }
+
+// RecordsReadWrite reports whether issuing a grant of this access changes
+// the Directory: the first read-write grant records that it was granted.
+func (d *Directory) RecordsReadWrite(readOnly bool) bool { return !readOnly && !d.GrantedReadWrite }
+
+// Map adds a mapped path beneath the caller's prefix while Allocated on
+// JuiceFS and never granted read-write, on the supplied fact that the path
+// overlaps no other mapping. Mapping it again at the same path changes
+// nothing.
+func (d *Directory) Map(path MappedPath, prefix MappingPrefix, disjoint bool) error {
+	if err := prefix.Admit(path); err != nil {
+		return err
+	}
+	if err := d.admitUse(); err != nil {
+		return err
+	}
+	if d.Backend != BackendJuiceFS {
+		return ErrBackendNotMappable
+	}
+	if d.GrantedReadWrite {
+		return ErrGrantedReadWrite
+	}
+	if slices.Contains(d.Mappings, path) {
+		return nil
+	}
+	if !disjoint {
+		return ErrMappingOverlaps
+	}
+	d.Mappings = append(d.Mappings, path)
+	return nil
+}
+
+// Unmap removes a mapped path beneath the caller's prefix; removing one it
+// does not have changes nothing.
+func (d *Directory) Unmap(path MappedPath, prefix MappingPrefix) error {
+	if err := prefix.Admit(path); err != nil {
+		return err
+	}
+	d.Mappings = slices.DeleteFunc(d.Mappings, func(mapped MappedPath) bool { return mapped == path })
+	return nil
+}
+
+// Mapped reports whether it is mapped at any path.
+func (d *Directory) Mapped() bool { return len(d.Mappings) > 0 }
+
+// MappedAt reports whether it is mapped at the path.
+func (d *Directory) MappedAt(path MappedPath) bool { return slices.Contains(d.Mappings, path) }
+
+// AdmitCommit admits again, under the Directory's lock, a file change
+// admitted before it: only while Allocated, so none lands in a Directory
+// reclaimed meanwhile.
+func (d *Directory) AdmitCommit() error { return d.admitUse() }
 
 // AdmitFileWrite admits a Create, Replace, Rename or Delete only while
 // Allocated, only on its own Space Token and only when the command names its
@@ -153,14 +220,16 @@ func (d *Directory) admitToken(token string) error {
 	return d.admitUse()
 }
 
-// Reclaim accepts reclamation only for its Work's lifetime. A repeated
-// request changes nothing; removing its content is carried out outside the
-// Directory once publications copying from it finish.
+// Reclaim accepts reclamation only for its Work's lifetime, ending its
+// mappings. A repeated request changes nothing; removing its content is
+// carried out outside the Directory once publications copying from it
+// finish.
 func (d *Directory) Reclaim() error {
 	if d.Lifetime != LifetimeWork {
 		return ErrPermanentDirectory
 	}
 	d.State = DirectoryReclaimed
+	d.Mappings = nil
 	return nil
 }
 

@@ -27,6 +27,18 @@ func TestConfigNeedsOnlyAgentAmongItsCallers(t *testing.T) {
 	require.Error(t, config.Validate(), "every backend's claim is named")
 }
 
+// Each caller of whole content maps beneath its own prefix, which no other
+// caller's overlaps.
+func TestMappingPrefixesAreMappedPathsApartFromEachOther(t *testing.T) {
+	config := validConfig(t)
+	config.ContentCallers = []ContentCallerConfig{{Token: "k", MappingPrefix: "project-originals"}, {Token: "m"}}
+	require.NoError(t, config.Validate())
+	config.ContentCallers = append(config.ContentCallers, ContentCallerConfig{Token: "n", MappingPrefix: "project-originals/x"})
+	require.Error(t, config.Validate(), "one caller's tree lies inside another's")
+	config.ContentCallers = []ContentCallerConfig{{Token: "k", MappingPrefix: "../escape"}}
+	require.Error(t, config.Validate())
+}
+
 // A Work without a Session Workspace sends up to 64 MiB to publish an
 // Artifact unless a test lowers the bound; cases exercise the bound lowered.
 func TestTheSentContentBoundIs64MiB(t *testing.T) {
