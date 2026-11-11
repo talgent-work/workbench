@@ -11,7 +11,9 @@ var ErrInvalidRelease = errors.New("marketplace: incomplete synchronized release
 var ErrReleaseChanged = errors.New("marketplace: an existing release version cannot be replaced")
 
 // PluginRelease is immutable publication content; its identity is source, slug
-// and the upstream declared version, independently of storage identifiers.
+// and version, independently of storage identifiers. The version is the one
+// upstream declares or, when none is declared, the one its package pin derives.
+// It names a release and never orders releases.
 type PluginRelease struct {
 	Slug, Source, Version, Description, RetrievalRef string
 	NativeEntry                                      []byte
