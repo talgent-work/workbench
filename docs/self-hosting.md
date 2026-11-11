@@ -202,7 +202,7 @@ and refuses a value a switch does not take. The defaults are the base as describ
 |---|---|---|
 | `AGENT_CORE_API_ACCESS` | `enabled`: the entry admits both Principals on the core's routes, each procedure admitting what its contract declares, and Agents, in sandboxes and on Managed Computers, call the core's public APIs at `WORKBENCH_ORIGIN` under their own Identity Tokens | `disabled`: `web-auth` admits only user tokens, and Agents get no address for the core (`PLATFORM_API_ADDRESS` is empty), as where a platform Connector carries every Agent call |
 | `ADDITIONAL_ENTRY_HOST` | empty: every route serves `WORKBENCH_HOST` only | a host name: the `web-api`, `auth` and `computer` routes serve it too; `workbench-web` stays on `WORKBENCH_HOST`. Add the host to the proxy in front of the Gateway |
-| `CONTROLPLANE_PROFILE` | empty: controlplane reads its defaults only | a profile name: controlplane also reads `controlplane_<profile>.yml` from ConfigMap `controlplane-profile`, which you provide, and mounts Secret `controlplane-profile-secrets`, if present, at `/etc/talgent/profile` (mode 0400) |
+| `CONTROLPLANE_PROFILE` | empty: controlplane reads its defaults only | a profile name: controlplane also reads `controlplane_<profile>.yml` from ConfigMap `controlplane-profile`, which you provide |
 
 A profile is merged over controlplane's defaults: maps merge, lists replace
 ([configuration reference](configuration.md#how-a-process-reads-its-configuration)). Its
@@ -210,7 +210,7 @@ A profile is merged over controlplane's defaults: maps merge, lists replace
 the environment file too. A deployment whose Agents reach the platform only through a
 platform Connector turns `AGENT_CORE_API_ACCESS` off and, in its profile, sets the Connector's
 address (`agent-execution.environment.TALGENT_GATEWAY_ADDRESS`,
-`marketplace.platform-connector.gateway-address`) and the `agent-computer` addresses above. After changing the profile ConfigMap or Secret,
+`marketplace.platform-connector.gateway-address`) and the `agent-computer` addresses above. After changing the profile ConfigMap,
 `kubectl -n talgent rollout restart deployment/controlplane`.
 
 ## 4. Secrets
