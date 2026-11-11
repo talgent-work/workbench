@@ -71,4 +71,33 @@ if [[ "$(git_ worktree list | wc -l)" -ne 1 ]]; then
   echo "FAIL: the hook left a worktree behind" >&2
   exit 1
 fi
+# The root README may name the extension's product, and nothing else of it.
+product="Talgent ${leak^}"
+check() { (cd "$repo" && env -u TALGENT_REQUIRE_SECRET_SCAN TALGENT_LEAK_PATTERNS_FILE=/nonexistent python3 scripts/public-tree/check-leaks.py --skip-secret-scan) >"$output" 2>&1; }
+echo "Discover $product." > "$repo/README.md"
+if ! check; then
+  echo "FAIL: the root README naming the extension's product was refused" >&2
+  cat "$output" >&2
+  exit 1
+fi
+echo "Discover $product and its ${leak^}." > "$repo/README.md"
+if check || ! grep -q "README.md:1: extension term: ${leak^}" "$output"; then
+  echo "FAIL: the root README's bare extension term passed beside the product name" >&2
+  cat "$output" >&2
+  exit 1
+fi
+mkdir -p "$repo/docs"
+printf 'public scripts\npublic .githooks\ncore README.md\ncore docs\n' > "$repo/scripts/public-tree/manifest"
+echo "A neutral readme." > "$repo/README.md"
+echo "Discover $product." > "$repo/docs/guide.md"
+git_ add docs/guide.md
+if check || ! grep -q "docs/guide.md:1: extension term: ${leak^}" "$output"; then
+  echo "FAIL: the extension's product name passed outside the root README" >&2
+  cat "$output" >&2
+  exit 1
+fi
+git_ rm -q --cached docs/guide.md
+rm -rf "$repo/docs"
+git_ checkout -q -- scripts/public-tree/manifest README.md
+
 echo "pre-push leak check: ok"
