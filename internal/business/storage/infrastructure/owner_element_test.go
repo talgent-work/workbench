@@ -10,15 +10,15 @@ import (
 
 func TestOwnerElementIsOnePathElementOfItsFactsInOrder(t *testing.T) {
 	facts := []domain.OwnerFact{{Condition: "project", Value: "p1"}, {Condition: "subject", Value: "case:1"}}
-	require.Equal(t, "project=p1,subject=case:1", OwnerElement(facts))
-	parsed, err := parseOwnerElement(OwnerElement(facts))
+	require.Equal(t, "project=p1,subject=case:1", ownerElement(facts))
+	parsed, err := parseOwnerElement(ownerElement(facts))
 	require.NoError(t, err)
 	require.Equal(t, facts, parsed)
 }
 
 func TestOwnerElementEscapesEveryOtherByte(t *testing.T) {
 	facts := []domain.OwnerFact{{Condition: "person", Value: "a/b,c=d %é"}}
-	element := OwnerElement(facts)
+	element := ownerElement(facts)
 	require.Equal(t, "person=a%2Fb%2Cc%3Dd%20%25%C3%A9", element)
 	require.NotContains(t, element, "/")
 	parsed, err := parseOwnerElement(element)

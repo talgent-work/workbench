@@ -14,11 +14,11 @@ import (
 // written as %XX in upper-case hex. The same element keys the owner in
 // Storage's records.
 
-// errInvalidOwnerElement means a stored element is not one OwnerElement wrote.
+// errInvalidOwnerElement means a stored element is not one ownerElement wrote.
 var errInvalidOwnerElement = errors.New("storage: not a Directory owner element")
 
-// OwnerElement writes an owner's facts as their one path element.
-func OwnerElement(facts []domain.OwnerFact) string {
+// ownerElement writes an owner's facts as their one path element.
+func ownerElement(facts []domain.OwnerFact) string {
 	var element strings.Builder
 	for i, fact := range facts {
 		if i > 0 {
@@ -31,7 +31,7 @@ func OwnerElement(facts []domain.OwnerFact) string {
 	return element.String()
 }
 
-// parseOwnerElement reads the facts of an element OwnerElement wrote.
+// parseOwnerElement reads the facts of an element ownerElement wrote.
 func parseOwnerElement(element string) ([]domain.OwnerFact, error) {
 	if element == "" {
 		return nil, errInvalidOwnerElement
@@ -52,7 +52,7 @@ func parseOwnerElement(element string) ([]domain.OwnerFact, error) {
 		}
 		facts = append(facts, fact)
 	}
-	if OwnerElement(facts) != element {
+	if ownerElement(facts) != element {
 		return nil, errInvalidOwnerElement
 	}
 	return facts, nil

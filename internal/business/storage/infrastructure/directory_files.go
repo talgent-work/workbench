@@ -85,7 +85,7 @@ func NewDirectoryFiles(layout DirectoryLayout) *DirectoryFiles {
 
 // ownerKey is the owner's one path element.
 func ownerKey(owner domain.DirectoryOwner) string {
-	return OwnerElement(owner.Facts())
+	return ownerElement(owner.Facts())
 }
 
 // relative is a Directory's folder relative to Root.

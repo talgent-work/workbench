@@ -19,7 +19,6 @@ import (
 	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/storage/application"
 	"github.com/talgent-work/workbench/internal/business/storage/domain"
-	"github.com/talgent-work/workbench/internal/business/storage/infrastructure"
 )
 
 func TestADirectoryOpensOnceAndAdmitsWritesOnlyOnItsToken(t *testing.T) {
@@ -278,7 +277,7 @@ func TestFilesKeepTheirOriginOnTheFileItself(t *testing.T) {
 	f := newFixture(t)
 	f.upload(caseInputs, f.open(fileSpace(caseInputs)), "brief.md", "b", false)
 	buf := make([]byte, 64)
-	n, err := unix.Getxattr(filepath.Join(f.folder(fileSpace(caseInputs)), "brief.md"), infrastructure.AttributeUploader, buf)
+	n, err := unix.Getxattr(filepath.Join(f.folder(fileSpace(caseInputs)), "brief.md"), "user.talgent.uploader", buf)
 	require.NoError(t, err)
 	require.Equal(t, "user-1", string(buf[:n]))
 }

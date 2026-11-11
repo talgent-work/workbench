@@ -57,17 +57,17 @@ func openChildDirectory(parent int, name string, create bool, mode uint32) (int,
 // its readers. Values are UTF-8 text; an absent attribute means the fact was
 // not recorded.
 const (
-	// AttributeUploader is the account id of the human who uploaded an Attachment.
-	AttributeUploader = "user.talgent.uploader"
-	// AttributeWork is the Work that published an Artifact.
-	AttributeWork = "user.talgent.work"
-	// AttributeContentType is the media type declared at upload.
-	AttributeContentType = "user.talgent.content_type"
+	// attributeUploader is the account id of the human who uploaded an Attachment.
+	attributeUploader = "user.talgent.uploader"
+	// attributeWork is the Work that published an Artifact.
+	attributeWork = "user.talgent.work"
+	// attributeContentType is the media type declared at upload.
+	attributeContentType = "user.talgent.content_type"
 	// attributeDigest is the content's SHA-256, Storage's own and unpublished.
 	attributeDigest = "user.talgent.digest"
 )
 
-var attributeKeys = []string{AttributeUploader, AttributeWork, AttributeContentType, attributeDigest}
+var attributeKeys = []string{attributeUploader, attributeWork, attributeContentType, attributeDigest}
 
 // maxAttributeBytes bounds one attribute value, so every value written is
 // read back whole.
@@ -75,9 +75,9 @@ const maxAttributeBytes = 512
 
 func writeAttributes(fd int, attributes application.FileAttributes) error {
 	for key, value := range map[string]string{
-		AttributeUploader:    attributes.UploaderUserID,
-		AttributeWork:        attributes.WorkID,
-		AttributeContentType: attributes.ContentType,
+		attributeUploader:    attributes.UploaderUserID,
+		attributeWork:        attributes.WorkID,
+		attributeContentType: attributes.ContentType,
 		attributeDigest:      attributes.ContentDigest,
 	} {
 		if value == "" {
@@ -109,9 +109,9 @@ func readAttributes(fd int) (application.FileAttributes, error) {
 		}
 	}
 	return application.FileAttributes{
-		UploaderUserID: values[AttributeUploader],
-		WorkID:         values[AttributeWork],
-		ContentType:    values[AttributeContentType],
+		UploaderUserID: values[attributeUploader],
+		WorkID:         values[attributeWork],
+		ContentType:    values[attributeContentType],
 		ContentDigest:  values[attributeDigest],
 	}, nil
 }

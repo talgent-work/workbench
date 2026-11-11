@@ -197,7 +197,13 @@ func (f *fixture) files(directory application.Named) map[string]application.Dire
 
 // folder is where a Directory lies on its file system in these tests.
 func (f *fixture) folder(located application.Located) string {
-	owner := infrastructure.OwnerElement(located.Directory.Owner)
+	// The owners these tests use need no escaping: condition=value, joined
+	// by ",".
+	facts := make([]string, 0, len(located.Directory.Owner))
+	for _, fact := range located.Directory.Owner {
+		facts = append(facts, fact.Condition+"="+fact.Value)
+	}
+	owner := strings.Join(facts, ",")
 	if located.Backend == domain.BackendNAS {
 		return filepath.Join(f.working, nasDirectories, owner, located.Directory.Name)
 	}
