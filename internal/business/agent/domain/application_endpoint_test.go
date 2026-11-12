@@ -21,7 +21,7 @@ func deskTools() domain.ApplicationMCPEndpoint {
 // carries its header values.
 func TestAnApplicationEndpointIsWellFormed(t *testing.T) {
 	require.NoError(t, deskTools().Validate())
-	require.NoError(t, (domain.ApplicationMCPEndpoint{Name: "Desk_2", URL: "http://desk.internal:8080/mcp"}).Validate(), "headers are optional")
+	require.NoError(t, (domain.ApplicationMCPEndpoint{Name: "Desk_2", URL: "http://desk.example:8080/mcp"}).Validate(), "headers are optional")
 
 	for name, change := range map[string]func(*domain.ApplicationMCPEndpoint){
 		"empty name":        func(e *domain.ApplicationMCPEndpoint) { e.Name = "" },
