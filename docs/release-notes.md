@@ -15,7 +15,10 @@ an agent token's `application_id` claim as `x-talgent-application-id`.
 An Application now starts Standalone Works with `agent.public.v2.WorkService` and drives them
 with `agent.public.v1.AgentWorkService` under its own token; it reaches only its own Works. Its
 Works run under one Agent named after it, only on a Cloud, and their agent tokens state the
-Application.
+Application. `StartWork` takes the Application's own MCP endpoints in
+`application_mcp_endpoints`, for that Work only: the Work sends each endpoint's headers unchanged
+for its life, and no read of the Work returns them. A header value or URL containing `${` is
+refused, since the Agent Harness would expand it from the run's environment.
 
 ## The release that names the Work API neutrally
 

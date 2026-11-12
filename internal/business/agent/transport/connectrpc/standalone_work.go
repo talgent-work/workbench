@@ -77,6 +77,11 @@ func (h *StandaloneWorkHandler) StartWork(ctx context.Context, request *agentpub
 		ThinkingLevel: strings.TrimSpace(msg.GetThinkingLevel()), ComputerID: strings.TrimSpace(msg.GetComputerId()),
 		Harness: harnessChoiceFromProto(msg.GetHarness()),
 	}
+	for _, endpoint := range msg.GetApplicationMcpEndpoints() {
+		start.Capabilities.ApplicationEndpoints = append(start.Capabilities.ApplicationEndpoints, domain.ApplicationMCPEndpoint{
+			Name: strings.TrimSpace(endpoint.GetName()), URL: strings.TrimSpace(endpoint.GetUrl()), Headers: endpoint.GetHeaders(),
+		})
+	}
 	for _, selection := range msg.GetRepositorySelections() {
 		start.Selections = append(start.Selections, command.RepositorySelection{RepositoryID: selection.GetRepositoryId(), BaseBranch: selection.GetBaseBranch()})
 	}
