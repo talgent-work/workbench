@@ -47,8 +47,13 @@ func TestCheckoutReachesAPrivateRepositoryOnlyThroughTheCredentialProxy(t *testi
 	t.Cleanup(proxy.Close)
 	plan := []repositoryCheckout{{RepositoryID: "github:1", CloneURL: "http://github.fixture.invalid/private.git", BaseBranch: "main", WorkBranch: "talgent/TAL-1", TargetPath: "/workspace/repos/private"}}
 
+	// Without the proxy the process reaches the provider itself, which refuses
+	// it: it has no credential to offer. (The provider's own address, not the
+	// fixture host, so the check never waits on name resolution.)
 	direct := t.TempDir()
-	require.Equal(t, domain.CheckoutUnavailable, runCheckout(t, direct, plan, "").checkouts(plan, domain.CheckoutIncomplete)[0].Reason, "without the proxy the process has no credential to offer")
+	directPlan := []repositoryCheckout{plan[0]}
+	directPlan[0].CloneURL = provider.URL + "/private.git"
+	require.Equal(t, domain.CheckoutUnavailable, runCheckout(t, direct, directPlan, "").checkouts(directPlan, domain.CheckoutIncomplete)[0].Reason, "without the proxy the process has no credential to offer")
 	require.NoDirExists(t, filepath.Join(direct, "repos", "private"))
 
 	workspace := t.TempDir()

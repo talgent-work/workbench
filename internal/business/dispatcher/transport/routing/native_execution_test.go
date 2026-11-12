@@ -2,6 +2,8 @@ package routing
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -75,6 +77,23 @@ func TestNativeExecutionRoutingPreservesScopeAndPrivateAuthentication(t *testing
 	require.Empty(t, calls, "a second peer hop must not execute the command")
 }
 
+// An ownership lookup that ends because its caller went away or ran out of
+// time answers with that cause, not Unavailable: nothing is wrong with the
+// directory. Any other lookup failure stays Unavailable.
+func TestNativeExecutionRoutingAnswersALookupEndedByItsCallerWithItsCause(t *testing.T) {
+	for cause, code := range map[error]connect.Code{
+		context.Canceled:            connect.CodeCanceled,
+		context.DeadlineExceeded:    connect.CodeDeadlineExceeded,
+		errors.New("redis: refused"): connect.CodeUnavailable,
+	} {
+		handler := NewNativeExecutionHandler(&nativeRouteReceiver{}, &nativeRouteDirectory{err: fmt.Errorf("locate: %w", cause)}, "ingress", "shared-control", peer.NewNativeClients(http.DefaultClient))
+		server := serveNativeRoute(t, handler)
+		client := dispatcherprivatev1connect.NewExecutionServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
+		_, err := client.GetCurrentTurn(withHeaders(context.Background(), "Authorization", "Bearer shared-control"), &dispatcherprivatev1.GetCurrentTurnRequest{WorkId: "work-a"})
+		require.Equal(t, code, connect.CodeOf(err), cause.Error())
+	}
+}
+
 // withHeaders is the context of a call carrying the given header pairs.
 func withHeaders(ctx context.Context, pairs ...string) context.Context {
 	ctx, info := connect.NewClientContext(ctx)
@@ -98,11 +117,15 @@ func received[T any](ctx context.Context, request *T) call[T] {
 type nativeRouteDirectory struct {
 	owner   command.ExecutionOwner
 	lookups chan string
+	err     error
 }
 
 func (d *nativeRouteDirectory) Locate(_ context.Context, key string) (command.ExecutionOwner, bool, error) {
 	if d.lookups != nil {
 		d.lookups <- key
+	}
+	if d.err != nil {
+		return command.ExecutionOwner{}, false, d.err
 	}
 	return d.owner, true, nil
 }

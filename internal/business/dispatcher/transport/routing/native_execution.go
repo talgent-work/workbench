@@ -45,7 +45,7 @@ func (h *NativeExecutionHandler) route(ctx context.Context, workID string) (disp
 	}
 	owner, exists, err := h.owners.Locate(ctx, workID)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
+		return nil, lookupError(err)
 	}
 	if !exists || !owner.Alive || owner.Instance == h.self {
 		return nil, nil
@@ -54,6 +54,21 @@ func (h *NativeExecutionHandler) route(ctx context.Context, workID string) (disp
 		return nil, connect.NewError(connect.CodeUnavailable, ErrPeerHopExceeded.Error()).WithCause(ErrPeerHopExceeded)
 	}
 	return h.peers.ForAddress(owner.Addr), nil
+}
+
+// lookupError answers a failed ownership lookup. A lookup its caller ended,
+// by going away or running out of time, answers with that cause: the
+// directory is not unavailable, and the call is not logged as a failure of
+// this service. Any other failure is Unavailable.
+func lookupError(err error) error {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, err.Error()).WithCause(err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, err.Error()).WithCause(err)
+	default:
+		return connect.NewError(connect.CodeUnavailable, err.Error()).WithCause(err)
+	}
 }
 
 // requestHeader is the inbound call's metadata.
