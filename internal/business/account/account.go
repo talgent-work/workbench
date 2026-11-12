@@ -54,6 +54,9 @@ type Config struct {
 	// ApplicationTokenLifetime bounds an Application's Identity Token, which
 	// is short and never refreshed.
 	ApplicationTokenLifetime string `json:"application-token-lifetime" yaml:"application-token-lifetime" toml:"application-token-lifetime"`
+	// ApplicationSecretOverlap is how long a replaced Client Secret keeps
+	// matching after its Application Owner rotates it.
+	ApplicationSecretOverlap string `json:"application-secret-overlap" yaml:"application-secret-overlap" toml:"application-secret-overlap"`
 	SessionSlidingLifetime   string `json:"session-sliding-lifetime" yaml:"session-sliding-lifetime" toml:"session-sliding-lifetime"`
 	SessionAbsoluteLifetime  string `json:"session-absolute-lifetime" yaml:"session-absolute-lifetime" toml:"session-absolute-lifetime"`
 	KeyRotationInterval      string `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
@@ -78,6 +81,7 @@ type policy struct {
 	lifetimes        domain.SessionLifetimes
 	agentToken       time.Duration
 	applicationToken time.Duration
+	secretOverlap    time.Duration
 	rotationInterval time.Duration
 	overlap          time.Duration
 }
@@ -92,6 +96,7 @@ func (c Config) policy() (policy, error) {
 		{"access-token-lifetime", c.AccessTokenLifetime, &p.lifetimes.Access},
 		{"agent-token-lifetime", c.AgentTokenLifetime, &p.agentToken},
 		{"application-token-lifetime", c.ApplicationTokenLifetime, &p.applicationToken},
+		{"application-secret-overlap", c.ApplicationSecretOverlap, &p.secretOverlap},
 		{"session-sliding-lifetime", c.SessionSlidingLifetime, &p.lifetimes.Sliding},
 		{"session-absolute-lifetime", c.SessionAbsoluteLifetime, &p.lifetimes.Absolute},
 		{"key-rotation-interval", c.KeyRotationInterval, &p.rotationInterval},
@@ -205,6 +210,7 @@ func newApplication(engine *xorm.Engine, p policy, keys *infrastructure.SigningK
 		Applications:             infrastructure.NewApplicationRepository(engine),
 		ApplicationQueries:       infrastructure.NewApplicationQueries(engine),
 		ApplicationTokenLifetime: p.applicationToken,
+		SecretOverlap:            p.secretOverlap,
 	})
 }
 

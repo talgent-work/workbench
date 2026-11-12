@@ -26,6 +26,7 @@ type Application struct {
 	applications             domain.ApplicationRepository
 	applicationQueries       query.ApplicationQueryRepository
 	applicationTokenLifetime time.Duration
+	secretOverlap            time.Duration
 }
 
 // Dependencies groups what Account's use cases consume.
@@ -47,6 +48,9 @@ type Dependencies struct {
 	// ApplicationTokenLifetime bounds an Application's Identity Token, which
 	// is never refreshed (An Application's tokens are short).
 	ApplicationTokenLifetime time.Duration
+	// SecretOverlap is how long a replaced Client Secret keeps matching after
+	// rotation (Rotation overlap).
+	SecretOverlap time.Duration
 	// Now defaults to the wall clock.
 	Now func() time.Time
 }
@@ -71,5 +75,6 @@ func NewApplication(deps Dependencies) *Application {
 		applications:             deps.Applications,
 		applicationQueries:       deps.ApplicationQueries,
 		applicationTokenLifetime: deps.ApplicationTokenLifetime,
+		secretOverlap:            deps.SecretOverlap,
 	}
 }

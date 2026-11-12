@@ -28,4 +28,7 @@ var (
 	// ErrClientSecretMismatch means no valid Client Secret of an active
 	// Application accepts the presented secret.
 	ErrClientSecretMismatch = errors.New("client secret does not match")
+	// ErrClientSecretNotFound names no Client Secret of the Application that
+	// still matches, so there is nothing to revoke.
+	ErrClientSecretNotFound = errors.New("client secret not found")
 )

@@ -146,6 +146,51 @@ func (a *Application) ValidSecrets(now time.Time) []*ClientSecret {
 	return valid
 }
 
+// RotateSecret issues a new current Client Secret, which only this call
+// returns. The current secret is superseded and keeps matching for overlap;
+// a secret already in an earlier overlap ends at once, so the Application
+// never holds more than two (Rotation overlap, Two secrets at most, Rotation
+// ends an earlier overlap, Secret shown once). The caller has checked Owner
+// manages.
+func (a *Application) RotateSecret(now time.Time, overlap time.Duration) (ClientSecretValue, error) {
+	if a.State != ApplicationActive {
+		return "", ErrApplicationNotFound
+	}
+	if overlap <= 0 {
+		return "", fmt.Errorf("%w: the rotation overlap must be positive", ErrInvalidApplication)
+	}
+	issued, value, err := IssueClientSecret(now)
+	if err != nil {
+		return "", err
+	}
+	for _, secret := range a.Secrets {
+		switch secret.State {
+		case ClientSecretOverlapping:
+			secret.End()
+		case ClientSecretCurrent:
+			secret.Supersede(now, overlap)
+		}
+	}
+	a.Secrets = append(a.Secrets, issued)
+	return value, nil
+}
+
+// RevokeSecret ends the named Client Secret at once, while it still matches
+// (Secret revocation). Tokens it already obtained stop at their expiry. The
+// caller has checked Owner manages.
+func (a *Application) RevokeSecret(id string, now time.Time) error {
+	if a.State != ApplicationActive {
+		return ErrApplicationNotFound
+	}
+	for _, secret := range a.Secrets {
+		if secret.ID == id && secret.valid(now) {
+			secret.End()
+			return nil
+		}
+	}
+	return ErrClientSecretNotFound
+}
+
 // IssueIdentityToken states the Application's claims for lifetime, for a
 // presented secret one of its Client Secrets accepts, and records that
 // secret's use (Client credentials, An Application's tokens are short). It
@@ -282,6 +327,22 @@ func (s *ClientSecret) valid(now time.Time) bool {
 	default:
 		return false
 	}
+}
+
+// Supersede replaces the current secret: it keeps matching until overlap
+// after now (Rotation overlap).
+func (s *ClientSecret) Supersede(now time.Time, overlap time.Duration) {
+	if s.State != ClientSecretCurrent {
+		return
+	}
+	s.State = ClientSecretOverlapping
+	s.OverlapEndsAt = now.UTC().Add(overlap)
+}
+
+// End stops the secret from matching; terminal (Secret revocation, Rotation
+// ends an earlier overlap, Removal is final).
+func (s *ClientSecret) End() {
+	s.State = ClientSecretEnded
 }
 
 // LastUseResolution is how precisely a Client Secret's last use is kept: a

@@ -86,3 +86,40 @@ export function useRegisterApplication() {
     },
   });
 }
+
+/** Puts the Application a change answered with into the owner's list. */
+function useReplaceOwnedApplication() {
+  const queryClient = useQueryClient();
+  const userId = useCurrentUser().data?.user?.id;
+  return (application: Application) => {
+    queryClient.setQueryData<Application[]>(ownedApplicationsKey(userId), current => current?.map(item => item.id === application.id ? application : item));
+    void queryClient.invalidateQueries({ queryKey: ownedApplicationsKey(userId) });
+  };
+}
+
+/** A rotated Application with the new Client Secret only this response shows. */
+export type RotatedSecret = { application: Application; clientSecret: string };
+
+export function useRotateClientSecret() {
+  const replace = useReplaceOwnedApplication();
+  return useMutation({
+    mutationFn: async (applicationId: string): Promise<RotatedSecret> => {
+      const response = await applicationClient.rotateClientSecret({ applicationId });
+      if (!response.application) throw new Error("The rotated application is missing from the response.");
+      return { application: applicationOf(response.application), clientSecret: response.clientSecret };
+    },
+    onSuccess: ({ application }) => replace(application),
+  });
+}
+
+export function useRevokeClientSecret() {
+  const replace = useReplaceOwnedApplication();
+  return useMutation({
+    mutationFn: async ({ applicationId, clientSecretId }: { applicationId: string; clientSecretId: string }): Promise<Application> => {
+      const response = await applicationClient.revokeClientSecret({ applicationId, clientSecretId });
+      if (!response.application) throw new Error("The application is missing from the response.");
+      return applicationOf(response.application);
+    },
+    onSuccess: replace,
+  });
+}

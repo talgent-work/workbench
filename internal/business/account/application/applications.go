@@ -51,22 +51,97 @@ func (a *Application) OwnedApplications(ctx context.Context, owner string) ([]qu
 // OwnedApplication reads one Application the person owns; any other answers
 // ErrApplicationNotFound, as an unknown one does.
 func (a *Application) OwnedApplication(ctx context.Context, owner, id string) (query.OwnedApplication, error) {
-	person, err := domain.ParseAccountID(owner)
+	found, err := a.ownedApplication(ctx, owner, id)
 	if err != nil {
 		return query.OwnedApplication{}, err
+	}
+	return assembleOwnedApplication(found, a.now()), nil
+}
+
+// RotateClientSecret names an Application its owner rotates the secret of.
+type RotateClientSecret struct {
+	Owner         string
+	ApplicationID string
+}
+
+// RotatedClientSecret is the Application after rotation and its new Client
+// Secret, which nothing returns again.
+type RotatedClientSecret struct {
+	Application  query.OwnedApplication
+	ClientSecret string
+}
+
+// RotateClientSecret issues the Application a new current Client Secret; the
+// replaced one keeps matching for the rotation overlap.
+func (a *Application) RotateClientSecret(ctx context.Context, cmd RotateClientSecret) (RotatedClientSecret, error) {
+	var rotated RotatedClientSecret
+	// A concurrent grant that records a use commits first; the repeat reloads.
+	err := retryOnceOnConflict(func() error {
+		found, err := a.ownedApplication(ctx, cmd.Owner, cmd.ApplicationID)
+		if err != nil {
+			return err
+		}
+		now := a.now()
+		secret, err := found.RotateSecret(now, a.secretOverlap)
+		if err != nil {
+			return err
+		}
+		if err := a.applications.Save(ctx, found); err != nil {
+			return err
+		}
+		rotated = RotatedClientSecret{Application: assembleOwnedApplication(found, now), ClientSecret: string(secret)}
+		return nil
+	})
+	return rotated, err
+}
+
+// RevokeClientSecret names one Client Secret its owner revokes.
+type RevokeClientSecret struct {
+	Owner          string
+	ApplicationID  string
+	ClientSecretID string
+}
+
+// RevokeClientSecret ends one of the Application's Client Secrets at once.
+func (a *Application) RevokeClientSecret(ctx context.Context, cmd RevokeClientSecret) (query.OwnedApplication, error) {
+	var revoked query.OwnedApplication
+	err := retryOnceOnConflict(func() error {
+		found, err := a.ownedApplication(ctx, cmd.Owner, cmd.ApplicationID)
+		if err != nil {
+			return err
+		}
+		now := a.now()
+		if err := found.RevokeSecret(cmd.ClientSecretID, now); err != nil {
+			return err
+		}
+		if err := a.applications.Save(ctx, found); err != nil {
+			return err
+		}
+		revoked = assembleOwnedApplication(found, now)
+		return nil
+	})
+	return revoked, err
+}
+
+// ownedApplication loads an active Application the person owns; any other
+// answers ErrApplicationNotFound, as an unknown one does (Owner manages).
+func (a *Application) ownedApplication(ctx context.Context, owner, id string) (*domain.Application, error) {
+	person, err := domain.ParseAccountID(owner)
+	if err != nil {
+		return nil, err
 	}
 	applicationID, err := domain.ParseApplicationID(id)
 	if err != nil {
-		return query.OwnedApplication{}, err
+		return nil, err
 	}
 	found, err := a.applications.Get(ctx, applicationID)
 	if err != nil {
-		return query.OwnedApplication{}, err
+		return nil, err
 	}
 	if !found.OwnedBy(person) || found.State != domain.ApplicationActive {
-		return query.OwnedApplication{}, domain.ErrApplicationNotFound
+		return nil, domain.ErrApplicationNotFound
 	}
-	return assembleOwnedApplication(found, a.now()), nil
+	return found, nil
 }
 
 // IssueApplicationIdentityToken is the client credentials grant: an

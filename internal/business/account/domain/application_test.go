@@ -150,3 +150,96 @@ func TestOwnedByIsTheApplicationOwnerOnly(t *testing.T) {
 	require.False(t, application.OwnedBy(stranger))
 	require.False(t, application.OwnedBy(""))
 }
+
+const rotationOverlap = 24 * time.Hour
+
+func issues(t *testing.T, application *Application, secret ClientSecretValue, at time.Time) bool {
+	t.Helper()
+	_, _, err := application.IssueIdentityToken(secret, at, applicationLifetime)
+	if err != nil {
+		require.ErrorIs(t, err, ErrClientSecretMismatch)
+		return false
+	}
+	return true
+}
+
+func TestRotateSecretKeepsTheReplacedSecretForTheOverlap(t *testing.T) {
+	application, first, now := registered(t)
+
+	second, err := application.RotateSecret(now, rotationOverlap)
+	require.NoError(t, err)
+	require.NotEqual(t, first, second)
+	require.NoError(t, application.Validate())
+
+	valid := application.ValidSecrets(now)
+	require.Len(t, valid, 2)
+	require.Equal(t, ClientSecretCurrent, valid[0].State)
+	require.Equal(t, second.Digest(), valid[0].SecretDigest)
+	require.Equal(t, ClientSecretOverlapping, valid[1].State)
+	require.Equal(t, now.Add(rotationOverlap), valid[1].OverlapEndsAt)
+
+	require.True(t, issues(t, application, first, now.Add(rotationOverlap-time.Second)))
+	require.True(t, issues(t, application, second, now.Add(rotationOverlap-time.Second)))
+	require.False(t, issues(t, application, first, now.Add(rotationOverlap)), "the overlap has ended")
+	require.True(t, issues(t, application, second, now.Add(rotationOverlap)))
+}
+
+func TestRotatingDuringAnOverlapEndsTheEarlierOverlapAtOnce(t *testing.T) {
+	application, first, now := registered(t)
+	second, err := application.RotateSecret(now, rotationOverlap)
+	require.NoError(t, err)
+
+	third, err := application.RotateSecret(now.Add(time.Hour), rotationOverlap)
+	require.NoError(t, err)
+	require.NoError(t, application.Validate())
+
+	at := now.Add(2 * time.Hour)
+	require.False(t, issues(t, application, first, at))
+	require.True(t, issues(t, application, second, at))
+	require.True(t, issues(t, application, third, at))
+	require.Len(t, application.ValidSecrets(at), 2)
+}
+
+func TestRevokeSecretRefusesItAtOnce(t *testing.T) {
+	application, first, now := registered(t)
+	second, err := application.RotateSecret(now, rotationOverlap)
+	require.NoError(t, err)
+	overlapping := application.ValidSecrets(now)[1]
+
+	require.NoError(t, application.RevokeSecret(overlapping.ID, now))
+	require.False(t, issues(t, application, first, now))
+	require.True(t, issues(t, application, second, now))
+	require.ErrorIs(t, application.RevokeSecret(overlapping.ID, now), ErrClientSecretNotFound, "an ended secret is not revoked twice")
+
+	current := application.ValidSecrets(now)[0]
+	require.NoError(t, application.RevokeSecret(current.ID, now))
+	require.False(t, issues(t, application, second, now))
+	require.Empty(t, application.ValidSecrets(now))
+	require.NoError(t, application.Validate())
+
+	third, err := application.RotateSecret(now, rotationOverlap)
+	require.NoError(t, err)
+	require.True(t, issues(t, application, third, now), "rotation restores a secret after the last was revoked")
+	require.Len(t, application.ValidSecrets(now), 1)
+}
+
+func TestRevokeSecretRefusesASecretWhoseOverlapEnded(t *testing.T) {
+	application, _, now := registered(t)
+	_, err := application.RotateSecret(now, rotationOverlap)
+	require.NoError(t, err)
+	overlapping := application.ValidSecrets(now)[1]
+
+	require.ErrorIs(t, application.RevokeSecret(overlapping.ID, now.Add(rotationOverlap)), ErrClientSecretNotFound)
+	require.ErrorIs(t, application.RevokeSecret("unknown", now), ErrClientSecretNotFound)
+}
+
+func TestARemovedApplicationNeitherRotatesNorRevokes(t *testing.T) {
+	application, _, now := registered(t)
+	id := application.Secrets[0].ID
+	application.State = ApplicationRemoved
+	application.Secrets[0].End()
+
+	_, err := application.RotateSecret(now, rotationOverlap)
+	require.ErrorIs(t, err, ErrApplicationNotFound)
+	require.ErrorIs(t, application.RevokeSecret(id, now), ErrApplicationNotFound)
+}

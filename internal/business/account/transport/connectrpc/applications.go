@@ -20,6 +20,8 @@ type ApplicationUseCases interface {
 	RegisterApplication(ctx context.Context, cmd application.RegisterApplication) (application.RegisteredApplication, error)
 	OwnedApplications(ctx context.Context, owner string) ([]query.OwnedApplication, error)
 	OwnedApplication(ctx context.Context, owner, id string) (query.OwnedApplication, error)
+	RotateClientSecret(ctx context.Context, cmd application.RotateClientSecret) (application.RotatedClientSecret, error)
+	RevokeClientSecret(ctx context.Context, cmd application.RevokeClientSecret) (query.OwnedApplication, error)
 }
 
 // Applications lets a person register Applications and read the ones they
@@ -77,6 +79,35 @@ func (h *Applications) GetApplication(ctx context.Context, req *accountpublicv1.
 	return &accountpublicv1.GetApplicationResponse{Application: applicationMessage(owned)}, nil
 }
 
+func (h *Applications) RotateClientSecret(ctx context.Context, req *accountpublicv1.RotateClientSecretRequest) (*accountpublicv1.RotateClientSecretResponse, error) {
+	owner, err := currentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rotated, err := h.app.RotateClientSecret(ctx, application.RotateClientSecret{Owner: owner, ApplicationID: req.GetApplicationId()})
+	if err != nil {
+		return nil, applicationError(err)
+	}
+	return &accountpublicv1.RotateClientSecretResponse{
+		Application:  applicationMessage(rotated.Application),
+		ClientSecret: rotated.ClientSecret,
+	}, nil
+}
+
+func (h *Applications) RevokeClientSecret(ctx context.Context, req *accountpublicv1.RevokeClientSecretRequest) (*accountpublicv1.RevokeClientSecretResponse, error) {
+	owner, err := currentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	revoked, err := h.app.RevokeClientSecret(ctx, application.RevokeClientSecret{
+		Owner: owner, ApplicationID: req.GetApplicationId(), ClientSecretID: req.GetClientSecretId(),
+	})
+	if err != nil {
+		return nil, applicationError(err)
+	}
+	return &accountpublicv1.RevokeClientSecretResponse{Application: applicationMessage(revoked)}, nil
+}
+
 func currentPerson(ctx context.Context) (string, error) {
 	id, ok := authn.CurrentUserID(ctx)
 	if !ok {
@@ -91,6 +122,10 @@ func applicationError(err error) error {
 		return connect.NewError(connect.CodeInvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrApplicationNotFound):
 		return connect.NewError(connect.CodeNotFound, "application not found")
+	case errors.Is(err, domain.ErrClientSecretNotFound):
+		return connect.NewError(connect.CodeNotFound, "client secret not found")
+	case errors.Is(err, domain.ErrConcurrentModification):
+		return connect.NewError(connect.CodeAborted, "account: the application changed concurrently; retry")
 	default:
 		return connect.NewError(connect.CodeInternal, "account: the application request failed").WithCause(err)
 	}
