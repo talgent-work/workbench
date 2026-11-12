@@ -166,7 +166,7 @@ func issues(t *testing.T, application *Application, secret ClientSecretValue, at
 func TestRotateSecretKeepsTheReplacedSecretForTheOverlap(t *testing.T) {
 	application, first, now := registered(t)
 
-	second, err := application.RotateSecret(now, rotationOverlap)
+	second, err := application.RotateSecret(application.ApplicationOwner, now, rotationOverlap)
 	require.NoError(t, err)
 	require.NotEqual(t, first, second)
 	require.NoError(t, application.Validate())
@@ -186,10 +186,10 @@ func TestRotateSecretKeepsTheReplacedSecretForTheOverlap(t *testing.T) {
 
 func TestRotatingDuringAnOverlapEndsTheEarlierOverlapAtOnce(t *testing.T) {
 	application, first, now := registered(t)
-	second, err := application.RotateSecret(now, rotationOverlap)
+	second, err := application.RotateSecret(application.ApplicationOwner, now, rotationOverlap)
 	require.NoError(t, err)
 
-	third, err := application.RotateSecret(now.Add(time.Hour), rotationOverlap)
+	third, err := application.RotateSecret(application.ApplicationOwner, now.Add(time.Hour), rotationOverlap)
 	require.NoError(t, err)
 	require.NoError(t, application.Validate())
 
@@ -202,22 +202,22 @@ func TestRotatingDuringAnOverlapEndsTheEarlierOverlapAtOnce(t *testing.T) {
 
 func TestRevokeSecretRefusesItAtOnce(t *testing.T) {
 	application, first, now := registered(t)
-	second, err := application.RotateSecret(now, rotationOverlap)
+	second, err := application.RotateSecret(application.ApplicationOwner, now, rotationOverlap)
 	require.NoError(t, err)
 	overlapping := application.ValidSecrets(now)[1]
 
-	require.NoError(t, application.RevokeSecret(overlapping.ID, now))
+	require.NoError(t, application.RevokeSecret(application.ApplicationOwner, overlapping.ID, now))
 	require.False(t, issues(t, application, first, now))
 	require.True(t, issues(t, application, second, now))
-	require.ErrorIs(t, application.RevokeSecret(overlapping.ID, now), ErrClientSecretNotFound, "an ended secret is not revoked twice")
+	require.ErrorIs(t, application.RevokeSecret(application.ApplicationOwner, overlapping.ID, now), ErrClientSecretNotFound, "an ended secret is not revoked twice")
 
 	current := application.ValidSecrets(now)[0]
-	require.NoError(t, application.RevokeSecret(current.ID, now))
+	require.NoError(t, application.RevokeSecret(application.ApplicationOwner, current.ID, now))
 	require.False(t, issues(t, application, second, now))
 	require.Empty(t, application.ValidSecrets(now))
 	require.NoError(t, application.Validate())
 
-	third, err := application.RotateSecret(now, rotationOverlap)
+	third, err := application.RotateSecret(application.ApplicationOwner, now, rotationOverlap)
 	require.NoError(t, err)
 	require.True(t, issues(t, application, third, now), "rotation restores a secret after the last was revoked")
 	require.Len(t, application.ValidSecrets(now), 1)
@@ -225,12 +225,12 @@ func TestRevokeSecretRefusesItAtOnce(t *testing.T) {
 
 func TestRevokeSecretRefusesASecretWhoseOverlapEnded(t *testing.T) {
 	application, _, now := registered(t)
-	_, err := application.RotateSecret(now, rotationOverlap)
+	_, err := application.RotateSecret(application.ApplicationOwner, now, rotationOverlap)
 	require.NoError(t, err)
 	overlapping := application.ValidSecrets(now)[1]
 
-	require.ErrorIs(t, application.RevokeSecret(overlapping.ID, now.Add(rotationOverlap)), ErrClientSecretNotFound)
-	require.ErrorIs(t, application.RevokeSecret("unknown", now), ErrClientSecretNotFound)
+	require.ErrorIs(t, application.RevokeSecret(application.ApplicationOwner, overlapping.ID, now.Add(rotationOverlap)), ErrClientSecretNotFound)
+	require.ErrorIs(t, application.RevokeSecret(application.ApplicationOwner, "unknown", now), ErrClientSecretNotFound)
 }
 
 func TestARemovedApplicationNeitherRotatesNorRevokes(t *testing.T) {
@@ -239,7 +239,19 @@ func TestARemovedApplicationNeitherRotatesNorRevokes(t *testing.T) {
 	application.State = ApplicationRemoved
 	application.Secrets[0].End()
 
-	_, err := application.RotateSecret(now, rotationOverlap)
+	_, err := application.RotateSecret(application.ApplicationOwner, now, rotationOverlap)
 	require.ErrorIs(t, err, ErrApplicationNotFound)
-	require.ErrorIs(t, application.RevokeSecret(id, now), ErrApplicationNotFound)
+	require.ErrorIs(t, application.RevokeSecret(application.ApplicationOwner, id, now), ErrApplicationNotFound)
+}
+
+func TestOnlyTheOwnerRotatesOrRevokes(t *testing.T) {
+	application, secret, now := registered(t)
+	stranger, err := NewAccountID()
+	require.NoError(t, err)
+
+	_, err = application.RotateSecret(stranger, now, rotationOverlap)
+	require.ErrorIs(t, err, ErrApplicationNotFound)
+	require.ErrorIs(t, application.RevokeSecret(stranger, application.Secrets[0].ID, now), ErrApplicationNotFound)
+	require.Len(t, application.Secrets, 1)
+	require.True(t, issues(t, application, secret, now), "the refused attempts changed nothing")
 }

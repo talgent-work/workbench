@@ -133,6 +133,12 @@ func (a *Application) OwnedBy(person AccountID) bool {
 	return person != "" && a.ApplicationOwner == person
 }
 
+// manageableBy tells whether person may manage the Application now: its
+// Application Owner, while it is active (Owner manages, Removal is final).
+func (a *Application) manageableBy(person AccountID) bool {
+	return a.State == ApplicationActive && a.OwnedBy(person)
+}
+
 // ValidSecrets are the secrets that still match at now: the current one first,
 // then one still in its overlap.
 func (a *Application) ValidSecrets(now time.Time) []*ClientSecret {
@@ -150,10 +156,11 @@ func (a *Application) ValidSecrets(now time.Time) []*ClientSecret {
 // returns. The current secret is superseded and keeps matching for overlap;
 // a secret already in an earlier overlap ends at once, so the Application
 // never holds more than two (Rotation overlap, Two secrets at most, Rotation
-// ends an earlier overlap, Secret shown once). The caller has checked Owner
-// manages.
-func (a *Application) RotateSecret(now time.Time, overlap time.Duration) (ClientSecretValue, error) {
-	if a.State != ApplicationActive {
+// ends an earlier overlap, Secret shown once). Only its Application Owner
+// rotates (Owner manages): any other person, like a removed Application, answers
+// ErrApplicationNotFound.
+func (a *Application) RotateSecret(by AccountID, now time.Time, overlap time.Duration) (ClientSecretValue, error) {
+	if !a.manageableBy(by) {
 		return "", ErrApplicationNotFound
 	}
 	if overlap <= 0 {
@@ -176,10 +183,10 @@ func (a *Application) RotateSecret(now time.Time, overlap time.Duration) (Client
 }
 
 // RevokeSecret ends the named Client Secret at once, while it still matches
-// (Secret revocation). Tokens it already obtained stop at their expiry. The
-// caller has checked Owner manages.
-func (a *Application) RevokeSecret(id string, now time.Time) error {
-	if a.State != ApplicationActive {
+// (Secret revocation). Tokens it already obtained stop at their expiry. Only
+// its Application Owner revokes (Owner manages).
+func (a *Application) RevokeSecret(by AccountID, id string, now time.Time) error {
+	if !a.manageableBy(by) {
 		return ErrApplicationNotFound
 	}
 	for _, secret := range a.Secrets {
@@ -342,7 +349,9 @@ func (s *ClientSecret) Supersede(now time.Time, overlap time.Duration) {
 // End stops the secret from matching; terminal (Secret revocation, Rotation
 // ends an earlier overlap, Removal is final).
 func (s *ClientSecret) End() {
-	s.State = ClientSecretEnded
+	if s.State == ClientSecretCurrent || s.State == ClientSecretOverlapping {
+		s.State = ClientSecretEnded
+	}
 }
 
 // LastUseResolution is how precisely a Client Secret's last use is kept: a
