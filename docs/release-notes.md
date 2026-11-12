@@ -36,6 +36,15 @@ was removed. An Application Owner removes an Application with
 `ApplicationService.RemoveApplication`: its secrets stop at once, and Agent closes its open
 Works.
 
+Before deploying it, run `deploy/middleware/migrations/20261115-marketplace-installation-owner.sql`
+against the database named by `WORKBENCH_MYSQL_DATABASE`; it renames the owner column of
+Marketplace's Plugin and Connector installations from `user_id` to `owner_id`, which the previous
+release does not read, so run it as part of the deployment. An Application installs, configures,
+enables and removes Plugins and catalog Connectors for itself, and its owner does so in the web
+app: each owner-scoped Marketplace request takes `application_id`. The Application's enabled
+installations are the default selection of every Work it starts, which a start request adds to
+or leaves out, and its Plugins offer its Works' Startup Agents.
+
 ## The release that names the Work API neutrally
 
 Nothing to do beyond deploying it; the entry routes `/api/agent.public.v2.WorkService`. A

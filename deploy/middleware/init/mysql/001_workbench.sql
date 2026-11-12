@@ -408,7 +408,7 @@ CREATE TABLE IF NOT EXISTS `marketplace_connector` (
 
 CREATE TABLE IF NOT EXISTS `marketplace_installed_connector` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'UUIDv7 identity of this installation incarnation',
-  `user_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Authorized personal owner',
+  `owner_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Owner: a person or an Application',
   `connector_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Catalog Connector identity',
   `state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1 enabled; 2 disabled',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic row version',
@@ -416,12 +416,12 @@ CREATE TABLE IF NOT EXISTS `marketplace_installed_connector` (
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Zero for active rows; uninstall removes the row',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_user_id_connector_id` (`user_id`,`connector_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Personal installations of catalog Connectors';
+  UNIQUE KEY `uniq_owner_id_connector_id` (`owner_id`,`connector_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Owners'' installations of catalog Connectors';
 
 CREATE TABLE IF NOT EXISTS `marketplace_installed_plugin` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'UUIDv7 identity of this installation incarnation',
-  `user_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Authorized personal owner',
+  `owner_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Owner: a person or an Application',
   `slug` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Stable plugin slug',
   `state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1 enabled; 2 disabled',
   `configuration` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'JSON typed manual values; no defaults',
@@ -430,8 +430,8 @@ CREATE TABLE IF NOT EXISTS `marketplace_installed_plugin` (
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Zero for active rows; uninstall removes the row',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_user_id_slug` (`user_id`,`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Independent personal plugin installations';
+  UNIQUE KEY `uniq_owner_id_slug` (`owner_id`,`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Owners'' independent plugin installations';
 
 CREATE TABLE IF NOT EXISTS `marketplace_plugin_release` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Storage locator, not release identity',

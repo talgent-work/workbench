@@ -10,7 +10,7 @@ import (
 
 func AssembleInstalledPluginEntity(plugin *domain.InstalledPlugin) query.InstalledPlugin {
 	return query.InstalledPlugin{
-		UserID: plugin.UserID, Slug: plugin.Slug, Enabled: plugin.State == domain.Enabled,
+		OwnerID: plugin.OwnerID, Slug: plugin.Slug, Enabled: plugin.State == domain.Enabled,
 		Configuration: plugin.ManualConfiguration.Clone(), Version: plugin.Version,
 	}
 }

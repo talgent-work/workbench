@@ -63,17 +63,19 @@ func NewClient(httpClient *http.Client, config Config) (*Client, error) {
 	}, nil
 }
 
-// delegated is the context of a call made for user under the internal
-// service delegation contract, and the call's metadata.
-func delegated(ctx context.Context, user string) (context.Context, *connect.CallInfo, error) {
-	if strings.TrimSpace(user) == "" {
+// delegated is the context of a call made for owner, a person or an
+// Application, under the internal service delegation contract, and the call's
+// metadata. Marketplace's selection reads take the delegated id as the owner
+// of the installations they read.
+func delegated(ctx context.Context, owner string) (context.Context, *connect.CallInfo, error) {
+	if strings.TrimSpace(owner) == "" {
 		return nil, nil, access.ErrAccessDenied
 	}
 	ctx, info := connect.NewClientContext(ctx)
 	// This is the existing internal service delegation contract. The public
 	// gateway strips these headers; they are never copied from client input.
 	info.RequestHeader().Set(authn.HeaderServiceID, "agent")
-	info.RequestHeader().Set(authn.HeaderDelegatedUserID, user)
+	info.RequestHeader().Set(authn.HeaderDelegatedUserID, owner)
 	propagation.TraceContext{}.Inject(ctx, otelsetup.ConnectCarrier{Header: info.RequestHeader()})
 	return ctx, info, nil
 }
