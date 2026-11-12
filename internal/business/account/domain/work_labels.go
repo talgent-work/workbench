@@ -1,9 +1,8 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
-	"maps"
-	"slices"
 	"unicode/utf8"
 )
 
@@ -15,16 +14,12 @@ const (
 	maxWorkLabelValueLength = 256
 )
 
-// WorkLabel is one key=value pair of a Work's Work Labels.
-type WorkLabel struct {
-	Key, Value string
-}
-
-// WorkLabels are a Work's Work Labels as Agent supplies them, one pair per
-// key, ordered by key. Account copies them into the Work's Identity Tokens
-// and decides nothing from them.
+// WorkLabels are a Work's Work Labels as Agent supplies them. Account copies
+// them into the Work's Identity Tokens and decides nothing from them. They
+// are held in one canonical form, so equal labels compare equal and the
+// Work's facts stay comparable as a whole (Facts never drift).
 type WorkLabels struct {
-	pairs []WorkLabel
+	canonical string
 }
 
 // NewWorkLabels bounds the supplied labels; nil or empty means none.
@@ -32,27 +27,25 @@ func NewWorkLabels(labels map[string]string) (WorkLabels, error) {
 	if len(labels) > maxWorkLabels {
 		return WorkLabels{}, fmt.Errorf("%w: at most %d work labels", ErrInvalidAgentAccount, maxWorkLabels)
 	}
-	result := WorkLabels{}
-	for _, key := range slices.Sorted(maps.Keys(labels)) {
-		value := labels[key]
+	if len(labels) == 0 {
+		return WorkLabels{}, nil
+	}
+	for key, value := range labels {
 		if key == "" || utf8.RuneCountInString(key) > maxWorkLabelKeyLength || value == "" || utf8.RuneCountInString(value) > maxWorkLabelValueLength {
 			return WorkLabels{}, fmt.Errorf("%w: a work label exceeds its bounds", ErrInvalidAgentAccount)
 		}
-		result.pairs = append(result.pairs, WorkLabel{Key: key, Value: value})
 	}
-	return result, nil
+	// A map of strings always encodes, with its keys sorted.
+	canonical, _ := json.Marshal(labels)
+	return WorkLabels{canonical: string(canonical)}, nil
 }
 
 // Map is the labels as key to value; nil for none.
 func (l WorkLabels) Map() map[string]string {
-	if len(l.pairs) == 0 {
+	if l.canonical == "" {
 		return nil
 	}
-	labels := make(map[string]string, len(l.pairs))
-	for _, pair := range l.pairs {
-		labels[pair.Key] = pair.Value
-	}
+	var labels map[string]string
+	_ = json.Unmarshal([]byte(l.canonical), &labels) // NewWorkLabels encoded it.
 	return labels
 }
-
-func (l WorkLabels) Equal(other WorkLabels) bool { return slices.Equal(l.pairs, other.pairs) }

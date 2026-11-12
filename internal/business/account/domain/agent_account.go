@@ -84,12 +84,6 @@ func NewWorkFacts(projectID, agentID, purpose, subjectKind, subjectID, represent
 	return facts, nil
 }
 
-// Equal reports whether two statements of a Work's facts are the same.
-func (f WorkFacts) Equal(other WorkFacts) bool {
-	return f.ProjectID == other.ProjectID && f.AgentID == other.AgentID && f.Purpose == other.Purpose && f.Subject == other.Subject &&
-		f.RepresentedPerson == other.RepresentedPerson && f.OwningApplication == other.OwningApplication && f.WorkLabels.Equal(other.WorkLabels)
-}
-
 func (f WorkFacts) Validate() error {
 	if f.AgentID == "" || f.Purpose == "" {
 		return fmt.Errorf("%w: agent definition and purpose are required", ErrInvalidAgentAccount)
@@ -131,7 +125,7 @@ func OpenAgentAccount(work WorkID, facts WorkFacts, now time.Time) (*AgentAccoun
 // supplied facts equal the Agent Account's own (Facts never drift). The token
 // is never refreshed: each call issues a new one.
 func (a *AgentAccount) IssueIdentityToken(facts WorkFacts, now time.Time, lifetime time.Duration) (IdentityClaims, error) {
-	if !facts.Equal(a.Facts) {
+	if facts != a.Facts {
 		return IdentityClaims{}, ErrAgentAccountFactsDiffer
 	}
 	if lifetime <= 0 {
