@@ -250,6 +250,64 @@ func (x *RequestWorkspaceReclamationTaskV1) GetWorkId() string {
 	return ""
 }
 
+// CloseRemovedApplicationWorkTaskV1 closes one unclosed Work of an
+// Application Account removed, retried a bounded number of times. Agent keeps
+// no obligation for it: a close that exhausts its retries is logged as an
+// error naming the Work, which then stops at its idle timeout.
+type CloseRemovedApplicationWorkTaskV1 struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The AgentWork's identity.
+	WorkId string `protobuf:"bytes,1,opt,name=work_id,json=workId,proto3" json:"work_id,omitempty"`
+	// The removed Application, which owns the Work.
+	ApplicationId string `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloseRemovedApplicationWorkTaskV1) Reset() {
+	*x = CloseRemovedApplicationWorkTaskV1{}
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloseRemovedApplicationWorkTaskV1) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseRemovedApplicationWorkTaskV1) ProtoMessage() {}
+
+func (x *CloseRemovedApplicationWorkTaskV1) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseRemovedApplicationWorkTaskV1.ProtoReflect.Descriptor instead.
+func (*CloseRemovedApplicationWorkTaskV1) Descriptor() ([]byte, []int) {
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CloseRemovedApplicationWorkTaskV1) GetWorkId() string {
+	if x != nil {
+		return x.WorkId
+	}
+	return ""
+}
+
+func (x *CloseRemovedApplicationWorkTaskV1) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
 // ReconcileAllocationTaskV1 is a retired payload.
 type ReconcileAllocationTaskV1 struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -261,7 +319,7 @@ type ReconcileAllocationTaskV1 struct {
 
 func (x *ReconcileAllocationTaskV1) Reset() {
 	*x = ReconcileAllocationTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[5]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -273,7 +331,7 @@ func (x *ReconcileAllocationTaskV1) String() string {
 func (*ReconcileAllocationTaskV1) ProtoMessage() {}
 
 func (x *ReconcileAllocationTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[5]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -286,7 +344,7 @@ func (x *ReconcileAllocationTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReconcileAllocationTaskV1.ProtoReflect.Descriptor instead.
 func (*ReconcileAllocationTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{5}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ReconcileAllocationTaskV1) GetAllocationId() string {
@@ -307,7 +365,7 @@ type PrepareAllocationTaskV1 struct {
 
 func (x *PrepareAllocationTaskV1) Reset() {
 	*x = PrepareAllocationTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[6]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -319,7 +377,7 @@ func (x *PrepareAllocationTaskV1) String() string {
 func (*PrepareAllocationTaskV1) ProtoMessage() {}
 
 func (x *PrepareAllocationTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[6]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -332,7 +390,7 @@ func (x *PrepareAllocationTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareAllocationTaskV1.ProtoReflect.Descriptor instead.
 func (*PrepareAllocationTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{6}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PrepareAllocationTaskV1) GetAllocationId() string {
@@ -353,7 +411,7 @@ type ReconnectAllocationTaskV1 struct {
 
 func (x *ReconnectAllocationTaskV1) Reset() {
 	*x = ReconnectAllocationTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[7]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -365,7 +423,7 @@ func (x *ReconnectAllocationTaskV1) String() string {
 func (*ReconnectAllocationTaskV1) ProtoMessage() {}
 
 func (x *ReconnectAllocationTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[7]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -378,7 +436,7 @@ func (x *ReconnectAllocationTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReconnectAllocationTaskV1.ProtoReflect.Descriptor instead.
 func (*ReconnectAllocationTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{7}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReconnectAllocationTaskV1) GetAllocationId() string {
@@ -399,7 +457,7 @@ type DeliverCredentialsTaskV1 struct {
 
 func (x *DeliverCredentialsTaskV1) Reset() {
 	*x = DeliverCredentialsTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[8]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -411,7 +469,7 @@ func (x *DeliverCredentialsTaskV1) String() string {
 func (*DeliverCredentialsTaskV1) ProtoMessage() {}
 
 func (x *DeliverCredentialsTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[8]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -424,7 +482,7 @@ func (x *DeliverCredentialsTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverCredentialsTaskV1.ProtoReflect.Descriptor instead.
 func (*DeliverCredentialsTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{8}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeliverCredentialsTaskV1) GetAllocationId() string {
@@ -445,7 +503,7 @@ type SyncInputsTaskV1 struct {
 
 func (x *SyncInputsTaskV1) Reset() {
 	*x = SyncInputsTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[9]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -457,7 +515,7 @@ func (x *SyncInputsTaskV1) String() string {
 func (*SyncInputsTaskV1) ProtoMessage() {}
 
 func (x *SyncInputsTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[9]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -470,7 +528,7 @@ func (x *SyncInputsTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncInputsTaskV1.ProtoReflect.Descriptor instead.
 func (*SyncInputsTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{9}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SyncInputsTaskV1) GetAllocationId() string {
@@ -491,7 +549,7 @@ type ObserveSandboxTaskV1 struct {
 
 func (x *ObserveSandboxTaskV1) Reset() {
 	*x = ObserveSandboxTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[10]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -503,7 +561,7 @@ func (x *ObserveSandboxTaskV1) String() string {
 func (*ObserveSandboxTaskV1) ProtoMessage() {}
 
 func (x *ObserveSandboxTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[10]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -516,7 +574,7 @@ func (x *ObserveSandboxTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObserveSandboxTaskV1.ProtoReflect.Descriptor instead.
 func (*ObserveSandboxTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{10}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ObserveSandboxTaskV1) GetAllocationId() string {
@@ -537,7 +595,7 @@ type RecoverContinuationTaskV1 struct {
 
 func (x *RecoverContinuationTaskV1) Reset() {
 	*x = RecoverContinuationTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[11]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -549,7 +607,7 @@ func (x *RecoverContinuationTaskV1) String() string {
 func (*RecoverContinuationTaskV1) ProtoMessage() {}
 
 func (x *RecoverContinuationTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[11]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -562,7 +620,7 @@ func (x *RecoverContinuationTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverContinuationTaskV1.ProtoReflect.Descriptor instead.
 func (*RecoverContinuationTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{11}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RecoverContinuationTaskV1) GetWorkId() string {
@@ -583,7 +641,7 @@ type RecoverWorkCreationTaskV1 struct {
 
 func (x *RecoverWorkCreationTaskV1) Reset() {
 	*x = RecoverWorkCreationTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[12]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -595,7 +653,7 @@ func (x *RecoverWorkCreationTaskV1) String() string {
 func (*RecoverWorkCreationTaskV1) ProtoMessage() {}
 
 func (x *RecoverWorkCreationTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[12]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -608,7 +666,7 @@ func (x *RecoverWorkCreationTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverWorkCreationTaskV1.ProtoReflect.Descriptor instead.
 func (*RecoverWorkCreationTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{12}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RecoverWorkCreationTaskV1) GetRequestId() string {
@@ -629,7 +687,7 @@ type PrepareInitialExecutionTaskV1 struct {
 
 func (x *PrepareInitialExecutionTaskV1) Reset() {
 	*x = PrepareInitialExecutionTaskV1{}
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[13]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -641,7 +699,7 @@ func (x *PrepareInitialExecutionTaskV1) String() string {
 func (*PrepareInitialExecutionTaskV1) ProtoMessage() {}
 
 func (x *PrepareInitialExecutionTaskV1) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_task_v1_recovery_proto_msgTypes[13]
+	mi := &file_agent_task_v1_recovery_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -654,7 +712,7 @@ func (x *PrepareInitialExecutionTaskV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareInitialExecutionTaskV1.ProtoReflect.Descriptor instead.
 func (*PrepareInitialExecutionTaskV1) Descriptor() ([]byte, []int) {
-	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{13}
+	return file_agent_task_v1_recovery_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *PrepareInitialExecutionTaskV1) GetWorkId() string {
@@ -677,7 +735,10 @@ const file_agent_task_v1_recovery_proto_rawDesc = "" +
 	"\awork_id\x18\x01 \x01(\tR\x06workId\"\x15\n" +
 	"\x13SweepRecoveryTaskV1\"W\n" +
 	"!RequestWorkspaceReclamationTaskV1\x12\x17\n" +
-	"\awork_id\x18\x01 \x01(\tR\x06workIdJ\x04\b\x02\x10\x03R\x13workspace_reference\"@\n" +
+	"\awork_id\x18\x01 \x01(\tR\x06workIdJ\x04\b\x02\x10\x03R\x13workspace_reference\"c\n" +
+	"!CloseRemovedApplicationWorkTaskV1\x12\x17\n" +
+	"\awork_id\x18\x01 \x01(\tR\x06workId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"@\n" +
 	"\x19ReconcileAllocationTaskV1\x12#\n" +
 	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\">\n" +
 	"\x17PrepareAllocationTaskV1\x12#\n" +
@@ -710,22 +771,23 @@ func file_agent_task_v1_recovery_proto_rawDescGZIP() []byte {
 	return file_agent_task_v1_recovery_proto_rawDescData
 }
 
-var file_agent_task_v1_recovery_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_agent_task_v1_recovery_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_agent_task_v1_recovery_proto_goTypes = []any{
 	(*ReconcileExecutionTaskV1)(nil),          // 0: agent.task.v1.ReconcileExecutionTaskV1
 	(*RunLongExecutionStepTaskV1)(nil),        // 1: agent.task.v1.RunLongExecutionStepTaskV1
 	(*RecoverWorkTaskV1)(nil),                 // 2: agent.task.v1.RecoverWorkTaskV1
 	(*SweepRecoveryTaskV1)(nil),               // 3: agent.task.v1.SweepRecoveryTaskV1
 	(*RequestWorkspaceReclamationTaskV1)(nil), // 4: agent.task.v1.RequestWorkspaceReclamationTaskV1
-	(*ReconcileAllocationTaskV1)(nil),         // 5: agent.task.v1.ReconcileAllocationTaskV1
-	(*PrepareAllocationTaskV1)(nil),           // 6: agent.task.v1.PrepareAllocationTaskV1
-	(*ReconnectAllocationTaskV1)(nil),         // 7: agent.task.v1.ReconnectAllocationTaskV1
-	(*DeliverCredentialsTaskV1)(nil),          // 8: agent.task.v1.DeliverCredentialsTaskV1
-	(*SyncInputsTaskV1)(nil),                  // 9: agent.task.v1.SyncInputsTaskV1
-	(*ObserveSandboxTaskV1)(nil),              // 10: agent.task.v1.ObserveSandboxTaskV1
-	(*RecoverContinuationTaskV1)(nil),         // 11: agent.task.v1.RecoverContinuationTaskV1
-	(*RecoverWorkCreationTaskV1)(nil),         // 12: agent.task.v1.RecoverWorkCreationTaskV1
-	(*PrepareInitialExecutionTaskV1)(nil),     // 13: agent.task.v1.PrepareInitialExecutionTaskV1
+	(*CloseRemovedApplicationWorkTaskV1)(nil), // 5: agent.task.v1.CloseRemovedApplicationWorkTaskV1
+	(*ReconcileAllocationTaskV1)(nil),         // 6: agent.task.v1.ReconcileAllocationTaskV1
+	(*PrepareAllocationTaskV1)(nil),           // 7: agent.task.v1.PrepareAllocationTaskV1
+	(*ReconnectAllocationTaskV1)(nil),         // 8: agent.task.v1.ReconnectAllocationTaskV1
+	(*DeliverCredentialsTaskV1)(nil),          // 9: agent.task.v1.DeliverCredentialsTaskV1
+	(*SyncInputsTaskV1)(nil),                  // 10: agent.task.v1.SyncInputsTaskV1
+	(*ObserveSandboxTaskV1)(nil),              // 11: agent.task.v1.ObserveSandboxTaskV1
+	(*RecoverContinuationTaskV1)(nil),         // 12: agent.task.v1.RecoverContinuationTaskV1
+	(*RecoverWorkCreationTaskV1)(nil),         // 13: agent.task.v1.RecoverWorkCreationTaskV1
+	(*PrepareInitialExecutionTaskV1)(nil),     // 14: agent.task.v1.PrepareInitialExecutionTaskV1
 }
 var file_agent_task_v1_recovery_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -746,7 +808,7 @@ func file_agent_task_v1_recovery_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_task_v1_recovery_proto_rawDesc), len(file_agent_task_v1_recovery_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

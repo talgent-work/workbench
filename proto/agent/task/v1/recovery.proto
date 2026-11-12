@@ -41,6 +41,17 @@ message RequestWorkspaceReclamationTaskV1 {
   string work_id = 1;
 }
 
+// CloseRemovedApplicationWorkTaskV1 closes one unclosed Work of an
+// Application Account removed, retried a bounded number of times. Agent keeps
+// no obligation for it: a close that exhausts its retries is logged as an
+// error naming the Work, which then stops at its idle timeout.
+message CloseRemovedApplicationWorkTaskV1 {
+  // The AgentWork's identity.
+  string work_id = 1;
+  // The removed Application, which owns the Work.
+  string application_id = 2;
+}
+
 // The task payloads below are retired: their queued tasks are dropped without
 // decoding. They stay because a task contract only grows within its version.
 

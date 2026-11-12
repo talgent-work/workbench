@@ -23,6 +23,7 @@ type ApplicationUseCases interface {
 	RotateClientSecret(ctx context.Context, cmd application.RotateClientSecret) (application.RotatedClientSecret, error)
 	RevokeClientSecret(ctx context.Context, cmd application.RevokeClientSecret) (query.OwnedApplication, error)
 	RenameApplication(ctx context.Context, cmd application.RenameApplication) (query.OwnedApplication, error)
+	RemoveApplication(ctx context.Context, cmd application.RemoveApplication) error
 }
 
 // Applications lets a person register Applications and read the ones they
@@ -119,6 +120,17 @@ func (h *Applications) RenameApplication(ctx context.Context, req *accountpublic
 		return nil, applicationError(err)
 	}
 	return &accountpublicv1.RenameApplicationResponse{Application: applicationMessage(renamed)}, nil
+}
+
+func (h *Applications) RemoveApplication(ctx context.Context, req *accountpublicv1.RemoveApplicationRequest) (*accountpublicv1.RemoveApplicationResponse, error) {
+	owner, err := currentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.app.RemoveApplication(ctx, application.RemoveApplication{Owner: owner, ApplicationID: req.GetApplicationId()}); err != nil {
+		return nil, applicationError(err)
+	}
+	return &accountpublicv1.RemoveApplicationResponse{}, nil
 }
 
 func currentPerson(ctx context.Context) (string, error) {

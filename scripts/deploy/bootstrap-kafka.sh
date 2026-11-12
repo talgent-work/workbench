@@ -16,6 +16,7 @@ TOPICS=(
   "computer.integration.v1.ComputerBecameUnreachableV1"
   "computer.integration.v1.ComputerBecameReachableV1"
   "computer.integration.v1.ComputerRemovedV1"
+  "account.integration.v1.ApplicationRemovedV1"
   "$@"
 )
 

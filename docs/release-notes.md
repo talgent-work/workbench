@@ -30,6 +30,12 @@ canonical schema (`scripts/deploy/bootstrap-mysql.sh`). A Work's starter may giv
 labels and Work State, and an agent token carries them as claim `work_labels`, which the entry
 does not forward.
 
+Run `scripts/deploy/bootstrap-kafka.sh` again before deploying it, too: it creates the topic
+`account.integration.v1.ApplicationRemovedV1`, on which Account tells Agent that an Application
+was removed. An Application Owner removes an Application with
+`ApplicationService.RemoveApplication`: its secrets stop at once, and Agent closes its open
+Works.
+
 ## The release that names the Work API neutrally
 
 Nothing to do beyond deploying it; the entry routes `/api/agent.public.v2.WorkService`. A

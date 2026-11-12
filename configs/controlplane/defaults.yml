@@ -101,6 +101,8 @@ agent-desk-assignments:
   consumer-group: "${AGENT_DESK_ASSIGNMENTS_GROUP:agent-desk-assignments}"
 agent-computer-presence:
   consumer-group: "${AGENT_COMPUTER_PRESENCE_GROUP:agent-computer-presence}"
+agent-application-removal:
+  consumer-group: "${AGENT_APPLICATION_REMOVAL_GROUP:agent-application-removal}"
 agent-taskqueue:
   redis-addr: "${REDIS_ADDR:127.0.0.1:6379}"
   redis-password: "${REDIS_PASSWORD:}"

@@ -50,6 +50,17 @@ func Reclamation() []taskqueue.EnqueueOption {
 	return []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(ReclamationRetries), taskqueue.WithTimeout(RecoveryAttemptTimeout)}
 }
 
+// RemovedApplicationCloseRetries bounds the close of one Work of a removed
+// Application. Agent keeps no obligation for it, so a close that exhausts
+// them is logged as an error naming the Work, which then stops at its idle
+// timeout.
+const RemovedApplicationCloseRetries = 10
+
+// RemovedApplicationClose is the policy of a removed Application's Work close.
+func RemovedApplicationClose() []taskqueue.EnqueueOption {
+	return []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(RemovedApplicationCloseRetries), taskqueue.WithTimeout(RecoveryAttemptTimeout)}
+}
+
 const (
 	ReconcileExecutionType   taskqueue.TaskType = "agent.execution.reconcile.v1"
 	RunLongExecutionStepType taskqueue.TaskType = "agent.execution.run-long-step.v1"
@@ -61,6 +72,9 @@ const (
 	// its task key keep their earlier "workspace" spelling: tasks already
 	// queued under them must still be decoded and deduplicated.
 	RequestWorkReclamationType taskqueue.TaskType = "agent.workspace.request-reclamation.v1"
+	// CloseRemovedApplicationWorkType closes one Work of a removed
+	// Application.
+	CloseRemovedApplicationWorkType taskqueue.TaskType = "agent.work.close-removed-application.v1"
 )
 
 // NewReconcileExecution wakes the execution's short steps.
@@ -86,6 +100,17 @@ func NewRequestWorkReclamation(workID string) (taskqueue.Task, error) {
 		return taskqueue.Task{}, taskqueue.ErrNilPayload
 	}
 	return keyed(RequestWorkReclamationType, RecoveryQueue, "workspace-reclamation", workID, &agenttaskv1.RequestWorkspaceReclamationTaskV1{WorkId: workID})
+}
+
+// NewCloseRemovedApplicationWork queues the close of one Work of a removed
+// Application, keyed by the Work, so a repeated fact collapses into the task
+// already queued.
+func NewCloseRemovedApplicationWork(workID, applicationID string) (taskqueue.Task, error) {
+	if strings.TrimSpace(applicationID) == "" {
+		return taskqueue.Task{}, taskqueue.ErrNilPayload
+	}
+	return keyed(CloseRemovedApplicationWorkType, RecoveryQueue, "removed-application-work", workID,
+		&agenttaskv1.CloseRemovedApplicationWorkTaskV1{WorkId: workID, ApplicationId: applicationID})
 }
 
 // NewSweepRecovery is the static envelope fired by the periodic sweep. It has
