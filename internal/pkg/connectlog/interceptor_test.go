@@ -129,3 +129,48 @@ func lastLogEntry(t *testing.T, buf *bytes.Buffer) map[string]any {
 	}
 	return entry
 }
+
+// Intent (real): a call whose caller went away is the caller's outcome, logged
+// at WARN as canceled, even when the handler answers the cancellation with a
+// server code such as Internal or Unavailable: a browser closing its poll is
+// no server fault and must not page.
+func TestInterceptorLogsACallItsCallerCanceledAsTheCallersOutcome(t *testing.T) {
+	for _, code := range []connect.Code{connect.CodeInternal, connect.CodeUnavailable} {
+		t.Run(code.String(), func(t *testing.T) {
+			logger, logs := testLogger()
+			logged := make(chan struct{})
+			spec := connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: "/test.Service/Poll"}
+			// Outside the logging interceptor: closes once the call was logged.
+			done := connect.ServerInterceptor(func(next connect.ServerFunc) connect.ServerFunc {
+				return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+					defer close(logged)
+					return next(ctx, spec, stream)
+				}
+			})
+			server := connect.NewServer(done, NewInterceptor(logger))
+			entered := make(chan struct{})
+			server.Register(connect.Method{Spec: spec, Handler: func(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+				if err := stream.Receive(&emptypb.Empty{}); err != nil {
+					return err
+				}
+				close(entered)
+				<-ctx.Done()
+				return connect.NewError(code, ctx.Err().Error()).WithCause(ctx.Err())
+			}})
+			mux := http.NewServeMux()
+			connecthttp.Mount(mux, server)
+			httpServer := httptest.NewServer(mux)
+			t.Cleanup(httpServer.Close)
+			client := connect.NewClient(connecthttp.NewTransport(httpServer.Client(), httpServer.URL))
+			ctx, cancel := context.WithCancel(context.Background())
+			go func() { <-entered; cancel() }()
+			_ = client.CallUnary(ctx, spec, &emptypb.Empty{}, &emptypb.Empty{})
+			<-logged
+
+			entry := lastLogEntry(t, logs)
+			if entry["level"] != "WARN" || entry["code"] != connect.CodeCanceled.String() {
+				t.Fatalf("level = %v code = %v, want WARN canceled", entry["level"], entry["code"])
+			}
+		})
+	}
+}

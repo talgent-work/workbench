@@ -38,6 +38,13 @@ func (i *interceptor) log(ctx context.Context, spec connect.Spec, start time.Tim
 	}
 	if err != nil {
 		code := codeOf(err)
+		// A call whose caller went away failed for the caller's reason, whatever
+		// code the handler answered the cancellation with (a lookup or query
+		// it cut short may surface as Internal or Unavailable): a browser
+		// closing its poll is no server fault.
+		if errors.Is(ctx.Err(), context.Canceled) {
+			code = connect.CodeCanceled
+		}
 		attrs[1] = slog.String("outcome", "failed")
 		attrs = append(attrs, slog.String("code", code.String()))
 		if callerOutcome(code) {
