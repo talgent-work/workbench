@@ -16,7 +16,7 @@ func TestServiceRequirementsConsumeOnlyMarketplaceRelationships(t *testing.T) {
 		{Name: "same-command-unregistered", Definition: []byte(`{"command":"github-mcp-server","args":["stdio"]}`)},
 		{Name: "ambiguous", Relationship: domain.ConnectorProviderRelationship{Status: "unavailable", Reason: "relationship_ambiguous"}},
 	}
-	capabilities := domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "tools", MCPServers: components}}}}
+	capabilities := domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "tools", MCPServers: components}}}}
 	requirements := requiredServices(capabilities, authorization)
 	require.Equal(t, []ServiceRequirement{{Provider: "github", Service: "github", Target: "github-api"}, {Provider: "github", Service: "github", Target: "github-remote-mcp"}}, requirements.Targets)
 	statuses := requirements.statuses(ServiceAccessResult{Unavailable: []UnavailableService{{Service: "github", Target: "github-api", Reason: "revoked"}, {Service: "github", Target: "github-remote-mcp", Reason: "revoked"}}})

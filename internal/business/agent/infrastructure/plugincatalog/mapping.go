@@ -36,7 +36,8 @@ func personalPlugin(record *marketplacepublicv1.InstalledPlugin) (domain.Persona
 	return domain.PersonalPlugin{Slug: record.GetSlug(), Enabled: record.GetEnabled(), Configuration: configuration}, nil
 }
 
-func pluginRelease(record *marketplacepublicv1.PluginRelease) (domain.PluginRelease, error) {
+// pluginRelease maps a resolved release, which the named catalog publishes.
+func pluginRelease(record *marketplacepublicv1.PluginRelease, catalogName string) (domain.PluginRelease, error) {
 	if record == nil {
 		return domain.PluginRelease{}, errors.New("agent: Marketplace omitted a release")
 	}
@@ -47,7 +48,7 @@ func pluginRelease(record *marketplacepublicv1.PluginRelease) (domain.PluginRele
 	if json.Unmarshal(record.GetNativeEntry(), &native) != nil || native.Name != record.GetSlug() || (native.Version != "" && native.Version != record.GetVersion()) {
 		return domain.PluginRelease{}, errors.New("agent: Marketplace returned an inconsistent native entry")
 	}
-	release := domain.PluginRelease{Slug: record.GetSlug(), Source: record.GetSource(), Version: record.GetVersion(), RetrievalRef: record.GetRetrievalRef(), NativeEntry: slices.Clone(record.GetNativeEntry()), Parameters: pluginconfig.ParameterDeclarations{}}
+	release := domain.PluginRelease{CatalogName: catalogName, Slug: record.GetSlug(), Source: record.GetSource(), Version: record.GetVersion(), RetrievalRef: record.GetRetrievalRef(), NativeEntry: slices.Clone(record.GetNativeEntry()), Parameters: pluginconfig.ParameterDeclarations{}}
 	for _, component := range record.GetSkills() {
 		release.Skills = append(release.Skills, domain.SkillComponent{Name: component.GetName(), Description: component.GetDescription(), ArgumentHint: component.GetArgumentHint()})
 	}

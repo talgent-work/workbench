@@ -43,6 +43,7 @@ type selectedPluginRecord struct {
 }
 
 type releaseRecord struct {
+	CatalogName  string                             `json:"catalog_name"`
 	Slug         string                             `json:"slug"`
 	Source       string                             `json:"source"`
 	Version      string                             `json:"version"`
@@ -99,7 +100,7 @@ func encodeCapabilitySnapshot(value domain.CapabilitySnapshot) (string, error) {
 	}
 	for _, plugin := range value.Plugins {
 		r := plugin.Release
-		release := releaseRecord{Slug: r.Slug, Source: r.Source, Version: r.Version, RetrievalRef: r.RetrievalRef, NativeEntry: r.NativeEntry, Parameters: r.Parameters}
+		release := releaseRecord{CatalogName: r.CatalogName, Slug: r.Slug, Source: r.Source, Version: r.Version, RetrievalRef: r.RetrievalRef, NativeEntry: r.NativeEntry, Parameters: r.Parameters}
 		if r.Skills != nil {
 			release.Skills = make([]skillRecord, 0, len(r.Skills))
 		}
@@ -141,7 +142,7 @@ func decodeCapabilitySnapshot(body string) (domain.CapabilitySnapshot, error) {
 	}
 	for _, plugin := range record.Plugins {
 		r := plugin.Release
-		release := domain.PluginRelease{Slug: r.Slug, Source: r.Source, Version: r.Version, RetrievalRef: r.RetrievalRef, NativeEntry: r.NativeEntry, Parameters: r.Parameters}
+		release := domain.PluginRelease{CatalogName: r.CatalogName, Slug: r.Slug, Source: r.Source, Version: r.Version, RetrievalRef: r.RetrievalRef, NativeEntry: r.NativeEntry, Parameters: r.Parameters}
 		if r.Skills != nil {
 			release.Skills = make([]domain.SkillComponent, 0, len(r.Skills))
 		}

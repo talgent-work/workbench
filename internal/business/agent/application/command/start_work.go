@@ -98,8 +98,8 @@ func (h workStartup) admit(ctx context.Context, request StartWork, operation sta
 	// Definition and capacity admission are consulted only for an available
 	// model; admission refuses a withdrawn Model Configuration first.
 	_, provided := h.models.Option(session.WorkModel)
-	// Each start takes up the current releases of the selected Plugins and the
-	// definition's current Soul (Agent model: Capability stability).
+	// Each start takes the current release declarations of the selected
+	// Plugins and the definition's current Soul (Agent model: Start upgrade).
 	current, err := h.plugins.CurrentReleases(ctx, request.SubjectID, session.CapabilitySnapshot)
 	if err != nil {
 		return false, err
@@ -133,6 +133,9 @@ func (h workStartup) admit(ctx context.Context, request StartWork, operation sta
 	// concurrent change the next attempt recognizes a repeat that won.
 	if err := h.sessions.Save(ctx, session); err != nil {
 		return false, err
+	}
+	if session.CapabilitySnapshot.StartupAgentDropped() {
+		h.plugins.StartedWithoutStartupAgent(ctx, session)
 	}
 	return true, nil
 }

@@ -119,6 +119,7 @@ func (c mcpCatalog) List(context.Context, string, int, string) (ReleasePage, err
 	return ReleasePage{Releases: c}, nil
 }
 func (mcpCatalog) Marketplace(context.Context) ([]byte, error) { return nil, nil }
+func (mcpCatalog) Name() string                                { return "talgent" }
 func (mcpCatalog) OpenArchive(context.Context, string) (io.ReadSeekCloser, error) {
 	return nil, ErrArchiveNotFound
 }

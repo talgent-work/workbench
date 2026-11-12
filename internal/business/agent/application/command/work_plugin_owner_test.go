@@ -59,7 +59,7 @@ func (personalCatalog) ListPersonalPlugins(_ context.Context, user string) ([]do
 }
 
 func (personalCatalog) ResolvePlugin(_ context.Context, _, slug string) (domain.PluginRelease, error) {
-	return domain.PluginRelease{Slug: slug, Source: "fixture", Version: "1", RetrievalRef: "fixture@1", NativeEntry: []byte(`{"name":"fixture"}`),
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "fixture", Version: "1", RetrievalRef: "fixture@1", NativeEntry: []byte(`{"name":"fixture"}`),
 		Parameters: pluginconfig.ParameterDeclarations{"language": {Type: "string", Title: "Language", Description: "Output language", Default: "default"}}}, nil
 }
 

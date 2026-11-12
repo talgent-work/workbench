@@ -32,7 +32,7 @@ func TestConfiguredRolesResolveDeploymentCapabilities(t *testing.T) {
 			input := request()
 			definition := definitions.value.ProvideCapabilities()
 			require.Equal(t, []string{tc.plugin}, definition.RequiredPlugins)
-			input.Capabilities, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.RequiredPlugins, DefaultStartupAgent: definition.StartupAgent}, []domain.PluginRelease{{Slug: tc.plugin, Source: "owned", Version: "1.0.0", RetrievalRef: "archive:runtime", NativeEntry: []byte(`{"name":"` + tc.plugin + `","version":"1.0.0","source":{"source":"url","url":"https://example.invalid/runtime.zip","sha256":"abc"}}`), Agents: []domain.AgentComponent{{Name: tc.agent}}}})
+			input.Capabilities, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.RequiredPlugins, DefaultStartupAgent: definition.StartupAgent}, []domain.PluginRelease{{CatalogName: "talgent", Slug: tc.plugin, Source: "owned", Version: "1.0.0", RetrievalRef: "archive:runtime", NativeEntry: []byte(`{"name":"` + tc.plugin + `","version":"1.0.0","source":{"source":"url","url":"https://example.invalid/runtime.zip","sha256":"abc"}}`), Agents: []domain.AgentComponent{{Name: tc.agent}}}})
 			require.NoError(t, err)
 			launch, err := config.prepare(sandboxLayout, input, owner(input), "")
 			require.NoError(t, err, "launch must consume the selected immutable runtime release")

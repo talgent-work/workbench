@@ -333,7 +333,7 @@ func (*repositoryCatalog) ResolvePlugin(_ context.Context, _ string, slug string
 	for i := range 8 {
 		agents = append(agents, domain.AgentComponent{Name: fmt.Sprintf("%s:role-%d", slug, i)})
 	}
-	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:" + slug + "-1", NativeEntry: []byte(fmt.Sprintf(`{"name":%q,"version":"1"}`, slug)), Agents: agents, Parameters: pluginconfig.ParameterDeclarations{"mode": {Type: "string", Title: "Mode", Description: "Review mode", Default: "strict"}}}, nil
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:" + slug + "-1", NativeEntry: []byte(fmt.Sprintf(`{"name":%q,"version":"1"}`, slug)), Agents: agents, Parameters: pluginconfig.ParameterDeclarations{"mode": {Type: "string", Title: "Mode", Description: "Review mode", Default: "strict"}}}, nil
 }
 
 func (*repositoryCatalog) ReadConnectorSelection(context.Context, string) (command.ConnectorSelection, error) {

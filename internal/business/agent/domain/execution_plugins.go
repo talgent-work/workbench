@@ -5,14 +5,9 @@ import (
 	"strings"
 )
 
-// Loading failure reasons of a selected Plugin.
-const (
-	// PluginNotLoaded: the Harness loaded no release of the Plugin.
-	PluginNotLoaded = "not_loaded"
-	// PluginVersionMismatch: the Harness reported another version than the
-	// run selected. A Plugin reported without a version is not a mismatch.
-	PluginVersionMismatch = "version_mismatch"
-)
+// PluginNotLoaded is the loading failure reason of a selected Plugin the
+// Harness loaded no release of.
+const PluginNotLoaded = "not_loaded"
 
 // PluginOutcome is how one stage of a Plugin's preparation, its installation
 // or its loading, ended in a run, as last reported.
@@ -30,6 +25,10 @@ type PluginResult struct {
 	Slug         string
 	Installation PluginOutcome
 	Loading      PluginOutcome
+	// LoadedVersion is the version the Harness reported loading, which may be
+	// newer than the release the run took (Latest loaded release); empty
+	// unless it loaded the Plugin and reported a version.
+	LoadedVersion string
 }
 
 // PluginInstallation is the in-environment preparation's report of one
@@ -135,17 +134,13 @@ func (e *AgentExecution) recordLoading(loaded []LoadedPlugin) bool {
 	changed := false
 	for _, selected := range e.Launch.Capabilities.Plugins {
 		outcome := PluginOutcome{Reported: true, Reason: PluginNotLoaded}
-		if version, found := versions[selected.Release.Slug]; found {
-			// The Harness reports a version only from the Plugin's own
-			// manifest; a Plugin whose manifest names none (versioned in the
-			// catalog by its pin) is reported without one, which shows no
-			// other release.
-			outcome.Succeeded, outcome.Reason = version == "" || version == selected.Release.Version, ""
-			if !outcome.Succeeded {
-				outcome.Reason = PluginVersionMismatch
-			}
+		version, found := versions[selected.Release.Slug]
+		if found {
+			outcome = PluginOutcome{Reported: true, Succeeded: true}
 		}
-		changed = e.recordPlugin(selected.Release.Slug, func(result *PluginResult) { result.Loading = outcome }) || changed
+		changed = e.recordPlugin(selected.Release.Slug, func(result *PluginResult) {
+			result.Loading, result.LoadedVersion = outcome, version
+		}) || changed
 	}
 	return changed
 }

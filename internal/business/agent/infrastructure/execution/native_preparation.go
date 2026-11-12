@@ -30,22 +30,23 @@ type repositoryCheckout struct {
 // preparationCommand prepares the Work's environment before its Harness
 // starts: Plugin installation, then checkout of the planned
 // repositories. The plan is supplied when the process is created, through
-// withCheckoutPlan; without one the start checks nothing out. Only retained
-// entries reach the native installer. The Work namespace also isolates
-// different retained versions in Claude's HOME-wide package cache.
+// withCheckoutPlan; without one the start checks nothing out. The Work's
+// resolved releases reach the native installer as a local marketplace named
+// after their catalog, so every Work of a Harness state shares one
+// installation of each release.
 // The layout decides how the script runs (see machineLayout).
-func (c NativeLaunchConfig) preparationCommand(layout launchLayout, harness domain.AgentHarness, request domain.LaunchSpecification, owner SandboxOwner) (string, string, error) {
-	name := "talgent-work-" + storageKey(request.WorkID)
+func (c NativeLaunchConfig) preparationCommand(layout launchLayout, harness domain.AgentHarness, request domain.LaunchSpecification, owner SandboxOwner) (string, error) {
 	entries := make([]json.RawMessage, 0, len(request.Capabilities.Plugins))
 	for _, plugin := range request.Capabilities.Plugins {
-		if err := nativeEntryMatches(plugin.Release); err != nil {
-			return "", "", err
+		entry, err := versionedEntry(plugin.Release)
+		if err != nil {
+			return "", err
 		}
-		entries = append(entries, plugin.Release.NativeEntry)
+		entries = append(entries, entry)
 	}
-	catalog, err := json.Marshal(map[string]any{"name": name, "owner": map[string]string{"name": "Talgent"}, "plugins": entries})
+	catalog, err := json.Marshal(map[string]any{"name": request.Capabilities.PluginCatalog(), "owner": map[string]string{"name": "Talgent"}, "plugins": entries})
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	// Preparation degrades at the Work's supplied bound. The bound is an
 	// absolute moment evaluated when the process runs, so waiting for the
@@ -60,7 +61,7 @@ func (c NativeLaunchConfig) preparationCommand(layout launchLayout, harness doma
 	receipt := storageKey(owner.WorkID + ":" + owner.ID)[:32]
 	budget := "remaining=$((" + strconv.FormatInt(request.PreparationBound.Unix(), 10) + " - $(date +%s))); [ \"$remaining\" -ge " + preparationMinimumSeconds + " ] || remaining=" + preparationMinimumSeconds + "; "
 	arguments := " " + shellWord(nativePreparation) + " " + shellWord(c.Binary) + " " + shellWord(string(catalog)) + " " + shellWord(receipt) + " \"${talgent_checkout_plan-}\" \"$remaining\""
-	return layout.preparation(harness, budget, arguments), name, nil
+	return layout.preparation(harness, budget, arguments), nil
 }
 
 // withCheckoutPlan gives a preparation command the plan of the start it
@@ -69,7 +70,7 @@ func withCheckoutPlan(command string, plan []byte) string {
 	return "talgent_checkout_plan=" + shellWord(string(plan)) + "; " + command
 }
 
-// nativeEntryMatches checks that a retained release's native entry installs
+// nativeEntryMatches checks that a resolved release's native entry installs
 // that release: its name is the release's slug and its version, when it names
 // one, the release's. A mismatch is the start's definite failure, naming the
 // release and what its entry says; nothing else of the entry is shown.
@@ -87,6 +88,25 @@ func nativeEntryMatches(release domain.PluginRelease) error {
 		return invalid("is version " + entry.Version)
 	}
 	return nil
+}
+
+// versionedEntry is a resolved release's native entry naming the release's
+// version: preparation compares it with the version an install record names,
+// so an entry that names none would install the release again on every
+// Work.
+func versionedEntry(release domain.PluginRelease) (json.RawMessage, error) {
+	if err := nativeEntryMatches(release); err != nil {
+		return nil, err
+	}
+	var entry map[string]json.RawMessage
+	if err := json.Unmarshal(release.NativeEntry, &entry); err != nil {
+		return nil, err
+	}
+	if _, named := entry["version"]; named {
+		return release.NativeEntry, nil
+	}
+	entry["version"], _ = json.Marshal(release.Version)
+	return json.Marshal(entry)
 }
 
 // escaped is text from a catalog as a reason shows it: its control

@@ -38,6 +38,9 @@ func (c CapabilitySnapshot) Clone() CapabilitySnapshot {
 	return c
 }
 
+// Validate checks a retained snapshot. Its startup Agent stays the Work's
+// selection even when no selected release declares it any more (Dropped
+// startup Agent); creation alone requires a declared one.
 func (c CapabilitySnapshot) Validate() error {
 	connectors := map[string]bool{}
 	for _, connector := range c.Connectors {
@@ -50,7 +53,6 @@ func (c CapabilitySnapshot) Validate() error {
 		connectors[connector.Name] = true
 	}
 	seen := map[string]bool{}
-	roleFound := c.StartupAgent == ""
 	for _, plugin := range c.Plugins {
 		if err := plugin.Release.Validate(); err != nil {
 			return err
@@ -59,6 +61,10 @@ func (c CapabilitySnapshot) Validate() error {
 			return fmt.Errorf("%w: duplicate plugin slug", ErrInvalidCapabilities)
 		}
 		seen[plugin.Release.Slug] = true
+		// One local marketplace serves a Work's Plugins under its catalog's name.
+		if plugin.Release.CatalogName != c.PluginCatalog() {
+			return fmt.Errorf("%w: plugins from different catalogs", ErrInvalidCapabilities)
+		}
 		effective, err := plugin.Configuration.Effective(plugin.Release.Parameters)
 		if err != nil {
 			return fmt.Errorf("plugin %s: %w", plugin.Release.Slug, err)
@@ -73,37 +79,52 @@ func (c CapabilitySnapshot) Validate() error {
 				return fmt.Errorf("%w: inconsistent effective parameters", ErrInvalidCapabilities)
 			}
 		}
-		if plugin.Release.declaresAgent(c.StartupAgent) {
-			roleFound = true
-		}
-	}
-	if !roleFound {
-		return fmt.Errorf("%w: startup Agent is not declared by the selected plugins", ErrInvalidCapabilities)
 	}
 	return nil
 }
 
-// TakesUp reports whether the Work can take up a Plugin's current release.
-// It cannot when the retained release declares the startup Agent and the
-// current one no longer does: the startup Agent stays as established, so
-// taking that release up would leave the Work without its role.
-func (c CapabilitySnapshot) TakesUp(current PluginRelease) bool {
-	for _, selected := range c.Plugins {
-		if selected.Release.Slug == current.Slug {
-			return !selected.Release.declaresAgent(c.StartupAgent) || current.declaresAgent(c.StartupAgent)
-		}
+// PluginCatalog names the catalog whose marketplace serves the Work's
+// selected Plugins; empty when it selects none.
+func (c CapabilitySnapshot) PluginCatalog() string {
+	if len(c.Plugins) == 0 {
+		return ""
 	}
-	return true
+	return c.Plugins[0].Release.CatalogName
 }
 
-// UpgradePlugins takes up the current release of every selected Plugin; the
-// selection, Prompt, startup Agent and Connectors stay as established. A
-// Plugin without a current release, or whose current release no longer
-// declares the startup Agent, keeps its retained one, as Plugin preparation
-// degrades rather than blocks a start. A retained value that
-// differs from the old release's default was chosen by the starting user and
-// carries over while the new release still accepts it; any other parameter
-// takes the new release's default.
+// LaunchedStartupAgent is the startup Agent a start launches with: the
+// Work's selection while a selected release declares it, and none once the
+// releases the Work took dropped it (Dropped startup Agent).
+func (c CapabilitySnapshot) LaunchedStartupAgent() string {
+	if c.StartupAgent == "" || c.declaresStartupAgent() {
+		return c.StartupAgent
+	}
+	return ""
+}
+
+// declaresStartupAgent reports whether a selected release declares the
+// Work's startup Agent.
+func (c CapabilitySnapshot) declaresStartupAgent() bool {
+	return slices.ContainsFunc(c.Plugins, func(plugin SelectedPlugin) bool { return plugin.Release.declaresAgent(c.StartupAgent) })
+}
+
+// StartupAgentDropped reports whether the Work selected a startup Agent that
+// no release it took declares any more.
+func (c CapabilitySnapshot) StartupAgentDropped() bool {
+	return c.StartupAgent != "" && c.LaunchedStartupAgent() == ""
+}
+
+// UpgradePlugins takes the current release declarations of every selected
+// Plugin (Start upgrade); the selection, Prompt, startup Agent and Connectors
+// stay as established. A Plugin without a current release keeps the
+// declarations the Work last took (Unresolvable release), under the catalog
+// the current releases name, so one marketplace still serves every Plugin of
+// the start. A release that no
+// longer declares the startup Agent is still taken: the start runs without
+// one (Dropped startup Agent). A retained value that differs from the old
+// release's default was chosen by the starting user and carries over while
+// the new release still accepts it; any other parameter takes the new
+// release's default (Parameter carry-over).
 func (c CapabilitySnapshot) UpgradePlugins(current []PluginRelease) (CapabilitySnapshot, error) {
 	bySlug := make(map[string]PluginRelease, len(current))
 	for _, release := range current {
@@ -112,7 +133,10 @@ func (c CapabilitySnapshot) UpgradePlugins(current []PluginRelease) (CapabilityS
 	upgraded := c.Clone()
 	for i, selected := range upgraded.Plugins {
 		release, found := bySlug[selected.Release.Slug]
-		if !found || !c.TakesUp(release) {
+		if !found {
+			if len(current) > 0 {
+				upgraded.Plugins[i].Release.CatalogName = current[0].CatalogName
+			}
 			continue
 		}
 		chosen := pluginconfig.Configuration{}

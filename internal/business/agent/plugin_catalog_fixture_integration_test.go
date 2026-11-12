@@ -39,7 +39,7 @@ func (modulePluginCatalog) ResolvePlugin(_ context.Context, subject, slug string
 	if !ok {
 		return domain.PluginRelease{}, errors.New("fixture: unknown release")
 	}
-	release := domain.PluginRelease{Slug: slug, Source: "fixture", Version: "1", RetrievalRef: "fixture:" + slug, NativeEntry: []byte(fmt.Sprintf(`{"name":%q,"version":"1"}`, slug))}
+	release := domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "fixture", Version: "1", RetrievalRef: "fixture:" + slug, NativeEntry: []byte(fmt.Sprintf(`{"name":%q,"version":"1"}`, slug))}
 	for _, name := range names {
 		release.Agents = append(release.Agents, domain.AgentComponent{Name: name})
 	}

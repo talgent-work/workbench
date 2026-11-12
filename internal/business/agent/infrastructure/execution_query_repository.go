@@ -103,10 +103,11 @@ func (r *ExecutionQueryRepository) ListCurrentPluginResults(ctx context.Context,
 		LoadingReported      bool   `xorm:"loading_reported"`
 		Loaded               bool   `xorm:"loaded"`
 		LoadingReason        string `xorm:"loading_reason"`
+		LoadedVersion        string `xorm:"loaded_version"`
 		UpdatedAt            int64  `xorm:"updated_at"`
 	}
 	err := r.db.Context(ctx).SQL(`SELECT p.slug, p.installation_reported, p.installed, p.installation_reason,
- p.loading_reported, p.loaded, p.loading_reason, p.updated_at
+ p.loading_reported, p.loaded, p.loading_reason, p.loaded_version, p.updated_at
  FROM execution_plugin_result p
  WHERE p.deleted_at = 0 AND p.execution_id = (
  SELECT e.id FROM agent_execution e WHERE e.session_id = ? ORDER BY e.created_at DESC, e.id DESC LIMIT 1)
@@ -117,7 +118,7 @@ func (r *ExecutionQueryRepository) ListCurrentPluginResults(ctx context.Context,
 	results := make([]query.PluginResult, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, query.PluginResult{Slug: row.Slug, InstallationReported: row.InstallationReported, Installed: row.Installed, InstallationReason: row.InstallationReason,
-			LoadingReported: row.LoadingReported, Loaded: row.Loaded, LoadingReason: row.LoadingReason, UpdatedAt: time.UnixMilli(row.UpdatedAt).UTC()})
+			LoadingReported: row.LoadingReported, Loaded: row.Loaded, LoadingReason: row.LoadingReason, LoadedVersion: row.LoadedVersion, UpdatedAt: time.UnixMilli(row.UpdatedAt).UTC()})
 	}
 	return results, nil
 }

@@ -72,31 +72,41 @@ func (c resolvingCatalog) ResolvePlugin(_ context.Context, _, slug string) (doma
 	return release, nil
 }
 
-// A current release that no longer declares the Work's startup Agent is left
-// out, with a warning for operators, so the Work keeps its retained release.
-func TestCatalogPluginUpgradesDegradeAReleaseThatDroppedTheStartupAgent(t *testing.T) {
+// A current release that no longer declares the Work's startup Agent is
+// still current (Start upgrade); a start that then runs without its startup
+// Agent warns operators (Dropped startup Agent warning).
+func TestCatalogPluginUpgradesTakeAReleaseThatDroppedTheStartupAgent(t *testing.T) {
 	var logs bytes.Buffer
 	upgrades := command.NewCatalogPluginUpgrades(resolvingCatalog{releases: map[string]domain.PluginRelease{
 		"runtime": {Slug: "runtime", Version: "2", Agents: []domain.AgentComponent{{Name: "runtime:executor"}}},
 		"review":  {Slug: "review", Version: "2"},
 	}}, slog.New(slog.NewTextHandler(&logs, nil)))
 	capabilities := domain.CapabilitySnapshot{StartupAgent: "runtime:coordinator", Plugins: []domain.SelectedPlugin{
-		{Release: domain.PluginRelease{Slug: "runtime", Version: "1", Agents: []domain.AgentComponent{{Name: "runtime:coordinator"}}}},
-		{Release: domain.PluginRelease{Slug: "review", Version: "1"}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "runtime", Version: "1", Agents: []domain.AgentComponent{{Name: "runtime:coordinator"}}}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "review", Version: "1"}},
 	}}
 	current, err := upgrades.CurrentReleases(t.Context(), "alice", capabilities)
 	require.NoError(t, err)
-	require.Equal(t, []domain.PluginRelease{{Slug: "review", Version: "2"}}, current)
+	require.Equal(t, []domain.PluginRelease{
+		{Slug: "runtime", Version: "2", Agents: []domain.AgentComponent{{Name: "runtime:executor"}}},
+		{Slug: "review", Version: "2"},
+	}, current)
+	require.Empty(t, logs.String(), "taking a release is no degradation")
+
+	work := &domain.AgentWork{ID: "work-1", CapabilitySnapshot: domain.CapabilitySnapshot{StartupAgent: "runtime:coordinator", Plugins: []domain.SelectedPlugin{{Release: current[0]}}}}
+	upgrades.StartedWithoutStartupAgent(t.Context(), work)
+	require.Contains(t, logs.String(), "level=WARN")
 	require.Contains(t, logs.String(), "runtime:coordinator")
-	require.Contains(t, logs.String(), "current_version=2")
+	require.Contains(t, logs.String(), "work-1")
+	require.Contains(t, logs.String(), "runtime@2")
 }
 
 // Current releases come from the catalog; a Plugin it cannot resolve is left
-// out, with a warning, so the Work keeps its retained release.
+// out, with a warning, so the start uses the declarations the Work last took.
 func TestCatalogPluginUpgradesDegradeAnUnresolvedPlugin(t *testing.T) {
 	var logs bytes.Buffer
 	upgrades := command.NewCatalogPluginUpgrades(resolvingCatalog{releases: map[string]domain.PluginRelease{"review": {Slug: "review", Version: "2"}}}, slog.New(slog.NewTextHandler(&logs, nil)))
-	selected := domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "review", Version: "1"}}, {Release: domain.PluginRelease{Slug: "gone", Version: "1"}}}}
+	selected := domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "review", Version: "1"}}, {Release: domain.PluginRelease{CatalogName: "talgent", Slug: "gone", Version: "1"}}}}
 	current, err := upgrades.CurrentReleases(t.Context(), "alice", selected)
 	require.NoError(t, err)
 	require.Equal(t, []domain.PluginRelease{{Slug: "review", Version: "2"}}, current)

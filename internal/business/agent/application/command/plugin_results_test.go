@@ -19,9 +19,9 @@ func pluginWorld(t *testing.T) *world {
 	t.Helper()
 	work := startingSession(t)
 	work.CapabilitySnapshot.Plugins = []domain.SelectedPlugin{
-		{Release: domain.PluginRelease{Slug: "runtime", Version: "1.0.0", Source: "official"}},
-		{Release: domain.PluginRelease{Slug: "tools", Version: "2.0.0", Source: "community"}},
-		{Release: domain.PluginRelease{Slug: "missing", Version: "3.0.0", Source: "community"}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "runtime", Version: "1.0.0", Source: "official"}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "tools", Version: "2.0.0", Source: "community"}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "missing", Version: "3.0.0", Source: "community"}},
 	}
 	w := newWorld(t, work)
 	w.begin(t)
@@ -57,8 +57,9 @@ func TestPreparationRecordsPluginInstallationOnTheExecution(t *testing.T) {
 	require.Equal(t, 1, w.environment.Launched)
 }
 
-// The launched process's complete inventory is matched against the run's
-// fixed releases on its execution; the Work is not changed.
+// The launched process's complete inventory records each selected Plugin's
+// loading, at the version it reports, on its execution; the Work is not
+// changed.
 func TestPluginLoadFeedbackRecordsLoadingOnTheCurrentExecution(t *testing.T) {
 	ctx := context.Background()
 	w := pluginWorld(t)
@@ -67,8 +68,8 @@ func TestPluginLoadFeedbackRecordsLoadingOnTheCurrentExecution(t *testing.T) {
 	require.NoError(t, w.feedback().Handle(ctx, pluginLoads(w, "process",
 		domain.LoadedPlugin{Slug: "runtime", Version: "1.0.0"}, domain.LoadedPlugin{Slug: "tools", Version: "1.0.0"}, domain.LoadedPlugin{Slug: "unselected", Version: "9.0.0"})))
 	require.Equal(t, []domain.PluginResult{
-		{Slug: "runtime", Loading: domain.PluginOutcome{Reported: true, Succeeded: true}},
-		{Slug: "tools", Loading: domain.PluginOutcome{Reported: true, Reason: domain.PluginVersionMismatch}},
+		{Slug: "runtime", Loading: domain.PluginOutcome{Reported: true, Succeeded: true}, LoadedVersion: "1.0.0"},
+		{Slug: "tools", Loading: domain.PluginOutcome{Reported: true, Succeeded: true}, LoadedVersion: "1.0.0"},
 		{Slug: "missing", Loading: domain.PluginOutcome{Reported: true, Reason: domain.PluginNotLoaded}},
 	}, w.execution(t).PluginResults, "installation and loading remain independent; undeclared Plugins are omitted")
 	require.Equal(t, saves, w.works.saves, "loading feedback is no Work lifecycle transition")

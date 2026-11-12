@@ -117,7 +117,7 @@ func runPreparation(t *testing.T, workspace, allocation string, plan []repositor
 	input := request()
 	encodedPlan, err := json.Marshal(plan)
 	require.NoError(t, err)
-	catalog := `{"name":"talgent-work-fixture","owner":{"name":"Talgent"},"plugins":[]}`
+	catalog := `{"name":"talgent","owner":{"name":"Talgent"},"plugins":[]}`
 	receipt := storageKey(input.WorkID + ":" + allocation)[:32]
 	process := exec.Command("node", "-e", nativePreparation, "claude", catalog, receipt, string(encodedPlan), budget)
 	process.Dir, process.Env = workspace, append(os.Environ(), "HOME="+t.TempDir(), "GIT_CONFIG_GLOBAL=/dev/null")

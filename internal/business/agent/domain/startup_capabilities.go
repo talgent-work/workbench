@@ -124,5 +124,8 @@ func NewCapabilitySnapshot(input StartupCapabilityInput, releases []PluginReleas
 	if err := snapshot.Validate(); err != nil {
 		return CapabilitySnapshot{}, err
 	}
+	if snapshot.StartupAgentDropped() {
+		return CapabilitySnapshot{}, fmt.Errorf("%w: startup Agent is not declared by the selected plugins", ErrInvalidCapabilities)
+	}
 	return snapshot, nil
 }

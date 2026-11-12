@@ -7,7 +7,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// UnchangedPlugins reports every selected Plugin's retained release as current,
+// UnchangedPlugins reports the release each selected Plugin last took as current,
 // for tests whose start is not about upgrading Plugins.
 type UnchangedPlugins struct{}
 
@@ -20,3 +20,5 @@ func (UnchangedPlugins) CurrentReleases(_ context.Context, _ string, capabilitie
 	}
 	return releases, nil
 }
+
+func (UnchangedPlugins) StartedWithoutStartupAgent(context.Context, *domain.AgentWork) {}

@@ -146,7 +146,7 @@ func (c *creationCatalog) ListPersonalPlugins(context.Context, string) ([]domain
 	return nil, nil
 }
 func (c *creationCatalog) ResolvePlugin(_ context.Context, _ string, slug string) (domain.PluginRelease, error) {
-	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"runtime","version":"1"}`)}, nil
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"runtime","version":"1"}`)}, nil
 }
 
 // creationExecution observes, in place of beginning the execution, each

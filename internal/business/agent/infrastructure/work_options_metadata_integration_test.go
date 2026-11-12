@@ -121,7 +121,7 @@ func (c *optionsCatalog) ResolvePlugin(_ context.Context, _ string, slug string)
 		return domain.PluginRelease{}, errors.New("catalog unavailable")
 	}
 	return domain.PluginRelease{
-		Slug: slug, Source: "owned", Version: c.version, RetrievalRef: "archive:" + slug + ":" + c.version,
+		CatalogName: "talgent", Slug: slug, Source: "owned", Version: c.version, RetrievalRef: "archive:" + slug + ":" + c.version,
 		NativeEntry: []byte(`{"name":"` + slug + `","version":"` + c.version + `"}`),
 		Agents:      []domain.AgentComponent{{Name: slug + ":worker", Description: "Worker"}},
 		Skills:      []domain.SkillComponent{{Name: slug + ":check", Description: "Check release " + c.version, ArgumentHint: "[path] [--strict]"}},

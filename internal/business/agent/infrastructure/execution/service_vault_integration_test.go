@@ -32,7 +32,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 	ctx := t.Context()
 	f := newNativeWorkLifecycle(t, ctx)
 	snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"github"}}, []domain.PluginRelease{{
-		Slug: "github", Source: "fixture", Version: "1", RetrievalRef: "archive:github", NativeEntry: []byte(`{"name":"github","version":"1"}`),
+		CatalogName: "talgent", Slug: "github", Source: "fixture", Version: "1", RetrievalRef: "archive:github", NativeEntry: []byte(`{"name":"github","version":"1"}`),
 		MCPServers: []domain.MCPComponent{{Name: "remote", Relationship: domain.ConnectorProviderRelationship{ConnectorID: "registered-remote", Provider: "github", Target: "github-remote-mcp", Authentication: "credential_proxy", Status: "supported"}, Definition: []byte(`{"type":"http","url":"https://api.githubcopilot.com/mcp/"}`)}},
 	}})
 	require.NoError(t, err)
@@ -180,7 +180,7 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	ctx := t.Context()
 	f := newNativeWorkLifecycle(t, ctx)
 	snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"github"}}, []domain.PluginRelease{{
-		Slug: "github", Source: "fixture", Version: "1", RetrievalRef: "archive:github", NativeEntry: []byte(`{"name":"github","version":"1"}`),
+		CatalogName: "talgent", Slug: "github", Source: "fixture", Version: "1", RetrievalRef: "archive:github", NativeEntry: []byte(`{"name":"github","version":"1"}`),
 		MCPServers: []domain.MCPComponent{{Name: "remote", Relationship: domain.ConnectorProviderRelationship{ConnectorID: "registered-remote", Provider: "github", Target: "github-remote-mcp", Authentication: "credential_proxy", Status: "supported"}, Definition: []byte(`{"type":"http","url":"https://api.githubcopilot.com/mcp/"}`)}},
 	}})
 	require.NoError(t, err)

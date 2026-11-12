@@ -198,6 +198,10 @@ func (s *CatalogStore) List(ctx context.Context, after string, limit int, compon
 	}
 	return page, nil
 }
+
+// Name is the catalog's configured name.
+func (s *CatalogStore) Name() string { return s.name }
+
 func (s *CatalogStore) Marketplace(ctx context.Context) ([]byte, error) {
 	var head struct {
 		Generation string `xorm:"generation"`

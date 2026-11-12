@@ -16,7 +16,6 @@ const reasons: Record<string, string> = {
   marketplace_unavailable: "The catalog was unavailable, so it wasn’t installed.",
   preparation_failed: "Couldn’t be set up.",
   not_loaded: "Installed but not loaded by the agent.",
-  version_mismatch: "A different version was loaded than the one selected.",
 };
 function pluginFailure(result: WorkPluginResult) {
   if (result.installation === PluginPreparationStatus.FAILED) return reasons[result.installationReason] ?? "Couldn’t be loaded.";

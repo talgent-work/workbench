@@ -8,7 +8,7 @@ import (
 )
 
 func twoPluginSnapshot() domain.CapabilitySnapshot {
-	return domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "mattpocock-skills"}}, {Release: domain.PluginRelease{Slug: "talgent"}}}}
+	return domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "mattpocock-skills"}}, {Release: domain.PluginRelease{CatalogName: "talgent", Slug: "talgent"}}}}
 }
 
 // execd re-runs a finished preparation when it is attached again, so the

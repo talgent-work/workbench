@@ -48,6 +48,7 @@ func (catalogFixture) List(context.Context, string, int, string) (application.Re
 func (catalogFixture) Marketplace(context.Context) ([]byte, error) {
 	return []byte(`{"name":"fixture","owner":{"name":"test"},"plugins":[]}`), nil
 }
+func (catalogFixture) Name() string { return "fixture" }
 func (catalogFixture) OpenArchive(context.Context, string) (io.ReadSeekCloser, error) {
 	return nil, application.ErrArchiveNotFound
 }
