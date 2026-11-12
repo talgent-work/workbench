@@ -84,7 +84,8 @@ func (s *AgentWork) begin(admission StartAdmission, mode ContextMode) error {
 	if err := s.admitNewRun(); err != nil {
 		return err
 	}
-	// Each start takes up the current Plugin releases it was supplied.
+	// Each start takes the current Plugin release declarations it was supplied
+	// (Start upgrade).
 	capabilities, err := s.CapabilitySnapshot.UpgradePlugins(admission.CurrentPlugins)
 	if err != nil {
 		return err

@@ -22,6 +22,9 @@ const (
 // preparation reads, and the workspace a Work runs in.
 type stateFixture struct {
 	workspace, home string
+	// workCache is a Managed Work's own package cache directory
+	// (CLAUDE_CODE_PLUGIN_CACHE_DIR); empty in a Cloud sandbox.
+	workCache string
 }
 
 func newStateFixture(t *testing.T) stateFixture {
@@ -33,7 +36,12 @@ func newStateFixture(t *testing.T) stateFixture {
 	return stateFixture{workspace: workspace, home: t.TempDir()}
 }
 
-func (s stateFixture) plugins() string { return filepath.Join(s.home, ".claude", "plugins") }
+func (s stateFixture) plugins() string {
+	if s.workCache != "" {
+		return s.workCache
+	}
+	return filepath.Join(s.home, ".claude", "plugins")
+}
 
 // release is the package directory of a release in the Harness state's cache.
 func (s stateFixture) release(marketplace, plugin, version string) string {
@@ -89,8 +97,14 @@ func (s stateFixture) recordedHere(t *testing.T, version string) installRecord {
 // invocation and fails the plugin subcommand named by failing.
 func (s stateFixture) prepare(t *testing.T, failing string) ([]pluginInstallationResult, []string) {
 	t.Helper()
+	report, calls := s.prepareReport(t, failing)
+	return report.Results, calls
+}
+
+func (s stateFixture) prepareReport(t *testing.T, failing string) (cleanupReport, []string) {
+	t.Helper()
 	calls := filepath.Join(t.TempDir(), "calls")
-	results := runPluginPreparationIn(t, s.workspace, s.home, fakeClaude(t, calls, failing), fixtureAllocationID)
+	results := runPluginPreparationReport(t, s.workspace, s.home, s.workCache, fakeClaude(t, calls, failing), fixtureAllocationID)
 	data, err := os.ReadFile(calls)
 	if os.IsNotExist(err) {
 		return results, nil
@@ -214,8 +228,9 @@ func TestPreparationRemovesPerWorkMarketplaces(t *testing.T) {
 	state.cache(t, "talgent-work-aaa", "talgent", "0.1.1")
 	state.cache(t, "talgent-work-ccc", "talgent", "0.1.0")
 
-	results, calls := state.prepare(t, "")
-	require.Equal(t, installedFixture, results)
+	report, calls := state.prepareReport(t, "")
+	require.Equal(t, installedFixture, report.Results)
+	require.Empty(t, report.Cleanup)
 	require.Equal(t, []string{
 		state.marketplaceAdd(),
 		"plugin marketplace remove talgent-work-aaa",
@@ -226,6 +241,38 @@ func TestPreparationRemovesPerWorkMarketplaces(t *testing.T) {
 	require.DirExists(t, state.release("talgent", "talgent", fixtureRelease))
 }
 
+// A legacy marketplace the native command could not remove keeps its cached
+// packages, so its install records name no removed directory, and the report
+// names the step that failed; the preparation still succeeds.
+func TestPreparationReportsALegacyMarketplaceItCouldNotRemove(t *testing.T) {
+	state := newStateFixture(t)
+	state.record(t, map[string][]installRecord{fixturePlugin: {state.recordedHere(t, fixtureRelease)}})
+	state.register(t, "talgent-work-aaa")
+	state.cache(t, "talgent-work-aaa", "talgent", "0.1.1")
+
+	report, _ := state.prepareReport(t, "marketplace")
+	require.Equal(t, []pluginInstallationResult{{Slug: "talgent", Reason: "marketplace_unavailable"}}, report.Results, "the fake fails every marketplace command")
+	require.Equal(t, []string{"marketplace_remove:talgent-work-aaa"}, report.Cleanup)
+	require.DirExists(t, state.release("talgent-work-aaa", "talgent", "0.1.1"))
+}
+
+// A Managed Work keeps its package cache, install records and marketplace
+// registrations in its own directory: the same rules apply there.
+func TestPreparationAppliesTheSameRulesInAManagedWorksOwnCache(t *testing.T) {
+	state := newStateFixture(t)
+	state.workCache = filepath.Join(state.workspace, ".talgent", "claude-plugins")
+	state.record(t, map[string][]installRecord{fixturePlugin: {state.recordedHere(t, fixtureRelease)}})
+	state.register(t, "talgent-work-aaa")
+	state.cache(t, "talgent", "talgent", "0.1.0")
+
+	results, calls := state.prepare(t, "")
+	require.Equal(t, installedFixture, results)
+	require.Equal(t, []string{state.marketplaceAdd(), "plugin marketplace remove talgent-work-aaa"}, calls, "a recorded release is not installed again")
+	require.NoDirExists(t, state.release("talgent", "talgent", "0.1.0"))
+	require.DirExists(t, state.release("talgent", "talgent", fixtureRelease))
+	require.NoDirExists(t, filepath.Join(state.home, ".claude", "plugins"), "nothing outside the Work root changes")
+}
+
 func runPluginPreparation(t *testing.T, workspace, binary, allocation string) []pluginInstallationResult {
 	t.Helper()
 	return runPluginPreparationIn(t, workspace, t.TempDir(), binary, allocation)
@@ -233,15 +280,26 @@ func runPluginPreparation(t *testing.T, workspace, binary, allocation string) []
 
 func runPluginPreparationIn(t *testing.T, workspace, home, binary, allocation string) []pluginInstallationResult {
 	t.Helper()
+	return runPluginPreparationReport(t, workspace, home, "", binary, allocation).Results
+}
+
+// cleanupReport is a preparation report with the cleanup steps that failed.
+type cleanupReport struct {
+	Results []pluginInstallationResult `json:"results"`
+	Cleanup []string                   `json:"cleanup"`
+}
+
+func runPluginPreparationReport(t *testing.T, workspace, home, workCache, binary, allocation string) cleanupReport {
+	t.Helper()
 	catalog := `{"name":"talgent","owner":{"name":"Talgent"},"plugins":[{"name":"talgent","version":"` + fixtureRelease + `","source":{"source":"url","url":"https://example.com/marketplace.git","sha":"0123456789abcdef0123456789abcdef01234567"}}]}`
 	receipt := storageKey(request().WorkID + ":" + allocation)[:32]
 	process := exec.Command("node", "-e", nativePreparation, binary, catalog, receipt, "", "600")
-	process.Dir, process.Env = workspace, append(os.Environ(), "HOME="+home, "CLAUDE_CONFIG_DIR=", "CLAUDE_CODE_PLUGIN_CACHE_DIR=")
+	process.Dir, process.Env = workspace, append(os.Environ(), "HOME="+home, "CLAUDE_CONFIG_DIR=", "CLAUDE_CODE_PLUGIN_CACHE_DIR="+workCache)
 	output, err := process.Output()
 	require.NoError(t, err)
-	var report preparationReport
+	var report cleanupReport
 	require.NoError(t, json.Unmarshal(output, &report), string(output))
-	return report.Results
+	return report
 }
 
 // fakeClaude records each invocation's arguments and fails the plugin

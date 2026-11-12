@@ -28,3 +28,14 @@ func TestNativePreparationNamesTheInvalidPluginRelease(t *testing.T) {
 		})
 	}
 }
+
+// A native entry that names no version reaches the installer naming the
+// release's version, which preparation compares with the install record.
+func TestNativePreparationNamesTheReleaseVersionInItsEntry(t *testing.T) {
+	input := request()
+	input.ContextMode = domain.ContextFresh
+	input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "pinned", Source: "owned", Version: "0123456789ab", RetrievalRef: "archive:pinned", NativeEntry: []byte(`{"name":"pinned"}`)}}}
+	launch, err := NativeLaunchConfig{Binary: "claude"}.prepare(sandboxLayout, input, owner(input), "")
+	require.NoError(t, err)
+	require.Contains(t, launch.PreparationCommand, `{"name":"pinned","version":"0123456789ab"}`)
+}

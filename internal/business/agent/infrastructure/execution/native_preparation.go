@@ -38,10 +38,11 @@ type repositoryCheckout struct {
 func (c NativeLaunchConfig) preparationCommand(layout launchLayout, harness domain.AgentHarness, request domain.LaunchSpecification, owner SandboxOwner) (string, error) {
 	entries := make([]json.RawMessage, 0, len(request.Capabilities.Plugins))
 	for _, plugin := range request.Capabilities.Plugins {
-		if err := nativeEntryMatches(plugin.Release); err != nil {
+		entry, err := versionedEntry(plugin.Release)
+		if err != nil {
 			return "", err
 		}
-		entries = append(entries, plugin.Release.NativeEntry)
+		entries = append(entries, entry)
 	}
 	catalog, err := json.Marshal(map[string]any{"name": request.Capabilities.PluginCatalog(), "owner": map[string]string{"name": "Talgent"}, "plugins": entries})
 	if err != nil {
@@ -87,6 +88,25 @@ func nativeEntryMatches(release domain.PluginRelease) error {
 		return invalid("is version " + entry.Version)
 	}
 	return nil
+}
+
+// versionedEntry is a resolved release's native entry naming the release's
+// version: preparation compares it with the version an install record names,
+// so an entry that names none would install the release again on every
+// Work.
+func versionedEntry(release domain.PluginRelease) (json.RawMessage, error) {
+	if err := nativeEntryMatches(release); err != nil {
+		return nil, err
+	}
+	var entry map[string]json.RawMessage
+	if err := json.Unmarshal(release.NativeEntry, &entry); err != nil {
+		return nil, err
+	}
+	if _, named := entry["version"]; named {
+		return release.NativeEntry, nil
+	}
+	entry["version"], _ = json.Marshal(release.Version)
+	return json.Marshal(entry)
 }
 
 // escaped is text from a catalog as a reason shows it: its control

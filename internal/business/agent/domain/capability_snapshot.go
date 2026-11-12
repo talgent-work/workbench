@@ -62,7 +62,7 @@ func (c CapabilitySnapshot) Validate() error {
 		}
 		seen[plugin.Release.Slug] = true
 		// One local marketplace serves a Work's Plugins under its catalog's name.
-		if plugin.Release.CatalogName != c.Plugins[0].Release.CatalogName {
+		if plugin.Release.CatalogName != c.PluginCatalog() {
 			return fmt.Errorf("%w: plugins from different catalogs", ErrInvalidCapabilities)
 		}
 		effective, err := plugin.Configuration.Effective(plugin.Release.Parameters)
@@ -96,10 +96,16 @@ func (c CapabilitySnapshot) PluginCatalog() string {
 // Work's selection while a selected release declares it, and none once the
 // releases the Work took dropped it (Dropped startup Agent).
 func (c CapabilitySnapshot) LaunchedStartupAgent() string {
-	if c.StartupAgent == "" || slices.ContainsFunc(c.Plugins, func(plugin SelectedPlugin) bool { return plugin.Release.declaresAgent(c.StartupAgent) }) {
+	if c.StartupAgent == "" || c.declaresStartupAgent() {
 		return c.StartupAgent
 	}
 	return ""
+}
+
+// declaresStartupAgent reports whether a selected release declares the
+// Work's startup Agent.
+func (c CapabilitySnapshot) declaresStartupAgent() bool {
+	return slices.ContainsFunc(c.Plugins, func(plugin SelectedPlugin) bool { return plugin.Release.declaresAgent(c.StartupAgent) })
 }
 
 // StartupAgentDropped reports whether the Work selected a startup Agent that
@@ -111,7 +117,9 @@ func (c CapabilitySnapshot) StartupAgentDropped() bool {
 // UpgradePlugins takes the current release declarations of every selected
 // Plugin (Start upgrade); the selection, Prompt, startup Agent and Connectors
 // stay as established. A Plugin without a current release keeps the
-// declarations the Work last took (Unresolvable release). A release that no
+// declarations the Work last took (Unresolvable release), under the catalog
+// the current releases name, so one marketplace still serves every Plugin of
+// the start. A release that no
 // longer declares the startup Agent is still taken: the start runs without
 // one (Dropped startup Agent). A retained value that differs from the old
 // release's default was chosen by the starting user and carries over while
@@ -126,6 +134,9 @@ func (c CapabilitySnapshot) UpgradePlugins(current []PluginRelease) (CapabilityS
 	for i, selected := range upgraded.Plugins {
 		release, found := bySlug[selected.Release.Slug]
 		if !found {
+			if len(current) > 0 {
+				upgraded.Plugins[i].Release.CatalogName = current[0].CatalogName
+			}
 			continue
 		}
 		chosen := pluginconfig.Configuration{}

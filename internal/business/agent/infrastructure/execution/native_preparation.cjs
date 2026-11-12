@@ -144,28 +144,49 @@ const listDirectory = (directory) => {
   catch { return []; }
 };
 
-// Marketplaces named per Work by earlier preparations.
+// Marketplaces named per Work by releases before the catalog named them.
+// Removal: delete this and the legacy steps of cleanUp once every Harness
+// state ran a preparation of this release; until then a definition whose
+// Works have not started again still holds their packages.
 const legacyMarketplace = (name) => name.startsWith('talgent-work-') && name !== catalog.name;
+
+// Each cleanup step that failed, by a safe code naming the step and the
+// directory or marketplace it left; the report carries the first 32, within
+// its bound, so a Harness state that keeps growing can be diagnosed from the
+// report file its workspace keeps.
+const cleanupFailures = [];
+const attempt = (code, step) => {
+  try { step(); return true; } catch { cleanupFailures.push(code); return false; }
+};
 
 // cleanUp bounds the package cache by the releases still in use. Every
 // release directory of the catalog's marketplace that no install record
-// references is removed, and every marketplace an earlier preparation named
-// per Work loses its registration and install records (through the native
-// command) and its cached packages. It runs under the install lock, after
-// installation, so no other Work installs meanwhile; a running Work is not
-// protected. A cleanup step that fails leaves its files for the next
-// preparation and never fails this one.
+// references is removed, and every legacy marketplace loses its registration
+// and install records, through the native command, then its cached packages.
+// It runs under the install lock, after installation, so no other Work
+// installs meanwhile; a running Work is not protected. A failed step leaves
+// its files for the next preparation, is reported, and never fails this one.
 async function cleanUp() {
-  const registrations = (() => { try { return read(path.join(pluginsRoot, 'known_marketplaces.json')); } catch { return {}; } })();
+  let registrations = {};
+  attempt('registrations_unreadable', () => { registrations = read(path.join(pluginsRoot, 'known_marketplaces.json')); });
+  const unremoved = new Set();
   for (const name of Object.keys(registrations).filter(legacyMarketplace)) {
-    if (remaining() === 0) return;
-    await run(binary, ['plugin', 'marketplace', 'remove', name], { cwd: workspace, env: { ...process.env, DISABLE_AUTOUPDATER: '1' } }, Math.min(30000, remaining()));
+    const removed = remaining() > 0 && await run(binary, ['plugin', 'marketplace', 'remove', name], { cwd: workspace, env: { ...process.env, DISABLE_AUTOUPDATER: '1' } }, Math.min(30000, remaining())) === 0;
+    if (!removed) {
+      unremoved.add(name);
+      cleanupFailures.push('marketplace_remove:' + name);
+    }
   }
-  for (const name of listDirectory(packageCache).filter(legacyMarketplace)) {
-    fs.rmSync(path.join(packageCache, name), { recursive: true, force: true });
+  // A marketplace still registered keeps its packages, so its install
+  // records never name a removed directory.
+  for (const name of listDirectory(packageCache).filter(legacyMarketplace).filter(name => !unremoved.has(name))) {
+    attempt('cache_remove:' + name, () => fs.rmSync(path.join(packageCache, name), { recursive: true, force: true }));
   }
   const records = readInstallRecords();
-  if (records === null) return;
+  if (records === null) {
+    cleanupFailures.push('records_unreadable');
+    return;
+  }
   const referenced = new Set();
   for (const entries of Object.values(records.plugins || {})) {
     for (const entry of Array.isArray(entries) ? entries : []) {
@@ -177,9 +198,9 @@ async function cleanUp() {
     const releases = path.join(marketplace, plugin);
     for (const version of listDirectory(releases)) {
       const release = path.join(releases, version);
-      if (!referenced.has(release)) fs.rmSync(release, { recursive: true, force: true });
+      if (!referenced.has(release)) attempt('release_remove:' + plugin + '/' + version, () => fs.rmSync(release, { recursive: true, force: true }));
     }
-    if (listDirectory(releases).length === 0) fs.rmSync(releases, { recursive: true, force: true });
+    if (listDirectory(releases).length === 0) attempt('release_remove:' + plugin, () => fs.rmSync(releases, { recursive: true, force: true }));
   }
 }
 
@@ -216,7 +237,7 @@ async function installPlugins() {
     current.enabledPlugins = enabled;
     save(settingsPath, current);
     if (catalog.plugins.length > 0) {
-      try { await cleanUp(); } catch {}
+      try { await cleanUp(); } catch { cleanupFailures.push('cleanup_failed'); }
     }
     return results;
   } finally {
@@ -311,7 +332,7 @@ async function main() {
     return;
   }
   fs.mkdirSync(path.dirname(reportPath), { recursive: true, mode: 0o700 });
-  const report = { results: await installPlugins(), repositories: await checkOutRepositories() };
+  const report = { results: await installPlugins(), repositories: await checkOutRepositories(), cleanup: cleanupFailures.slice(0, 32) };
   save(reportPath, report);
   process.stdout.write(JSON.stringify(report) + '\n');
 }

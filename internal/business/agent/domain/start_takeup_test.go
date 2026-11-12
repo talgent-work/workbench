@@ -102,6 +102,25 @@ func TestUpgradeTakesAReleaseThatDroppedTheStartupAgent(t *testing.T) {
 	require.Equal(t, "review:worker", restored.LaunchedStartupAgent(), "a later release declaring it again launches with it")
 }
 
+// A Plugin whose current release cannot be resolved keeps the declarations
+// the Work last took under the catalog the current releases name, so a
+// renamed catalog never blocks the start (Unresolvable release).
+func TestUpgradeServesAnUnresolvedPluginFromTheCurrentCatalog(t *testing.T) {
+	retained, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{RequiredPlugins: []string{"review", "lint"}}, []domain.PluginRelease{pluginRelease("review", "1"), pluginRelease("lint", "1")})
+	require.NoError(t, err)
+	renamed := pluginRelease("review", "2")
+	renamed.CatalogName = "company"
+	upgraded, err := retained.UpgradePlugins([]domain.PluginRelease{renamed})
+	require.NoError(t, err)
+	require.Equal(t, "company", upgraded.PluginCatalog())
+	versions := map[string]string{}
+	for _, plugin := range upgraded.Plugins {
+		require.Equal(t, "company", plugin.Release.CatalogName, plugin.Release.Slug)
+		versions[plugin.Release.Slug] = plugin.Release.Version
+	}
+	require.Equal(t, map[string]string{"review": "2", "lint": "1"}, versions, "lint keeps the declarations it last took")
+}
+
 // A new Work still needs a startup Agent its selected releases declare.
 func TestCreationRefusesAStartupAgentNoSelectedReleaseDeclares(t *testing.T) {
 	_, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{RequiredPlugins: []string{"review"}, DefaultStartupAgent: "review:missing"}, []domain.PluginRelease{pluginRelease("review", "1")})
