@@ -6,12 +6,14 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, test } from 'node:test'
 import type { PipeSink } from '../src/execd/pipe.ts'
 import { WorkInputs } from '../src/execd/inputs.ts'
+import { currentHost, type ProcessHost } from '../src/execd/host.ts'
 import { ProcessTable, type RunningProcess } from '../src/execd/processes.ts'
 import { ExecdService } from '../src/execd/service.ts'
 import { SHIM_ARG } from '../src/execd/shim.ts'
 import { Works } from '../src/execd/works.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
 import { endEveryWorkProcess } from '../src/end-work-processes.ts'
+import { posixOnly } from './support/platform.ts'
 
 const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url))
 
@@ -47,8 +49,8 @@ afterEach(async () => {
 })
 
 // A Work process that runs until it is ended: it waits for stdin.
-async function running(work: string): Promise<string> {
-  const response = await service.request({ workId: work, method: 'POST', path: '/pty', token: 'tok', body: { cwd: '/workspace', command: 'read x' } })
+async function running(work: string, command = 'read x'): Promise<string> {
+  const response = await service.request({ workId: work, method: 'POST', path: '/pty', token: 'tok', body: { cwd: '/workspace', command } })
   assert.equal(response.status, 201)
   const id = (response.body as { session_id: string }).session_id
   created.push(`${work}/${id}`)
@@ -115,4 +117,24 @@ test('holds on starts nest', async () => {
   fence()
   const id = await later
   assert.equal((await processes.phase('w-1', id))?.kind, 'running')
+})
+
+// Ending a process can end its command before its shim (taskkill /T walks the
+// tree in no set order), and the shim then records the command's own exit
+// code. An ended process is still recorded as killed.
+test('a process whose command ended before its shim is recorded as killed', { skip: posixOnly('stands in for taskkill with POSIX signals') }, async () => {
+  const id = await running('w-1', 'trap "exit 1" TERM; while :; do sleep 0.05; done')
+  const host = currentHost()
+  const commandFirst: ProcessHost = Object.assign(Object.create(Object.getPrototypeOf(host)) as ProcessHost, host, {
+    kill: async (started: Parameters<ProcessHost['kill']>[0], stateDir: string) => {
+      process.kill(started.pid, 'SIGTERM')
+      const deadline = Date.now() + 5_000
+      while (Date.now() < deadline && (await host.shimAlive(started, stateDir))) await new Promise((resolve) => setTimeout(resolve, 20))
+      await host.kill(started, stateDir)
+    },
+  })
+  const table = new ProcessTable({ stateRoot: join(dir, 'state', 'processes'), shim: [process.execPath, MAIN, SHIM_ARG], host: commandFirst })
+  const [target] = await table.running()
+  assert.equal((await table.end([target])).ended, 1)
+  assert.deepEqual(await processes.phase('w-1', id), { kind: 'exited', run: 1, exitCode: -1 })
 })

@@ -73,9 +73,9 @@ export class WindowsHost implements ProcessHost {
     await this.kill(started, stateDir)
   }
 
-  // Ends the shim with the command beneath it. The shim then records no
-  // exit; the next look at the run records it as killed, as a signalled
-  // shell reports.
+  // Ends the shim with the command beneath it. taskkill /T may end the
+  // command first, and the shim then records its exit code; ProcessTable.end
+  // records the ended run as killed either way.
   async kill(started: StartedRecord, stateDir: string): Promise<void> {
     await this.killTree(started.shimPid)
     const deadline = Date.now() + KILL_WAIT_MS
