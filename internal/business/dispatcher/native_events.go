@@ -123,6 +123,9 @@ func (m *NativeExecutions) applyMessage(ctx context.Context, entry *nativeExecut
 			m.logger.WarnContext(ctx, "native permission mode unknown; the Work keeps its last known mode", "agent_work_id", entry.target.WorkID, "mode", mode)
 		}
 	}
+	if title := nativeprocess.ReportedTitle(event.Message); entry.ObserveTitle(title) {
+		observations = append(observations, command.ExecutionObservation{Kind: command.ExecutionTitleObserved, Title: title})
+	}
 	if plugins, observed := nativeprocess.PluginLoads(event.Message); observed {
 		observations = append(observations, command.ExecutionObservation{Kind: command.ExecutionPluginLoadsObserved, LoadedPlugins: plugins})
 	}

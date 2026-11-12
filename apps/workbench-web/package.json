@@ -24,7 +24,7 @@
     "@connectrpc/connect": "^2.1.1",
     "@eslint/js": "^9.39.4",
     "@heroui/styles": "^3.1.0",
-    "@talgent/contracts": "github:talgent-work/contracts#v0.5.6&path:/gen/ts",
+    "@talgent/contracts": "github:talgent-work/contracts#v0.5.7&path:/gen/ts",
     "@tailwindcss/vite": "^4.2.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

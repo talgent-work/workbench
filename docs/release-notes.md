@@ -5,6 +5,19 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that titles Personal Works by their conversation
+
+Before deploying it, run
+[`deploy/middleware/migrations/20261112-display-title-chosen.sql`](../deploy/middleware/migrations/20261112-display-title-chosen.sql)
+against the Workbench's MySQL database; it adds `agent_session.display_title_chosen` and can run
+while the previous release serves.
+
+A Personal Work now takes the title Claude Code gives its conversation, usually within its first
+Turn, until its owner renames it; until then it shows its first input's first line, cut to 80
+characters. Every existing Work counts as not renamed, so one its owner renamed takes Claude
+Code's title at its next Turn. A Work whose model provider cannot serve Claude Code's title
+request keeps the first line.
+
 ## The release that installs each Plugin once
 
 Nothing to do beyond deploying it. Preparation ran `claude plugin update` after every Plugin

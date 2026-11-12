@@ -28,7 +28,9 @@ func personalWork(t *testing.T) visibleWork {
 
 func TestDisplayTitleStartsFromTheFirstLineOfTheFirstInput(t *testing.T) {
 	require.Equal(t, "Draft the plan", domain.DisplayTitleFrom("  Draft the plan  \nwith details"))
-	require.Equal(t, strings.Repeat("长", 200), domain.DisplayTitleFrom(strings.Repeat("长", 250)), "a long first line is cut to 200 characters")
+	require.Equal(t, strings.Repeat("长", 79)+"…", domain.DisplayTitleFrom(strings.Repeat("长", 250)), "a long first line is cut to 80 characters with an ellipsis")
+	require.Equal(t, strings.Repeat("长", 80), domain.DisplayTitleFrom(strings.Repeat("长", 80)), "a first line of 80 characters is kept whole")
+	require.Equal(t, strings.Repeat("a", 78)+"…", domain.DisplayTitleFrom(strings.Repeat("a", 78)+" tail of the instruction"), "no space is left before the ellipsis")
 }
 
 func TestOnlyAPersonalWorkHasADisplayTitle(t *testing.T) {
@@ -49,9 +51,34 @@ func TestOwnerRenamesTheirPersonalWork(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, "Renamed", work.DisplayTitle)
+	require.True(t, work.DisplayTitleChosen)
 	changed, err = work.ChangeDisplayTitle(work.definition, "owner", "Renamed")
 	require.NoError(t, err)
 	require.False(t, changed)
+}
+
+// A Personal Work takes the title its Harness gives the conversation, each
+// new one included, until its owner chooses one; no other Work has one.
+func TestAPersonalWorkTakesItsHarnesssTitleUntilItsOwnerChoosesOne(t *testing.T) {
+	work := personalWork(t)
+	require.True(t, work.RecordHarnessTitle(" Go context 包 "))
+	require.Equal(t, "Go context 包", work.DisplayTitle)
+	require.False(t, work.RecordHarnessTitle("Go context 包"), "the same title changes nothing")
+	for _, unusable := range []string{"", "  ", "two\nlines", strings.Repeat("x", 201)} {
+		require.False(t, work.RecordHarnessTitle(unusable), unusable)
+	}
+	require.True(t, work.RecordHarnessTitle("Go context cancellation"))
+	require.Equal(t, "Go context cancellation", work.DisplayTitle)
+
+	_, err := work.ChangeDisplayTitle(work.definition, "owner", "Go context cancellation")
+	require.NoError(t, err)
+	require.True(t, work.DisplayTitleChosen, "keeping the Harness's title is choosing it")
+	require.False(t, work.RecordHarnessTitle("Another title"))
+	require.Equal(t, "Go context cancellation", work.DisplayTitle)
+
+	other := humanWork(t)
+	require.False(t, other.RecordHarnessTitle("Go context 包"))
+	require.Empty(t, other.DisplayTitle)
 }
 
 func TestOnlyTheOwnerChangesAPersonalWorksFilesUntilItCloses(t *testing.T) {

@@ -26,7 +26,9 @@ const (
 	// PermissionModeObserved is the permission mode the process reports it
 	// now applies.
 	PermissionModeObserved ExecutionFeedbackKind = "permission_mode_observed"
-	TurnActivity           ExecutionFeedbackKind = "turn_activity"
+	// TitleObserved is the title the Harness gave the Work's conversation.
+	TitleObserved ExecutionFeedbackKind = "title_observed"
+	TurnActivity  ExecutionFeedbackKind = "turn_activity"
 	// AttachmentLost and AttachmentReturned are Dispatcher's loss and return
 	// of its attachment to the process's sandbox, the observation a Cloud
 	// Work's Disconnection follows; DetachedSince names the loss.
@@ -50,7 +52,9 @@ type ExecutionFeedback struct {
 	WorkProgress           []domain.WorkProgressItem
 	SubAgents              []domain.SubAgent
 	// PermissionMode is the mode a PermissionModeObserved report names.
-	PermissionMode      domain.PermissionMode
+	PermissionMode domain.PermissionMode
+	// Title is the title a TitleObserved report names.
+	Title               string
 	Kind                ExecutionFeedbackKind
 	WorkID              string
 	InteractionID       string
@@ -148,6 +152,10 @@ func (h *ApplyExecutionFeedbackHandler) Handle(ctx context.Context, feedback Exe
 		err = session.RecordSubAgents(feedback.ObservationSequence, feedback.SubAgents)
 	case PermissionModeObserved:
 		err = session.RecordPermissionMode(feedback.ObservationSequence, feedback.PermissionMode)
+	case TitleObserved:
+		if !session.RecordHarnessTitle(feedback.Title) {
+			return nil
+		}
 	case InputSettled:
 		if strings.TrimSpace(feedback.InputID) == "" {
 			return domain.ErrInvalidWork

@@ -35,8 +35,10 @@ type ProtocolState struct {
 	SubAgents []subAgent `json:"subagents,omitempty"`
 	// PermissionMode is the mode the process last reported it applies.
 	PermissionMode string `json:"permission_mode,omitempty"`
-	Offset         int64  `json:"offset"`
-	Ready          bool   `json:"ready"`
+	// Title is the title the process last reported for the conversation.
+	Title  string `json:"title,omitempty"`
+	Offset int64  `json:"offset"`
+	Ready  bool   `json:"ready"`
 	// Failure is a definitive native failure observed before exit, such as a
 	// rejected initialize request. The exit fact carries it.
 	Failure      string `json:"failure,omitempty"`

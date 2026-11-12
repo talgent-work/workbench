@@ -60,21 +60,23 @@ type agentWorkDO struct {
 	ModelMachineLogin    bool   `xorm:"model_machine_login"`
 	// SubjectKind and SubjectID are NULL for a Work without a Subject, so the
 	// unique index binds only Works with one.
-	SubjectKind     *string `xorm:"subject_kind varchar(32)"`
-	SubjectID       *string `xorm:"subject_id varchar(255)"`
-	ProjectRef      string  `xorm:"project_ref varchar(255)"`
-	StartedBy       string  `xorm:"started_by varchar(255)"`
-	ComputerID      string  `xorm:"computer_id varchar(36)"`
-	ComputerKind    string  `xorm:"computer_kind varchar(16)"`
-	ID              string  `xorm:"id pk varchar(36)"`
-	AgentID         string  `xorm:"agent_id varchar(36)"`
-	State           uint8   `xorm:"state tinyint"`
-	Capabilities    string  `xorm:"capabilities text"`
-	ContextRef      string  `xorm:"context_ref varchar(36)"`
-	AgentHarness    string  `xorm:"agent_harness varchar(64)"`
-	LocatedLayout   string  `xorm:"located_layout JSON"`
-	DisplayTitle    string  `xorm:"display_title varchar(200)"`
-	StartingContext string  `xorm:"starting_context"`
+	SubjectKind   *string `xorm:"subject_kind varchar(32)"`
+	SubjectID     *string `xorm:"subject_id varchar(255)"`
+	ProjectRef    string  `xorm:"project_ref varchar(255)"`
+	StartedBy     string  `xorm:"started_by varchar(255)"`
+	ComputerID    string  `xorm:"computer_id varchar(36)"`
+	ComputerKind  string  `xorm:"computer_kind varchar(16)"`
+	ID            string  `xorm:"id pk varchar(36)"`
+	AgentID       string  `xorm:"agent_id varchar(36)"`
+	State         uint8   `xorm:"state tinyint"`
+	Capabilities  string  `xorm:"capabilities text"`
+	ContextRef    string  `xorm:"context_ref varchar(36)"`
+	AgentHarness  string  `xorm:"agent_harness varchar(64)"`
+	LocatedLayout string  `xorm:"located_layout JSON"`
+	DisplayTitle  string  `xorm:"display_title varchar(200)"`
+	// DisplayTitleChosen records that the owner chose the display title.
+	DisplayTitleChosen bool   `xorm:"display_title_chosen bool"`
+	StartingContext    string `xorm:"starting_context"`
 	// RepresentedPerson is the person the Work's Agent represents; empty for
 	// one that represents no person.
 	RepresentedPerson string `xorm:"represented_person varchar(255)"`
