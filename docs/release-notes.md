@@ -83,6 +83,23 @@ named by `WORKBENCH_MYSQL_DATABASE`; it renames `scm_provider_authorization.owne
 `owner_id`, since an authorization's owner is a person or an Application. The previous release
 does not read `owner_id`, so run it as part of the deployment; it can run more than once.
 
+Before deploying it, also run
+`deploy/middleware/migrations/20261115-agent-work-owning-application.sql` against the database
+named by `AGENT_MYSQL_DATABASE`; it records the owning Application on the existing Works of
+Applications' definitions and can run more than once. An Application's owner connects its
+Provider Authorizations in the web app; its Works check out repositories with them, never with a
+person's, and a start with no usable authorization is refused.
+
+Before deploying it, also run
+`deploy/middleware/migrations/20261116-agent-work-selection-owner.sql` against the database named
+by `AGENT_MYSQL_DATABASE`; it renames the owner key of each Work's stored repository and
+authorization selections from `owner_user_id` to `owner_id`, since the owner is a person or an
+Application. The previous release does not read `owner_id`, so run it as part of the
+deployment; it can run more than once.
+
+`ApplicationService.ListOwnedApplications` and `GetApplication` now answer removed Applications
+too, marked `removed` and holding no secret: their owner still reads their Works and usage.
+
 ## The release that names the Work API neutrally
 
 Nothing to do beyond deploying it; the entry routes `/api/agent.public.v2.WorkService`. A
