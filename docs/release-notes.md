@@ -5,6 +5,13 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that removes the v1 PersonalWorkService
+
+Nothing to do beyond deploying it and re-applying the `web-api` HTTPRoute and the `web-auth`
+SecurityPolicy, which no longer route `/api/agent.public.v1.PersonalWorkService`. A client still
+on that service moves to `agent.public.v2.WorkService` (contracts v0.6.0) before upgrading; a web
+app moves to `@talgent/workbench-ui` 0.4.0 or later.
+
 ## The release that lets Applications run Works
 
 Before deploying, in this order:
@@ -38,7 +45,7 @@ What changes:
   Application's own MCP servers; the Work sends each endpoint's headers unchanged for its life,
   no read returns them, and a value containing `${` is refused.
 - **Neutral Work API.** `agent.public.v2.WorkService` (`StartWork`, `ListWorks`, ...) replaces
-  `agent.public.v1.PersonalWorkService`, which stays only until its last client moves.
+  `agent.public.v1.PersonalWorkService`.
 - **Configuration.** controlplane reads `marketplace.account.address` and
   `trace-access.account-address` (both default to its own listener) and
   `account.application-token-lifetime` and `account.application-secret-overlap`

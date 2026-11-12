@@ -1463,27 +1463,6 @@ spec:
       backendRefs:
         - name: controlplane
           port: 8080
-    # Retiring: agent.public.v2.WorkService replaces it; it goes once no web app
-    # on an earlier workbench-ui and no Work on an earlier talgent-api calls it.
-    - name: personal-work-api
-      matches:
-        - path:
-            type: PathPrefix
-            value: /api/agent.public.v1.PersonalWorkService
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /agent.public.v1.PersonalWorkService
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            set:
-              - name: x-talgent-authenticated-by
-                value: envoy
-      backendRefs:
-        - name: controlplane
-          port: 8080
     - name: work-file-api
       matches:
         - path:
@@ -1707,10 +1686,6 @@ spec:
       kind: HTTPRoute
       name: web-api
       sectionName: work-api
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: web-api
-      sectionName: personal-work-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: web-api

@@ -175,13 +175,10 @@ func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, confi
 
 // RegisterStandaloneWorkHandlers mounts an owner's Standalone Works and their
 // files for the person the entry verified, and the Library reads for an Agent
-// acting for the person its Work represents. The retiring PersonalWorkService
-// serves the same operations under its old names until its last consumer moves.
+// acting for the person its Work represents.
 func RegisterStandaloneWorkHandlers(mux *http.ServeMux, works *standalonework.StandaloneWorks, logger *slog.Logger) {
 	server := connectserver.New(logger, authn.NewPrincipalInterceptor())
-	standalone := transport.NewStandaloneWorkHandler(works)
-	agentpublicv2connect.RegisterWorkServiceHandler(server, standalone)
-	agentpublicv1connect.RegisterPersonalWorkServiceHandler(server, transport.NewPersonalWorkHandler(standalone))
+	agentpublicv2connect.RegisterWorkServiceHandler(server, transport.NewStandaloneWorkHandler(works))
 	agentpublicv1connect.RegisterWorkFileServiceHandler(server, transport.NewWorkFileHandler(works))
 	connectserver.Mount(mux, server)
 }
