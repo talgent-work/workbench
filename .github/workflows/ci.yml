@@ -242,10 +242,18 @@ jobs:
         npm install -g ./talgent-computer-*.tgz
         npm run test:installed
 
+  # One runner per package group: a case's elapsed time is held to the
+  # 3-second budget, and one 4-vCPU runner carrying every -race package beside
+  # MySQL and ClickHouse made cases wait on the CPU rather than do their work.
   integration-test:
     needs: generate
     if: needs.generate.outputs.generated_changed != 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [agent, storage]
+    name: integration-test (${{ matrix.group }})
     steps:
     - uses: actions/checkout@v6
     - uses: actions/setup-go@v6
@@ -262,7 +270,7 @@ jobs:
 
     - name: Run integration tests with production storage ownership privileges
       run: |
-        sudo -n env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" make test-integration
+        sudo -n env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" make test-integration INTEGRATION_GROUP=${{ matrix.group }}
 
     - name: Save the Go caches of a new go.mod or go.sum
       if: ${{ !cancelled() && steps.go-cache.outputs.save-key != '' }}

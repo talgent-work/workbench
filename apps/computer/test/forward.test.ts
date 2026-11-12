@@ -53,11 +53,11 @@ test('an upstream that never completes the connection answers 502 after the conn
   // TCP accepts, but the TLS handshake never answers.
   const silent = await listen(createTcpServer((socket) => sockets.push(socket)))
   const { port, failures } = await proxyTo(`https://127.0.0.1:${silent}/`)
-  const started = Date.now()
   const answer = await get(port)
   assert.equal(answer.status, 502)
+  // The recorded reason proves the connect timer ended it; elapsed wall time
+  // would only measure the runner's load.
   assert.deepEqual(failures, ['connect timeout'])
-  assert.ok(Date.now() - started < timeouts.idleMs + 1000)
 })
 
 test('an upstream that never answers answers 502 after the idle timeout', async () => {
