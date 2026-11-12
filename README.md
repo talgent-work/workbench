@@ -91,25 +91,11 @@ your Workbench offers, and authorize your own GitHub account for the repositorie
 
 ## Build on Workbench with Applications
 
-Register an **Application**, and your internal systems or your product drive Agents through the
-same public APIs the web app uses. They can start a Work, steer it, stream its conversation,
-collect and share its Artifacts, and read its usage.
-
-- **An Agent of its own.** An Application stands where a person stands. It has its own Agent
-  (name, instructions, default model), its own Plugins and Connectors, and its own authorizations,
-  such as the GitHub repositories its Works check out. It reaches only its own Works.
-- **Standard sign-in for programs.** Registering an Application from your account gives you a
-  client ID and secret. The Application exchanges them for short-lived tokens with the OAuth 2.0
-  client credentials grant. You can rotate a secret without downtime or revoke it at once.
-- **Your users, your labels.** Give each Work your own `key=value` Work Labels, such as
-  `user=u123` or `tenant=acme`. You can then filter Works by them and break usage down by any
-  label key.
-- **Bring your own tools.** When you start a Work, hand it your own MCP endpoints so the Agent can
-  call your product's business tools. Each endpoint carries the headers your service
-  authenticates. The Work sends them unchanged for its life, and no read of the Work returns them.
-- **In sight of its owner.** The person who registered an Application configures it in the web app
-  and reads its Works, their conversations and its usage. Removing the Application stops its
-  secrets at once and closes its open Works.
+Register an **Application** and your own systems or product drive Agents through the same public
+APIs the web app uses: start Works, follow them, collect their Artifacts and read their usage. Each
+Application has its own Agent, Plugins and authorizations, signs in with OAuth 2.0 client
+credentials, labels its Works to attribute usage to its own users, and can give a Work its own MCP
+tools.
 
 ## From every person to the whole company: Talgent Orchestra
 
