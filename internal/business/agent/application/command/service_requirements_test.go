@@ -9,7 +9,7 @@ import (
 )
 
 func TestServiceRequirementsConsumeOnlyMarketplaceRelationships(t *testing.T) {
-	authorization := domain.WorkAuthorizationSelection{OwnerUserID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: "retained", Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
+	authorization := domain.WorkAuthorizationSelection{OwnerID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: "retained", Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
 	components := []domain.MCPComponent{
 		{Name: "registered", Definition: []byte(`{"type":"http","url":"https://api.githubcopilot.com/mcp/"}`), Relationship: domain.ConnectorProviderRelationship{ConnectorID: "registered-connector", Provider: "github", Target: "github-remote-mcp", Authentication: "credential_proxy", Status: "supported"}},
 		{Name: "same-url-unregistered", Definition: []byte(`{"type":"http","url":"https://api.githubcopilot.com/mcp/"}`)},

@@ -37,7 +37,7 @@ func TestWorkUsesOneHumanForPluginsHomeAndAuthorization(t *testing.T) {
 	work, err := store.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, "owner", work.RepresentedPerson)
-	require.Equal(t, domain.WorkAuthorizationSelection{OwnerUserID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: "01940000-0000-7000-8000-000000000382", Provider: "github", Service: "github"}}}, work.AuthorizationSelection)
+	require.Equal(t, domain.WorkAuthorizationSelection{OwnerID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: "01940000-0000-7000-8000-000000000382", Provider: "github", Service: "github"}}}, work.AuthorizationSelection)
 	require.NoError(t, store.AuthorizeWork(t.Context(), "owner", id))
 	require.Len(t, work.CapabilitySnapshot.Plugins, 1)
 	require.Equal(t, "owner-plugin", work.CapabilitySnapshot.Plugins[0].Release.Slug)
@@ -96,7 +96,7 @@ func (ownerAuthorizationCatalog) ListPersonalAuthorizations(_ context.Context, o
 	if owner == "owner" {
 		id = "01940000-0000-7000-8000-000000000382"
 	}
-	return []domain.PersonalAuthorization{{OwnerUserID: owner, AuthorizationID: id, Provider: "github", Service: "github"}}, nil
+	return []domain.PersonalAuthorization{{OwnerID: owner, AuthorizationID: id, Provider: "github", Service: "github"}}, nil
 }
 
 func (personalCatalog) ReadConnectorSelection(context.Context, string) (command.ConnectorSelection, error) {

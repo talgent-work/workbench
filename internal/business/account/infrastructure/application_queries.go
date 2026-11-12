@@ -22,12 +22,12 @@ func NewApplicationQueries(engine *xorm.Engine) *ApplicationQueries {
 	return &ApplicationQueries{engine: engine}
 }
 
-// OwnedApplications reads the owner's active Applications through
-// idx_owner_registered, then their secrets still valid at now.
+// OwnedApplications reads the owner's Applications, removed ones included,
+// through idx_owner_registered, then their secrets still valid at now.
 func (r *ApplicationQueries) OwnedApplications(ctx context.Context, owner string, now time.Time) ([]query.OwnedApplication, error) {
 	var rows []applicationDO
-	if err := r.engine.Context(ctx).Cols("id", "name", "registered_at").
-		Where("owner_id = ? AND state = ? AND deleted_at = 0", owner, int(domain.ApplicationActive)).
+	if err := r.engine.Context(ctx).Cols("id", "name", "registered_at", "state").
+		Where("owner_id = ? AND deleted_at = 0", owner).
 		OrderBy("registered_at, id").Find(&rows); err != nil {
 		return nil, oops.With("operation", "application.list_owned").Wrap(err)
 	}
@@ -54,7 +54,7 @@ func (r *ApplicationQueries) OwnedApplications(ctx context.Context, owner string
 	for _, row := range rows {
 		owned = append(owned, query.OwnedApplication{
 			ID: row.ID, Name: row.Name, RegisteredAt: fromMillis(row.RegisteredAt),
-			Secrets: append([]query.ClientSecret{}, bySecret[row.ID]...),
+			Secrets: append([]query.ClientSecret{}, bySecret[row.ID]...), Removed: row.State == int(domain.ApplicationRemoved),
 		})
 	}
 	return owned, nil

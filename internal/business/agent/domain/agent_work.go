@@ -414,10 +414,10 @@ func (s *AgentWork) Validate() error {
 	if s.RepresentedPerson != "" && s.OwningApplication != "" {
 		return fmt.Errorf("%w: a Work represents a person or belongs to an Application, never both", ErrInvalidWork)
 	}
-	if owner := s.RepositorySelection.OwnerUserID; owner != "" && owner != s.AuthorizationOwner() {
+	if owner := s.RepositorySelection.OwnerID; owner != "" && owner != s.AuthorizationOwner() {
 		return ErrInvalidWork
 	}
-	if owner := s.AuthorizationSelection.OwnerUserID; owner != "" && owner != s.AuthorizationOwner() {
+	if owner := s.AuthorizationSelection.OwnerID; owner != "" && owner != s.AuthorizationOwner() {
 		return ErrInvalidWork
 	}
 	if s.HarnessProcess == nil && s.State != WorkClosed {

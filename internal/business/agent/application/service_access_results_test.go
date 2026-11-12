@@ -22,7 +22,7 @@ func TestServiceAccessResultsPreserveOwnerAndReturnIndependentObservations(t *te
 	app := &application.Application{Works: serviceAccessWorks{work: f.work}, WorkPrincipals: authorization, ExecutionQueries: reader}
 	result, err := app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorID: "viewer", WorkID: f.work.ID})
 	require.NoError(t, err)
-	require.Equal(t, "owner", result.OwnerUserID)
+	require.Equal(t, "owner", result.OwnerID)
 	require.Equal(t, []string{"github"}, result.SelectedServices)
 	require.Equal(t, reader.results, result.Observations)
 	require.Equal(t, "viewer", authorization.subject, "the requester itself must be the owner")
@@ -72,7 +72,7 @@ func newServiceAccessFixture(t *testing.T) *serviceAccessFixture {
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
 		WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
 		RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(),
-		AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner", Available: []domain.PersonalAuthorization{{OwnerUserID: "owner", AuthorizationID: "b5f00000-0000-4000-8000-000000000382", Provider: "github", Service: "github"}}},
+		AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: "owner", Available: []domain.PersonalAuthorization{{OwnerID: "owner", AuthorizationID: "b5f00000-0000-4000-8000-000000000382", Provider: "github", Service: "github"}}},
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	return &serviceAccessFixture{work: work}

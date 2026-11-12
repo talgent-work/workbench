@@ -86,8 +86,8 @@ type Start struct {
 
 // Authorizations are a Work's service authorizations, fixed at its creation.
 type Authorizations struct {
-	OwnerUserID string
-	Services    []ServiceAuthorization
+	OwnerID  string
+	Services []ServiceAuthorization
 }
 
 // ServiceAuthorization is one service authorization of a Work.
@@ -224,7 +224,7 @@ func (cfg Config) models() query.ModelConfigurations {
 }
 
 func authorizations(selection domain.WorkAuthorizationSelection) Authorizations {
-	result := Authorizations{OwnerUserID: selection.OwnerUserID}
+	result := Authorizations{OwnerID: selection.OwnerID}
 	for _, service := range selection.Authorizations {
 		result.Services = append(result.Services, ServiceAuthorization{AuthorizationID: service.AuthorizationID, Provider: service.Provider, Service: service.Service, SupportedTargets: service.SupportedTargets})
 	}

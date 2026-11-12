@@ -33,7 +33,7 @@ func (r recentRepositories) ListRecentRepositoryIDs(context.Context, string) ([]
 func TestRecentRepositoriesAreTheOwnersStillReachableOnesMostRecentFirst(t *testing.T) {
 	var reachable []domain.AccessibleRepository
 	for _, id := range []string{"a", "b", "c", "d", "e", "f", "g"} {
-		reachable = append(reachable, domain.AccessibleRepository{OwnerUserID: "owner", Provider: "github", RepoID: "github:" + id, RepoName: "acme/" + id, DefaultBranch: "main"})
+		reachable = append(reachable, domain.AccessibleRepository{OwnerID: "owner", Provider: "github", RepoID: "github:" + id, RepoName: "acme/" + id, DefaultBranch: "main"})
 	}
 	app := &Application{Catalog: reachableRepositories{repositories: reachable},
 		WorkQueries: recentRepositories{ids: []string{"github:g", "github:lost", "github:a", "github:f", "github:e", "github:d", "github:c"}}}

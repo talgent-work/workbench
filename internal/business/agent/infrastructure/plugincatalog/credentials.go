@@ -16,12 +16,12 @@ func (c *Client) SupplyRepositoryCredential(ctx context.Context, input command.R
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	ctx, info, err := delegated(ctx, input.OwnerUserID)
+	ctx, info, err := delegated(ctx, input.OwnerID)
 	if err != nil {
 		return command.RepositoryCredentialMaterial{}, err
 	}
 	info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
-	response, err := c.credentials.SupplyRepositoryCredential(ctx, &marketplaceprivatev1.SupplyRepositoryCredentialRequest{OwnerUserId: input.OwnerUserID, AuthorizationId: input.AuthorizationID, RepositoryId: input.RepositoryID, CloneUrl: input.CloneURL})
+	response, err := c.credentials.SupplyRepositoryCredential(ctx, &marketplaceprivatev1.SupplyRepositoryCredentialRequest{OwnerUserId: input.OwnerID, AuthorizationId: input.AuthorizationID, RepositoryId: input.RepositoryID, CloneUrl: input.CloneURL})
 	if err != nil {
 		return command.RepositoryCredentialMaterial{}, credentialUnavailable(err, info)
 	}

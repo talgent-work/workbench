@@ -30,7 +30,7 @@ func (c *Client) ListPersonalAuthorizations(ctx context.Context, owner string) (
 			continue
 		}
 		facts = append(facts, domain.PersonalAuthorization{
-			OwnerUserID: owner, AuthorizationID: record.GetId(), Provider: record.GetProvider(), Service: record.GetProvider(), SupportedTargets: record.GetSupportedTargets(),
+			OwnerID: owner, AuthorizationID: record.GetId(), Provider: record.GetProvider(), Service: record.GetProvider(), SupportedTargets: record.GetSupportedTargets(),
 		})
 	}
 	return facts, nil
@@ -56,7 +56,7 @@ func (c *Client) ListAccessibleRepositories(ctx context.Context, owner string) (
 	}
 	var facts []domain.AccessibleRepository
 	for _, record := range response.GetRepositories() {
-		facts = append(facts, domain.AccessibleRepository{OwnerUserID: owner, Provider: record.GetProvider(), RepoID: record.GetId(), RepoName: record.GetName(),
+		facts = append(facts, domain.AccessibleRepository{OwnerID: owner, Provider: record.GetProvider(), RepoID: record.GetId(), RepoName: record.GetName(),
 			CloneURL: record.GetCloneUrl(), WebURL: record.GetWebUrl(), DefaultBranch: record.GetDefaultBranch()})
 	}
 	return facts, nil

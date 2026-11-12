@@ -14,7 +14,7 @@ func (h *WorkHandler) GetWorkServiceAccess(ctx context.Context, request *agentpu
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	response := &agentpublicv1.GetWorkServiceAccessResponse{OwnerUserId: result.OwnerUserID, SelectedServices: result.SelectedServices}
+	response := &agentpublicv1.GetWorkServiceAccessResponse{OwnerUserId: result.OwnerID, SelectedServices: result.SelectedServices}
 	for _, observation := range result.Observations {
 		response.Observations = append(response.Observations, &agentpublicv1.WorkServiceAccessObservation{Service: observation.Service, Target: observation.Target, Plugin: observation.Plugin, Mcp: observation.MCP, Status: observation.Status, Reason: observation.Reason})
 	}

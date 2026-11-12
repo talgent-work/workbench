@@ -25,7 +25,7 @@ func firstStart(ready bool) harnessProcessRecord {
 // derived, that selected the repositories github:1 and github:2 and still
 // holds its initial task input, with its first start admitted.
 func createdRow(t *testing.T) workViewRow {
-	selection := workRepositoryRecord{OwnerUserID: "owner", WorkBranch: "talgent/work", Repositories: []selectedRepositoryRecord{
+	selection := workRepositoryRecord{OwnerID: "owner", WorkBranch: "talgent/work", Repositories: []selectedRepositoryRecord{
 		{Provider: "github", RepoID: "github:1", RepoName: "acme/api", CloneURL: "https://github.com/acme/api.git", DefaultBranch: "main", BaseBranch: "main"},
 		{Provider: "github", RepoID: "github:2", RepoName: "acme/web", CloneURL: "https://github.com/acme/web.git", DefaultBranch: "main", BaseBranch: "release"},
 	}}

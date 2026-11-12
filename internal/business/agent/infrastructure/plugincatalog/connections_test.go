@@ -30,7 +30,7 @@ func TestAccessibleRepositoriesAreReadUnderTheDelegatedOwner(t *testing.T) {
 	require.NoError(t, err)
 	facts, err := client.ListAccessibleRepositories(t.Context(), "represented-user")
 	require.NoError(t, err)
-	require.Equal(t, []domain.AccessibleRepository{{OwnerUserID: "represented-user", Provider: "github",
+	require.Equal(t, []domain.AccessibleRepository{{OwnerID: "represented-user", Provider: "github",
 		RepoID: "github:123", RepoName: "example/project", CloneURL: "https://github.com/example/project.git",
 		WebURL: "https://github.com/example/project", DefaultBranch: "release"}}, facts)
 	service.reject = true

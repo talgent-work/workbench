@@ -18,14 +18,14 @@ func TestWorkRetainsRepositoryIdentityAndBranchAcrossExecution(t *testing.T) {
 			input := domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(),
 				WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
 				RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(),
-				RepositoryInput: domain.WorkRepositoryInput{OwnerUserID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{fact},
+				RepositoryInput: domain.WorkRepositoryInput{OwnerID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{fact},
 					Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
 			}
 			admit := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: input.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 			work, err := domain.NewAgentWork(input, admit)
 			port := follow(work)
 			require.NoError(t, err)
-			want := domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/work", Repositories: []domain.WorkRepository{{
+			want := domain.WorkRepositorySelection{OwnerID: "owner", WorkBranch: "talgent/work", Repositories: []domain.WorkRepository{{
 				Provider: "github", RepoID: "123", RepoName: "example/project", CloneURL: "https://github.com/example/project.git",
 				WebURL: "https://github.com/example/project", DefaultBranch: "main", BaseBranch: "main"}}}
 			require.Equal(t, want, port.launch().RepositorySelection)
@@ -52,22 +52,22 @@ func TestWorkRetainsRepositoryIdentityAndBranchAcrossExecution(t *testing.T) {
 }
 
 func repositoryFact() domain.AccessibleRepository {
-	return domain.AccessibleRepository{OwnerUserID: "owner", Provider: "github", RepoID: "123",
+	return domain.AccessibleRepository{OwnerID: "owner", Provider: "github", RepoID: "123",
 		RepoName: "example/project", CloneURL: "https://github.com/example/project.git", WebURL: "https://github.com/example/project", DefaultBranch: "main"}
 }
 
 func TestWorkRejectsInvalidRepositorySelectionBeforeExecution(t *testing.T) {
 	fact := repositoryFact()
 	foreign := fact
-	foreign.OwnerUserID = "other-owner"
+	foreign.OwnerID = "other-owner"
 	for name, selection := range map[string]domain.WorkRepositoryInput{
-		"foreign fact":           {OwnerUserID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{foreign}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
-		"foreign selection":      {OwnerUserID: "other-owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{foreign}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
-		"unreachable repository": {OwnerUserID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{fact}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: "unknown"}}},
-		"duplicate choice":       {OwnerUserID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{fact}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}, {RepositoryID: fact.RepoID, BaseBranch: "release"}}},
-		"ambiguous repository":   {OwnerUserID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{fact, fact}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
-		"missing work branch":    {OwnerUserID: "owner", WorkBranch: " ", Available: []domain.AccessibleRepository{fact}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
-		"missing identity":       {OwnerUserID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{{OwnerUserID: "owner", RepoID: fact.RepoID}}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
+		"foreign fact":           {OwnerID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{foreign}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
+		"foreign selection":      {OwnerID: "other-owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{foreign}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
+		"unreachable repository": {OwnerID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{fact}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: "unknown"}}},
+		"duplicate choice":       {OwnerID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{fact}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}, {RepositoryID: fact.RepoID, BaseBranch: "release"}}},
+		"ambiguous repository":   {OwnerID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{fact, fact}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
+		"missing work branch":    {OwnerID: "owner", WorkBranch: " ", Available: []domain.AccessibleRepository{fact}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
+		"missing identity":       {OwnerID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{{OwnerID: "owner", RepoID: fact.RepoID}}, Choices: []domain.WorkRepositoryChoice{{RepositoryID: fact.RepoID}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			id := uuid.NewString()

@@ -418,10 +418,10 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 			return nil, false, fmt.Errorf("%w: missing required plugin %s", ErrInvalidCapabilities, slug)
 		}
 	}
-	if owner := request.AuthorizationInput.OwnerUserID; owner != "" && owner != a.AuthorizationOwner() {
+	if owner := request.AuthorizationInput.OwnerID; owner != "" && owner != a.AuthorizationOwner() {
 		return nil, false, fmt.Errorf("%w: Provider Authorizations require a represented human or an owning Application", ErrInvalidWork)
 	}
-	if owner := request.RepositoryInput.OwnerUserID; owner != "" && owner != a.AuthorizationOwner() {
+	if owner := request.RepositoryInput.OwnerID; owner != "" && owner != a.AuthorizationOwner() {
 		return nil, false, fmt.Errorf("%w: repositories require a represented human or an owning Application", ErrInvalidWork)
 	}
 	if err := AdmitAgentOwner(a.AdmittedOwners(), request.StartedBy); err != nil {

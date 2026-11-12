@@ -26,14 +26,14 @@ func (c ownedConnections) ListPersonalAuthorizations(_ context.Context, owner st
 	if !ok {
 		return nil, nil
 	}
-	return []domain.PersonalAuthorization{{OwnerUserID: owner, AuthorizationID: id, Provider: "github", Service: "github"}}, nil
+	return []domain.PersonalAuthorization{{OwnerID: owner, AuthorizationID: id, Provider: "github", Service: "github"}}, nil
 }
 
 func (c ownedConnections) ListAccessibleRepositories(_ context.Context, owner string) ([]domain.AccessibleRepository, error) {
 	if _, ok := c[owner]; !ok {
 		return nil, domain.ErrRepositoryAuthorizationMissing
 	}
-	return []domain.AccessibleRepository{{OwnerUserID: owner, Provider: "github", RepoID: "github:" + owner, RepoName: owner + "/project",
+	return []domain.AccessibleRepository{{OwnerID: owner, Provider: "github", RepoID: "github:" + owner, RepoName: owner + "/project",
 		CloneURL: "https://github.com/example/" + owner + ".git", WebURL: "https://github.com/example/" + owner, DefaultBranch: "main"}}, nil
 }
 
@@ -60,8 +60,8 @@ func TestAnApplicationsWorksUseTheApplicationsOwnAuthorization(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, supportDesk, work.OwningApplication)
 	require.Empty(t, work.RepresentedPerson)
-	require.Equal(t, supportDesk, work.RepositorySelection.OwnerUserID)
-	require.Equal(t, supportDesk, work.AuthorizationSelection.OwnerUserID)
+	require.Equal(t, supportDesk, work.RepositorySelection.OwnerID)
+	require.Equal(t, supportDesk, work.AuthorizationSelection.OwnerID)
 	require.Equal(t, []domain.WorkServiceAuthorization{{AuthorizationID: deskAuthorization, Provider: "github", Service: "github"}}, work.AuthorizationSelection.Authorizations,
 		"its owner's authorization is never selected")
 	require.Equal(t, supportDesk, work.LaunchSpecification().AuthorizationOwner())

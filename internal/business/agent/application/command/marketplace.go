@@ -35,7 +35,7 @@ type ConnectorSelection struct {
 }
 
 type RepositoryCredentialRequest struct {
-	OwnerUserID, AuthorizationID, RepositoryID, CloneURL string
+	OwnerID, AuthorizationID, RepositoryID, CloneURL string
 }
 
 type RepositoryCredentialMaterial struct {
@@ -43,7 +43,7 @@ type RepositoryCredentialMaterial struct {
 	ExpiresAt          time.Time
 }
 
-type ServiceCredentialRequest struct{ OwnerUserID, AuthorizationID, Target string }
+type ServiceCredentialRequest struct{ OwnerID, AuthorizationID, Target string }
 
 type ServiceCredentialMaterial struct {
 	Token     string

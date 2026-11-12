@@ -75,6 +75,6 @@ func (s startCatalog) ListAccessibleRepositories(ctx context.Context, owner stri
 type fixtureRepositories struct{ authorizationcatalogtest.Empty }
 
 func (fixtureRepositories) ListAccessibleRepositories(_ context.Context, owner string) ([]domain.AccessibleRepository, error) {
-	return []domain.AccessibleRepository{{OwnerUserID: owner, Provider: "github", RepoID: "123",
+	return []domain.AccessibleRepository{{OwnerID: owner, Provider: "github", RepoID: "123",
 		RepoName: "example/project", CloneURL: "https://github.com/example/project.git", WebURL: "https://github.com/example/project", DefaultBranch: "main"}}, nil
 }

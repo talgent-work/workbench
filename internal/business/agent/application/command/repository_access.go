@@ -91,7 +91,7 @@ func (a *RepositoryAccess) Resolve(ctx context.Context, owner, workID string) (R
 			result.Unavailable = append(result.Unavailable, RepositoryAccessFailure{RepositoryID: ref.RepositoryID, Reason: "not_selected"})
 			continue
 		}
-		material, err := a.supply.SupplyRepositoryCredential(ctx, RepositoryCredentialRequest{OwnerUserID: owner, AuthorizationID: ref.AuthorizationID, RepositoryID: ref.RepositoryID, CloneURL: ref.CloneURL})
+		material, err := a.supply.SupplyRepositoryCredential(ctx, RepositoryCredentialRequest{OwnerID: owner, AuthorizationID: ref.AuthorizationID, RepositoryID: ref.RepositoryID, CloneURL: ref.CloneURL})
 		if err != nil {
 			if ctx.Err() != nil {
 				return RepositoryAccessResult{}, ctx.Err()

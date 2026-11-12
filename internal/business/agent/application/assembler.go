@@ -8,7 +8,7 @@ import (
 )
 
 func AssembleWorkServiceAccess(work *domain.AgentWork, observations []query.ServiceAccessObservation, repositories []query.RepositoryPreparation) query.WorkServiceAccess {
-	result := query.WorkServiceAccess{OwnerUserID: work.AuthorizationSelection.OwnerUserID, Observations: slices.Clone(observations), Repositories: slices.Clone(repositories)}
+	result := query.WorkServiceAccess{OwnerID: work.AuthorizationSelection.OwnerID, Observations: slices.Clone(observations), Repositories: slices.Clone(repositories)}
 	for _, authorization := range work.AuthorizationSelection.Authorizations {
 		result.SelectedServices = append(result.SelectedServices, authorization.Service)
 	}

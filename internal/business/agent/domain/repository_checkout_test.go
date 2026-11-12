@@ -14,7 +14,7 @@ import (
 func repositoryWork(t *testing.T) *domain.AgentWork {
 	t.Helper()
 	work := newSession(t)
-	work.RepositorySelection = domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/work", Repositories: []domain.WorkRepository{
+	work.RepositorySelection = domain.WorkRepositorySelection{OwnerID: "owner", WorkBranch: "talgent/work", Repositories: []domain.WorkRepository{
 		{Provider: "github", RepoID: "github:1", RepoName: "acme/api", CloneURL: "https://github.com/acme/api.git", DefaultBranch: "main", BaseBranch: "main"},
 		{Provider: "github", RepoID: "github:2", RepoName: "acme/web", CloneURL: "https://github.com/acme/web.git", DefaultBranch: "main", BaseBranch: "main"},
 	}}

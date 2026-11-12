@@ -36,7 +36,7 @@ func TestAuthorizationReferencesArePersonalAndPreserveInactiveIdentity(t *testin
 	facts, err := port.ListPersonalAuthorizations(t.Context(), owner)
 	require.NoError(t, err)
 	require.Len(t, facts, 1)
-	require.Equal(t, owner, facts[0].OwnerUserID)
+	require.Equal(t, owner, facts[0].OwnerID)
 	require.Equal(t, id, facts[0].AuthorizationID, "reconnection restores this reference instead of adding a later authorization")
 	_, err = db.Exec("UPDATE scm_provider_authorization SET status='revoked' WHERE id=?", id)
 	require.NoError(t, err)

@@ -9,7 +9,7 @@ import (
 // AccessibleRepository is an owner-scoped Marketplace fact: a repository the
 // owner's current authorization reaches. It is not evidence of continuing access.
 type AccessibleRepository struct {
-	OwnerUserID   string `validate:"required,max=255"`
+	OwnerID       string `validate:"required,max=255"`
 	Provider      string `validate:"required,max=64"`
 	RepoID        string `validate:"required,max=255"`
 	RepoName      string `validate:"required,max=512"`
@@ -24,7 +24,7 @@ type WorkRepositoryChoice struct {
 }
 
 type WorkRepositoryInput struct {
-	OwnerUserID string
+	OwnerID string
 	// WorkBranch is the branch the creating caller names for the checkouts.
 	WorkBranch string
 	Choices    []WorkRepositoryChoice
@@ -44,7 +44,7 @@ type WorkRepository struct {
 }
 
 type WorkRepositorySelection struct {
-	OwnerUserID string `validate:"max=255"`
+	OwnerID string `validate:"max=255"`
 	// WorkBranch is the branch every selected repository is checked out on,
 	// named by the creating caller.
 	WorkBranch   string `validate:"max=255"`
@@ -71,7 +71,7 @@ func (s *AgentWork) RepositoryAuthorization(repositoryID string) (WorkServiceAut
 		if repo.Provider != "github" {
 			return WorkServiceAuthorization{}, ErrServiceAuthorizationNotSelected
 		}
-		ref, err := s.ServiceAuthorization(s.RepositorySelection.OwnerUserID, "github")
+		ref, err := s.ServiceAuthorization(s.RepositorySelection.OwnerID, "github")
 		if err != nil {
 			return WorkServiceAuthorization{}, err
 		}
@@ -94,7 +94,7 @@ func (s WorkRepositorySelection) Validate() error {
 	}
 	selected := make(map[string]bool, len(s.Repositories))
 	for _, repo := range s.Repositories {
-		if err := validation.Struct(repo); err != nil || s.OwnerUserID == "" || selected[repo.RepoID] {
+		if err := validation.Struct(repo); err != nil || s.OwnerID == "" || selected[repo.RepoID] {
 			return fmt.Errorf("%w: invalid repository selection", ErrInvalidWork)
 		}
 		selected[repo.RepoID] = true
@@ -103,12 +103,12 @@ func (s WorkRepositorySelection) Validate() error {
 }
 
 func (s *AgentWork) determineRepositorySelection(input WorkRepositoryInput) error {
-	if input.OwnerUserID != "" && input.OwnerUserID != s.AuthorizationOwner() {
+	if input.OwnerID != "" && input.OwnerID != s.AuthorizationOwner() {
 		return fmt.Errorf("%w: repository owner differs from the Work's authorization owner", ErrInvalidWork)
 	}
 	facts := make(map[string]AccessibleRepository, len(input.Available))
 	for _, fact := range input.Available {
-		if err := validation.Struct(fact); err != nil || fact.OwnerUserID != input.OwnerUserID {
+		if err := validation.Struct(fact); err != nil || fact.OwnerID != input.OwnerID {
 			return fmt.Errorf("%w: repository facts are not owner scoped", ErrInvalidWork)
 		}
 		if _, exists := facts[fact.RepoID]; exists {
@@ -119,14 +119,14 @@ func (s *AgentWork) determineRepositorySelection(input WorkRepositoryInput) erro
 	selection := WorkRepositorySelection{}
 	for _, choice := range input.Choices {
 		fact, found := facts[choice.RepositoryID]
-		if !found || input.OwnerUserID == "" {
+		if !found || input.OwnerID == "" {
 			return fmt.Errorf("%w: repository is not reachable under this owner's authorization", ErrInvalidWork)
 		}
 		base := strings.TrimSpace(choice.BaseBranch)
 		if base == "" {
 			base = fact.DefaultBranch
 		}
-		selection.OwnerUserID = input.OwnerUserID
+		selection.OwnerID = input.OwnerID
 		selection.Repositories = append(selection.Repositories, WorkRepository{
 			Provider: fact.Provider, RepoID: fact.RepoID, RepoName: fact.RepoName,
 			CloneURL: fact.CloneURL, WebURL: fact.WebURL, DefaultBranch: fact.DefaultBranch, BaseBranch: base,

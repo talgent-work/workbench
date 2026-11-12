@@ -8,7 +8,7 @@ import (
 )
 
 type workRepositoryRecord struct {
-	OwnerUserID  string                     `json:"owner_user_id"`
+	OwnerID      string                     `json:"owner_id"`
 	WorkBranch   string                     `json:"work_branch,omitempty"`
 	Repositories []selectedRepositoryRecord `json:"repositories"`
 }
@@ -24,7 +24,7 @@ type selectedRepositoryRecord struct {
 }
 
 func encodeWorkRepositories(selection domain.WorkRepositorySelection) (string, error) {
-	record := workRepositoryRecord{OwnerUserID: selection.OwnerUserID, WorkBranch: selection.WorkBranch}
+	record := workRepositoryRecord{OwnerID: selection.OwnerID, WorkBranch: selection.WorkBranch}
 	for _, repo := range selection.Repositories {
 		record.Repositories = append(record.Repositories, selectedRepositoryRecord{
 			Provider: repo.Provider, RepoID: repo.RepoID, RepoName: repo.RepoName,
@@ -39,7 +39,7 @@ func decodeWorkRepositories(data string) (domain.WorkRepositorySelection, error)
 	if err := json.Unmarshal([]byte(data), &record); err != nil {
 		return domain.WorkRepositorySelection{}, oops.Wrap(err)
 	}
-	selection := domain.WorkRepositorySelection{OwnerUserID: record.OwnerUserID, WorkBranch: record.WorkBranch}
+	selection := domain.WorkRepositorySelection{OwnerID: record.OwnerID, WorkBranch: record.WorkBranch}
 	for _, repo := range record.Repositories {
 		selection.Repositories = append(selection.Repositories, domain.WorkRepository{
 			Provider: repo.Provider, RepoID: repo.RepoID, RepoName: repo.RepoName,

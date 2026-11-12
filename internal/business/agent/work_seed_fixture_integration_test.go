@@ -86,7 +86,7 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	cloud := testCloud("10", "10Gi", "64").Cloud
 	admission := domain.StartAdmission{AdmittedAt: now, AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Soul: definition.Soul,
 		Seat: domain.ComputerSeat{ComputerID: cloud.ID, Kind: domain.ComputerCloud, DeskID: uuid.NewString()}}
-	work, created, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: workOwner, AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: definition.RepresentedPerson()},
+	work, created, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: workOwner, AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: definition.RepresentedPerson()},
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: domain.WorkSubject{Kind: "case", ID: seed.subject}, ProjectID: workProject,
 		Capabilities: capabilities, TraceAttributes: definition.WorkTraceAttributes(nil), Admission: admission}, domain.WorkCreationFacts{})
 	require.NoError(t, err)

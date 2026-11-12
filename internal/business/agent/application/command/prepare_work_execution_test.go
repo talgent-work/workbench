@@ -21,7 +21,7 @@ func repeatedPreparation(sessions *feedbackSessionStore) command.PrepareWorkExec
 // choices neither refuse the request nor replace the retained selection.
 func TestPreparationReturnsTheOriginalWorkWhateverRepositoriesItAsksFor(t *testing.T) {
 	_, sessions := startupStores(t)
-	retained := domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-368", Repositories: []domain.WorkRepository{
+	retained := domain.WorkRepositorySelection{OwnerID: "owner", WorkBranch: "talgent/TAL-368", Repositories: []domain.WorkRepository{
 		{Provider: "github", RepoID: "github:1", RepoName: "acme/api", CloneURL: "https://github.com/acme/api.git", DefaultBranch: "main", BaseBranch: "main"},
 	}}
 	sessions.session.RepositorySelection = retained

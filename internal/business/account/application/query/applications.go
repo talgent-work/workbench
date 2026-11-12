@@ -17,6 +17,9 @@ type OwnedApplication struct {
 	// SecretOverlap is how long a replaced Client Secret keeps matching
 	// after a rotation, the deployment's Rotation overlap.
 	SecretOverlap time.Duration
+	// Removed tells that it was removed for good: it holds no secret and
+	// its owner only reads its Works and usage (Ownership answered).
+	Removed bool
 }
 
 // ClientSecretState is where a listed Client Secret stands.

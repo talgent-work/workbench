@@ -21,7 +21,7 @@ func TestServiceSupplyTransmitsRetainedAuthorityAndCurrentMaterial(t *testing.T)
 	service := &serviceSupplyEndpoint{token: "initial-token"}
 	client := newServiceSupplyClient(t, service)
 	for _, target := range []string{"github-api", "github-remote-mcp"} {
-		input := command.ServiceCredentialRequest{OwnerUserID: "owner", AuthorizationID: "retained", Target: target}
+		input := command.ServiceCredentialRequest{OwnerID: "owner", AuthorizationID: "retained", Target: target}
 		for _, token := range []string{"initial-token", "rotated-token"} {
 			service.token = token
 			material, err := client.SupplyServiceCredential(t.Context(), input)
@@ -48,7 +48,7 @@ func TestServiceSupplyLimitsFailureFeedbackToKnownReasons(t *testing.T) {
 		t.Run(scenario.expected+"/"+scenario.code.String(), func(t *testing.T) {
 			failure := connect.NewError(scenario.code, "provider-secret")
 			client := newServiceSupplyClient(t, &serviceSupplyEndpoint{failure: failure, status: scenario.reported})
-			material, err := client.SupplyServiceCredential(t.Context(), command.ServiceCredentialRequest{OwnerUserID: "owner", AuthorizationID: "retained", Target: "github-api"})
+			material, err := client.SupplyServiceCredential(t.Context(), command.ServiceCredentialRequest{OwnerID: "owner", AuthorizationID: "retained", Target: "github-api"})
 			var unavailable *command.ServiceCredentialUnavailable
 			require.ErrorAs(t, err, &unavailable)
 			require.Equal(t, scenario.expected, unavailable.Reason)
@@ -86,7 +86,7 @@ func (s *serviceSupplyEndpoint) SupplyServiceCredential(ctx context.Context, r *
 	if info.RequestHeader().Get("Authorization") != "Bearer service-secret" || info.RequestHeader().Get(authn.HeaderServiceID) != "agent" || info.RequestHeader().Get(authn.HeaderDelegatedUserID) != r.OwnerUserId {
 		return nil, connect.NewError(connect.CodePermissionDenied, "")
 	}
-	s.received = command.ServiceCredentialRequest{OwnerUserID: r.OwnerUserId, AuthorizationID: r.AuthorizationId, Target: r.Target}
+	s.received = command.ServiceCredentialRequest{OwnerID: r.OwnerUserId, AuthorizationID: r.AuthorizationId, Target: r.Target}
 	if s.failure != nil {
 		if s.status != "" {
 			info.ResponseHeader().Set("X-Talgent-Credential-Status", s.status)
