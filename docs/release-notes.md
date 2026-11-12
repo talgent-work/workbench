@@ -5,6 +5,25 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that versions unversioned catalog Plugins
+
+Nothing to do beyond deploying it. Synchronizing `claude-plugins-official` no longer ends
+`partial_failure`:
+
+- A Plugin whose `plugin.json` and catalog entry name no version is now published, versioned by
+  what its entry is pinned to: the first 12 hex characters of its commit, of the catalog's commit
+  for a package inside the catalog repository, or of its archive's SHA-256. Each new commit is a
+  new release; an unchanged pin keeps its release without being fetched again.
+- An entry whose source runs a command on the installing machine, such as `xcode`, is skipped
+  and logged as the warning `catalog skipped a plugin the platform cannot acquire`; the run
+  still succeeds.
+
+Until this release runs, a synchronization still ends `partial_failure` on those entries, so
+`scripts/deploy/request-catalog-sync.sh` exits 1 while the previous release serves. When every
+failure it prints is `claude-plugins-official` with `explicit plugin version is required` or
+`unsupported plugin source`, the catalog was otherwise published: check the Plugin you need is
+listed and go on.
+
 ## The release that renames the core plugin to `talgent`
 
 ### Upgrade in this order
@@ -32,7 +51,11 @@ This release changes stored data and every service image, so upgrade in this ord
    ```
 
    Do not go on until the catalog lists `talgent`: the rename migration points stored
-   references at it.
+   references at it. Until [the release that versions unversioned catalog
+   Plugins](#the-release-that-versions-unversioned-catalog-plugins), a synchronization ends
+   `partial_failure` on the `claude-plugins-official` entries that name no version or run a local command, so the script
+   exits 1 even when `talgent` was published; when those are the only failures it prints, check
+   the catalog lists `talgent` and go on.
 2. **Apply the migrations, with no Work starting.** Apply
    `deploy/middleware/migrations/20261111-core-plugin-rename.sql`,
    `20261111-execution-start-causes.sql` and `20261111-retry-ceilings.sql` as described below.

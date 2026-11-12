@@ -156,7 +156,7 @@ func (s *CatalogSynchronizer) readSource(ctx context.Context, a *catalogAcquisit
 			retained[r.CatalogEntryName] = r
 		}
 	}
-	result := SourceReleases{Source: source.publication(), Failures: map[string]error{}}
+	result := SourceReleases{Source: source.publication(), Failures: map[string]error{}, Skipped: map[string]error{}}
 	type job struct {
 		order int
 		slug  string
@@ -211,6 +211,10 @@ func (s *CatalogSynchronizer) readSource(ctx context.Context, a *catalogAcquisit
 	})
 	chosen := map[string]application.PluginRelease{}
 	for _, item := range outcomes {
+		if errors.Is(item.err, errLocalOnlySource) {
+			result.Skipped[item.slug] = item.err
+			continue
+		}
 		if item.err != nil {
 			result.Failures[item.slug] = item.err
 			continue
@@ -240,10 +244,26 @@ func (s *CatalogSynchronizer) readPlugin(ctx context.Context, a *catalogAcquisit
 	if e := ctx.Err(); e != nil {
 		return release, slug, e
 	}
+	if localOnlySourceKinds[entrySourceKind(entry)] {
+		return release, slug, errLocalOnlySource
+	}
 	// A verified checksum proves the package itself is unchanged, independently
 	// of an unreliable index version. Otherwise inspect its manifest first.
 	if !s.force && previous.Slug != "" && meta.Version == previous.Version && samePinnedArchive(entry, previous.NativeEntry) {
 		return previous, previous.Slug, nil
+	}
+	// An entry naming no version may describe a package naming none, whose
+	// release is its pin. Pinning a third-party entry first reads nothing the
+	// package read below would not, and an unchanged pin needs no package read.
+	var pinned json.RawMessage
+	var e error
+	if meta.Version == "" && !source.Owned {
+		if pinned, e = s.pinEntry(ctx, a, source, location, pluginRoot, entry); e != nil {
+			return release, slug, e
+		}
+		if !s.force && previous.Slug != "" && unchangedPin(pinned, previous.NativeEntry, previous.Version) {
+			return previous, previous.Slug, nil
+		}
 	}
 	identity, e := a.manifestIdentity(ctx, location, pluginRoot, entry)
 	if e != nil {
@@ -259,16 +279,30 @@ func (s *CatalogSynchronizer) readPlugin(ctx context.Context, a *catalogAcquisit
 		return release, slug, errors.New("marketplace: invalid package name")
 	}
 	slug = identity.Name
-	if identity.Version == "" {
-		return release, slug, errors.New("marketplace: explicit plugin version is required")
-	}
 	previous = retained[slug]
-	if !s.force && previous.Slug != "" && identity.Version == previous.Version {
+	if identity.Version == "" {
+		// Owned packages pin only after this point: their pin builds an archive.
+		if pinned == nil {
+			if pinned, e = s.pinEntry(ctx, a, source, location, pluginRoot, entry); e != nil {
+				return release, slug, e
+			}
+		}
+		if identity.Version, e = pinnedVersion(pinned); e != nil {
+			return release, slug, e
+		}
+		if !s.force && previous.Slug != "" && unchangedPin(pinned, previous.NativeEntry, previous.Version) {
+			return previous, slug, nil
+		}
+		if pinned, e = withVersion(pinned, identity.Version); e != nil {
+			return release, slug, e
+		}
+	} else if !s.force && previous.Slug != "" && identity.Version == previous.Version {
 		return previous, slug, nil
 	}
-	pinned, e := s.pinEntry(ctx, a, source, location, pluginRoot, entry)
-	if e != nil {
-		return release, slug, e
+	if pinned == nil {
+		if pinned, e = s.pinEntry(ctx, a, source, location, pluginRoot, entry); e != nil {
+			return release, slug, e
+		}
 	}
 	directory, e := a.plugin(ctx, pinned)
 	if e != nil {

@@ -38,6 +38,16 @@ The processes share these stores:
 | JuiceFS | Attachments, Artifacts, previews and Marketplace archives |
 | NAS (NFS) | Work workspaces and Agent HOMEs |
 
+Marketplace synchronizes its catalog sources into immutable Plugin releases, each identified by
+source, Plugin name and version. The version is the one the package's `plugin.json` or its catalog
+entry declares; a Plugin declaring none is versioned by what its entry is pinned to: the first 12
+hex characters of the commit (git, `git-subdir` and catalog-relative packages, which are pinned
+to the catalog's commit) or of the archive's SHA-256, or the resolved npm version. That version
+is written into the published entry, so Claude Code reports the release it loaded. A version only
+names a release: the current one is whichever the latest catalog generation selected, never the
+greatest. An entry whose source runs a command on the installing machine (`command`) can never
+be acquired by the platform; synchronization skips it with a warning instead of failing.
+
 The browser signs in through Account; Envoy Gateway validates the session token against
 Account's published keys and passes the identity on, and each context authorizes on it. An Agent
 reaches the platform's API from its sandbox with its Work's credential, which the sandbox's

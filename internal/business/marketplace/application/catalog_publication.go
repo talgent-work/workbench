@@ -22,6 +22,10 @@ type SourceReleases struct {
 	Releases []PluginRelease
 	// Failed slugs retain their last valid publication from this source.
 	Failures map[string]error
+	// Skipped slugs name packages the platform can never acquire, such as a
+	// command run on the installing machine. They are neither published nor
+	// failures; publication only logs them.
+	Skipped map[string]error
 	// Failure means source enumeration failed; preserve the entire source.
 	Failure error
 }
@@ -76,6 +80,9 @@ func PublishCatalog(ctx context.Context, store CatalogPublicationPort, sources [
 			retained[release.Slug] = release
 		}
 		next := SourceReleases{Source: source.Source}
+		for slug, reason := range source.Skipped {
+			logger.WarnContext(ctx, "catalog skipped a plugin the platform cannot acquire", "source", source.Source.Name, "slug", slug, "reason", SafeDiagnosis(reason.Error()))
+		}
 		if source.Failure != nil {
 			next.Releases = previous
 			failures = append(failures, &PluginSyncFailure{Source: source.Source.Name, Cause: source.Failure})

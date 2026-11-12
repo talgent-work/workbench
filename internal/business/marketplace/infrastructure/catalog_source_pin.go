@@ -147,8 +147,6 @@ func (s *CatalogSynchronizer) pinEntry(ctx context.Context, acquisition *catalog
 			exact = versions[len(versions)-1]
 		}
 		origin["version"] = exact
-	case "command":
-		return nil, errors.New("marketplace: command sources cannot guarantee a retained package; publish an immutable git or archive source")
 	default:
 		return nil, errors.New("marketplace: unsupported plugin source")
 	}
