@@ -159,10 +159,10 @@ func TestReplacedFileShowsOnlyItsNewContent(t *testing.T) {
 	// Bytes after a ZIP's end record keep it valid: new content, same kind.
 	f.uploadAs(caseInputs, token, "letter.docx", "", fixtureFile(t, "letter.docx")+"\n", true)
 	require.Equal(t, domain.PreviewRender, f.preview(caseInputs, "letter.docx").Verdict.Mode, "the old content's copy never shows")
-	_, err := f.app.RenameFile(t.Context(), at(caseInputs, "letter.docx"), token, "renamed.docx", "user-1")
+	_, err := f.app.RenameFile(t.Context(), at(caseInputs, "letter.docx"), token, "renamed.docx", application.Actor{UserID: "user-1"})
 	require.NoError(t, err)
 	require.Len(t, previewEntries(t, f), 1, "a rename leaves the copy")
-	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "renamed.docx"), token, "user-1"))
+	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "renamed.docx"), token, application.Actor{UserID: "user-1"}))
 	require.Len(t, previewEntries(t, f), 1, "a deletion leaves the copy to lapse")
 }
 

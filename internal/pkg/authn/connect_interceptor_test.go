@@ -32,8 +32,8 @@ var (
 	undeclared = method(agentprivatev1.File_agent_private_v1_acting_work_proto, "ActingWorkService", "AdmitAgentAction")
 	// Declared anonymous.
 	anonymous = method(computerpublicv1.File_computer_public_v1_registration_proto, "RegistrationService", "StartRegistration")
-	// A user-only server-streaming procedure.
-	userStream = method(streamgatewaypublicv1.File_streamgateway_public_v1_streamgateway_proto, "StreamGatewayService", "WatchStream")
+	// A server-streaming procedure declared for a person or an Application.
+	ownerStream = method(streamgatewaypublicv1.File_streamgateway_public_v1_streamgateway_proto, "StreamGatewayService", "WatchStream")
 )
 
 // noStream is a server stream the handlers under test never use.
@@ -123,7 +123,7 @@ func TestUndeclaredPrincipalIsRefusedBeforeTheHandler(t *testing.T) {
 	}{
 		"agent on a user procedure":    {userOnly, agentHeaders()},
 		"user on undeclared procedure": {undeclared, userHeaders()},
-		"agent on a user stream":       {userStream, agentHeaders()},
+		"agent on a user stream":       {ownerStream, agentHeaders()},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, ran, err := call(t, NewPrincipalInterceptor(), tc.procedure, tc.header)
@@ -131,7 +131,7 @@ func TestUndeclaredPrincipalIsRefusedBeforeTheHandler(t *testing.T) {
 			require.False(t, ran)
 		})
 	}
-	_, ran, err := call(t, NewPrincipalInterceptor(), userStream, userHeaders())
+	_, ran, err := call(t, NewPrincipalInterceptor(), ownerStream, userHeaders())
 	require.NoError(t, err)
 	require.True(t, ran, "a declared stream admits its Principal")
 }

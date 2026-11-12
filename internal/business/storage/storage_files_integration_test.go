@@ -27,14 +27,14 @@ func TestADirectoryOpensOnceAndAdmitsWritesOnlyOnItsToken(t *testing.T) {
 	require.Equal(t, first, f.open(fileSpace(caseInputs)), "opening is idempotent")
 	require.DirExists(t, f.folder(fileSpace(caseInputs)))
 
-	_, err := f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "a.md"), SpaceToken: "forged", UploaderUserID: "user-1"})
+	_, err := f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "a.md"), SpaceToken: "forged", Uploader: application.Actor{UserID: "user-1"}})
 	require.ErrorIs(t, err, domain.ErrSpaceTokenRejected)
 	other := f.open(fileSpace(named("inputs", "subject", "case:2")))
-	require.ErrorIs(t, f.app.DeleteFile(t.Context(), at(caseInputs, "a.md"), other, "user-1"), domain.ErrSpaceTokenRejected)
+	require.ErrorIs(t, f.app.DeleteFile(t.Context(), at(caseInputs, "a.md"), other, application.Actor{UserID: "user-1"}), domain.ErrSpaceTokenRejected)
 	files, err := f.app.ListFiles(t.Context(), named("inputs", "subject", "never-opened"))
 	require.NoError(t, err)
 	require.Empty(t, files, "a Directory never opened lists nothing")
-	_, err = f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(named("inputs", "subject", "never-opened"), "a.md"), SpaceToken: first, UploaderUserID: "user-1"})
+	_, err = f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(named("inputs", "subject", "never-opened"), "a.md"), SpaceToken: first, Uploader: application.Actor{UserID: "user-1"}})
 	require.ErrorIs(t, err, domain.ErrDirectoryNotOpen)
 }
 
@@ -48,7 +48,7 @@ func TestWritesStateWhetherTheyReplaceAndShareLinksFollowThem(t *testing.T) {
 
 	// Create never replaces: a name taken after the link was issued is
 	// refused at commit.
-	stale, err := f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "late.md"), SpaceToken: token, UploaderUserID: "user-1"})
+	stale, err := f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "late.md"), SpaceToken: token, Uploader: application.Actor{UserID: "user-1"}})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, f.upload(caseInputs, token, "late.md", "first", false).StatusCode)
 	request, _ := http.NewRequest(http.MethodPut, stale.URL, strings.NewReader("second"))
@@ -68,9 +68,9 @@ func TestWritesStateWhetherTheyReplaceAndShareLinksFollowThem(t *testing.T) {
 	require.Len(t, f.files(caseInputs)["brief.md"].ShareLinks, 1)
 
 	// Rename moves the link; a taken target is refused.
-	_, err = f.app.RenameFile(t.Context(), at(caseInputs, "brief.md"), token, "late.md", "user-1")
+	_, err = f.app.RenameFile(t.Context(), at(caseInputs, "brief.md"), token, "late.md", application.Actor{UserID: "user-1"})
 	require.ErrorIs(t, err, application.ErrNameTaken)
-	renamed, err := f.app.RenameFile(t.Context(), at(caseInputs, "brief.md"), token, "final brief.md", "user-1")
+	renamed, err := f.app.RenameFile(t.Context(), at(caseInputs, "brief.md"), token, "final brief.md", application.Actor{UserID: "user-1"})
 	require.NoError(t, err)
 	require.Len(t, renamed.ShareLinks, 1)
 	status, body, _ = f.get(share.URL)
@@ -81,8 +81,8 @@ func TestWritesStateWhetherTheyReplaceAndShareLinksFollowThem(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(f.folder(fileSpace(caseInputs)), "late.md")))
 	lateShare, err := f.app.CreateShareLink(t.Context(), at(caseInputs, "final brief.md"), "user-1")
 	require.NoError(t, err)
-	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "final brief.md"), token, "user-1"))
-	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "final brief.md"), token, "user-1"), "deleting an absent file succeeds")
+	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "final brief.md"), token, application.Actor{UserID: "user-1"}))
+	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "final brief.md"), token, application.Actor{UserID: "user-1"}), "deleting an absent file succeeds")
 	for _, link := range []string{share.URL, lateShare.URL} {
 		status, _, _ = f.get(link)
 		require.Equal(t, http.StatusGone, status)
@@ -94,7 +94,7 @@ func TestWritesStateWhetherTheyReplaceAndShareLinksFollowThem(t *testing.T) {
 func TestUploadIsInvisibleUntilComplete(t *testing.T) {
 	f := newFixture(t)
 	token := f.open(fileSpace(caseInputs))
-	link, err := f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "big.bin"), SpaceToken: token, UploaderUserID: "user-1"})
+	link, err := f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "big.bin"), SpaceToken: token, Uploader: application.Actor{UserID: "user-1"}})
 	require.NoError(t, err)
 	reader, writer := io.Pipe()
 	done := make(chan *http.Response, 1)
@@ -126,7 +126,7 @@ func TestUploadIsBounded(t *testing.T) {
 	oversized := strings.Repeat("x", fixtureMaxUploadBytes+1)
 	response := f.upload(caseInputs, token, "declared.bin", oversized, false)
 	require.Equal(t, http.StatusRequestEntityTooLarge, response.StatusCode)
-	link, err := f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "streamed.bin"), SpaceToken: token, UploaderUserID: "user-1"})
+	link, err := f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "streamed.bin"), SpaceToken: token, Uploader: application.Actor{UserID: "user-1"}})
 	require.NoError(t, err)
 	request, _ := http.NewRequest(http.MethodPut, link.URL, io.MultiReader(strings.NewReader(oversized)))
 	request.ContentLength = -1
@@ -288,10 +288,10 @@ func TestCommittedFileChangesArePublished(t *testing.T) {
 	f := newFixture(t)
 	token := f.open(fileSpace(caseInputs))
 	f.upload(caseInputs, token, "a.md", "a", false)
-	_, err := f.app.RenameFile(t.Context(), at(caseInputs, "a.md"), token, "b.md", "user-1")
+	_, err := f.app.RenameFile(t.Context(), at(caseInputs, "a.md"), token, "b.md", application.Actor{UserID: "user-1"})
 	require.NoError(t, err)
-	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "b.md"), token, "user-1"))
-	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "b.md"), token, "user-1"))
+	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "b.md"), token, application.Actor{UserID: "user-1"}))
+	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "b.md"), token, application.Actor{UserID: "user-1"}))
 
 	var changes []*storageintegrationv1.FileChangedV1
 	require.Eventually(t, func() bool { return len(f.published.all()) == 3 }, 5*time.Second, 10*time.Millisecond)
@@ -312,4 +312,37 @@ func TestCommittedFileChangesArePublished(t *testing.T) {
 	require.Equal(t, "a.md", operations[storageintegrationv1.FileOperation_FILE_OPERATION_CREATED].GetName())
 	require.Equal(t, "a.md", operations[storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED].GetPreviousName())
 	require.Equal(t, "b.md", operations[storageintegrationv1.FileOperation_FILE_OPERATION_DELETED].GetName())
+}
+
+// An Application the owner's context admitted writes as itself: its upload
+// records it as the uploader, and each change it makes is published with it
+// as the writer, never as a person. A write names one writer.
+func TestAnApplicationWritesAsItself(t *testing.T) {
+	f := newFixture(t)
+	token := f.open(fileSpace(caseInputs))
+	desk := application.Actor{ApplicationID: "application-1"}
+	link, err := f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "ticket.md"), SpaceToken: token, Uploader: desk})
+	require.NoError(t, err)
+	request, _ := http.NewRequest(http.MethodPut, link.URL, strings.NewReader("ticket"))
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	response.Body.Close()
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	ticket := f.files(caseInputs)["ticket.md"]
+	require.Equal(t, "application-1", ticket.Attributes.UploaderApplicationID)
+	require.Empty(t, ticket.Attributes.UploaderUserID)
+	_, err = f.app.RenameFile(t.Context(), at(caseInputs, "ticket.md"), token, "ticket-42.md", desk)
+	require.NoError(t, err)
+	require.NoError(t, f.app.DeleteFile(t.Context(), at(caseInputs, "ticket-42.md"), token, desk))
+
+	require.Eventually(t, func() bool { return len(f.published.all()) == 3 }, 5*time.Second, 10*time.Millisecond)
+	for _, msg := range f.published.all() {
+		change := msg.Payload().(*storageintegrationv1.FileChangedV1)
+		require.Equal(t, "application-1", change.GetActorApplicationId())
+		require.Empty(t, change.GetActorUserId())
+		require.Empty(t, change.GetActorWorkId())
+	}
+
+	_, err = f.app.IssueUpload(t.Context(), application.IssueUpload{Position: at(caseInputs, "both.md"), SpaceToken: token, Uploader: application.Actor{UserID: "user-1", ApplicationID: "application-1"}})
+	require.ErrorIs(t, err, domain.ErrFileWriterRequired, "a write names one writer")
 }

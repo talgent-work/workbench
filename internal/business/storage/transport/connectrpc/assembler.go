@@ -67,7 +67,7 @@ func directoryFileToProto(file application.DirectoryFile) *storageprivatev1.File
 func storedFileToProto(file application.StoredFile) *storageprivatev1.File {
 	return &storageprivatev1.File{
 		Position: positionToProto(file.Position), SizeBytes: file.SizeBytes, ContentType: file.ContentType(), UpdatedAt: timestamppb.New(file.ModifiedAt),
-		UploaderUserId: file.Attributes.UploaderUserID, WorkId: file.Attributes.WorkID,
+		UploaderUserId: file.Attributes.UploaderUserID, UploaderApplicationId: file.Attributes.UploaderApplicationID, WorkId: file.Attributes.WorkID,
 	}
 }
 

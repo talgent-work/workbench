@@ -23,7 +23,7 @@ func NewHandler(app *application.Application) *Handler { return &Handler{app: ap
 
 func (h *Handler) WatchStream(ctx context.Context, req *streamgatewaypublicv1.WatchStreamRequest, srv streamgatewaypublicv1connect.StreamGatewayServiceWatchStreamServerStream) error {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	actor, _ := authn.CurrentUserID(ctx)
+	reader := streamReader(ctx)
 	after := time.Time{}
 	if ts := req.GetAfterTimestamp(); ts != nil {
 		after = ts.AsTime()
@@ -33,7 +33,7 @@ func (h *Handler) WatchStream(ctx context.Context, req *streamgatewaypublicv1.Wa
 		kinds = append(kinds, kind.String())
 	}
 	err := h.app.Queries.WatchStream.Run(ctx, query.WatchStreamRequest{
-		ActorUserID: actor, Admission: readerAdmission(info.RequestHeader()), IncludeUnattributedErrors: req.GetIncludeUnattributedErrors(),
+		ReaderID: reader, Admission: readerAdmission(info.RequestHeader()), IncludeUnattributedErrors: req.GetIncludeUnattributedErrors(),
 		AgentWorkID: req.GetAgentWorkId(), After: after, AfterID: req.GetAfterId(), Agent: req.Agent, Kinds: kinds, TurnIDs: req.GetTurnIds(),
 	}, func(payload query.PortalLivePayload) error {
 		response := mapPortalLivePayload(payload)
@@ -47,7 +47,7 @@ func (h *Handler) WatchStream(ctx context.Context, req *streamgatewaypublicv1.Wa
 
 func (h *Handler) ListMessagesBySession(ctx context.Context, req *streamgatewaypublicv1.ListMessagesBySessionRequest) (*streamgatewaypublicv1.ListMessagesBySessionResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	actor, _ := authn.CurrentUserID(ctx)
+	reader := streamReader(ctx)
 	var before *query.MessageHistoryCursor
 	if cursor := req.GetBefore(); cursor != nil {
 		if cursor.Timestamp == nil || cursor.Timestamp.CheckValid() != nil {
@@ -67,7 +67,7 @@ func (h *Handler) ListMessagesBySession(ctx context.Context, req *streamgatewayp
 		kinds = append(kinds, kind.String())
 	}
 	page, err := h.app.Queries.ListMessagesBySession.Handle(ctx, query.ListMessagesBySessionRequest{
-		ActorUserID: actor, Admission: readerAdmission(info.RequestHeader()), IncludeUnattributedErrors: req.GetIncludeUnattributedErrors(),
+		ReaderID: reader, Admission: readerAdmission(info.RequestHeader()), IncludeUnattributedErrors: req.GetIncludeUnattributedErrors(),
 		Before: before, From: from, Kinds: kinds, Agent: req.Agent, TurnIDs: req.GetTurnIds(), AgentWorkID: req.GetAgentWorkId(), ToolCallIDs: req.GetToolCallIds(), InteractionIDs: req.GetInteractionIds(), Limit: int(req.GetLimit()),
 	})
 	if err != nil {
@@ -85,9 +85,9 @@ func (h *Handler) ListMessagesBySession(ctx context.Context, req *streamgatewayp
 
 func (h *Handler) GetMessageDetail(ctx context.Context, req *streamgatewaypublicv1.GetMessageDetailRequest) (*streamgatewaypublicv1.GetMessageDetailResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	actor, _ := authn.CurrentUserID(ctx)
+	reader := streamReader(ctx)
 	detail, err := h.app.GetMessageDetail(ctx, query.MessageDetailRequest{
-		ActorUserID: actor, Admission: readerAdmission(info.RequestHeader()), AgentWorkID: req.AgentWorkId, MessageID: req.MessageId, Offset: req.Offset, Limit: req.Limit,
+		ReaderID: reader, Admission: readerAdmission(info.RequestHeader()), AgentWorkID: req.AgentWorkId, MessageID: req.MessageId, Offset: req.Offset, Limit: req.Limit,
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -97,8 +97,8 @@ func (h *Handler) GetMessageDetail(ctx context.Context, req *streamgatewaypublic
 
 func (h *Handler) GetToolDetail(ctx context.Context, req *streamgatewaypublicv1.GetToolDetailRequest) (*streamgatewaypublicv1.GetToolDetailResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)
-	actor, _ := authn.CurrentUserID(ctx)
-	detail, err := h.app.GetToolDetail(ctx, query.ToolDetailRequest{ActorUserID: actor, Admission: readerAdmission(info.RequestHeader()), AgentWorkID: req.AgentWorkId, ToolCallID: req.ToolCallId, InputOffset: req.InputOffset, OutputOffset: req.OutputOffset, Limit: req.Limit})
+	reader := streamReader(ctx)
+	detail, err := h.app.GetToolDetail(ctx, query.ToolDetailRequest{ReaderID: reader, Admission: readerAdmission(info.RequestHeader()), AgentWorkID: req.AgentWorkId, ToolCallID: req.ToolCallId, InputOffset: req.InputOffset, OutputOffset: req.OutputOffset, Limit: req.Limit})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -155,4 +155,15 @@ func toolPreviewResponse(preview *query.ToolOutputPreview) *dispatcherpublicv1.T
 		})
 	}
 	return message
+}
+
+// streamReader is whom a read of a Work's message stream is for: the person
+// or the Application the request speaks for. Agent admits each to its own
+// Works and a person also by Work Share or Visibility.
+func streamReader(ctx context.Context) string {
+	if application, ok := authn.CurrentApplication(ctx); ok {
+		return application.ID
+	}
+	user, _ := authn.CurrentUserID(ctx)
+	return user
 }

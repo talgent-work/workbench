@@ -1,6 +1,9 @@
 package standalonework
 
-import "github.com/talgent-work/workbench/internal/business/agent/domain"
+import (
+	"github.com/talgent-work/workbench/internal/business/agent/application/command"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
+)
 
 // Caller is whom a request acts for: an owner of Standalone Works asking for
 // itself, a person or an Application, or the Agent of one of a person's Works
@@ -30,8 +33,8 @@ func (c Caller) Owner() string {
 }
 
 // self is the person asking for themselves, for what only a person has: Work
-// Shares, repository choices and changing their Works' files. An Application
-// and an Agent are no one here.
+// Shares, repository choices and Share Links. An Application and an Agent are
+// no one here.
 func (c Caller) self() string {
 	if c.Agent != nil || c.ApplicationID != "" {
 		return ""
@@ -48,4 +51,26 @@ func (c Caller) libraryReader() string {
 		return ""
 	}
 	return c.UserID
+}
+
+// fileReader is whom a read of a Work's files is for: the owner asking for
+// itself, a person or an Application, or the person whose Library their
+// Work's Agent reads.
+func (c Caller) fileReader() string {
+	if c.Agent != nil {
+		return c.libraryReader()
+	}
+	return c.Owner()
+}
+
+// fileOwner is the owner changing its Standalone Works' files, a person or an
+// Application; an Agent changes none, so it names no one.
+func (c Caller) fileOwner() command.FileOwner {
+	if c.Agent != nil {
+		return command.FileOwner{}
+	}
+	if c.ApplicationID != "" {
+		return command.FileOwner{ApplicationID: c.ApplicationID}
+	}
+	return command.FileOwner{UserID: c.UserID}
 }
