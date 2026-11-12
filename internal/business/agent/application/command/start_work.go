@@ -84,13 +84,13 @@ func (h workStartup) admit(ctx context.Context, request StartWork, operation sta
 	if err != nil {
 		return false, err
 	}
-	deskID := requestedDeskID(request.WorkID, request.RequestID)
-	if session.StartHoldsDesk(deskID) {
-		return true, nil
-	}
 	agent, err := h.agents.Get(ctx, session.AgentID)
 	if err != nil {
 		return false, err
+	}
+	deskID := requestedDeskID(agent.WorkPrincipal(), request.RequestID)
+	if session.StartHoldsDesk(deskID) {
+		return true, nil
 	}
 	if err := request.admitObservedVersion(session); err != nil {
 		return false, err
