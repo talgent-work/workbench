@@ -173,6 +173,7 @@ account:
   cookie-domain: "${ACCOUNT_COOKIE_DOMAIN:}"
   access-token-lifetime: "15m"
   agent-token-lifetime: "168h"
+  application-token-lifetime: "15m"
   session-sliding-lifetime: "720h"
   session-absolute-lifetime: "2160h"
   key-rotation-interval: "720h"

@@ -21,4 +21,11 @@ var (
 	// Account first.
 	ErrAgentAccountExists      = errors.New("agent account already exists")
 	ErrAgentAccountFactsDiffer = errors.New("work facts differ from the agent account")
+	ErrInvalidApplication      = errors.New("invalid application")
+	// ErrApplicationNotFound also answers a person who does not own the
+	// Application, so its existence stays private.
+	ErrApplicationNotFound = errors.New("application not found")
+	// ErrClientSecretMismatch means no valid Client Secret of an active
+	// Application accepts the presented secret.
+	ErrClientSecretMismatch = errors.New("client secret does not match")
 )

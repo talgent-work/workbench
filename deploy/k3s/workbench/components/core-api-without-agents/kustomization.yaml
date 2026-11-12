@@ -1,5 +1,5 @@
-# AGENT_CORE_API_ACCESS=disabled: the entry admits only people on the core's
-# product routes, Agents get no address for them, and no Work loads the core
+# AGENT_CORE_API_ACCESS=disabled: the entry admits only people and
+# Applications on the core's product routes, Agents get no address for them, and no Work loads the core
 # API plugin that teaches them those routes; a deployment that sends
 # every Agent call through its platform Connector instead names it in a
 # controlplane profile.
@@ -15,7 +15,7 @@ patches:
         value:
           defaultAction: Deny
           rules:
-            - name: people-only
+            - name: people-and-applications
               action: Allow
               principal:
                 jwt:
@@ -24,6 +24,7 @@ patches:
                     - name: principal
                       values:
                         - user
+                        - application
   - patch: |-
       apiVersion: apps/v1
       kind: Deployment

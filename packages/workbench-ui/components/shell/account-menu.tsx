@@ -1,5 +1,5 @@
 import { Avatar, Button, Dropdown, Header, Label, Separator, typographyVariants } from "@heroui/react";
-import { AlertTriangle, Box, ChartColumn, Ellipsis, History, Library, LogOut, Monitor, Plus, Puzzle, UserRound } from "lucide-react";
+import { AlertTriangle, AppWindow, Box, ChartColumn, Ellipsis, History, Library, LogOut, Monitor, Plus, Puzzle, UserRound } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useCurrentUser, useLogout } from "../../lib/account-service";
 import type { PersonalPaths } from "./entry-shell";
@@ -87,6 +87,7 @@ export function AccountMenu({ compact, onNavigate, personal }: { compact: boolea
           if (own) onNavigate(own.to(personal));
           else if (key === "profile") onNavigate("/profile");
           else if (key === "computers") onNavigate("/computers");
+          else if (key === "applications") onNavigate("/applications");
           else if (key === "sign-out") logout.mutate();
           else if (key === "installed-retry") retry();
           else { const item = installed.find(entry => entry.id === key); if (item) onNavigate(item.to); }
@@ -116,6 +117,7 @@ export function AccountMenu({ compact, onNavigate, personal }: { compact: boolea
           {personal && <Separator />}
           <Dropdown.Item id="profile" textValue="Edit profile"><UserRound size={16} aria-hidden="true" /><Label>Edit profile</Label></Dropdown.Item>
           <Dropdown.Item id="computers" textValue="Computers"><Monitor size={16} aria-hidden="true" /><Label>Computers</Label></Dropdown.Item>
+          <Dropdown.Item id="applications" textValue="Applications"><AppWindow size={16} aria-hidden="true" /><Label>Applications</Label></Dropdown.Item>
           <Separator />
           <Dropdown.Item id="sign-out" textValue="Sign out" isDisabled={logout.isPending}><LogOut size={16} aria-hidden="true" /><Label>Sign out</Label></Dropdown.Item>
         </Dropdown.Menu>

@@ -35,7 +35,10 @@ const (
 	audience = "talgent"
 )
 
-const agentTokenLifetime = 7 * 24 * time.Hour
+const (
+	agentTokenLifetime       = 7 * 24 * time.Hour
+	applicationTokenLifetime = 15 * time.Minute
+)
 
 var lifetimes = domain.SessionLifetimes{Access: 15 * time.Minute, Sliding: 30 * 24 * time.Hour, Absolute: 90 * 24 * time.Hour}
 
@@ -140,6 +143,8 @@ func newHarness(t *testing.T) *harness {
 		Tokens: keys, Directory: infrastructure.NewUserDirectoryQueries(engine),
 		Lifetimes: lifetimes, Now: c.Now,
 		AgentAccounts: infrastructure.NewAgentAccountRepository(engine), AgentTokenLifetime: agentTokenLifetime,
+		Applications: infrastructure.NewApplicationRepository(engine), ApplicationQueries: infrastructure.NewApplicationQueries(engine),
+		ApplicationTokenLifetime: applicationTokenLifetime,
 	})
 	require.NoError(t, app.RotateSigningKeys(context.Background()))
 	handler, err := accounthttp.NewHandler(app, accounthttp.Config{

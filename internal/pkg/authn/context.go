@@ -35,11 +35,19 @@ type Agent struct {
 	RepresentedUserID string
 }
 
-// Principal is the one subject a request speaks for: a user or an agent,
-// never both.
+// Application is an application Principal: a third-party program that calls
+// as itself, by its Application id. It carries no person, not even its
+// Application Owner.
+type Application struct {
+	ID string
+}
+
+// Principal is the one subject a request speaks for: a user, an agent or an
+// Application, never more than one.
 type Principal struct {
-	user  *AuthenticatedUser
-	agent *Agent
+	user        *AuthenticatedUser
+	agent       *Agent
+	application *Application
 }
 
 // UserPrincipal is a request speaking for a person.
@@ -47,6 +55,11 @@ func UserPrincipal(user AuthenticatedUser) Principal { return Principal{user: &u
 
 // AgentPrincipal is a request speaking for a Work's Agent.
 func AgentPrincipal(agent Agent) Principal { return Principal{agent: &agent} }
+
+// ApplicationPrincipal is a request speaking for an Application.
+func ApplicationPrincipal(application Application) Principal {
+	return Principal{application: &application}
+}
 
 // User is the person the request speaks for, if it speaks for one.
 func (p Principal) User() (AuthenticatedUser, bool) {
@@ -62,6 +75,15 @@ func (p Principal) Agent() (Agent, bool) {
 		return Agent{}, false
 	}
 	return *p.agent, true
+}
+
+// Application is the Application the request speaks for, if it speaks for
+// one.
+func (p Principal) Application() (Application, bool) {
+	if p.application == nil {
+		return Application{}, false
+	}
+	return *p.application, true
 }
 
 type principalContextKey struct{}
@@ -94,7 +116,7 @@ func WithAuthenticatedUser(ctx context.Context, user AuthenticatedUser) context.
 }
 
 // CurrentUser returns the person the request speaks for; a request speaking
-// for an agent has none.
+// for an agent or an Application has none.
 func CurrentUser(ctx context.Context) (AuthenticatedUser, bool) {
 	principal, ok := PrincipalFrom(ctx)
 	if !ok {
@@ -130,4 +152,13 @@ func normalizeUserID(id string) (string, bool) {
 		return "", false
 	}
 	return id, true
+}
+
+// CurrentApplication returns the Application the request speaks for.
+func CurrentApplication(ctx context.Context) (Application, bool) {
+	principal, ok := PrincipalFrom(ctx)
+	if !ok {
+		return Application{}, false
+	}
+	return principal.Application()
 }

@@ -1,0 +1,20 @@
+/* The breadcrumb switcher for the object a page is about, such as a Project or
+   an Application. It heads the breadcrumb; its 16px slot shows the separator
+   at rest when a crumb follows and the switch chevron on hover or keyboard
+   focus (always without hover), so revealing the control moves nothing. */
+.p-object-switcher { margin-inline-start: -8px; gap: 6px; padding-inline: 8px 0; min-width: 0; flex-shrink: 1; }
+/* The page location's items carry their own inline padding; pull it back so the
+   switcher's separator sits as close to the next crumb as the location's own separators. */
+.p-object-switcher ~ .p-location { margin-inline-start: -7px; }
+.p-object-switcher:not([data-hovered="true"]):not([data-focus-visible="true"]):not([data-pressed="true"]) { background: transparent; }
+.p-object-switcher-slot { position: relative; display: inline-block; width: 16px; height: 16px; flex-shrink: 0; color: var(--muted); }
+/* The Button gives its icons a margin and 16px size; these two share one centred 14px slot. */
+.p-object-switcher-slot>svg { position: absolute; inset: 1px; margin: 0; width: 14px; height: 14px; }
+.p-object-switcher-chevron { visibility: hidden; }
+.p-object-switcher:not([data-followed="true"]) .p-object-switcher-separator { visibility: hidden; }
+.p-object-switcher:is([data-hovered="true"],[data-focus-visible="true"],[aria-expanded="true"]) .p-object-switcher-chevron,.p-object-switcher:is(:hover,:focus-visible) .p-object-switcher-chevron { visibility: visible; }
+.p-object-switcher:is([data-hovered="true"],[data-focus-visible="true"],[aria-expanded="true"]) .p-object-switcher-separator,.p-object-switcher:is(:hover,:focus-visible) .p-object-switcher-separator { visibility: hidden; }
+@media (hover: none) {
+  .p-object-switcher .p-object-switcher-chevron { visibility: visible; }
+  .p-object-switcher .p-object-switcher-separator { visibility: hidden; }
+}
