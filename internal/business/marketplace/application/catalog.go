@@ -56,9 +56,9 @@ type ReleasePage struct {
 	NextCursor string
 }
 
-// CatalogPort exposes synchronized catalog content. Implementations must not
-// fetch or reinterpret mutable package contents during these reads.
-type CatalogPort interface {
+// PluginCatalogQueryRepository reads the synchronized catalog. Implementations
+// must not fetch or reinterpret mutable package contents during these reads.
+type PluginCatalogQueryRepository interface {
 	Get(ctx context.Context, slug string) (PluginRelease, error)
 	List(ctx context.Context, afterSlug string, limit int, component string) (ReleasePage, error)
 	Marketplace(ctx context.Context) ([]byte, error)

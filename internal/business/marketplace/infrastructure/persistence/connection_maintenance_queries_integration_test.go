@@ -16,7 +16,7 @@ import (
 
 func testConnectionMaintenancePages(t *testing.T, db *xorm.Engine) {
 	ctx := t.Context()
-	authRepo, authQueries := NewProviderAuthorizations(db), NewAuthorizationMaintenanceQueries(db)
+	authRepo, authQueries := NewProviderAuthorizations(db), NewProviderAuthorizationQueries(db)
 	var authorizationIDs []string
 	for n := range 105 {
 		auth := newProviderAuthorizationForTest(t, fmt.Sprintf("event-owner-%03d", n))
@@ -53,7 +53,7 @@ func testConnectionMaintenancePages(t *testing.T, db *xorm.Engine) {
 	require.Equal(t, authorizationIDs, collect(byAccount))
 	// Execute the real revocation webhook use case with these adapters and
 	// verify durable aggregate changes on both sides of the page boundary.
-	connections := application.NewPersonalConnections(authRepo, nil, nil, nil, nil, nil, authRepo, nil, authQueries)
+	connections := application.NewPersonalConnections(authRepo, authQueries, nil, nil, nil)
 	require.NoError(t, connections.HandleGitHubAppAuthorizationRevoked(ctx, application.GitHubAppAuthorizationRevokedInput{ProviderAccountID: "event-account"}))
 	for _, id := range authorizationIDs {
 		auth, err := authRepo.Get(ctx, id)
@@ -64,7 +64,7 @@ func testConnectionMaintenancePages(t *testing.T, db *xorm.Engine) {
 	require.NoError(t, err)
 	require.Equal(t, domain.ProviderAuthorizationActive, currentForeign.Status)
 
-	_, err = db.Exec("UPDATE scm_provider_authorization SET deleted_at=1,version=version+1 WHERE owner_user_id='event-owner-000'")
+	_, err = db.Exec("UPDATE scm_provider_authorization SET deleted_at=1,version=version+1 WHERE owner_id='event-owner-000'")
 	require.NoError(t, err)
 	require.Len(t, collect(byAccount), 104)
 }

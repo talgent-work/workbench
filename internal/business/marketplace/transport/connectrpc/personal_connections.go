@@ -20,7 +20,7 @@ func (h *Handler) BeginProviderAuthorization(ctx context.Context, req *marketpla
 		return nil, err
 	}
 	result, err := h.application.BeginPersonalAuthorization(ctx, application.BeginProviderAuthorizationInput{
-		OwnerUserID: actor, Provider: provider, RedirectURI: req.GetRedirectUri(),
+		OwnerID: actor, Provider: provider, RedirectURI: req.GetRedirectUri(),
 	})
 	if err != nil {
 		return nil, mapConnectionError(err)
@@ -38,7 +38,7 @@ func (h *Handler) CompleteProviderAuthorization(ctx context.Context, req *market
 		return nil, err
 	}
 	result, err := h.application.CompletePersonalAuthorization(ctx, application.CompleteProviderAuthorizationInput{
-		OwnerUserID: actor, Provider: provider, Code: req.GetCode(), State: req.GetState(),
+		OwnerID: actor, Provider: provider, Code: req.GetCode(), State: req.GetState(),
 		RedirectURI: req.GetRedirectUri(),
 	})
 	if err != nil {
@@ -47,7 +47,7 @@ func (h *Handler) CompleteProviderAuthorization(ctx context.Context, req *market
 	return &marketplacepublicv1.CompleteProviderAuthorizationResponse{Authorization: &marketplacepublicv1.ProviderAuthorization{
 		Id: result.ID, Status: result.Status,
 		Provider: result.Provider, ProviderAccountId: result.ProviderAccountID, ProviderLogin: result.ProviderLogin,
-		OwnerUserId: result.OwnerUserID,
+		OwnerUserId: result.OwnerID,
 	}}, nil
 }
 

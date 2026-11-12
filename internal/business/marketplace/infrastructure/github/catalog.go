@@ -17,8 +17,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var _ application.ProviderAccessObserver = (*Catalog)(nil)
-
 // installationFetchConcurrency bounds parallel repository listings across one
 // user's installations.
 const installationFetchConcurrency = 4
@@ -63,14 +61,14 @@ func NewCatalog(cfg Config, authorizations application.AuthorizationStore, ciphe
 // ObserveAccess lists the user's installations with their repositories, the
 // installations fetched concurrently. An installation that disappears between
 // the two reads only narrows the scope.
-func (c *Catalog) ObserveAccess(ctx context.Context, ownerUserID string, provider domain.Provider) (domain.AccessScope, error) {
+func (c *Catalog) ObserveAccess(ctx context.Context, ownerID string, provider domain.Provider) (domain.AccessScope, error) {
 	if !c.enabled || provider != domain.ProviderGitHub {
 		return domain.AccessScope{}, application.ErrProviderUnavailable
 	}
 	// The observation is as of its start: a slower one must not look newer
 	// than one that began after it.
 	observedAt := c.now().UTC()
-	session, err := c.userSession(ctx, ownerUserID)
+	session, err := c.userSession(ctx, ownerID)
 	if err != nil {
 		return domain.AccessScope{}, mapProviderError(err)
 	}
@@ -210,13 +208,13 @@ type userSession struct {
 	token   string
 }
 
-func (c *Catalog) userSession(ctx context.Context, ownerUserID string) (*userSession, error) {
-	auth, err := c.authorizations.GetByOwnerAndProvider(ctx, ownerUserID, domain.ProviderGitHub)
+func (c *Catalog) userSession(ctx context.Context, ownerID string) (*userSession, error) {
+	auth, err := c.authorizations.GetByOwnerAndProvider(ctx, ownerID, domain.ProviderGitHub)
 	if err != nil {
 		return nil, err
 	}
 	manager := newFreshUserTokenManager(c.app.cfg, c.app.http, c.authorizations, c.cipher, c.now)
-	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{AuthorizationID: auth.ID, OwnerUserID: ownerUserID, Provider: domain.ProviderGitHub, Reason: "catalog"})
+	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{AuthorizationID: auth.ID, OwnerID: ownerID, Provider: domain.ProviderGitHub, Reason: "catalog"})
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +252,7 @@ func (s *userSession) refresh(ctx context.Context, rejected string) (string, err
 		return s.token, nil
 	}
 	manager := newFreshUserTokenManager(s.catalog.app.cfg, s.catalog.app.http, s.catalog.authorizations, s.catalog.cipher, s.catalog.now)
-	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{AuthorizationID: s.auth.ID, OwnerUserID: s.auth.OwnerUserID, Provider: domain.ProviderGitHub, ForceRefresh: true, Reason: "github_api_401"})
+	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{AuthorizationID: s.auth.ID, OwnerID: s.auth.OwnerID, Provider: domain.ProviderGitHub, ForceRefresh: true, Reason: "github_api_401"})
 	if err != nil {
 		return "", err
 	}

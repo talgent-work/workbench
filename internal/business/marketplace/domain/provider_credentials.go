@@ -43,13 +43,13 @@ type ProviderAuthorizationPort interface {
 // it verifies the consumer's target and authentication contract. A Provider name
 // alone must never be mapped to Applicable=true.
 type CredentialRequirement struct {
-	OwnerUserID string
-	Provider    Provider
-	Applicable  bool
+	OwnerID    string
+	Provider   Provider
+	Applicable bool
 }
 
 func (a *ProviderAuthorization) SupplyValidCredentials(ctx context.Context, requirement CredentialRequirement, now time.Time, skew time.Duration, port ProviderAuthorizationPort) (CredentialSet, error) {
-	if requirement.OwnerUserID != a.OwnerUserID || requirement.OwnerUserID == "" {
+	if requirement.OwnerID != a.OwnerID || requirement.OwnerID == "" {
 		return CredentialSet{}, ErrPermissionDenied
 	}
 	if requirement.Provider != a.Provider || !requirement.Applicable {
@@ -96,7 +96,7 @@ func (a *ProviderAuthorization) RenewCredentials(ctx context.Context, now time.T
 }
 
 func (a *ProviderAuthorization) CancelAuthorization(ctx context.Context, owner string, now time.Time, port ProviderAuthorizationPort) error {
-	if owner == "" || owner != a.OwnerUserID {
+	if owner == "" || owner != a.OwnerID {
 		return ErrPermissionDenied
 	}
 	if a.Status == ProviderAuthorizationRevoked {

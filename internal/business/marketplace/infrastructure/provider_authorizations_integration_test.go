@@ -19,7 +19,7 @@ func TestAuthorizationReferencesArePersonalAndPreserveInactiveIdentity(t *testin
 	id := uuid.NewString()
 	for _, record := range []struct{ id, owner, state string }{{id, owner, "reconnect_required"}, {uuid.NewString(), other, "active"}} {
 		_, err := db.Exec(`INSERT INTO scm_provider_authorization
-		 (id,owner_user_id,provider,status,access_token_ciphertext,refresh_token_ciphertext)
+		 (id,owner_id,provider,status,access_token_ciphertext,refresh_token_ciphertext)
 		 VALUES (?,?,?,?,?,?)`, record.id, record.owner, "github", record.state, "access-secret-canary", "refresh-secret-canary")
 		require.NoError(t, err)
 	}

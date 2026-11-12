@@ -24,7 +24,7 @@ func TestAuthorizer_BeginProviderAuthorizationRequestsUserAuthorization(t *testi
 	authorizer.now = func() time.Time { return time.Unix(100, 0).UTC() }
 
 	resp, err := authorizer.BeginProviderAuthorization(context.Background(), application.BeginProviderAuthorizationInput{
-		OwnerUserID: "user-1",
+		OwnerID:     "user-1",
 		Provider:    domain.ProviderGitHub,
 		RedirectURI: "https://app.example.test/marketplace/providers/github",
 	})
@@ -84,7 +84,7 @@ func TestAuthorizer_CompleteProviderAuthorizationReturnsEncryptedAuthorization(t
 	}
 	authorizer.now = func() time.Time { return time.Unix(100, 0).UTC() }
 	begin, err := authorizer.BeginProviderAuthorization(context.Background(), application.BeginProviderAuthorizationInput{
-		OwnerUserID: "user-1",
+		OwnerID:     "user-1",
 		Provider:    domain.ProviderGitHub,
 		RedirectURI: "https://app.example.test/profile",
 	})
@@ -94,7 +94,7 @@ func TestAuthorizer_CompleteProviderAuthorizationReturnsEncryptedAuthorization(t
 	state := stateFromURL(t, begin.AuthorizationURL)
 
 	auth, err := authorizer.CompleteProviderAuthorization(context.Background(), application.CompleteProviderAuthorizationInput{
-		OwnerUserID: "user-1",
+		OwnerID:     "user-1",
 		Provider:    domain.ProviderGitHub,
 		Code:        "code-1",
 		State:       state,
@@ -110,7 +110,7 @@ func TestAuthorizer_CompleteProviderAuthorizationReturnsEncryptedAuthorization(t
 	if err != nil {
 		t.Fatalf("Decrypt access token: %v", err)
 	}
-	if auth.OwnerUserID != "user-1" || auth.ProviderLogin != "octocat" || plaintext != "ghu_user_token" {
+	if auth.OwnerID != "user-1" || auth.ProviderLogin != "octocat" || plaintext != "ghu_user_token" {
 		t.Fatalf("authorization=%+v plaintext=%q", auth, plaintext)
 	}
 	if !auth.RefreshTokenExpiresAt.Equal(time.Unix(100, 0).UTC().Add(2 * time.Hour)) {

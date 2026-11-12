@@ -39,13 +39,13 @@ func (c SynchronizationConfig) Validate() error {
 var SynchronizationModule = fx.Module("marketplace.synchronization",
 	fx.Provide(func(config Config) SynchronizationConfig { return config.Synchronization }),
 	fx.Provide(infrastructure.NewSynchronizationRuns),
-	fx.Provide(func(config SynchronizationConfig, store *infrastructure.CatalogStore) (application.CatalogSynchronizationPort, error) {
+	fx.Provide(func(config SynchronizationConfig, store *infrastructure.CatalogStore) (application.PluginSourcePort, error) {
 		if !config.Enabled {
 			return nil, nil
 		}
 		return infrastructure.NewCatalogSynchronizer(config.Acquisition, store)
 	}),
-	fx.Provide(func(config SynchronizationConfig, runs *infrastructure.SynchronizationRuns, synchronizer application.CatalogSynchronizationPort, enqueuer taskqueue.Enqueuer, logger *slog.Logger) *application.CatalogSynchronization {
+	fx.Provide(func(config SynchronizationConfig, runs *infrastructure.SynchronizationRuns, synchronizer application.PluginSourcePort, enqueuer taskqueue.Enqueuer, logger *slog.Logger) *application.CatalogSynchronization {
 		return application.NewCatalogSynchronization(runs, synchronizer, enqueuer, time.Duration(config.TimeoutSeconds)*time.Second, config.Enabled, logger)
 	}),
 	fx.Provide(fx.Annotate(taskprocessor.NewSynchronizationProcessor, fx.ResultTags(pkgtaskqueue.ProcessorTag(Queue)))),

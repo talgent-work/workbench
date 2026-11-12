@@ -23,7 +23,7 @@ func (i *CredentialSupplier) SupplyRepositoryCredential(ctx context.Context, own
 		return credential.MaterializedCredential{}, domain.ErrCredentialTargetInapplicable
 	}
 	manager := newFreshUserTokenManager(i.cfg, i.http, i.authorizations, i.cipher, i.now)
-	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{OwnerUserID: owner, AuthorizationID: authorizationID, Provider: domain.ProviderGitHub, Reason: "work_repository"})
+	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{OwnerID: owner, AuthorizationID: authorizationID, Provider: domain.ProviderGitHub, Reason: "work_repository"})
 	if err != nil {
 		return credential.MaterializedCredential{}, mapProviderError(err)
 	}

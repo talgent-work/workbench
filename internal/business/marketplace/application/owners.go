@@ -14,13 +14,13 @@ var ErrApplicationUnknown = errors.New("marketplace: application not found")
 // OwnedApplication is Account's answer about one Application: who owns it
 // and whether it was removed.
 type OwnedApplication struct {
-	ID          string
-	OwnerUserID string
-	Removed     bool
+	ID      string
+	OwnerID string
+	Removed bool
 }
 
-// ApplicationOwnershipPort asks Account's Application Ownership Query.
-type ApplicationOwnershipPort interface {
+// AccountPort asks Account's Application Ownership Query.
+type AccountPort interface {
 	GetApplication(ctx context.Context, applicationID string) (OwnedApplication, error)
 }
 
@@ -35,10 +35,10 @@ type Caller struct {
 // reaches: the caller's own, or an Application the calling person owns
 // (Application Owner manages).
 type Owners struct {
-	ownership ApplicationOwnershipPort
+	ownership AccountPort
 }
 
-func NewOwners(ownership ApplicationOwnershipPort) *Owners {
+func NewOwners(ownership AccountPort) *Owners {
 	return &Owners{ownership: ownership}
 }
 
@@ -67,7 +67,7 @@ func (o *Owners) Resolve(ctx context.Context, caller Caller, applicationID strin
 	if err != nil {
 		return "", err
 	}
-	if owned.OwnerUserID != caller.UserID || owned.Removed {
+	if owned.OwnerID != caller.UserID || owned.Removed {
 		return "", domain.ErrPermissionDenied
 	}
 	return owned.ID, nil

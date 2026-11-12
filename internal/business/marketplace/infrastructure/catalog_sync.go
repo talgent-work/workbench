@@ -77,7 +77,7 @@ func NewCatalogSynchronizer(config CatalogAcquisitionConfig, store *CatalogStore
 	return &CatalogSynchronizer{config: config, store: store}, nil
 }
 
-var _ application.CatalogSynchronizationPort = (*CatalogSynchronizer)(nil)
+var _ application.PluginSourcePort = (*CatalogSynchronizer)(nil)
 
 // SynchronizeCatalog copies configuration so Force never mutates a shared instance.
 func (s *CatalogSynchronizer) SynchronizeCatalog(ctx context.Context, force bool) error {

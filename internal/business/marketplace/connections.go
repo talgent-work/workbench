@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/talgent-work/workbench/internal/business/marketplace/application/credential"
-
 	domainevent "github.com/go-jimu/components/ddd/event"
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 	"go.uber.org/fx"
@@ -49,10 +47,7 @@ var ConnectionsModule = fx.Module(
 	pkgmysql.Bind(Database),
 	fx.Provide(func(cfg ConnectionConfig) scmgithub.Config { return cfg.GitHub }),
 	fx.Provide(func(cfg ConnectionConfig) tokenmaintenance.Config { return cfg.Maintenance }),
-	fx.Provide(fx.Annotate(
-		persistence.NewProviderAuthorizations,
-		fx.As(new(application.ProviderConnectionQueryRepository)), fx.As(fx.Self()),
-	)),
+	fx.Provide(persistence.NewProviderAuthorizations),
 	// Every save of an authorization goes through the store that dispatches
 	// its recorded credential changes.
 	fx.Provide(fx.Annotate(
@@ -67,13 +62,9 @@ var ConnectionsModule = fx.Module(
 		events.Subscribe(eventlog.Handler(logger, publisher))
 		lc.Append(fx.Hook{OnStop: events.Close})
 	}),
-	fx.Provide(fx.Annotate(persistence.NewAuthorizationMaintenanceQueries, fx.As(new(query.AuthorizationMaintenanceQueryRepository)), fx.As(new(query.AuthorizationEventQueryRepository)))),
-	fx.Provide(fx.Annotate(
-		scmgithub.NewCatalog,
-		fx.As(new(application.ProviderAccessObserver)),
-	)),
-	fx.Provide(fx.Annotate(scopemaintenance.NewScheduler, fx.As(new(application.AccessScopeObservations)), fx.As(fx.Self()))),
-	fx.Provide(func(candidates query.AuthorizationMaintenanceQueryRepository, scheduler *scopemaintenance.Scheduler) *scopemaintenance.ReconcileScanProcessor {
+	fx.Provide(scmgithub.NewCatalog, fx.Private),
+	fx.Provide(fx.Annotate(scopemaintenance.NewScheduler, fx.As(new(application.MarketplaceTaskQueuePort)), fx.As(fx.Self()))),
+	fx.Provide(func(candidates query.ProviderAuthorizationQueryRepository, scheduler *scopemaintenance.Scheduler) *scopemaintenance.ReconcileScanProcessor {
 		return scopemaintenance.NewReconcileScanProcessor(candidates, scheduler, time.Now)
 	}),
 	fx.Provide(func(connections *application.PersonalConnections) *scopemaintenance.ObserveProcessor {
@@ -83,25 +74,15 @@ var ConnectionsModule = fx.Module(
 		scmgithub.NewTokenCipher,
 		fx.As(new(scmgithub.TokenCipher)),
 	)),
-	fx.Provide(fx.Annotate(
-		scmgithub.NewAuthorizer,
-		fx.As(new(application.ProviderAuthorizer)),
-	)),
-	fx.Provide(fx.Annotate(
-		scmgithub.NewCredentialSupplier,
-		fx.As(new(credential.RepositoryCredentialSupplier)), fx.As(new(credential.ServiceCredentialSupplier)),
-	)),
-	fx.Provide(fx.Annotate(
-		scmgithub.NewAuthorizationRefresher,
-		fx.As(new(tokenmaintenance.AuthorizationRefresher)),
-	)),
+	fx.Provide(scmgithub.NewAuthorizer, scmgithub.NewCredentialSupplier, scmgithub.NewAuthorizationRefresher, fx.Private),
+	fx.Provide(fx.Annotate(scmgithub.NewGitHub, fx.As(new(application.GitHubPort)))),
 	fx.Provide(func(cfg scmgithub.Config, app *application.Application, logger *slog.Logger) (*marketplacehttp.WebhookHandler, error) {
 		return marketplacehttp.NewWebhookHandler(cfg.WebhookSecret, app, logger)
 	}),
 	fx.Provide(fx.Annotate(scmgithub.NewAuthorizationPort, fx.As(new(domain.ProviderAuthorizationPort)))),
 	fx.Provide(func(
 		authorizations domain.ProviderAuthorizationRepository,
-		candidates query.AuthorizationMaintenanceQueryRepository,
+		candidates query.ProviderAuthorizationQueryRepository,
 		enqueuer componenttaskqueue.Enqueuer,
 		registry *componenttaskqueue.SchemaRegistry,
 		cfg tokenmaintenance.Config,
@@ -109,9 +90,9 @@ var ConnectionsModule = fx.Module(
 		return tokenmaintenance.NewRefreshScanProcessor(authorizations, candidates, enqueuer, registry, cfg, time.Now)
 	}),
 	fx.Provide(func(
-		refresher tokenmaintenance.AuthorizationRefresher,
+		github application.GitHubPort,
 	) *tokenmaintenance.RefreshAuthorizationProcessor {
-		return tokenmaintenance.NewRefreshAuthorizationProcessor(refresher)
+		return tokenmaintenance.NewRefreshAuthorizationProcessor(github)
 	}),
 	fx.Provide(application.NewPersonalConnections),
 	TaskqueueModule,

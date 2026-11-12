@@ -13,7 +13,7 @@ func providerAuthorizationToDO(a *domain.ProviderAuthorization) (ProviderAuthori
 	}
 	return ProviderAuthorizationDO{
 		ID:                     a.ID,
-		OwnerUserID:            a.OwnerUserID,
+		OwnerID:                a.OwnerID,
 		Provider:               string(a.Provider),
 		ProviderAccountID:      a.ProviderAccountID,
 		ProviderLogin:          a.ProviderLogin,
@@ -45,7 +45,7 @@ func providerAuthorizationFromDO(row ProviderAuthorizationDO) (*domain.ProviderA
 	return domain.RehydrateProviderAuthorization(domain.ProviderAuthorization{
 		AccessScope: scope,
 		ID:          row.ID,
-		OwnerUserID: row.OwnerUserID,
+		OwnerID:     row.OwnerID,
 		Provider:    domain.Provider(row.Provider),
 		Status:      domain.ProviderAuthorizationStatus(row.Status),
 

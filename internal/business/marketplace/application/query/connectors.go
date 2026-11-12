@@ -29,7 +29,14 @@ type InstalledConnector struct {
 	Version     int
 }
 
+// ConnectorQueryRepository lists the whole Connector catalog, which Get by
+// identity does not serve.
 type ConnectorQueryRepository interface {
 	ListCatalog(ctx context.Context) ([]CatalogConnector, error)
-	ListInstalled(ctx context.Context, userID string) ([]InstalledConnector, error)
+}
+
+// InstalledConnectorQueryRepository lists an owner's installed Connectors, a
+// person's or an Application's.
+type InstalledConnectorQueryRepository interface {
+	ListInstalled(ctx context.Context, ownerID string) ([]InstalledConnector, error)
 }

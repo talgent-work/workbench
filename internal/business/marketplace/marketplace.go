@@ -14,6 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	marketplaceaccount "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/account"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -86,11 +87,11 @@ var Module = fx.Module("domain.marketplace",
 	)),
 	fx.Provide(infrastructure.NewConnectorRepository, infrastructure.NewInstalledConnectorRepository),
 	fx.Provide(func(connectors *infrastructure.ConnectorRepository, installed *infrastructure.InstalledConnectorRepository) application.ConnectorRepositories {
-		return application.ConnectorRepositories{Catalog: connectors, Installed: installed, Queries: connectors}
+		return application.ConnectorRepositories{Catalog: connectors, Installed: installed, CatalogQueries: connectors, InstalledQueries: installed}
 	}),
 	fx.Invoke(registerPlatformConnectors),
-	fx.Provide(func(store *infrastructure.CatalogStore) application.CatalogPort { return store }),
-	fx.Provide(fx.Annotate(infrastructure.NewProviderAuthorizationQueries, fx.As(new(query.ProviderAuthorizationQueryRepository)))),
+	fx.Provide(func(store *infrastructure.CatalogStore) application.PluginCatalogQueryRepository { return store }),
+	fx.Provide(fx.Annotate(persistence.NewProviderAuthorizationQueries, fx.As(new(query.ProviderAuthorizationQueryRepository)))),
 	fx.Provide(func(config Config, httpClient *http.Client) (*marketplaceaccount.Client, error) {
 		return marketplaceaccount.NewClient(httpClient, config.Account)
 	}),

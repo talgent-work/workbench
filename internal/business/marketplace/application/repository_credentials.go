@@ -9,7 +9,7 @@ import (
 )
 
 type RepositoryCredentialRequest struct {
-	OwnerUserID, AuthorizationID, RepositoryID, CloneURL string
+	OwnerID, AuthorizationID, RepositoryID, CloneURL string
 }
 
 // RepositoryCredential is transient material for a trusted execution boundary.
@@ -20,14 +20,14 @@ type RepositoryCredential struct {
 }
 
 func (a *PersonalConnections) SupplyRepositoryCredential(ctx context.Context, request RepositoryCredentialRequest) (RepositoryCredential, error) {
-	if strings.TrimSpace(request.OwnerUserID) == "" || strings.TrimSpace(request.AuthorizationID) == "" || strings.TrimSpace(request.RepositoryID) == "" || strings.TrimSpace(request.CloneURL) == "" {
+	if strings.TrimSpace(request.OwnerID) == "" || strings.TrimSpace(request.AuthorizationID) == "" || strings.TrimSpace(request.RepositoryID) == "" || strings.TrimSpace(request.CloneURL) == "" {
 		return RepositoryCredential{}, domain.ErrInvalidRequiredField
 	}
 	authorization, err := a.authorizations.Get(ctx, request.AuthorizationID)
 	if err != nil {
 		return RepositoryCredential{}, err
 	}
-	if authorization.OwnerUserID != request.OwnerUserID || authorization.Provider != domain.ProviderGitHub {
+	if authorization.OwnerID != request.OwnerID || authorization.Provider != domain.ProviderGitHub {
 		return RepositoryCredential{}, domain.ErrPermissionDenied
 	}
 	// The observed scope verifies the selected external identity and target; it
@@ -49,7 +49,7 @@ func (a *PersonalConnections) SupplyRepositoryCredential(ctx context.Context, re
 	if repository.CloneURL != request.CloneURL {
 		return RepositoryCredential{}, domain.ErrCredentialTargetInapplicable
 	}
-	material, err := a.supplier.SupplyRepositoryCredential(ctx, request.OwnerUserID, request.AuthorizationID, request.CloneURL)
+	material, err := a.github.SupplyRepositoryCredential(ctx, request.OwnerID, request.AuthorizationID, request.CloneURL)
 	if err != nil {
 		return RepositoryCredential{}, err
 	}

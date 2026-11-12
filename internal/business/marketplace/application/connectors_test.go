@@ -15,6 +15,9 @@ import (
 // connectorStore is one in-memory fake behind the Connector repositories and
 // query contract, so writes are visible to the reads used by the use cases.
 type connectorStore struct {
+	// The authorization selections connector tests do not exercise stay
+	// unimplemented.
+	query.ProviderAuthorizationQueryRepository
 	catalog        map[string]*domain.Connector
 	installed      map[string]*domain.InstalledConnector
 	authorizations []query.PersonalAuthorization
@@ -127,7 +130,7 @@ func (mcpCatalog) OpenArchive(context.Context, string) (io.ReadSeekCloser, error
 func connectorApplication(t *testing.T, plugins ...PluginRelease) (*Application, *connectorStore) {
 	t.Helper()
 	store := newConnectorStore()
-	app := NewApplication(nil, nil, mcpCatalog(plugins), store, nil, ConnectorRepositories{Catalog: store, Installed: installedConnectors{store}, Queries: store})
+	app := NewApplication(nil, nil, mcpCatalog(plugins), store, nil, ConnectorRepositories{Catalog: store, Installed: installedConnectors{store}, CatalogQueries: store, InstalledQueries: store})
 	require.NoError(t, app.PublishConnector(t.Context(), ConnectorPublication{Name: "talgent", Configuration: domain.MCPConfiguration{Type: "http", URL: "http://connector.talgent.svc.cluster.local/mcp"}}))
 	configuration := domain.MCPConfiguration{Command: "github-mcp-server", Arguments: []string{"stdio"}}
 	binding := domain.ProviderAccessBinding{Provider: "github", Target: "github-api", Authentication: "credential_proxy"}

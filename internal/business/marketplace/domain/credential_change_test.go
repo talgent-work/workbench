@@ -37,10 +37,10 @@ func TestCredentialChangesAreRecordedForConsumers(t *testing.T) {
 	require.NoError(t, auth.RenewCredentials(ctx, now, 5*time.Minute, false, renewing))
 	require.Empty(t, changes(auth), "a credential still valid is not renewed again")
 
-	require.NoError(t, auth.ReplaceWith(domain.ProviderAuthorizationInput{OwnerUserID: auth.OwnerUserID, Provider: auth.Provider, ProviderAccountID: "123", ProviderLogin: "octocat", AccessTokenCiphertext: "again", RefreshTokenCiphertext: "refresh"}))
+	require.NoError(t, auth.ReplaceWith(domain.ProviderAuthorizationInput{OwnerID: auth.OwnerID, Provider: auth.Provider, ProviderAccountID: "123", ProviderLogin: "octocat", AccessTokenCiphertext: "again", RefreshTokenCiphertext: "refresh"}))
 	require.Equal(t, []domain.CredentialChange{domain.CredentialReauthorized}, changes(auth))
 
-	require.NoError(t, auth.CancelAuthorization(ctx, auth.OwnerUserID, now, renewing))
+	require.NoError(t, auth.CancelAuthorization(ctx, auth.OwnerID, now, renewing))
 	require.Equal(t, []domain.CredentialChange{domain.CredentialRevoked}, changes(auth))
 	require.NoError(t, auth.MarkRevoked(now))
 	require.Empty(t, changes(auth), "accepting a revocation again records nothing")

@@ -54,7 +54,7 @@ func TestAuthorizationMaintenanceCandidatesMySQL(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}
-	queries := NewAuthorizationMaintenanceQueries(db)
+	queries := NewProviderAuthorizationQueries(db)
 	for _, check := range []struct {
 		limit    int
 		expected []string

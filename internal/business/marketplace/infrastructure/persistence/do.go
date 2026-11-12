@@ -2,7 +2,7 @@ package persistence
 
 type ProviderAuthorizationDO struct {
 	ID                     string `xorm:"id pk varchar(36)"`
-	OwnerUserID            string `xorm:"owner_user_id varchar(64) notnull default('')"`
+	OwnerID                string `xorm:"owner_id varchar(64) notnull default('')"`
 	Provider               string `xorm:"provider varchar(16) notnull default('')"`
 	ProviderAccountID      string `xorm:"provider_account_id varchar(128) notnull default('')"`
 	ProviderLogin          string `xorm:"provider_login varchar(128) notnull default('')"`

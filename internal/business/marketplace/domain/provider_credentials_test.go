@@ -44,11 +44,11 @@ func TestProviderAuthorization_CancellationRenewsExpiredCredentialsBeforeRevocat
 			return true, nil
 		},
 	}
-	require.NoError(t, auth.CancelAuthorization(context.Background(), auth.OwnerUserID, now, port))
+	require.NoError(t, auth.CancelAuthorization(context.Background(), auth.OwnerID, now, port))
 	require.Equal(t, []string{"renew", "revoke"}, calls)
 	require.Equal(t, domain.ProviderAuthorizationRevoked, auth.Status)
 	// A retry is locally idempotent and never contacts the Provider again.
-	require.NoError(t, auth.CancelAuthorization(context.Background(), auth.OwnerUserID, now, port))
+	require.NoError(t, auth.CancelAuthorization(context.Background(), auth.OwnerID, now, port))
 	require.Len(t, calls, 2)
 }
 
@@ -59,7 +59,7 @@ func TestProviderAuthorization_UnconfirmedCancellationPreservesAuthorization(t *
 			auth := providerAuthorizationForTest(t, now.Add(time.Hour))
 			before := *auth
 			port := authorizationAuthority{revoke: func(domain.CredentialSet) (bool, error) { return false, externalErr }}
-			err := auth.CancelAuthorization(context.Background(), auth.OwnerUserID, now, port)
+			err := auth.CancelAuthorization(context.Background(), auth.OwnerID, now, port)
 			require.Error(t, err)
 			require.Equal(t, before, *auth)
 		})
@@ -86,9 +86,9 @@ func TestProviderAuthorization_SupplyChecksOwnerTargetAndCurrentState(t *testing
 		revoked     bool
 		want        error
 	}{
-		{"foreign-owner", domain.CredentialRequirement{OwnerUserID: "another-user", Provider: domain.ProviderGitHub, Applicable: true}, false, domain.ErrPermissionDenied},
-		{"unknown-target", domain.CredentialRequirement{OwnerUserID: "user-1", Provider: domain.ProviderGitHub}, false, domain.ErrCredentialTargetInapplicable},
-		{"revoked", domain.CredentialRequirement{OwnerUserID: "user-1", Provider: domain.ProviderGitHub, Applicable: true}, true, domain.ErrAuthorizationRevoked},
+		{"foreign-owner", domain.CredentialRequirement{OwnerID: "another-user", Provider: domain.ProviderGitHub, Applicable: true}, false, domain.ErrPermissionDenied},
+		{"unknown-target", domain.CredentialRequirement{OwnerID: "user-1", Provider: domain.ProviderGitHub}, false, domain.ErrCredentialTargetInapplicable},
+		{"revoked", domain.CredentialRequirement{OwnerID: "user-1", Provider: domain.ProviderGitHub, Applicable: true}, true, domain.ErrAuthorizationRevoked},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			auth := providerAuthorizationForTest(t, now.Add(time.Hour))
@@ -106,7 +106,7 @@ func TestProviderAuthorization_InvalidReauthorizationPreservesExistingGrant(t *t
 	auth := providerAuthorizationForTest(t, time.Now().Add(time.Hour))
 	before := *auth
 	err := auth.ReplaceWith(domain.ProviderAuthorizationInput{
-		OwnerUserID: auth.OwnerUserID, Provider: auth.Provider,
+		OwnerID: auth.OwnerID, Provider: auth.Provider,
 		ProviderAccountID: "another-account", ProviderLogin: "another-login",
 	})
 	require.Error(t, err)

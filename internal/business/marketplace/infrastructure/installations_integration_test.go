@@ -19,6 +19,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
@@ -58,13 +59,13 @@ func setup(t *testing.T) (*xorm.Engine, *infrastructure.InstalledPluginRepositor
 	return setupWithCatalog(t, catalogFixture{})
 }
 
-func setupWithCatalog(t *testing.T, catalog application.CatalogPort) (*xorm.Engine, *infrastructure.InstalledPluginRepository, *application.Application, marketplacepublicv1connect.MarketplaceServiceClient, *httptest.Server) {
+func setupWithCatalog(t *testing.T, catalog application.PluginCatalogQueryRepository) (*xorm.Engine, *infrastructure.InstalledPluginRepository, *application.Application, marketplacepublicv1connect.MarketplaceServiceClient, *httptest.Server) {
 	t.Helper()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	repository := infrastructure.NewInstalledPluginRepository(db)
-	app := application.NewApplication(repository, repository, catalog, infrastructure.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), Queries: infrastructure.NewConnectorRepository(db)})
+	app := application.NewApplication(repository, repository, catalog, persistence.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), CatalogQueries: infrastructure.NewConnectorRepository(db), InstalledQueries: infrastructure.NewInstalledConnectorRepository(db)})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())

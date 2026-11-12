@@ -452,7 +452,7 @@ CREATE TABLE IF NOT EXISTS `marketplace_plugin_release` (
 
 CREATE TABLE IF NOT EXISTS `scm_provider_authorization` (
     `id` varchar(36) NOT NULL COMMENT 'Primary key ID, UUID format',
-    `owner_user_id` varchar(64) NOT NULL DEFAULT '' COMMENT 'Talgent user that owns this provider authorization',
+    `owner_id` varchar(64) NOT NULL DEFAULT '' COMMENT 'Owner of this provider authorization: a person or an Application',
     `provider` varchar(16) NOT NULL DEFAULT '' COMMENT 'SCM provider',
     `provider_account_id` varchar(128) NOT NULL DEFAULT '' COMMENT 'Provider account ID',
     `provider_login` varchar(128) NOT NULL DEFAULT '' COMMENT 'Provider login',
@@ -474,10 +474,10 @@ CREATE TABLE IF NOT EXISTS `scm_provider_authorization` (
     `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update timestamp in milliseconds',
     `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft delete timestamp in milliseconds',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uniq_owner_provider` (`owner_user_id`, `provider`, `deleted_at`),
+    UNIQUE KEY `uniq_owner_provider` (`owner_id`, `provider`, `deleted_at`),
     KEY `idx_scope_observation` (`status`, `access_scope_observed_at`, `deleted_at`),
     KEY `idx_scope_installations` ((CAST(`access_scope_json`->'$.installation_ids' AS CHAR(32) ARRAY))),
-    KEY `idx_owner_provider` (`owner_user_id`, `provider`, `deleted_at`),
+    KEY `idx_owner_provider` (`owner_id`, `provider`, `deleted_at`),
     KEY `idx_refresh_candidates` (`status`, `expires_at`, `refresh_lease_until`, `deleted_at`),
     KEY `idx_provider_account` (`provider`, `provider_account_id`, `deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='SCM provider authorizations';

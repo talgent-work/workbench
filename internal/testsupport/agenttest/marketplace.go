@@ -15,7 +15,6 @@ import (
 	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
 	marketapp "github.com/talgent-work/workbench/internal/business/marketplace/application"
 	marketdomain "github.com/talgent-work/workbench/internal/business/marketplace/domain"
-	marketinfra "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
 	marketstore "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	markettransport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -46,7 +45,7 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 	ids := map[string]string{}
 	for _, granted := range authorizations {
 		authorization, err := marketdomain.NewProviderAuthorization(marketdomain.ProviderAuthorizationInput{
-			OwnerUserID: granted.User, Provider: marketdomain.ProviderGitHub,
+			OwnerID: granted.User, Provider: marketdomain.ProviderGitHub,
 			ProviderAccountID: "101", ProviderLogin: "fixture",
 			AccessTokenCiphertext: SecretCanary,
 		})
@@ -57,11 +56,11 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 		require.NoError(t, store.Save(ctx, authorization))
 		ids[granted.User] = authorization.ID
 	}
-	personal := marketapp.NewPersonalConnections(store, ownRepository{}, nil, nil, nil, nil, nil, nil, nil)
+	personal := marketapp.NewPersonalConnections(store, marketstore.NewProviderAuthorizationQueries(db), ownRepository{}, nil, nil)
 	for _, id := range ids {
 		require.NoError(t, personal.ObserveAccessScope(ctx, id))
 	}
-	market := marketapp.NewApplication(nil, nil, nil, marketinfra.NewProviderAuthorizationQueries(db), personal, marketapp.ConnectorRepositories{})
+	market := marketapp.NewApplication(nil, nil, nil, marketstore.NewProviderAuthorizationQueries(db), personal, marketapp.ConnectorRepositories{})
 	marketplace := connect.NewServer(authn.NewPrincipalInterceptor())
 	marketplacepublicv1connect.RegisterMarketplaceServiceHandler(marketplace, markettransport.NewHandler(market, marketapp.NewOwners(noApplications{})))
 	mux := http.NewServeMux()
@@ -81,7 +80,7 @@ func (noApplications) GetApplication(context.Context, string) (marketapp.OwnedAp
 
 // ownRepository stands in for the Provider's live decision: each user reaches
 // one repository of their own.
-type ownRepository struct{}
+type ownRepository struct{ marketapp.GitHubPort }
 
 func (ownRepository) ObserveAccess(_ context.Context, owner string, _ marketdomain.Provider) (marketdomain.AccessScope, error) {
 	return marketdomain.AccessScope{ObservedAt: time.Now(), Accounts: []marketdomain.ScopeAccount{{InstallationID: "1", Login: owner, Repositories: []marketdomain.ScopeRepository{{

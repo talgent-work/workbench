@@ -14,8 +14,10 @@ import (
 
 var ErrSynchronizationDisabled = errors.New("marketplace: synchronization is disabled")
 
-// CatalogSynchronizationPort acquires releases without changing personal installs.
-type CatalogSynchronizationPort interface {
+// PluginSourcePort reads the configured upstream sources' catalogs and fetches
+// their Plugin packages without credentials, then publishes what it acquired;
+// it never changes an owner's installations.
+type PluginSourcePort interface {
 	SynchronizeCatalog(context.Context, bool) error
 }
 
@@ -43,14 +45,14 @@ type SynchronizationRuns interface {
 // CatalogSynchronization owns shared admission, bounded execution and safe status.
 type CatalogSynchronization struct {
 	runs         SynchronizationRuns
-	synchronizer CatalogSynchronizationPort
+	synchronizer PluginSourcePort
 	enqueuer     taskqueue.Enqueuer
 	timeout      time.Duration
 	enabled      bool
 	logger       *slog.Logger
 }
 
-func NewCatalogSynchronization(runs SynchronizationRuns, synchronizer CatalogSynchronizationPort, enqueuer taskqueue.Enqueuer, timeout time.Duration, enabled bool, logger *slog.Logger) *CatalogSynchronization {
+func NewCatalogSynchronization(runs SynchronizationRuns, synchronizer PluginSourcePort, enqueuer taskqueue.Enqueuer, timeout time.Duration, enabled bool, logger *slog.Logger) *CatalogSynchronization {
 	return &CatalogSynchronization{runs, synchronizer, enqueuer, timeout, enabled, logger}
 }
 func (a *CatalogSynchronization) Request(ctx context.Context, force bool) (*SynchronizationRun, error) {

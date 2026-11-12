@@ -9,6 +9,8 @@ import (
 )
 
 type fakeAuthorizationRepository struct {
+	// The selections a test does not exercise stay unimplemented.
+	query.ProviderAuthorizationQueryRepository
 	authorizations map[string]*domain.ProviderAuthorization
 }
 
@@ -36,18 +38,18 @@ func (r *fakeAuthorizationRepository) Get(_ context.Context, id string) (*domain
 	return nil, domain.ErrProviderNotFound
 }
 
-func (r *fakeAuthorizationRepository) GetByOwnerAndProvider(_ context.Context, ownerUserID string, provider domain.Provider) (*domain.ProviderAuthorization, error) {
+func (r *fakeAuthorizationRepository) GetByOwnerAndProvider(_ context.Context, ownerID string, provider domain.Provider) (*domain.ProviderAuthorization, error) {
 	for _, auth := range r.authorizations {
-		if auth.OwnerUserID == ownerUserID && auth.Provider == provider {
+		if auth.OwnerID == ownerID && auth.Provider == provider {
 			return cloneAuthorization(auth), nil
 		}
 	}
 	return nil, domain.ErrProviderNotFound
 }
 
-func (r *fakeAuthorizationRepository) GetProviderConnectionState(_ context.Context, ownerUserID string, provider domain.Provider) (*query.ProviderConnectionState, error) {
+func (r *fakeAuthorizationRepository) GetProviderConnectionState(_ context.Context, ownerID string, provider domain.Provider) (*query.ProviderConnectionState, error) {
 	for _, auth := range r.authorizations {
-		if auth.OwnerUserID == ownerUserID && auth.Provider == provider {
+		if auth.OwnerID == ownerID && auth.Provider == provider {
 			return providerConnectionStateFromAuthorization(cloneAuthorization(auth)), nil
 		}
 	}
@@ -96,10 +98,10 @@ func (a *fakeProviderAuthorizer) CompleteProviderAuthorization(context.Context, 
 	return cloneAuthorization(a.authorization), nil
 }
 
-func mustAuthorization(t *testing.T, ownerUserID, login string) *domain.ProviderAuthorization {
+func mustAuthorization(t *testing.T, ownerID, login string) *domain.ProviderAuthorization {
 	t.Helper()
 	auth, err := domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
-		OwnerUserID:            ownerUserID,
+		OwnerID:                ownerID,
 		Provider:               domain.ProviderGitHub,
 		ProviderAccountID:      login + "-id",
 		ProviderLogin:          login,
