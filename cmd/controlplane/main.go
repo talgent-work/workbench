@@ -30,20 +30,21 @@ import (
 // Option supplies the Workbench core's configuration tree while retaining
 // module resource names. An extension runs in its own process.
 type Option struct {
-	AgentStorage           agent.StorageConfig          `json:"agent-storage" yaml:"agent-storage" toml:"agent-storage"`
-	AgentAccount           agent.AccountConfig          `json:"agent-account" yaml:"agent-account" toml:"agent-account"`
-	Storage                storage.Config               `json:"storage" yaml:"storage" toml:"storage"`
-	AgentRPC               agent.RPCConfig              `json:"agent-rpc" yaml:"agent-rpc" toml:"agent-rpc"`
-	AgentMarketplace       agent.PluginCatalogConfig    `json:"agent-marketplace" yaml:"agent-marketplace" toml:"agent-marketplace"`
-	AgentBuiltInPlugins    agent.BuiltInPluginsConfig   `json:"agent-built-in-plugins" yaml:"agent-built-in-plugins" toml:"agent-built-in-plugins"`
-	AgentComputer          agent.ComputerConfig         `json:"agent-computer" yaml:"agent-computer" toml:"agent-computer"`
-	Computer               computer.Config              `json:"computer" yaml:"computer" toml:"computer"`
-	AgentExecution         agent.ExecutionConfig        `json:"agent-execution" yaml:"agent-execution" toml:"agent-execution"`
-	AgentRecovery          agent.RecoveryConfig         `json:"agent-recovery" yaml:"agent-recovery" toml:"agent-recovery"`
-	AgentCredentialChanges agent.CredentialChangeConfig `json:"agent-credential-changes" yaml:"agent-credential-changes" toml:"agent-credential-changes"`
-	AgentInputChanges      agent.InputChangeConfig      `json:"agent-input-changes" yaml:"agent-input-changes" toml:"agent-input-changes"`
-	AgentDeskAssignments   agent.DeskAssignmentConfig   `json:"agent-desk-assignments" yaml:"agent-desk-assignments" toml:"agent-desk-assignments"`
-	AgentComputerPresence  agent.ComputerPresenceConfig `json:"agent-computer-presence" yaml:"agent-computer-presence" toml:"agent-computer-presence"`
+	AgentStorage            agent.StorageConfig            `json:"agent-storage" yaml:"agent-storage" toml:"agent-storage"`
+	AgentAccount            agent.AccountConfig            `json:"agent-account" yaml:"agent-account" toml:"agent-account"`
+	Storage                 storage.Config                 `json:"storage" yaml:"storage" toml:"storage"`
+	AgentRPC                agent.RPCConfig                `json:"agent-rpc" yaml:"agent-rpc" toml:"agent-rpc"`
+	AgentMarketplace        agent.PluginCatalogConfig      `json:"agent-marketplace" yaml:"agent-marketplace" toml:"agent-marketplace"`
+	AgentBuiltInPlugins     agent.BuiltInPluginsConfig     `json:"agent-built-in-plugins" yaml:"agent-built-in-plugins" toml:"agent-built-in-plugins"`
+	AgentComputer           agent.ComputerConfig           `json:"agent-computer" yaml:"agent-computer" toml:"agent-computer"`
+	Computer                computer.Config                `json:"computer" yaml:"computer" toml:"computer"`
+	AgentExecution          agent.ExecutionConfig          `json:"agent-execution" yaml:"agent-execution" toml:"agent-execution"`
+	AgentRecovery           agent.RecoveryConfig           `json:"agent-recovery" yaml:"agent-recovery" toml:"agent-recovery"`
+	AgentCredentialChanges  agent.CredentialChangeConfig   `json:"agent-credential-changes" yaml:"agent-credential-changes" toml:"agent-credential-changes"`
+	AgentInputChanges       agent.InputChangeConfig        `json:"agent-input-changes" yaml:"agent-input-changes" toml:"agent-input-changes"`
+	AgentDeskAssignments    agent.DeskAssignmentConfig     `json:"agent-desk-assignments" yaml:"agent-desk-assignments" toml:"agent-desk-assignments"`
+	AgentComputerPresence   agent.ComputerPresenceConfig   `json:"agent-computer-presence" yaml:"agent-computer-presence" toml:"agent-computer-presence"`
+	AgentApplicationRemoval agent.ApplicationRemovalConfig `json:"agent-application-removal" yaml:"agent-application-removal" toml:"agent-application-removal"`
 	fx.Out
 	Logger         sloghelper.Options   `json:"logger" toml:"logger" yaml:"logger"`
 	HTTP           pkghttpserver.Config `json:"http" toml:"http" yaml:"http"`
@@ -131,7 +132,8 @@ func appOptions(opt Option) []fx.Option {
 		internalpkg.KafkaConsumerModule,
 		internalpkg.IntegrationPublisherModule,
 		// Agent runs its own consumers of Marketplace's credential changes,
-		// Storage's file changes, Computer's Desk seatings and Presence changes.
+		// Storage's file changes, Computer's Desk seatings and Presence changes
+		// and Account's Application removals.
 		internalpkg.IntegrationPayloadModule,
 		internalpkg.NATSLazyModule,
 		internalpkg.LazyClickHouseModule,
@@ -145,6 +147,7 @@ func appOptions(opt Option) []fx.Option {
 		agent.InputChangeModule,
 		agent.DeskAssignmentModule,
 		agent.ComputerPresenceModule,
+		agent.ApplicationRemovalModule,
 		agent.TurnResultModule,
 		trace.Module,
 		// Task lanes follow the business modules, so they stop first (fx

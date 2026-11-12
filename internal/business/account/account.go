@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"go.uber.org/fx"
 	"xorm.io/xorm"
 
@@ -195,7 +196,25 @@ func newRuntime(cfg Config) (runtime, error) {
 	}, nil
 }
 
-func newApplication(engine *xorm.Engine, p policy, keys *infrastructure.SigningKeys, github *infrastructure.GitHubIdentity) *application.Application {
+type applicationDependencies struct {
+	fx.In
+	Engine *xorm.Engine
+	Policy policy
+	Keys   *infrastructure.SigningKeys
+	GitHub *infrastructure.GitHubIdentity
+	// Bus publishes Application Removed; without it Agent never learns of a
+	// removal, and the removed Application's Works stop at their idle
+	// timeout.
+	Bus    integrationmessage.Publisher `optional:"true"`
+	Logger *slog.Logger
+}
+
+func newApplication(deps applicationDependencies) *application.Application {
+	engine, p, keys, github := deps.Engine, deps.Policy, deps.Keys, deps.GitHub
+	var publisher application.AccountPublisherPort
+	if deps.Bus != nil {
+		publisher = infrastructure.NewAccountPublisher(deps.Bus)
+	}
 	sessions := infrastructure.NewLoginSessionRepository(engine)
 	return application.NewApplication(application.Dependencies{
 		Accounts:           infrastructure.NewAccountRepository(engine),
@@ -211,6 +230,8 @@ func newApplication(engine *xorm.Engine, p policy, keys *infrastructure.SigningK
 		ApplicationQueries:       infrastructure.NewApplicationQueries(engine),
 		ApplicationTokenLifetime: p.applicationToken,
 		SecretOverlap:            p.secretOverlap,
+		Publisher:                publisher,
+		Logger:                   deps.Logger,
 	})
 }
 

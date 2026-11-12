@@ -263,3 +263,36 @@ func TestRotateSecretRefusesANonPositiveOverlapAsAFault(t *testing.T) {
 	require.NotErrorIs(t, err, ErrInvalidApplication, "a misconfigured overlap is not the caller's fault")
 	require.Len(t, application.Secrets, 1)
 }
+
+func TestRemoveEndsEverySecretAndIssuesNothingAgain(t *testing.T) {
+	application, first, now := registered(t)
+	second, err := application.RotateSecret(application.ApplicationOwner, now, rotationOverlap)
+	require.NoError(t, err)
+
+	removed, err := application.Remove(application.ApplicationOwner, now.Add(time.Minute))
+	require.NoError(t, err)
+
+	require.Equal(t, ApplicationRemovedEvent{ApplicationID: application.ID, At: now.Add(time.Minute)}, removed)
+	require.Equal(t, ApplicationRemoved, application.State)
+	require.NoError(t, application.Validate(), "a removed Application holds no valid secret")
+	require.Empty(t, application.ValidSecrets(now.Add(time.Minute)))
+	for _, secret := range []ClientSecretValue{first, second} {
+		require.False(t, grantSucceeds(t, application, secret, now.Add(time.Minute)), "neither the current nor the overlapping secret matches")
+	}
+}
+
+func TestOnlyTheOwnerRemovesAndOnlyOnce(t *testing.T) {
+	application, secret, now := registered(t)
+	stranger, err := NewAccountID()
+	require.NoError(t, err)
+
+	_, err = application.Remove(stranger, now)
+	require.ErrorIs(t, err, ErrApplicationNotFound)
+	require.Equal(t, ApplicationActive, application.State)
+	require.True(t, grantSucceeds(t, application, secret, now), "the refused removal changed nothing")
+
+	_, err = application.Remove(application.ApplicationOwner, now)
+	require.NoError(t, err)
+	_, err = application.Remove(application.ApplicationOwner, now)
+	require.ErrorIs(t, err, ErrApplicationNotFound, "a removed Application never returns")
+}

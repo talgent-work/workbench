@@ -8,10 +8,11 @@ import { PageLayout } from "../../components/shell/page-layout";
 import { useOwnedApplications, type Application } from "../../lib/application-service";
 import { CredentialsSection } from "./credentials-section";
 import { RegisterApplicationDialog } from "./register-application-dialog";
+import { SettingsSection } from "./settings-section";
 import "../../components/marketplace/marketplace.css";
 
 /** The sections of an Application's page, switched by the topbar tabs. */
-const sections = [{ id: "credentials", label: "Credentials" }] as const;
+const sections = [{ id: "credentials", label: "Credentials" }, { id: "settings", label: "Settings" }] as const;
 type SectionId = typeof sections[number]["id"];
 
 const applicationIcon = <AppWindow size={18} className="shrink-0 text-muted" aria-hidden="true" />;
@@ -29,6 +30,8 @@ export function ApplicationsPage() {
   const section = sections.find(item => item.id === sectionId)!;
   const update = (change: (next: URLSearchParams) => void) => setParams(current => { const next = new URLSearchParams(current); change(next); return next; }, { replace: true });
   const select = (id: string) => update(next => next.set("app", id));
+  // A removed Application leaves the list; the page shows the first one left.
+  const leave = () => update(next => { next.delete("app"); next.delete("section"); });
   const register = { id: "register-application", label: "Register application", icon: <Plus size={16} aria-hidden="true" />, onPress: () => setRegistering(true) };
 
   const lead = selected && <ObjectSwitcher noun="Application" followed
@@ -42,15 +45,16 @@ export function ApplicationsPage() {
   return <PageLayout workspaceTitle={selected?.name ?? "Applications"} lead={lead} trail={selected ? [{ label: section.label, onPress: () => undefined }] : []} centerActions={tabs}>
     <div className="mx-auto grid w-[min(960px,100%)] gap-8 pb-24 pt-4">
       <LoadState noun="your applications" isPending={applications.isPending} isError={applications.isError} hasData={Boolean(applications.data)} isFetching={applications.isFetching} onRetry={() => void applications.refetch()} />
-      {applications.data && (selected ? <ApplicationSection key={selected.id} application={selected} section={sectionId} /> : <NoApplications onRegister={() => setRegistering(true)} />)}
+      {applications.data && (selected ? <ApplicationSection key={selected.id} application={selected} section={sectionId} onRemoved={leave} /> : <NoApplications onRegister={() => setRegistering(true)} />)}
     </div>
     {registering && <RegisterApplicationDialog onClose={() => setRegistering(false)} onRegistered={select} />}
   </PageLayout>;
 }
 
-function ApplicationSection({ application, section }: { application: Application; section: SectionId }) {
+function ApplicationSection({ application, section, onRemoved }: { application: Application; section: SectionId; onRemoved: () => void }) {
   switch (section) {
     case "credentials": return <CredentialsSection application={application} />;
+    case "settings": return <SettingsSection application={application} onRemoved={onRemoved} />;
   }
 }
 

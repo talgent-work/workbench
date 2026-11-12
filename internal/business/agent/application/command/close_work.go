@@ -3,6 +3,8 @@ package command
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
@@ -27,6 +29,16 @@ func (h *CloseWorkHandler) Handle(ctx context.Context, request WorkControl) erro
 		}
 		return work.Close(requestID, facts)
 	})
+}
+
+// CloseForRemovedApplication closes a Work of an Application that Account
+// removed (Close removed Application's Works). Agent itself closes it, the
+// one exception to Standalone Work control: the Application, which can no
+// longer call, must still own the Work's definition, so a task naming another
+// Work is refused. A running Work is stopped first between Turns, as any
+// close; a Turn still active refuses it, and the caller repeats the close.
+func (h *CloseWorkHandler) CloseForRemovedApplication(ctx context.Context, applicationID, workID string) error {
+	return h.Handle(ctx, WorkControl{SubjectID: applicationID, WorkID: workID, RequestID: uuid.Must(uuid.NewV7()).String()})
 }
 
 // ApplyKeptClose applies the close request a Work kept while it stopped. The

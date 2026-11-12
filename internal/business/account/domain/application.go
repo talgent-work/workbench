@@ -201,6 +201,30 @@ func (a *Application) RevokeSecret(by AccountID, id string, now time.Time) error
 	return ErrClientSecretNotFound
 }
 
+// Remove removes the Application for good: every Client Secret that still
+// matches ends at once, so it obtains no further Identity Token, and it never
+// returns (Removal is final). Only its Application Owner removes it (Owner
+// manages); any other person, like an Application already removed, answers
+// ErrApplicationNotFound. Tokens it already obtained stop at their expiry.
+func (a *Application) Remove(by AccountID, now time.Time) (ApplicationRemovedEvent, error) {
+	if !a.ManageableBy(by) {
+		return ApplicationRemovedEvent{}, ErrApplicationNotFound
+	}
+	for _, secret := range a.Secrets {
+		secret.End()
+	}
+	a.State = ApplicationRemoved
+	return ApplicationRemovedEvent{ApplicationID: a.ID, At: now.UTC()}, nil
+}
+
+// ApplicationRemovedEvent records that an Application was removed for good
+// (ApplicationRemoved); Account publishes it as the Application Removed
+// Published Fact.
+type ApplicationRemovedEvent struct {
+	ApplicationID ApplicationID
+	At            time.Time
+}
+
 // IssueIdentityToken states the Application's claims for lifetime, for a
 // presented secret one of its Client Secrets accepts, and records that
 // secret's use (Client credentials, An Application's tokens are short). It

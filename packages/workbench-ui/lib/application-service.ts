@@ -145,3 +145,20 @@ export function useRevokeClientSecret() {
     onError: refresh,
   });
 }
+
+/** Removes an Application for good: its secrets stop at once and its open
+ * Works close. It leaves the owner's list, which a failure rereads. */
+export function useRemoveApplication() {
+  const queryClient = useQueryClient();
+  const userId = useCurrentUser().data?.user?.id;
+  const { refresh } = useOwnedApplicationUpdates();
+  return useMutation({
+    mutationFn: async (applicationId: string) => { await applicationClient.removeApplication({ applicationId }); return applicationId; },
+    onSuccess: applicationId => {
+      queryClient.setQueryData<Application[]>(ownedApplicationsKey(userId), current => current?.filter(item => item.id !== applicationId));
+      refresh();
+    },
+    // An Application removed meanwhile answers NotFound; the list shows it gone.
+    onError: refresh,
+  });
+}

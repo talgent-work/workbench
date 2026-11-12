@@ -5,6 +5,14 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that removes Applications
+
+Run `scripts/deploy/bootstrap-kafka.sh` again before deploying it: it creates the topic
+`account.integration.v1.ApplicationRemovedV1`, on which Account tells Agent that an Application
+was removed. An Application Owner now removes an Application with
+`ApplicationService.RemoveApplication`: its secrets stop at once, and Agent closes its open
+Works.
+
 ## The release that lets Applications run Works
 
 Before deploying it, run `deploy/middleware/migrations/20261113-agent-account-application.sql`

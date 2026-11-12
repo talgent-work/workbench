@@ -114,6 +114,32 @@ type harness struct {
 	app    *application.Application
 	keys   *infrastructure.SigningKeys
 	server *httptest.Server
+	// removals are the Application Removed facts Account published.
+	removals *recordedRemovals
+}
+
+// recordedRemovals records Account's Application Removed publications; fail
+// makes each publication fail after recording it.
+type recordedRemovals struct {
+	mu      sync.Mutex
+	removed []domain.ApplicationRemovedEvent
+	fail    bool
+}
+
+func (r *recordedRemovals) PublishApplicationRemoved(_ context.Context, removed domain.ApplicationRemovedEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.removed = append(r.removed, removed)
+	if r.fail {
+		return fmt.Errorf("broker unreachable")
+	}
+	return nil
+}
+
+func (r *recordedRemovals) published() []domain.ApplicationRemovedEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]domain.ApplicationRemovedEvent(nil), r.removed...)
 }
 
 func newHarness(t *testing.T) *harness {
@@ -139,6 +165,7 @@ func newHarness(t *testing.T) *harness {
 	}, ghServer.Client())
 	require.NoError(t, err)
 	sessions := infrastructure.NewLoginSessionRepository(engine)
+	removals := &recordedRemovals{}
 	app := application.NewApplication(application.Dependencies{
 		Accounts: infrastructure.NewAccountRepository(engine), Sessions: sessions, GitHub: github,
 		Tokens: keys, Directory: infrastructure.NewUserDirectoryQueries(engine),
@@ -146,6 +173,7 @@ func newHarness(t *testing.T) *harness {
 		AgentAccounts: infrastructure.NewAgentAccountRepository(engine), AgentTokenLifetime: agentTokenLifetime,
 		Applications: infrastructure.NewApplicationRepository(engine), ApplicationQueries: infrastructure.NewApplicationQueries(engine),
 		ApplicationTokenLifetime: applicationTokenLifetime, SecretOverlap: secretOverlap,
+		Publisher: removals, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	require.NoError(t, app.RotateSigningKeys(context.Background()))
 	handler, err := accounthttp.NewHandler(app, accounthttp.Config{
@@ -156,7 +184,7 @@ func newHarness(t *testing.T) *harness {
 	mux.Handle(accounthttp.PathPrefix, handler)
 	server := httptest.NewTLSServer(mux)
 	t.Cleanup(server.Close)
-	return &harness{t: t, clock: c, engine: engine, github: gh, app: app, keys: keys, server: server}
+	return &harness{t: t, clock: c, engine: engine, github: gh, app: app, keys: keys, server: server, removals: removals}
 }
 
 // device is one browser: its own cookie jar, never following redirects.
