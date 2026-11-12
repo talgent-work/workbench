@@ -118,10 +118,10 @@ func TestARepeatedCreationReachesTheSameWorkAndDesk(t *testing.T) {
 	require.EqualValues(t, 1, cloud.startsOf(t, first.GetWorkId()), "one start reaches execution")
 }
 
-// A repeated Restart or Resume returns the admission its Desk holds while
-// that start runs; once the start ended and its Desk left, a late repeat
-// starts nothing.
-func TestARepeatedStartAnswersItsAdmissionAndALateRepeatStartsNothing(t *testing.T) {
+// A repeated Restart returns the admission its Desk holds while that start
+// runs; once the start ended and its Desk left, a late repeat starts nothing,
+// and only a new request starts the Work again.
+func TestARepeatedRestartAnswersItsAdmissionAndALateRepeatStartsNothing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	cloud := startOneRoomCloud(t, ctx)
@@ -146,19 +146,33 @@ func TestARepeatedStartAnswersItsAdmissionAndALateRepeatStartsNothing(t *testing
 
 	_, err = cloud.client.RestartWork(sessionControlRequest(ctx), &agentprivatev1.RestartWorkRequest{SubjectId: "employee-a", WorkId: id, RequestId: uuid.NewString()})
 	require.NoError(t, err, "a new request starts the Work again")
+	cloud.runs.awaitLaunched(t, ctx, id)
+	require.EqualValues(t, 3, cloud.startsOf(t, id))
+}
+
+// A repeated Resume returns the admission its Desk holds while that start
+// runs; once the start ended and its Desk left, a late repeat starts nothing.
+func TestARepeatedResumeAnswersItsAdmissionAndALateRepeatStartsNothing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cloud := startOneRoomCloud(t, ctx)
+	definition := cloud.definition(t, ctx)
+	id, err := cloud.create(ctx, definition, "work-a")
+	require.NoError(t, err)
 	cloud.stop(t, ctx, id)
+
 	resume := &agentprivatev1.ResumeWorkRequest{SubjectId: "employee-a", WorkId: id, RequestId: uuid.NewString()}
 	for range 2 {
 		_, err = cloud.client.ResumeWork(sessionControlRequest(ctx), resume)
 		require.NoError(t, err, "a repeat returns the same admission")
 	}
 	cloud.runs.awaitLaunched(t, ctx, id)
-	require.EqualValues(t, 4, cloud.startsOf(t, id), "one Resume reaches execution")
+	require.EqualValues(t, 2, cloud.startsOf(t, id), "one Resume reaches execution")
 	cloud.stop(t, ctx, id)
 	_, err = cloud.client.ResumeWork(sessionControlRequest(ctx), resume)
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a late repeat whose Desk left starts nothing")
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPED, cloud.workState(t, ctx, id))
-	require.EqualValues(t, 4, cloud.startsOf(t, id))
+	require.EqualValues(t, 2, cloud.startsOf(t, id))
 }
 
 // One start request identity names one Work: Computer refuses its Desk for

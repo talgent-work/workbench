@@ -261,7 +261,15 @@ export class ProcessTable {
     const results = await Promise.allSettled(targets.map((target) => limit.run(async () => {
       const phase = await this.phase(target.workId, target.id)
       if (phase?.kind !== 'running' || phase.started.run !== target.run) return false
-      await this.host.kill(phase.started, this.dir(target.workId, target.id))
+      const dir = this.dir(target.workId, target.id)
+      await this.host.kill(phase.started, dir)
+      // An ended run is recorded as killed, as a signalled shell reports. A
+      // kill may end the command before its shim (taskkill /T walks the tree
+      // in no set order), and the dying shim then records the command's own
+      // exit code; once the shim is gone, nothing writes after this.
+      if (!(await this.host.shimAlive(phase.started, dir))) {
+        writeJsonAtomic(join(dir, stateFiles.exit), { run: phase.started.run, exitCode: -1 } satisfies ExitRecord)
+      }
       return true
     })))
     const outcome: EndOutcome = { ended: 0, remaining: [] }

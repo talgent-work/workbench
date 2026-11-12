@@ -9,8 +9,8 @@ import (
 const (
 	// PluginNotLoaded: the Harness loaded no release of the Plugin.
 	PluginNotLoaded = "not_loaded"
-	// PluginVersionMismatch: the Harness loaded another release than the
-	// run selected.
+	// PluginVersionMismatch: the Harness reported another version than the
+	// run selected. A Plugin reported without a version is not a mismatch.
 	PluginVersionMismatch = "version_mismatch"
 )
 
@@ -136,7 +136,11 @@ func (e *AgentExecution) recordLoading(loaded []LoadedPlugin) bool {
 	for _, selected := range e.Launch.Capabilities.Plugins {
 		outcome := PluginOutcome{Reported: true, Reason: PluginNotLoaded}
 		if version, found := versions[selected.Release.Slug]; found {
-			outcome.Succeeded, outcome.Reason = version == selected.Release.Version, ""
+			// The Harness reports a version only from the Plugin's own
+			// manifest; a Plugin whose manifest names none (versioned in the
+			// catalog by its pin) is reported without one, which shows no
+			// other release.
+			outcome.Succeeded, outcome.Reason = version == "" || version == selected.Release.Version, ""
 			if !outcome.Succeeded {
 				outcome.Reason = PluginVersionMismatch
 			}

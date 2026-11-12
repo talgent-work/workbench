@@ -43,7 +43,10 @@ source, Plugin name and version. The version is the one the package's `plugin.js
 entry declares; a Plugin declaring none is versioned by what its entry is pinned to: the first 12
 hex characters of the commit (git, `git-subdir` and catalog-relative packages, which are pinned
 to the catalog's commit) or of the archive's SHA-256, or the resolved npm version. That version
-is written into the published entry, so Claude Code reports the release it loaded. A version only
+is written into the published entry, where Claude Code installs and caches the release by it.
+Claude Code reports a loaded Plugin's version only from its `plugin.json`, so such a Plugin is
+reported without one; the loading check counts a Plugin reported without a version as loaded,
+and only a different reported version as a mismatch. A version only
 names a release: the current one is whichever the latest catalog generation selected, never the
 greatest. An entry whose source runs a command on the installing machine (`command`) can never
 be acquired by the platform; synchronization skips it with a warning instead of failing.

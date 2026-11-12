@@ -5,6 +5,13 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that loads Plugins versioned by their pin
+
+Nothing to do beyond deploying it. A Plugin versioned by its pin, because its `plugin.json`
+names no version, is reported by Claude Code without a version; its loading was recorded as
+`version_mismatch` although it was loaded. A Plugin reported without a version now counts as
+loaded; a different reported version is still a mismatch.
+
 ## The release that versions unversioned catalog Plugins
 
 Nothing to do beyond deploying it. Synchronizing `claude-plugins-official` no longer ends
