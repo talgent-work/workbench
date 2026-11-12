@@ -371,6 +371,10 @@ data:
     execution-mysql:
       dsn: ${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_ADDR})/${AGENT_MYSQL_DATABASE}?charset=utf8mb4&parseTime=true
     marketplace:
+      # Account's private API, whose Application Ownership Query admits an
+      # Application Owner to the Application's installations and authorizations.
+      account:
+        address: http://127.0.0.1:8080
       synchronization:
         enabled: true
         interval-seconds: 1800
