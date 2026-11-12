@@ -88,24 +88,11 @@ func (s *AgentWork) ChangeDisplayTitle(definition *AgentDefinition, requester, t
 	if err := validateDisplayTitle(title, true); err != nil {
 		return false, err
 	}
-	if s.DisplayTitle == title && s.DisplayTitleChosen {
+	if s.DisplayTitle == title {
 		return false, nil
 	}
-	s.DisplayTitle, s.DisplayTitleChosen = title, true
-	return true, nil
-}
-
-// RecordHarnessTitle takes the title the Harness gave a Personal Work's
-// conversation as its display title until the owner chooses one, and tells
-// whether the display title changed. A title no display title may be is
-// ignored, as is one of any other Work.
-func (s *AgentWork) RecordHarnessTitle(title string) bool {
-	title = strings.TrimSpace(title)
-	if !s.Personal() || s.DisplayTitleChosen || title == "" || s.DisplayTitle == title || validateDisplayTitle(title, true) != nil {
-		return false
-	}
 	s.DisplayTitle = title
-	return true
+	return true, nil
 }
 
 // AdmitFileChange admits a change to a Personal Work's files: only its owner,

@@ -5,10 +5,19 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that stops waiting for Claude Code's title
+
+Nothing to do beyond deploying it. Claude Code never titles a conversation that runs a
+SessionStart hook, as every Work does through its built-in Plugin, so the previous release's
+title reporting is removed; a Personal Work keeps its first input's first line, cut to 80
+characters, until its owner renames it. The column `agent_session.display_title_chosen` the
+previous release added is no longer read; drop it once this release runs:
+`ALTER TABLE agent_session DROP COLUMN display_title_chosen`.
+
 ## The release that titles Personal Works by their conversation
 
 Before deploying it, run
-[`deploy/middleware/migrations/20261112-display-title-chosen.sql`](../deploy/middleware/migrations/20261112-display-title-chosen.sql)
+[`deploy/middleware/migrations/20261112-display-title-chosen.sql`](https://github.com/talgent-work/workbench/blob/v0.3.7/deploy/middleware/migrations/20261112-display-title-chosen.sql)
 against the Workbench's MySQL database; it adds `agent_session.display_title_chosen` and can run
 while the previous release serves.
 

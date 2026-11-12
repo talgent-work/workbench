@@ -59,7 +59,6 @@ func (h *FeedbackHandler) Report(ctx context.Context, request *agentprivatev1.Re
 		// The Work's permission mode is in the Harness's vocabulary; the Work
 		// refuses a name it does not know.
 		PermissionMode: domain.PermissionMode(request.GetPermissionMode()),
-		Title:          request.GetTitle(),
 	}
 	if request.DetachedSince != nil {
 		feedback.DetachedSince = request.GetDetachedSince().AsTime()
@@ -93,7 +92,6 @@ var feedbackKinds = map[agentprivatev1.FeedbackKind]command.ExecutionFeedbackKin
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_WORK_PROGRESS_UPDATED:     command.WorkProgressUpdated,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_SUBAGENTS_UPDATED:         command.SubAgentsUpdated,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_PERMISSION_MODE_OBSERVED:  command.PermissionModeObserved,
-	agentprivatev1.FeedbackKind_FEEDBACK_KIND_TITLE_OBSERVED:            command.TitleObserved,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_ATTACHMENT_LOST:           command.AttachmentLost,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_ATTACHMENT_RETURNED:       command.AttachmentReturned,
 	agentprivatev1.FeedbackKind_FEEDBACK_KIND_PLUGIN_LOADS_OBSERVED:     command.PluginLoadsObserved,
