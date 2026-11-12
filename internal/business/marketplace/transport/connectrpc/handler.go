@@ -12,11 +12,28 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
-type Handler struct{ application *application.Application }
+type Handler struct {
+	application *application.Application
+	owners      *application.Owners
+}
 
 var _ marketplacepublicv1connect.MarketplaceServiceHandler = (*Handler)(nil)
 
-func NewHandler(app *application.Application) *Handler { return &Handler{application: app} }
+func NewHandler(app *application.Application, owners *application.Owners) *Handler {
+	return &Handler{application: app, owners: owners}
+}
+
+// owner is whose installations or Provider Authorizations the request
+// reaches: the caller's own, or an Application the calling person owns.
+func (h *Handler) owner(ctx context.Context, applicationID string) (string, error) {
+	caller := application.Caller{}
+	if found, ok := authn.CurrentApplication(ctx); ok {
+		caller.ApplicationID = found.ID
+	} else {
+		caller.UserID, _ = authn.CurrentUserID(ctx)
+	}
+	return h.owners.Resolve(ctx, caller, applicationID)
+}
 
 func (h *Handler) ListPlugins(ctx context.Context, request *marketplacepublicv1.ListPluginsRequest) (*marketplacepublicv1.ListPluginsResponse, error) {
 	page, err := h.application.ListReleases(ctx, request.GetCursor(), int(request.GetPageSize()), request.GetComponentType())

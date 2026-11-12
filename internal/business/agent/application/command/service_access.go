@@ -43,7 +43,7 @@ func (a *ServiceAccess) Resolve(ctx context.Context, owner, workID string, requi
 	if err != nil {
 		return ServiceAccessResult{}, err
 	}
-	if owner == "" || owner != work.RepresentedPerson {
+	if owner == "" || owner != work.AuthorizationOwner() {
 		return ServiceAccessResult{}, access.ErrAccessDenied
 	}
 	if err := work.AuthorizeCredentialAccess(); err != nil {

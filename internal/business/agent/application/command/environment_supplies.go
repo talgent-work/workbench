@@ -48,7 +48,7 @@ func NewEnvironmentSupplies(repositories RepositorySupply, services ServiceSuppl
 
 // creation is what a Cloud execution's specification fixes: the Mount Grants
 // of exactly the Work's located layout and the access its selected
-// repositories take. A Work whose Agent represents no person selects no
+// repositories take. A Work with no authorization owner selects no
 // repository; a Managed execution takes nothing.
 func (s *EnvironmentSupplies) creation(ctx context.Context, execution *domain.AgentExecution) (CreationSupply, error) {
 	if execution.Realization != domain.RealizationCloud {
@@ -59,7 +59,7 @@ func (s *EnvironmentSupplies) creation(ctx context.Context, execution *domain.Ag
 		return CreationSupply{}, err
 	}
 	supply := CreationSupply{Mounts: mounts}
-	if owner := execution.Launch.RepresentedPerson; owner != "" {
+	if owner := execution.Launch.AuthorizationOwner(); owner != "" {
 		if supply.Repositories, err = s.repositories.Plan(ctx, owner, execution.WorkID); err != nil {
 			return CreationSupply{}, err
 		}
@@ -72,7 +72,7 @@ func (s *EnvironmentSupplies) creation(ctx context.Context, execution *domain.Ag
 // issuance), the Space Token of the Work's publication target, the same on
 // every opening, and on a Cloud the current credentials of the repositories
 // and service targets the run may reach, with the access observed for each.
-// A Work whose Agent represents no person holds no personal authorization,
+// A Work with no authorization owner holds no Provider Authorization,
 // so none of its targets is supplied.
 func (s *EnvironmentSupplies) credentials(ctx context.Context, execution *domain.AgentExecution) (CredentialSupply, error) {
 	ctx, cancel := context.WithTimeout(ctx, supplyAttemptTimeout)
@@ -92,7 +92,7 @@ func (s *EnvironmentSupplies) credentials(ctx context.Context, execution *domain
 	launch := execution.Launch
 	required := requiredServices(launch.Capabilities, launch.AuthorizationSelection)
 	services, repositories := required.unselected(), RepositoryAccessResult{}
-	if owner := launch.RepresentedPerson; owner != "" {
+	if owner := launch.AuthorizationOwner(); owner != "" {
 		if repositories, err = s.repositories.Resolve(ctx, owner, execution.WorkID); err != nil {
 			return CredentialSupply{}, err
 		}

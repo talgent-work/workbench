@@ -4,11 +4,13 @@ import (
 	"context"
 
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
-func (h *Handler) ListPersonalAuthorizations(ctx context.Context, _ *marketplacepublicv1.ListPersonalAuthorizationsRequest) (*marketplacepublicv1.ListPersonalAuthorizationsResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
+func (h *Handler) ListPersonalAuthorizations(ctx context.Context, request *marketplacepublicv1.ListPersonalAuthorizationsRequest) (*marketplacepublicv1.ListPersonalAuthorizationsResponse, error) {
+	actor, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
 	references, err := h.application.ListPersonalAuthorizations(ctx, actor)
 	if err != nil {
 		return nil, mapError(err)
@@ -21,7 +23,10 @@ func (h *Handler) ListPersonalAuthorizations(ctx context.Context, _ *marketplace
 }
 
 func (h *Handler) CancelPersonalAuthorization(ctx context.Context, request *marketplacepublicv1.CancelPersonalAuthorizationRequest) (*marketplacepublicv1.CancelPersonalAuthorizationResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
+	actor, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
 	reference, err := h.application.CancelPersonalAuthorization(ctx, actor, request.GetAuthorizationId())
 	if err != nil {
 		return nil, mapConnectionError(err)

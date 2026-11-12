@@ -59,7 +59,7 @@ func (a *RepositoryAccess) Plan(ctx context.Context, owner, workID string) ([]Re
 	if err != nil {
 		return nil, err
 	}
-	if owner == "" || owner != work.RepresentedPerson {
+	if owner == "" || owner != work.AuthorizationOwner() {
 		return nil, access.ErrAccessDenied
 	}
 	if err := work.AdmitRepositoryAccess(owner); err != nil {

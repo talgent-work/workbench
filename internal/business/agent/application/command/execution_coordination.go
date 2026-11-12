@@ -93,7 +93,7 @@ func (c *ExecutionCoordination) begin(ctx context.Context, work *domain.AgentWor
 		return err
 	}
 	launch := work.LaunchSpecification()
-	launch.ComputerName, launch.Purpose, launch.OwningApplication = place.Name, definition.Purpose, definition.OwningApplication()
+	launch.ComputerName, launch.Purpose = place.Name, definition.Purpose
 	realization := domain.RealizationCloud
 	if work.OnManagedComputer() {
 		realization = domain.RealizationManaged

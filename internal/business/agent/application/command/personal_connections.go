@@ -12,7 +12,7 @@ func (h *CreateWorkHandler) repositoryInput(ctx context.Context, owner string, i
 		return domain.WorkRepositoryInput{}, nil
 	}
 	if owner == "" {
-		return domain.WorkRepositoryInput{}, fmt.Errorf("%w: personal repositories require a represented human", domain.ErrInvalidWork)
+		return domain.WorkRepositoryInput{}, fmt.Errorf("%w: repositories require a represented human or an owning Application", domain.ErrInvalidWork)
 	}
 	facts, err := h.catalog.ListAccessibleRepositories(ctx, owner)
 	if err != nil {

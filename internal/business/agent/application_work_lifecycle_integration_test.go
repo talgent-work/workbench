@@ -140,8 +140,6 @@ func TestAnApplicationReachesOnlyItsOwnWorks(t *testing.T) {
 	denied(err)
 	_, err = desk.works.ListLibraryFiles(desk.ctx, &agentpublicv2.ListLibraryFilesRequest{})
 	denied(err)
-	_, err = desk.works.ListWorkStartRepositories(desk.ctx, &agentpublicv2.ListWorkStartRepositoriesRequest{})
-	denied(err)
 }
 
 // An Application drives its Work as its owner: its runs' Identity Token

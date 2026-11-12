@@ -39,12 +39,14 @@ func (p *StandaloneWorks) StartOptions(ctx context.Context, caller Caller) (quer
 	return p.app.GetWorkStartOptions(ctx, query.WorkStartOptionsQuery{SubjectID: owner, EmployeeID: caller.self(), ApplicationID: caller.ApplicationID})
 }
 
-// StartRepositories lists the repositories the person may check out.
+// StartRepositories lists the repositories the owner, a person or an
+// Application, may check out under its own Provider Authorization.
 func (p *StandaloneWorks) StartRepositories(ctx context.Context, caller Caller) (query.WorkStartRepositories, error) {
-	if caller.self() == "" {
+	owner := caller.Owner()
+	if owner == "" {
 		return query.WorkStartRepositories{}, access.ErrAccessDenied
 	}
-	return p.app.ListWorkStartRepositories(ctx, caller.UserID)
+	return p.app.ListWorkStartRepositories(ctx, owner)
 }
 
 // StartWork is a new Standalone Work and its first input.

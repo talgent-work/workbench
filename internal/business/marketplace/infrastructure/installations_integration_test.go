@@ -66,7 +66,7 @@ func setupWithCatalog(t *testing.T, catalog application.CatalogPort) (*xorm.Engi
 	repository := infrastructure.NewInstalledPluginRepository(db)
 	app := application.NewApplication(repository, repository, catalog, infrastructure.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), Queries: infrastructure.NewConnectorRepository(db)})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
-		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app))
+		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)

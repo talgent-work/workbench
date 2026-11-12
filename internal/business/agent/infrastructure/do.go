@@ -78,6 +78,9 @@ type agentWorkDO struct {
 	// RepresentedPerson is the person the Work's Agent represents; empty for
 	// one that represents no person.
 	RepresentedPerson string `xorm:"represented_person varchar(255)"`
+	// OwningApplication is the Application that owns the Work; empty for
+	// one no Application owns.
+	OwningApplication string `xorm:"owning_application varchar(36)"`
 	TraceAttributes   string `xorm:"trace_attributes JSON"`
 	HarnessProcess    string `xorm:"harness_process text"`
 	HoldsProcess      bool   `xorm:"holds_process"`

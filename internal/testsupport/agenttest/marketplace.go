@@ -63,12 +63,20 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 	}
 	market := marketapp.NewApplication(nil, nil, nil, marketinfra.NewProviderAuthorizationQueries(db), personal, marketapp.ConnectorRepositories{})
 	marketplace := connect.NewServer(authn.NewPrincipalInterceptor())
-	marketplacepublicv1connect.RegisterMarketplaceServiceHandler(marketplace, markettransport.NewHandler(market))
+	marketplacepublicv1connect.RegisterMarketplaceServiceHandler(marketplace, markettransport.NewHandler(market, marketapp.NewOwners(noApplications{})))
 	mux := http.NewServeMux()
 	connecthttp.Mount(mux, marketplace)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server.URL, ids
+}
+
+// noApplications answers that no Application exists: Agent reaches
+// Marketplace for a delegated owner and never names an Application.
+type noApplications struct{}
+
+func (noApplications) GetApplication(context.Context, string) (marketapp.OwnedApplication, error) {
+	return marketapp.OwnedApplication{}, marketapp.ErrApplicationUnknown
 }
 
 // ownRepository stands in for the Provider's live decision: each user reaches

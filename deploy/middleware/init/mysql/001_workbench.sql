@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `display_title` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'A Personal Work''s display title: its first input''s first line, changed by its owner; empty for any other Work',
   `starting_context` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'JSON of the Work this one started from and the context position; empty when it started afresh',
   `represented_person` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Person the Work''s Agent represents, fixed at creation; empty when it represents none',
+  `owning_application` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Application that owns the Work, fixed at creation; empty when none does',
   `trace_attributes` json NOT NULL COMMENT 'Immutable caller telemetry attribution',
   `harness_process` json NOT NULL COMMENT 'Observed facts of the current Harness process; null before the first start',
   `holds_process` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The Work holds a Harness process until its exit or environment loss is confirmed',
@@ -113,6 +114,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   KEY `idx_agent_id_holds_process_deleted_at` (`agent_id`,`holds_process`,`deleted_at`),
   KEY `idx_project_ref_deleted_at_created_at_id` (`project_ref`,`deleted_at`,`created_at`,`id`),
   KEY `idx_represented_person_deleted_at_created_at_id` (`represented_person`,`deleted_at`,`created_at`,`id`),
+  KEY `idx_owning_application_deleted_at_created_at_id` (`owning_application`,`deleted_at`,`created_at`,`id`),
   KEY `idx_started_by_deleted_at_updated_at_created_at_id` (`started_by`,`deleted_at`,`updated_at`,`created_at`,`id`),
   KEY `idx_computer_id_state_deleted_at_id` (`computer_id`,`state`,`deleted_at`,`id`) COMMENT 'Presence changes find the Works running on a Computer'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentWork conversation and Harness process lifecycle authority';

@@ -6,12 +6,30 @@ import (
 	"slices"
 )
 
-var ErrServiceAuthorizationNotSelected = errors.New("agent: service authorization was not selected for this Work")
+var (
+	ErrServiceAuthorizationNotSelected = errors.New("agent: service authorization was not selected for this Work")
+	// ErrRepositoryAuthorizationMissing refuses a start that selects
+	// repositories while its authorization owner has no usable Provider
+	// Authorization to reach them.
+	ErrRepositoryAuthorizationMissing = errors.New("agent: the owner has no usable Provider Authorization for the selected repositories; connect one first")
+)
 
-// ServiceAuthorization admits only a retained personal reference for the trusted
-// owner while this Work may use credentials. Marketplace decides current validity.
+// AuthorizationOwner is whose Provider Authorizations the Work uses: the
+// person its Agent represents, or the Application that owns it; empty for a
+// Work that uses none (Personal authorization scope, Application stands for
+// a person).
+func (s *AgentWork) AuthorizationOwner() string {
+	if s.RepresentedPerson != "" {
+		return s.RepresentedPerson
+	}
+	return s.OwningApplication
+}
+
+// ServiceAuthorization admits only a retained reference for the Work's
+// authorization owner while this Work may use credentials. Marketplace
+// decides current validity.
 func (s *AgentWork) ServiceAuthorization(owner, service string) (WorkServiceAuthorization, error) {
-	if owner == "" || owner != s.RepresentedPerson {
+	if owner == "" || owner != s.AuthorizationOwner() {
 		return WorkServiceAuthorization{}, ErrInvalidWork
 	}
 	if err := s.AuthorizeCredentialAccess(); err != nil {
@@ -87,8 +105,8 @@ func (s WorkAuthorizationSelection) Validate() error {
 
 func (s *AgentWork) determineAuthorizationSelection(input WorkAuthorizationInput) error {
 	selection := WorkAuthorizationSelection{OwnerUserID: input.OwnerUserID}
-	if input.OwnerUserID != "" && input.OwnerUserID != s.RepresentedPerson {
-		return fmt.Errorf("%w: authorization owner differs from represented owner", ErrInvalidWork)
+	if input.OwnerUserID != "" && input.OwnerUserID != s.AuthorizationOwner() {
+		return fmt.Errorf("%w: authorization owner differs from the Work's authorization owner", ErrInvalidWork)
 	}
 	for _, fact := range input.Available {
 		if err := validation.Struct(fact); err != nil || fact.OwnerUserID != input.OwnerUserID {

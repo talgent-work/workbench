@@ -367,11 +367,11 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 			return nil, false, fmt.Errorf("%w: missing required plugin %s", ErrInvalidCapabilities, slug)
 		}
 	}
-	if owner := request.AuthorizationInput.OwnerUserID; owner != "" && owner != a.RepresentedPerson() {
-		return nil, false, fmt.Errorf("%w: personal authorization requires a represented human", ErrInvalidWork)
+	if owner := request.AuthorizationInput.OwnerUserID; owner != "" && owner != a.AuthorizationOwner() {
+		return nil, false, fmt.Errorf("%w: Provider Authorizations require a represented human or an owning Application", ErrInvalidWork)
 	}
-	if owner := request.RepositoryInput.OwnerUserID; owner != "" && owner != a.RepresentedPerson() {
-		return nil, false, fmt.Errorf("%w: personal repositories require a represented human", ErrInvalidWork)
+	if owner := request.RepositoryInput.OwnerUserID; owner != "" && owner != a.AuthorizationOwner() {
+		return nil, false, fmt.Errorf("%w: repositories require a represented human or an owning Application", ErrInvalidWork)
 	}
 	if err := AdmitAgentOwner(a.Owners, request.StartedBy); err != nil {
 		return nil, false, err
@@ -393,7 +393,7 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 		AuthorizationInput: request.AuthorizationInput,
 		ThinkingLevel:      request.ThinkingLevel,
 		ID:                 workID, AgentID: a.ID, Subject: request.Subject, ProjectID: request.ProjectID, DisplayTitle: request.DisplayTitle,
-		WorkModel: request.WorkModel, Capabilities: request.Capabilities, RepresentedPerson: a.RepresentedPerson(), StartingUser: request.StartingUser,
+		WorkModel: request.WorkModel, Capabilities: request.Capabilities, RepresentedPerson: a.RepresentedPerson(), OwningApplication: a.OwningApplication(), StartingUser: request.StartingUser,
 		WorkLayout: a.WorkLayout, AgentHarnessID: request.AgentHarnessID, TraceAttributes: request.TraceAttributes, WorkLabels: request.WorkLabels,
 		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, HarnessChoice: request.HarnessChoice, InitialTaskInput: request.InitialTaskInput,
 	}, request.Admission)
