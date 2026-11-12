@@ -5,15 +5,22 @@ import { marketplaceClient } from "./client";
 import { useCurrentUser } from "./account-service";
 import { standaloneWorkStartSource } from "./standalone-work-service";
 
-// Marketplace reads and personal changes. Catalog data is platform-wide; every
-// personal query is keyed by the signed-in user so another session never
-// reuses it. A personal change also refreshes Start Work defaults.
+// Marketplace reads and an owner's changes. Catalog data is platform-wide; the
+// owner is the signed-in person, or an Application they own when a call names
+// its applicationId. Every owner-scoped query is keyed by the signed-in user
+// and the Application so another session or Application never reuses it. A
+// change also refreshes Start Work defaults and the Application's Work
+// defaults, whose Startup Agents come from its Plugins.
 export const marketplaceQueryKey = ["marketplace"] as const;
 const pageSize = 100;
 
-function usePersonalKey(...parts: string[]) {
+/** Whose installations a read or change reaches: the signed-in person's own,
+ * or the Application they own named by applicationId. */
+export type MarketplaceOwner = { applicationId?: string };
+
+function usePersonalKey(owner: MarketplaceOwner, ...parts: string[]) {
   const userId = useCurrentUser().data?.user?.id ?? "";
-  return { key: [...marketplaceQueryKey, ...parts, userId] as const, enabled: Boolean(userId) };
+  return { key: [...marketplaceQueryKey, ...parts, userId, owner.applicationId ?? ""] as const, enabled: Boolean(userId) };
 }
 
 // The catalog has a few hundred Plugins; lists group and search all of them.
@@ -30,7 +37,7 @@ async function listAllPlugins(signal: AbortSignal) {
 
 // `enabled: false` defers a read until a surface needs it, such as the account
 // menu, which loads what the person installed only once they reach for it.
-type ReadOptions = { enabled?: boolean };
+type ReadOptions = MarketplaceOwner & { enabled?: boolean };
 
 export function usePluginCatalog() {
   return useQuery({ queryKey: [...marketplaceQueryKey, "plugins"], queryFn: ({ signal }) => listAllPlugins(signal), retry: false, staleTime: 60_000 });
@@ -55,11 +62,12 @@ export function usePluginReleases(slugs: string[]) {
 }
 
 export function useInstalledPlugins(options: ReadOptions = {}) {
-  const { key, enabled } = usePersonalKey("installed-plugins");
+  const { applicationId = "" } = options;
+  const { key, enabled } = usePersonalKey(options, "installed-plugins");
   return useQuery({ queryKey: key, enabled: enabled && options.enabled !== false, retry: false, queryFn: async ({ signal }) => {
     const installed = new Map<string, InstalledPlugin>();
     for (let cursor = ""; ;) {
-      const page = await marketplaceClient.listInstalledPlugins({ cursor, pageSize }, { signal });
+      const page = await marketplaceClient.listInstalledPlugins({ cursor, pageSize, applicationId }, { signal });
       for (const plugin of page.plugins) installed.set(plugin.slug, plugin);
       if (!page.nextCursor) return installed;
       cursor = page.nextCursor;
@@ -77,18 +85,18 @@ export function useAlwaysEnabledPlugins() {
   return { isPending: options.isPending, isAlwaysEnabled: (slug: string) => required.has(slug) };
 }
 
-export function useConnectors() {
-  const { key, enabled } = usePersonalKey("connectors");
-  return useQuery({ queryKey: key, enabled, retry: false, queryFn: async ({ signal }) => (await marketplaceClient.listConnectors({}, { signal })).connectors });
+export function useConnectors(owner: MarketplaceOwner = {}) {
+  const { key, enabled } = usePersonalKey(owner, "connectors");
+  return useQuery({ queryKey: key, enabled, retry: false, queryFn: async ({ signal }) => (await marketplaceClient.listConnectors({ applicationId: owner.applicationId ?? "" }, { signal })).connectors });
 }
 
 export function useInstalledConnectors(options: ReadOptions = {}) {
-  const { key, enabled } = usePersonalKey("installed-connectors");
-  return useQuery({ queryKey: key, enabled: enabled && options.enabled !== false, retry: false, queryFn: async ({ signal }) => (await marketplaceClient.listInstalledConnectors({}, { signal })).connectors });
+  const { key, enabled } = usePersonalKey(options, "installed-connectors");
+  return useQuery({ queryKey: key, enabled: enabled && options.enabled !== false, retry: false, queryFn: async ({ signal }) => (await marketplaceClient.listInstalledConnectors({ applicationId: options.applicationId ?? "" }, { signal })).connectors });
 }
 
 export function useConnector(name: string) {
-  const { key, enabled } = usePersonalKey("connector", name);
+  const { key, enabled } = usePersonalKey({}, "connector", name);
   return useQuery({ queryKey: key, enabled, retry: false, queryFn: ({ signal }) => marketplaceClient.getConnector({ name }, { signal }) });
 }
 
@@ -97,42 +105,45 @@ function useRefreshPersonal() {
   return () => Promise.all([
     cache.invalidateQueries({ queryKey: marketplaceQueryKey }),
     cache.invalidateQueries({ queryKey: ["work-start-options"] }),
+    cache.invalidateQueries({ queryKey: ["application-agent"] }),
   ]);
 }
 
-export function usePluginActions() {
+export function usePluginActions(owner: MarketplaceOwner = {}) {
   const refresh = useRefreshPersonal();
+  const applicationId = owner.applicationId ?? "";
   const install = useMutation({ mutationFn: async ({ slug, configuration }: { slug: string; configuration: JsonObject }) => {
-    const response = await marketplaceClient.installPlugin({ slug, configuration });
+    const response = await marketplaceClient.installPlugin({ slug, configuration, applicationId });
     if (response.plugin?.slug !== slug) throw new Error("The installation was not confirmed");
     return response.plugin;
   }, onSettled: refresh });
   const setEnabled = useMutation({ mutationFn: async ({ installed, enabled }: { installed: InstalledPlugin; enabled: boolean }) => {
-    const request = { slug: installed.slug, version: installed.version };
+    const request = { slug: installed.slug, version: installed.version, applicationId };
     await (enabled ? marketplaceClient.enablePlugin(request) : marketplaceClient.disablePlugin(request));
   }, onSettled: refresh });
   // Setting merges; settings the user cleared are deleted afterwards.
   const configure = useMutation({ mutationFn: async ({ installed, values, cleared = [] }: { installed: InstalledPlugin; values: JsonObject; cleared?: string[] }) => {
     let version = installed.version;
-    if (Object.keys(values).length || !cleared.length) version = (await marketplaceClient.setPluginConfiguration({ slug: installed.slug, version, values })).plugin?.version ?? version;
-    if (cleared.length) await marketplaceClient.deletePluginConfiguration({ slug: installed.slug, version, names: cleared });
+    if (Object.keys(values).length || !cleared.length) version = (await marketplaceClient.setPluginConfiguration({ slug: installed.slug, version, values, applicationId })).plugin?.version ?? version;
+    if (cleared.length) await marketplaceClient.deletePluginConfiguration({ slug: installed.slug, version, names: cleared, applicationId });
   }, onSettled: refresh });
-  const uninstall = useMutation({ mutationFn: (installed: InstalledPlugin) => marketplaceClient.uninstallPlugin({ slug: installed.slug, version: installed.version }), onSettled: refresh });
+  const uninstall = useMutation({ mutationFn: (installed: InstalledPlugin) => marketplaceClient.uninstallPlugin({ slug: installed.slug, version: installed.version, applicationId }), onSettled: refresh });
   return { install, setEnabled, configure, uninstall };
 }
 
-export function useConnectorActions() {
+export function useConnectorActions(owner: MarketplaceOwner = {}) {
   const refresh = useRefreshPersonal();
+  const applicationId = owner.applicationId ?? "";
   const install = useMutation({ mutationFn: async (name: string) => {
-    const response = await marketplaceClient.installConnector({ name });
+    const response = await marketplaceClient.installConnector({ name, applicationId });
     if (response.connector?.name !== name) throw new Error("The installation was not confirmed");
     return response.connector;
   }, onSettled: refresh });
   const setEnabled = useMutation({ mutationFn: async ({ connector, enabled }: { connector: Connector; enabled: boolean }) => {
-    const request = { name: connector.name, version: connector.installationVersion };
+    const request = { name: connector.name, version: connector.installationVersion, applicationId };
     await (enabled ? marketplaceClient.enableConnector(request) : marketplaceClient.disableConnector(request));
   }, onSettled: refresh });
-  const uninstall = useMutation({ mutationFn: (connector: Connector) => marketplaceClient.uninstallConnector({ name: connector.name, version: connector.installationVersion }), onSettled: refresh });
+  const uninstall = useMutation({ mutationFn: (connector: Connector) => marketplaceClient.uninstallConnector({ name: connector.name, version: connector.installationVersion, applicationId }), onSettled: refresh });
   return { install, setEnabled, uninstall };
 }
 

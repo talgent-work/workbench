@@ -5,21 +5,26 @@ import (
 
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
-func (h *Handler) ListConnectors(ctx context.Context, _ *marketplacepublicv1.ListConnectorsRequest) (*marketplacepublicv1.ListConnectorsResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	connectors, err := h.application.ListConnectors(ctx, actor)
+func (h *Handler) ListConnectors(ctx context.Context, request *marketplacepublicv1.ListConnectorsRequest) (*marketplacepublicv1.ListConnectorsResponse, error) {
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	connectors, err := h.application.ListConnectors(ctx, owner)
 	if err != nil {
 		return nil, mapError(err)
 	}
 	return &marketplacepublicv1.ListConnectorsResponse{Connectors: connectorMessages(connectors)}, nil
 }
 
-func (h *Handler) ListInstalledConnectors(ctx context.Context, _ *marketplacepublicv1.ListInstalledConnectorsRequest) (*marketplacepublicv1.ListInstalledConnectorsResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	connectors, err := h.application.ListInstalledConnectors(ctx, actor)
+func (h *Handler) ListInstalledConnectors(ctx context.Context, request *marketplacepublicv1.ListInstalledConnectorsRequest) (*marketplacepublicv1.ListInstalledConnectorsResponse, error) {
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	connectors, err := h.application.ListInstalledConnectors(ctx, owner)
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -27,8 +32,11 @@ func (h *Handler) ListInstalledConnectors(ctx context.Context, _ *marketplacepub
 }
 
 func (h *Handler) GetConnector(ctx context.Context, request *marketplacepublicv1.GetConnectorRequest) (*marketplacepublicv1.GetConnectorResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	detail, err := h.application.GetConnector(ctx, actor, request.GetName())
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	detail, err := h.application.GetConnector(ctx, owner, request.GetName())
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -40,8 +48,11 @@ func (h *Handler) GetConnector(ctx context.Context, request *marketplacepublicv1
 }
 
 func (h *Handler) InstallConnector(ctx context.Context, request *marketplacepublicv1.InstallConnectorRequest) (*marketplacepublicv1.InstallConnectorResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	detail, err := h.application.InstallConnector(ctx, actor, request.GetName())
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	detail, err := h.application.InstallConnector(ctx, owner, request.GetName())
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -49,7 +60,11 @@ func (h *Handler) InstallConnector(ctx context.Context, request *marketplacepubl
 }
 
 func (h *Handler) EnableConnector(ctx context.Context, request *marketplacepublicv1.EnableConnectorRequest) (*marketplacepublicv1.EnableConnectorResponse, error) {
-	detail, err := h.application.EnableConnector(ctx, connectorCommand(ctx, request.GetName(), request.GetVersion()))
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	detail, err := h.application.EnableConnector(ctx, application.ConnectorInstallationCommand{OwnerID: owner, Name: request.GetName(), Version: int(request.GetVersion())})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -57,7 +72,11 @@ func (h *Handler) EnableConnector(ctx context.Context, request *marketplacepubli
 }
 
 func (h *Handler) DisableConnector(ctx context.Context, request *marketplacepublicv1.DisableConnectorRequest) (*marketplacepublicv1.DisableConnectorResponse, error) {
-	detail, err := h.application.DisableConnector(ctx, connectorCommand(ctx, request.GetName(), request.GetVersion()))
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	detail, err := h.application.DisableConnector(ctx, application.ConnectorInstallationCommand{OwnerID: owner, Name: request.GetName(), Version: int(request.GetVersion())})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -65,15 +84,14 @@ func (h *Handler) DisableConnector(ctx context.Context, request *marketplacepubl
 }
 
 func (h *Handler) UninstallConnector(ctx context.Context, request *marketplacepublicv1.UninstallConnectorRequest) (*marketplacepublicv1.UninstallConnectorResponse, error) {
-	if err := h.application.UninstallConnector(ctx, connectorCommand(ctx, request.GetName(), request.GetVersion())); err != nil {
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	if err := h.application.UninstallConnector(ctx, application.ConnectorInstallationCommand{OwnerID: owner, Name: request.GetName(), Version: int(request.GetVersion())}); err != nil {
 		return nil, mapError(err)
 	}
 	return &marketplacepublicv1.UninstallConnectorResponse{}, nil
-}
-
-func connectorCommand(ctx context.Context, name string, version uint32) application.ConnectorInstallationCommand {
-	actor, _ := authn.CurrentUserID(ctx)
-	return application.ConnectorInstallationCommand{ActorUserID: actor, Name: name, Version: int(version)}
 }
 
 func connectorMessages(connectors []application.Connector) []*marketplacepublicv1.Connector {

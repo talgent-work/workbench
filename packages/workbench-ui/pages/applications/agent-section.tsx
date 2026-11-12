@@ -5,6 +5,7 @@ import { AgentAppearanceEditor } from "../../components/agent/agent-appearance-e
 import { AgentSoulEditor } from "../../components/agent/agent-soul-editor";
 import { PromptModelControl } from "../../components/composer/prompt-bar-controls";
 import { AgentPicker } from "../../components/work-start/work-start-tray";
+import { InstallationsSection } from "./installations-section";
 import type { Application } from "../../lib/application-service";
 import {
   applicationAgentErrorMessage, useAgentWorkDefaults, useApplicationAgent, useApplicationAgentSoul, useChangeAgentWorkDefaults,
@@ -46,7 +47,16 @@ export function AgentSection({ application }: { application: Application }) {
       <p className="text-[14px] text-muted">Each Work {application.name} starts uses these unless its start request chooses others.</p>
       <Defaults agentId={agent.data.agentId} />
     </section>
+    <Installations application={application} agentId={agent.data.agentId} />
   </>;
+}
+
+/** The Application's installations, once the Work defaults name the Plugins
+ * every Work loads anyway. */
+function Installations({ application, agentId }: { application: Application; agentId: string }) {
+  const defaults = useAgentWorkDefaults(agentId);
+  const required = new Set((defaults.data?.options?.plugins ?? []).filter(plugin => plugin.required).map(plugin => plugin.name));
+  return <InstallationsSection application={application} required={required} />;
 }
 
 function Loading({ label }: { label: string }) {

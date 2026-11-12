@@ -44,6 +44,10 @@ marketplace:
   directory: "${MARKETPLACE_DIRECTORY:/mnt/talgent/marketplace}"
   name: "talgent"
   owner: "Talgent"
+  # Account's private API, whose Application Ownership Query admits an
+  # Application Owner to the Application's installations and authorizations.
+  account:
+    address: "${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}"
   connections:
     credential-token: "${AGENT_CONTROL_TOKEN:}"
     maintenance:

@@ -9,6 +9,8 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
+// SelectionHandler serves Agent's trusted startup reads. The delegated id
+// names the owner of the installations read, a person or an Application.
 type SelectionHandler struct {
 	app            *application.Application
 	authentication *CredentialHandler

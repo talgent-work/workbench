@@ -70,12 +70,12 @@ const (
 
 // SpaceFile is one file of a File Space, as Storage keeps it.
 type SpaceFile struct {
-	Directory      domain.Directory
-	Kind           FileKind
-	Name           string
-	SizeBytes      int64
-	ContentType    string
-	UpdatedAt      time.Time
+	Directory   domain.Directory
+	Kind        FileKind
+	Name        string
+	SizeBytes   int64
+	ContentType string
+	UpdatedAt   time.Time
 	// Uploader is the owner that uploaded an Attachment.
 	Uploader FileOwner
 	// WorkID is the Work that published an Artifact.

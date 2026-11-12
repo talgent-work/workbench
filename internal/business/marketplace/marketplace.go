@@ -13,6 +13,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
+	marketplaceaccount "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/account"
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -30,13 +31,20 @@ type Config struct {
 	ProviderConnectors []ProviderConnectorConfig `json:"provider-connectors" yaml:"provider-connectors" toml:"provider-connectors"`
 	PlatformConnector  PlatformConnectorConfig   `json:"platform-connector" yaml:"platform-connector" toml:"platform-connector"`
 	Connections        ConnectionConfig          `json:"connections" yaml:"connections" toml:"connections"`
-	Directory          string                    `json:"directory" yaml:"directory" toml:"directory"`
-	Name               string                    `json:"name" yaml:"name" toml:"name"`
-	Owner              string                    `json:"owner" yaml:"owner" toml:"owner"`
+	// Account locates Account's Application Ownership Query, which admits
+	// an Application Owner to the Application's installations and Provider
+	// Authorizations.
+	Account   marketplaceaccount.Config `json:"account" yaml:"account" toml:"account"`
+	Directory string                    `json:"directory" yaml:"directory" toml:"directory"`
+	Name      string                    `json:"name" yaml:"name" toml:"name"`
+	Owner     string                    `json:"owner" yaml:"owner" toml:"owner"`
 }
 
 func (c Config) Validate() error {
 	if err := c.Synchronization.Validate(); err != nil {
+		return err
+	}
+	if err := c.Account.Validate(); err != nil {
 		return err
 	}
 	if !filepath.IsAbs(c.Directory) || strings.TrimSpace(c.Name) == "" || strings.TrimSpace(c.Owner) == "" {
@@ -83,6 +91,12 @@ var Module = fx.Module("domain.marketplace",
 	fx.Invoke(registerPlatformConnectors),
 	fx.Provide(func(store *infrastructure.CatalogStore) application.CatalogPort { return store }),
 	fx.Provide(fx.Annotate(infrastructure.NewProviderAuthorizationQueries, fx.As(new(query.ProviderAuthorizationQueryRepository)))),
+	fx.Provide(func(config Config, httpClient *http.Client) (*marketplaceaccount.Client, error) {
+		return marketplaceaccount.NewClient(httpClient, config.Account)
+	}),
+	fx.Provide(func(ownership *marketplaceaccount.Client) *application.Owners {
+		return application.NewOwners(ownership)
+	}),
 	fx.Provide(application.NewApplication, marketplaceconnect.NewHandler, marketplacehttp.NewCatalogHandler),
 	fx.Invoke(func(params handlerParams) {
 		public := connectserver.New(params.Logger, authn.NewPrincipalInterceptor())

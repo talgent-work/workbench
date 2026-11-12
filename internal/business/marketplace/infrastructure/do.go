@@ -2,7 +2,7 @@ package infrastructure
 
 type installedPluginDO struct {
 	ID            string `xorm:"id pk"`
-	UserID        string `xorm:"user_id"`
+	OwnerID       string `xorm:"owner_id"`
 	Slug          string `xorm:"slug"`
 	State         uint8  `xorm:"state"`
 	Configuration string `xorm:"configuration"`
@@ -14,4 +14,4 @@ type installedPluginDO struct {
 
 func (installedPluginDO) TableName() string { return "marketplace_installed_plugin" }
 
-var installationColumns = []string{"id", "user_id", "slug", "state", "configuration", "version", "created_at", "updated_at", "deleted_at"}
+var installationColumns = []string{"id", "owner_id", "slug", "state", "configuration", "version", "created_at", "updated_at", "deleted_at"}
