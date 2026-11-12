@@ -22,6 +22,24 @@ umask 077
 deployment_dir=$(mktemp -d)
 trap 'rm -rf "$deployment_dir"' EXIT
 cp "$root_dir/deploy/opensandbox/server.yaml" "$deployment_dir/server.yaml"
+cp "$root_dir/deploy/opensandbox/resources.yaml" "$deployment_dir/resources.yaml"
+# The RuntimeClass sandboxes run with: a VM-isolating runtime the cluster
+# provides. The bundled default is Kata's QEMU runtime-rs.
+runtime_class=${TALGENT_SANDBOX_RUNTIME_CLASS:-kata-qemu-runtime-rs}
+if [[ ! "$runtime_class" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
+  echo "TALGENT_SANDBOX_RUNTIME_CLASS must be a RuntimeClass name" >&2
+  exit 1
+fi
+sed -i "s|runtimeClassName: kata-qemu-runtime-rs|runtimeClassName: ${runtime_class}|" "$deployment_dir/resources.yaml"
+# How the script confirms that pod traffic between nodes is encrypted, since
+# credential traffic to sandboxes crosses nodes: flannel-wireguard reads the
+# nodes' Flannel backend annotations; operator means the operator vouches for
+# their own pod network's encryption and the script checks nothing.
+network_check=${TALGENT_POD_NETWORK_CHECK:-flannel-wireguard}
+if [[ "$network_check" != flannel-wireguard && "$network_check" != operator ]]; then
+  echo "TALGENT_POD_NETWORK_CHECK must be flannel-wireguard or operator" >&2
+  exit 1
+fi
 # Bootstrap releases are independent of product-only image updates. Accept only
 # an explicit complete published reference when overriding the checked-in pin.
 if [[ -n "${TALGENT_EXECD_IMAGE:-}" ]]; then
@@ -31,11 +49,11 @@ if [[ -n "${TALGENT_EXECD_IMAGE:-}" ]]; then
   fi
   sed -i -E "s|execd_image = \"[^\"]+\"|execd_image = \"${TALGENT_EXECD_IMAGE}\"|" "$deployment_dir/server.yaml"
 fi
-runtime_hash=$(cat "$root_dir/deploy/opensandbox/resources.yaml" "$deployment_dir/server.yaml" | openssl dgst -sha256 | awk '{print $NF}')
+runtime_hash=$(cat "$deployment_dir/resources.yaml" "$deployment_dir/server.yaml" | openssl dgst -sha256 | awk '{print $NF}')
 sed -i "s|TALGENT_RUNTIME_CONFIG_SHA256|$runtime_hash|" "$deployment_dir/server.yaml"
-kubectl get runtimeclass kata-qemu-runtime-rs >/dev/null
+kubectl get runtimeclass "$runtime_class" >/dev/null
 # Inspect real node annotations, not a user-set assertion that encryption exists.
-if ! kubectl get nodes -o json | jq -e '
+if [[ "$network_check" == flannel-wireguard ]] && ! kubectl get nodes -o json | jq -e '
   (.items | length > 0) and all(.items[];
     .metadata.annotations["flannel.alpha.coreos.com/backend-type"] == "wireguard" and
     (.metadata.annotations["flannel.alpha.coreos.com/backend-data"] | fromjson | (.PublicKey | length > 0) and .Port > 0))
@@ -53,7 +71,7 @@ elif [[ ! "$key_length" =~ ^[0-9]+$ ]] || (( key_length < 32 )); then
   echo "opensandbox-api has no valid api-key; existing credentials were not changed" >&2
   exit 1
 fi
-kubectl apply -f "$root_dir/deploy/opensandbox/resources.yaml"
+kubectl apply -f "$deployment_dir/resources.yaml"
 kubectl apply --server-side -f "$root_dir/deploy/opensandbox/controller.yaml"
 kubectl wait --for=condition=Established --timeout=60s crd/batchsandboxes.sandbox.opensandbox.io crd/pools.sandbox.opensandbox.io crd/sandboxsnapshots.sandbox.opensandbox.io
 kubectl -n opensandbox-system rollout status deployment/opensandbox-controller-manager --timeout=300s
