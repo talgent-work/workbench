@@ -77,6 +77,12 @@ app: each owner-scoped Marketplace request takes `application_id`. The Applicati
 installations are the default selection of every Work it starts, which a start request adds to
 or leaves out, and its Plugins offer its Works' Startup Agents.
 
+Before deploying it, also run
+`deploy/middleware/migrations/20261116-marketplace-authorization-owner.sql` against the database
+named by `WORKBENCH_MYSQL_DATABASE`; it renames `scm_provider_authorization.owner_user_id` to
+`owner_id`, since an authorization's owner is a person or an Application. The previous release
+does not read `owner_id`, so run it as part of the deployment; it can run more than once.
+
 ## The release that names the Work API neutrally
 
 Nothing to do beyond deploying it; the entry routes `/api/agent.public.v2.WorkService`. A

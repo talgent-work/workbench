@@ -159,7 +159,7 @@ func (a *Application) ReadConnectorSelection(ctx context.Context, owner string) 
 	if err != nil {
 		return ConnectorSelection{}, err
 	}
-	installed, err := a.connectorQueries.ListInstalled(ctx, owner)
+	installed, err := a.installedQueries.ListInstalled(ctx, owner)
 	if err != nil {
 		return ConnectorSelection{}, err
 	}
@@ -217,7 +217,7 @@ func (a *Application) connectorViews(ctx context.Context, actor string) ([]Conne
 	if err != nil {
 		return nil, err
 	}
-	installed, err := a.connectorQueries.ListInstalled(ctx, actor)
+	installed, err := a.installedQueries.ListInstalled(ctx, actor)
 	if err != nil {
 		return nil, err
 	}

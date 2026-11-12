@@ -35,10 +35,10 @@ type ProviderAccessView struct {
 }
 
 func (a *PersonalConnections) BeginPersonalAuthorization(ctx context.Context, input BeginProviderAuthorizationInput) (BeginProviderAuthorizationResult, error) {
-	if strings.TrimSpace(input.OwnerUserID) == "" {
+	if strings.TrimSpace(input.OwnerID) == "" {
 		return BeginProviderAuthorizationResult{}, ErrUnauthenticated
 	}
-	return a.authorizer.BeginProviderAuthorization(ctx, input)
+	return a.github.BeginProviderAuthorization(ctx, input)
 }
 
 // ListAccessibleRepositories offers the repositories last observed as reachable
@@ -69,12 +69,12 @@ func (a *PersonalConnections) GetProviderAccess(ctx context.Context, actor strin
 		return ProviderAccessView{}, err
 	}
 	view := ProviderAccessView{State: state}
-	if view.ManageURL, err = a.observer.ManageURL(ctx, provider); err != nil {
+	if view.ManageURL, err = a.github.ManageURL(ctx, provider); err != nil {
 		view.ManageURL = ""
 	}
 	if state.Status != string(domain.ProviderAuthorizationActive) {
 		// Unknown requested permissions are omitted rather than guessed.
-		view.Permissions, _ = a.observer.RequestedPermissions(ctx, provider)
+		view.Permissions, _ = a.github.RequestedPermissions(ctx, provider)
 		return view, nil
 	}
 	auth, err := a.authorizations.GetByOwnerAndProvider(ctx, actor, provider)
@@ -134,7 +134,7 @@ func (a *PersonalConnections) observeAccessScope(ctx context.Context, authorizat
 	}
 	observeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	scope, err := a.observer.ObserveAccess(observeCtx, auth.OwnerUserID, auth.Provider)
+	scope, err := a.github.ObserveAccess(observeCtx, auth.OwnerID, auth.Provider)
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func (a *PersonalConnections) observeAccessScope(ctx context.Context, authorizat
 // reauthorized authorization so the owner sees it at once. Failure leaves the
 // scope to the next observation.
 func (a *PersonalConnections) observeAfterAuthorization(ctx context.Context, authorizationID string) {
-	if err := a.observeAccessScope(context.WithoutCancel(ctx), authorizationID, authorizationObservationTimeout); err != nil && a.observations != nil {
-		_ = a.observations.ScheduleObservation(context.WithoutCancel(ctx), authorizationID)
+	if err := a.observeAccessScope(context.WithoutCancel(ctx), authorizationID, authorizationObservationTimeout); err != nil && a.tasks != nil {
+		_ = a.tasks.ScheduleAccessScopeObservation(context.WithoutCancel(ctx), authorizationID)
 	}
 }

@@ -39,7 +39,7 @@ type Client struct {
 	applications accountprivatev1connect.ApplicationOwnershipServiceClient
 }
 
-var _ application.ApplicationOwnershipPort = (*Client)(nil)
+var _ application.AccountPort = (*Client)(nil)
 
 func NewClient(httpClient *http.Client, cfg Config) (*Client, error) {
 	if err := cfg.Validate(); err != nil {
@@ -61,5 +61,5 @@ func (c *Client) GetApplication(ctx context.Context, applicationID string) (appl
 		return application.OwnedApplication{}, oops.With("operation", "account.get_application").With("application_id", applicationID).Wrap(err)
 	}
 	found := resp.GetApplication()
-	return application.OwnedApplication{ID: found.GetApplicationId(), OwnerUserID: found.GetOwnerUserId(), Removed: found.GetRemoved()}, nil
+	return application.OwnedApplication{ID: found.GetApplicationId(), OwnerID: found.GetOwnerUserId(), Removed: found.GetRemoved()}, nil
 }

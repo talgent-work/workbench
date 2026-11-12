@@ -17,6 +17,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/marketplace/public/v1/marketplacepublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
@@ -52,11 +53,11 @@ func setupApplications(t *testing.T) (*application.Application, marketplacepubli
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	repository := infrastructure.NewInstalledPluginRepository(db)
-	app := application.NewApplication(repository, repository, catalogFixture{}, infrastructure.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), Queries: infrastructure.NewConnectorRepository(db)})
+	app := application.NewApplication(repository, repository, catalogFixture{}, persistence.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), CatalogQueries: infrastructure.NewConnectorRepository(db), InstalledQueries: infrastructure.NewInstalledConnectorRepository(db)})
 	owners := application.NewOwners(accountAnswers{
-		ownedApplication:   {ID: ownedApplication, OwnerUserID: applicationOwner},
-		removedApplication: {ID: removedApplication, OwnerUserID: applicationOwner, Removed: true},
-		otherApplication:   {ID: otherApplication, OwnerUserID: anotherPerson},
+		ownedApplication:   {ID: ownedApplication, OwnerID: applicationOwner},
+		removedApplication: {ID: removedApplication, OwnerID: applicationOwner, Removed: true},
+		otherApplication:   {ID: otherApplication, OwnerID: anotherPerson},
 	})
 	mux := http.NewServeMux()
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {

@@ -5,13 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/talgent-work/workbench/internal/business/marketplace/application/credential"
-
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
-
-var _ credential.RepositoryCredentialSupplier = (*CredentialSupplier)(nil)
 
 type CredentialSupplier struct {
 	enabled        bool

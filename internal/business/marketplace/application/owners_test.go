@@ -26,8 +26,8 @@ func (o ownership) GetApplication(_ context.Context, id string) (application.Own
 
 func TestOwnersResolveWhoseAuthorizationsARequestReaches(t *testing.T) {
 	owners := application.NewOwners(ownership{
-		"app-1":   {ID: "app-1", OwnerUserID: "alice"},
-		"removed": {ID: "removed", OwnerUserID: "alice", Removed: true},
+		"app-1":   {ID: "app-1", OwnerID: "alice"},
+		"removed": {ID: "removed", OwnerID: "alice", Removed: true},
 	})
 	ctx := context.Background()
 	cases := []struct {

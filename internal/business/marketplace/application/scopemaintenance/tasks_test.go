@@ -30,11 +30,11 @@ func TestScheduleObservationGroupsRequestsByWindow(t *testing.T) {
 	start := time.Date(2026, 10, 13, 8, 0, 1, 0, time.UTC)
 	for _, offset := range []time.Duration{0, 3 * time.Second, 6 * time.Second} {
 		scheduler.now = func() time.Time { return start.Add(offset) }
-		require.NoError(t, scheduler.ScheduleObservation(t.Context(), "auth-1"))
+		require.NoError(t, scheduler.ScheduleAccessScopeObservation(t.Context(), "auth-1"))
 	}
 	require.Equal(t, enqueuer.keys[0], enqueuer.keys[1])
 	require.NotEqual(t, enqueuer.keys[1], enqueuer.keys[2])
 	require.Equal(t, time.Date(2026, 10, 13, 8, 0, 5, 0, time.UTC), enqueuer.processAt[0])
 	require.Equal(t, time.Date(2026, 10, 13, 8, 0, 10, 0, time.UTC), enqueuer.processAt[2])
-	require.ErrorIs(t, scheduler.ScheduleObservation(t.Context(), ""), ErrInvalidPayload)
+	require.ErrorIs(t, scheduler.ScheduleAccessScopeObservation(t.Context(), ""), ErrInvalidPayload)
 }

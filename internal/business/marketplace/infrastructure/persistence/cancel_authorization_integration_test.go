@@ -43,7 +43,7 @@ func (*reauthorizationAuthority) BeginProviderAuthorization(context.Context, app
 func (p *reauthorizationAuthority) CompleteProviderAuthorization(_ context.Context, input application.CompleteProviderAuthorizationInput) (*domain.ProviderAuthorization, error) {
 	p.calls.Add(1)
 	return domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
-		OwnerUserID: input.OwnerUserID, Provider: input.Provider,
+		OwnerID: input.OwnerID, Provider: input.Provider,
 		ProviderAccountID: "replacement-account", ProviderLogin: "replacement-login",
 		AccessTokenCiphertext: "replacement-protected-access",
 	})
@@ -87,7 +87,7 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	reauthorization := &reauthorizationAuthority{}
 	changes := &credentialChanges{}
 	store := application.NewCredentialChangeDispatch(repo, changes, slog.Default())
-	connections := application.NewPersonalConnections(store, unobservableAccess{}, nil, reauthorization, nil, port, repo, nil, NewAuthorizationMaintenanceQueries(db))
+	connections := application.NewPersonalConnections(store, NewProviderAuthorizationQueries(db), testGitHub{access: unobservableAccess{}, authority: reauthorization}, nil, port)
 	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
@@ -186,7 +186,7 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	require.True(t, state.State.CanListRepositories)
 	reconnected, err = repo.Get(ctx, auth.ID)
 	require.NoError(t, err)
-	credentials, err := reconnected.SupplyValidCredentials(ctx, domain.CredentialRequirement{OwnerUserID: owner, Provider: domain.ProviderGitHub, Applicable: true}, time.Now(), 0, port)
+	credentials, err := reconnected.SupplyValidCredentials(ctx, domain.CredentialRequirement{OwnerID: owner, Provider: domain.ProviderGitHub, Applicable: true}, time.Now(), 0, port)
 	require.NoError(t, err)
 	require.Equal(t, "replacement-protected-access", credentials.AccessTokenCiphertext)
 

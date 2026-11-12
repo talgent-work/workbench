@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/talgent-work/workbench/internal/business/marketplace/application/credential"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
@@ -64,24 +65,15 @@ type ProviderAccount struct {
 
 type ProviderPermission struct{ Name, Access string }
 
-// ProviderAccessObserver asks the Provider, live, what it currently grants an
-// owner. Only Provider fact maintenance observes; reads use the retained scope.
-type ProviderAccessObserver interface {
-	ObserveAccess(ctx context.Context, ownerUserID string, provider domain.Provider) (domain.AccessScope, error)
-	// RequestedPermissions reports what connecting requests; empty when unknown.
-	RequestedPermissions(ctx context.Context, provider domain.Provider) ([]ProviderPermission, error)
-	// ManageURL is the Provider page where the user changes reachable accounts.
-	ManageURL(ctx context.Context, provider domain.Provider) (string, error)
-}
-
-// AccessScopeObservations schedules an asynchronous observation of one
-// authorization's scope, merging repeated requests for the same authorization.
-type AccessScopeObservations interface {
-	ScheduleObservation(ctx context.Context, authorizationID string) error
+// MarketplaceTaskQueuePort enqueues Marketplace's tasks. Observing an
+// authorization's access scope runs as a task, merging repeated requests for
+// the same authorization.
+type MarketplaceTaskQueuePort interface {
+	ScheduleAccessScopeObservation(ctx context.Context, authorizationID string) error
 }
 
 type BeginProviderAuthorizationInput struct {
-	OwnerUserID string
+	OwnerID     string
 	Provider    domain.Provider
 	RedirectURI string
 }
@@ -91,14 +83,29 @@ type BeginProviderAuthorizationResult struct {
 }
 
 type CompleteProviderAuthorizationInput struct {
-	OwnerUserID string
+	OwnerID     string
 	Provider    domain.Provider
 	Code        string
 	State       string
 	RedirectURI string
 }
 
-type ProviderAuthorizer interface {
+// GitHubPort reaches GitHub through the platform's GitHub App: it begins and
+// completes an owner's authorization, observes the access scope the
+// authorization reaches, renews its credentials, and materializes repository
+// and service credentials for supply. Only Provider fact maintenance observes
+// live; reads use the retained scope.
+type GitHubPort interface {
 	BeginProviderAuthorization(ctx context.Context, input BeginProviderAuthorizationInput) (BeginProviderAuthorizationResult, error)
 	CompleteProviderAuthorization(ctx context.Context, input CompleteProviderAuthorizationInput) (*domain.ProviderAuthorization, error)
+	// ObserveAccess asks GitHub, live, what it currently grants an owner.
+	ObserveAccess(ctx context.Context, ownerID string, provider domain.Provider) (domain.AccessScope, error)
+	// RequestedPermissions reports what connecting requests; empty when unknown.
+	RequestedPermissions(ctx context.Context, provider domain.Provider) ([]ProviderPermission, error)
+	// ManageURL is the Provider page where the owner changes reachable accounts.
+	ManageURL(ctx context.Context, provider domain.Provider) (string, error)
+	// RefreshProviderAuthorization renews one authorization's credentials.
+	RefreshProviderAuthorization(ctx context.Context, authorizationID string, reason string) error
+	SupplyRepositoryCredential(ctx context.Context, ownerID, authorizationID, cloneURL string) (credential.MaterializedCredential, error)
+	SupplyServiceCredential(ctx context.Context, ownerID, authorizationID, target string) (credential.ServiceMaterial, error)
 }

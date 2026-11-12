@@ -27,7 +27,7 @@ func (h *CredentialHandler) SupplyRepositoryCredential(ctx context.Context, requ
 		return nil, err
 	}
 	material, err := h.app.SupplyRepositoryCredential(ctx, application.RepositoryCredentialRequest{
-		OwnerUserID: request.GetOwnerUserId(), AuthorizationID: request.GetAuthorizationId(), RepositoryID: request.GetRepositoryId(), CloneURL: request.GetCloneUrl(),
+		OwnerID: request.GetOwnerUserId(), AuthorizationID: request.GetAuthorizationId(), RepositoryID: request.GetRepositoryId(), CloneURL: request.GetCloneUrl(),
 	})
 	if err != nil {
 		return nil, credentialSupplyError(ctx, err)
@@ -40,7 +40,7 @@ func (h *CredentialHandler) SupplyServiceCredential(ctx context.Context, request
 	if err := h.authenticate(info.RequestHeader()); err != nil {
 		return nil, err
 	}
-	material, err := h.app.SupplyServiceCredential(ctx, application.ServiceCredentialRequest{OwnerUserID: request.GetOwnerUserId(), AuthorizationID: request.GetAuthorizationId(), Target: request.GetTarget()})
+	material, err := h.app.SupplyServiceCredential(ctx, application.ServiceCredentialRequest{OwnerID: request.GetOwnerUserId(), AuthorizationID: request.GetAuthorizationId(), Target: request.GetTarget()})
 	if err != nil {
 		return nil, credentialSupplyError(ctx, err)
 	}

@@ -65,7 +65,7 @@ func NewScheduler(enqueuer componenttaskqueue.Enqueuer, registry *componenttaskq
 	return &Scheduler{enqueuer: enqueuer, registry: registry, now: time.Now}
 }
 
-func (s *Scheduler) ScheduleObservation(ctx context.Context, authorizationID string) error {
+func (s *Scheduler) ScheduleAccessScopeObservation(ctx context.Context, authorizationID string) error {
 	payload := &ObservePayload{AuthorizationID: authorizationID}
 	if err := payload.Validate(); err != nil {
 		return err
@@ -106,12 +106,12 @@ func (p *ObserveProcessor) Process(ctx context.Context, payload ObservePayload) 
 // Active authorization whose scope is older than Staleness, or never observed,
 // correcting reach that a lost Provider notification left stale.
 type ReconcileScanProcessor struct {
-	candidates query.AuthorizationMaintenanceQueryRepository
-	scheduler  application.AccessScopeObservations
+	candidates query.ProviderAuthorizationQueryRepository
+	scheduler  application.MarketplaceTaskQueuePort
 	now        func() time.Time
 }
 
-func NewReconcileScanProcessor(candidates query.AuthorizationMaintenanceQueryRepository, scheduler application.AccessScopeObservations, now func() time.Time) *ReconcileScanProcessor {
+func NewReconcileScanProcessor(candidates query.ProviderAuthorizationQueryRepository, scheduler application.MarketplaceTaskQueuePort, now func() time.Time) *ReconcileScanProcessor {
 	if now == nil {
 		now = time.Now
 	}
@@ -124,7 +124,7 @@ func (p *ReconcileScanProcessor) Process(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		if err := p.scheduler.ScheduleObservation(ctx, id); err != nil {
+		if err := p.scheduler.ScheduleAccessScopeObservation(ctx, id); err != nil {
 			return err
 		}
 	}

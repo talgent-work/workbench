@@ -129,7 +129,7 @@ func TestAuthorizationObservesItsScopeOnTheSpot(t *testing.T) {
 	app := newTestApplication(t)
 	app.authorizer.authorization = mustAuthorization(t, "owner", "octocat")
 	app.observer.accounts = []domain.ScopeAccount{scopeAccount("2", "acme", githubRepository("github:2", "acme/api"))}
-	complete := CompleteProviderAuthorizationInput{OwnerUserID: "owner", Provider: domain.ProviderGitHub, Code: "code", State: "state"}
+	complete := CompleteProviderAuthorizationInput{OwnerID: "owner", Provider: domain.ProviderGitHub, Code: "code", State: "state"}
 	info, err := app.CompletePersonalAuthorization(t.Context(), complete)
 	require.NoError(t, err)
 	repositories, err := app.ListAccessibleRepositories(t.Context(), "owner", domain.ProviderGitHub)

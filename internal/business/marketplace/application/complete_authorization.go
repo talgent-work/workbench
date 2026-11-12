@@ -11,14 +11,14 @@ import (
 )
 
 type ProviderAuthorizationInfo struct {
-	ID, OwnerUserID, Provider, ProviderAccountID, ProviderLogin, Status string
+	ID, OwnerID, Provider, ProviderAccountID, ProviderLogin, Status string
 }
 
 func (a *PersonalConnections) CompletePersonalAuthorization(ctx context.Context, input CompleteProviderAuthorizationInput) (ProviderAuthorizationInfo, error) {
-	if strings.TrimSpace(input.OwnerUserID) == "" {
+	if strings.TrimSpace(input.OwnerID) == "" {
 		return ProviderAuthorizationInfo{}, ErrUnauthenticated
 	}
-	existing, err := a.authorizations.GetByOwnerAndProvider(ctx, input.OwnerUserID, input.Provider)
+	existing, err := a.authorizations.GetByOwnerAndProvider(ctx, input.OwnerID, input.Provider)
 	if err != nil && !errors.Is(err, domain.ErrProviderNotFound) {
 		return ProviderAuthorizationInfo{}, err
 	}
@@ -36,9 +36,9 @@ func (a *PersonalConnections) CompletePersonalAuthorization(ctx context.Context,
 	// must not race with replacement of the same retained authorization.
 	operationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	verified, operationErr := a.authorizer.CompleteProviderAuthorization(operationCtx, input)
+	verified, operationErr := a.github.CompleteProviderAuthorization(operationCtx, input)
 	if operationErr == nil {
-		if verified == nil || verified.OwnerUserID != input.OwnerUserID || verified.Provider != input.Provider {
+		if verified == nil || verified.OwnerID != input.OwnerID || verified.Provider != input.Provider {
 			operationErr = domain.ErrPermissionDenied
 		} else {
 			operationErr = verified.Validate()
@@ -54,7 +54,7 @@ func (a *PersonalConnections) CompletePersonalAuthorization(ctx context.Context,
 		existing = verified
 	} else {
 		operationErr = existing.ReplaceWith(domain.ProviderAuthorizationInput{
-			OwnerUserID: verified.OwnerUserID, Provider: verified.Provider,
+			OwnerID: verified.OwnerID, Provider: verified.Provider,
 			ProviderAccountID: verified.ProviderAccountID, ProviderLogin: verified.ProviderLogin,
 			AccessTokenCiphertext:  verified.AccessTokenCiphertext,
 			RefreshTokenCiphertext: verified.RefreshTokenCiphertext, ExpiresAt: verified.ExpiresAt,

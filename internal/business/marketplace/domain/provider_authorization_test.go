@@ -11,7 +11,7 @@ import (
 // must fail before it can be persisted as an apparently valid OAuth grant.
 func TestProviderAuthorization_RejectsEmptyTokenMaterial(t *testing.T) {
 	_, err := domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
-		OwnerUserID:       "user-1",
+		OwnerID:           "user-1",
 		Provider:          domain.ProviderGitHub,
 		ProviderAccountID: "123",
 		ProviderLogin:     "octocat",
@@ -26,7 +26,7 @@ func TestProviderAuthorization_RejectsEmptyTokenMaterial(t *testing.T) {
 // of whether a GitHub App installation is available.
 func TestProviderAuthorization_AllowsAuthorizationWithoutInstallation(t *testing.T) {
 	_, err := domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
-		OwnerUserID:            "user-1",
+		OwnerID:                "user-1",
 		Provider:               domain.ProviderGitHub,
 		ProviderAccountID:      "123",
 		ProviderLogin:          "octocat",
@@ -43,7 +43,7 @@ func TestProviderAuthorization_AllowsAuthorizationWithoutInstallation(t *testing
 // material, but an encrypted access token is still enough for repository use.
 func TestProviderAuthorization_AllowsEmptyRefreshToken(t *testing.T) {
 	auth, err := domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
-		OwnerUserID:           "user-1",
+		OwnerID:               "user-1",
 		Provider:              domain.ProviderGitHub,
 		ProviderAccountID:     "123",
 		ProviderLogin:         "octocat",
@@ -161,7 +161,7 @@ func TestProviderAuthorization_TerminalStatesAndReconnectReset(t *testing.T) {
 	reconnectExpiresAt := now.Add(8 * time.Hour)
 	reconnectRefreshExpiresAt := now.Add(180 * 24 * time.Hour)
 	if err := auth.ReplaceWith(domain.ProviderAuthorizationInput{
-		OwnerUserID:            "user-1",
+		OwnerID:                "user-1",
 		Provider:               domain.ProviderGitHub,
 		ProviderAccountID:      "456",
 		ProviderLogin:          "octocat-new",
@@ -199,7 +199,7 @@ func TestProviderAuthorization_TerminalStatesAndReconnectReset(t *testing.T) {
 func providerAuthorizationForTest(t *testing.T, expiresAt time.Time) *domain.ProviderAuthorization {
 	t.Helper()
 	auth, err := domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
-		OwnerUserID:            "user-1",
+		OwnerID:                "user-1",
 		Provider:               domain.ProviderGitHub,
 		ProviderAccountID:      "123",
 		ProviderLogin:          "octocat",

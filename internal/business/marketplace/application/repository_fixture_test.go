@@ -42,7 +42,7 @@ func (c *fakeProviderObserver) ManageURL(context.Context, domain.Provider) (stri
 
 type recordingObservations struct{ scheduled []string }
 
-func (r *recordingObservations) ScheduleObservation(_ context.Context, authorizationID string) error {
+func (r *recordingObservations) ScheduleAccessScopeObservation(_ context.Context, authorizationID string) error {
 	r.scheduled = append(r.scheduled, authorizationID)
 	return nil
 }

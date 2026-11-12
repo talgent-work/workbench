@@ -9,8 +9,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
-var _ credential.ServiceCredentialSupplier = (*CredentialSupplier)(nil)
-
 func (s *CredentialSupplier) SupplyServiceCredential(ctx context.Context, owner, authorizationID, target string) (credential.ServiceMaterial, error) {
 	if !s.enabled {
 		return credential.ServiceMaterial{}, application.ErrProviderUnavailable
@@ -25,7 +23,7 @@ func (s *CredentialSupplier) SupplyServiceCredential(ctx context.Context, owner,
 		return credential.ServiceMaterial{}, domain.ErrCredentialTargetInapplicable
 	}
 	manager := newFreshUserTokenManager(s.cfg, s.http, s.authorizations, s.cipher, s.now)
-	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{OwnerUserID: owner, AuthorizationID: authorizationID, Provider: domain.ProviderGitHub, Reason: target})
+	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{OwnerID: owner, AuthorizationID: authorizationID, Provider: domain.ProviderGitHub, Reason: target})
 	if err != nil {
 		return credential.ServiceMaterial{}, mapProviderError(err)
 	}

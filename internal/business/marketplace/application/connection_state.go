@@ -20,7 +20,7 @@ func (a *PersonalConnections) GetPersonalConnection(ctx context.Context, actor s
 	if actor == "" {
 		return nil, ErrUnauthenticated
 	}
-	return a.providerQueries.GetProviderConnectionState(ctx, actor, provider)
+	return a.queries.GetProviderConnectionState(ctx, actor, provider)
 }
 
 func providerConnectionStateWithoutAuthorization(provider domain.Provider) *query.ProviderConnectionState {

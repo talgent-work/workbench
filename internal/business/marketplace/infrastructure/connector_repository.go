@@ -16,9 +16,10 @@ import (
 type ConnectorRepository struct{ engine *xorm.Engine }
 
 var (
-	_ domain.ConnectorRepository          = (*ConnectorRepository)(nil)
-	_ domain.InstalledConnectorRepository = (*InstalledConnectorRepository)(nil)
-	_ query.ConnectorQueryRepository      = (*ConnectorRepository)(nil)
+	_ domain.ConnectorRepository              = (*ConnectorRepository)(nil)
+	_ domain.InstalledConnectorRepository     = (*InstalledConnectorRepository)(nil)
+	_ query.ConnectorQueryRepository          = (*ConnectorRepository)(nil)
+	_ query.InstalledConnectorQueryRepository = (*InstalledConnectorRepository)(nil)
 )
 
 func NewConnectorRepository(engine *xorm.Engine) *ConnectorRepository {
@@ -103,9 +104,9 @@ func (r *ConnectorRepository) ListCatalog(ctx context.Context) ([]query.CatalogC
 	return result, nil
 }
 
-func (r *ConnectorRepository) ListInstalled(ctx context.Context, userID string) ([]query.InstalledConnector, error) {
+func (r *InstalledConnectorRepository) ListInstalled(ctx context.Context, ownerID string) ([]query.InstalledConnector, error) {
 	var rows []installedConnectorDO
-	if err := r.engine.Context(ctx).Cols(installedConnectorColumns...).Where("owner_id = ? AND deleted_at = 0", userID).Asc("connector_id").Find(&rows); err != nil {
+	if err := r.engine.Context(ctx).Cols(installedConnectorColumns...).Where("owner_id = ? AND deleted_at = 0", ownerID).Asc("connector_id").Find(&rows); err != nil {
 		return nil, oops.With("operation", "marketplace.installed_connector.list").Wrap(err)
 	}
 	result := make([]query.InstalledConnector, 0, len(rows))

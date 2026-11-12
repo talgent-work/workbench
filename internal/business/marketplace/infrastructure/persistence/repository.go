@@ -16,11 +16,10 @@ import (
 )
 
 var _ application.AuthorizationStore = (*ProviderAuthorizations)(nil)
-var _ application.ProviderConnectionQueryRepository = (*ProviderAuthorizations)(nil)
 
 type ProviderAuthorizations struct{ db *xorm.Engine }
 
-const providerAuthorizationSelectColumns = "id, owner_user_id, provider, provider_account_id, provider_login, access_token_ciphertext, refresh_token_ciphertext, expires_at, refresh_token_expires_at, status, refresh_lease_id, refresh_lease_until, last_refreshed_at, last_checked_at, last_failure_code, last_failure_detail, access_scope_json, access_scope_observed_at, version, created_at, updated_at, deleted_at"
+const providerAuthorizationSelectColumns = "id, owner_id, provider, provider_account_id, provider_login, access_token_ciphertext, refresh_token_ciphertext, expires_at, refresh_token_expires_at, status, refresh_lease_id, refresh_lease_until, last_refreshed_at, last_checked_at, last_failure_code, last_failure_detail, access_scope_json, access_scope_observed_at, version, created_at, updated_at, deleted_at"
 
 func NewProviderAuthorizations(db *xorm.Engine) *ProviderAuthorizations {
 	return &ProviderAuthorizations{db: db}
@@ -51,7 +50,7 @@ func (r *ProviderAuthorizations) Save(ctx context.Context, authorization *domain
 }
 
 func (r *ProviderAuthorizations) Get(ctx context.Context, id string) (*domain.ProviderAuthorization, error) {
-	rows, err := r.findProviderAuthorizations(ctx, "id = ? AND deleted_at = 0", id)
+	rows, err := findProviderAuthorizations(ctx, r.db, "id = ? AND deleted_at = 0", id)
 	if err != nil {
 		return nil, oops.Wrap(err)
 	}
@@ -61,8 +60,8 @@ func (r *ProviderAuthorizations) Get(ctx context.Context, id string) (*domain.Pr
 	return providerAuthorizationFromDO(rows[0])
 }
 
-func (r *ProviderAuthorizations) GetByOwnerAndProvider(ctx context.Context, ownerUserID string, provider domain.Provider) (*domain.ProviderAuthorization, error) {
-	rows, err := r.findProviderAuthorizations(ctx, "owner_user_id = ? AND provider = ? AND deleted_at = 0", strings.TrimSpace(ownerUserID), string(provider))
+func (r *ProviderAuthorizations) GetByOwnerAndProvider(ctx context.Context, ownerID string, provider domain.Provider) (*domain.ProviderAuthorization, error) {
+	rows, err := findProviderAuthorizations(ctx, r.db, "owner_id = ? AND provider = ? AND deleted_at = 0", strings.TrimSpace(ownerID), string(provider))
 	if err != nil {
 		return nil, oops.Wrap(err)
 	}
@@ -70,17 +69,6 @@ func (r *ProviderAuthorizations) GetByOwnerAndProvider(ctx context.Context, owne
 		return nil, domain.ErrProviderNotFound
 	}
 	return providerAuthorizationFromDO(rows[0])
-}
-
-func (r *ProviderAuthorizations) GetProviderConnectionState(ctx context.Context, ownerUserID string, provider domain.Provider) (*query.ProviderConnectionState, error) {
-	rows, err := r.findProviderAuthorizations(ctx, "owner_user_id = ? AND provider = ? AND deleted_at = 0", strings.TrimSpace(ownerUserID), string(provider))
-	if err != nil {
-		return nil, oops.Wrap(err)
-	}
-	if len(rows) == 0 {
-		return providerConnectionStateWithoutAuthorization(provider), nil
-	}
-	return providerConnectionStateFromDO(rows[0]), nil
 }
 
 func (r *ProviderAuthorizations) AcquireCredentialLease(ctx context.Context, authorization *domain.ProviderAuthorization, leaseID string, leaseUntil, now time.Time) (*domain.ProviderAuthorization, error) {
@@ -143,10 +131,10 @@ func providerConnectionStateFromDO(row ProviderAuthorizationDO) *query.ProviderC
 	return state
 }
 
-func (r *ProviderAuthorizations) findProviderAuthorizations(ctx context.Context, where string, args ...any) ([]ProviderAuthorizationDO, error) {
+func findProviderAuthorizations(ctx context.Context, db *xorm.Engine, where string, args ...any) ([]ProviderAuthorizationDO, error) {
 	var rows []ProviderAuthorizationDO
 	query := "SELECT " + providerAuthorizationSelectColumns + " FROM scm_provider_authorization WHERE " + where
-	if err := r.db.Context(ctx).SQL(query, args...).Find(&rows); err != nil {
+	if err := db.Context(ctx).SQL(query, args...).Find(&rows); err != nil {
 		return nil, err
 	}
 	return rows, nil

@@ -25,7 +25,7 @@ func TestServiceCredentialHTTPChecksAuthorityTargetAndCurrentGrant(t *testing.T)
 	repo := &fakeAuthorizationRepository{authorization: authorization}
 	supplier, err := NewCredentialSupplier(enabledConfig(t), repo, protected)
 	require.NoError(t, err)
-	app := application.NewPersonalConnections(repo, nil, nil, nil, supplier, nil, nil, supplier, nil)
+	app := application.NewPersonalConnections(repo, nil, NewGitHub(nil, nil, nil, supplier), nil, nil)
 	mux := http.NewServeMux()
 	srv := connect.NewServer()
 	marketplaceprivatev1connect.RegisterCredentialServiceHandler(srv, transport.NewCredentialHandler(app, "control-secret"))
@@ -77,7 +77,7 @@ func TestServiceCredentialHTTPChecksAuthorityTargetAndCurrentGrant(t *testing.T)
 	// Reauthorization restores supply through the same stored authorization ID.
 	ciphertext, err = protected.Encrypt("replacement-provider-token")
 	require.NoError(t, err)
-	require.NoError(t, repo.authorization.ReplaceWith(domain.ProviderAuthorizationInput{OwnerUserID: "owner", Provider: domain.ProviderGitHub,
+	require.NoError(t, repo.authorization.ReplaceWith(domain.ProviderAuthorizationInput{OwnerID: "owner", Provider: domain.ProviderGitHub,
 		ProviderAccountID: "new-account", ProviderLogin: "new-login", AccessTokenCiphertext: ciphertext, ExpiresAt: time.Now().Add(time.Hour)}))
 	ctx, _ = consumer()
 	response, err := client.SupplyServiceCredential(ctx, request("github-api"))
