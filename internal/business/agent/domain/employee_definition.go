@@ -13,7 +13,7 @@ const (
 	// standaloneStartupAgent is the core plugin's Standalone Work role, which
 	// starts each Work of an owner's definition a caller names no other role
 	// for.
-	standaloneStartupAgent = "talgent:personal-work-executor"
+	standaloneStartupAgent = "talgent:work-executor"
 )
 
 // EmployeeDefinitionInput is the definition a person's Agent starts with:
