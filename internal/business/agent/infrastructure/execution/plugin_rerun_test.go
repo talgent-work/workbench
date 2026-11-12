@@ -38,7 +38,7 @@ func TestPreparationRerunOfTheSameAllocationDoesNotInstallAgain(t *testing.T) {
 	}
 	first, installs := run(fixtureAllocationID)
 	require.Equal(t, []domain.PluginInstallation{{Slug: "fixed", Installed: true}}, installationResults([]byte(first), 0, input.Capabilities))
-	require.Equal(t, 3, installs, "marketplace add, one install and its update")
+	require.Equal(t, 2, installs, "marketplace add and one install; a fresh install needs no update")
 
 	again, reruns := run(fixtureAllocationID)
 	require.Equal(t, first, again, "a re-run reports the finished preparation")
