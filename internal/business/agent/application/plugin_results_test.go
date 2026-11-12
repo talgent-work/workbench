@@ -36,8 +36,8 @@ func TestPluginResultsListTheSelectionWithTheCurrentRunsOutcomes(t *testing.T) {
 		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "missing", Version: "3.0.0", Source: "community"}},
 	}
 	outcomes := &currentRunOutcomes{outcomes: []query.PluginResult{
-		{Slug: "runtime", InstallationReported: true, InstallationReason: "installation_failed", LoadingReported: true, Loaded: true},
-		{Slug: "tools", InstallationReported: true, Installed: true, LoadingReported: true, LoadingReason: "version_mismatch"},
+		{Slug: "runtime", InstallationReported: true, InstallationReason: "installation_failed", LoadingReported: true, Loaded: true, LoadedVersion: "1.1.0"},
+		{Slug: "tools", InstallationReported: true, Installed: true, LoadingReported: true, LoadingReason: "not_loaded"},
 		{Slug: "unselected", Loaded: true},
 	}}
 	app.ExecutionQueries = outcomes
@@ -46,8 +46,8 @@ func TestPluginResultsListTheSelectionWithTheCurrentRunsOutcomes(t *testing.T) {
 	require.Equal(t, "reader", auth.subject)
 	require.Equal(t, "work", outcomes.workID)
 	require.Equal(t, []query.PluginResult{
-		{Slug: "runtime", ReleaseVersion: "1.0.0", Source: "official", InstallationReported: true, InstallationReason: "installation_failed", LoadingReported: true, Loaded: true},
-		{Slug: "tools", ReleaseVersion: "2.0.0", Source: "community", InstallationReported: true, Installed: true, LoadingReported: true, LoadingReason: "version_mismatch"},
+		{Slug: "runtime", ReleaseVersion: "1.0.0", Source: "official", InstallationReported: true, InstallationReason: "installation_failed", LoadingReported: true, Loaded: true, LoadedVersion: "1.1.0"},
+		{Slug: "tools", ReleaseVersion: "2.0.0", Source: "community", InstallationReported: true, Installed: true, LoadingReported: true, LoadingReason: "not_loaded"},
 		{Slug: "missing", ReleaseVersion: "3.0.0", Source: "community"},
 	}, results, "installation and loading remain independent; undeclared plugins are omitted")
 	require.Zero(t, works.saves)
