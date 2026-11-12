@@ -45,6 +45,13 @@ run while the previous release serves. Once Agent learns that an Application was
 Application acts on nothing of its Agent's: a message stream it still holds ends at its next
 re-admission.
 
+Before deploying it, also run
+`deploy/middleware/migrations/20261115-storage-share-link-application-creator.sql` against the
+database named by `WORKBENCH_MYSQL_DATABASE`; it adds `storage_share_link.created_by_application`
+and can run while the previous release serves. An Application now creates and stops Share Links
+to its own Works' files with `CreateWorkFileShareLink` and `StopWorkFileSharing`; a link names
+its creator in `created_by_user_id` or `created_by_application_id`.
+
 Run `scripts/deploy/bootstrap-kafka.sh` again before deploying it, too: it creates the topic
 `account.integration.v1.ApplicationRemovedV1`, on which Account tells Agent that an Application
 was removed. An Application Owner removes an Application with

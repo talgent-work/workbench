@@ -48,7 +48,7 @@ func (c *Client) ListDirectoryFiles(ctx context.Context, directories []domain.Di
 	return filesFromProto(response.GetFiles()), nil
 }
 
-func (c *Client) IssueUpload(ctx context.Context, position command.FilePosition, spaceToken string, replace bool, contentType string, uploader command.FileOwner) (command.FileLink, error) {
+func (c *Client) IssueUpload(ctx context.Context, position command.FilePosition, spaceToken string, replace bool, contentType string, uploader command.FileActor) (command.FileLink, error) {
 	response, err := c.files.IssueUpload(authorized(ctx, c.token), &storageprivatev1.IssueUploadRequest{
 		Position: positionToProto(position.Directory, position.Name), SpaceToken: spaceToken, Replace: replace,
 		UploaderUserId: uploader.UserID, UploaderApplicationId: uploader.ApplicationID, ContentType: contentType,
@@ -59,7 +59,7 @@ func (c *Client) IssueUpload(ctx context.Context, position command.FilePosition,
 	return command.FileLink{URL: response.GetUploadUrl(), ExpiresAt: response.GetExpiresAt().AsTime()}, nil
 }
 
-func (c *Client) RenameFile(ctx context.Context, position command.FilePosition, spaceToken, newName string, actor command.FileOwner) error {
+func (c *Client) RenameFile(ctx context.Context, position command.FilePosition, spaceToken, newName string, actor command.FileActor) error {
 	_, err := c.files.RenameFile(authorized(ctx, c.token), &storageprivatev1.RenameFileRequest{
 		Position: positionToProto(position.Directory, position.Name), SpaceToken: spaceToken, NewName: newName,
 		ActorUserId: actor.UserID, ActorApplicationId: actor.ApplicationID,
@@ -67,7 +67,7 @@ func (c *Client) RenameFile(ctx context.Context, position command.FilePosition, 
 	return fileError("storage.rename", err)
 }
 
-func (c *Client) DeleteFile(ctx context.Context, position command.FilePosition, spaceToken string, actor command.FileOwner) error {
+func (c *Client) DeleteFile(ctx context.Context, position command.FilePosition, spaceToken string, actor command.FileActor) error {
 	_, err := c.files.DeleteFile(authorized(ctx, c.token), &storageprivatev1.DeleteFileRequest{
 		Position: positionToProto(position.Directory, position.Name), SpaceToken: spaceToken,
 		ActorUserId: actor.UserID, ActorApplicationId: actor.ApplicationID,
@@ -87,16 +87,16 @@ func (c *Client) IssueAccessLink(ctx context.Context, position command.FilePosit
 	return command.FileLink{URL: response.GetAccessUrl(), Path: response.GetAccessPath(), ExpiresAt: response.GetExpiresAt().AsTime()}, nil
 }
 
-func (c *Client) CreateShareLink(ctx context.Context, position command.FilePosition, actor string) (command.ShareLink, error) {
-	response, err := c.files.CreateShareLink(authorized(ctx, c.token), &storageprivatev1.CreateShareLinkRequest{Position: positionToProto(position.Directory, position.Name), CreatedByUserId: actor})
+func (c *Client) CreateShareLink(ctx context.Context, position command.FilePosition, actor command.FileActor) (command.ShareLink, error) {
+	response, err := c.files.CreateShareLink(authorized(ctx, c.token), &storageprivatev1.CreateShareLinkRequest{Position: positionToProto(position.Directory, position.Name), CreatedByUserId: actor.UserID, CreatedByApplicationId: actor.ApplicationID})
 	if err != nil {
 		return command.ShareLink{}, fileError("storage.share", err)
 	}
 	return shareLinkFromProto(response.GetShareLink()), nil
 }
 
-func (c *Client) RevokeShareLinks(ctx context.Context, position command.FilePosition, actor string) error {
-	_, err := c.files.RevokeShareLinks(authorized(ctx, c.token), &storageprivatev1.RevokeShareLinksRequest{Position: positionToProto(position.Directory, position.Name), CreatedByUserId: actor})
+func (c *Client) RevokeShareLinks(ctx context.Context, position command.FilePosition, actor command.FileActor) error {
+	_, err := c.files.RevokeShareLinks(authorized(ctx, c.token), &storageprivatev1.RevokeShareLinksRequest{Position: positionToProto(position.Directory, position.Name), CreatedByUserId: actor.UserID, CreatedByApplicationId: actor.ApplicationID})
 	return fileError("storage.revoke_shares", err)
 }
 
@@ -149,7 +149,7 @@ func filesFromProto(files []*storageprivatev1.File) []command.SpaceFile {
 		}
 		mapped := command.SpaceFile{
 			Directory: directoryFromProto(file.GetPosition().GetDirectory()), Kind: kind, Name: file.GetPosition().GetName(), SizeBytes: file.GetSizeBytes(), ContentType: file.GetContentType(),
-			UpdatedAt: file.GetUpdatedAt().AsTime(), Uploader: command.FileOwner{UserID: file.GetUploaderUserId(), ApplicationID: file.GetUploaderApplicationId()}, WorkID: file.GetWorkId(),
+			UpdatedAt: file.GetUpdatedAt().AsTime(), Uploader: command.FileActor{UserID: file.GetUploaderUserId(), ApplicationID: file.GetUploaderApplicationId()}, WorkID: file.GetWorkId(),
 		}
 		for _, link := range file.GetShareLinks() {
 			mapped.ShareLinks = append(mapped.ShareLinks, shareLinkFromProto(link))
@@ -160,7 +160,7 @@ func filesFromProto(files []*storageprivatev1.File) []command.SpaceFile {
 }
 
 func shareLinkFromProto(link *storageprivatev1.ShareLink) command.ShareLink {
-	return command.ShareLink{Token: link.GetToken(), URL: link.GetUrl(), CreatedByUserID: link.GetCreatedByUserId(), CreatedAt: link.GetCreatedAt().AsTime()}
+	return command.ShareLink{Token: link.GetToken(), URL: link.GetUrl(), CreatedBy: command.FileActor{UserID: link.GetCreatedByUserId(), ApplicationID: link.GetCreatedByApplicationId()}, CreatedAt: link.GetCreatedAt().AsTime()}
 }
 
 var filePreviewModes = map[storageprivatev1.PreviewMode]command.PreviewMode{

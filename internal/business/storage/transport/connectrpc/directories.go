@@ -140,7 +140,7 @@ func (h *DirectoryHandler) IssueUpload(ctx context.Context, request *storagepriv
 	}
 	link, err := h.application.IssueUpload(ctx, application.IssueUpload{
 		Position: positionFromProto(request.GetPosition()), SpaceToken: request.GetSpaceToken(), Replace: request.GetReplace(),
-		Uploader:    application.Actor{UserID: request.GetUploaderUserId(), ApplicationID: request.GetUploaderApplicationId()},
+		Uploader:    domain.Actor{UserID: request.GetUploaderUserId(), ApplicationID: request.GetUploaderApplicationId()},
 		ContentType: request.GetContentType(),
 	})
 	if err != nil {
@@ -153,7 +153,7 @@ func (h *DirectoryHandler) RenameFile(ctx context.Context, request *storagepriva
 	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
-	file, err := h.application.RenameFile(ctx, positionFromProto(request.GetPosition()), request.GetSpaceToken(), request.GetNewName(), actorOf(request.GetActorUserId(), request.GetActorApplicationId()))
+	file, err := h.application.RenameFile(ctx, positionFromProto(request.GetPosition()), request.GetSpaceToken(), request.GetNewName(), domain.Actor{UserID: request.GetActorUserId(), ApplicationID: request.GetActorApplicationId()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -164,7 +164,7 @@ func (h *DirectoryHandler) DeleteFile(ctx context.Context, request *storagepriva
 	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
-	if err := h.application.DeleteFile(ctx, positionFromProto(request.GetPosition()), request.GetSpaceToken(), actorOf(request.GetActorUserId(), request.GetActorApplicationId())); err != nil {
+	if err := h.application.DeleteFile(ctx, positionFromProto(request.GetPosition()), request.GetSpaceToken(), domain.Actor{UserID: request.GetActorUserId(), ApplicationID: request.GetActorApplicationId()}); err != nil {
 		return nil, mapError(err)
 	}
 	return &storageprivatev1.DeleteFileResponse{}, nil
@@ -186,7 +186,7 @@ func (h *DirectoryHandler) CreateShareLink(ctx context.Context, request *storage
 	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
-	link, err := h.application.CreateShareLink(ctx, positionFromProto(request.GetPosition()), request.GetCreatedByUserId())
+	link, err := h.application.CreateShareLink(ctx, positionFromProto(request.GetPosition()), domain.Actor{UserID: request.GetCreatedByUserId(), ApplicationID: request.GetCreatedByApplicationId()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -197,7 +197,7 @@ func (h *DirectoryHandler) RevokeShareLinks(ctx context.Context, request *storag
 	if err := h.directoryCaller(ctx); err != nil {
 		return nil, err
 	}
-	revoked, remaining, err := h.application.RevokeShareLinks(ctx, positionFromProto(request.GetPosition()), request.GetCreatedByUserId())
+	revoked, remaining, err := h.application.RevokeShareLinks(ctx, positionFromProto(request.GetPosition()), domain.Actor{UserID: request.GetCreatedByUserId(), ApplicationID: request.GetCreatedByApplicationId()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -253,10 +253,4 @@ func (h *DirectoryHandler) ReadContent(ctx context.Context, request *storagepriv
 		response.Files = append(response.Files, &storageprivatev1.ContentFile{Path: string(file.Path), Content: file.Content})
 	}
 	return response, nil
-}
-
-// actorOf is the person or the Application a request names as admitted by
-// the owner's context.
-func actorOf(userID, applicationID string) application.Actor {
-	return application.Actor{UserID: userID, ApplicationID: applicationID}
 }

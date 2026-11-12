@@ -15,11 +15,13 @@ import (
 )
 
 // directoryMigrations are the one-off scripts that replace File Spaces with
-// Directories, then add Directory Mappings; each and its part of this test
-// are removed once every environment ran it.
+// Directories, then add Directory Mappings, then a Share Link's Application
+// creator; each and its part of this test are removed once every environment
+// ran it.
 var directoryMigrations = []string{
 	"../../../deploy/middleware/migrations/20261108-storage-directories.sql",
 	"../../../deploy/middleware/migrations/20261111-storage-directory-mappings.sql",
+	"../../../deploy/middleware/migrations/20261115-storage-share-link-application-creator.sql",
 }
 
 // The scripts drop the File Space tables and leave exactly the current

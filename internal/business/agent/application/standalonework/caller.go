@@ -63,14 +63,14 @@ func (c Caller) fileReader() string {
 	return c.Owner()
 }
 
-// fileOwner is the owner changing its Standalone Works' files, a person or an
-// Application; an Agent changes none, so it names no one.
-func (c Caller) fileOwner() command.FileOwner {
+// fileActor is the owner changing or sharing its Standalone Works' files, a
+// person or an Application; an Agent changes none, so it names no one.
+func (c Caller) fileActor() command.FileActor {
 	if c.Agent != nil {
-		return command.FileOwner{}
+		return command.FileActor{}
 	}
 	if c.ApplicationID != "" {
-		return command.FileOwner{ApplicationID: c.ApplicationID}
+		return command.FileActor{ApplicationID: c.ApplicationID}
 	}
-	return command.FileOwner{UserID: c.UserID}
+	return command.FileActor{UserID: c.UserID}
 }

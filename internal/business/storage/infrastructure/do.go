@@ -24,11 +24,14 @@ type shareLinkDO struct {
 	DirectoryName string `xorm:"directory_name"`
 	TargetName    string `xorm:"target_name"`
 	CreatedBy     string `xorm:"created_by"`
-	State         string `xorm:"state"`
-	Version       int    `xorm:"'version'"`
-	CreatedAt     int64  `xorm:"created_at"`
-	UpdatedAt     int64  `xorm:"updated_at"`
-	DeletedAt     int64  `xorm:"deleted_at"`
+	// CreatedByApplication is the Application that created the link, when
+	// no person did.
+	CreatedByApplication string `xorm:"created_by_application"`
+	State                string `xorm:"state"`
+	Version              int    `xorm:"'version'"`
+	CreatedAt            int64  `xorm:"created_at"`
+	UpdatedAt            int64  `xorm:"updated_at"`
+	DeletedAt            int64  `xorm:"deleted_at"`
 }
 
 func (shareLinkDO) TableName() string { return "storage_share_link" }

@@ -251,7 +251,7 @@ type ConverterPort interface {
 type UploadGrant struct {
 	Position    domain.FilePosition
 	Replace     bool
-	Uploader    Actor
+	Uploader    domain.Actor
 	ContentType string
 }
 

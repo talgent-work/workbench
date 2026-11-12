@@ -2,22 +2,36 @@ package domain
 
 import "strings"
 
-// FileWriter is who makes a write in a File Space: the person or the
-// Application the owner's context admitted, or a Work whose Agent made it;
-// exactly one. Only AdmittedWriter and WorkWriter make one, so a FileWriter
-// always names its writer.
+// Actor is the person or the Application the owner's context admitted to
+// change or share a file; a valid one names exactly one of them.
+type Actor struct{ UserID, ApplicationID string }
+
+// Validate requires exactly one of the person and the Application.
+func (a Actor) Validate() error {
+	if (strings.TrimSpace(a.UserID) == "") == (strings.TrimSpace(a.ApplicationID) == "") {
+		return ErrActorRequired
+	}
+	return nil
+}
+
+func (a Actor) trimmed() Actor {
+	return Actor{UserID: strings.TrimSpace(a.UserID), ApplicationID: strings.TrimSpace(a.ApplicationID)}
+}
+
+// FileWriter is who makes a write in a File Space: an Actor, or a Work whose
+// Agent made it; exactly one. Only AdmittedWriter and WorkWriter make one, so
+// a FileWriter always names its writer.
 type FileWriter struct {
 	userID, applicationID, workID string
 }
 
-// AdmittedWriter is the person or the Application the owner's context
-// admitted to change a file; it names exactly one of them.
-func AdmittedWriter(userID, applicationID string) (FileWriter, error) {
-	userID, applicationID = strings.TrimSpace(userID), strings.TrimSpace(applicationID)
-	if (userID == "") == (applicationID == "") {
+// AdmittedWriter is the Actor the owner's context admitted to change a file.
+func AdmittedWriter(actor Actor) (FileWriter, error) {
+	if err := actor.Validate(); err != nil {
 		return FileWriter{}, ErrFileWriterRequired
 	}
-	return FileWriter{userID: userID, applicationID: applicationID}, nil
+	actor = actor.trimmed()
+	return FileWriter{userID: actor.UserID, applicationID: actor.ApplicationID}, nil
 }
 
 // WorkWriter is a Work whose Agent changes a file.
@@ -28,6 +42,9 @@ func WorkWriter(workID string) (FileWriter, error) {
 	}
 	return FileWriter{workID: workID}, nil
 }
+
+// Actor is the writing person or Application, empty for a Work.
+func (w FileWriter) Actor() Actor { return Actor{UserID: w.userID, ApplicationID: w.applicationID} }
 
 // UserID is the writing person, empty for an Application or a Work.
 func (w FileWriter) UserID() string { return w.userID }

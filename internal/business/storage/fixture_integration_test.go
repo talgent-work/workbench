@@ -166,7 +166,7 @@ func (f *fixture) upload(directory application.Named, token, name, content strin
 // uploadAs uploads with the declared contentType, empty when none is known.
 func (f *fixture) uploadAs(directory application.Named, token, name, contentType, content string, replace bool) *http.Response {
 	f.t.Helper()
-	link, err := f.app.IssueUpload(f.t.Context(), application.IssueUpload{Position: at(directory, name), SpaceToken: token, Replace: replace, Uploader: application.Actor{UserID: "user-1"}, ContentType: contentType})
+	link, err := f.app.IssueUpload(f.t.Context(), application.IssueUpload{Position: at(directory, name), SpaceToken: token, Replace: replace, Uploader: domain.Actor{UserID: "user-1"}, ContentType: contentType})
 	require.NoError(f.t, err)
 	request, _ := http.NewRequest(http.MethodPut, link.URL, strings.NewReader(content))
 	response, err := http.DefaultClient.Do(request)

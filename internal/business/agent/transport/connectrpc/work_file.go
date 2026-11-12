@@ -167,7 +167,7 @@ func workFileKindToProto(kind command.FileKind) agentpublicv1.WorkFileKind {
 }
 
 func shareLinkToProto(link command.ShareLink) *agentpublicv1.WorkFileShareLink {
-	return &agentpublicv1.WorkFileShareLink{Token: link.Token, Url: link.URL, CreatedByUserId: link.CreatedByUserID, CreatedAt: timestamppb.New(link.CreatedAt)}
+	return &agentpublicv1.WorkFileShareLink{Token: link.Token, Url: link.URL, CreatedByUserId: link.CreatedBy.UserID, CreatedByApplicationId: link.CreatedBy.ApplicationID, CreatedAt: timestamppb.New(link.CreatedAt)}
 }
 
 var previewModesToProto = map[command.PreviewMode]agentpublicv1.WorkFilePreviewMode{

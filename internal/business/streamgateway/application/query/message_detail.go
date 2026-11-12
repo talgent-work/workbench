@@ -19,7 +19,8 @@ type ReaderAdmission struct{ Reference, Value string }
 
 // WorkAccessPort admits a reader of a Work's message stream from Agent's own
 // facts: the owner, a Work Share holder, or a reader admitted within the scope
-// of a public Work.
+// of a public Work. A reader is the id of the reading person or Application;
+// StreamGateway never tells them apart, Agent decides.
 type WorkAccessPort interface {
 	AuthorizeRead(ctx context.Context, reader string, admission ReaderAdmission, workID string) error
 }

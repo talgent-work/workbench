@@ -113,7 +113,7 @@ func (p *StandaloneWorks) IssueAttachmentUpload(ctx context.Context, caller Call
 	if err != nil {
 		return command.FileLink{}, err
 	}
-	return p.files.IssueUpload(ctx, command.FilePosition{Directory: space, Name: name}, token, replace, contentType, caller.fileOwner())
+	return p.files.IssueUpload(ctx, command.FilePosition{Directory: space, Name: name}, token, replace, contentType, caller.fileActor())
 }
 
 // RenameAttachment moves the owner's Attachment to a free name.
@@ -122,7 +122,7 @@ func (p *StandaloneWorks) RenameAttachment(ctx context.Context, caller Caller, w
 	if err != nil {
 		return err
 	}
-	return p.files.RenameFile(ctx, command.FilePosition{Directory: space, Name: name}, token, newName, caller.fileOwner())
+	return p.files.RenameFile(ctx, command.FilePosition{Directory: space, Name: name}, token, newName, caller.fileActor())
 }
 
 // DeleteFile deletes the owner's Attachment or Artifact.
@@ -131,7 +131,7 @@ func (p *StandaloneWorks) DeleteFile(ctx context.Context, caller Caller, file Wo
 	if err != nil {
 		return err
 	}
-	return p.files.DeleteFile(ctx, command.FilePosition{Directory: space, Name: file.Name}, token, caller.fileOwner())
+	return p.files.DeleteFile(ctx, command.FilePosition{Directory: space, Name: file.Name}, token, caller.fileActor())
 }
 
 // CreateShareLink lets the owner share one file of a Standalone Work by link,
@@ -141,7 +141,7 @@ func (p *StandaloneWorks) CreateShareLink(ctx context.Context, caller Caller, fi
 	if err != nil {
 		return command.ShareLink{}, err
 	}
-	return p.files.CreateShareLink(ctx, position, caller.UserID)
+	return p.files.CreateShareLink(ctx, position, caller.fileActor())
 }
 
 // StopSharing revokes every Share Link to one file of the owner's Standalone Work.
@@ -150,21 +150,21 @@ func (p *StandaloneWorks) StopSharing(ctx context.Context, caller Caller, file W
 	if err != nil {
 		return err
 	}
-	return p.files.RevokeShareLinks(ctx, position, caller.UserID)
+	return p.files.RevokeShareLinks(ctx, position, caller.fileActor())
 }
 
 // sharingPosition admits the owner's sharing of a Standalone Work's file and
-// names its File position: Share Links are a person owner's, so neither an
-// Application nor an Agent shares.
+// names its File position: its owner, a person or an Application, shares it
+// (Personal file access); an Agent shares nothing.
 func (p *StandaloneWorks) sharingPosition(ctx context.Context, caller Caller, file WorkFile) (command.FilePosition, error) {
-	if caller.self() == "" {
+	if caller.Owner() == "" {
 		return command.FilePosition{}, access.ErrAccessDenied
 	}
 	owned, err := p.loadWork(ctx, caller, file.WorkID)
 	if err != nil {
 		return command.FilePosition{}, err
 	}
-	if err := owned.work.AdmitFileSharing(owned.definition, caller.UserID); err != nil {
+	if err := owned.work.AdmitFileSharing(owned.definition, caller.Owner()); err != nil {
 		return command.FilePosition{}, denied(err)
 	}
 	space, err := standaloneSpace(owned.work, file.Kind)

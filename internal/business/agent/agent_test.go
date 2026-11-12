@@ -149,15 +149,24 @@ func (stubStorage) ListFiles(context.Context, domain.Directory) ([]command.Space
 func (stubStorage) RequestWorkReclamation(context.Context, string) error { return nil }
 
 // IssueUpload names, in its link, the owner the upload is attributed to.
-func (stubStorage) IssueUpload(_ context.Context, position command.FilePosition, _ string, _ bool, _ string, uploader command.FileOwner) (command.FileLink, error) {
+func (stubStorage) IssueUpload(_ context.Context, position command.FilePosition, _ string, _ bool, _ string, uploader command.FileActor) (command.FileLink, error) {
 	return command.FileLink{URL: fmt.Sprintf("upload://%s/%s?user=%s&application=%s", position.Directory.Name, position.Name, uploader.UserID, uploader.ApplicationID)}, nil
 }
 
-func (stubStorage) RenameFile(context.Context, command.FilePosition, string, string, command.FileOwner) error {
+func (stubStorage) RenameFile(context.Context, command.FilePosition, string, string, command.FileActor) error {
 	return nil
 }
 
-func (stubStorage) DeleteFile(context.Context, command.FilePosition, string, command.FileOwner) error {
+func (stubStorage) DeleteFile(context.Context, command.FilePosition, string, command.FileActor) error {
+	return nil
+}
+
+// CreateShareLink names, in its link, the owner who shares the file.
+func (stubStorage) CreateShareLink(_ context.Context, position command.FilePosition, actor command.FileActor) (command.ShareLink, error) {
+	return command.ShareLink{Token: "share-token", URL: fmt.Sprintf("share://%s/%s", position.Directory.Name, position.Name), CreatedBy: actor}, nil
+}
+
+func (stubStorage) RevokeShareLinks(context.Context, command.FilePosition, command.FileActor) error {
 	return nil
 }
 

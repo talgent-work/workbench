@@ -21,8 +21,8 @@ func (m *lifecycleModule) files() agentpublicv1connect.WorkFileServiceClient {
 }
 
 // An Application uploads, renames and deletes its own Work's Attachments,
-// attributed to itself, and reads and downloads its files, as their owner.
-// Share Links stay a person owner's.
+// attributed to itself, reads and downloads its files, and shares them by
+// Share Link, as their owner.
 func TestAnApplicationUsesItsOwnWorksFiles(t *testing.T) {
 	m := newLifecycleModule(t).start()
 	desk := m.as("application", supportDesk)
@@ -43,8 +43,12 @@ func TestAnApplicationUsesItsOwnWorksFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, link.GetAccessUrl(), "answer.md")
 
-	_, err = files.CreateWorkFileShareLink(desk.ctx, &agentpublicv1.CreateWorkFileShareLinkRequest{WorkId: work, Kind: agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT, Name: "answer.md"})
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "Share Links are a person owner's")
+	shared, err := files.CreateWorkFileShareLink(desk.ctx, &agentpublicv1.CreateWorkFileShareLinkRequest{WorkId: work, Kind: agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT, Name: "answer.md"})
+	require.NoError(t, err)
+	require.Equal(t, supportDesk, shared.GetShareLink().GetCreatedByApplicationId(), "the Application shares as itself")
+	require.Empty(t, shared.GetShareLink().GetCreatedByUserId())
+	_, err = files.StopWorkFileSharing(desk.ctx, &agentpublicv1.StopWorkFileSharingRequest{WorkId: work, Kind: agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT, Name: "answer.md"})
+	require.NoError(t, err)
 }
 
 // Another Application and a person reach none of an Application's Work's
@@ -69,6 +73,10 @@ func TestAnApplicationReachesOnlyItsOwnWorksFiles(t *testing.T) {
 		_, err = files.DeleteWorkFile(c.ctx, &agentpublicv1.DeleteWorkFileRequest{WorkId: workID, Kind: agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT, Name: "answer.md"})
 		denied(err)
 		_, err = files.CreateWorkFileAccessLink(c.ctx, &agentpublicv1.CreateWorkFileAccessLinkRequest{WorkId: workID, Kind: agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT, Name: "answer.md"})
+		denied(err)
+		_, err = files.CreateWorkFileShareLink(c.ctx, &agentpublicv1.CreateWorkFileShareLinkRequest{WorkId: workID, Kind: agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT, Name: "answer.md"})
+		denied(err)
+		_, err = files.StopWorkFileSharing(c.ctx, &agentpublicv1.StopWorkFileSharingRequest{WorkId: workID, Kind: agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT, Name: "answer.md"})
 		denied(err)
 	}
 	reach(billing, work)

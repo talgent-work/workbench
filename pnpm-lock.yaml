@@ -101,8 +101,8 @@ importers:
         specifier: ^4.2.2
         version: 4.2.2(vite@8.1.6(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1))
       '@talgent/contracts':
-        specifier: github:talgent-work/contracts#v0.5.18&path:/gen/ts
-        version: https://codeload.github.com/talgent-work/contracts/tar.gz/b835ffa05b8d9101f5a4574412fc822015e09214#path:/gen/ts(@bufbuild/protobuf@2.11.0)
+        specifier: github:talgent-work/contracts#v0.5.23&path:/gen/ts
+        version: https://codeload.github.com/talgent-work/contracts/tar.gz/72f9d27f3308c863fd73fedff59bc22ec663ad65#path:/gen/ts(@bufbuild/protobuf@2.11.0)
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -204,8 +204,8 @@ importers:
         specifier: ^4.2.2
         version: 4.2.2(vite@8.1.6(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1))
       '@talgent/contracts':
-        specifier: github:talgent-work/contracts#v0.5.18&path:/gen/ts
-        version: https://codeload.github.com/talgent-work/contracts/tar.gz/b835ffa05b8d9101f5a4574412fc822015e09214#path:/gen/ts(@bufbuild/protobuf@2.11.0)
+        specifier: github:talgent-work/contracts#v0.5.23&path:/gen/ts
+        version: https://codeload.github.com/talgent-work/contracts/tar.gz/72f9d27f3308c863fd73fedff59bc22ec663ad65#path:/gen/ts(@bufbuild/protobuf@2.11.0)
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -1181,8 +1181,8 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@talgent/contracts@https://codeload.github.com/talgent-work/contracts/tar.gz/b835ffa05b8d9101f5a4574412fc822015e09214#path:/gen/ts':
-    resolution: {path: /gen/ts, tarball: https://codeload.github.com/talgent-work/contracts/tar.gz/b835ffa05b8d9101f5a4574412fc822015e09214}
+  '@talgent/contracts@https://codeload.github.com/talgent-work/contracts/tar.gz/72f9d27f3308c863fd73fedff59bc22ec663ad65#path:/gen/ts':
+    resolution: {path: /gen/ts, tarball: https://codeload.github.com/talgent-work/contracts/tar.gz/72f9d27f3308c863fd73fedff59bc22ec663ad65}
     version: 0.0.0
     peerDependencies:
       '@bufbuild/protobuf': ^2.11.0
@@ -4003,7 +4003,7 @@ snapshots:
       tailwindcss: 4.2.2
       vite: 8.1.6(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1)
 
-  '@talgent/contracts@https://codeload.github.com/talgent-work/contracts/tar.gz/b835ffa05b8d9101f5a4574412fc822015e09214#path:/gen/ts(@bufbuild/protobuf@2.11.0)':
+  '@talgent/contracts@https://codeload.github.com/talgent-work/contracts/tar.gz/72f9d27f3308c863fd73fedff59bc22ec663ad65#path:/gen/ts(@bufbuild/protobuf@2.11.0)':
     dependencies:
       '@bufbuild/protobuf': 2.11.0
 

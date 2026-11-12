@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"slices"
-	"strings"
 	"time"
 )
 
@@ -273,26 +272,25 @@ func (d *Directory) ShareLinkTokens(position FilePosition) []string {
 // CreateShareLink adds an active Share Link to a position the caller found
 // holding an Attachment or Artifact, also after the work the Directory
 // serves has ended.
-func (d *Directory) CreateShareLink(target FilePosition, createdBy string, now time.Time) (*ShareLink, error) {
+func (d *Directory) CreateShareLink(target FilePosition, createdBy Actor, now time.Time) (*ShareLink, error) {
 	if target.Directory != d.ID || ValidateFileName(target.Name) != nil {
 		return nil, ErrShareLinkNotFound
 	}
-	createdBy = strings.TrimSpace(createdBy)
-	if createdBy == "" {
-		return nil, ErrSharerRequired
+	if err := createdBy.Validate(); err != nil {
+		return nil, err
 	}
-	link := &ShareLink{Token: newSecret(), Target: target, CreatedBy: createdBy, CreatedAt: now.UTC(), State: ShareLinkActive}
+	link := &ShareLink{Token: newSecret(), Target: target, CreatedBy: createdBy.trimmed(), CreatedAt: now.UTC(), State: ShareLinkActive}
 	d.ShareLinks = append(d.ShareLinks, link)
 	return link, nil
 }
 
 // RevokeShareLinks revokes the active Share Links at a position, every one
-// or only those createdBy made when it is set, and reports how many it
-// revoked and how many stay active.
-func (d *Directory) RevokeShareLinks(target FilePosition, createdBy string) (revoked, remaining int) {
-	createdBy = strings.TrimSpace(createdBy)
+// when createdBy names no one, or only those createdBy made, and reports how
+// many it revoked and how many stay active.
+func (d *Directory) RevokeShareLinks(target FilePosition, createdBy Actor) (revoked, remaining int) {
+	createdBy = createdBy.trimmed()
 	for _, link := range d.ActiveShareLinks(target) {
-		if createdBy != "" && link.CreatedBy != createdBy {
+		if createdBy != (Actor{}) && link.CreatedBy != createdBy {
 			remaining++
 			continue
 		}
@@ -334,9 +332,10 @@ const (
 // ShareLink is an unguessable link to the file at one position of its
 // Directory, readable by anyone holding it.
 type ShareLink struct {
-	Token     string
-	Target    FilePosition
-	CreatedBy string
+	Token  string
+	Target FilePosition
+	// CreatedBy is the person or Application that created it.
+	CreatedBy Actor
 	CreatedAt time.Time
 	State     ShareLinkState
 }

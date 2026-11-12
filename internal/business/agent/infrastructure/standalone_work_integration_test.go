@@ -70,7 +70,7 @@ func (s *librarySpaces) IssueAccessLink(_ context.Context, position command.File
 	return command.FileLink{URL: "https://files.invalid/" + position.Name}, nil
 }
 
-func (s *librarySpaces) DeleteFile(context.Context, command.FilePosition, string, command.FileOwner) error {
+func (s *librarySpaces) DeleteFile(context.Context, command.FilePosition, string, command.FileActor) error {
 	return nil
 }
 

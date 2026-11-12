@@ -79,7 +79,7 @@ func (l *Links) VerifyUpload(token string, now time.Time) (application.UploadGra
 	if err != nil {
 		return application.UploadGrant{}, application.ErrInvalidLink
 	}
-	return application.UploadGrant{Position: position, Replace: claims.Replace, Uploader: application.Actor{UserID: claims.Uploader, ApplicationID: claims.UploaderApplication}, ContentType: claims.ContentType}, nil
+	return application.UploadGrant{Position: position, Replace: claims.Replace, Uploader: domain.Actor{UserID: claims.Uploader, ApplicationID: claims.UploaderApplication}, ContentType: claims.ContentType}, nil
 }
 
 func (l *Links) AccessLink(grant application.AccessGrant, expiresAt time.Time) application.AccessLink {

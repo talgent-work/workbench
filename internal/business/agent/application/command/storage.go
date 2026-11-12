@@ -33,12 +33,12 @@ type StoragePort interface {
 	// ListDirectoryFiles lists the files of the given Directories, without
 	// Share Links.
 	ListDirectoryFiles(ctx context.Context, directories []domain.Directory) ([]SpaceFile, error)
-	IssueUpload(ctx context.Context, position FilePosition, spaceToken string, replace bool, contentType string, uploader FileOwner) (FileLink, error)
-	RenameFile(ctx context.Context, position FilePosition, spaceToken, newName string, actor FileOwner) error
-	DeleteFile(ctx context.Context, position FilePosition, spaceToken string, actor FileOwner) error
+	IssueUpload(ctx context.Context, position FilePosition, spaceToken string, replace bool, contentType string, uploader FileActor) (FileLink, error)
+	RenameFile(ctx context.Context, position FilePosition, spaceToken, newName string, actor FileActor) error
+	DeleteFile(ctx context.Context, position FilePosition, spaceToken string, actor FileActor) error
 	IssueAccessLink(ctx context.Context, position FilePosition, inline bool) (FileLink, error)
-	CreateShareLink(ctx context.Context, position FilePosition, actor string) (ShareLink, error)
-	RevokeShareLinks(ctx context.Context, position FilePosition, actor string) error
+	CreateShareLink(ctx context.Context, position FilePosition, actor FileActor) (ShareLink, error)
+	RevokeShareLinks(ctx context.Context, position FilePosition, actor FileActor) error
 	// FilePreview tells how a file is shown; render first asks for its
 	// Preview Copy.
 	FilePreview(ctx context.Context, position FilePosition, render bool) (FilePreview, error)
@@ -70,27 +70,28 @@ const (
 
 // SpaceFile is one file of a File Space, as Storage keeps it.
 type SpaceFile struct {
-	Directory      domain.Directory
-	Kind           FileKind
-	Name           string
-	SizeBytes      int64
-	ContentType    string
-	UpdatedAt      time.Time
+	Directory   domain.Directory
+	Kind        FileKind
+	Name        string
+	SizeBytes   int64
+	ContentType string
+	UpdatedAt   time.Time
 	// Uploader is the owner that uploaded an Attachment.
-	Uploader FileOwner
+	Uploader FileActor
 	// WorkID is the Work that published an Artifact.
 	WorkID     string
 	ShareLinks []ShareLink
 }
 
-// FileOwner is the owner of a Standalone Work changing its files, a person or
-// an Application; exactly one is named.
-type FileOwner struct{ UserID, ApplicationID string }
+// FileActor is the person or the Application that uploads, renames, deletes
+// or shares a file, as Storage records it; exactly one is named.
+type FileActor struct{ UserID, ApplicationID string }
 
 // ShareLink is one active Share Link of a file.
 type ShareLink struct {
-	Token, URL, CreatedByUserID string
-	CreatedAt                   time.Time
+	Token, URL string
+	CreatedBy  FileActor
+	CreatedAt  time.Time
 }
 
 // FileLink is a short-lived link to read or write one file.
