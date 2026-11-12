@@ -46,3 +46,30 @@ func TestAnApplicationsAgentKeepsItsOwner(t *testing.T) {
 	agent.Owners = []string{applicationID, "employee-1"}
 	require.ErrorIs(t, agent.Validate(), domain.ErrInvalidAgentDefinition)
 }
+
+// Removed Application admits nothing: once Agent records the removal, the
+// Application is admitted as no Owner, and only Agent itself may close its
+// Works for it. A person's Agent has no Application to lose.
+func TestARemovedApplicationActsAsNoOwner(t *testing.T) {
+	agent, err := domain.NewAgentDefinition(domain.ApplicationDefinitionInput(applicationID, "Support Desk"))
+	require.NoError(t, err)
+	require.False(t, agent.AdmitsRemovedApplicationClose(applicationID))
+
+	changed, err := agent.RecordApplicationRemoved()
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, agent.IsOwner(applicationID))
+	require.Empty(t, agent.AdmittedOwners())
+	require.Equal(t, []string{applicationID}, agent.Owners, "the Agent stays the Application's")
+	require.True(t, agent.AdmitsRemovedApplicationClose(applicationID))
+	require.False(t, agent.AdmitsRemovedApplicationClose("0193a7c2-6f1e-7c2a-9b3d-000000000000"))
+	require.NoError(t, agent.Validate())
+	changed, err = agent.RecordApplicationRemoved()
+	require.NoError(t, err)
+	require.False(t, changed, "repeating it changes nothing")
+
+	person, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"0193a7c2-6f1e-7c2a-9b3d-0000000000aa"}, Purpose: domain.StandaloneWorkPurpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: "0193a7c2-6f1e-7c2a-9b3d-0000000000aa"}})
+	require.NoError(t, err)
+	_, err = person.RecordApplicationRemoved()
+	require.ErrorIs(t, err, domain.ErrInvalidAgentDefinition)
+}

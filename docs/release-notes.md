@@ -38,6 +38,13 @@ by `AGENT_MYSQL_DATABASE` and `WORKBENCH_MYSQL_DATABASE`; it rewrites the name i
 definitions and Works and can run more than once. Without it, a definition still naming the old
 Startup Agent starts no Standalone Work.
 
+Before deploying it, also run
+`deploy/middleware/migrations/20261115-agent-definition-application-removed.sql` against the
+database named by `AGENT_MYSQL_DATABASE`; it adds `agent_definition.application_removed` and can
+run while the previous release serves. Once Agent learns that an Application was removed, the
+Application acts on nothing of its Agent's: a message stream it still holds ends at its next
+re-admission.
+
 Run `scripts/deploy/bootstrap-kafka.sh` again before deploying it, too: it creates the topic
 `account.integration.v1.ApplicationRemovedV1`, on which Account tells Agent that an Application
 was removed. An Application Owner removes an Application with

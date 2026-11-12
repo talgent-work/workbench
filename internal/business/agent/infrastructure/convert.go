@@ -33,7 +33,7 @@ func agentDefinitionToDO(agent *domain.AgentDefinition) (*agentDefinitionDO, err
 	if err != nil {
 		return nil, err
 	}
-	return &agentDefinitionDO{Owners: owners, AgentName: agent.AgentName, IconGlyph: agent.Icon.Glyph, IconColor: agent.Icon.Color, Purpose: agent.Purpose, ScopeKind: agent.UsageScope.Kind, ScopeRef: agent.UsageScope.Reference, WorkLayout: layout, VisibilityPublic: agent.Visibility.Public, ID: agent.ID, Capabilities: capabilities, Soul: agent.Soul, Version: agent.Version}, nil
+	return &agentDefinitionDO{Owners: owners, AgentName: agent.AgentName, IconGlyph: agent.Icon.Glyph, IconColor: agent.Icon.Color, Purpose: agent.Purpose, ScopeKind: agent.UsageScope.Kind, ScopeRef: agent.UsageScope.Reference, WorkLayout: layout, VisibilityPublic: agent.Visibility.Public, ID: agent.ID, Capabilities: capabilities, Soul: agent.Soul, ApplicationRemoved: agent.ApplicationRemoved, Version: agent.Version}, nil
 }
 
 func agentDefinitionFromDO(row *agentDefinitionDO) (*domain.AgentDefinition, error) {
@@ -49,7 +49,7 @@ func agentDefinitionFromDO(row *agentDefinitionDO) (*domain.AgentDefinition, err
 	if err != nil {
 		return nil, err
 	}
-	agent := &domain.AgentDefinition{Owners: owners, AgentName: row.AgentName, Icon: domain.AgentIcon{Glyph: row.IconGlyph, Color: row.IconColor}, Purpose: row.Purpose, UsageScope: domain.UsageScope{Kind: row.ScopeKind, Reference: row.ScopeRef}, WorkLayout: layout, Visibility: domain.VisibilityRule{Public: row.VisibilityPublic}, ID: row.ID, Capabilities: capabilities, WorkDefaults: defaults, Soul: row.Soul, Version: row.Version}
+	agent := &domain.AgentDefinition{Owners: owners, AgentName: row.AgentName, Icon: domain.AgentIcon{Glyph: row.IconGlyph, Color: row.IconColor}, Purpose: row.Purpose, UsageScope: domain.UsageScope{Kind: row.ScopeKind, Reference: row.ScopeRef}, WorkLayout: layout, Visibility: domain.VisibilityRule{Public: row.VisibilityPublic}, ID: row.ID, Capabilities: capabilities, WorkDefaults: defaults, Soul: row.Soul, ApplicationRemoved: row.ApplicationRemoved, Version: row.Version}
 	return agent, agent.Validate()
 }
 

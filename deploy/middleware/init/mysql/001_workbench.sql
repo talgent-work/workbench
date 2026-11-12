@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS `agent_definition` (
   `agent_name` varchar(512) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Current public Agent name; empty until existing definition is initialized',
   `icon_glyph` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Preset icon glyph',
   `icon_color` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Preset icon color',
+  `application_removed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The owning Application was removed; it then acts as no Owner',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_agent_definition_scope_purpose` (`scope_kind`,`scope_ref`,`purpose`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentDefinition capability, appearance and Work Layout authority';

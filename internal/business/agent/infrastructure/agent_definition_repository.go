@@ -54,7 +54,7 @@ func (r *AgentDefinitionRepository) Save(ctx context.Context, agent *domain.Agen
 	} else {
 		var affected int64
 		affected, err = r.db.Context(ctx).Where("id = ? AND version = ? AND deleted_at = 0", row.ID, agent.Version).
-			Cols("owners", "agent_name", "icon_glyph", "icon_color", "capabilities", "soul", "version", "updated_at").Update(row)
+			Cols("owners", "agent_name", "icon_glyph", "icon_color", "capabilities", "soul", "application_removed", "version", "updated_at").Update(row)
 		if err == nil && affected != 1 {
 			return domain.ErrConcurrentModification
 		}

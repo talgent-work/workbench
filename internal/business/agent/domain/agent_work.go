@@ -357,7 +357,7 @@ func (s *AgentWork) AdmitControlRequester(definition *AgentDefinition, participa
 	if definition == nil || definition.ID != s.AgentID {
 		return ErrControlRequesterNotOwner
 	}
-	return AdmitAgentOwner(definition.Owners, participant)
+	return AdmitAgentOwner(definition.AdmittedOwners(), participant)
 }
 
 func (s *AgentWork) Validate() error {

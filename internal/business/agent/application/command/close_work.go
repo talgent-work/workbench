@@ -33,12 +33,30 @@ func (h *CloseWorkHandler) Handle(ctx context.Context, request WorkControl) erro
 
 // CloseForRemovedApplication closes a Work of an Application that Account
 // removed (Close removed Application's Works). Agent itself closes it, the
-// one exception to Standalone Work control: the Application, which can no
-// longer call, must still own the Work's definition, so a task naming another
-// Work is refused. A running Work is stopped first between Turns, as any
-// close; a Turn still active refuses it, and the caller repeats the close.
-func (h *CloseWorkHandler) CloseForRemovedApplication(ctx context.Context, applicationID, workID string) error {
-	return h.Handle(ctx, WorkControl{SubjectID: applicationID, WorkID: workID, RequestID: uuid.Must(uuid.NewV7()).String()})
+// one exception to Standalone Work control: the definition, which the caller
+// read, must have recorded that its own Application was removed and must be
+// the Work's, so a task naming another Work is refused. A running Work is
+// stopped first between Turns, as any close; a Turn still active refuses it,
+// and the caller repeats the close.
+func (h *CloseWorkHandler) CloseForRemovedApplication(ctx context.Context, definition *domain.AgentDefinition, applicationID, workID string) error {
+	if definition == nil || !definition.AdmitsRemovedApplicationClose(applicationID) {
+		return access.ErrAccessDenied
+	}
+	work, err := h.control.sessions.Get(ctx, workID)
+	if err != nil {
+		return err
+	}
+	if work.AgentID != definition.ID {
+		return access.ErrAccessDenied
+	}
+	facts, err := h.facts(ctx, work)
+	if err != nil {
+		return err
+	}
+	if err := work.Close(uuid.Must(uuid.NewV7()).String(), facts); err != nil {
+		return err
+	}
+	return h.control.sessions.Save(ctx, work)
 }
 
 // ApplyKeptClose applies the close request a Work kept while it stopped. The

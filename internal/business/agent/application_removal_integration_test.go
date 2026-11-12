@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"connectrpc.com/connect/v2"
 	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"github.com/go-jimu/components/taskqueue"
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ import (
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/transport/messagehandler"
@@ -69,6 +71,10 @@ func TestARemovedApplicationsWorksAreClosed(t *testing.T) {
 		others = append(others, other)
 	}
 
+	read := application.AdmitWorkReader{ReaderID: supportDesk, WorkID: work}
+	_, err = m.app.AdmitWorkReader(m.ctx, read)
+	require.NoError(t, err, "the Application reads its Work's stream while it exists")
+
 	queued := &queuedTasks{}
 	recovery := application.NewRecovery(m.app, queued, nil, nil, nil, nil, nil)
 	payload := &accountintegrationv1.ApplicationRemovedV1{EventId: uuid.NewString(), ApplicationId: supportDesk}
@@ -76,6 +82,15 @@ func TestARemovedApplicationsWorksAreClosed(t *testing.T) {
 	require.NoError(t, err)
 	handler := messagehandler.NewApplicationRemovalHandler(recovery)
 	require.NoError(t, handler.Handle(m.ctx, fact))
+
+	// Removed Application admits nothing: a stream it still holds is refused
+	// at its next re-admission, and so is every read and control.
+	_, err = m.app.AdmitWorkReader(m.ctx, read)
+	require.ErrorIs(t, err, access.ErrAccessDenied)
+	_, err = desk.work.GetWork(desk.ctx, &agentpublicv1.GetWorkRequest{WorkId: work})
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	_, err = desk.work.SendMessage(desk.ctx, &agentpublicv1.SendMessageRequest{WorkId: work, InputId: uuid.NewString(), Text: "late"})
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 
 	require.Len(t, queued.tasks, 1, "only the removed Application's Work is closed")
 	task := queued.tasks[0]

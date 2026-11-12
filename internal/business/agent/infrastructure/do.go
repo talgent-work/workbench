@@ -36,10 +36,12 @@ type agentDefinitionDO struct {
 	ID               string `xorm:"id pk varchar(36)"`
 	Capabilities     string `xorm:"capabilities text"`
 	Soul             string `xorm:"soul text"`
-	Version          int    `xorm:"'version' int"`
-	CreatedAt        int64  `xorm:"created_at bigint"`
-	UpdatedAt        int64  `xorm:"updated_at bigint"`
-	DeletedAt        int64  `xorm:"deleted_at bigint"`
+	// ApplicationRemoved records that the owning Application was removed.
+	ApplicationRemoved bool  `xorm:"application_removed"`
+	Version            int   `xorm:"'version' int"`
+	CreatedAt          int64 `xorm:"created_at bigint"`
+	UpdatedAt          int64 `xorm:"updated_at bigint"`
+	DeletedAt          int64 `xorm:"deleted_at bigint"`
 }
 
 func (agentDefinitionDO) TableName() string { return "agent_definition" }

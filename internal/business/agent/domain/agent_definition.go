@@ -217,8 +217,12 @@ type AgentDefinition struct {
 	WorkDefaults WorkDefaults
 	// Soul is the persona and working style its Owners write; each of its
 	// Works takes it up at its next start. Only its Owners read or write it.
-	Soul    string
-	Version int `validate:"gte=0"`
+	Soul string
+	// ApplicationRemoved is set once Agent learns that the Application owning
+	// this definition was removed: from then on the Application is admitted
+	// as no Owner (Removed Application admits nothing).
+	ApplicationRemoved bool
+	Version            int `validate:"gte=0"`
 }
 
 func NewAgentDefinition(input AgentDefinitionInput) (*AgentDefinition, error) {
@@ -248,6 +252,9 @@ func (a *AgentDefinition) Validate() error {
 	if application := a.OwningApplication(); application != "" && !slices.Equal(a.Owners, []string{application}) {
 		return fmt.Errorf("%w: an Application's Agent is owned by that Application alone", ErrInvalidAgentDefinition)
 	}
+	if a.ApplicationRemoved && a.OwningApplication() == "" {
+		return fmt.Errorf("%w: only an Application's Agent records its Application's removal", ErrInvalidAgentDefinition)
+	}
 	if err := validateSoul(a.Soul); err != nil {
 		return err
 	}
@@ -260,9 +267,47 @@ func (a *AgentDefinition) Validate() error {
 	return a.Capabilities.Validate()
 }
 
-// IsOwner reports whether the participant is one of the Agent's Owners.
+// IsOwner reports whether the participant is one of the Agent's Owners it
+// still admits.
 func (a *AgentDefinition) IsOwner(participant string) bool {
-	return AdmitAgentOwner(a.Owners, participant) == nil
+	return AdmitAgentOwner(a.AdmittedOwners(), participant) == nil
+}
+
+// AdmittedOwners are the Owners who may act as such: all of them, except a
+// removed Application, which acts on nothing of its Agent's any more
+// (Removed Application admits nothing).
+func (a *AgentDefinition) AdmittedOwners() []string {
+	return AdmittedOwners(a.Owners, a.ApplicationRemoved)
+}
+
+// AdmittedOwners applies Removed Application admits nothing to Owners read
+// without their definition.
+func AdmittedOwners(owners []string, applicationRemoved bool) []string {
+	if applicationRemoved {
+		return nil
+	}
+	return owners
+}
+
+// RecordApplicationRemoved records that the Application owning this
+// definition was removed, reporting whether that changed it; repeating it
+// changes nothing. Only an Application's Agent has an Application to lose.
+func (a *AgentDefinition) RecordApplicationRemoved() (bool, error) {
+	if a.OwningApplication() == "" {
+		return false, fmt.Errorf("%w: no Application owns this Agent", ErrInvalidAgentDefinition)
+	}
+	if a.ApplicationRemoved {
+		return false, nil
+	}
+	a.ApplicationRemoved = true
+	return true, nil
+}
+
+// AdmitsRemovedApplicationClose reports whether Agent itself may close a Work
+// of this definition for the removed Application named: the one exception to
+// Standalone Work control.
+func (a *AgentDefinition) AdmitsRemovedApplicationClose(applicationID string) bool {
+	return a.ApplicationRemoved && applicationID != "" && a.OwningApplication() == applicationID
 }
 
 // TransferOwners replaces the Owners with the supplied people; every Work of
@@ -373,7 +418,7 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 	if owner := request.RepositoryInput.OwnerUserID; owner != "" && owner != a.RepresentedPerson() {
 		return nil, false, fmt.Errorf("%w: personal repositories require a represented human", ErrInvalidWork)
 	}
-	if err := AdmitAgentOwner(a.Owners, request.StartedBy); err != nil {
+	if err := AdmitAgentOwner(a.AdmittedOwners(), request.StartedBy); err != nil {
 		return nil, false, err
 	}
 	if err := a.AdmitComputer(request.ComputerManaged); err != nil {
