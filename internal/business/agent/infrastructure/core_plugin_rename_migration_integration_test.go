@@ -38,7 +38,7 @@ func (c releaseCatalog) ResolvePlugin(_ context.Context, _ string, slug string) 
 	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "public", Version: c.version, RetrievalRef: "archive:" + slug + "-" + c.version,
 		NativeEntry: []byte(fmt.Sprintf(`{"name":%q,"version":%q}`, slug, c.version)),
 		Skills:      []domain.SkillComponent{{Name: slug + ":interviewing", Description: "Interview the owner"}},
-		Agents:      []domain.AgentComponent{{Name: c.role, Description: "Personal Work executor"}}}, nil
+		Agents:      []domain.AgentComponent{{Name: c.role, Description: "Work executor"}}}, nil
 }
 
 func (releaseCatalog) ReadConnectorSelection(context.Context, string) (command.ConnectorSelection, error) {
@@ -54,8 +54,8 @@ func (releaseCatalog) ReadConnectorSelection(context.Context, string) (command.C
 // the script again changes nothing.
 func TestCorePluginRenameMigrationResolvesTalgentEverywhere(t *testing.T) {
 	const (
-		oldSlug, oldRole = "talgent-runtime", "talgent-runtime:personal-work-executor"
-		newSlug, newRole = "talgent", "talgent:personal-work-executor"
+		oldSlug, oldRole = "talgent-runtime", "talgent-runtime:work-executor"
+		newSlug, newRole = "talgent", "talgent:work-executor"
 	)
 	ctx := context.Background()
 	before := newBuiltInFixture(t, configuredBuiltIns(t, []string{oldSlug}, nil), releaseCatalog{slug: oldSlug, role: oldRole, version: "1"})
@@ -103,7 +103,7 @@ func TestCorePluginRenameMigrationResolvesTalgentEverywhere(t *testing.T) {
 	require.Len(t, work.CapabilitySnapshot.Plugins, 1)
 	retained := work.CapabilitySnapshot.Plugins[0].Release
 	require.Equal(t, newSlug, retained.Slug)
-	require.Equal(t, []domain.AgentComponent{{Name: newRole, Description: "Personal Work executor"}}, retained.Agents)
+	require.Equal(t, []domain.AgentComponent{{Name: newRole, Description: "Work executor"}}, retained.Agents)
 	require.Equal(t, newSlug+":interviewing", retained.Skills[0].Name)
 	require.NoError(t, work.CapabilitySnapshot.Validate())
 
