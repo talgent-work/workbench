@@ -56,6 +56,7 @@ func (w startedWorks) started(work *domain.AgentWork) {
 type runs struct {
 	t            testing.TB
 	now          func() time.Time
+	works        domain.AgentWorkRepository
 	executions   *execution.AgentExecutionRepository
 	coordination *command.ExecutionCoordination
 	feedback     *command.ApplyExecutionFeedbackHandler
@@ -74,7 +75,7 @@ func newRunsAt(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, 
 func newRunsWith(t testing.TB, db *xorm.Engine, works domain.AgentWorkRepository, now func() time.Time, buffer command.DispatcherPort) *runs {
 	executions := execution.NewAgentExecutionRepository(db, now)
 	coordination := command.NewExecutionCoordination(now, works, commandtest.Definitions{}, executions, computertest.Checked(startupAuthority{}), buffer)
-	return &runs{t: t, now: now, executions: executions, coordination: coordination,
+	return &runs{t: t, now: now, works: works, executions: executions, coordination: coordination,
 		feedback: command.NewApplyExecutionFeedbackHandler(now, works, executions, coordination, buffer, &commandtest.InputSettlements{})}
 }
 
@@ -102,12 +103,38 @@ func (r *runs) launch(ctx context.Context, workID string) {
 }
 
 // coordinate passes the Work's execution requests to its execution and applies the
-// execution's reports to the Work.
+// execution's reports to the Work, as the Policies between them would, until a
+// round changes neither: each round may raise what the next one passes on.
 func (r *runs) coordinate(ctx context.Context, workID string) {
 	r.t.Helper()
-	for range 3 {
+	before := r.revisions(ctx, workID)
+	for range coordinationRounds {
 		require.NoError(r.t, r.coordination.Coordinate(ctx, workID))
+		after := r.revisions(ctx, workID)
+		if after == before {
+			return
+		}
+		before = after
 	}
+	r.t.Fatalf("the Work and its execution kept changing after %d coordination rounds", coordinationRounds)
+}
+
+// coordinationRounds bounds coordinate: no Work needs more rounds to settle.
+const coordinationRounds = 5
+
+// revisions are the Work's and its latest execution's versions.
+func (r *runs) revisions(ctx context.Context, workID string) [2]int {
+	r.t.Helper()
+	work, err := r.works.Get(ctx, workID)
+	require.NoError(r.t, err)
+	revisions := [2]int{work.Version, -1}
+	latest, err := r.executions.Latest(ctx, workID)
+	if errors.Is(err, domain.ErrExecutionNotFound) {
+		return revisions
+	}
+	require.NoError(r.t, err)
+	revisions[1] = latest.Version
+	return revisions
 }
 
 // Handle applies one feedback about the Work's launched process, and the
