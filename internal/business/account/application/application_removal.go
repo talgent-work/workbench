@@ -31,27 +31,38 @@ type RemoveApplication struct {
 // published best effort: Agent closes the Application's Works on it, and a
 // publication that fails is logged and leaves them to their idle timeout.
 func (a *Application) RemoveApplication(ctx context.Context, cmd RemoveApplication) error {
-	var removed domain.ApplicationRemovedEvent
+	var events []domain.Event
 	// A concurrent grant that records a use commits first; the repeat reloads.
 	err := retryOnceOnConflict(func() error {
 		owner, found, err := a.applicationFor(ctx, cmd.Owner, cmd.ApplicationID)
 		if err != nil {
 			return err
 		}
-		if removed, err = found.Remove(owner, a.now()); err != nil {
+		if err := found.Remove(owner, a.now()); err != nil {
 			return err
 		}
-		return a.applications.Save(ctx, found)
+		if err := a.applications.Save(ctx, found); err != nil {
+			return err
+		}
+		events = found.Events.Drain()
+		return nil
 	})
 	if err != nil {
 		return err
 	}
-	a.logger.InfoContext(ctx, "account: application removed", slog.String("application_id", string(removed.ApplicationID)))
-	publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
-	defer cancel()
-	if err := a.publisher.PublishApplicationRemoved(publishCtx, removed); err != nil {
-		a.logger.WarnContext(ctx, "account: application removed not published; its Works stop at their idle timeout",
-			slog.String("application_id", string(removed.ApplicationID)), slog.Any("error", err))
+	for _, event := range events {
+		removed, ok := event.(domain.ApplicationRemovedEvent)
+		if !ok {
+			continue
+		}
+		publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
+		err := a.publisher.PublishApplicationRemoved(publishCtx, removed)
+		cancel()
+		if err != nil {
+			// The removal stands; only Agent's closing of its Works is lost.
+			a.logger.WarnContext(ctx, "account: application removed not published; its Works stop at their idle timeout",
+				slog.String("application_id", string(removed.ApplicationID)), slog.Any("error", err))
+		}
 	}
 	return nil
 }

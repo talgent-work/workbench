@@ -269,10 +269,9 @@ func TestRemoveEndsEverySecretAndIssuesNothingAgain(t *testing.T) {
 	second, err := application.RotateSecret(application.ApplicationOwner, now, rotationOverlap)
 	require.NoError(t, err)
 
-	removed, err := application.Remove(application.ApplicationOwner, now.Add(time.Minute))
-	require.NoError(t, err)
+	require.NoError(t, application.Remove(application.ApplicationOwner, now.Add(time.Minute)))
 
-	require.Equal(t, ApplicationRemovedEvent{ApplicationID: application.ID, At: now.Add(time.Minute)}, removed)
+	require.Equal(t, []Event{ApplicationRemovedEvent{ApplicationID: application.ID, OccurredAt: now.Add(time.Minute)}}, application.Events.Drain())
 	require.Equal(t, ApplicationRemoved, application.State)
 	require.NoError(t, application.Validate(), "a removed Application holds no valid secret")
 	require.Empty(t, application.ValidSecrets(now.Add(time.Minute)))
@@ -286,13 +285,13 @@ func TestOnlyTheOwnerRemovesAndOnlyOnce(t *testing.T) {
 	stranger, err := NewAccountID()
 	require.NoError(t, err)
 
-	_, err = application.Remove(stranger, now)
-	require.ErrorIs(t, err, ErrApplicationNotFound)
+	require.ErrorIs(t, application.Remove(stranger, now), ErrApplicationNotFound)
 	require.Equal(t, ApplicationActive, application.State)
+	require.Nil(t, application.Events, "a refused removal records nothing")
 	require.True(t, grantSucceeds(t, application, secret, now), "the refused removal changed nothing")
 
-	_, err = application.Remove(application.ApplicationOwner, now)
-	require.NoError(t, err)
-	_, err = application.Remove(application.ApplicationOwner, now)
-	require.ErrorIs(t, err, ErrApplicationNotFound, "a removed Application never returns")
+	require.NoError(t, application.Remove(application.ApplicationOwner, now))
+	require.Len(t, application.Events.Drain(), 1)
+	require.ErrorIs(t, application.Remove(application.ApplicationOwner, now), ErrApplicationNotFound, "a removed Application never returns")
+	require.Empty(t, application.Events.Drain())
 }

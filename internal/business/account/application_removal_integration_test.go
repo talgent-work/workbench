@@ -46,7 +46,7 @@ func TestRemovalRevokesEverySecretAtOnceAndPublishesIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, listed.GetApplications())
 
-	require.Equal(t, []domain.ApplicationRemovedEvent{{ApplicationID: domain.ApplicationID(id), At: h.clock.Now()}}, h.removals.published())
+	require.Equal(t, []domain.ApplicationRemovedEvent{{ApplicationID: domain.ApplicationID(id), OccurredAt: h.clock.Now()}}, h.removals.published())
 }
 
 func TestRemovalIsFinalAndTheOwnersAlone(t *testing.T) {

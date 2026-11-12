@@ -57,6 +57,8 @@ type Application struct {
 	State            ApplicationState
 	RegisteredAt     time.Time
 	Secrets          []*ClientSecret
+	// Events are the facts recorded since the Application was loaded.
+	Events EventCollection
 	// Version is zero until the Application is first saved.
 	Version int
 }
@@ -203,26 +205,27 @@ func (a *Application) RevokeSecret(by AccountID, id string, now time.Time) error
 
 // Remove removes the Application for good: every Client Secret that still
 // matches ends at once, so it obtains no further Identity Token, and it never
-// returns (Removal is final). Only its Application Owner removes it (Owner
-// manages); any other person, like an Application already removed, answers
-// ErrApplicationNotFound. Tokens it already obtained stop at their expiry.
-func (a *Application) Remove(by AccountID, now time.Time) (ApplicationRemovedEvent, error) {
+// returns (Removal is final); it records ApplicationRemoved. Only its
+// Application Owner removes it (Owner manages); any other person, like an
+// Application already removed, answers ErrApplicationNotFound. Tokens it
+// already obtained stop at their expiry.
+func (a *Application) Remove(by AccountID, now time.Time) error {
 	if !a.ManageableBy(by) {
-		return ApplicationRemovedEvent{}, ErrApplicationNotFound
+		return ErrApplicationNotFound
 	}
 	for _, secret := range a.Secrets {
 		secret.End()
 	}
 	a.State = ApplicationRemoved
-	return ApplicationRemovedEvent{ApplicationID: a.ID, At: now.UTC()}, nil
+	a.record(ApplicationRemovedEvent{ApplicationID: a.ID, OccurredAt: now.UTC()})
+	return nil
 }
 
-// ApplicationRemovedEvent records that an Application was removed for good
-// (ApplicationRemoved); Account publishes it as the Application Removed
-// Published Fact.
-type ApplicationRemovedEvent struct {
-	ApplicationID ApplicationID
-	At            time.Time
+func (a *Application) record(event Event) {
+	if a.Events == nil {
+		a.Events = NewEventCollection()
+	}
+	a.Events.Add(event)
 }
 
 // IssueIdentityToken states the Application's claims for lifetime, for a

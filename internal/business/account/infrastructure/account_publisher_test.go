@@ -23,7 +23,7 @@ func (b *recordedMessages) Publish(_ context.Context, msg message.Message) error
 func TestApplicationRemovedIsPublishedKeyedByApplication(t *testing.T) {
 	published := &recordedMessages{}
 	at := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
-	require.NoError(t, NewAccountPublisher(published).PublishApplicationRemoved(context.Background(), domain.ApplicationRemovedEvent{ApplicationID: "app", At: at}))
+	require.NoError(t, NewAccountPublisher(published).PublishApplicationRemoved(context.Background(), domain.ApplicationRemovedEvent{ApplicationID: "app", OccurredAt: at}))
 
 	require.Len(t, published.published, 1)
 	msg := published.published[0]

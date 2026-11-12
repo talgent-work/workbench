@@ -30,9 +30,9 @@ func NewAccountPublisher(publisher message.Publisher) *AccountPublisher {
 func (p *AccountPublisher) PublishApplicationRemoved(ctx context.Context, removed domain.ApplicationRemovedEvent) error {
 	id := string(removed.ApplicationID)
 	payload := &accountintegrationv1.ApplicationRemovedV1{
-		EventId: uuid.Must(uuid.NewV7()).String(), OccurredAt: timestamppb.New(removed.At), ApplicationId: id,
+		EventId: uuid.Must(uuid.NewV7()).String(), OccurredAt: timestamppb.New(removed.OccurredAt), ApplicationId: id,
 	}
-	msg, err := message.New(message.KindOf(payload), payload, message.WithKey(id), message.WithOccurredAt(removed.At))
+	msg, err := message.New(message.KindOf(payload), payload, message.WithKey(id), message.WithOccurredAt(removed.OccurredAt))
 	if err != nil {
 		return oops.With("operation", "application_removed.encode").Wrap(err)
 	}
