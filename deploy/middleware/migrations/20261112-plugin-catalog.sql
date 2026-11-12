@@ -6,7 +6,9 @@
 --   names, with each selected release, the catalog that publishes it
 --   (release.catalog_name). Existing releases take @catalog_name, which must
 --   be the Marketplace catalog's configured name (marketplace.name, `talgent`
---   by default); set it before running the script when it differs.
+--   by default); set it before running the script when it differs. Each
+--   execution's launch specification (agent_execution.request_json), which
+--   keeps the releases its start took, names the same catalog (CatalogName).
 -- - Each run's Plugin outcome (execution_plugin_result) records the version
 --   its Harness loaded (loaded_version). A Plugin recorded as loaded at
 --   another version (loading_reason version_mismatch) was loaded: it now
@@ -19,8 +21,8 @@
 -- When: right before deploying the release that installs each Plugin release
 -- once. The previous release ignores both; the new release cannot read a Work
 -- whose releases name no catalog.
--- Repeatable: yes. The column is added only when missing, and only a Work
--- whose releases name no catalog yet, or an outcome still naming
+-- Repeatable: yes. The column is added only when missing, and only a Work or
+-- execution whose releases name no catalog yet, or an outcome still naming
 -- version_mismatch, is rewritten.
 -- Rollback: roll back the controlplane image; the column and the catalog
 -- names may stay.
@@ -38,6 +40,19 @@ SET @statement = IF(@present,
       SET capabilities = CAST(REPLACE(CAST(capabilities AS CHAR), ''"release": {'', CONCAT(''"release": {"catalog_name": '', JSON_QUOTE(?), '', '')) AS JSON)
     WHERE CAST(capabilities AS CHAR) LIKE ''%"release": {%''
       AND CAST(capabilities AS CHAR) NOT LIKE ''%"catalog_name"%''',
+  'DO ?');
+PREPARE step FROM @statement;
+EXECUTE step USING @catalog_name;
+DEALLOCATE PREPARE step;
+
+-- agent_execution.request_json
+SET @present = (SELECT COUNT(*) > 0 FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_execution');
+SET @statement = IF(@present,
+  'UPDATE agent_execution
+      SET request_json = CAST(REPLACE(CAST(request_json AS CHAR), ''"Release": {'', CONCAT(''"Release": {"CatalogName": '', JSON_QUOTE(?), '', '')) AS JSON)
+    WHERE CAST(request_json AS CHAR) LIKE ''%"Release": {%''
+      AND CAST(request_json AS CHAR) NOT LIKE ''%"CatalogName"%''',
   'DO ?');
 PREPARE step FROM @statement;
 EXECUTE step USING @catalog_name;

@@ -17,7 +17,8 @@ import (
 const pluginCatalogMigration = "../../../../deploy/middleware/migrations/20261112-plugin-catalog.sql"
 
 // A Work stored before releases named their catalog reads again after the
-// script, each release naming the catalog the script was given, and a Plugin
+// script, each release naming the catalog the script was given, as do its
+// executions' launch specifications, and a Plugin
 // outcome recorded as loaded at another version counts as loaded. Applying
 // the script again changes nothing.
 func TestPluginCatalogMigrationNamesEachRetainedReleasesCatalog(t *testing.T) {
@@ -32,6 +33,11 @@ func TestPluginCatalogMigrationNamesEachRetainedReleasesCatalog(t *testing.T) {
 	require.NoError(t, err)
 	_, err = fixture.app.Works.Get(ctx, workID)
 	require.Error(t, err, "a release that names no catalog cannot be read")
+	// The Work's executions keep the releases their starts took in their
+	// launch specification, which an earlier release wrote without a catalog.
+	_, err = db.ExecContext(ctx, `INSERT INTO agent_execution (id, session_id, request_json, credential_plan_json, authorization_ids, specification_json, preparation_command, launch_command, native_session_id)
+		VALUES (?, ?, '{"Capabilities": {"Plugins": [{"Release": {"Slug": "talgent", "Version": "1"}}]}}', '{}', '[]', '{}', '', '', ?)`, uuid.NewString(), workID, uuid.NewString())
+	require.NoError(t, err)
 	mismatched := uuid.NewString()
 	_, err = db.ExecContext(ctx, `INSERT INTO execution_plugin_result (id, execution_id, slug, loading_reported, loaded, loading_reason) VALUES (?, ?, 'talgent', 1, 0, 'version_mismatch')`, mismatched, uuid.NewString())
 	require.NoError(t, err)
@@ -53,6 +59,10 @@ func TestPluginCatalogMigrationNamesEachRetainedReleasesCatalog(t *testing.T) {
 	require.Len(t, work.CapabilitySnapshot.Plugins, 1)
 	require.Equal(t, "company", work.CapabilitySnapshot.PluginCatalog())
 	require.Equal(t, "talgent:personal-work-executor", work.CapabilitySnapshot.LaunchedStartupAgent())
+
+	var catalog string
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT JSON_UNQUOTE(JSON_EXTRACT(request_json, '$.Capabilities.Plugins[0].Release.CatalogName')) FROM agent_execution WHERE session_id = ? LIMIT 1`, workID).Scan(&catalog))
+	require.Equal(t, "company", catalog, "an execution's launch specification names the catalog")
 
 	var loaded bool
 	var reason, version string
