@@ -97,6 +97,8 @@ Application has its own Agent, Plugins and authorizations, signs in with OAuth 2
 credentials, labels its Works to attribute usage to its own users, and can give a Work its own MCP
 tools.
 
+<img alt="An Application's Works in the web app: each Work with its Work Labels, state, token use and last update" src="docs/assets/applications.webp" width="900">
+
 ## From every person to the whole company: Talgent Orchestra
 
 Workbench gives every person an Agent of their own. When work outgrows one person, **Talgent
