@@ -161,6 +161,9 @@ func withAgentClaims(builder *jwt.Builder, work domain.WorkFacts) *jwt.Builder {
 			builder = builder.Claim(claim.name, claim.value)
 		}
 	}
+	if labels := work.WorkLabels.Map(); labels != nil {
+		builder = builder.Claim("work_labels", labels)
+	}
 	return builder
 }
 

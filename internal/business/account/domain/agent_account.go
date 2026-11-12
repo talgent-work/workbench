@@ -44,13 +44,15 @@ type WorkFacts struct {
 	// OwningApplication is the Application that owns the Work; empty for a
 	// Work no Application owns.
 	OwningApplication ApplicationID
+	// WorkLabels are the Work's Work Labels; empty for none.
+	WorkLabels WorkLabels
 }
 
 // maxFactLength bounds each fact, as the column that keeps it.
 const maxFactLength = 255
 
 // NewWorkFacts trims and validates the facts Agent supplies.
-func NewWorkFacts(projectID, agentID, purpose, subjectKind, subjectID, representedPerson, owningApplication string) (WorkFacts, error) {
+func NewWorkFacts(projectID, agentID, purpose, subjectKind, subjectID, representedPerson, owningApplication string, workLabels map[string]string) (WorkFacts, error) {
 	facts := WorkFacts{
 		ProjectID: strings.TrimSpace(projectID),
 		AgentID:   strings.TrimSpace(agentID),
@@ -71,10 +73,21 @@ func NewWorkFacts(projectID, agentID, purpose, subjectKind, subjectID, represent
 		}
 		facts.OwningApplication = id
 	}
+	labels, err := NewWorkLabels(workLabels)
+	if err != nil {
+		return WorkFacts{}, err
+	}
+	facts.WorkLabels = labels
 	if err := facts.Validate(); err != nil {
 		return WorkFacts{}, err
 	}
 	return facts, nil
+}
+
+// Equal reports whether two statements of a Work's facts are the same.
+func (f WorkFacts) Equal(other WorkFacts) bool {
+	return f.ProjectID == other.ProjectID && f.AgentID == other.AgentID && f.Purpose == other.Purpose && f.Subject == other.Subject &&
+		f.RepresentedPerson == other.RepresentedPerson && f.OwningApplication == other.OwningApplication && f.WorkLabels.Equal(other.WorkLabels)
 }
 
 func (f WorkFacts) Validate() error {
@@ -118,7 +131,7 @@ func OpenAgentAccount(work WorkID, facts WorkFacts, now time.Time) (*AgentAccoun
 // supplied facts equal the Agent Account's own (Facts never drift). The token
 // is never refreshed: each call issues a new one.
 func (a *AgentAccount) IssueIdentityToken(facts WorkFacts, now time.Time, lifetime time.Duration) (IdentityClaims, error) {
-	if facts != a.Facts {
+	if !facts.Equal(a.Facts) {
 		return IdentityClaims{}, ErrAgentAccountFactsDiffer
 	}
 	if lifetime <= 0 {

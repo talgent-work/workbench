@@ -6,9 +6,21 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
+// StandaloneWorksFilter narrows a definition's Standalone Works: to those
+// carrying every one of Labels and, when States is not empty, to those in one
+// of these Work States. At most Limit are listed.
+type StandaloneWorksFilter struct {
+	AgentID string
+	Labels  []domain.WorkLabel
+	States  []domain.WorkState
+	Limit   int
+}
+
 // StandaloneWorkSummary is one Standalone Work as its owner's list shows it.
 type StandaloneWorkSummary struct {
 	WorkID, Title string
+	// Labels are its Work Labels; nil for none.
+	Labels map[string]string
 	// State is the Work State as Works are shown.
 	State   string
 	Waiting bool
