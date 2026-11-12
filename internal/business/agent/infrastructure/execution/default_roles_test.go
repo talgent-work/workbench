@@ -16,7 +16,7 @@ import (
 
 // The core's Standalone Work role and roles a caller supplies from its own plugin.
 var defaultRoleCases = []struct{ purpose, scope, plugin, agent string }{
-	{"work", "employee", "talgent", "talgent:personal-work-executor"},
+	{"work", "employee", "talgent", "talgent:work-executor"},
 	{"work", "employee", "caller-plugin", "caller-plugin:case-executor"},
 	{"project_coordination", "project", "caller-plugin", "caller-plugin:coordinator"},
 }

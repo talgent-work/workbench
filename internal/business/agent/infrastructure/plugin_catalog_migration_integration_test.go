@@ -23,8 +23,8 @@ const pluginCatalogMigration = "../../../../deploy/middleware/migrations/2026111
 // the script again changes nothing.
 func TestPluginCatalogMigrationNamesEachRetainedReleasesCatalog(t *testing.T) {
 	ctx := context.Background()
-	fixture := newBuiltInFixture(t, configuredBuiltIns(t, []string{"talgent"}, nil), releaseCatalog{slug: "talgent", role: "talgent:personal-work-executor", version: "1"})
-	definitionID := fixture.projectDefinition(t, "talgent:personal-work-executor", "talgent")
+	fixture := newBuiltInFixture(t, configuredBuiltIns(t, []string{"talgent"}, nil), releaseCatalog{slug: "talgent", role: "talgent:work-executor", version: "1"})
+	definitionID := fixture.projectDefinition(t, "talgent:work-executor", "talgent")
 	workID, err := fixture.createProjectWork(definitionID)
 	require.NoError(t, err)
 
@@ -58,7 +58,7 @@ func TestPluginCatalogMigrationNamesEachRetainedReleasesCatalog(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, work.CapabilitySnapshot.Plugins, 1)
 	require.Equal(t, "company", work.CapabilitySnapshot.PluginCatalog())
-	require.Equal(t, "talgent:personal-work-executor", work.CapabilitySnapshot.LaunchedStartupAgent())
+	require.Equal(t, "talgent:work-executor", work.CapabilitySnapshot.LaunchedStartupAgent())
 
 	var catalog string
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT JSON_UNQUOTE(JSON_EXTRACT(request_json, '$.Capabilities.Plugins[0].Release.CatalogName')) FROM agent_execution WHERE session_id = ? LIMIT 1`, workID).Scan(&catalog))
