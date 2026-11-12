@@ -1,21 +1,27 @@
 import { useState, type ReactNode } from "react";
 import { Card, Chip, ListBox, Meter, Select } from "@heroui/react";
 import { LoadState } from "../../components/marketplace/marketplace-shared";
+import { useAgentWorkDefaults, useApplicationAgent } from "../../lib/application-agent-service";
 import { liveSecrets, type Application } from "../../lib/application-service";
+import { listedApplicationWorks, useOpenApplicationWorks } from "../../lib/application-work-service";
+import { useInstalledConnectors, useInstalledPlugins } from "../../lib/marketplace-catalog";
 import { useApplicationUsage, usageWindowDays, type LabelUsage } from "../../lib/application-usage-service";
 import { formatCompactTokenCount } from "../../lib/trace-view-model";
 import { tokenCategories, tokenTotal, type TokenUsage } from "../../lib/token-usage";
 import { useNow } from "../../lib/use-now";
 
-/** An Application at a glance for its owner: its tokens over the measurements
- * kept, its secret state and its usage by one Work Label key. */
-export function OverviewSection({ application, onSection }: { application: Application; onSection: (section: "credentials") => void }) {
+/** An Application at a glance for its owner: its open Works, its tokens over
+ * the measurements kept, what its Works load by default, its secret state and
+ * its usage by one Work Label key. */
+export function OverviewSection({ application, onSection }: { application: Application; onSection: (section: "works" | "agent" | "credentials") => void }) {
   // The first key the Works carry is the breakdown until the owner picks one.
   const [picked, setPicked] = useState("");
   const usage = useApplicationUsage(application.id, picked);
   return <>
-    <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label={`${application.name} at a glance`}>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" role="group" aria-label={`${application.name} at a glance`}>
+      <OpenWorksStat application={application} onPress={() => onSection("works")} />
       <Stat label={`Tokens, ${usageWindowDays} days`} value={usage.data ? formatCompactTokenCount(tokenTotal(usage.data.usage)) : "–"} detail={usage.data && <TokenParts usage={usage.data.usage} />} />
+      <LoadsByDefaultStat application={application} onPress={() => onSection("agent")} />
       <SecretsStat application={application} onPress={() => onSection("credentials")} />
     </div>
     <section className="mk-section" aria-labelledby="ap-usage">
@@ -34,6 +40,30 @@ function Stat({ label, value, detail, tone, onPress }: { label: string; value: s
   </>;
   if (!onPress) return <Card className="mk-group grid gap-1 p-4">{body}</Card>;
   return <Card className="mk-group grid cursor-pointer gap-1 p-4" role="button" tabIndex={0} aria-label={`${label}: ${value}`} onClick={onPress} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onPress(); } }}>{body}</Card>;
+}
+
+/** How many of the Application's Works are still open. */
+function OpenWorksStat({ application, onPress }: { application: Application; onPress: () => void }) {
+  const open = useOpenApplicationWorks(application.id);
+  const value = open.data === undefined ? "–" : open.data >= listedApplicationWorks ? `${open.data}+` : String(open.data);
+  return <Stat label="Open Works" value={value} onPress={onPress} />;
+}
+
+/** How many installed Plugins and Connectors every Work of the Application
+ * loads unless its start request leaves them out; what every Work loads
+ * anyway is not the owner's choice and is not counted. */
+function LoadsByDefaultStat({ application, onPress }: { application: Application; onPress: () => void }) {
+  const owner = { applicationId: application.id };
+  const plugins = useInstalledPlugins(owner);
+  const connectors = useInstalledConnectors(owner);
+  const agent = useApplicationAgent(application.id);
+  const defaults = useAgentWorkDefaults(agent.data?.agentId ?? "");
+  const required = new Set((defaults.data?.options?.plugins ?? []).filter(plugin => plugin.required).map(plugin => plugin.name));
+  const known = plugins.data && connectors.data && defaults.data;
+  const loaded = known ? [...plugins.data.values()].filter(item => item.enabled && !required.has(item.slug)).length
+    + connectors.data.filter(item => item.status === "enabled" && !item.required).length : undefined;
+  const value = loaded === undefined ? "–" : `${loaded} ${loaded === 1 ? "item" : "items"}`;
+  return <Stat label="Loads by default" value={value} onPress={onPress} />;
 }
 
 /** Whether the Application can sign in, and whether a rotation is under way. */

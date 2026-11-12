@@ -126,7 +126,7 @@ func (a *Agent) AuthorizeWorkReader(ctx context.Context, readerID, workID string
 		return authorityError(err)
 	}
 	switch response.GetBasis() {
-	case agentprivatev1.WorkReadBasis_WORK_READ_BASIS_OWNER, agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE:
+	case agentprivatev1.WorkReadBasis_WORK_READ_BASIS_OWNER, agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE, agentprivatev1.WorkReadBasis_WORK_READ_BASIS_APPLICATION_OWNER:
 		return nil
 	default:
 		return query.ErrAuthorizationPermissionDenied

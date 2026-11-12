@@ -15,7 +15,7 @@ import type { WorkStartSource } from "./work-start-source";
  * null while observed. */
 export type StandaloneWork = { id: string; title: string; state: string; stateReason: string; waiting: boolean; updatedAt: Date | null; disconnectedSince: Date | null };
 
-function standaloneWork(work: WorkSummary): StandaloneWork {
+export function standaloneWork(work: WorkSummary): StandaloneWork {
   return { id: work.workId, title: work.title.trim() || "Untitled work", state: work.state, stateReason: work.stateReason, waiting: work.waiting, updatedAt: work.updatedAt ? timestampDate(work.updatedAt) : null, disconnectedSince: work.disconnectedSince ? timestampDate(work.disconnectedSince) : null };
 }
 

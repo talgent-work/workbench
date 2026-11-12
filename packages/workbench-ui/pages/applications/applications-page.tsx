@@ -13,10 +13,11 @@ import { CredentialsSection } from "./credentials-section";
 import { OverviewSection } from "./overview-section";
 import { RegisterApplicationDialog } from "./register-application-dialog";
 import { SettingsSection } from "./settings-section";
+import { WorksSection } from "./works-section";
 import "../../components/marketplace/marketplace.css";
 
 /** The sections of an Application's page, switched by the topbar tabs. */
-const sections = [{ id: "overview", label: "Overview" }, { id: "agent", label: "Agent" }, { id: "credentials", label: "Credentials" }, { id: "settings", label: "Settings" }] as const;
+const sections = [{ id: "overview", label: "Overview" }, { id: "works", label: "Works" }, { id: "agent", label: "Agent" }, { id: "credentials", label: "Credentials" }, { id: "settings", label: "Settings" }] as const;
 type SectionId = typeof sections[number]["id"];
 /** A page without ?section= opens where a new Application's owner goes first:
  * its credentials. */
@@ -65,6 +66,7 @@ export function ApplicationsPage() {
 function ApplicationSection({ application, section, onSection, onRemoved }: { application: Application; section: SectionId; onSection: (section: SectionId) => void; onRemoved: () => void }) {
   switch (section) {
     case "overview": return <OverviewSection application={application} onSection={onSection} />;
+    case "works": return <WorksSection application={application} />;
     case "agent": return <AgentSection application={application} />;
     case "credentials": return <CredentialsSection application={application} />;
     case "settings": return <SettingsSection application={application} onRemoved={onRemoved} />;

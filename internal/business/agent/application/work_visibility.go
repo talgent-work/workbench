@@ -134,10 +134,23 @@ func (a *Application) admittedReaderWork(ctx context.Context, input AdmitWorkRea
 		return nil, "", err
 	}
 	basis, err := work.AdmitStreamReader(definition, input.ReaderID, input.Admission)
+	if errors.Is(err, domain.ErrWorkReaderNotAdmitted) && definition.OwningApplication() != "" {
+		basis, err = a.AdmitApplicationOwnerReader(ctx, work, definition, input.ReaderID)
+	}
 	if errors.Is(err, domain.ErrWorkReaderNotAdmitted) {
 		return nil, "", errors.Join(access.ErrAccessDenied, err)
 	}
 	return work, basis, err
+}
+
+// AdmitApplicationOwnerReader admits the Application Owner of the Application
+// whose Agent runs the Work, by Account's ownership answer.
+func (a *Application) AdmitApplicationOwnerReader(ctx context.Context, work *domain.AgentWork, definition *domain.AgentDefinition, reader string) (domain.ReadBasis, error) {
+	requester, err := a.ApplicationOwnerReader(ctx, definition, reader)
+	if err != nil {
+		return "", err
+	}
+	return work.AdmitApplicationOwnerReader(definition, requester)
 }
 
 // changeWork applies one owner or trusted-caller decision to a Work, retrying

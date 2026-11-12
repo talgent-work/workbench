@@ -41,7 +41,7 @@ func (p *StandaloneWorks) ListFiles(ctx context.Context, caller Caller, workID s
 	if err != nil {
 		return nil, err
 	}
-	basis, err := owned.work.AdmitFileReader(owned.definition, caller.fileReader())
+	basis, err := p.admitFileReader(ctx, caller, owned)
 	if err != nil {
 		return nil, denied(err)
 	}
@@ -194,6 +194,17 @@ func (p *StandaloneWorks) FilePreview(ctx context.Context, caller Caller, file W
 	return p.files.FilePreview(ctx, position, render)
 }
 
+// admitFileReader admits a reader of the Work's files: an owner of its
+// definition or a Work Share holder, or, for an Application's Work, the person
+// Account says owns the Application, who only reads.
+func (p *StandaloneWorks) admitFileReader(ctx context.Context, caller Caller, owned ownedWork) (domain.ReadBasis, error) {
+	basis, err := owned.work.AdmitFileReader(owned.definition, caller.fileReader())
+	if !errors.Is(err, domain.ErrWorkReaderNotAdmitted) || caller.self() == "" || owned.definition.OwningApplication() == "" {
+		return basis, err
+	}
+	return p.app.AdmitApplicationOwnerReader(ctx, owned.work, owned.definition, caller.self())
+}
+
 // readablePosition admits the caller to read one file and names its File
 // position: in a Standalone Work's own File Spaces, or, for another Work, an
 // Artifact it published itself into its publication target. An Agent reads
@@ -206,7 +217,7 @@ func (p *StandaloneWorks) readablePosition(ctx context.Context, caller Caller, f
 	if err != nil {
 		return command.FilePosition{}, err
 	}
-	if _, err := owned.work.AdmitFileReader(owned.definition, caller.fileReader()); err != nil {
+	if _, err := p.admitFileReader(ctx, caller, owned); err != nil {
 		return command.FilePosition{}, denied(err)
 	}
 	if owned.work.Standalone() {

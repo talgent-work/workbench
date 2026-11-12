@@ -115,7 +115,7 @@ func creationCapabilitiesFromProto(value *agentpublicv1.CreationCapabilities) do
 }
 
 func (h *StandaloneWorkHandler) ListWorks(ctx context.Context, request *agentpublicv2.ListWorksRequest) (*agentpublicv2.ListWorksResponse, error) {
-	works, err := h.works.List(ctx, standalonework.ListWorks{Caller: currentCaller(ctx), Limit: int(request.GetLimit()), Labels: request.GetLabels(), States: request.GetStates()})
+	works, err := h.works.List(ctx, standalonework.ListWorks{Caller: currentCaller(ctx), Application: request.GetApplicationId(), Limit: int(request.GetLimit()), Labels: request.GetLabels(), States: request.GetStates()})
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}

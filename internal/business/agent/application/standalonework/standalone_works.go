@@ -123,16 +123,20 @@ const (
 
 // ListWorks narrows the owner's Standalone Works: to those carrying every one
 // of Labels and, when States is not empty, to those in one of them. At most
-// Limit are listed; zero lists the default number.
+// Limit are listed; zero lists the default number. Application names the
+// Application whose Works its Application Owner reads; empty lists the
+// caller's own.
 type ListWorks struct {
-	Caller Caller
-	Limit  int
-	Labels map[string]string
-	States []string
+	Caller      Caller
+	Application string
+	Limit       int
+	Labels      map[string]string
+	States      []string
 }
 
-// List lists the owner's Standalone Works, closed ones included, most
-// recently updated first; an owner without a definition yet has none.
+// List lists the owner's Standalone Works, or an Application's to its
+// Application Owner, closed ones included, most recently updated first; an
+// owner without a definition yet has none.
 func (p *StandaloneWorks) List(ctx context.Context, input ListWorks) ([]query.StandaloneWorkSummary, error) {
 	labels, err := domain.NewWorkLabels(input.Labels)
 	if err != nil {
@@ -142,7 +146,7 @@ func (p *StandaloneWorks) List(ctx context.Context, input ListWorks) ([]query.St
 	if err != nil {
 		return nil, err
 	}
-	agentID, found, err := p.ownDefinition(ctx, input.Caller)
+	agentID, found, err := p.listedDefinition(ctx, input.Caller, strings.TrimSpace(input.Application))
 	if err != nil || !found {
 		return nil, err
 	}
@@ -163,6 +167,22 @@ func listedStates(requested []string) ([]domain.WorkState, error) {
 		states = append(states, domain.WorkState(state))
 	}
 	return states, nil
+}
+
+// listedDefinition locates the definition whose Works a listing reads: the
+// caller's own, or, named, an Application's, which only the Application itself
+// or a person who owns it reads.
+func (p *StandaloneWorks) listedDefinition(ctx context.Context, caller Caller, application string) (string, bool, error) {
+	switch {
+	case application == "" || application == caller.ApplicationID:
+		return p.ownDefinition(ctx, caller)
+	case caller.self() == "":
+		return "", false, access.ErrAccessDenied
+	}
+	if err := p.app.AdmitApplicationOwner(ctx, caller.self(), application); err != nil {
+		return "", false, err
+	}
+	return p.app.FindApplicationAgent(ctx, application)
 }
 
 // ownDefinition locates the owner's definition without establishing it.

@@ -49,8 +49,29 @@ type MeasuredWork = { labels: Record<string, string>; output: number };
 const measured: MeasuredWork[] = [];
 const usageRequests: Array<{ applicationId: string; breakdownKey: string; listLabelKeys: boolean }> = [];
 const totalsOf = (works: MeasuredWork[]) => works.length ? [{ metricKind: "output_tokens", dimension: "model", value: works.reduce((sum, work) => sum + work.output, 0), unknownCount: 0n }] : [];
+// The Application's Works as Agent lists them to its owner, and the listings
+// asked for; listingFails makes the next listing fail.
+type ListedWork = { workId: string; title: string; state: string; waiting: boolean; labels: Record<string, string> };
+const applicationWorks: ListedWork[] = [];
+const workListings: Array<{ applicationId: string; labels: Record<string, string>; states: string[] }> = [];
+let listingFails = false;
+// What the Application has installed: enabled Plugins and Connectors load by default.
+const installedPlugins: Array<{ slug: string; enabled: boolean }> = [];
+const installedConnectors: Array<{ name: string; status: string; required: boolean }> = [];
 vi.mock("../lib/client", () => ({
+  workClient: {
+    listWorks: async (request: { applicationId: string; labels: Record<string, string>; states: string[] }) => {
+      workListings.push({ applicationId: request.applicationId, labels: { ...request.labels }, states: [...(request.states ?? [])] });
+      if (listingFails) { listingFails = false; throw new ConnectError("unavailable", Code.Unavailable); }
+      const works = applicationWorks
+        .filter(work => Object.entries(request.labels ?? {}).every(([key, value]) => work.labels[key] === value))
+        .filter(work => !request.states?.length || request.states.includes(work.state));
+      return { works: works.map(work => ({ ...work, stateReason: "" })) };
+    },
+  },
   marketplaceClient: {
+    listInstalledPlugins: async () => ({ plugins: [...installedPlugins], nextCursor: "" }),
+    listInstalledConnectors: async () => ({ connectors: [...installedConnectors] }),
     getProviderConnectionState: async (request: { provider: string; applicationId: string }) => {
       marketplaceCalls.push({ method: "getProviderConnectionState", request });
       if (request.applicationId !== deskId || !deskGitHub) return { state: { provider: "github", status: "none", authorizationId: "" } };
@@ -147,6 +168,11 @@ vi.mock("../lib/client", () => ({
 
 beforeEach(() => {
   stored.length = 0;
+  applicationWorks.length = 0;
+  workListings.length = 0;
+  listingFails = false;
+  installedPlugins.length = 0;
+  installedConnectors.length = 0;
   measured.length = 0;
   usageRequests.length = 0;
   agentCalls.length = 0;
@@ -436,8 +462,10 @@ it("connects GitHub for the application, never for its owner, through the Provid
     vi.unstubAllGlobals();
   }
   expect(marketplaceCalls).toContainEqual({ method: "beginProviderAuthorization", request: expect.objectContaining({ provider: "github", applicationId: deskId }) });
-  // The callback completes the connection for the application it began for.
+  // The callback completes the connection for the application it began for,
+  // and returns to the section it started from.
   expect(window.sessionStorage.getItem("talgent.providerAuthorization.application")).toBe(deskId);
+  expect(window.sessionStorage.getItem("talgent.providerAuthorization.return")).toBe(`/applications?app=${deskId}&section=agent`);
   window.sessionStorage.clear();
 });
 
@@ -499,4 +527,60 @@ it("explains an application with no usage, and one whose Works carry no labels",
   renderPage(`/applications?app=${ciId}&section=overview`);
   expect(await screen.findByText("CI Triage’s Works carry no Work Labels to break their usage down by.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Secrets: None" })).toBeInTheDocument();
+});
+
+it("lists the application's works with their labels, narrows them by a selected label and reads them, never as the owner's", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  applicationWorks.push(
+    { workId: "w-1", title: "Answer ticket 42", state: "working", waiting: true, labels: { tenant: "acme", user: "u1" } },
+    { workId: "w-2", title: "Answer ticket 43", state: "closed", waiting: false, labels: { tenant: "globex" } },
+  );
+  renderPage(`/applications?app=${deskId}&section=works`);
+
+  const table = await screen.findByRole("grid", { name: "Support Desk works" });
+  expect(await within(table).findByRole("link", { name: "Answer ticket 42" })).toHaveAttribute("href", `/applications/works/w-1?app=${deskId}`);
+  expect(within(table).getByText("Waits for Support Desk")).toBeInTheDocument();
+  expect(within(table).queryByText(/your answer/i)).not.toBeInTheDocument();
+  expect(workListings.every(listing => listing.applicationId === deskId)).toBe(true);
+
+  await user.click(within(table).getByRole("button", { name: "Show only Works with tenant=acme" }));
+  await waitFor(() => expect(within(table).queryByText("Answer ticket 43")).not.toBeInTheDocument());
+  expect(workListings.at(-1)?.labels).toEqual({ tenant: "acme" });
+  expect(within(screen.getByLabelText("Label filters")).getByText("tenant=acme")).toBeInTheDocument();
+
+  await user.click(within(table).getByRole("button", { name: "Show only Works with user=u1" }));
+  await waitFor(() => expect(workListings.at(-1)?.labels).toEqual({ tenant: "acme", user: "u1" }));
+  await user.click(screen.getByRole("button", { name: "Clear" }));
+  expect(await within(table).findByText("Answer ticket 43")).toBeInTheDocument();
+});
+
+it("explains an application without works, a filter nothing matches, and a listing that failed", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  listingFails = true;
+  renderPage(`/applications?app=${deskId}&section=works`);
+
+  expect(await screen.findByText("Support Desk’s works couldn’t be loaded.")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Retry" }));
+  expect(await screen.findByText("Works Support Desk starts through the API show up here.")).toBeInTheDocument();
+});
+
+it("counts the application's open works and what its works load by default", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  applicationWorks.push(
+    { workId: "w-1", title: "Answer ticket 42", state: "working", waiting: false, labels: {} },
+    { workId: "w-2", title: "Answer ticket 43", state: "stopped", waiting: false, labels: {} },
+    { workId: "w-3", title: "Answer ticket 44", state: "closed", waiting: false, labels: {} },
+  );
+  installedPlugins.push({ slug: "support", enabled: true }, { slug: "drafts", enabled: false });
+  installedConnectors.push({ name: "zendesk", status: "enabled", required: false }, { name: "talgent", status: "enabled", required: true });
+  renderPage(`/applications?app=${deskId}&section=overview`);
+
+  const glance = await screen.findByRole("group", { name: "Support Desk at a glance" });
+  expect(await within(glance).findByRole("button", { name: "Open Works: 2" })).toBeInTheDocument();
+  expect(await within(glance).findByRole("button", { name: "Loads by default: 2 items" })).toBeInTheDocument();
+  await user.click(within(glance).getByRole("button", { name: "Open Works: 2" }));
+  expect(await screen.findByRole("grid", { name: "Support Desk works" })).toBeInTheDocument();
 });

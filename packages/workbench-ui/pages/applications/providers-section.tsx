@@ -30,12 +30,13 @@ function ProviderRow({ application, provider }: { application: Application; prov
   const state = useProviderConnection(provider, application.id);
   const connect = useConnectProvider();
   const disconnect = useDisconnectProvider(application.id);
-  const { pathname } = useLocation();
+  // The page, section and Application in view, so the callback returns here.
+  const { pathname, search } = useLocation();
   const [confirm, setConfirm] = useState(false);
   const name = providerName(provider);
   const current = state.data?.state;
   const connection = connectionOf(current?.status);
-  const start = () => connect.mutate({ provider, returnTo: pathname, applicationId: application.id });
+  const start = () => connect.mutate({ provider, returnTo: pathname + search, applicationId: application.id });
   const confirmDisconnect = () => {
     if (!current?.authorizationId) return;
     disconnect.mutate(current.authorizationId, {

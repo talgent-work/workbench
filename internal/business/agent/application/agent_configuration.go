@@ -72,6 +72,52 @@ func (a *Application) ownedApplication(ctx context.Context, person, applicationI
 	return found, nil
 }
 
+// ApplicationOwnerReader is who asks to read a Work of the definition as the
+// Application Owner of the Application that owns its Agent, by Account's
+// Application Ownership Query, which also answers after the Application's
+// removal. It names no owned Application when the definition belongs to no
+// Application or the person owns another one.
+func (a *Application) ApplicationOwnerReader(ctx context.Context, definition *domain.AgentDefinition, person string) (domain.DefinitionRequester, error) {
+	requester := domain.DefinitionRequester{ID: strings.TrimSpace(person)}
+	application := definition.OwningApplication()
+	if application == "" || requester.ID == "" {
+		return requester, nil
+	}
+	found, err := a.Accounts.GetApplication(ctx, application)
+	if errors.Is(err, command.ErrApplicationUnknown) {
+		return requester, nil
+	}
+	if err != nil {
+		return domain.DefinitionRequester{}, err
+	}
+	if found.OwnerUserID == requester.ID {
+		requester.OwnedApplication = found.ID
+	}
+	return requester, nil
+}
+
+// AdmitApplicationOwner admits a person reading an Application they own, by
+// Account's Application Ownership Query, also after its removal: reading what
+// an Application did outlives it (Application Owner reading). Another
+// person's or an unknown Application is no one's to read.
+func (a *Application) AdmitApplicationOwner(ctx context.Context, person, applicationID string) error {
+	person, applicationID = strings.TrimSpace(person), strings.TrimSpace(applicationID)
+	if person == "" || applicationID == "" {
+		return access.ErrAccessDenied
+	}
+	found, err := a.Accounts.GetApplication(ctx, applicationID)
+	if errors.Is(err, command.ErrApplicationUnknown) {
+		return access.ErrAccessDenied
+	}
+	if err != nil {
+		return err
+	}
+	if found.OwnerUserID != person {
+		return access.ErrAccessDenied
+	}
+	return nil
+}
+
 // EnsureOwnedApplicationAgent returns the Agent of an Application the person
 // owns, establishing it on its first need from the Application's name.
 func (a *Application) EnsureOwnedApplicationAgent(ctx context.Context, person, applicationID string) (command.InitializedAgentDefinition, error) {

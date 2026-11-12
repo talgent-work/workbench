@@ -116,3 +116,22 @@ func TestOnlyAnApplicationsAgentHoldsAModelDefault(t *testing.T) {
 	person.WorkDefaults.ModelConfigurationID = "fast"
 	require.ErrorIs(t, person.Validate(), domain.ErrInvalidAgentDefinition)
 }
+
+// The Application Owner reads a Work of the Application's Agent as such, and
+// an owner of another Application, a person Account named no owner, or a Work
+// of another Agent is not admitted.
+func TestTheApplicationOwnerReadsItsApplicationsWorks(t *testing.T) {
+	agent := applicationAgent(t)
+	work := &domain.AgentWork{ID: "work-1", AgentID: agent.ID}
+
+	basis, err := work.AdmitApplicationOwnerReader(agent, itsOwner)
+	require.NoError(t, err)
+	require.Equal(t, domain.ReadAsApplicationOwner, basis)
+	for _, requester := range []domain.DefinitionRequester{anotherOwner, aStranger, theApplication} {
+		_, err = work.AdmitApplicationOwnerReader(agent, requester)
+		require.ErrorIs(t, err, domain.ErrWorkReaderNotAdmitted, requester.ID)
+	}
+	other := &domain.AgentWork{ID: "work-2", AgentID: "another-agent"}
+	_, err = other.AdmitApplicationOwnerReader(agent, itsOwner)
+	require.ErrorIs(t, err, domain.ErrWorkReaderNotAdmitted, "the Work runs under another Agent")
+}
