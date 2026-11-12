@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Card, Tabs } from "@heroui/react";
+import { Alert, Button, Card, Tabs } from "@heroui/react";
 import { AppWindow, Plus } from "lucide-react";
 import { AgentIcon } from "../../components/agent/agent-icon";
 import { useSearchParams } from "react-router-dom";
@@ -19,9 +19,12 @@ import "../../components/marketplace/marketplace.css";
 /** The sections of an Application's page, switched by the topbar tabs. */
 const sections = [{ id: "overview", label: "Overview" }, { id: "works", label: "Works" }, { id: "agent", label: "Agent" }, { id: "credentials", label: "Credentials" }, { id: "settings", label: "Settings" }] as const;
 type SectionId = typeof sections[number]["id"];
-/** A page without ?section= opens where a new Application's owner goes first:
- * its credentials. */
-const defaultSection: SectionId = "credentials";
+/** What a removed Application's owner still reads: nothing of it acts. */
+const readableSections: readonly SectionId[] = ["overview", "works"];
+/** A page without ?section= opens where a new Application's owner goes first,
+ * its credentials, or on a removed Application's overview. */
+const defaultSection = (application: Application | undefined): SectionId => application?.removed ? "overview" : "credentials";
+const sectionsOf = (application: Application | undefined) => application?.removed ? sections.filter(item => readableSections.includes(item.id)) : sections;
 
 /** Shown until an Application's Agent has loaded. */
 const placeholderIcon = <AppWindow size={18} className="shrink-0 text-muted" aria-hidden="true" />;
@@ -34,13 +37,16 @@ export function ApplicationsPage() {
   const [params, setParams] = useSearchParams();
   const [registering, setRegistering] = useState(false);
   const list = applications.data ?? [];
-  const selected = list.find(application => application.id === params.get("app")) ?? list[0];
-  const sectionId: SectionId = sections.find(item => item.id === params.get("section"))?.id ?? defaultSection;
-  const section = sections.find(item => item.id === sectionId)!;
+  // Without ?app= the first Application still in use opens, else the first.
+  const selected = list.find(application => application.id === params.get("app")) ?? list.find(application => !application.removed) ?? list[0];
+  const available = sectionsOf(selected);
+  const sectionId: SectionId = available.find(item => item.id === params.get("section"))?.id ?? defaultSection(selected);
+  const section = available.find(item => item.id === sectionId)!;
   const update = (change: (next: URLSearchParams) => void) => setParams(current => { const next = new URLSearchParams(current); change(next); return next; }, { replace: true });
   const select = (id: string) => update(next => next.set("app", id));
-  // A removed Application leaves the list; the page shows the first one left.
-  const leave = () => update(next => { next.delete("app"); next.delete("section"); });
+  // A removed Application stays in the list, read-only: the page stays on it,
+  // at its overview.
+  const removed = (id: string) => update(next => { next.set("app", id); next.set("section", "overview"); });
   // Each Application appears as its Agent does, the one every Work of it runs as.
   const agents = useApplicationAgents(list.map(item => item.id));
   const iconOf = (id: string) => { const agent = agents.get(id); return agent ? <AgentIcon icon={agent.icon} size={20} /> : placeholderIcon; };
@@ -48,16 +54,17 @@ export function ApplicationsPage() {
 
   const lead = selected && <ObjectSwitcher noun="Application" followed
     current={{ id: selected.id, name: selected.name, icon: iconOf(selected.id) }}
-    objects={list.map(item => ({ id: item.id, name: item.name, icon: iconOf(item.id) }))}
+    objects={list.map(item => ({ id: item.id, name: item.removed ? `${item.name} (removed)` : item.name, icon: iconOf(item.id) }))}
     onSwitch={select} actions={[register]} />;
   const tabs = selected && <Tabs className="p-perspective-tabs" selectedKey={sectionId} onSelectionChange={key => update(next => next.set("section", String(key)))}>
-    <Tabs.ListContainer><Tabs.List aria-label="Application section">{sections.map(item => <Tabs.Tab key={item.id} id={item.id}>{item.label}<Tabs.Indicator /></Tabs.Tab>)}</Tabs.List></Tabs.ListContainer>
+    <Tabs.ListContainer><Tabs.List aria-label="Application section">{available.map(item => <Tabs.Tab key={item.id} id={item.id}>{item.label}<Tabs.Indicator /></Tabs.Tab>)}</Tabs.List></Tabs.ListContainer>
   </Tabs>;
 
   return <PageLayout workspaceTitle={selected?.name ?? "Applications"} lead={lead} trail={selected ? [{ label: section.label, onPress: () => undefined }] : []} centerActions={tabs}>
     <div className="mx-auto grid w-[min(960px,100%)] gap-8 pb-24 pt-4">
       <LoadState noun="your applications" isPending={applications.isPending} isError={applications.isError} hasData={Boolean(applications.data)} isFetching={applications.isFetching} onRetry={() => void applications.refetch()} />
-      {applications.data && (selected ? <ApplicationSection key={selected.id} application={selected} section={sectionId} onSection={id => update(next => next.set("section", id))} onRemoved={leave} /> : <NoApplications onRegister={() => setRegistering(true)} />)}
+      {selected?.removed && <RemovedNotice application={selected} />}
+      {applications.data && (selected ? <ApplicationSection key={selected.id} application={selected} section={sectionId} onSection={id => update(next => next.set("section", id))} onRemoved={() => removed(selected.id)} /> : <NoApplications onRegister={() => setRegistering(true)} />)}
     </div>
     {registering && <RegisterApplicationDialog onClose={() => setRegistering(false)} onRegistered={select} />}
   </PageLayout>;
@@ -71,6 +78,14 @@ function ApplicationSection({ application, section, onSection, onRemoved }: { ap
     case "credentials": return <CredentialsSection application={application} />;
     case "settings": return <SettingsSection application={application} onRemoved={onRemoved} />;
   }
+}
+
+/** Why a removed Application's page only reads. */
+function RemovedNotice({ application }: { application: Application }) {
+  return <Alert status="default"><Alert.Indicator /><Alert.Content>
+    <Alert.Title>{application.name} was removed</Alert.Title>
+    <Alert.Description>It can no longer call Workbench and its Works are closed. You can still read its Works and usage.</Alert.Description>
+  </Alert.Content></Alert>;
 }
 
 function NoApplications({ onRegister }: { onRegister: () => void }) {

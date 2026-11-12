@@ -69,9 +69,9 @@ function RenameForm({ application }: { application: Application }) {
 /** Removes the Application for good, confirmed first. */
 function RemoveApplicationDialog({ application, onClose, onRemoved }: { application: Application; onClose: () => void; onRemoved: () => void }) {
   const remove = useRemoveApplication();
-  // Removal drops the Application from the list, which unmounts this dialog
-  // before a callback given to mutate would run; the promise still settles,
-  // so the page moves on. One removed meanwhile answers NotFound and leaves
+  // Removal turns the page read-only, which unmounts this dialog before a
+  // callback given to mutate would run; the promise still settles, so the
+  // page moves on to the removed Application's overview. One removed meanwhile answers NotFound and leaves
   // the same way; any other failure shows in the dialog.
   const done = () => { onClose(); onRemoved(); };
   const confirm = () => remove.mutateAsync(application.id).then(done, (error: unknown) => { if (ConnectError.from(error).code === Code.NotFound) done(); });
@@ -81,7 +81,7 @@ function RemoveApplicationDialog({ application, onClose, onRemoved }: { applicat
       <ul className="grid list-disc gap-1 pl-5">
         <li>Its secrets stop working now. Tokens it already obtained stop when they expire, within minutes.</li>
         <li>Its open Works close.</li>
-        <li>You can’t restore it. Register a new application to start again.</li>
+        <li>You can’t restore it. You can still read its Works and usage here; register a new application to start again.</li>
       </ul>
       {remove.isError && <Alert status="danger"><Alert.Indicator /><Alert.Content><Alert.Title>The application couldn’t be removed</Alert.Title><Alert.Description>Try again in a moment.</Alert.Description></Alert.Content></Alert>}
     </AlertDialog.Body>

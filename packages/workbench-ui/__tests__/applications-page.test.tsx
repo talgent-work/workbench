@@ -16,14 +16,17 @@ const ciId = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4f";
 const secret = "wbs_" + "A".repeat(39) + "k4Qz";
 const rotatedSecret = "wbs_" + "B".repeat(39) + "Zr9x";
 
-type Stored = { id: string; name: string; registeredAtUnixMs: bigint; secretOverlapSeconds: bigint; clientSecrets: Array<Record<string, unknown>> };
+type Stored = { id: string; name: string; registeredAtUnixMs: bigint; secretOverlapSeconds: bigint; clientSecrets: Array<Record<string, unknown>>; removed: boolean };
 const stored: Stored[] = [];
 // Makes the next removal fail as an unavailable server would.
 let removalUnavailable = false;
 const applicationOf = (id: string, name: string, lastUsed = 0n): Stored => ({
   id, name, registeredAtUnixMs: BigInt(Date.now()), secretOverlapSeconds: 24n * 3600n,
   clientSecrets: [{ id: `${id}-s`, state: ClientSecretState.CURRENT, hint: "k4Qz", issuedAtUnixMs: BigInt(Date.now()), lastUsedAtUnixMs: lastUsed, overlapEndsAtUnixMs: 0n }],
+  removed: false,
 });
+// Account keeps a removed Application in its owner's list, without secrets.
+const removedOf = (application: Stored): Stored => ({ ...application, clientSecrets: [], removed: true });
 
 vi.mock("../lib/account-service", () => ({ useCurrentUser: () => ({ data: { user: { id: userId } } }) }));
 vi.mock("../lib/notifications", () => ({ notify: vi.fn() }));
@@ -158,9 +161,9 @@ vi.mock("../lib/client", () => ({
     },
     removeApplication: async ({ applicationId }: { applicationId: string }) => {
       if (removalUnavailable) throw new ConnectError("unavailable", Code.Unavailable);
-      const index = stored.findIndex(item => item.id === applicationId);
+      const index = stored.findIndex(item => item.id === applicationId && !item.removed);
       if (index < 0) throw new ConnectError("application not found", Code.NotFound);
-      stored.splice(index, 1);
+      stored[index] = removedOf(stored[index]);
       return {};
     },
   },
@@ -331,8 +334,9 @@ it("removes an application only after its final confirmation, then shows the one
   await user.click(within(dialog).getByRole("button", { name: "Remove application" }));
 
   await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
-  expect(stored.map(item => item.name)).toEqual(["Support Desk"]);
-  expect(await screen.findByRole("list", { name: "Support Desk credentials" })).toBeInTheDocument();
+  expect(stored.map(item => [item.name, item.removed])).toEqual([["Support Desk", false], ["CI Triage", true]]);
+  expect(await screen.findByText("CI Triage was removed")).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "CI Triage at a glance" })).toBeInTheDocument();
 });
 
 it("rereads the list when the application was removed meanwhile", async () => {
@@ -341,25 +345,40 @@ it("rereads the list when the application was removed meanwhile", async () => {
   renderPage("/applications?section=settings");
 
   await user.click(await screen.findByRole("button", { name: "Remove application" }));
-  stored.length = 0;
+  stored[0] = removedOf(stored[0]);
   const dialog = await screen.findByRole("alertdialog");
   await user.click(within(dialog).getByRole("button", { name: "Remove application" }));
 
-  expect(await screen.findByText("No applications yet")).toBeInTheDocument();
+  expect(await screen.findByText("Support Desk was removed")).toBeInTheDocument();
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
 });
 
-it("leaves the settings of an application removed meanwhile for the one left", async () => {
+it("shows a removed application read-only: its overview and works, nothing it acts with", async () => {
   const user = userEvent.setup();
-  stored.push(applicationOf(deskId, "Support Desk"), applicationOf(ciId, "CI Triage"));
-  renderPage(`/applications?app=${ciId}&section=settings`);
+  stored.push(applicationOf(deskId, "Support Desk"), removedOf(applicationOf(ciId, "CI Triage")));
+  applicationWorks.push({ workId: "w1", title: "Triage build 42", state: "closed", waiting: false, labels: { tenant: "acme" } });
+  renderPage(`/applications?app=${ciId}&section=credentials`);
 
-  await user.click(await screen.findByRole("button", { name: "Remove application" }));
-  stored.splice(1, 1);
-  const dialog = await screen.findByRole("alertdialog");
-  await user.click(within(dialog).getByRole("button", { name: "Remove application" }));
+  expect(await screen.findByText("CI Triage was removed")).toBeInTheDocument();
+  const tabs = screen.getByRole("tablist", { name: "Application section" });
+  expect(within(tabs).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["Overview", "Works"]);
+  const glance = await screen.findByRole("group", { name: "CI Triage at a glance" });
+  expect(within(glance).queryByText("Secrets")).not.toBeInTheDocument();
+  expect(within(glance).queryByText("Loads by default")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Remove application" })).not.toBeInTheDocument();
+
+  await user.click(within(tabs).getByRole("tab", { name: "Works" }));
+  expect(await screen.findByText("Triage build 42")).toBeInTheDocument();
+});
+
+it("opens the first application still in use, and lists removed ones as removed", async () => {
+  const user = userEvent.setup();
+  stored.push(removedOf(applicationOf(ciId, "CI Triage")), applicationOf(deskId, "Support Desk"));
+  renderPage();
 
   expect(await screen.findByRole("list", { name: "Support Desk credentials" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Application menu: Support Desk" }));
+  expect(await screen.findByRole("menuitem", { name: /CI Triage \(removed\)/ })).toBeInTheDocument();
 });
 
 it("keeps the confirmation open and explains a removal that failed", async () => {

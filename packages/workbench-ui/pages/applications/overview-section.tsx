@@ -12,7 +12,8 @@ import { useNow } from "../../lib/use-now";
 
 /** An Application at a glance for its owner: its open Works, its tokens over
  * the measurements kept, what its Works load by default, its secret state and
- * its usage by one Work Label key. */
+ * its usage by one Work Label key; a removed one shows only its Works and
+ * usage. */
 export function OverviewSection({ application, onSection }: { application: Application; onSection: (section: "works" | "agent" | "credentials") => void }) {
   // The first key the Works carry is the breakdown until the owner picks one.
   const [picked, setPicked] = useState("");
@@ -21,8 +22,9 @@ export function OverviewSection({ application, onSection }: { application: Appli
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" role="group" aria-label={`${application.name} at a glance`}>
       <OpenWorksStat application={application} onPress={() => onSection("works")} />
       <Stat label={`Tokens, ${usageWindowDays} days`} value={usage.data ? formatCompactTokenCount(tokenTotal(usage.data.usage)) : "–"} detail={usage.data && <TokenParts usage={usage.data.usage} />} />
-      <LoadsByDefaultStat application={application} onPress={() => onSection("agent")} />
-      <SecretsStat application={application} onPress={() => onSection("credentials")} />
+      {/* A removed Application loads nothing and holds no secret. */}
+      {!application.removed && <LoadsByDefaultStat application={application} onPress={() => onSection("agent")} />}
+      {!application.removed && <SecretsStat application={application} onPress={() => onSection("credentials")} />}
     </div>
     <section className="mk-section" aria-labelledby="ap-usage">
       <h3 id="ap-usage" className="mk-section-title">Usage</h3>

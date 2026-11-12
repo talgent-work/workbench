@@ -26,6 +26,9 @@ export type Application = {
   secrets: ClientSecret[];
   /** How long a replaced secret keeps working after a rotation. */
   secretOverlapMs: number;
+  /** Removed for good: it holds no secret and its owner only reads its Works
+   * and usage. */
+  removed: boolean;
 };
 
 const at = (unixMs: bigint) => unixMs > 0n ? new Date(Number(unixMs)) : null;
@@ -44,6 +47,7 @@ export function applicationOf(message: ApplicationMessage): Application {
       overlapEndsAt: at(secret.overlapEndsAtUnixMs),
     })),
     secretOverlapMs: Number(message.secretOverlapSeconds) * 1000,
+    removed: message.removed,
   };
 }
 
@@ -167,11 +171,13 @@ export function useRemoveApplication() {
   const { refresh } = useOwnedApplicationUpdates();
   return useMutation({
     mutationFn: async (applicationId: string) => { await applicationClient.removeApplication({ applicationId }); return applicationId; },
+    // The list keeps it, marked removed: its owner still reads its Works.
     onSuccess: applicationId => {
-      queryClient.setQueryData<Application[]>(ownedApplicationsKey(userId), current => current?.filter(item => item.id !== applicationId));
+      queryClient.setQueryData<Application[]>(ownedApplicationsKey(userId), current => current?.map(item => item.id === applicationId ? { ...item, removed: true, secrets: [] } : item));
       refresh();
     },
-    // An Application removed meanwhile answers NotFound; the list shows it gone.
+    // An Application removed meanwhile answers NotFound; the reread list shows
+    // it removed.
     onError: refresh,
   });
 }
