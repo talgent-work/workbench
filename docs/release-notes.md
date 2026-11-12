@@ -30,6 +30,14 @@ canonical schema (`scripts/deploy/bootstrap-mysql.sh`). A Work's starter may giv
 labels and Work State, and an agent token carries them as claim `work_labels`, which the entry
 does not forward.
 
+The core plugin's Startup Agent is renamed `talgent:work-executor` (it was
+`talgent:personal-work-executor`). Once the public catalog lists the `talgent` release that
+declares `work-executor`, and before the new controlplane deploys, run
+`deploy/middleware/migrations/20261113-core-startup-agent-rename.sql` against the databases named
+by `AGENT_MYSQL_DATABASE` and `WORKBENCH_MYSQL_DATABASE`; it rewrites the name in stored
+definitions and Works and can run more than once. Without it, a definition still naming the old
+Startup Agent starts no Standalone Work.
+
 Run `scripts/deploy/bootstrap-kafka.sh` again before deploying it, too: it creates the topic
 `account.integration.v1.ApplicationRemovedV1`, on which Account tells Agent that an Application
 was removed. An Application Owner removes an Application with
