@@ -94,6 +94,35 @@ const invoke = async (...args) => {
   return await run(binary, args, { cwd: workspace, env }, Math.min(180000, remaining())) === 0;
 };
 
+// The native install records, where Claude Code keeps them: in the Work's own
+// package cache when it has one, else under its configuration directory.
+const installRecordsPath = process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR
+  ? path.join(process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR, 'installed_plugins.json')
+  : path.join(process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME, '.claude'), 'plugins', 'installed_plugins.json');
+
+// The native install records, or null when they cannot be read; an absent
+// file records nothing.
+const readInstallRecords = () => {
+  try { return read(installRecordsPath); } catch { return null; }
+};
+
+// Whether a Plugin may be recorded at another version than the pinned one: it
+// is recorded for this workspace at a different version, or the records
+// cannot be read.
+const mayBeStale = (records, id, version) => {
+  if (records === null) return true;
+  const recorded = recordedVersion(records, id);
+  return recorded !== undefined && recorded !== String(version);
+};
+
+// The version this workspace recorded for a Plugin before this preparation,
+// or undefined when it had none.
+const recordedVersion = (records, id) => {
+  const entries = records.plugins && Array.isArray(records.plugins[id]) ? records.plugins[id] : [];
+  const entry = entries.find(item => item && item.scope === 'project' && item.projectPath === workspace);
+  return entry ? String(entry.version) : undefined;
+};
+
 async function installPlugins() {
   const release = catalog.plugins.length === 0 || !sharedCache ? () => {} : await acquireInstallLock();
   if (!release) return catalog.plugins.map(plugin => ({ slug: plugin.name, installed: false, reason: 'installation_failed' }));
@@ -110,13 +139,18 @@ async function installPlugins() {
     save(settingsPath, settings);
     const available = catalog.plugins.length === 0 || await invoke('plugin', 'marketplace', 'add', '--scope', 'project', root);
     const results = [];
+    const records = readInstallRecords();
     for (const plugin of catalog.plugins) {
       const id = plugin.name + '@' + catalog.name;
       // Install leaves an installed Plugin at its recorded version when the
       // manifest above now pins another release (a reused HOME and workspace);
-      // update moves the record to the pinned release and is a no-op otherwise.
+      // update moves the record to the pinned release. A Plugin recorded at no
+      // version or at the pinned one is at that release once installed, so
+      // update, a native check of the package's source taking seconds, is
+      // skipped; records that cannot be read keep the update.
+      const stale = mayBeStale(records, id, plugin.version);
       const installed = available && await invoke('plugin', 'install', '--scope', 'project', id)
-        && await invoke('plugin', 'update', '--scope', 'project', id);
+        && (!stale || await invoke('plugin', 'update', '--scope', 'project', id));
       enabled[id] = installed;
       results.push({ slug: plugin.name, installed, reason: installed ? '' : (available ? 'installation_failed' : 'marketplace_unavailable') });
     }
