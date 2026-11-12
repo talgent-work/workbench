@@ -17,8 +17,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
-	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/application/standalonework"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
@@ -66,7 +66,7 @@ func (*builtInCatalog) ReadConnectorSelection(context.Context, string) (command.
 
 type builtInFixture struct {
 	db    *xorm.Engine
-	works *personalwork.PersonalWorks
+	works *standalonework.StandaloneWorks
 	app   *application.Application
 }
 
@@ -85,15 +85,15 @@ func newBuiltInFixture(t *testing.T, builtIns domain.BuiltInPlugins, catalog com
 	app := &application.Application{Queries: application.Queries{GetWork: agentquery.NewGetWorkHandler(definitions, sessions, authorizer, application.AssembleAgentWorkEntity, nil)},
 		Definitions: definitions, DefinitionQueries: lookup, Works: sessions, WorkQueries: infrastructure.NewWorkQueryRepository(db), Catalog: start, Models: options, BuiltInPlugins: builtIns,
 		Commands: application.Commands{EnsureAgentDefinition: command.NewEnsureAgentDefinitionHandler(definitions, lookup), CreateWork: create}}
-	return builtInFixture{db: db, works: personalwork.New(app, infrastructure.NewWorkQueryRepository(db), &librarySpaces{}, knownPeople{}), app: app}
+	return builtInFixture{db: db, works: standalonework.New(app, infrastructure.NewWorkQueryRepository(db), &librarySpaces{}, knownPeople{}), app: app}
 }
 
-// startPersonal starts a Personal Work for the person and returns the
+// startStandalone starts a Standalone Work for the person and returns the
 // Plugins it retains with their effective parameter values.
-func (f builtInFixture) startPersonal(t *testing.T, person string) map[string]any {
+func (f builtInFixture) startStandalone(t *testing.T, person string) map[string]any {
 	t.Helper()
 	ctx := context.Background()
-	id, err := f.works.Start(ctx, personalwork.StartPersonalWork{Person: personalwork.Person{UserID: person, DisplayName: person}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
+	id, err := f.works.Start(ctx, standalonework.StartWork{Person: standalonework.Person{UserID: person, DisplayName: person}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
 	require.NoError(t, err)
 	return f.retained(t, id)
 }
@@ -140,16 +140,16 @@ func configuredBuiltIns(t *testing.T, platform, project []string) domain.BuiltIn
 	return builtIns
 }
 
-// A Personal Work loads the platform scope's Built-in Plugins although its
+// A Standalone Work loads the platform scope's Built-in Plugins although its
 // person's definition names none, and Start Work offers them as required.
-func TestAPersonalWorkLoadsThePlatformScopeAlone(t *testing.T) {
+func TestAStandaloneWorkLoadsThePlatformScopeAlone(t *testing.T) {
 	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, []string{projectPlugin}), &builtInCatalog{})
-	options, err := f.works.StartOptions(context.Background(), personalwork.Person{UserID: "alice"})
+	options, err := f.works.StartOptions(context.Background(), standalonework.Person{UserID: "alice"})
 	require.NoError(t, err)
 	require.Equal(t, personalRole, options.DefaultStartupAgent)
 	require.Equal(t, map[string]bool{platformPlugin: true}, requiredOptions(options))
 
-	require.Equal(t, map[string]any{platformPlugin: "release-default"}, f.startPersonal(t, "alice"))
+	require.Equal(t, map[string]any{platformPlugin: "release-default"}, f.startStandalone(t, "alice"))
 }
 
 // A personal disable or uninstall of a Built-in Plugin leaves every Work
@@ -159,12 +159,12 @@ func TestAPersonalDisableOrUninstallKeepsABuiltInPlugin(t *testing.T) {
 		"disabled": {{Slug: platformPlugin, Enabled: false, Configuration: pluginconfig.Configuration{"mode": "saved"}}, {Slug: "chosen", Enabled: true}},
 	}}
 	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, nil), catalog)
-	options, err := f.works.StartOptions(context.Background(), personalwork.Person{UserID: "disabled"})
+	options, err := f.works.StartOptions(context.Background(), standalonework.Person{UserID: "disabled"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{platformPlugin: true, "chosen": false}, requiredOptions(options))
 
-	require.Equal(t, map[string]any{platformPlugin: "saved", "chosen": "release-default"}, f.startPersonal(t, "disabled"))
-	require.Equal(t, map[string]any{platformPlugin: "release-default"}, f.startPersonal(t, "uninstalled"))
+	require.Equal(t, map[string]any{platformPlugin: "saved", "chosen": "release-default"}, f.startStandalone(t, "disabled"))
+	require.Equal(t, map[string]any{platformPlugin: "release-default"}, f.startStandalone(t, "uninstalled"))
 }
 
 // A Work of a Project also loads the Project scope's Built-in Plugins, so a
@@ -220,7 +220,7 @@ func TestASlugFromSeveralLayersIsLoadedOnce(t *testing.T) {
 
 // Start options for an existing Work report the Built-in Plugins of the Work's
 // own scopes as required: a Work of a Project its platform and Project scope's,
-// a Personal Work only the platform scope's although the request names a
+// a Standalone Work only the platform scope's although the request names a
 // Project and the Work retains the Project scope's slug as a personal choice.
 func TestStartOptionsOfAnExistingWorkReportItsBuiltInPluginsAsRequired(t *testing.T) {
 	catalog := &builtInCatalog{personal: map[string][]domain.PersonalPlugin{"alice": {{Slug: projectPlugin, Enabled: true}}}}
@@ -231,7 +231,7 @@ func TestStartOptionsOfAnExistingWorkReportItsBuiltInPluginsAsRequired(t *testin
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{platformPlugin: true, projectPlugin: true, "caller-plugin": false}, requiredOptions(options))
 
-	id, err := f.works.Start(context.Background(), personalwork.StartPersonalWork{Person: personalwork.Person{UserID: "alice", DisplayName: "alice"}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
+	id, err := f.works.Start(context.Background(), standalonework.StartWork{Person: standalonework.Person{UserID: "alice", DisplayName: "alice"}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
 	require.NoError(t, err)
 	options, err = f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "alice", WorkID: id, ProjectID: "project"})
 	require.NoError(t, err)

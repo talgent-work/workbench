@@ -4,15 +4,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { formatAgo } from "../../components/analytics/work-usage/work-status";
 import { PageLayout } from "../../components/shell/page-layout";
 import { useEntryShell } from "../../components/shell/entry-shell";
-import { usePersonalWorks } from "../../lib/personal-work-service";
+import { useStandaloneWorks } from "../../lib/standalone-work-service";
 import { useNow } from "../../lib/use-now";
 import { workPresentation } from "../../lib/work-state-presentation";
 
-/** The person's Personal Works, most recently updated first, for an entry
+/** The person's Standalone Works, most recently updated first, for an entry
  * that lists them on a page of their own. */
-export function PersonalWorksPage() {
+export function StandaloneWorksPage() {
   const { personal } = useEntryShell();
-  const works = usePersonalWorks();
+  const works = useStandaloneWorks();
   const navigate = useNavigate();
   const now = useNow();
   return <PageLayout workspaceTitle="Works" topActions={<Link to={personal.newWork} className={buttonVariants({ size: "sm" })}><Plus size={16} aria-hidden="true" />New work</Link>}>

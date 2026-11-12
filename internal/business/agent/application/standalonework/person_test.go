@@ -1,4 +1,4 @@
-package personalwork
+package standalonework
 
 import (
 	"testing"

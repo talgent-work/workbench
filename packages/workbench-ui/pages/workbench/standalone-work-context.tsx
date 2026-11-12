@@ -21,8 +21,8 @@ import { isTerminalWorkLifecycle } from "../../lib/work-state-presentation";
 
 /** A Work's context card: its Progress, Agents, Plugins, files and Token Usage. Its
  * owner changes its files and reads its Plugins and usage; a Work Share holder reads its
- * files. Only a Personal Work lists its files here (`withFiles`). */
-export function PersonalWorkContext({ workId, title, owner, withFiles, workLifecycle, workCreatedAt, progress, subAgents }: {
+ * files. Only a Standalone Work lists its files here (`withFiles`). */
+export function StandaloneWorkContext({ workId, title, owner, withFiles, workLifecycle, workCreatedAt, progress, subAgents }: {
   workId: string; title: string; owner: boolean; withFiles: boolean; workLifecycle: string; workCreatedAt: Date | null; progress: WorkProgress | null | undefined; subAgents: SubAgent[] | undefined;
 }) {
   const reader = useReadingArea();

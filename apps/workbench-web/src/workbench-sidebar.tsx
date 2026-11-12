@@ -7,7 +7,7 @@ import { WorkHistory, type WorkHistorySource } from "@talgent/workbench-ui/compo
 import { AccountMenu } from "@talgent/workbench-ui/components/shell/account-menu";
 import { SidebarHeader, SidebarLink, type SidebarItem } from "@talgent/workbench-ui/components/shell/sidebar-parts";
 import { personalPathsAt } from "@talgent/workbench-ui/components/shell/entry-shell";
-import { personalWorksKey, usePersonalWorks } from "@talgent/workbench-ui/lib/personal-work-service";
+import { standaloneWorksKey, useStandaloneWorks } from "@talgent/workbench-ui/lib/standalone-work-service";
 
 const paths = personalPathsAt("");
 const items: SidebarItem[] = [
@@ -17,13 +17,13 @@ const items: SidebarItem[] = [
   { label: "Usage", icon: ChartColumn, to: paths.usage },
 ];
 
-const affects = [personalWorksKey];
+const affects = [standaloneWorksKey];
 
 // Talgent Workbench's navigation: what a person does on their own, Recent
-// with their Personal Works, and the account at the bottom.
+// with their Standalone Works, and the account at the bottom.
 export function WorkbenchSidebar({ compact, mobile, isReading, onNavigate, onCollapsedChange, onCloseMobile }: ShellSidebarProps) {
   const { pathname } = useLocation();
-  const works = usePersonalWorks();
+  const works = useStandaloneWorks();
   const data = useMemo(() => works.data?.slice(0, 20).map(work => ({ id: work.id, title: work.title, state: work.state, waiting: work.waiting, stateReason: work.stateReason, disconnectedSince: work.disconnectedSince, to: paths.work(work.id) })), [works.data]);
   const history: WorkHistorySource = { data, isLoading: works.isLoading, error: works.error, refetch: works.refetch, affects };
   const activeWorkId = pathname.match(/^\/works\/([^/]+)/)?.[1];

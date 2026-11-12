@@ -8,22 +8,24 @@ import (
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
+	"github.com/talgent-work/workbench/internal/business/agent/application/standalonework"
 )
 
 // WorkFileHandler serves Work files for the gateway-asserted person.
-type WorkFileHandler struct{ works *personalwork.PersonalWorks }
+type WorkFileHandler struct {
+	works *standalonework.StandaloneWorks
+}
 
 var _ agentpublicv1connect.WorkFileServiceHandler = (*WorkFileHandler)(nil)
 
-func NewWorkFileHandler(works *personalwork.PersonalWorks) *WorkFileHandler {
+func NewWorkFileHandler(works *standalonework.StandaloneWorks) *WorkFileHandler {
 	return &WorkFileHandler{works: works}
 }
 
 func (h *WorkFileHandler) ListWorkFiles(ctx context.Context, request *agentpublicv1.ListWorkFilesRequest) (*agentpublicv1.ListWorkFilesResponse, error) {
 	files, err := h.works.ListFiles(ctx, currentPerson(ctx), request.GetWorkId())
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	response := &agentpublicv1.ListWorkFilesResponse{Files: make([]*agentpublicv1.WorkFile, 0, len(files))}
 	for _, file := range files {
@@ -43,7 +45,7 @@ func (h *WorkFileHandler) CreateWorkAttachmentUpload(ctx context.Context, reques
 	msg := request
 	link, err := h.works.IssueAttachmentUpload(ctx, currentPerson(ctx), msg.GetWorkId(), msg.GetName(), msg.GetReplace(), msg.GetContentType())
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	return &agentpublicv1.CreateWorkAttachmentUploadResponse{UploadUrl: link.URL, ExpiresAt: timestamppb.New(link.ExpiresAt)}, nil
 }
@@ -51,7 +53,7 @@ func (h *WorkFileHandler) CreateWorkAttachmentUpload(ctx context.Context, reques
 func (h *WorkFileHandler) RenameWorkAttachment(ctx context.Context, request *agentpublicv1.RenameWorkAttachmentRequest) (*agentpublicv1.RenameWorkAttachmentResponse, error) {
 	msg := request
 	if err := h.works.RenameAttachment(ctx, currentPerson(ctx), msg.GetWorkId(), msg.GetName(), msg.GetNewName()); err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	return &agentpublicv1.RenameWorkAttachmentResponse{}, nil
 }
@@ -62,7 +64,7 @@ func (h *WorkFileHandler) DeleteWorkFile(ctx context.Context, request *agentpubl
 		err = h.works.DeleteFile(ctx, currentPerson(ctx), file)
 	}
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	return &agentpublicv1.DeleteWorkFileResponse{}, nil
 }
@@ -70,12 +72,12 @@ func (h *WorkFileHandler) DeleteWorkFile(ctx context.Context, request *agentpubl
 func (h *WorkFileHandler) CreateWorkFileAccessLink(ctx context.Context, request *agentpublicv1.CreateWorkFileAccessLinkRequest) (*agentpublicv1.CreateWorkFileAccessLinkResponse, error) {
 	file, err := workFile(request.GetWorkId(), request.GetKind(), request.GetName())
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	inline := request.GetDisposition() == agentpublicv1.WorkFileAccessDisposition_WORK_FILE_ACCESS_DISPOSITION_PREVIEW
 	link, err := h.works.IssueAccessLink(ctx, currentPerson(ctx), file, inline)
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	return &agentpublicv1.CreateWorkFileAccessLinkResponse{AccessUrl: link.URL, ExpiresAt: timestamppb.New(link.ExpiresAt), AccessPath: link.Path}, nil
 }
@@ -83,11 +85,11 @@ func (h *WorkFileHandler) CreateWorkFileAccessLink(ctx context.Context, request 
 func (h *WorkFileHandler) CreateWorkFileShareLink(ctx context.Context, request *agentpublicv1.CreateWorkFileShareLinkRequest) (*agentpublicv1.CreateWorkFileShareLinkResponse, error) {
 	file, err := workFile(request.GetWorkId(), request.GetKind(), request.GetName())
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	link, err := h.works.CreateShareLink(ctx, currentPerson(ctx), file)
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	return &agentpublicv1.CreateWorkFileShareLinkResponse{ShareLink: shareLinkToProto(link)}, nil
 }
@@ -98,7 +100,7 @@ func (h *WorkFileHandler) StopWorkFileSharing(ctx context.Context, request *agen
 		err = h.works.StopSharing(ctx, currentPerson(ctx), file)
 	}
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	return &agentpublicv1.StopWorkFileSharingResponse{}, nil
 }
@@ -122,11 +124,11 @@ func (h *WorkFileHandler) RequestWorkFilePreview(ctx context.Context, request *a
 func (h *WorkFileHandler) preview(ctx context.Context, workID string, kind agentpublicv1.WorkFileKind, name string, render bool) (*agentpublicv1.WorkFilePreview, error) {
 	file, err := workFile(workID, kind, name)
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	preview, err := h.works.FilePreview(ctx, currentPerson(ctx), file, render)
 	if err != nil {
-		return nil, mapPersonalWorkError(ctx, err)
+		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	result := &agentpublicv1.WorkFilePreview{
 		Mode: previewModesToProto[preview.Mode], Display: previewDisplaysToProto[preview.Display], Refusal: previewRefusalsToProto[preview.Refusal],
@@ -138,15 +140,15 @@ func (h *WorkFileHandler) preview(ctx context.Context, workID string, kind agent
 	return result, nil
 }
 
-func workFile(workID string, kind agentpublicv1.WorkFileKind, name string) (personalwork.WorkFile, error) {
-	file := personalwork.WorkFile{WorkID: workID, Name: name}
+func workFile(workID string, kind agentpublicv1.WorkFileKind, name string) (standalonework.WorkFile, error) {
+	file := standalonework.WorkFile{WorkID: workID, Name: name}
 	switch kind {
 	case agentpublicv1.WorkFileKind_WORK_FILE_KIND_ATTACHMENT:
 		file.Kind = command.FileKindAttachment
 	case agentpublicv1.WorkFileKind_WORK_FILE_KIND_ARTIFACT:
 		file.Kind = command.FileKindArtifact
 	default:
-		return personalwork.WorkFile{}, personalwork.ErrInvalidRequest
+		return standalonework.WorkFile{}, standalonework.ErrInvalidRequest
 	}
 	return file, nil
 }

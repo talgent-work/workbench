@@ -448,7 +448,7 @@ func seedMetricBuckets(t *testing.T, db *sql.DB) time.Time {
 		{ts: base.Add(2 * time.Minute), projectID: "project-1", sessionID: "work-1", runtimePurpose: "work", ownerContext: "case", ownerID: "case-alpha", userID: "user-1", metricKind: "skill_call", dimension: "designing-tests", value: 1},
 		{ts: base.Add(3 * time.Minute), projectID: "project-1", sessionID: "work-2", runtimePurpose: "normal", ownerContext: "case", ownerID: "case-beta", userID: "user-2", metricKind: "tool_call", dimension: "Read", value: 4},
 		{ts: base.Add(4 * time.Minute), projectID: "project-2", sessionID: "work-3", runtimePurpose: "work", ownerContext: "case", ownerID: "case-other", userID: "user-3", metricKind: "tool_call", dimension: "Read", value: 8},
-		// A Personal Work: no Project, the same person as work-1.
+		// A Standalone Work: no Project, the same person as work-1.
 		{ts: base.Add(5 * time.Minute), sessionID: "personal-1", runtimePurpose: "work", userID: "user-1", metricKind: "tool_call", dimension: "Read", value: 5},
 	}
 	for index, row := range rows {

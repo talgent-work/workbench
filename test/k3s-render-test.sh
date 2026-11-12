@@ -183,7 +183,7 @@ want_claims = {"principal": "x-talgent-principal", "iss": "x-talgent-issuer", "s
                "work_subject_id": "x-talgent-work-subject-id", "for": "x-talgent-represented-user-id"}
 check(claims == want_claims, f"web-auth writes every claim as its header, got {claims}")
 targets = {t["sectionName"] for t in auth["spec"]["targetRefs"]}
-for section in ("agent-identity-api", "storage-artifact-api", "personal-work-api", "work-file-api", "application-api"):
+for section in ("agent-identity-api", "storage-artifact-api", "work-api", "personal-work-api", "work-file-api", "application-api"):
     check(section in rules(docs, "web-api") and section in targets, f"web-auth validates the web-api rule {section}")
 check(find(docs, "BackendTrafficPolicy", "computer-api-rate-limit") is None and "computer-api" not in rules(docs, "computer"),
       "Managed Works reach the platform through the entry, not a computer-api rule")

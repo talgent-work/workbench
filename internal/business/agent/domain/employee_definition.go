@@ -12,7 +12,7 @@ const (
 )
 
 // EmployeeDefinitionInput is the definition a person's Agent starts with:
-// owned by the person and representing them, the core plugin's Personal Work
+// owned by the person and representing them, the core plugin's Standalone Work
 // role starting each Work a caller names no other role for, and Works private
 // unless switched public within their Project. It requires no Plugin: the
 // deployment's Built-in Plugins supply the core plugin.

@@ -99,7 +99,7 @@ export function useComputers() {
   });
 }
 
-/** A Computer a person may start a Personal Work on: a Cloud, or one of
+/** A Computer a person may start a Standalone Work on: a Cloud, or one of
  * their Managed Computers, which takes a start only while reachable. sandbox
  * is whether a Managed Computer's machine reports it can provide Claude
  * Code's sandbox. */

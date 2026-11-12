@@ -5,6 +5,20 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that names the Work API neutrally
+
+Nothing to do beyond deploying it; the entry routes `/api/agent.public.v2.WorkService`. A
+client of `agent.public.v1.PersonalWorkService` moves to `agent.public.v2.WorkService`, which
+serves the same operations as `StartWork`, `ListWorks`, `ChangeWorkTitle`,
+`GetWorkStartOptions`, `ListWorkStartRepositories` and `GrantWorkShare`; a Library Work reports
+`standalone` where it reported `personal`. PersonalWorkService is deprecated and is removed in a
+later release.
+
+A web app built on `@talgent/workbench-ui` imports the renamed pages and hooks:
+`pages/workbench/standalone-works-page` (`StandaloneWorksPage`),
+`pages/workbench/standalone-work-page` (`StandaloneWorkPage`) and `lib/standalone-work-service`
+(`useStandaloneWorks`, `useStartWork`, `useChangeWorkTitle`, `useGrantWorkShare`).
+
 ## The release that installs each Plugin release once per Harness state
 
 Before deploying it, run `deploy/middleware/migrations/20261112-plugin-catalog.sql` against the

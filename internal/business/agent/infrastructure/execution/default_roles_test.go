@@ -14,7 +14,7 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
 
-// The core's Personal Work role and roles a caller supplies from its own plugin.
+// The core's Standalone Work role and roles a caller supplies from its own plugin.
 var defaultRoleCases = []struct{ purpose, scope, plugin, agent string }{
 	{"work", "employee", "talgent", "talgent:personal-work-executor"},
 	{"work", "employee", "caller-plugin", "caller-plugin:case-executor"},

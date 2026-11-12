@@ -1,4 +1,4 @@
-package personalwork
+package standalonework
 
 import (
 	"context"
@@ -35,11 +35,11 @@ type Library struct {
 	Works []query.LibraryWork
 }
 
-// Library lists the Artifacts of the person's Personal Works and of each Work
+// Library lists the Artifacts of the person's Standalone Works and of each Work
 // they hold a Work Share in, most recently added first. A shared Work with a
 // Subject or a Project contributes only the Artifacts it published itself:
 // its publication target may hold its Subject's other Works' files.
-func (p *PersonalWorks) Library(ctx context.Context, person Person, filter LibraryFilter) (Library, error) {
+func (p *StandaloneWorks) Library(ctx context.Context, person Person, filter LibraryFilter) (Library, error) {
 	reader := person.libraryReader()
 	if reader == "" {
 		return Library{}, access.ErrAccessDenied
@@ -77,7 +77,7 @@ func (p *PersonalWorks) Library(ctx context.Context, person Person, filter Libra
 			continue
 		}
 		for _, work := range read {
-			if work.PublicationTarget.Equal(file.Directory) && domain.ReadableWorkFile(work.WorkID, work.Personal, true, file.WorkID) && filter.admits(file) {
+			if work.PublicationTarget.Equal(file.Directory) && domain.ReadableWorkFile(work.WorkID, work.Standalone, true, file.WorkID) && filter.admits(file) {
 				library.Files = append(library.Files, LibraryFile{Work: work, File: file})
 			}
 		}

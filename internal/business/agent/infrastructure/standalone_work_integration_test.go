@@ -15,8 +15,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
-	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
 	agentquery "github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/application/standalonework"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
@@ -102,7 +102,7 @@ func (knownPeople) IssueWorkIdentityToken(context.Context, command.WorkIdentityF
 	return command.IdentityToken{}, errors.New("personal Works issue no token here")
 }
 
-func personalWorksFixture(t *testing.T, db *xorm.Engine, spaces *librarySpaces) (*personalwork.PersonalWorks, *application.Application) {
+func standaloneWorksFixture(t *testing.T, db *xorm.Engine, spaces *librarySpaces) (*standalonework.StandaloneWorks, *application.Application) {
 	t.Helper()
 	options := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
 	create := creationCoordinator(db, startupAuthority{}, nil, options, &personalStartupCatalog{})
@@ -113,43 +113,43 @@ func personalWorksFixture(t *testing.T, db *xorm.Engine, spaces *librarySpaces) 
 		CreateWork:            create,
 	}}
 	directory := knownPeople{"reader": {UserID: "reader", Username: "reader"}}
-	return personalwork.New(app, infrastructure.NewWorkQueryRepository(db), spaces, directory), app
+	return standalonework.New(app, infrastructure.NewWorkQueryRepository(db), spaces, directory), app
 }
 
-// A person's Personal Works start under the definition Agent establishes for
+// A person's Standalone Works start under the definition Agent establishes for
 // them, each with its own File Space; their list, sharing, Library and file
 // access follow from the owner and Work Shares alone.
-func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
+func TestStandaloneWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	ctx := context.Background()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	spaces := &librarySpaces{}
-	works, app := personalWorksFixture(t, db, spaces)
-	owner := personalwork.Person{UserID: "owner", DisplayName: "Owner"}
-	reader := personalwork.Person{UserID: "reader"}
-	stranger := personalwork.Person{UserID: "stranger"}
+	works, app := standaloneWorksFixture(t, db, spaces)
+	owner := standalonework.Person{UserID: "owner", DisplayName: "Owner"}
+	reader := standalonework.Person{UserID: "reader"}
+	stranger := standalonework.Person{UserID: "stranger"}
 
-	_, err = works.Start(ctx, personalwork.StartPersonalWork{Person: owner, RequestID: "not-a-uuid", InitialMessage: "x"})
-	require.ErrorIs(t, err, personalwork.ErrInvalidRequest)
+	_, err = works.Start(ctx, standalonework.StartWork{Person: owner, RequestID: "not-a-uuid", InitialMessage: "x"})
+	require.ErrorIs(t, err, standalonework.ErrInvalidRequest)
 	empty, err := works.List(ctx, owner, 0)
 	require.NoError(t, err)
-	require.Empty(t, empty, "a person without a definition has no Personal Works")
+	require.Empty(t, empty, "a person without a definition has no Standalone Works")
 
 	request := uuid.NewString()
-	first, err := works.Start(ctx, personalwork.StartPersonalWork{Person: owner, RequestID: request, InitialMessage: "Draft the plan\nwith details"})
+	first, err := works.Start(ctx, standalonework.StartWork{Person: owner, RequestID: request, InitialMessage: "Draft the plan\nwith details"})
 	require.NoError(t, err)
-	again, err := works.Start(ctx, personalwork.StartPersonalWork{Person: owner, RequestID: request, InitialMessage: "Draft the plan\nwith details"})
+	again, err := works.Start(ctx, standalonework.StartWork{Person: owner, RequestID: request, InitialMessage: "Draft the plan\nwith details"})
 	require.NoError(t, err)
 	require.Equal(t, first, again, "a repeated request returns the Work it started")
-	second, err := works.Start(ctx, personalwork.StartPersonalWork{Person: owner, RequestID: uuid.NewString(), InitialMessage: "Summarize the notes"})
+	second, err := works.Start(ctx, standalonework.StartWork{Person: owner, RequestID: uuid.NewString(), InitialMessage: "Summarize the notes"})
 	require.NoError(t, err)
 
 	stored, err := app.Works.Get(ctx, first)
 	require.NoError(t, err)
-	require.True(t, stored.Personal())
+	require.True(t, stored.Standalone())
 	require.Equal(t, "Draft the plan", stored.DisplayTitle)
-	require.Equal(t, workFiles(first, "inputs"), stored.LocatedLayout.Inputs.Directory, "a Personal Work's inputs are its own")
+	require.Equal(t, workFiles(first, "inputs"), stored.LocatedLayout.Inputs.Directory, "a Standalone Work's inputs are its own")
 	require.Equal(t, workFiles(first, "artifacts"), stored.LocatedLayout.PublicationTarget.Directory, "and so are its Artifacts")
 
 	require.NoError(t, works.ChangeTitle(ctx, owner, first, "Plan"))
@@ -166,7 +166,7 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "disconnected", listed[1].StateReason, "the list carries why a Work stopped")
 
-	require.ErrorIs(t, works.GrantShare(ctx, owner, first, "ghost"), personalwork.ErrReaderUnknown)
+	require.ErrorIs(t, works.GrantShare(ctx, owner, first, "ghost"), standalonework.ErrReaderUnknown)
 	require.NoError(t, works.GrantShare(ctx, owner, first, "reader"))
 
 	// A Work with a Subject and a Project, which publishes into its Subject's
@@ -192,66 +192,66 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 		{Directory: caseFiles("case-x", "inputs"), Kind: command.FileKindAttachment, Name: "spec.md", UpdatedAt: now},
 	}
 
-	names := func(library personalwork.Library) []string {
+	names := func(library standalonework.Library) []string {
 		var out []string
 		for _, file := range library.Files {
 			out = append(out, file.File.Name)
 		}
 		return out
 	}
-	mine, err := works.Library(ctx, owner, personalwork.LibraryFilter{})
+	mine, err := works.Library(ctx, owner, standalonework.LibraryFilter{})
 	require.NoError(t, err)
-	require.Equal(t, []string{"notes.md", "plan.pdf"}, names(mine), "the owner's Library holds their Personal Works' Artifacts, newest first")
-	shared, err := works.Library(ctx, reader, personalwork.LibraryFilter{})
+	require.Equal(t, []string{"notes.md", "plan.pdf"}, names(mine), "the owner's Library holds their Standalone Works' Artifacts, newest first")
+	shared, err := works.Library(ctx, reader, standalonework.LibraryFilter{})
 	require.NoError(t, err)
 	require.Equal(t, []string{"plan.pdf", "design.md"}, names(shared), "a shared Work contributes only the Artifacts it published")
 	for _, file := range shared.Files {
 		require.Equal(t, "owner", file.Work.SharedBy)
 	}
-	narrowed, err := works.Library(ctx, reader, personalwork.LibraryFilter{NameQuery: "DESIGN"})
+	narrowed, err := works.Library(ctx, reader, standalonework.LibraryFilter{NameQuery: "DESIGN"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"design.md"}, names(narrowed))
-	narrowed, err = works.Library(ctx, reader, personalwork.LibraryFilter{WorkID: first, AddedBefore: now})
+	narrowed, err = works.Library(ctx, reader, standalonework.LibraryFilter{WorkID: first, AddedBefore: now})
 	require.NoError(t, err)
 	require.Equal(t, []string{"plan.pdf"}, names(narrowed))
-	none, err := works.Library(ctx, stranger, personalwork.LibraryFilter{})
+	none, err := works.Library(ctx, stranger, standalonework.LibraryFilter{})
 	require.NoError(t, err)
 	require.Empty(t, none.Files)
 
-	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: first, Kind: command.FileKindAttachment, Name: "brief.md"}, false)
-	require.NoError(t, err, "a Work Share holder reads a Personal Work's Attachments")
-	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "design.md"}, false)
+	_, err = works.IssueAccessLink(ctx, reader, standalonework.WorkFile{WorkID: first, Kind: command.FileKindAttachment, Name: "brief.md"}, false)
+	require.NoError(t, err, "a Work Share holder reads a Standalone Work's Attachments")
+	_, err = works.IssueAccessLink(ctx, reader, standalonework.WorkFile{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "design.md"}, false)
 	require.NoError(t, err)
 	require.Equal(t, []string{"work:" + first + "/inputs/brief.md", "subject:case:case-x/artifacts/design.md"}, spaces.issued)
-	for _, refused := range []personalwork.WorkFile{
+	for _, refused := range []standalonework.WorkFile{
 		{WorkID: subjectWork, Kind: command.FileKindAttachment, Name: "spec.md"},
 		{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "other.md"},
 	} {
 		_, err = works.IssueAccessLink(ctx, reader, refused, false)
 		require.ErrorIs(t, err, command.ErrFileNotFound, refused.Name)
 	}
-	_, err = works.IssueAccessLink(ctx, stranger, personalwork.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}, false)
+	_, err = works.IssueAccessLink(ctx, stranger, standalonework.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}, false)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 
-	require.ErrorIs(t, works.DeleteFile(ctx, reader, personalwork.WorkFile{WorkID: first, Kind: command.FileKindAttachment, Name: "brief.md"}), access.ErrAccessDenied)
-	require.NoError(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: first, Kind: command.FileKindAttachment, Name: "brief.md"}))
-	require.ErrorIs(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "design.md"}), domain.ErrWorkFilesUnavailable)
+	require.ErrorIs(t, works.DeleteFile(ctx, reader, standalonework.WorkFile{WorkID: first, Kind: command.FileKindAttachment, Name: "brief.md"}), access.ErrAccessDenied)
+	require.NoError(t, works.DeleteFile(ctx, owner, standalonework.WorkFile{WorkID: first, Kind: command.FileKindAttachment, Name: "brief.md"}))
+	require.ErrorIs(t, works.DeleteFile(ctx, owner, standalonework.WorkFile{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "design.md"}), domain.ErrWorkFilesUnavailable)
 
 	// A Closed Work's Artifacts stay in the Library; a revoked Work Share
 	// takes its Work's files out of the reader's.
 	_, err = db.Exec("UPDATE agent_session SET state=7 WHERE id=?", first)
 	require.NoError(t, err)
-	mine, err = works.Library(ctx, owner, personalwork.LibraryFilter{})
+	mine, err = works.Library(ctx, owner, standalonework.LibraryFilter{})
 	require.NoError(t, err)
 	require.Equal(t, []string{"notes.md", "plan.pdf"}, names(mine))
 	_, err = app.RevokeWorkShare(ctx, application.RevokeWorkShare{ActorUserID: "owner", WorkID: first, ReaderID: "reader"})
 	require.NoError(t, err)
-	shared, err = works.Library(ctx, reader, personalwork.LibraryFilter{})
+	shared, err = works.Library(ctx, reader, standalonework.LibraryFilter{})
 	require.NoError(t, err)
 	require.Equal(t, []string{"design.md"}, names(shared))
-	_, err = works.IssueAccessLink(ctx, reader, personalwork.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}, false)
+	_, err = works.IssueAccessLink(ctx, reader, standalonework.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}, false)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
-	require.ErrorIs(t, works.DeleteFile(ctx, owner, personalwork.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}), domain.ErrWorkFilesClosed)
+	require.ErrorIs(t, works.DeleteFile(ctx, owner, standalonework.WorkFile{WorkID: first, Kind: command.FileKindArtifact, Name: "plan.pdf"}), domain.ErrWorkFilesClosed)
 }
 
 // personalStartupCatalog publishes the core plugin as a fixed release

@@ -11,18 +11,18 @@ import { WorkConversation } from "../../components/work/work-conversation";
 import { WorkSnapshotUnavailable } from "../../components/work/work-snapshot-state";
 import { useCurrentUser } from "../../lib/account-service";
 import { useAgentWork } from "../../lib/agent-work-service";
-import { useLibraryWork, usePersonalWorks } from "../../lib/personal-work-service";
+import { useLibraryWork, useStandaloneWorks } from "../../lib/standalone-work-service";
 import { newestStartupProgress } from "../../lib/startup-progress";
 import type { SubAgent } from "../../lib/subagents";
 import { useUploadWorkAttachment } from "../../lib/work-file-service";
 import { adaptWorkProgress } from "../../lib/work-progress";
-import { PersonalWorkContext } from "./personal-work-context";
+import { StandaloneWorkContext } from "./standalone-work-context";
 import { ShareButton } from "./share-dialog";
 import { TitleButton } from "./title-dialog";
 
-/** A Personal Work: its conversation and context card, titled by the Work.
+/** A Standalone Work: its conversation and context card, titled by the Work.
  * Its owner continues, renames and shares it; a Work Share holder reads it. */
-export function PersonalWorkPage() {
+export function StandaloneWorkPage() {
   const { workId = "" } = useParams();
   const navigate = useNavigate();
   const { personal: paths } = useEntryShell();
@@ -33,14 +33,14 @@ export function PersonalWorkPage() {
   const refused = snapshot.error ? ConnectError.from(snapshot.error).code : undefined;
   // Agent shows a Work only to its owner; anyone else may still hold a Work Share.
   const reader = refused === Code.PermissionDenied;
-  const own = usePersonalWorks();
+  const own = useStandaloneWorks();
   const shared = useLibraryWork(workId, reader);
-  // Only a Personal Work has a title of its own and is shared from here; a
+  // Only a Standalone Work has a title of its own and is shared from here; a
   // Work of a Project is the Project's to share.
-  const personal = own.data?.find(item => item.id === workId);
+  const ownWork = own.data?.find(item => item.id === workId);
   // A Work with a Project keeps its files in the Project's spaces, not here.
-  const personalWork = work ? Boolean(personal) : Boolean(shared.data?.personal);
-  const title = (work ? personal?.title : shared.data?.title) || (reader ? "Shared work" : "Work");
+  const standaloneWork = work ? Boolean(ownWork) : Boolean(shared.data?.standalone);
+  const title = (work ? ownWork?.title : shared.data?.title) || (reader ? "Shared work" : "Work");
   const [live, setLive] = useState<{ workId: string; lifecycle: string; startup?: StartupProgress }>({ workId: "", lifecycle: "" });
   const onLifecycle = useCallback((lifecycle: string, _updatedAt?: Date, startup?: StartupProgress) => setLive({ workId, lifecycle, startup }), [workId]);
   const [liveSubAgents, setLiveSubAgents] = useState<{ workId: string; agents: SubAgent[] }>();
@@ -60,7 +60,7 @@ export function PersonalWorkPage() {
     : refused === Code.NotFound ? <WorkSnapshotUnavailable notFound onRetry={refresh} />
     : snapshot.isError && !reader ? <WorkSnapshotUnavailable notFound={false} onRetry={refresh} />
     : null;
-  return <PageLayout workspaceTitle={title} trail={[{ label: "Works", onPress: () => navigate(paths.works) }]} topActions={work && personal && <>
+  return <PageLayout workspaceTitle={title} trail={[{ label: "Works", onPress: () => navigate(paths.works) }]} topActions={work && ownWork && <>
     <TitleButton workId={workId} title={title} />
     <ShareButton workId={workId} ownerId={userId} readerIds={work.shareReaderIds} />
   </>}>
@@ -92,9 +92,9 @@ export function PersonalWorkPage() {
           onWorkControlChange={refresh}
           onWorkLifecycleChange={onLifecycle}
           onSubAgentsChange={onSubAgents}
-          onUploadAttachment={work && personalWork ? file => upload.mutateAsync({ file }) : undefined}
+          onUploadAttachment={work && standaloneWork ? file => upload.mutateAsync({ file }) : undefined}
         />}
-      {!unavailable && !snapshot.isPending && !starting && <PersonalWorkContext workId={workId} title={title} owner={Boolean(work)} withFiles={personalWork} workLifecycle={workLifecycle}
+      {!unavailable && !snapshot.isPending && !starting && <StandaloneWorkContext workId={workId} title={title} owner={Boolean(work)} withFiles={standaloneWork} workLifecycle={workLifecycle}
         workCreatedAt={work?.createdAt ? timestampDate(work.createdAt) : null} progress={work ? adaptWorkProgress(work.workProgress) : undefined}
         subAgents={liveSubAgents?.workId === workId ? liveSubAgents.agents : undefined} />}
       {snapshot.isPending && <span className="sr-only" role="status">Loading work…</span>}
