@@ -58,21 +58,30 @@ func TestApplicationIssuesApplicationClaimsForItsSecretAndRecordsUse(t *testing.
 	application, secret, now := registered(t)
 	later := now.Add(time.Hour)
 
-	claims, err := application.IssueIdentityToken(secret, later, applicationLifetime)
+	claims, recorded, err := application.IssueIdentityToken(secret, later, applicationLifetime)
 	require.NoError(t, err)
+	require.True(t, recorded)
 	require.Equal(t, PrincipalApplication, claims.Principal)
 	require.Equal(t, string(application.ID), claims.Subject)
 	require.Equal(t, later.Add(applicationLifetime), claims.ExpiresAt)
 	require.Empty(t, claims.SessionID)
 	require.Equal(t, WorkFacts{}, claims.Work)
 	require.Equal(t, later, application.Secrets[0].LastUsedAt)
+
+	_, recorded, err = application.IssueIdentityToken(secret, later.Add(LastUseResolution-time.Second), applicationLifetime)
+	require.NoError(t, err)
+	require.False(t, recorded, "a use within the resolution writes nothing")
+	require.Equal(t, later, application.Secrets[0].LastUsedAt)
+	_, recorded, err = application.IssueIdentityToken(secret, later.Add(LastUseResolution), applicationLifetime)
+	require.NoError(t, err)
+	require.True(t, recorded)
 }
 
 func TestApplicationRefusesAnotherSecret(t *testing.T) {
 	application, _, now := registered(t)
 	_, otherSecret, _ := registered(t)
 
-	_, err := application.IssueIdentityToken(otherSecret, now, applicationLifetime)
+	_, _, err := application.IssueIdentityToken(otherSecret, now, applicationLifetime)
 	require.ErrorIs(t, err, ErrClientSecretMismatch)
 	require.True(t, application.Secrets[0].LastUsedAt.IsZero())
 }
@@ -82,7 +91,7 @@ func TestApplicationIssuesNothingOnceRemoved(t *testing.T) {
 	application.State = ApplicationRemoved
 	application.Secrets[0].State = ClientSecretEnded
 
-	_, err := application.IssueIdentityToken(secret, now, applicationLifetime)
+	_, _, err := application.IssueIdentityToken(secret, now, applicationLifetime)
 	require.ErrorIs(t, err, ErrClientSecretMismatch)
 }
 
@@ -92,10 +101,13 @@ func TestClientSecretMatchesInItsOverlapOnly(t *testing.T) {
 	kept.State = ClientSecretOverlapping
 	kept.OverlapEndsAt = now.Add(24 * time.Hour)
 
-	require.True(t, kept.Match(secret.Digest(), now.Add(23*time.Hour)))
-	require.False(t, kept.Match(secret.Digest(), now.Add(24*time.Hour)))
+	matched, _ := kept.Match(secret.Digest(), now.Add(23*time.Hour))
+	require.True(t, matched)
+	matched, _ = kept.Match(secret.Digest(), now.Add(24*time.Hour))
+	require.False(t, matched)
 	kept.State = ClientSecretEnded
-	require.False(t, kept.Match(secret.Digest(), now))
+	matched, _ = kept.Match(secret.Digest(), now)
+	require.False(t, matched)
 }
 
 func TestValidSecretsListTheCurrentFirst(t *testing.T) {

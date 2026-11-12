@@ -150,27 +150,28 @@ func (a *Application) ValidSecrets(now time.Time) []*ClientSecret {
 // presented secret one of its Client Secrets accepts, and records that
 // secret's use (Client credentials, An Application's tokens are short). It
 // issues nothing once removed (Removal is final), and the token is never
-// refreshed (No Application refresh).
-func (a *Application) IssueIdentityToken(presented ClientSecretValue, now time.Time, lifetime time.Duration) (IdentityClaims, error) {
+// refreshed (No Application refresh). It reports whether it recorded a use,
+// which only then needs saving.
+func (a *Application) IssueIdentityToken(presented ClientSecretValue, now time.Time, lifetime time.Duration) (IdentityClaims, bool, error) {
 	if a.State != ApplicationActive {
-		return IdentityClaims{}, ErrClientSecretMismatch
+		return IdentityClaims{}, false, ErrClientSecretMismatch
 	}
 	if lifetime <= 0 {
-		return IdentityClaims{}, fmt.Errorf("%w: application token lifetime must be positive", ErrInvalidApplication)
+		return IdentityClaims{}, false, fmt.Errorf("%w: application token lifetime must be positive", ErrInvalidApplication)
 	}
 	digest := presented.Digest()
 	for _, secret := range a.Secrets {
-		if secret.Match(digest, now) {
+		if matched, recorded := secret.Match(digest, now); matched {
 			now = now.UTC()
 			return IdentityClaims{
 				Principal: PrincipalApplication,
 				Subject:   string(a.ID),
 				IssuedAt:  now,
 				ExpiresAt: now.Add(lifetime),
-			}, nil
+			}, recorded, nil
 		}
 	}
-	return IdentityClaims{}, ErrClientSecretMismatch
+	return IdentityClaims{}, false, ErrClientSecretMismatch
 }
 
 // ClientSecretValue is the plaintext of a Client Secret: shown to its
@@ -283,13 +284,21 @@ func (s *ClientSecret) valid(now time.Time) bool {
 	}
 }
 
+// LastUseResolution is how precisely a Client Secret's last use is kept: a
+// use within it of the recorded one changes nothing, so an Application that
+// fetches tokens in parallel does not write, or contend, on every grant.
+const LastUseResolution = time.Minute
+
 // Match accepts a presented secret equal to the retained digest while the
 // secret is current, or overlapping before its overlap ends, and records its
-// use (Match).
-func (s *ClientSecret) Match(presented ClientSecretDigest, now time.Time) bool {
+// use to LastUseResolution (Match). recorded tells whether LastUsedAt moved.
+func (s *ClientSecret) Match(presented ClientSecretDigest, now time.Time) (matched, recorded bool) {
 	if !s.valid(now) || subtle.ConstantTimeCompare([]byte(presented), []byte(s.SecretDigest)) != 1 {
-		return false
+		return false, false
+	}
+	if !s.LastUsedAt.IsZero() && now.Sub(s.LastUsedAt) < LastUseResolution {
+		return true, false
 	}
 	s.LastUsedAt = now.UTC()
-	return true
+	return true, true
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { Alert, Button, Checkbox, FieldError, Input, Label, Modal, TextField } from "@heroui/react";
 import { CopyButton } from "../../components/copy-button";
 import { applicationNameProblem, maxApplicationName, useRegisterApplication, type RegisteredApplication } from "../../lib/application-service";
@@ -56,7 +57,7 @@ export function RegisterApplicationDialog({ onClose, onRegistered }: { onClose: 
           <Input placeholder="Support Desk" />
           <FieldError>{problem}</FieldError>
         </TextField>
-        {register.isError && <Alert status="danger"><Alert.Indicator /><Alert.Content><Alert.Title>The application couldn’t be registered</Alert.Title><Alert.Description>Try again in a moment.</Alert.Description></Alert.Content></Alert>}
+        {register.isError && <Alert status="danger"><Alert.Indicator /><Alert.Content><Alert.Title>The application couldn’t be registered</Alert.Title><Alert.Description>{ConnectError.from(register.error).code === Code.InvalidArgument ? "Workbench didn’t accept this name. Use 1 to 60 characters." : "Try again in a moment."}</Alert.Description></Alert.Content></Alert>}
       </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onPress={onClose} isDisabled={register.isPending}>Cancel</Button>

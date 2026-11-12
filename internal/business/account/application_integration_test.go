@@ -191,3 +191,19 @@ func TestClientCredentialsGrantRefusesWrongCredentialsAsAnInvalidClient(t *testi
 	require.NoError(t, err)
 	require.Empty(t, read.GetApplications())
 }
+
+func TestParallelGrantsOfOneApplicationAllSucceed(t *testing.T) {
+	h := newHarness(t)
+	registered, err := h.applicationService().RegisterApplication(as("user", newPerson()), &accountpublicv1.RegisterApplicationRequest{Name: "Support Desk"})
+	require.NoError(t, err)
+	statuses := make(chan int, 8)
+	for range 8 {
+		go func() {
+			status, _ := h.grant(registered.GetApplication().GetId(), registered.GetClientSecret())
+			statuses <- status
+		}()
+	}
+	for range 8 {
+		require.Equal(t, http.StatusOK, <-statuses)
+	}
+}

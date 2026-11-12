@@ -90,8 +90,9 @@ func (a *Application) IssueApplicationIdentityToken(ctx context.Context, cmd Iss
 		return IssuedToken{}, err
 	}
 	var issued IssuedToken
-	// A concurrent grant for the same Application commits first; the repeat
-	// reloads it and records this use on top.
+	// A concurrent grant or change of the same Application commits first; the
+	// repeat reloads it, and a use another grant already recorded within
+	// LastUseResolution needs no second write.
 	err = retryOnceOnConflict(func() error {
 		var err error
 		issued, err = a.issueApplicationTokenOnce(ctx, id, secret)
@@ -108,12 +109,14 @@ func (a *Application) issueApplicationTokenOnce(ctx context.Context, id domain.A
 	if err != nil {
 		return IssuedToken{}, err
 	}
-	claims, err := found.IssueIdentityToken(secret, a.now(), a.applicationTokenLifetime)
+	claims, recorded, err := found.IssueIdentityToken(secret, a.now(), a.applicationTokenLifetime)
 	if err != nil {
 		return IssuedToken{}, err
 	}
-	if err := a.applications.Save(ctx, found); err != nil {
-		return IssuedToken{}, err
+	if recorded {
+		if err := a.applications.Save(ctx, found); err != nil {
+			return IssuedToken{}, err
+		}
 	}
 	token, err := a.tokens.Sign(ctx, claims)
 	if err != nil {
