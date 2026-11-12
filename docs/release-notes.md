@@ -11,22 +11,10 @@ Before deploying, in this order:
 
 1. Confirm the public catalog lists the `talgent` release that declares the Startup Agent
    `work-executor` (renamed from `personal-work-executor`).
-2. Run each script in `deploy/middleware/migrations/` below against its database. Each can run
-   more than once; "Before" scripts can run while the previous release serves, "With" scripts
-   rename what the previous release reads, so run them as part of the deployment.
-
-   | Script | Database | When |
-   |---|---|---|
-   | `20261113-agent-account-application.sql` | `ACCOUNT_MYSQL_DATABASE` | Before |
-   | `20261114-agent-account-work-labels.sql` | `ACCOUNT_MYSQL_DATABASE` | Before |
-   | `20261113-core-startup-agent-rename.sql` | `AGENT_MYSQL_DATABASE`, `WORKBENCH_MYSQL_DATABASE` | Before (after step 1) |
-   | `20261115-agent-definition-application-removed.sql` | `AGENT_MYSQL_DATABASE` | Before |
-   | `20261115-agent-work-owning-application.sql` | `AGENT_MYSQL_DATABASE` | Before |
-   | `20261116-agent-work-selection-owner.sql` | `AGENT_MYSQL_DATABASE` | With |
-   | `20261115-storage-share-link-application-creator.sql` | `WORKBENCH_MYSQL_DATABASE` | Before |
-   | `20261115-marketplace-installation-owner.sql` | `WORKBENCH_MYSQL_DATABASE` | With |
-   | `20261116-marketplace-authorization-owner.sql` | `WORKBENCH_MYSQL_DATABASE` | With |
-
+2. Bring each MySQL database to the schema in `deploy/middleware/init/`: this release adds the
+   Application tables, `agent_work_label` and owner columns, and renames installation and
+   authorization owners to `owner_id`. The deploy creates missing tables; existing tables need
+   the new columns before controlplane starts.
 3. Run `scripts/deploy/bootstrap-kafka.sh`: it creates `account.integration.v1.ApplicationRemovedV1`.
 4. Deploy with the ClickHouse schema step (leave `TALGENT_SKIP_CLICKHOUSE_MIGRATION` unset): it
    adds `trace_work_measurements.application_id`.
@@ -72,7 +60,7 @@ A web app built on `@talgent/workbench-ui` imports the renamed pages and hooks:
 
 ## The release that installs each Plugin release once per Harness state
 
-Before deploying it, run `deploy/middleware/migrations/20261112-plugin-catalog.sql` against the
+Before deploying it, run [`20261112-plugin-catalog.sql`](https://github.com/talgent-work/workbench/blob/v0.3.13/deploy/middleware/migrations/20261112-plugin-catalog.sql) against the
 database named by `AGENT_MYSQL_DATABASE`, with no Work starting. When the Marketplace catalog's
 configured name (`marketplace.name`) is not `talgent`, set it first in the same session:
 `SET @catalog_name = '<name>';`. The script names each Work's retained releases after that
@@ -100,7 +88,7 @@ previous release added is no longer read; drop it once this release runs:
 ## The release that titles Personal Works by their conversation
 
 Before deploying it, run
-[`deploy/middleware/migrations/20261112-display-title-chosen.sql`](https://github.com/talgent-work/workbench/blob/v0.3.7/deploy/middleware/migrations/20261112-display-title-chosen.sql)
+[`20261112-display-title-chosen.sql`](https://github.com/talgent-work/workbench/blob/v0.3.7/deploy/middleware/migrations/20261112-display-title-chosen.sql)
 against the Workbench's MySQL database; it adds `agent_session.display_title_chosen` and can run
 while the previous release serves.
 
@@ -177,8 +165,8 @@ This release changes stored data and every service image, so upgrade in this ord
    exits 1 even when `talgent` was published; when those are the only failures it prints, check
    the catalog lists `talgent` and go on.
 2. **Apply the migrations, with no Work starting.** Apply
-   `deploy/middleware/migrations/20261111-core-plugin-rename.sql`,
-   `20261111-execution-start-causes.sql` and `20261111-retry-ceilings.sql` as described below.
+   [`20261111-core-plugin-rename.sql`](https://github.com/talgent-work/workbench/blob/v0.3.13/deploy/middleware/migrations/20261111-core-plugin-rename.sql),
+   [`20261111-execution-start-causes.sql`](https://github.com/talgent-work/workbench/blob/v0.3.13/deploy/middleware/migrations/20261111-execution-start-causes.sql) and [`20261111-retry-ceilings.sql`](https://github.com/talgent-work/workbench/blob/v0.3.13/deploy/middleware/migrations/20261111-retry-ceilings.sql) as described below.
    Apply them when no one is starting a Work: a start in flight across the migration may be rejected,
    and its Work then needs a Restart.
 3. **Upgrade every service image together.** Deploy the release's images of `controlplane`,
@@ -201,7 +189,7 @@ Every Work loads both by default: `agent-built-in-plugins.platform` is `[talgent
 `agent-built-in-plugins.platform` names `talgent` in place of `talgent-runtime`.
 
 Stored uses of the old slug are rewritten by
-`deploy/middleware/migrations/20261111-core-plugin-rename.sql`: AgentDefinitions' required
+[`20261111-core-plugin-rename.sql`](https://github.com/talgent-work/workbench/blob/v0.3.13/deploy/middleware/migrations/20261111-core-plugin-rename.sql): AgentDefinitions' required
 Plugins and Startup Agents, Works' retained Plugins and Startup Agents, and personal
 installations; a person who already installed `talgent` keeps that installation and loses the
 `talgent-runtime` one. Existing Works do not gain `talgent-api`. Executions queued or starting
@@ -254,8 +242,8 @@ A start into a fresh sandbox no longer spends a retry on execd starting late: be
 command it waits up to a minute for execd to answer. An execd that does not answer by then fails
 the attempt as `execd: not ready`.
 
-To upgrade, apply `deploy/middleware/migrations/20261111-execution-start-causes.sql` and
-`deploy/middleware/migrations/20261111-retry-ceilings.sql` to the database named by
+To upgrade, apply [`20261111-execution-start-causes.sql`](https://github.com/talgent-work/workbench/blob/v0.3.13/deploy/middleware/migrations/20261111-execution-start-causes.sql) and
+[`20261111-retry-ceilings.sql`](https://github.com/talgent-work/workbench/blob/v0.3.13/deploy/middleware/migrations/20261111-retry-ceilings.sql) to the database named by
 `AGENT_MYSQL_DATABASE` before you deploy, beside the rename script
 ([upgrade order](#upgrade-in-this-order)). They add `agent_execution.rejection_reason`,
 `startup_setback`, `inputs_sync_failures` and `inputs_sync_abandoned`, and
