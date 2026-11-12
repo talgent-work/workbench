@@ -152,11 +152,7 @@ func TestPersonalWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.Equal(t, workFiles(first, "inputs"), stored.LocatedLayout.Inputs.Directory, "a Personal Work's inputs are its own")
 	require.Equal(t, workFiles(first, "artifacts"), stored.LocatedLayout.PublicationTarget.Directory, "and so are its Artifacts")
 
-	require.False(t, stored.DisplayTitleChosen)
 	require.NoError(t, works.ChangeTitle(ctx, owner, first, "Plan"))
-	renamed, err := app.Works.Get(ctx, first)
-	require.NoError(t, err)
-	require.True(t, renamed.DisplayTitleChosen, "the owner's choice is kept")
 	require.ErrorIs(t, works.ChangeTitle(ctx, stranger, first, "Mine"), domain.ErrControlRequesterNotOwner)
 	listed, err := works.List(ctx, owner, 0)
 	require.NoError(t, err)

@@ -42,7 +42,7 @@ func (c *Client) ReportExecution(ctx context.Context, observation command.Execut
 		InputId: observation.InputID, InputOutcome: outcomes[observation.InputOutcome],
 		RequiredInteractionIds: observation.RequiredInteractionIDs,
 		ProcessId:              observation.ProcessID, ExitCode: int32(observation.ExitCode), ExitReason: observation.ExitReason,
-		PermissionMode: observation.PermissionMode, Title: observation.Title,
+		PermissionMode: observation.PermissionMode,
 	}
 	if !observation.DetachedSince.IsZero() {
 		request.DetachedSince = timestamppb.New(observation.DetachedSince)
@@ -105,7 +105,6 @@ var kinds = map[command.ExecutionObservationKind]agentprivatev1.FeedbackKind{
 	command.ExecutionTurnActivity:            agentprivatev1.FeedbackKind_FEEDBACK_KIND_TURN_ACTIVITY,
 	command.ExecutionSubAgentsUpdated:        agentprivatev1.FeedbackKind_FEEDBACK_KIND_SUBAGENTS_UPDATED,
 	command.ExecutionPermissionModeObserved:  agentprivatev1.FeedbackKind_FEEDBACK_KIND_PERMISSION_MODE_OBSERVED,
-	command.ExecutionTitleObserved:           agentprivatev1.FeedbackKind_FEEDBACK_KIND_TITLE_OBSERVED,
 	command.ExecutionAttachmentLost:          agentprivatev1.FeedbackKind_FEEDBACK_KIND_ATTACHMENT_LOST,
 	command.ExecutionAttachmentReturned:      agentprivatev1.FeedbackKind_FEEDBACK_KIND_ATTACHMENT_RETURNED,
 }

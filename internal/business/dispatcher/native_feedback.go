@@ -13,7 +13,7 @@ import (
 
 const (
 	// feedbackCapacity bounds a Work's undelivered observations. Beyond it an
-	// observation is dropped: a Progress, SubAgents, permission mode or title snapshot a later one
+	// observation is dropped: a Progress, SubAgents or permission mode snapshot a later one
 	// supersedes first, otherwise the oldest other than the exit fact and the
 	// latest snapshots, which nothing would replace. Observations are hints; Agent's recovery
 	// observation of the process restores readiness, turns, interactions and
@@ -68,7 +68,7 @@ func newFeedbackQueue(reporter command.ExecutionFeedbackReporter, logger *slog.L
 
 // snapshot reports an observation each later one of its kind replaces whole.
 func snapshot(kind command.ExecutionObservationKind) bool {
-	return kind == command.ExecutionWorkProgressUpdated || kind == command.ExecutionSubAgentsUpdated || kind == command.ExecutionPermissionModeObserved || kind == command.ExecutionTitleObserved
+	return kind == command.ExecutionWorkProgressUpdated || kind == command.ExecutionSubAgentsUpdated || kind == command.ExecutionPermissionModeObserved
 }
 
 // latest reports whether no later queued observation has the kind of item i.

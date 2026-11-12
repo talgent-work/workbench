@@ -51,34 +51,9 @@ func TestOwnerRenamesTheirPersonalWork(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, "Renamed", work.DisplayTitle)
-	require.True(t, work.DisplayTitleChosen)
 	changed, err = work.ChangeDisplayTitle(work.definition, "owner", "Renamed")
 	require.NoError(t, err)
 	require.False(t, changed)
-}
-
-// A Personal Work takes the title its Harness gives the conversation, each
-// new one included, until its owner chooses one; no other Work has one.
-func TestAPersonalWorkTakesItsHarnesssTitleUntilItsOwnerChoosesOne(t *testing.T) {
-	work := personalWork(t)
-	require.True(t, work.RecordHarnessTitle(" Go context 包 "))
-	require.Equal(t, "Go context 包", work.DisplayTitle)
-	require.False(t, work.RecordHarnessTitle("Go context 包"), "the same title changes nothing")
-	for _, unusable := range []string{"", "  ", "two\nlines", strings.Repeat("x", 201)} {
-		require.False(t, work.RecordHarnessTitle(unusable), unusable)
-	}
-	require.True(t, work.RecordHarnessTitle("Go context cancellation"))
-	require.Equal(t, "Go context cancellation", work.DisplayTitle)
-
-	_, err := work.ChangeDisplayTitle(work.definition, "owner", "Go context cancellation")
-	require.NoError(t, err)
-	require.True(t, work.DisplayTitleChosen, "keeping the Harness's title is choosing it")
-	require.False(t, work.RecordHarnessTitle("Another title"))
-	require.Equal(t, "Go context cancellation", work.DisplayTitle)
-
-	other := humanWork(t)
-	require.False(t, other.RecordHarnessTitle("Go context 包"))
-	require.Empty(t, other.DisplayTitle)
 }
 
 func TestOnlyTheOwnerChangesAPersonalWorksFilesUntilItCloses(t *testing.T) {
