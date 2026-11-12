@@ -6,17 +6,21 @@ import (
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	agentpublicv2 "github.com/talgent-work/contracts/gen/go/agent/public/v2"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v2/agentpublicv2connect"
 )
 
 // PersonalWorkHandler serves the retiring agent.public.v1 PersonalWorkService
 // by translating each call to agent.public.v2 WorkService, which owns the
-// behavior. Remove it with the contract once no client calls it: a web app
-// built on an earlier workbench-ui release still does.
-type PersonalWorkHandler struct{ works *StandaloneWorkHandler }
+// behavior. Its callers are web apps built on a workbench-ui release before
+// WorkService and Works whose talgent-api Plugin release predates WorkService;
+// remove it with the contract and the entry route once both have moved.
+type PersonalWorkHandler struct {
+	works agentpublicv2connect.WorkServiceHandler
+}
 
 var _ agentpublicv1connect.PersonalWorkServiceHandler = (*PersonalWorkHandler)(nil)
 
-func NewPersonalWorkHandler(works *StandaloneWorkHandler) *PersonalWorkHandler {
+func NewPersonalWorkHandler(works agentpublicv2connect.WorkServiceHandler) *PersonalWorkHandler {
 	return &PersonalWorkHandler{works: works}
 }
 

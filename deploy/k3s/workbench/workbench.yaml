@@ -1437,8 +1437,8 @@ spec:
       backendRefs:
         - name: controlplane
           port: 8080
-    # Retiring: agent.public.v2.WorkService replaces it; it goes once no
-    # client calls it.
+    # Retiring: agent.public.v2.WorkService replaces it; it goes once no web app
+    # on an earlier workbench-ui and no Work on an earlier talgent-api calls it.
     - name: personal-work-api
       matches:
         - path:

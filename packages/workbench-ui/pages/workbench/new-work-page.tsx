@@ -5,7 +5,7 @@ import { WorkStartForm } from "../../components/work-start/work-start-form";
 import { standaloneWorkStartSource, useStartWork } from "../../lib/standalone-work-service";
 import type { WorkStartSource } from "../../lib/work-start-source";
 
-const source: WorkStartSource = { ...standaloneWorkStartSource, draft: { key: "personal", instruction: "" } };
+const source: WorkStartSource = { ...standaloneWorkStartSource, draft: { key: "standalone", instruction: "" } };
 
 /** New work: the start form with nothing above it but the question. A
  * Standalone Work's first input names it. */

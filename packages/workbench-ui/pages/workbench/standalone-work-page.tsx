@@ -37,10 +37,10 @@ export function StandaloneWorkPage() {
   const shared = useLibraryWork(workId, reader);
   // Only a Standalone Work has a title of its own and is shared from here; a
   // Work of a Project is the Project's to share.
-  const personal = own.data?.find(item => item.id === workId);
+  const ownWork = own.data?.find(item => item.id === workId);
   // A Work with a Project keeps its files in the Project's spaces, not here.
-  const standaloneWork = work ? Boolean(personal) : Boolean(shared.data?.standalone);
-  const title = (work ? personal?.title : shared.data?.title) || (reader ? "Shared work" : "Work");
+  const standaloneWork = work ? Boolean(ownWork) : Boolean(shared.data?.standalone);
+  const title = (work ? ownWork?.title : shared.data?.title) || (reader ? "Shared work" : "Work");
   const [live, setLive] = useState<{ workId: string; lifecycle: string; startup?: StartupProgress }>({ workId: "", lifecycle: "" });
   const onLifecycle = useCallback((lifecycle: string, _updatedAt?: Date, startup?: StartupProgress) => setLive({ workId, lifecycle, startup }), [workId]);
   const [liveSubAgents, setLiveSubAgents] = useState<{ workId: string; agents: SubAgent[] }>();
@@ -60,7 +60,7 @@ export function StandaloneWorkPage() {
     : refused === Code.NotFound ? <WorkSnapshotUnavailable notFound onRetry={refresh} />
     : snapshot.isError && !reader ? <WorkSnapshotUnavailable notFound={false} onRetry={refresh} />
     : null;
-  return <PageLayout workspaceTitle={title} trail={[{ label: "Works", onPress: () => navigate(paths.works) }]} topActions={work && personal && <>
+  return <PageLayout workspaceTitle={title} trail={[{ label: "Works", onPress: () => navigate(paths.works) }]} topActions={work && ownWork && <>
     <TitleButton workId={workId} title={title} />
     <ShareButton workId={workId} ownerId={userId} readerIds={work.shareReaderIds} />
   </>}>

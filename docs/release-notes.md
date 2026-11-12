@@ -14,6 +14,11 @@ serves the same operations as `StartWork`, `ListWorks`, `ChangeWorkTitle`,
 `standalone` where it reported `personal`. PersonalWorkService is deprecated and is removed in a
 later release.
 
+A web app built on `@talgent/workbench-ui` imports the renamed pages and hooks:
+`pages/workbench/standalone-works-page` (`StandaloneWorksPage`),
+`pages/workbench/standalone-work-page` (`StandaloneWorkPage`) and `lib/standalone-work-service`
+(`useStandaloneWorks`, `useStartWork`, `useChangeWorkTitle`, `useGrantWorkShare`).
+
 ## The release that installs each Plugin release once per Harness state
 
 Before deploying it, run `deploy/middleware/migrations/20261112-plugin-catalog.sql` against the
