@@ -189,9 +189,11 @@ func (m *machineRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		m.mu.Lock()
 		m.created = append(m.created, body)
-		id := "harness-handle"
-		if strings.Contains(body.Command, "node -e") {
-			id = "preparation-handle"
+		// Only the Harness launch reads the native input stream; preparation
+		// and the Harness's own hooks both run node.
+		id := "preparation-handle"
+		if strings.Contains(body.Command, "--input-format") {
+			id = "harness-handle"
 		}
 		launching := m.launching
 		m.mu.Unlock()
