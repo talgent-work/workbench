@@ -31,6 +31,9 @@ type CapabilityDifferences struct {
 	StartupAgent *string
 	Plugins      []PluginChoice
 	Connectors   []ConnectorChoice
+	// ApplicationEndpoints are the Application's own MCP endpoints for this
+	// Work only; only an Application's definition admits them.
+	ApplicationEndpoints []ApplicationMCPEndpoint
 	// RequiredPlugins are the caller's own, such as the plugin of the role it
 	// names; a per-Work exclusion does not drop them.
 	RequiredPlugins []string
@@ -342,6 +345,9 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 	}
 	if err := request.Capabilities.Validate(); err != nil {
 		return nil, false, err
+	}
+	if len(request.Capabilities.ApplicationEndpoints) > 0 && a.OwningApplication() == "" {
+		return nil, false, fmt.Errorf("%w: only an Application's Work takes Application MCP endpoints", ErrInvalidCapabilities)
 	}
 	for _, slug := range a.Capabilities.RequiredPlugins {
 		if !slices.ContainsFunc(request.Capabilities.Plugins, func(p SelectedPlugin) bool { return p.Release.Slug == slug }) {

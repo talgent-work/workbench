@@ -219,3 +219,18 @@ func TestManagedLaunchDeclaresTheTalgentConnectorThroughTheLocalProxy(t *testing
 	require.NotContains(t, launch.Command, "github-mcp-server")
 	require.NotContains(t, launch.Command, "connector.talgent.svc", "the in-cluster Gateway address is not reachable from the machine")
 }
+
+// An Application's own endpoint is declared as the Application gave it,
+// headers unchanged, beside the Work's Connectors, on a Cloud and on a
+// Managed Computer alike.
+func TestNativeLaunchDeclaresApplicationEndpointsAsGiven(t *testing.T) {
+	for name, layout := range map[string]launchLayout{"cloud": sandboxLayout, "managed": machineLayout} {
+		t.Run(name, func(t *testing.T) {
+			input := request()
+			input.Capabilities.ApplicationEndpoints = []domain.ApplicationMCPEndpoint{{Name: "tickets", URL: "https://desk.example/mcp", Headers: map[string]string{"Authorization": "Bearer desk-key"}}}
+			launch, err := (NativeLaunchConfig{Binary: "claude"}).prepare(layout, input, owner(input), "")
+			require.NoError(t, err)
+			require.Contains(t, launch.Command, `"tickets":{"headers":{"Authorization":"Bearer desk-key"},"type":"http","url":"https://desk.example/mcp"}`)
+		})
+	}
+}

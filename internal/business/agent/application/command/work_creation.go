@@ -39,7 +39,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	capabilities, err := resolveStartupCapabilities(ctx, h.catalog, catalogUser, request.StartingUserID, domain.StartupCapabilityInput{
 		BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: h.builtIns.ComposeRequiredPlugins(request.ProjectID, agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.Capabilities.StartupAgent,
 		Prompt: request.CapabilityDifferences.Prompt, StartupAgent: request.CapabilityDifferences.StartupAgent, Plugins: request.CapabilityDifferences.Plugins,
-		ConnectorChoices: request.CapabilityDifferences.Connectors,
+		ConnectorChoices: request.CapabilityDifferences.Connectors, ApplicationEndpoints: request.CapabilityDifferences.ApplicationEndpoints,
 	})
 	if err != nil {
 		return "", err
