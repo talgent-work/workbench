@@ -1,5 +1,6 @@
 // Package account composes the Account context: GitHub sign-in, Login
-// Sessions, Agent Accounts, Identity Token keys and the User Directory.
+// Sessions, Agent Accounts, Applications, Identity Token keys and the User
+// Directory.
 package account
 
 import (
@@ -49,10 +50,13 @@ type Config struct {
 	AccessTokenLifetime string   `json:"access-token-lifetime" yaml:"access-token-lifetime" toml:"access-token-lifetime"`
 	// AgentTokenLifetime bounds an agent's Identity Token, which is never
 	// refreshed and outlives any run.
-	AgentTokenLifetime      string `json:"agent-token-lifetime" yaml:"agent-token-lifetime" toml:"agent-token-lifetime"`
-	SessionSlidingLifetime  string `json:"session-sliding-lifetime" yaml:"session-sliding-lifetime" toml:"session-sliding-lifetime"`
-	SessionAbsoluteLifetime string `json:"session-absolute-lifetime" yaml:"session-absolute-lifetime" toml:"session-absolute-lifetime"`
-	KeyRotationInterval     string `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
+	AgentTokenLifetime string `json:"agent-token-lifetime" yaml:"agent-token-lifetime" toml:"agent-token-lifetime"`
+	// ApplicationTokenLifetime bounds an Application's Identity Token, which
+	// is short and never refreshed.
+	ApplicationTokenLifetime string `json:"application-token-lifetime" yaml:"application-token-lifetime" toml:"application-token-lifetime"`
+	SessionSlidingLifetime   string `json:"session-sliding-lifetime" yaml:"session-sliding-lifetime" toml:"session-sliding-lifetime"`
+	SessionAbsoluteLifetime  string `json:"session-absolute-lifetime" yaml:"session-absolute-lifetime" toml:"session-absolute-lifetime"`
+	KeyRotationInterval      string `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
 	// KeyOverlap is how long a new key is published before it signs.
 	KeyOverlap string `json:"key-overlap" yaml:"key-overlap" toml:"key-overlap"`
 	// MasterKeyPath is a file holding 32 base64-encoded bytes that seal
@@ -73,6 +77,7 @@ type GitHubConfig struct {
 type policy struct {
 	lifetimes        domain.SessionLifetimes
 	agentToken       time.Duration
+	applicationToken time.Duration
 	rotationInterval time.Duration
 	overlap          time.Duration
 }
@@ -86,6 +91,7 @@ func (c Config) policy() (policy, error) {
 	}{
 		{"access-token-lifetime", c.AccessTokenLifetime, &p.lifetimes.Access},
 		{"agent-token-lifetime", c.AgentTokenLifetime, &p.agentToken},
+		{"application-token-lifetime", c.ApplicationTokenLifetime, &p.applicationToken},
 		{"session-sliding-lifetime", c.SessionSlidingLifetime, &p.lifetimes.Sliding},
 		{"session-absolute-lifetime", c.SessionAbsoluteLifetime, &p.lifetimes.Absolute},
 		{"key-rotation-interval", c.KeyRotationInterval, &p.rotationInterval},
@@ -102,6 +108,9 @@ func (c Config) policy() (policy, error) {
 	}
 	if p.agentToken < p.lifetimes.Access {
 		return policy{}, errors.New("account config: agent-token-lifetime must not be shorter than access-token-lifetime")
+	}
+	if p.applicationToken > p.agentToken {
+		return policy{}, errors.New("account config: application-token-lifetime must not be longer than agent-token-lifetime")
 	}
 	return p, nil
 }
@@ -161,7 +170,7 @@ func newRuntime(cfg Config) (runtime, error) {
 			MasterKey:             deriveKey(master, "signing-key-seal"),
 			Overlap:               p.overlap,
 			RotationInterval:      p.rotationInterval,
-			LongestTokenLifetime:  max(p.lifetimes.Access, p.agentToken),
+			LongestTokenLifetime:  max(p.lifetimes.Access, p.agentToken, p.applicationToken),
 			VerificationRetention: p.lifetimes.Absolute,
 		},
 		HTTP: accounthttp.Config{
@@ -192,6 +201,10 @@ func newApplication(engine *xorm.Engine, p policy, keys *infrastructure.SigningK
 		Lifetimes:          p.lifetimes,
 		AgentAccounts:      infrastructure.NewAgentAccountRepository(engine),
 		AgentTokenLifetime: p.agentToken,
+
+		Applications:             infrastructure.NewApplicationRepository(engine),
+		ApplicationQueries:       infrastructure.NewApplicationQueries(engine),
+		ApplicationTokenLifetime: p.applicationToken,
 	})
 }
 
@@ -219,9 +232,11 @@ func register(r registration) {
 	accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
 	accountprivatev1connect.RegisterAgentAccountServiceHandler(private, accountconnect.NewAgentAccounts(r.App))
 	connectserver.Mount(r.Mux, private)
-	// The browser reads who is signed in under the identity the entry verified.
+	// The browser reads who is signed in, and a person registers and reads
+	// their Applications, under the identity the entry verified.
 	public := connectserver.New(r.Logger, authn.NewPrincipalInterceptor())
 	accountpublicv1connect.RegisterSessionServiceHandler(public, accountconnect.Session{})
+	accountpublicv1connect.RegisterApplicationServiceHandler(public, accountconnect.NewApplications(r.App))
 	connectserver.Mount(r.Mux, public)
 }
 

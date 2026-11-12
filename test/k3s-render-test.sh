@@ -174,7 +174,7 @@ for route in (d for d in docs if d["kind"] == "HTTPRoute"):
                   f"route {route['metadata']['name']} rule {rule['name']} removes no header of its own")
 auth = find(docs, "SecurityPolicy", "web-auth")
 providers = auth["spec"]["jwt"]["providers"]
-check(len(providers) == 1, "web-auth validates both Principals with one provider")
+check(len(providers) == 1, "web-auth validates every Principal with one provider")
 claims = {c["claim"]: c["header"] for c in providers[0]["claimToHeaders"]}
 want_claims = {"principal": "x-talgent-principal", "iss": "x-talgent-issuer", "sub": "x-talgent-subject",
                "preferred_username": "x-talgent-username", "email": "x-talgent-email", "name": "x-talgent-display-name",
@@ -183,7 +183,7 @@ want_claims = {"principal": "x-talgent-principal", "iss": "x-talgent-issuer", "s
                "work_subject_id": "x-talgent-work-subject-id", "for": "x-talgent-represented-user-id"}
 check(claims == want_claims, f"web-auth writes every claim as its header, got {claims}")
 targets = {t["sectionName"] for t in auth["spec"]["targetRefs"]}
-for section in ("agent-identity-api", "storage-artifact-api", "personal-work-api", "work-file-api"):
+for section in ("agent-identity-api", "storage-artifact-api", "personal-work-api", "work-file-api", "application-api"):
     check(section in rules(docs, "web-api") and section in targets, f"web-auth validates the web-api rule {section}")
 check(find(docs, "BackendTrafficPolicy", "computer-api-rate-limit") is None and "computer-api" not in rules(docs, "computer"),
       "Managed Works reach the platform through the entry, not a computer-api rule")
@@ -215,18 +215,18 @@ for rendered, how in ((docs, "by default"), (switched, "with every switch set"))
 policies = [d["metadata"]["name"] for d in docs if d["kind"] == "NetworkPolicy" and where(d) == "talgent-sandbox"]
 check(policies == ["sandbox-boundary"], f"one sandbox policy bounds every sandbox, got {policies}")
 
-# AGENT_CORE_API_ACCESS: enabled, the entry admits both Principals on the
+# AGENT_CORE_API_ACCESS: enabled, the entry admits every Principal on the
 # core's routes, leaving admission to each procedure's declaration, and
 # Agents call the core at the entry's public origin; disabled, it admits
-# people only and Agents get no address for the core.
-check("authorization" not in auth["spec"], "by default web-auth admits both Principals")
+# people and Applications only and Agents get no address for the core.
+check("authorization" not in auth["spec"], "by default web-auth admits every Principal")
 check(container_env(docs, "controlplane").get("PLATFORM_API_ADDRESS", {}).get("valueFrom")
       == {"configMapKeyRef": {"name": "workbench-environment", "key": "WORKBENCH_ORIGIN"}},
       "by default Agents call the core at the entry's public origin")
-people_only = find(switched, "SecurityPolicy", "web-auth")["spec"].get("authorization")
-check(people_only == {"defaultAction": "Deny", "rules": [{"name": "people-only", "action": "Allow",
-      "principal": {"jwt": {"provider": "account", "claims": [{"name": "principal", "values": ["user"]}]}}}]},
-      f"AGENT_CORE_API_ACCESS=disabled admits only user tokens on the core's routes, got {people_only}")
+without_agents = find(switched, "SecurityPolicy", "web-auth")["spec"].get("authorization")
+check(without_agents == {"defaultAction": "Deny", "rules": [{"name": "people-and-applications", "action": "Allow",
+      "principal": {"jwt": {"provider": "account", "claims": [{"name": "principal", "values": ["user", "application"]}]}}}]},
+      f"AGENT_CORE_API_ACCESS=disabled admits only user and application tokens on the core's routes, got {without_agents}")
 check(container_env(switched, "controlplane").get("PLATFORM_API_ADDRESS") == {"name": "PLATFORM_API_ADDRESS", "value": ""},
       f"AGENT_CORE_API_ACCESS=disabled gives Agents no address for the core, got {container_env(switched, 'controlplane').get('PLATFORM_API_ADDRESS')}")
 

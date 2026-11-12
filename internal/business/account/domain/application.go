@@ -1,0 +1,295 @@
+package domain
+
+import (
+	"crypto/subtle"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/google/uuid"
+)
+
+// ApplicationID is an Application's identity: a canonical lowercase UUIDv7,
+// also its OAuth client id and the subject of its Identity Tokens.
+type ApplicationID string
+
+func ParseApplicationID(raw string) (ApplicationID, error) {
+	id := strings.TrimSpace(raw)
+	parsed, err := uuid.Parse(id)
+	if err != nil || parsed.String() != id {
+		return "", ErrApplicationNotFound
+	}
+	return ApplicationID(id), nil
+}
+
+// MaxApplicationName bounds an Application's Name in characters.
+const MaxApplicationName = 60
+
+func normalizeApplicationName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" || utf8.RuneCountInString(name) > MaxApplicationName {
+		return "", fmt.Errorf("%w: a name has 1 to %d characters", ErrInvalidApplication, MaxApplicationName)
+	}
+	return name, nil
+}
+
+type ApplicationState int
+
+const (
+	// ApplicationActive obtains Identity Tokens with a valid Client Secret.
+	ApplicationActive ApplicationState = iota + 1
+	// ApplicationRemoved obtains nothing; terminal.
+	ApplicationRemoved
+)
+
+// Application is one third-party program that calls the platform as itself.
+// Its Client Secrets are owned Entities: each is valid, in its rotation
+// overlap or ended, and a removed Application holds no valid one.
+type Application struct {
+	ID ApplicationID
+	// ApplicationOwner is the person who registered it; it never
+	// changes (Fixed Application Owner).
+	ApplicationOwner AccountID
+	Name             string
+	State            ApplicationState
+	RegisteredAt     time.Time
+	Secrets          []*ClientSecret
+	// Version is zero until the Application is first saved.
+	Version int
+}
+
+// RegisterApplication begins an Application owned by the registering person
+// and issues its first Client Secret, which only this call returns (Self-
+// service registration, First secret at registration, Secret shown once).
+func RegisterApplication(owner AccountID, name string, now time.Time) (*Application, ClientSecretValue, error) {
+	if _, err := ParseAccountID(string(owner)); err != nil {
+		return nil, "", fmt.Errorf("%w: the owner must be an account", ErrInvalidApplication)
+	}
+	name, err := normalizeApplicationName(name)
+	if err != nil {
+		return nil, "", err
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, "", err
+	}
+	secret, value, err := IssueClientSecret(now)
+	if err != nil {
+		return nil, "", err
+	}
+	return &Application{
+		ID:               ApplicationID(id.String()),
+		ApplicationOwner: owner,
+		Name:             name,
+		State:            ApplicationActive,
+		RegisteredAt:     now.UTC(),
+		Secrets:          []*ClientSecret{secret},
+	}, value, nil
+}
+
+// Validate checks a reconstituted Application.
+func (a *Application) Validate() error {
+	if a == nil {
+		return ErrInvalidApplication
+	}
+	if _, err := ParseApplicationID(string(a.ID)); err != nil {
+		return fmt.Errorf("%w: the id must be a canonical uuid", ErrInvalidApplication)
+	}
+	if _, err := ParseAccountID(string(a.ApplicationOwner)); err != nil {
+		return fmt.Errorf("%w: the owner must be an account", ErrInvalidApplication)
+	}
+	if _, err := normalizeApplicationName(a.Name); err != nil {
+		return err
+	}
+	if a.State != ApplicationActive && a.State != ApplicationRemoved {
+		return fmt.Errorf("%w: unknown state %d", ErrInvalidApplication, a.State)
+	}
+	current, overlapping := 0, 0
+	for _, secret := range a.Secrets {
+		if err := secret.Validate(); err != nil {
+			return err
+		}
+		switch secret.State {
+		case ClientSecretCurrent:
+			current++
+		case ClientSecretOverlapping:
+			overlapping++
+		}
+	}
+	if current > 1 || overlapping > 1 {
+		return fmt.Errorf("%w: at most one current and one overlapping secret", ErrInvalidApplication)
+	}
+	if a.State == ApplicationRemoved && current+overlapping > 0 {
+		return fmt.Errorf("%w: a removed application holds no valid secret", ErrInvalidApplication)
+	}
+	return nil
+}
+
+// OwnedBy tells whether person is the Application Owner, the only person who
+// reads and manages it (Owner manages).
+func (a *Application) OwnedBy(person AccountID) bool {
+	return person != "" && a.ApplicationOwner == person
+}
+
+// ValidSecrets are the secrets that still match at now: the current one first,
+// then one still in its overlap.
+func (a *Application) ValidSecrets(now time.Time) []*ClientSecret {
+	valid := make([]*ClientSecret, 0, len(a.Secrets))
+	for _, secret := range a.Secrets {
+		if secret.valid(now) {
+			valid = append(valid, secret)
+		}
+	}
+	slices.SortStableFunc(valid, func(x, y *ClientSecret) int { return int(x.State) - int(y.State) })
+	return valid
+}
+
+// IssueIdentityToken states the Application's claims for lifetime, for a
+// presented secret one of its Client Secrets accepts, and records that
+// secret's use (Client credentials, An Application's tokens are short). It
+// issues nothing once removed (Removal is final), and the token is never
+// refreshed (No Application refresh).
+func (a *Application) IssueIdentityToken(presented ClientSecretValue, now time.Time, lifetime time.Duration) (IdentityClaims, error) {
+	if a.State != ApplicationActive {
+		return IdentityClaims{}, ErrClientSecretMismatch
+	}
+	if lifetime <= 0 {
+		return IdentityClaims{}, fmt.Errorf("%w: application token lifetime must be positive", ErrInvalidApplication)
+	}
+	digest := presented.Digest()
+	for _, secret := range a.Secrets {
+		if secret.Match(digest, now) {
+			now = now.UTC()
+			return IdentityClaims{
+				Principal: PrincipalApplication,
+				Subject:   string(a.ID),
+				IssuedAt:  now,
+				ExpiresAt: now.Add(lifetime),
+			}, nil
+		}
+	}
+	return IdentityClaims{}, ErrClientSecretMismatch
+}
+
+// ClientSecretValue is the plaintext of a Client Secret: shown to its
+// Application Owner once and never retained; Account keeps its digest.
+type ClientSecretValue string
+
+const (
+	clientSecretPrefix = "wbs_"
+	clientSecretHint   = 4
+)
+
+// ParseClientSecretValue accepts only the issued form, so arbitrary input
+// never reaches a digest comparison.
+func ParseClientSecretValue(raw string) (ClientSecretValue, error) {
+	raw = strings.TrimSpace(raw)
+	body, ok := strings.CutPrefix(raw, clientSecretPrefix)
+	if !ok || !isOpaqueSecret(body) {
+		return "", ErrClientSecretMismatch
+	}
+	return ClientSecretValue(raw), nil
+}
+
+// Digest is the one-way form a Client Secret retains.
+func (v ClientSecretValue) Digest() ClientSecretDigest {
+	return ClientSecretDigest(opaqueDigest(string(v)))
+}
+
+// ClientSecretDigest is a SHA-256 hex digest of a Client Secret.
+type ClientSecretDigest string
+
+type ClientSecretState int
+
+const (
+	// ClientSecretCurrent is the Application's current secret.
+	ClientSecretCurrent ClientSecretState = iota + 1
+	// ClientSecretOverlapping is a superseded secret in its overlap.
+	ClientSecretOverlapping
+	// ClientSecretEnded matches nothing; terminal.
+	ClientSecretEnded
+)
+
+// ClientSecret is one credential its Application presents to obtain an
+// Identity Token.
+type ClientSecret struct {
+	// ID is unique within its Application.
+	ID           string
+	SecretDigest ClientSecretDigest
+	// Hint is the secret's last characters, so its owner can tell secrets
+	// apart; it reveals too little to match.
+	Hint     string
+	State    ClientSecretState
+	IssuedAt time.Time
+	// OverlapEndsAt is when an overlapping secret stops matching.
+	OverlapEndsAt time.Time
+	// LastUsedAt is when the secret last obtained a token; zero for never.
+	LastUsedAt time.Time
+}
+
+// IssueClientSecret begins a Client Secret from a fresh secret, keeping only
+// its digest and returning the secret once (Issue).
+func IssueClientSecret(now time.Time) (*ClientSecret, ClientSecretValue, error) {
+	random, err := newOpaqueSecret()
+	if err != nil {
+		return nil, "", err
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, "", err
+	}
+	value := ClientSecretValue(clientSecretPrefix + random)
+	return &ClientSecret{
+		ID:           id.String(),
+		SecretDigest: value.Digest(),
+		Hint:         string(value[len(value)-clientSecretHint:]),
+		State:        ClientSecretCurrent,
+		IssuedAt:     now.UTC(),
+	}, value, nil
+}
+
+func (s *ClientSecret) Validate() error {
+	if s == nil {
+		return fmt.Errorf("%w: missing client secret", ErrInvalidApplication)
+	}
+	if _, err := uuid.Parse(s.ID); err != nil {
+		return fmt.Errorf("%w: a client secret id must be a uuid", ErrInvalidApplication)
+	}
+	if !validOpaqueDigest(string(s.SecretDigest)) {
+		return fmt.Errorf("%w: client secret digest is malformed", ErrInvalidApplication)
+	}
+	switch s.State {
+	case ClientSecretCurrent, ClientSecretEnded:
+	case ClientSecretOverlapping:
+		if s.OverlapEndsAt.IsZero() {
+			return fmt.Errorf("%w: an overlapping secret needs its overlap end", ErrInvalidApplication)
+		}
+	default:
+		return fmt.Errorf("%w: unknown client secret state %d", ErrInvalidApplication, s.State)
+	}
+	return nil
+}
+
+func (s *ClientSecret) valid(now time.Time) bool {
+	switch s.State {
+	case ClientSecretCurrent:
+		return true
+	case ClientSecretOverlapping:
+		return now.Before(s.OverlapEndsAt)
+	default:
+		return false
+	}
+}
+
+// Match accepts a presented secret equal to the retained digest while the
+// secret is current, or overlapping before its overlap ends, and records its
+// use (Match).
+func (s *ClientSecret) Match(presented ClientSecretDigest, now time.Time) bool {
+	if !s.valid(now) || subtle.ConstantTimeCompare([]byte(presented), []byte(s.SecretDigest)) != 1 {
+		return false
+	}
+	s.LastUsedAt = now.UTC()
+	return true
+}

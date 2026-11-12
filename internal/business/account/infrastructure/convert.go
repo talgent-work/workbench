@@ -96,3 +96,54 @@ func loginSessionFromDO(row *loginSessionDO) (*domain.LoginSession, error) {
 	}
 	return session, nil
 }
+
+func applicationToDO(application *domain.Application) *applicationDO {
+	return &applicationDO{
+		ID:           string(application.ID),
+		OwnerID:      string(application.ApplicationOwner),
+		Name:         application.Name,
+		State:        int(application.State),
+		RegisteredAt: millis(application.RegisteredAt),
+		Version:      application.Version,
+	}
+}
+
+func clientSecretToDO(application domain.ApplicationID, secret *domain.ClientSecret) *clientSecretDO {
+	return &clientSecretDO{
+		ID:            secret.ID,
+		ApplicationID: string(application),
+		SecretDigest:  string(secret.SecretDigest),
+		Hint:          secret.Hint,
+		State:         int(secret.State),
+		IssuedAt:      millis(secret.IssuedAt),
+		OverlapEndsAt: millis(secret.OverlapEndsAt),
+		LastUsedAt:    millis(secret.LastUsedAt),
+	}
+}
+
+func applicationFromDO(row *applicationDO, secretRows []clientSecretDO) (*domain.Application, error) {
+	application := &domain.Application{
+		ID:               domain.ApplicationID(row.ID),
+		ApplicationOwner: domain.AccountID(row.OwnerID),
+		Name:             row.Name,
+		State:            domain.ApplicationState(row.State),
+		RegisteredAt:     fromMillis(row.RegisteredAt),
+		Version:          row.Version,
+		Secrets:          make([]*domain.ClientSecret, 0, len(secretRows)),
+	}
+	for _, secret := range secretRows {
+		application.Secrets = append(application.Secrets, &domain.ClientSecret{
+			ID:            secret.ID,
+			SecretDigest:  domain.ClientSecretDigest(secret.SecretDigest),
+			Hint:          secret.Hint,
+			State:         domain.ClientSecretState(secret.State),
+			IssuedAt:      fromMillis(secret.IssuedAt),
+			OverlapEndsAt: fromMillis(secret.OverlapEndsAt),
+			LastUsedAt:    fromMillis(secret.LastUsedAt),
+		})
+	}
+	if err := application.Validate(); err != nil {
+		return nil, err
+	}
+	return application, nil
+}

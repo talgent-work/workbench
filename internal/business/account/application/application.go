@@ -8,8 +8,9 @@ import (
 )
 
 // Application is Account's use-case entry: GitHub sign-in, Login Session
-// refresh and sign-out, Agent Accounts and their Identity Tokens, signing
-// keys and the User Directory.
+// refresh and sign-out, Agent Accounts and their Identity Tokens,
+// Applications and the client credentials grant, signing keys and the User
+// Directory.
 type Application struct {
 	accounts  domain.AccountRepository
 	sessions  domain.LoginSessionRepository
@@ -21,6 +22,10 @@ type Application struct {
 
 	agentAccounts      domain.AgentAccountRepository
 	agentTokenLifetime time.Duration
+
+	applications             domain.ApplicationRepository
+	applicationQueries       query.ApplicationQueryRepository
+	applicationTokenLifetime time.Duration
 }
 
 // Dependencies groups what Account's use cases consume.
@@ -36,6 +41,12 @@ type Dependencies struct {
 	// AgentTokenLifetime bounds an agent's Identity Token, far longer than a
 	// run (An agent's token is long).
 	AgentTokenLifetime time.Duration
+
+	Applications       domain.ApplicationRepository
+	ApplicationQueries query.ApplicationQueryRepository
+	// ApplicationTokenLifetime bounds an Application's Identity Token, which
+	// is never refreshed (An Application's tokens are short).
+	ApplicationTokenLifetime time.Duration
 	// Now defaults to the wall clock.
 	Now func() time.Time
 }
@@ -56,5 +67,9 @@ func NewApplication(deps Dependencies) *Application {
 
 		agentAccounts:      deps.AgentAccounts,
 		agentTokenLifetime: deps.AgentTokenLifetime,
+
+		applications:             deps.Applications,
+		applicationQueries:       deps.ApplicationQueries,
+		applicationTokenLifetime: deps.ApplicationTokenLifetime,
 	}
 }

@@ -450,6 +450,7 @@ data:
       cookie-domain: ${ACCOUNT_COOKIE_DOMAIN}
       access-token-lifetime: 15m
       agent-token-lifetime: 168h
+      application-token-lifetime: 15m
       session-sliding-lifetime: 720h
       session-absolute-lifetime: 2160h
       key-rotation-interval: 720h
@@ -1399,6 +1400,25 @@ spec:
       backendRefs:
         - name: controlplane
           port: 8080
+    - name: application-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/account.public.v1.ApplicationService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /account.public.v1.ApplicationService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
     - name: agent-work-api
       matches:
         - path:
@@ -1651,6 +1671,10 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: web-api
+      sectionName: application-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
       sectionName: agent-work-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
@@ -1684,13 +1708,13 @@ spec:
       kind: HTTPRoute
       name: web-api
       sectionName: storage-artifact-api
-  # Account issues both Principals' Identity Tokens; the gateway validates
+  # Account issues every Principal's Identity Token; the gateway validates
   # them against Account's published keys and writes their claims as
   # x-talgent-* headers, a claim the token lacks writing none, after the
   # ClientTrafficPolicy identity-headers removed any a client sent. Each
   # service admits the Principals its procedures declare, and every context
   # authorizes on those claims itself. AGENT_CORE_API_ACCESS=disabled admits
-  # people only (components/core-api-without-agents).
+  # people and Applications only (components/core-api-without-agents).
   jwt:
     providers:
       - name: account
@@ -1810,8 +1834,10 @@ spec:
       backendRefs:
         - name: controlplane
           port: 8080
-    # Session refresh, sign-out and the published keys. Not rate limited: a
-    # shared limit here would let one client stall everyone's silent refresh.
+    # Session refresh, sign-out, the published keys and Applications' client
+    # credentials grant (/auth/token). Not rate limited: a shared limit here
+    # would let one client stall everyone's silent refresh, and a Client
+    # Secret carries 256 bits that no guessing reaches.
     - name: account-session
       matches:
         - path:

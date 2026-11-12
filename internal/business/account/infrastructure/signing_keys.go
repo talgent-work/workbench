@@ -129,6 +129,8 @@ func (s *SigningKeys) Sign(ctx context.Context, claims domain.IdentityClaims) (s
 			Claim("roles", []string{})
 	case domain.PrincipalAgent:
 		builder = withAgentClaims(builder, claims.Work)
+	case domain.PrincipalApplication:
+		// An Application's token states only who it is.
 	default:
 		return "", fmt.Errorf("account signing keys: unknown principal %q", claims.Principal)
 	}

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthGate } from "@talgent/workbench-ui/components/auth/auth-gate";
 import { DocumentTitle } from "@talgent/workbench-ui/components/shell/document-title";
 import { EntryShellContext, personalPathsAt, type EntryShell } from "@talgent/workbench-ui/components/shell/entry-shell";
+import { ApplicationsPage } from "@talgent/workbench-ui/pages/applications/applications-page";
 import { ComputersPage } from "@talgent/workbench-ui/pages/computers/computers-page";
 import { ConnectComputerPage } from "@talgent/workbench-ui/pages/computers/connect-computer-page";
 import { LoginPage } from "@talgent/workbench-ui/pages/login-page";
@@ -30,6 +31,7 @@ export default function WorkbenchRoutes() {
     <Route path="/marketplace/*" element={page("Marketplace", <MarketplacePage />)} />
     <Route path="/profile" element={page("Profile", <ProfilePage />)} />
     <Route path="/computers" element={page("Computers", <ComputersPage />)} />
+    <Route path="/applications" element={page("Applications", <ApplicationsPage />)} />
     <Route path="/computers/connect" element={page("Connect a computer", <ConnectComputerPage />)} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></EntryShellContext>;

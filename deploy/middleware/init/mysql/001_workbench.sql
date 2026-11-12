@@ -142,6 +142,37 @@ CREATE TABLE IF NOT EXISTS `agent_work_share` (
   KEY `idx_reader_id_work_id` (`reader_id`,`work_id`) COMMENT 'A reader finds the Works shared with them'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Work Shares of an AgentWork, owned by agent_session';
 
+CREATE TABLE IF NOT EXISTS `application` (
+  `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Application UUIDv7 identity; its OAuth client id and the subject of its Identity Tokens',
+  `owner_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Account id of the Application Owner, the person who registered it; never changes',
+  `name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Name its Application Owner manages it by, 1 to 60 characters',
+  `state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1 active, 2 removed (terminal)',
+  `registered_at` bigint NOT NULL DEFAULT '0' COMMENT 'Registration time in Unix milliseconds',
+  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic aggregate version',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
+  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last update time in Unix milliseconds',
+  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; 0 means active',
+  PRIMARY KEY (`id`),
+  KEY `idx_owner_registered` (`owner_id`,`registered_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Application aggregate: a third-party program that calls the platform as itself';
+
+CREATE TABLE IF NOT EXISTS `application_client_secret` (
+  `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Client Secret UUIDv7 identity',
+  `application_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Owning Application',
+  `secret_digest` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'SHA-256 hex digest of the secret; the secret itself is never stored',
+  `hint` varchar(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Last characters of the secret, so its owner can tell secrets apart',
+  `state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1 current, 2 overlapping, 3 ended (terminal)',
+  `issued_at` bigint NOT NULL DEFAULT '0' COMMENT 'Issue time in Unix milliseconds',
+  `overlap_ends_at` bigint NOT NULL DEFAULT '0' COMMENT 'When an overlapping secret stops matching, in Unix milliseconds; 0 otherwise',
+  `last_used_at` bigint NOT NULL DEFAULT '0' COMMENT 'When the secret last obtained a token, in Unix milliseconds; 0 for never',
+  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Stored row version; changes with its Application',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
+  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last update time in Unix milliseconds',
+  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; 0 means active',
+  PRIMARY KEY (`id`),
+  KEY `idx_application_id` (`application_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Client Secrets of an Application, owned by its aggregate';
+
 CREATE TABLE IF NOT EXISTS `computer` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Computer UUIDv7 identity; a Cloud''s is fixed by its cluster''s configuration',
   `kind` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'cloud or managed',
