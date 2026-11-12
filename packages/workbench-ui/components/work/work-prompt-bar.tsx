@@ -7,6 +7,7 @@ import { MessageInput, type MessageInputProps } from "../chat/message-input";
 import type { SlashCandidate } from "../composer/use-slash-completion";
 import { agentWorkClient } from "../../lib/client";
 import { pluginDisplayName } from "../../lib/marketplace-plugins";
+import { useWorkPluginResults } from "../../lib/work-plugin-results";
 import { notify } from "../../lib/notifications";
 
 // Safe reason codes of Plugin installation and loading; unknown codes are
@@ -40,7 +41,7 @@ export function WorkPromptBar({ repositories = [], ...props }: MessageInputProps
   const { workId, active } = props;
   const [dismissed, setDismissed] = useState<string[]>([]);
   const capabilities = useQuery({ queryKey: ["work-capabilities", workId], queryFn: () => agentWorkClient.getWorkCapabilities({ workId }), enabled: active, retry: false, refetchInterval: active ? 15_000 : false });
-  const results = useQuery({ queryKey: ["work-plugin-results", workId], queryFn: () => agentWorkClient.getWorkPluginResults({ workId }), retry: false, refetchInterval: active ? 30_000 : false });
+  const results = useWorkPluginResults(workId, active);
   const commands = capabilities.data?.observed ? capabilities.data.commands : [];
   // A namespaced name marks a Plugin Skill for the in-text highlight only.
   const candidates: SlashCandidate[] = commands.map(command => ({ name: command.name, description: command.description, argumentHint: command.argumentHint, builtIn: !command.name.includes(":") }));

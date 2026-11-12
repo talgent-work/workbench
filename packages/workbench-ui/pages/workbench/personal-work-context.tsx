@@ -7,18 +7,20 @@ import { AttachmentConflictDialog, FileSection, type FileRow } from "../../compo
 import { useReadingArea } from "../../components/shell/reading-context";
 import { WorkTokenSection } from "../../components/work/token-usage";
 import { WorkContextRail } from "../../components/work/work-context-rail";
+import { WorkPluginsSection } from "../../components/work/work-plugins-section";
 import { useWorkProgressSection } from "../../components/work/work-progress-section";
 import { useSubAgentsSection } from "../../components/work/subagents-section";
 import { useCurrentUser } from "../../lib/account-service";
 import { NameTakenError } from "../../lib/name-taken-error";
 import type { SubAgent } from "../../lib/subagents";
+import { useWorkPluginResults } from "../../lib/work-plugin-results";
 import { useWorkTrace } from "../../lib/use-work-trace";
 import { useCreateWorkFileShareLink, useDeleteWorkFile, useDownloadWorkFile, useRenameWorkAttachment, useStopWorkFileSharing, useUploadWorkAttachment, useWorkFiles, workFileKey } from "../../lib/work-file-service";
 import type { WorkProgress } from "../../lib/work-progress";
 import { isTerminalWorkLifecycle } from "../../lib/work-state-presentation";
 
-/** A Work's context card: its Progress, Agents, files and Token Usage. Its
- * owner changes its files and reads its usage; a Work Share holder reads its
+/** A Work's context card: its Progress, Agents, Plugins, files and Token Usage. Its
+ * owner changes its files and reads its Plugins and usage; a Work Share holder reads its
  * files. Only a Personal Work lists its files here (`withFiles`). */
 export function PersonalWorkContext({ workId, title, owner, withFiles, workLifecycle, workCreatedAt, progress, subAgents }: {
   workId: string; title: string; owner: boolean; withFiles: boolean; workLifecycle: string; workCreatedAt: Date | null; progress: WorkProgress | null | undefined; subAgents: SubAgent[] | undefined;
@@ -43,11 +45,14 @@ export function PersonalWorkContext({ workId, title, owner, withFiles, workLifec
   const uploadFile = (file: File, replace = false) => upload.mutate({ file, replace }, { onError: error => { if (error instanceof NameTakenError) { upload.reset(); setConflict(file); } } });
   const fileInput = useRef<HTMLInputElement>(null);
   const open = (file: WorkFile) => reader.open({ kind: "work-file", label: title, workId, file });
-  const hasContent = Boolean(progress?.items.length || subAgentsSection || artifacts.length || showAttachments || hasTokens);
+  const plugins = useWorkPluginResults(owner ? workId : undefined);
+  const hasPlugins = owner && Boolean(plugins.data?.plugins.length);
+  const hasContent = Boolean(progress?.items.length || subAgentsSection || hasPlugins || artifacts.length || showAttachments || hasTokens);
 
   return <WorkContextRail hasContent={hasContent} collapsed={collapsed} onCollapsedChange={setCollapsed} beside={!hasContent && files.isLoading && <p className="sr-only" role="status">Loading context…</p>}>
     {progressSection}
     {subAgentsSection}
+    {hasPlugins && <WorkPluginsSection workId={workId} />}
     {artifacts.length > 0 && <WorkFileSection title="Artifacts" workId={workId} files={artifacts} owner={owner} editable={editable} onOpen={open} />}
     {/* Attachments stays while it can take an upload, so its heading's + is always reachable. */}
     {showAttachments && <WorkFileSection title="Attachments" workId={workId} files={attachments} owner={owner} editable={editable} onOpen={open}
