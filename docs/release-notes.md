@@ -5,14 +5,6 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
-## The release that removes Applications
-
-Run `scripts/deploy/bootstrap-kafka.sh` again before deploying it: it creates the topic
-`account.integration.v1.ApplicationRemovedV1`, on which Account tells Agent that an Application
-was removed. An Application Owner now removes an Application with
-`ApplicationService.RemoveApplication`: its secrets stop at once, and Agent closes its open
-Works.
-
 ## The release that lets Applications run Works
 
 Before deploying it, run `deploy/middleware/migrations/20261113-agent-account-application.sql`
@@ -23,7 +15,24 @@ an agent token's `application_id` claim as `x-talgent-application-id`.
 An Application now starts Standalone Works with `agent.public.v2.WorkService` and drives them
 with `agent.public.v1.AgentWorkService` under its own token; it reaches only its own Works. Its
 Works run under one Agent named after it, only on a Cloud, and their agent tokens state the
-Application.
+Application. `StartWork` takes the Application's own MCP endpoints in
+`application_mcp_endpoints`, for that Work only: the Work sends each endpoint's headers unchanged
+for its life, and no read of the Work returns them. A header value or URL containing `${` is
+refused, since the Agent Harness would expand it from the run's environment.
+
+Before deploying it, also run `deploy/middleware/migrations/20261114-agent-account-work-labels.sql`
+against the database named by `ACCOUNT_MYSQL_DATABASE`; it adds `agent_account.work_labels` and
+can run while the previous release serves. Agent's new `agent_work_label` table comes with the
+canonical schema (`scripts/deploy/bootstrap-mysql.sh`). A Work's starter may give it Work Labels
+(`StartWorkRequest.labels`), which it keeps for its life; `ListWorks` shows them and narrows by
+labels and Work State, and an agent token carries them as claim `work_labels`, which the entry
+does not forward.
+
+Run `scripts/deploy/bootstrap-kafka.sh` again before deploying it, too: it creates the topic
+`account.integration.v1.ApplicationRemovedV1`, on which Account tells Agent that an Application
+was removed. An Application Owner removes an Application with
+`ApplicationService.RemoveApplication`: its secrets stop at once, and Agent closes its open
+Works.
 
 ## The release that names the Work API neutrally
 

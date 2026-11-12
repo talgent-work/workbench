@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 )
 
-var agentAccountColumns = []string{"work_id", "project_id", "agent_id", "purpose", "work_subject_kind", "work_subject_id", "represented_user_id", "application_id", "version", "created_at"}
+var agentAccountColumns = []string{"work_id", "project_id", "agent_id", "purpose", "work_subject_kind", "work_subject_id", "represented_user_id", "application_id", "work_labels", "version", "created_at"}
 
 // AgentAccountRepository persists Agent Accounts. An Agent Account's facts
 // never change, so it is only ever inserted.
@@ -72,8 +73,19 @@ func agentAccountToDO(account *domain.AgentAccount) *agentAccountDO {
 		WorkSubjectID:     facts.Subject.ID,
 		RepresentedUserID: string(facts.RepresentedPerson),
 		ApplicationID:     string(facts.OwningApplication),
+		WorkLabels:        encodeWorkLabels(facts.WorkLabels),
 		CreatedAt:         account.CreatedAt.UnixMilli(),
 	}
+}
+
+// encodeWorkLabels keeps the labels as a JSON object, an empty one for none.
+func encodeWorkLabels(labels domain.WorkLabels) string {
+	pairs := labels.Map()
+	if pairs == nil {
+		pairs = map[string]string{}
+	}
+	encoded, _ := json.Marshal(pairs) // A map of strings always encodes.
+	return string(encoded)
 }
 
 func agentAccountFromDO(row *agentAccountDO) (*domain.AgentAccount, error) {
@@ -81,7 +93,11 @@ func agentAccountFromDO(row *agentAccountDO) (*domain.AgentAccount, error) {
 	if err != nil {
 		return nil, err
 	}
-	facts, err := domain.NewWorkFacts(row.ProjectID, row.AgentID, row.Purpose, row.WorkSubjectKind, row.WorkSubjectID, row.RepresentedUserID, row.ApplicationID)
+	var labels map[string]string
+	if err := json.Unmarshal([]byte(row.WorkLabels), &labels); err != nil {
+		return nil, err
+	}
+	facts, err := domain.NewWorkFacts(row.ProjectID, row.AgentID, row.Purpose, row.WorkSubjectKind, row.WorkSubjectID, row.RepresentedUserID, row.ApplicationID, labels)
 	if err != nil {
 		return nil, err
 	}

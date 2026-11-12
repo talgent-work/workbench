@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS `agent_account` (
   `work_subject_id` varchar(255) NOT NULL DEFAULT '' COMMENT 'The identity of the Work''s Subject',
   `represented_user_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Account id of the person the Agent represents; empty for an Agent representing no one',
   `application_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'The Application that owns the Work; empty for a Work no Application owns',
+  `work_labels` json NOT NULL DEFAULT (json_object()) COMMENT 'The Work''s Work Labels as a key to value object; empty for a Work without labels',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Stored row version; the facts never change',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'First Identity Token request in Unix milliseconds',
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last update time in Unix milliseconds',
@@ -142,6 +143,15 @@ CREATE TABLE IF NOT EXISTS `agent_work_share` (
   PRIMARY KEY (`work_id`,`reader_id`),
   KEY `idx_reader_id_work_id` (`reader_id`,`work_id`) COMMENT 'A reader finds the Works shared with them'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Work Shares of an AgentWork, owned by agent_session';
+
+CREATE TABLE IF NOT EXISTS `agent_work_label` (
+  `work_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'The Work, an agent_session identity; its rows are written once, with the Work',
+  `label_key` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'A Work Label key its starter defined: letters, digits, dot, underscore, hyphen and slash',
+  `label_value` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'The value of that Work Label, compared exactly',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time of the Work, Unix milliseconds',
+  PRIMARY KEY (`work_id`,`label_key`),
+  KEY `idx_label_key_label_value_work_id` (`label_key`,`label_value`,`work_id`) COMMENT 'Listings narrow Works to those carrying a label'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Work Labels of an AgentWork, owned by agent_session and fixed at its creation';
 
 CREATE TABLE IF NOT EXISTS `application` (
   `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Application UUIDv7 identity; its OAuth client id and the subject of its Identity Tokens',

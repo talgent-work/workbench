@@ -75,7 +75,12 @@ func (h *StandaloneWorkHandler) StartWork(ctx context.Context, request *agentpub
 		Caller: currentCaller(ctx), RequestID: strings.TrimSpace(msg.GetRequestId()), InitialMessage: msg.GetInitialMessage(),
 		Capabilities: creationCapabilitiesFromProto(msg.GetCreationCapabilities()), WorkModel: workModelFromProto(msg.GetModel()),
 		ThinkingLevel: strings.TrimSpace(msg.GetThinkingLevel()), ComputerID: strings.TrimSpace(msg.GetComputerId()),
-		Harness: harnessChoiceFromProto(msg.GetHarness()),
+		Harness: harnessChoiceFromProto(msg.GetHarness()), Labels: msg.GetLabels(),
+	}
+	for _, endpoint := range msg.GetApplicationMcpEndpoints() {
+		start.Capabilities.ApplicationEndpoints = append(start.Capabilities.ApplicationEndpoints, domain.ApplicationMCPEndpoint{
+			Name: strings.TrimSpace(endpoint.GetName()), URL: strings.TrimSpace(endpoint.GetUrl()), Headers: endpoint.GetHeaders(),
+		})
 	}
 	for _, selection := range msg.GetRepositorySelections() {
 		start.Selections = append(start.Selections, command.RepositorySelection{RepositoryID: selection.GetRepositoryId(), BaseBranch: selection.GetBaseBranch()})
@@ -110,14 +115,14 @@ func creationCapabilitiesFromProto(value *agentpublicv1.CreationCapabilities) do
 }
 
 func (h *StandaloneWorkHandler) ListWorks(ctx context.Context, request *agentpublicv2.ListWorksRequest) (*agentpublicv2.ListWorksResponse, error) {
-	works, err := h.works.List(ctx, currentCaller(ctx), int(request.GetLimit()))
+	works, err := h.works.List(ctx, standalonework.ListWorks{Caller: currentCaller(ctx), Limit: int(request.GetLimit()), Labels: request.GetLabels(), States: request.GetStates()})
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	response := &agentpublicv2.ListWorksResponse{Works: make([]*agentpublicv2.WorkSummary, 0, len(works))}
 	for _, work := range works {
 		response.Works = append(response.Works, &agentpublicv2.WorkSummary{
-			WorkId: work.WorkID, Title: work.Title, State: work.State, StateReason: work.StateReason, Waiting: work.Waiting,
+			WorkId: work.WorkID, Title: work.Title, Labels: work.Labels, State: work.State, StateReason: work.StateReason, Waiting: work.Waiting,
 			CreatedAt: timestamppb.New(work.CreatedAt), UpdatedAt: timestamppb.New(work.UpdatedAt), DisconnectedSince: optionalTimestamp(work.DisconnectedSince),
 		})
 	}

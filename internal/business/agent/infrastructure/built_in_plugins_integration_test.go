@@ -30,7 +30,7 @@ import (
 const (
 	platformPlugin = "talgent"
 	projectPlugin  = "project-plugin"
-	personalRole   = "talgent:personal-work-executor"
+	personalRole   = "talgent:work-executor"
 	projectRole    = "project-plugin:coordinator"
 )
 

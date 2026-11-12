@@ -117,3 +117,27 @@ func TestARunOutlivingItsTokenReceivesANewOne(t *testing.T) {
 	require.True(t, w.now().Before(first.ExpiresAt), "the old token still worked when the new one arrived")
 	require.Equal(t, second.ExpiresAt.Add(-24*time.Hour), w.execution(t).Credentials.ExpiresAt)
 }
+
+// A Work's token states its Work Labels, as its start fixed them (Fixed
+// facts).
+func TestAWorksTokenStatesItsWorkLabels(t *testing.T) {
+	ctx := context.Background()
+	session := startingSession(t)
+	labels, err := domain.NewWorkLabels(map[string]string{"user": "u123", "tenant": "acme"})
+	require.NoError(t, err)
+	session.WorkLabels = labels
+	w := newWorld(t, session)
+	w.begin(t)
+	w.change(t, func(execution *domain.AgentExecution) {
+		require.True(t, commandtest.Submit(execution))
+		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
+		require.NoError(t, err)
+	})
+	w.environment.Observation = running("environment")
+	_, err = w.reconciliation().Reconcile(ctx, w.execution(t).ID)
+	require.NoError(t, err)
+
+	issued := w.accounts.Issued()
+	require.Len(t, issued, 1)
+	require.Equal(t, map[string]string{"user": "u123", "tenant": "acme"}, issued[0].WorkLabels)
+}

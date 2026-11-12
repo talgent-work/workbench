@@ -35,7 +35,10 @@ func (r *AgentWorkRepository) Get(ctx context.Context, id string) (*domain.Agent
 	if err != nil {
 		return nil, err
 	}
-	session.WorkShares, err = workShares(r.db.Context(ctx), id)
+	if session.WorkShares, err = workShares(r.db.Context(ctx), id); err != nil {
+		return nil, err
+	}
+	session.WorkLabels, err = workLabels(r.db.Context(ctx), id)
 	return session, err
 }
 
@@ -90,6 +93,9 @@ func (r *AgentWorkRepository) save(ctx context.Context, session *domain.AgentWor
 		_, err = tx.Insert(row)
 		if duplicateKey(err) {
 			return domain.ErrConcurrentModification
+		}
+		if err == nil {
+			err = insertWorkLabels(tx, session.ID, session.WorkLabels, row.CreatedAt)
 		}
 	} else {
 		var affected int64

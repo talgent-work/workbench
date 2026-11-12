@@ -88,7 +88,8 @@ a Work, steer it, stream its conversation, collect its Artifacts and read its us
 - **Your users, your labels.** Give each Work your own `key=value` Work Labels, such as `user=u123`
   or `tenant=acme`, then filter Works and break usage down by them.
 - **Bring your own tools.** Hand a Work your own MCP endpoints when you start it, so the Agent can
-  call your product's business tools, authenticated your way.
+  call your product's business tools. Each comes with the headers your service authenticates,
+  which the Work sends unchanged for its life; issue them per Work and revoke them when it closes.
 - **In sight of its owner.** The person who registered an Application manages it in the web app and
   reads its Works and their conversations.
 
