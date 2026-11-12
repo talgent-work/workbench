@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthGate } from "@talgent/workbench-ui/components/auth/auth-gate";
 import { DocumentTitle } from "@talgent/workbench-ui/components/shell/document-title";
 import { EntryShellContext, personalPathsAt, type EntryShell } from "@talgent/workbench-ui/components/shell/entry-shell";
+import { ApplicationsPrototype } from "@talgent/workbench-ui/pages/applications/prototype/applications-prototype";
 import { ComputersPage } from "@talgent/workbench-ui/pages/computers/computers-page";
 import { ConnectComputerPage } from "@talgent/workbench-ui/pages/computers/connect-computer-page";
 import { LoginPage } from "@talgent/workbench-ui/pages/login-page";
@@ -29,6 +30,8 @@ export default function WorkbenchRoutes() {
     <Route path="/usage" element={page("Usage", <UsagePage />)} />
     <Route path="/marketplace/*" element={page("Marketplace", <MarketplacePage />)} />
     <Route path="/profile" element={page("Profile", <ProfilePage />)} />
+    {/* PROTOTYPE (Applications): no AuthGate, so it runs without a core. */}
+    <Route path="/applications" element={<DocumentTitle title="Applications"><ApplicationsPrototype /></DocumentTitle>} />
     <Route path="/computers" element={page("Computers", <ComputersPage />)} />
     <Route path="/computers/connect" element={page("Connect a computer", <ConnectComputerPage />)} />
     <Route path="*" element={<Navigate to="/" replace />} />

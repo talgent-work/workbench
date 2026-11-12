@@ -1,0 +1,26 @@
+/* PROTOTYPE (Applications): a breadcrumb switcher for the Application in
+   view. It heads the breadcrumb; its 16px slot shows the separator at rest
+   when a crumb follows and the switch chevron on hover or keyboard focus
+   (always without hover), so revealing the control moves nothing. */
+.p-app-switcher { margin-inline-start: -8px; gap: 6px; padding-inline: 8px 0; min-width: 0; flex-shrink: 1; }
+.p-app-switcher ~ .p-location { margin-inline-start: -7px; }
+.p-app-switcher:not([data-hovered="true"]):not([data-focus-visible="true"]):not([data-pressed="true"]) { background: transparent; }
+.p-app-switcher-slot { position: relative; display: inline-block; width: 16px; height: 16px; flex-shrink: 0; color: var(--muted); }
+.p-app-switcher-slot>svg { position: absolute; inset: 1px; margin: 0; width: 14px; height: 14px; }
+.p-app-switcher-chevron { visibility: hidden; }
+.p-app-switcher:not([data-followed="true"]) .p-app-switcher-separator { visibility: hidden; }
+.p-app-switcher:is([data-hovered="true"],[data-focus-visible="true"],[aria-expanded="true"]) .p-app-switcher-chevron,.p-app-switcher:is(:hover,:focus-visible) .p-app-switcher-chevron { visibility: visible; }
+.p-app-switcher:is([data-hovered="true"],[data-focus-visible="true"],[aria-expanded="true"]) .p-app-switcher-separator,.p-app-switcher:is(:hover,:focus-visible) .p-app-switcher-separator { visibility: hidden; }
+@media (hover: none) {
+  .p-app-switcher .p-app-switcher-chevron { visibility: visible; }
+  .p-app-switcher .p-app-switcher-separator { visibility: hidden; }
+}
+/* The document scrolls, so a tab whose content outgrows the window adds a
+   scrollbar and narrows the viewport, shifting every centred element. Keep its
+   gutter while an Application page is open; the site would set this on :root. */
+:root:has(.p-app-scope) { scrollbar-gutter: stable; }
+/* The New work page's model and Startup Agent triggers, in settings rows:
+   the composer's push-right and width cap don't apply; a stacked row aligns
+   their text with the label above. */
+.p-work-defaults .wpb-model-trigger { margin-left: 0; max-width: 100%; }
+.p-work-defaults > li.\!flex-col > .button { margin-inline-start: -8px; }

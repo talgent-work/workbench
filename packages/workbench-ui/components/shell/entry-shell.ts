@@ -7,6 +7,8 @@ export type PageLayoutProps = {
   topActions?: ReactNode;
   centerActions?: ReactNode;
   width?: "contained" | "fluid";
+  /** PROTOTYPE (Applications): heads the breadcrumb, such as a switcher for the object in view; the title then adds no crumb. */
+  lead?: ReactNode;
   /** Levels between the entry and the current page, such as Marketplace › Plugins. */
   trail?: Array<{ label: string; onPress: () => void }>;
 };
