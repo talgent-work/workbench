@@ -24,7 +24,10 @@ func TestAnApplicationsAgentIsTheApplications(t *testing.T) {
 	require.Equal(t, applicationID, agent.WorkPrincipal(), "its Works act as the Application")
 	require.Empty(t, agent.RepresentedPerson())
 	require.False(t, agent.RepresentsHuman())
-	require.NotContains(t, agent.WorkTraceAttributes(nil), "talgent.user_id")
+	attributes := agent.WorkTraceAttributes(map[string]string{"talgent.application_id": "someone-else", "ticket": "T-1"})
+	require.NotContains(t, attributes, "talgent.user_id")
+	require.Equal(t, applicationID, attributes["talgent.application_id"], "its Works' usage rolls up to the Application, whatever a caller supplied")
+	require.Equal(t, "T-1", attributes["ticket"])
 	require.ErrorIs(t, agent.AdmitComputer(true), domain.ErrCloudOnlyAgent)
 	require.Equal(t, domain.EmployeeDefinitionInput("employee-1").WorkDefaults, agent.WorkDefaults, "it starts its Works with the Standalone Work role")
 }

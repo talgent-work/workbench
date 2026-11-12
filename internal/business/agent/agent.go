@@ -165,6 +165,7 @@ func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, confi
 	private := connectserver.New(logger)
 	agentprivatev1connect.RegisterAgentServiceHandler(private, transport.NewAgentHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterWorkAccessServiceHandler(private, transport.NewWorkAccessHandler(app, config.ControlToken))
+	agentprivatev1connect.RegisterWorkAttributionServiceHandler(private, transport.NewWorkAttributionHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterWorkspaceReadingServiceHandler(private, transport.NewWorkspaceReadingHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterWorkFactsServiceHandler(private, transport.NewWorkFactsHandler(app, config.ControlToken))
 	agentprivatev1connect.RegisterActingWorkServiceHandler(private, transport.NewActingWorkHandler(app, config.ControlToken))

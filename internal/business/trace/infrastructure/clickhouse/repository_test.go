@@ -34,7 +34,7 @@ func TestSpanScopeFromAttributesMapsOwnerNeutralFields(t *testing.T) {
 }
 
 func TestBuildMetricBucketsQueryUsesMetricBucketsOnly(t *testing.T) {
-	query, _ := buildMetricBucketsQuery(metricScopeSession, query.TraceMetricOptions{AgentWorkID: "work-1", StepSeconds: 300}, "")
+	query, _ := buildMetricBucketsQuery(metricScopeSession, query.TraceMetricOptions{AgentWorkID: "work-1", StepSeconds: 300}, metricSubject{})
 
 	if !strings.Contains(query, "trace_metric_buckets") {
 		t.Fatalf("query = %s, want trace_metric_buckets source", query)
@@ -56,7 +56,7 @@ func TestBuildMetricBucketsQueryUsesMetricBucketsOnly(t *testing.T) {
 	if strings.Contains(query, "execution_id") {
 		t.Fatalf("query = %s, metrics are aggregated per Work, never per process run", query)
 	}
-	if !strings.Contains(query, "GROUP BY grouped_bucket_start, project_id, agent_work_id, agent_id, runtime_purpose, owner_context, owner_id, user_id, metric_kind, dimension") {
+	if !strings.Contains(query, "GROUP BY grouped_bucket_start, project_id, agent_work_id, agent_id, runtime_purpose, owner_context, owner_id, user_id, application_id, metric_kind, dimension") {
 		t.Fatalf("query = %s, want owner-neutral attribution columns in grouping", query)
 	}
 	if !strings.Contains(query, "ORDER BY grouped_bucket_start ASC, metric_kind ASC, dimension ASC, owner_context ASC, owner_id ASC, runtime_purpose ASC, agent_work_id ASC, user_id ASC") {
@@ -67,7 +67,7 @@ func TestBuildMetricBucketsQueryUsesMetricBucketsOnly(t *testing.T) {
 // Intent: project metrics must not require agent_work_id, so rows a caller
 // records outside any Work contribute to project-level token and tool charts.
 func TestBuildMetricBucketsQuery_ProjectScopeDoesNotRequireAgentWorkID(t *testing.T) {
-	query, _ := buildMetricBucketsQuery(metricScopeProject, query.TraceMetricOptions{ProjectID: "project-1"}, "")
+	query, _ := buildMetricBucketsQuery(metricScopeProject, query.TraceMetricOptions{ProjectID: "project-1"}, metricSubject{})
 
 	if !strings.Contains(query, "project_id = {project_id:String}") {
 		t.Fatalf("query = %s, want project scope filter", query)
@@ -84,7 +84,7 @@ func TestBuildMetricBucketsQuery_ProjectScopeDoesNotRequireAgentWorkID(t *testin
 // by a Project, and an empty person reads nothing rather than every Work of
 // no person.
 func TestBuildMetricBucketsQuery_PersonScopeFiltersThePersonAcrossProjects(t *testing.T) {
-	query, params := buildMetricBucketsQuery(metricScopePerson, query.TraceMetricOptions{ProjectID: "ignored", AgentWorkID: "work-1"}, "person-1")
+	query, params := buildMetricBucketsQuery(metricScopePerson, query.TraceMetricOptions{ProjectID: "ignored", AgentWorkID: "work-1"}, metricSubject{personID: "person-1"})
 	for _, want := range []string{"user_id = {user_id:String}", "user_id != ''", "agent_work_id = {agent_work_id:String}"} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query = %s, want %q", query, want)
@@ -92,6 +92,48 @@ func TestBuildMetricBucketsQuery_PersonScopeFiltersThePersonAcrossProjects(t *te
 	}
 	if strings.Contains(query, "project_id = {project_id:String}") || params["user_id"] != "person-1" || params["agent_work_id"] != "work-1" {
 		t.Fatalf("query = %s params = %v, want the person across Projects", query, params)
+	}
+}
+
+// An Application's usage reads its Works, which never have a Project, by the
+// Application attribution, narrowed to the Works a label filter resolved; an
+// empty Application reads nothing rather than every Work no Application owns.
+func TestBuildMetricBucketsQuery_ApplicationScopeReadsItsWorks(t *testing.T) {
+	sql, params := buildMetricBucketsQuery(metricScopeApplication, query.TraceMetricOptions{}, metricSubject{applicationID: "application-1", workIDs: []string{"work-1", "work'2"}})
+	for _, want := range []string{"application_id = {application_id:String}", "application_id != ''", "project_id = ''", "has({work_ids:Array(String)}, agent_work_id)"} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("query = %s, want %q", sql, want)
+		}
+	}
+	if params["application_id"] != "application-1" || params["work_ids"] != `['work-1', 'work\'2']` {
+		t.Fatalf("params = %v", params)
+	}
+	unnarrowed, _ := buildMetricBucketsQuery(metricScopeApplication, query.TraceMetricOptions{}, metricSubject{applicationID: "application-1"})
+	if strings.Contains(unnarrowed, "work_ids") {
+		t.Fatalf("query = %s, want every Work of the Application without a filter", unnarrowed)
+	}
+}
+
+// An Application's spans are its Works' spans by the Application attribution,
+// newest first, narrowed to resolved Works when a filter applies.
+func TestBuildSpanListQuery_ApplicationScopeReadsItsWorks(t *testing.T) {
+	sql, params, err := buildSpanListQuery(spanScopeApplication, query.SpanListOptions{ApplicationID: "application-1", WorkIDs: []string{"work-1"}, NewestFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"ResourceAttributes['talgent.application_id'] = {application_id:String}",
+		"ResourceAttributes['talgent.application_id'] != ''",
+		"ResourceAttributes['talgent.project_id'] = ''",
+		"has({work_ids:Array(String)}, ResourceAttributes['talgent.agent_work_id'])",
+		"ORDER BY Timestamp DESC",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("query = %s, want %q", sql, want)
+		}
+	}
+	if params["application_id"] != "application-1" {
+		t.Fatalf("params = %v", params)
 	}
 }
 
@@ -130,7 +172,7 @@ func TestBuildMetricBucketsQueryAnchorsBucketsToStartTime(t *testing.T) {
 		ProjectID:   "project-1",
 		StartTime:   start,
 		StepSeconds: 7200,
-	}, "")
+	}, metricSubject{})
 
 	for _, want := range []string{
 		"fromUnixTimestamp64Nano(",

@@ -8,12 +8,13 @@ import { PageLayout } from "../../components/shell/page-layout";
 import { useOwnedApplications, type Application } from "../../lib/application-service";
 import { AgentSection } from "./agent-section";
 import { CredentialsSection } from "./credentials-section";
+import { OverviewSection } from "./overview-section";
 import { RegisterApplicationDialog } from "./register-application-dialog";
 import { SettingsSection } from "./settings-section";
 import "../../components/marketplace/marketplace.css";
 
 /** The sections of an Application's page, switched by the topbar tabs. */
-const sections = [{ id: "agent", label: "Agent" }, { id: "credentials", label: "Credentials" }, { id: "settings", label: "Settings" }] as const;
+const sections = [{ id: "overview", label: "Overview" }, { id: "agent", label: "Agent" }, { id: "credentials", label: "Credentials" }, { id: "settings", label: "Settings" }] as const;
 type SectionId = typeof sections[number]["id"];
 /** A page without ?section= opens where a new Application's owner goes first:
  * its credentials. */
@@ -49,14 +50,15 @@ export function ApplicationsPage() {
   return <PageLayout workspaceTitle={selected?.name ?? "Applications"} lead={lead} trail={selected ? [{ label: section.label, onPress: () => undefined }] : []} centerActions={tabs}>
     <div className="mx-auto grid w-[min(960px,100%)] gap-8 pb-24 pt-4">
       <LoadState noun="your applications" isPending={applications.isPending} isError={applications.isError} hasData={Boolean(applications.data)} isFetching={applications.isFetching} onRetry={() => void applications.refetch()} />
-      {applications.data && (selected ? <ApplicationSection key={selected.id} application={selected} section={sectionId} onRemoved={leave} /> : <NoApplications onRegister={() => setRegistering(true)} />)}
+      {applications.data && (selected ? <ApplicationSection key={selected.id} application={selected} section={sectionId} onSection={id => update(next => next.set("section", id))} onRemoved={leave} /> : <NoApplications onRegister={() => setRegistering(true)} />)}
     </div>
     {registering && <RegisterApplicationDialog onClose={() => setRegistering(false)} onRegistered={select} />}
   </PageLayout>;
 }
 
-function ApplicationSection({ application, section, onRemoved }: { application: Application; section: SectionId; onRemoved: () => void }) {
+function ApplicationSection({ application, section, onSection, onRemoved }: { application: Application; section: SectionId; onSection: (section: SectionId) => void; onRemoved: () => void }) {
   switch (section) {
+    case "overview": return <OverviewSection application={application} onSection={onSection} />;
     case "agent": return <AgentSection application={application} />;
     case "credentials": return <CredentialsSection application={application} />;
     case "settings": return <SettingsSection application={application} onRemoved={onRemoved} />;

@@ -22,9 +22,6 @@ type EventResult struct {
 	Events     []NativeEvent
 	NextCursor string
 }
-type EventRepository interface {
-	ListEvents(context.Context, EventOptions) (*EventResult, error)
-}
 
 // ListEvents reads a Project's events, or, without a Project, one Work's.
 func (q *Queries) ListEvents(ctx context.Context, opts EventOptions) (*EventResult, error) {
@@ -39,5 +36,5 @@ func (q *Queries) ListEvents(ctx context.Context, opts EventOptions) (*EventResu
 	if opts.Limit <= 0 || opts.Limit > 500 {
 		opts.Limit = 500
 	}
-	return q.events.ListEvents(ctx, opts)
+	return q.evidence.ListEvents(ctx, opts)
 }

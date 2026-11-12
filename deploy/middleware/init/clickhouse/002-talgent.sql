@@ -54,17 +54,27 @@ CREATE TABLE IF NOT EXISTS talgent_trace.trace_work_measurements (
     owner_context String,
     owner_id String,
     user_id String,
+    -- The Application that owns the Work. Work Labels never reach here.
+    application_id String,
     dimension String,
     measurements Array(Tuple(String, Nullable(Float64))),
     gaps Array(String),
     source_priority UInt8,
     projection_version UInt64,
     -- A person's usage spans every Project, outside the sort key.
-    INDEX idx_user_id user_id TYPE bloom_filter GRANULARITY 4
+    INDEX idx_user_id user_id TYPE bloom_filter GRANULARITY 4,
+    -- An Application's usage spans its Works, outside the sort key.
+    INDEX idx_application_id application_id TYPE bloom_filter GRANULARITY 4
 ) ENGINE = ReplacingMergeTree(projection_version)
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (project_id, agent_work_id, evidence_id)
 TTL toDateTime(timestamp) + INTERVAL 30 DAY;
+-- A table created before Applications gains their attribution. Its earlier
+-- measurements belong to no Application.
+ALTER TABLE talgent_trace.trace_work_measurements
+    ADD COLUMN IF NOT EXISTS application_id String AFTER user_id;
+ALTER TABLE talgent_trace.trace_work_measurements
+    ADD INDEX IF NOT EXISTS idx_application_id application_id TYPE bloom_filter GRANULARITY 4;
 
 -- Independent receipts contain only attribution and identity. Version zero is
 -- replaced by a successful interpretation of the same evidence.
@@ -84,6 +94,7 @@ SELECT
     ResourceAttributes['talgent.owner_context'] AS owner_context,
     ResourceAttributes['talgent.owner_id'] AS owner_id,
     ResourceAttributes['talgent.user_id'] AS user_id,
+    ResourceAttributes['talgent.application_id'] AS application_id,
     '' AS dimension,
     [('observation_gap', CAST(NULL AS Nullable(Float64)))] AS measurements,
     ['projection_incomplete'] AS gaps,
@@ -106,6 +117,7 @@ SELECT
     ResourceAttributes['talgent.owner_context'] AS owner_context,
     ResourceAttributes['talgent.owner_id'] AS owner_id,
     ResourceAttributes['talgent.user_id'] AS user_id,
+    ResourceAttributes['talgent.application_id'] AS application_id,
     '' AS dimension,
     [('observation_gap', CAST(NULL AS Nullable(Float64)))] AS measurements,
     ['projection_incomplete'] AS gaps,
@@ -132,6 +144,7 @@ SELECT
     ResourceAttributes['talgent.owner_context'] AS owner_context,
     ResourceAttributes['talgent.owner_id'] AS owner_id,
     ResourceAttributes['talgent.user_id'] AS user_id,
+    ResourceAttributes['talgent.application_id'] AS application_id,
     if(SpanName = 'claude_code.llm_request', if(SpanAttributes['model'] != '', SpanAttributes['model'], 'Unknown model'),
        talgent_call_dimension(SpanAttributes['tool_name'], SpanAttributes)) AS dimension,
     talgent_span_measurements(SpanName, SpanAttributes) AS measurements,
@@ -171,6 +184,7 @@ SELECT
     ResourceAttributes['talgent.owner_context'] AS owner_context,
     ResourceAttributes['talgent.owner_id'] AS owner_id,
     ResourceAttributes['talgent.user_id'] AS user_id,
+    ResourceAttributes['talgent.application_id'] AS application_id,
     if(event = 'skill_activated', if(LogAttributes['skill.name'] != '', LogAttributes['skill.name'], 'Unknown skill'),
        talgent_call_dimension(LogAttributes['tool_name'], call_attributes)) AS dimension,
     multiIf(event = 'skill_activated', [('skill_activation', CAST(1 AS Nullable(Float64)))],
@@ -198,14 +212,14 @@ SELECT
     toUInt32(60) AS bucket_seconds,
     project_id, agent_work_id,
     fact.2 AS agent_id, fact.3 AS runtime_purpose, fact.4 AS owner_context,
-    fact.5 AS owner_id, fact.6 AS user_id,
+    fact.5 AS owner_id, fact.6 AS user_id, fact.10 AS application_id,
     metric.1 AS metric_kind, fact.7 AS dimension,
     ifNull(metric.2, 0) AS value, toUInt64(isNull(metric.2)) AS unknown_count,
     fact.9 AS gaps
 FROM (
     SELECT project_id, agent_work_id, measurement_id,
         argMax(tuple(timestamp, agent_id, runtime_purpose, owner_context, owner_id,
-                     user_id, dimension, measurements, gaps),
+                     user_id, dimension, measurements, gaps, application_id),
                tuple(source_priority, projection_version, timestamp, evidence_id)) AS fact
     FROM talgent_trace.trace_work_measurements FINAL
     GROUP BY project_id, agent_work_id, measurement_id

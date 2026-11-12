@@ -30,6 +30,16 @@ canonical schema (`scripts/deploy/bootstrap-mysql.sh`). A Work's starter may giv
 labels and Work State, and an agent token carries them as claim `work_labels`, which the entry
 does not forward.
 
+Deploy it with the ClickHouse schema step (do not skip it with
+`TALGENT_SKIP_CLICKHOUSE_MIGRATION`): it adds `trace_work_measurements.application_id`, which a
+new Work of an Application fills from its telemetry; measurements taken earlier belong to no
+Application. controlplane reads Account's Application Ownership Query at
+`trace-access.account-address`, by default its own listener. An Application, and its owner,
+read its usage with `trace.public.v1.TraceQueryService.GetApplicationTraceMetrics`, narrowed by
+Work Labels and broken down by one label key, and its Works' spans with `ListSpansByApplication`;
+the Application also reads its own Works' spans, events and measurements by Work. Observability
+keeps no Work Label: it resolves labels to Works through Agent each time.
+
 Run `scripts/deploy/bootstrap-kafka.sh` again before deploying it, too: it creates the topic
 `account.integration.v1.ApplicationRemovedV1`, on which Account tells Agent that an Application
 was removed. An Application Owner removes an Application with

@@ -28,6 +28,9 @@ type WorkQueryRepository interface {
 	// ListStandaloneWorks lists a definition's Works without a Subject or a
 	// Project, most recently updated first, narrowed as the filter states.
 	ListStandaloneWorks(ctx context.Context, filter StandaloneWorksFilter) ([]StandaloneWorkSummary, error)
+	// ListWorkAttributions reads those of the named Works that are the
+	// definition's Standalone Works, with their Work Labels.
+	ListWorkAttributions(ctx context.Context, agentID string, workIDs []string) ([]WorkAttribution, error)
 	// ListLibraryWorks lists the person's Standalone Works under their
 	// definition and the Works with an input source they hold a Work Share
 	// in, closed ones included, at most limit.

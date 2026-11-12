@@ -35,7 +35,8 @@ func (c ClickHouseConfig) Validate() error {
 	return nil
 }
 
-// AccessConfig reaches the Project access decision and Agent's Work access.
+// AccessConfig reaches the Project access decision, Agent's Work access and
+// Work attribution, and Account's Application Ownership Query.
 type AccessConfig = access.Config
 
 // Module runs inside controlplane; its telemetry connection stays
@@ -46,13 +47,13 @@ var Module = fx.Module(
 		return pkgclickhouse.NewConn(lc, pkgclickhouse.Config{DSN: cfg.DSN})
 	}),
 	fx.Provide(fx.Annotate(clickhouse.NewRepository,
-		fx.As(new(query.SpanQueryRepository)),
-		fx.As(new(query.TraceMetricRepository)),
-		fx.As(new(query.EventRepository)),
+		fx.As(new(query.NativeEvidenceQueryRepository)),
+		fx.As(new(query.MeasurementQueryRepository)),
 	)),
 	fx.Provide(
 		access.NewProjectAccess,
-		fx.Annotate(access.NewWorkAccess, fx.As(new(query.WorkAccess))),
+		fx.Annotate(access.NewAgent, fx.As(new(query.AgentPort))),
+		fx.Annotate(access.NewAccount, fx.As(new(query.AccountPort))),
 	),
 	fx.Provide(query.NewQueries),
 	fx.Provide(application.NewApplication),

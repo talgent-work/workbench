@@ -486,6 +486,20 @@ controlplane's log).
   (`scripts/juicefs/metadata.sh backup <file>` with `JUICEFS_META_URL` and `REDIS_PASSWORD`)
   with a copy of the whole bucket, and the NFS export. Keep Secrets apart from it.
   `metadata.sh restore` loads metadata only into an empty database.
+- **A runaway Application.** Applications have no quota; their usage is attributed to them. To
+  find the Applications using the most tokens over the last day, with how many Works each ran,
+  query ClickHouse's `talgent_trace`:
+
+  ```sql
+  SELECT application_id, uniqExact(agent_work_id) AS works, sum(value) AS tokens
+  FROM trace_metric_buckets
+  WHERE application_id != '' AND measurement_time >= now() - INTERVAL 1 DAY
+    AND metric_kind IN ('input_tokens', 'cache_read_tokens', 'cache_creation_tokens', 'output_tokens')
+  GROUP BY application_id ORDER BY tokens DESC LIMIT 20
+  ```
+
+  Its owner, or you with the database, stops one by revoking its secrets, which ends its access
+  when its current token expires.
 - **Preview renderings.** Gotenberg renders an office file the first time someone opens it and
   Storage keeps the preview for `storage.preview.retention`. To scale rendering, add Gotenberg
   replicas together with `storage-preview-taskqueue.worker-concurrency`.
