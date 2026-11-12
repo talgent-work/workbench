@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Button, Card, Tabs } from "@heroui/react";
 import { AppWindow, Plus } from "lucide-react";
+import { AgentIcon } from "../../components/agent/agent-icon";
 import { useSearchParams } from "react-router-dom";
 import { LoadState } from "../../components/marketplace/marketplace-shared";
 import { ObjectSwitcher } from "../../components/shell/object-switcher";
 import { PageLayout } from "../../components/shell/page-layout";
+import { useApplicationAgents } from "../../lib/application-agent-service";
 import { useOwnedApplications, type Application } from "../../lib/application-service";
 import { AgentSection } from "./agent-section";
 import { CredentialsSection } from "./credentials-section";
@@ -19,7 +21,8 @@ type SectionId = typeof sections[number]["id"];
  * its credentials. */
 const defaultSection: SectionId = "credentials";
 
-const applicationIcon = <AppWindow size={18} className="shrink-0 text-muted" aria-hidden="true" />;
+/** Shown until an Application's Agent has loaded. */
+const placeholderIcon = <AppWindow size={18} className="shrink-0 text-muted" aria-hidden="true" />;
 
 /** Applications: the programs the person registered to use Workbench through
  * its APIs. The Application in view heads the breadcrumb as its switcher and
@@ -36,11 +39,14 @@ export function ApplicationsPage() {
   const select = (id: string) => update(next => next.set("app", id));
   // A removed Application leaves the list; the page shows the first one left.
   const leave = () => update(next => { next.delete("app"); next.delete("section"); });
+  // Each Application appears as its Agent does, the one every Work of it runs as.
+  const agents = useApplicationAgents(list.map(item => item.id));
+  const iconOf = (id: string) => { const agent = agents.get(id); return agent ? <AgentIcon icon={agent.icon} size={20} /> : placeholderIcon; };
   const register = { id: "register-application", label: "Register application", icon: <Plus size={16} aria-hidden="true" />, onPress: () => setRegistering(true) };
 
   const lead = selected && <ObjectSwitcher noun="Application" followed
-    current={{ id: selected.id, name: selected.name, icon: applicationIcon }}
-    objects={list.map(item => ({ id: item.id, name: item.name, icon: applicationIcon }))}
+    current={{ id: selected.id, name: selected.name, icon: iconOf(selected.id) }}
+    objects={list.map(item => ({ id: item.id, name: item.name, icon: iconOf(item.id) }))}
     onSwitch={select} actions={[register]} />;
   const tabs = selected && <Tabs className="p-perspective-tabs" selectedKey={sectionId} onSelectionChange={key => update(next => next.set("section", String(key)))}>
     <Tabs.ListContainer><Tabs.List aria-label="Application section">{sections.map(item => <Tabs.Tab key={item.id} id={item.id}>{item.label}<Tabs.Indicator /></Tabs.Tab>)}</Tabs.List></Tabs.ListContainer>

@@ -165,7 +165,12 @@ it("lists the owner's applications in the switcher and opens the one in ?app=", 
   await user.click(screen.getByRole("button", { name: "Application menu: CI Triage" }));
   const menu = await screen.findByRole("menu");
   expect(within(menu).getAllByRole("menuitem").map(item => item.textContent)).toEqual(["Support Desk", "CI Triage", "Register application"]);
-  await user.click(within(menu).getByRole("menuitem", { name: "Support Desk" }));
+  // Each Application appears as its Agent does.
+  await waitFor(() => {
+    const items = within(screen.getByRole("menu")).getAllByRole("menuitem").slice(0, 2);
+    expect(items.map(item => item.querySelector(".agent-icon[data-glyph='bot'][data-color='green']") !== null)).toEqual([true, true]);
+  });
+  await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Support Desk" }));
   expect(await screen.findByRole("list", { name: "Support Desk credentials" })).toBeInTheDocument();
 });
 

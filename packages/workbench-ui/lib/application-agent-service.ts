@@ -1,5 +1,5 @@
 import { ConnectError, Code } from "@connectrpc/connect";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { GetWorkStartOptionsResponse } from "@talgent/contracts/agent/public/v1/work_start_options_pb";
 import { useCurrentUser } from "./account-service";
 import { agentIconOf, type AgentAppearanceValue } from "./agent-icon";
@@ -22,9 +22,8 @@ const agentKey = (userId: string | undefined, applicationId: string) => ["applic
 const soulKey = (userId: string | undefined, agentId: string) => ["application-agent", userId, "soul", agentId];
 const defaultsKey = (userId: string | undefined, agentId: string) => ["application-agent", userId, "work-defaults", agentId];
 
-export function useApplicationAgent(applicationId: string) {
-  const userId = useCurrentUser().data?.user?.id;
-  return useQuery({
+function applicationAgentQuery(userId: string | undefined, applicationId: string) {
+  return {
     queryKey: agentKey(userId, applicationId),
     queryFn: async (): Promise<ApplicationAgent> => {
       const agent = await agentWorkClient.ensureApplicationAgent({ applicationId });
@@ -33,6 +32,21 @@ export function useApplicationAgent(applicationId: string) {
     enabled: Boolean(userId && applicationId),
     retry: false,
     refetchOnWindowFocus: false,
+  };
+}
+
+export function useApplicationAgent(applicationId: string) {
+  const userId = useCurrentUser().data?.user?.id;
+  return useQuery(applicationAgentQuery(userId, applicationId));
+}
+
+/** The Agents of several Applications, by Application id, for showing each
+ * one as its Agent appears; an Agent still loading or unavailable is absent. */
+export function useApplicationAgents(applicationIds: string[]): Map<string, ApplicationAgent> {
+  const userId = useCurrentUser().data?.user?.id;
+  return useQueries({
+    queries: applicationIds.map(id => applicationAgentQuery(userId, id)),
+    combine: results => new Map(results.flatMap((result, index) => result.data ? [[applicationIds[index], result.data] as const] : [])),
   });
 }
 
