@@ -13,7 +13,7 @@ each part lives in this repository. For what the product does, see the [README](
                                   └──▶ computer-gateway   Talgent Computer connections
  Talgent Computer ──WebSocket────────▶ computer-gateway
 
- controlplane ──▶ OpenSandbox ──▶ sandbox (Kata): Claude Code + execd
+ controlplane ──▶ OpenSandbox ──▶ sandbox (VM):   Claude Code + execd
  dispatcher ──────────────────────▶ execd: drives Claude Code, collects its output
  sandbox ──OTLP──▶ OTel Collector ──▶ ClickHouse ◀── Trace (Usage)
 ```

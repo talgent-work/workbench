@@ -227,7 +227,7 @@ This release changes stored data and every service image, so upgrade in this ord
    and its Work then needs a Restart.
 3. **Upgrade every service image together.** Deploy the release's images of `controlplane`,
    `dispatcher`, `streamgateway`, `computer-gateway` and `workbench-web` at once, as in
-   [section 7](self-hosting.md#7-deploy), not one service at a time. Extensions check each
+   [section 7](self-hosting.md#6-deploy), not one service at a time. Extensions check each
    service's contracts version when they start, so a service left on the previous image keeps
    them from starting.
 

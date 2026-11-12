@@ -16,7 +16,7 @@ types they fill; the [self-hosting guide](self-hosting.md) shows how a deploymen
   image's file, mounted at `/app/configs/<process>/`. Its `${NAME}` values come from ConfigMap
   `workbench-environment` and from Secrets, both as environment variables. The environment's
   `CONTROLPLANE_PROFILE` activates a controlplane profile from ConfigMap `controlplane-profile`
-  ([switches](self-hosting.md#switches)).
+  ([switches](self-hosting.md#3-environment-file)).
 - Processes read their configuration once; restart them after a change.
 
 In the tables, **Default** is the value of `configs/<process>/defaults.yml`, which suits a local
@@ -155,7 +155,7 @@ Where Works run: this cluster's Cloud and people's Managed Computers.
 | `cloud.id`, `cloud.name` | `${COMPUTER_CLOUD_ID:01a19bc3-075a-7c57-b42b-7fdf73b611ed}`, `${COMPUTER_CLOUD_NAME:Talgent Cloud}` | The Cloud's identity, which Works keep for good, and its name |
 | `cloud.capacity` | `requests.cpu: "8"`, `requests.memory: 12Gi`, `pods: "64"` | The room runs get; keep it with ResourceQuota `agent-executions` |
 | `cloud.namespace`, `cloud.quota-name` | `${SANDBOX_NAMESPACE:talgent-sandbox}`, `agent-executions` | The ResourceQuota each admission checks; it must be in the sandboxes' namespace, so it counts only their Pods |
-| `cloud.demand` | requests 600m CPU and 960Mi, limits 2250m and 2368Mi, 1 Pod | Everything the quota charges for one run: the sandbox container, its egress sidecar and the Kata RuntimeClass overhead |
+| `cloud.demand` | requests 600m CPU and 960Mi, limits 2250m and 2368Mi, 1 Pod | Everything the quota charges for one run: the sandbox container, its egress sidecar and the sandbox RuntimeClass's Pod overhead (250m/320Mi for the bundled `kata-qemu-runtime-rs`); change it with the RuntimeClass |
 
 ### agent-computer
 
@@ -289,8 +289,8 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
   `talgent-sandbox`, which must equal controlplane's `SANDBOX_NAMESPACE`. The render drops the
   chart's ClusterRole: the Server's permissions are in the base's `sandbox.yaml`, a Role in
   `talgent-sandbox` and, at cluster scope, only reading Namespaces and RuntimeClasses. The
-  workload template, ConfigMap `opensandbox-workload-template` in `resources.yaml`, sets the Kata
-  RuntimeClass, `fsGroup: 1000`, DNS `ndots: 1` and the image pull Secret `ghcr-pull`. The
+  workload template, ConfigMap `opensandbox-workload-template` in `resources.yaml`, sets the sandbox
+  RuntimeClass (`TALGENT_SANDBOX_RUNTIME_CLASS`), `fsGroup: 1000`, DNS `ndots: 1` and the image pull Secret `ghcr-pull`. The
   Server's API key is Secret `opensandbox-api`.
 - **Gotenberg.** `deploy/k3s/workbench/gotenberg.yaml`, settings in ConfigMap `gotenberg-config`.
 - **workbench-web** takes no configuration; it serves the built app on port 3000.
@@ -309,7 +309,9 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
 | `REDIS_PASSWORD` | `apply-k3s.sh` | The Redis password, written to the optional Secret `redis-auth` when set |
 | `ACCOUNT_GITHUB_CLIENT_ID`, `ACCOUNT_GITHUB_CLIENT_SECRET` | `apply-k3s.sh` | Written to Secret `account-github-oauth` |
 | `TALGENT_EXECD_IMAGE` | `apply-opensandbox.sh` | Another execd image than the pinned one |
+| `TALGENT_SANDBOX_RUNTIME_CLASS` | `apply-opensandbox.sh` | The VM-isolating RuntimeClass sandboxes run with; default `kata-qemu-runtime-rs`. The script refuses to deploy when it does not exist |
+| `TALGENT_POD_NETWORK_CHECK` | `apply-opensandbox.sh` | How the encrypted pod network is confirmed: `flannel-wireguard` (default) requires every node to report Flannel's WireGuard backend with a public key; `operator` means the operator vouches for their network's encryption and nothing is checked |
 | `CLICKHOUSE_ADDR`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_MIGRATION_USER`, `CLICKHOUSE_MIGRATION_PASSWORD`, `CLICKHOUSE_MIGRATION_SQL`, `CLICKHOUSE_CONTAINER`, `CLICKHOUSE_WAIT_SECONDS` | `bootstrap-clickhouse.sh` | Defaults `127.0.0.1:9000`, `talgent_trace`, `default`, empty, `deploy/middleware/init/clickhouse/002-talgent.sql`, none, 0 (`apply-k3s.sh`: 120): how long to wait for the Collector's tables |
 | `KAFKA_BOOTSTRAP_SERVER`, `KAFKA_PARTITIONS`, `KAFKA_REPLICATION_FACTOR`, `KAFKA_CONTAINER` | `bootstrap-kafka.sh` | Defaults `127.0.0.1:9092`, 10, 1, `kafka` |
-| `JUICEFS_CSI_VERSION`, `JUICEFS_CSI_CONTROLLER_REPLICAS`, `JUICEFS_CSI_DASHBOARD_REPLICAS`, `JUICEFS_CSI_INSTALL_CONFIRM` | `scripts/juicefs/install-csi-k3s.sh` | Defaults `v0.31.6`, 1, 0; confirm with `local-k3s` |
+| `JUICEFS_CSI_VERSION`, `JUICEFS_CSI_CONTROLLER_REPLICAS`, `JUICEFS_CSI_DASHBOARD_REPLICAS`, `JUICEFS_CSI_INSTALL_CONFIRM` | `scripts/juicefs/install-csi-k3s.sh` | Defaults `v0.31.6`, 1, 0; it installs cluster-wide resources on k3s and runs only with `JUICEFS_CSI_INSTALL_CONFIRM=local-k3s` |
 | `JUICEFS_META_URL`, `REDIS_PASSWORD` | `scripts/juicefs/metadata.sh` | The metadata Redis URL without credentials, and its password |
