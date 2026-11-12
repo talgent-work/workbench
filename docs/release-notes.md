@@ -5,6 +5,14 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that installs each Plugin once
+
+Nothing to do beyond deploying it. Preparation ran `claude plugin update` after every Plugin
+install, though only a Plugin a reused workspace recorded at another release needs it; each
+update re-checks the package's source and took about 18 seconds even when it changed nothing.
+A Plugin the workspace had not installed, or had at the pinned release, is no longer updated;
+install records that cannot be read keep the update.
+
 ## The release that loads Plugins versioned by their pin
 
 Nothing to do beyond deploying it. A Plugin versioned by its pin, because its `plugin.json`
