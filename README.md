@@ -73,6 +73,25 @@ your Workbench offers, and authorize your own GitHub account for the repositorie
 
 <sub>Screenshots show sample data.</sub>
 
+## Build on Workbench
+
+Workbench is also an agent platform for your own software. Register an **Application**, and your
+internal systems or your product drive Agents through the same public APIs the web app uses: start
+a Work, steer it, stream its conversation, collect its Artifacts and read its usage.
+
+- **An Agent of its own.** An Application stands where a person stands: it has its own Agent, its
+  own Plugins and Connectors, and its own authorizations, such as the GitHub repositories its Works
+  check out.
+- **Standard sign-in for programs.** Register an Application from your account to receive a client
+  ID and secret, which it exchanges for short-lived tokens with the OAuth 2.0 client credentials
+  grant. Rotate a secret without downtime, or revoke it at once.
+- **Your users, your labels.** Give each Work your own `key=value` Work Labels, such as `user=u123`
+  or `tenant=acme`, then filter Works and break usage down by them.
+- **Bring your own tools.** Hand a Work your own MCP endpoints when you start it, so the Agent can
+  call your product's business tools, authenticated your way.
+- **In sight of its owner.** The person who registered an Application manages it in the web app and
+  reads its Works and their conversations.
+
 ## Why Workbench
 
 - **Your environment.** Deploy Workbench on your own Kubernetes cluster and run Works there or on
@@ -83,8 +102,8 @@ your Workbench offers, and authorize your own GitHub account for the repositorie
 - **Any model.** Offer the models you choose: Claude, DeepSeek, Qwen, Kimi, GLM, MiniMax, or any
   other vendor with an Anthropic-compatible API, each with its own key. People pick one when they
   start a Work.
-- **Yours alone.** Each Work, file and share belongs to the person who made it and reaches only
-  who it is meant for.
+- **Yours alone.** Each Work, file and share belongs to the person or Application that made it and
+  reaches only who it is meant for.
 - **Open source.** Apache-2.0. Read and audit the code that runs your Agents, with no lock-in to
   one vendor's cloud or model.
 
