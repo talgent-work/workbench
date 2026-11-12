@@ -7,10 +7,15 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 )
 
+// definitionCapabilitiesRecord is a definition's capabilities column: its
+// base Prompt and required Plugins, and its Work defaults, whose startup
+// Agent the column has always held beside them.
 type definitionCapabilitiesRecord struct {
-	Prompt          string   `json:"prompt"`
-	StartupAgent    string   `json:"startup_agent"`
-	RequiredPlugins []string `json:"required_plugins"`
+	Prompt               string   `json:"prompt"`
+	StartupAgent         string   `json:"startup_agent"`
+	RequiredPlugins      []string `json:"required_plugins"`
+	DefaultModel         string   `json:"default_model_configuration_id,omitempty"`
+	DefaultThinkingLevel string   `json:"default_thinking_level,omitempty"`
 }
 
 type snapshotRecord struct {
@@ -18,7 +23,16 @@ type snapshotRecord struct {
 	StartupAgent string                 `json:"startup_agent"`
 	Plugins      []selectedPluginRecord `json:"plugins"`
 	Connectors   []connectorRecord      `json:"connectors"`
-	Sandbox      bool                   `json:"sandbox,omitempty"`
+	// ApplicationEndpoints keeps the headers the Application gave; they
+	// leave storage only for the Work's own launch.
+	ApplicationEndpoints []applicationEndpointRecord `json:"application_endpoints,omitempty"`
+	Sandbox              bool                        `json:"sandbox,omitempty"`
+}
+
+type applicationEndpointRecord struct {
+	Name    string            `json:"name"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 type connectorRecord struct {
@@ -71,17 +85,19 @@ type mcpRecord struct {
 	Definition   []byte                               `json:"definition"`
 }
 
-func encodeCapabilities(value domain.CapabilityConfiguration) (string, error) {
-	return encode(definitionCapabilitiesRecord{Prompt: value.Prompt, StartupAgent: value.StartupAgent, RequiredPlugins: value.RequiredPlugins})
+func encodeCapabilities(value domain.CapabilityConfiguration, defaults domain.WorkDefaults) (string, error) {
+	return encode(definitionCapabilitiesRecord{Prompt: value.Prompt, StartupAgent: defaults.StartupAgent, RequiredPlugins: value.RequiredPlugins,
+		DefaultModel: defaults.ModelConfigurationID, DefaultThinkingLevel: defaults.ThinkingLevel})
 }
 
-func decodeCapabilities(body string) (domain.CapabilityConfiguration, error) {
+func decodeCapabilities(body string) (domain.CapabilityConfiguration, domain.WorkDefaults, error) {
 	var record definitionCapabilitiesRecord
 	if err := json.Unmarshal([]byte(body), &record); err != nil {
-		return domain.CapabilityConfiguration{}, err
+		return domain.CapabilityConfiguration{}, domain.WorkDefaults{}, err
 	}
-	value := domain.CapabilityConfiguration{Prompt: record.Prompt, StartupAgent: record.StartupAgent, RequiredPlugins: record.RequiredPlugins}
-	return value, value.Validate()
+	value := domain.CapabilityConfiguration{Prompt: record.Prompt, RequiredPlugins: record.RequiredPlugins}
+	defaults := domain.WorkDefaults{StartupAgent: record.StartupAgent, ModelConfigurationID: record.DefaultModel, ThinkingLevel: record.DefaultThinkingLevel}
+	return value, defaults, value.Validate()
 }
 
 func encodeCapabilitySnapshot(value domain.CapabilitySnapshot) (string, error) {
@@ -94,6 +110,9 @@ func encodeCapabilitySnapshot(value domain.CapabilitySnapshot) (string, error) {
 	for _, c := range value.Connectors {
 		record.Connectors = append(record.Connectors, connectorRecord{ID: c.ID, Name: c.Name, Required: c.Required, Command: c.Command, Arguments: c.Arguments, Authentication: c.Authentication,
 			Type: c.Type, URL: c.URL, Environment: c.Environment, Headers: c.Headers, Provider: c.Provider, Target: c.Target, ProviderAuthentication: c.ProviderAuthentication})
+	}
+	for _, endpoint := range value.ApplicationEndpoints {
+		record.ApplicationEndpoints = append(record.ApplicationEndpoints, applicationEndpointRecord{Name: endpoint.Name, URL: endpoint.URL, Headers: endpoint.Headers})
 	}
 	if value.Plugins != nil {
 		record.Plugins = make([]selectedPluginRecord, 0, len(value.Plugins))
@@ -136,6 +155,9 @@ func decodeCapabilitySnapshot(body string) (domain.CapabilitySnapshot, error) {
 	for _, c := range record.Connectors {
 		value.Connectors = append(value.Connectors, domain.SelectedConnector{ID: c.ID, Name: c.Name, Required: c.Required, Command: c.Command, Arguments: c.Arguments, Authentication: c.Authentication,
 			Type: c.Type, URL: c.URL, Environment: c.Environment, Headers: c.Headers, Provider: c.Provider, Target: c.Target, ProviderAuthentication: c.ProviderAuthentication})
+	}
+	for _, endpoint := range record.ApplicationEndpoints {
+		value.ApplicationEndpoints = append(value.ApplicationEndpoints, domain.ApplicationMCPEndpoint{Name: endpoint.Name, URL: endpoint.URL, Headers: endpoint.Headers})
 	}
 	if record.Plugins != nil {
 		value.Plugins = make([]domain.SelectedPlugin, 0, len(record.Plugins))

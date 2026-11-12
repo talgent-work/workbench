@@ -115,6 +115,55 @@ func TestAgentAccountForAnAgentRepresentingNoOne(t *testing.T) {
 	require.False(t, token.Has("for"), "no represented person, no claim")
 }
 
+// An Application's Work names its owning Application in every agent token,
+// represents no person, and keeps that owner for good.
+func TestAgentAccountStatesTheOwningApplication(t *testing.T) {
+	h := newHarness(t)
+	client := h.agentAccounts()
+	work, application := newWorkID(), newWorkID()
+	request := &accountprivatev1.IssueWorkIdentityTokenRequest{WorkId: work, AgentId: "agent-1", Purpose: "work", ApplicationId: application}
+	resp, err := client.IssueWorkIdentityToken(asAgent(context.Background()), request)
+	require.NoError(t, err)
+	token := h.verify(resp.GetToken())
+	var owner string
+	require.NoError(t, token.Get("application_id", &owner))
+	require.Equal(t, application, owner)
+	require.False(t, token.Has("for"), "an Application's Work represents no person")
+
+	request.ApplicationId = newWorkID()
+	_, err = client.IssueWorkIdentityToken(asAgent(context.Background()), request)
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "the owning Application never drifts")
+	request.ApplicationId = "not-an-application"
+	_, err = client.IssueWorkIdentityToken(asAgent(context.Background()), request)
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+
+	unowned := h.verify(h.issueAgentToken(newWorkID(), ""))
+	require.False(t, unowned.Has("application_id"), "a Work no Application owns states none")
+}
+
+// A Work's Work Labels are among the facts every agent token states, across
+// a reload of its Agent Account, and never drift.
+func TestAgentAccountStatesTheWorkLabels(t *testing.T) {
+	h := newHarness(t)
+	client := h.agentAccounts()
+	labels := map[string]string{"user": "u123", "tenant": "acme"}
+	request := &accountprivatev1.IssueWorkIdentityTokenRequest{WorkId: newWorkID(), AgentId: "agent-1", Purpose: "work", ApplicationId: newWorkID(), WorkLabels: labels}
+	for range 2 {
+		resp, err := client.IssueWorkIdentityToken(asAgent(context.Background()), request)
+		require.NoError(t, err)
+		var stated map[string]any
+		require.NoError(t, h.verify(resp.GetToken()).Get("work_labels", &stated))
+		require.Equal(t, map[string]any{"user": "u123", "tenant": "acme"}, stated)
+	}
+
+	request.WorkLabels = map[string]string{"user": "u456", "tenant": "acme"}
+	_, err := client.IssueWorkIdentityToken(asAgent(context.Background()), request)
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "the Work Labels never drift")
+
+	unlabelled := h.verify(h.issueAgentToken(newWorkID(), ""))
+	require.False(t, unlabelled.Has("work_labels"), "a Work without labels states none")
+}
+
 func TestAgentAccountServesOnlyTrustedServices(t *testing.T) {
 	h := newHarness(t)
 	_, err := h.agentAccounts().IssueWorkIdentityToken(context.Background(), issueRequest(newWorkID(), "", ""))

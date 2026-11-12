@@ -42,8 +42,8 @@ type ConnectorDetail struct {
 type ConnectorPlugin struct{ Slug, Description string }
 
 type ConnectorInstallationCommand struct {
-	ActorUserID, Name string
-	Version           int
+	OwnerID, Name string
+	Version       int
 }
 
 // ConnectorSelection is trusted startup input for Agent: the catalog with offer
@@ -159,7 +159,7 @@ func (a *Application) ReadConnectorSelection(ctx context.Context, owner string) 
 	if err != nil {
 		return ConnectorSelection{}, err
 	}
-	installed, err := a.connectorQueries.ListInstalled(ctx, owner)
+	installed, err := a.installedQueries.ListInstalled(ctx, owner)
 	if err != nil {
 		return ConnectorSelection{}, err
 	}
@@ -188,18 +188,18 @@ func (a *Application) changeConnectorInstallation(ctx context.Context, command C
 	if err := a.installedConnectors.Save(ctx, installation); err != nil {
 		return ConnectorDetail{}, err
 	}
-	return a.GetConnector(ctx, command.ActorUserID, command.Name)
+	return a.GetConnector(ctx, command.OwnerID, command.Name)
 }
 
 func (a *Application) loadConnectorInstallation(ctx context.Context, command ConnectorInstallationCommand) (*domain.InstalledConnector, error) {
-	if strings.TrimSpace(command.ActorUserID) == "" {
+	if strings.TrimSpace(command.OwnerID) == "" {
 		return nil, ErrUnauthenticated
 	}
 	connector, err := a.connectors.GetByName(ctx, command.Name)
 	if err != nil {
 		return nil, err
 	}
-	installation, err := a.installedConnectors.Get(ctx, command.ActorUserID, connector.ID)
+	installation, err := a.installedConnectors.Get(ctx, command.OwnerID, connector.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +217,7 @@ func (a *Application) connectorViews(ctx context.Context, actor string) ([]Conne
 	if err != nil {
 		return nil, err
 	}
-	installed, err := a.connectorQueries.ListInstalled(ctx, actor)
+	installed, err := a.installedQueries.ListInstalled(ctx, actor)
 	if err != nil {
 		return nil, err
 	}

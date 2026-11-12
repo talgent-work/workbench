@@ -20,12 +20,12 @@ func (c *Client) SupplyServiceCredential(ctx context.Context, input command.Serv
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	ctx, info, err := delegated(ctx, input.OwnerUserID)
+	ctx, info, err := delegated(ctx, input.OwnerID)
 	if err != nil {
 		return command.ServiceCredentialMaterial{}, err
 	}
 	info.RequestHeader().Set("Authorization", "Bearer "+c.credentialToken)
-	response, err := c.credentials.SupplyServiceCredential(ctx, &marketplaceprivatev1.SupplyServiceCredentialRequest{OwnerUserId: input.OwnerUserID, AuthorizationId: input.AuthorizationID, Target: input.Target})
+	response, err := c.credentials.SupplyServiceCredential(ctx, &marketplaceprivatev1.SupplyServiceCredentialRequest{OwnerUserId: input.OwnerID, AuthorizationId: input.AuthorizationID, Target: input.Target})
 	if err != nil {
 		return command.ServiceCredentialMaterial{}, credentialUnavailable(err, info)
 	}

@@ -20,6 +20,9 @@ type CapabilitySnapshot struct {
 	StartupAgent string
 	Plugins      []SelectedPlugin
 	Connectors   []SelectedConnector
+	// ApplicationEndpoints are the MCP endpoints the Work's Application gave
+	// it at creation, with their fixed headers.
+	ApplicationEndpoints []ApplicationMCPEndpoint
 	// Sandbox records that a Work on a Managed Computer runs in Claude
 	// Code's sandbox, chosen at its first start and never turned off.
 	Sandbox bool
@@ -30,6 +33,7 @@ func (c CapabilitySnapshot) Clone() CapabilitySnapshot {
 	for i := range c.Connectors {
 		c.Connectors[i] = c.Connectors[i].Clone()
 	}
+	c.ApplicationEndpoints = cloneApplicationEndpoints(c.ApplicationEndpoints)
 	c.Plugins = slices.Clone(c.Plugins)
 	for i := range c.Plugins {
 		c.Plugins[i].Release = c.Plugins[i].Release.Clone()
@@ -51,6 +55,9 @@ func (c CapabilitySnapshot) Validate() error {
 			return fmt.Errorf("%w: duplicate Connector", ErrInvalidCapabilities)
 		}
 		connectors[connector.Name] = true
+	}
+	if err := validateApplicationEndpoints(c.ApplicationEndpoints, c.Connectors); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for _, plugin := range c.Plugins {

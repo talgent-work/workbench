@@ -12,7 +12,10 @@ import (
 
 func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkStartOptionsQuery) (query.WorkStartOptions, error) {
 	value := query.WorkStartOptions{Models: a.Models.Provided()}
-	var base domain.CapabilityConfiguration
+	var (
+		base     domain.CapabilityConfiguration
+		defaults domain.WorkDefaults
+	)
 	if input.WorkID != "" {
 		work, err := a.Queries.GetWork.Handle(ctx, query.GetWork{SubjectID: input.SubjectID, WorkID: input.WorkID})
 		if err != nil {
@@ -30,14 +33,17 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 		}
 		return value, nil
 	}
-	employee := domain.EmployeeDefinitionInput(strings.TrimSpace(input.EmployeeID))
-	if err := employee.UsageScope.Validate(); err != nil {
+	owner := domain.EmployeeDefinitionInput(strings.TrimSpace(input.EmployeeID))
+	if input.ApplicationID != "" {
+		owner = domain.ApplicationDefinitionInput(input.ApplicationID, "")
+	}
+	if err := owner.UsageScope.Validate(); err != nil {
 		return query.WorkStartOptions{}, err
 	}
-	id, err := a.DefinitionQueries.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: employee.UsageScope.Kind, ScopeReference: employee.UsageScope.Reference, Purpose: employee.Purpose})
+	id, err := a.DefinitionQueries.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: owner.UsageScope.Kind, ScopeReference: owner.UsageScope.Reference, Purpose: owner.Purpose})
 	switch {
 	case errors.Is(err, domain.ErrAgentDefinitionNotFound):
-		base = employee.Capabilities.Clone()
+		base, defaults = owner.Capabilities.Clone(), owner.WorkDefaults
 	case err != nil:
 		return query.WorkStartOptions{}, err
 	default:
@@ -45,7 +51,7 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 		if err != nil {
 			return query.WorkStartOptions{}, err
 		}
-		base = definition.ProvideCapabilities()
+		base, defaults = definition.ProvideCapabilities(), definition.WorkDefaults
 	}
 	base.RequiredPlugins = a.BuiltInPlugins.ComposeRequiredPlugins(input.ProjectID, base.RequiredPlugins, input.RequiredPlugins)
 	personal, err := a.Catalog.ListPersonalPlugins(ctx, input.SubjectID)
@@ -56,7 +62,8 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 	if err != nil {
 		return query.WorkStartOptions{}, err
 	}
-	value.DefaultStartupAgent = base.StartupAgent
+	value.DefaultStartupAgent = defaults.StartupAgent
+	value.DefaultModel, value.DefaultThinkingLevel = a.offeredDefaults(defaults)
 	for _, slug := range slugs {
 		release, err := a.Catalog.ResolvePlugin(ctx, input.SubjectID, slug)
 		if err != nil {
@@ -75,6 +82,27 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 		return query.WorkStartOptions{}, err
 	}
 	return value, nil
+}
+
+// offeredDefaults is the definition's default model while the platform
+// provides it, and its default thinking level while the model a new Work
+// would take offers it (Model choice, Thinking-level default).
+func (a *Application) offeredDefaults(defaults domain.WorkDefaults) (domain.WorkModelSelection, string) {
+	var model domain.WorkModelSelection
+	if _, provided := a.Models.Option(defaults.Model()); defaults.ModelConfigurationID != "" && provided {
+		model = defaults.Model()
+	}
+	taken := model
+	if taken == (domain.WorkModelSelection{}) {
+		if first, ok := a.Models.Default(); ok {
+			taken = first.Selection
+		}
+	}
+	levels, _, _ := a.Models.ThinkingLevels(taken)
+	if defaults.ThinkingLevel != "" && slices.Contains(levels, defaults.ThinkingLevel) {
+		return model, defaults.ThinkingLevel
+	}
+	return model, ""
 }
 
 const recentRepositoryLimit = 5

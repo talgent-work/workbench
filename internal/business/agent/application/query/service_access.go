@@ -7,7 +7,7 @@ type ServiceAccessObservation struct {
 }
 
 type WorkServiceAccess struct {
-	OwnerUserID      string
+	OwnerID          string
 	SelectedServices []string
 	Observations     []ServiceAccessObservation
 	Repositories     []RepositoryPreparation

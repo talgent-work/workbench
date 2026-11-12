@@ -3,14 +3,16 @@ package tokenmaintenance
 import (
 	"context"
 	"strings"
+
+	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 )
 
 type RefreshAuthorizationProcessor struct {
-	refresher AuthorizationRefresher
+	github application.GitHubPort
 }
 
-func NewRefreshAuthorizationProcessor(refresher AuthorizationRefresher) *RefreshAuthorizationProcessor {
-	return &RefreshAuthorizationProcessor{refresher: refresher}
+func NewRefreshAuthorizationProcessor(github application.GitHubPort) *RefreshAuthorizationProcessor {
+	return &RefreshAuthorizationProcessor{github: github}
 }
 
 func (p *RefreshAuthorizationProcessor) Process(ctx context.Context, payload RefreshAuthorizationPayload) error {
@@ -21,7 +23,7 @@ func (p *RefreshAuthorizationProcessor) Process(ctx context.Context, payload Ref
 	if reason == "" {
 		reason = ReasonAccessExpiring
 	}
-	if err := p.refresher.RefreshProviderAuthorization(ctx, payload.AuthorizationID, reason); err != nil {
+	if err := p.github.RefreshProviderAuthorization(ctx, payload.AuthorizationID, reason); err != nil {
 		return err
 	}
 	return nil

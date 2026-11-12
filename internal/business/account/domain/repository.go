@@ -33,3 +33,10 @@ type AgentAccountRepository interface {
 	Get(ctx context.Context, work WorkID) (*AgentAccount, error)
 	Save(ctx context.Context, account *AgentAccount) error
 }
+
+// ApplicationRepository is the collection of Applications with their Client
+// Secrets.
+type ApplicationRepository interface {
+	Get(ctx context.Context, id ApplicationID) (*Application, error)
+	Save(ctx context.Context, application *Application) error
+}

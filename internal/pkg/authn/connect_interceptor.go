@@ -34,6 +34,7 @@ const (
 	HeaderWorkSubjectKind   = "x-talgent-work-subject-kind"
 	HeaderWorkSubjectID     = "x-talgent-work-subject-id"
 	HeaderRepresentedUserID = "x-talgent-represented-user-id"
+	HeaderApplicationID     = "x-talgent-application-id"
 	// A trusted service's call on a person's behalf.
 	HeaderServiceID         = "x-talgent-service-id"
 	HeaderDelegatedUserID   = "x-talgent-delegated-user-id"
@@ -47,8 +48,9 @@ const (
 
 // The values of HeaderPrincipal.
 const (
-	principalUser  = "user"
-	principalAgent = "agent"
+	principalUser        = "user"
+	principalAgent       = "agent"
+	principalApplication = "application"
 )
 
 // NewPrincipalInterceptor establishes exactly one Principal for every request,
@@ -106,11 +108,14 @@ func admits(admission *admissionv1.Admission, principal Principal) bool {
 	if _, agent := principal.Agent(); agent {
 		want = admissionv1.Principal_PRINCIPAL_AGENT
 	}
+	if _, application := principal.Application(); application {
+		want = admissionv1.Principal_PRINCIPAL_APPLICATION
+	}
 	return slices.Contains(admission.GetPrincipals(), want)
 }
 
 // establish builds the request's one Principal: a trusted service's
-// delegated person, or the user or agent the entry verified. Delegation is
+// delegated person, or the user, agent or Application the entry verified. Delegation is
 // read first and needs no further proof: the cluster network is its trust
 // boundary, and the entry strips its headers from every public request
 // (contracts docs/gateway-identity.md).
@@ -149,10 +154,17 @@ func establish(header headerReader) (Principal, error) {
 				return Principal{}, connect.NewError(connect.CodeUnauthenticated, "the agent's represented person is invalid")
 			}
 		}
+		if owner := strings.TrimSpace(header.Get(HeaderApplicationID)); owner != "" {
+			if agent.ApplicationID, ok = canonicalUUID(owner); !ok {
+				return Principal{}, connect.NewError(connect.CodeUnauthenticated, "the agent's owning Application is invalid")
+			}
+		}
 		if agent.AgentID == "" || agent.Purpose == "" {
 			return Principal{}, connect.NewError(connect.CodeUnauthenticated, "the agent's AgentDefinition and purpose are required")
 		}
 		return AgentPrincipal(agent), nil
+	case principalApplication:
+		return ApplicationPrincipal(Application{ID: subject}), nil
 	default:
 		return Principal{}, connect.NewError(connect.CodeUnauthenticated, "the identity names no known Principal")
 	}
@@ -184,7 +196,8 @@ func delegatedUser(header headerReader) (string, bool, error) {
 	return userID, true, nil
 }
 
-// canonicalUUID admits an Account or Work id: a canonical lowercase UUID.
+// canonicalUUID admits an Account, Work or Application id: a canonical
+// lowercase UUID.
 func canonicalUUID(raw string) (string, bool) {
 	id := strings.TrimSpace(raw)
 	parsed, err := uuid.Parse(id)

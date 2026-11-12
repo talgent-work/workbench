@@ -26,7 +26,7 @@ func grantedToDO(granted bool) uint8 {
 func shareLinkToDO(id domain.DirectoryID, link *domain.ShareLink) *shareLinkDO {
 	return &shareLinkDO{
 		Token: link.Token, OwnerKey: ownerKey(id.Owner), DirectoryName: id.Name, TargetName: link.Target.Name,
-		CreatedBy: link.CreatedBy, State: string(link.State), CreatedAt: link.CreatedAt.UnixMilli(),
+		CreatedBy: link.CreatedBy.UserID, CreatedByApplication: link.CreatedBy.ApplicationID, State: string(link.State), CreatedAt: link.CreatedAt.UnixMilli(),
 	}
 }
 
@@ -64,7 +64,7 @@ func directoryFromDO(row *directoryDO, links []shareLinkDO, mappings []mappingDO
 		directory.ShareLinks = append(directory.ShareLinks, &domain.ShareLink{
 			Token:     link.Token,
 			Target:    domain.FilePosition{Directory: id, Name: link.TargetName},
-			CreatedBy: link.CreatedBy,
+			CreatedBy: domain.Actor{UserID: link.CreatedBy, ApplicationID: link.CreatedByApplication},
 			CreatedAt: time.UnixMilli(link.CreatedAt).UTC(),
 			State:     domain.ShareLinkState(link.State),
 		})

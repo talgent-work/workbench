@@ -16,7 +16,7 @@ type WorkLifecycleEvent struct {
 	OccurredAt time.Time
 }
 
-type ListWorkLifecycleEvents struct{ ActorUserID, WorkID string }
+type ListWorkLifecycleEvents struct{ ActorID, WorkID string }
 
 type ListWorkLifecycleEventsHandler struct {
 	authorization access.WorkAuthorizer
@@ -31,7 +31,7 @@ func (h *ListWorkLifecycleEventsHandler) Handle(ctx context.Context, request Lis
 	if strings.TrimSpace(request.WorkID) == "" {
 		return nil, domain.ErrInvalidWork
 	}
-	if err := h.authorization.AuthorizeWork(ctx, request.ActorUserID, request.WorkID); err != nil {
+	if err := h.authorization.AuthorizeWork(ctx, request.ActorID, request.WorkID); err != nil {
 		return nil, err
 	}
 	return h.reader.ListWorkLifecycleEvents(ctx, request.WorkID)

@@ -7,7 +7,8 @@
 
 ### Your own Agent, ready for real work.
 
-Open-source managed agents you host yourself. Run every Work in a cloud sandbox, or on your own machine.
+A managed agent platform you run yourself. Every Work in its own sandbox or on your own machine,
+with the model you choose.
 
 [![Release](https://img.shields.io/github/v/release/talgent-work/workbench?sort=semver&color=6a4cf5)](https://github.com/talgent-work/workbench/releases/latest)
 [![License](https://img.shields.io/github/license/talgent-work/workbench?color=blue)](LICENSE)
@@ -20,40 +21,55 @@ Open-source managed agents you host yourself. Run every Work in a cloud sandbox,
 
 </div>
 
-Talgent Workbench gives everyone an AI Agent of their own. Start a Work, hand it files, follow
-what it does as it happens and get the results back. Run several Works at once, and do more than
-you could alone.
+Talgent Workbench gives every person, and every program you register, an AI Agent of their own.
+Start a Work, hand it files, follow what it does as it happens and collect the results.
 
-Workbench is a managed agent platform that runs in your own environment instead of a vendor's
-cloud. It hosts every Agent's runtime for you: a sandbox for each Work, sessions that resume where
-they stopped, credentials kept out of reach, access granted per person and every run's cost in
-sight.
+Workbench runs Claude Code natively and hosts everything around it: a sandbox per Work, sessions
+that resume where they stopped, credentials kept out of reach, Plugins, files, sharing and usage.
+All of it, including the conversations and telemetry, runs in your own Kubernetes cluster.
+
+## Why Workbench
+
+- **The whole platform is yours.** The control plane, the Agents' conversations, their files and
+  their telemetry live in your cluster, not only the sandboxes. Apache-2.0, so you can read and
+  audit the code that runs your Agents.
+- **Any model, per Work.** Offer Claude, DeepSeek, Qwen, Kimi, GLM, MiniMax or any vendor with an
+  Anthropic-compatible API, each with its own key. People and programs choose one when they start
+  a Work.
+- **In the cloud or on your own machine.** Run a Work in a VM-isolated sandbox on your cluster, or
+  on your own Mac, Linux or Windows computer. The conversation, Library, Usage and Plugins are the
+  same either way.
+- **For people and for programs.** A web app where everyone has their own Agent, and the same
+  public APIs for the Applications you register, each with its own Agent, Plugins and
+  authorizations.
+- **The Claude Code ecosystem as it is.** Plugins come from standard Claude Code plugin catalogs,
+  so the Skills and Agents you already use work unchanged.
+- **Costs and access you can trace.** Token usage by person, Work, model and Application. Every
+  Work, file and share belongs to the person or Application that made it.
 
 ## Two ways to run a Work
 
-Each time you start a Work, choose where it runs: hosted in Workbench's cloud, or on a computer of
-your own that Workbench manages. Everything else stays the same: the live conversation, the Library,
-Usage, Plugins and sharing.
+Each time you start a Work, choose where it runs. Everything else stays the same.
 
 | | Cloud (hosted) | Managed Computer |
 |---|---|---|
 | **Where it runs** | In a fresh sandbox on your Workbench's Kubernetes cluster | On your own Mac, Linux or Windows machine, connected with Talgent Computer |
 | **Best for** | Work that should run any time, with nothing to set up and no machine left on | Work that needs the files, tools and apps already on your machine |
-| **Isolation** | Its own sandbox, cut off from your private network; credentials and model keys never enter it | You choose how much the Agent may do there, and can confine it to the operating system's sandbox on macOS and Linux |
+| **Isolation** | Its own VM-isolated sandbox, cut off from your private network; credentials and model keys never enter it | You choose how much the Agent may do there, and can confine it to the operating system's sandbox on macOS and Linux |
 | **Setup** | None for you; the deployment provides it | Install `@talgent/computer` from npm and connect the machine from your Computers page. It needs only an outbound connection and keeps itself up to date |
 
 ## What you can do
 
 **Hand work to your Agent.** Describe the task, attach files, pick a repository, a model and the
-Plugins it needs. Steer it while it runs, stop it, and pick it up later exactly where it left off.
+Plugins it needs. Steer it while it runs, stop it, and pick it up later where it left off.
 
-**Watch it work.** The conversation streams live: what the Agent is thinking, the tools it calls,
-its plan and its progress. Share a Work with colleagues so they can follow along, read-only, until
-you revoke it.
+**Watch it work.** The conversation streams live: the Agent's thinking, the tools it calls, its
+plan and its progress. Share a Work with colleagues so they can follow it read-only until you
+revoke access.
 
 **Keep everything it made.** Reports, pages, spreadsheets and decks the Agent publishes land in
 your Library, next to what others have shared with you. Office documents, PDFs and images preview
-in the browser.
+in the browser, and a Share Link hands a file to anyone you choose.
 
 **Extend it from the Marketplace.** Add the Plugins (Skills and specialist Agents) and Connectors
 your Workbench offers, and authorize your own GitHub account for the repositories a Work checks out.
@@ -73,20 +89,15 @@ your Workbench offers, and authorize your own GitHub account for the repositorie
 
 <sub>Screenshots show sample data.</sub>
 
-## Why Workbench
+## Build on Workbench with Applications
 
-- **Your environment.** Deploy Workbench on your own Kubernetes cluster and run Works there or on
-  your own computers. Your files and results stay with you.
-- **Isolated by default.** Every cloud Work runs in its own sandbox, cut off from your private
-  network, and on your own computer you decide how far the Agent may reach. Credentials and model
-  keys never enter a Work.
-- **Any model.** Offer the models you choose: Claude, DeepSeek, Qwen, Kimi, GLM, MiniMax, or any
-  other vendor with an Anthropic-compatible API, each with its own key. People pick one when they
-  start a Work.
-- **Yours alone.** Each Work, file and share belongs to the person who made it and reaches only
-  who it is meant for.
-- **Open source.** Apache-2.0. Read and audit the code that runs your Agents, with no lock-in to
-  one vendor's cloud or model.
+Register an **Application** and your own systems or product drive Agents through the same public
+APIs the web app uses: start Works, follow them, collect their Artifacts and read their usage. Each
+Application has its own Agent, Plugins and authorizations, signs in with OAuth 2.0 client
+credentials, labels its Works to attribute usage to its own users, and can give a Work its own MCP
+tools.
+
+<img alt="An Application's Works in the web app: each Work with its Work Labels, state, token use and last update" src="docs/assets/applications.webp" width="900">
 
 ## From every person to the whole company: Talgent Orchestra
 
@@ -143,6 +154,7 @@ moves by two days and every owner is told. The EU pricing rules are kept for the
 | Processes, stores and repository layout | [Architecture](docs/architecture.md) |
 | Building, testing and releases | [Development](docs/development.md) |
 | Talgent Computer and its gateway | [Talgent Computer protocol](docs/computer-protocol.md) |
+| Calling Workbench as an Application: tokens, APIs, identity | [Contracts repository](https://github.com/talgent-work/contracts): `docs/application-tokens.md`, `proto/*/public` |
 
 ## Contributing
 

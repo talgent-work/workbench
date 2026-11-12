@@ -34,9 +34,9 @@ var (
 // with base capabilities that every Work of these cases overrides.
 func seedDefinition(t *testing.T, db *xorm.Engine) *domain.AgentDefinition {
 	t.Helper()
-	created, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{workOwner}, AgentName: "Fixture Agent", Purpose: domain.EmployeeWorkPurpose,
+	created, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{workOwner}, AgentName: "Fixture Agent", Purpose: domain.StandaloneWorkPurpose,
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: workOwner},
-		Capabilities: domain.CapabilityConfiguration{Prompt: "base prompt", StartupAgent: "custom:base", RequiredPlugins: []string{"custom"}},
+		Capabilities: domain.CapabilityConfiguration{Prompt: "base prompt", RequiredPlugins: []string{"custom"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "custom:base"},
 	})
 	require.NoError(t, err)
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
@@ -79,14 +79,14 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	builtIns, err := domain.NewBuiltInPlugins(defaultBuiltIns.Platform, nil)
 	require.NoError(t, err)
 	capabilities, err := command.ResolveStartupCapabilities(ctx, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), workOwner, domain.StartupCapabilityInput{
-		BasePrompt: definition.Capabilities.Prompt, RequiredPlugins: builtIns.ComposeRequiredPlugins(workProject, definition.Capabilities.RequiredPlugins, nil), DefaultStartupAgent: definition.Capabilities.StartupAgent,
+		BasePrompt: definition.Capabilities.Prompt, RequiredPlugins: builtIns.ComposeRequiredPlugins(workProject, definition.Capabilities.RequiredPlugins, nil), DefaultStartupAgent: definition.WorkDefaults.StartupAgent,
 		Prompt: &workPrompt, StartupAgent: &workStartupAgent,
 	})
 	require.NoError(t, err)
 	cloud := testCloud("10", "10Gi", "64").Cloud
 	admission := domain.StartAdmission{AdmittedAt: now, AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Soul: definition.Soul,
 		Seat: domain.ComputerSeat{ComputerID: cloud.ID, Kind: domain.ComputerCloud, DeskID: uuid.NewString()}}
-	work, created, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: workOwner, AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: definition.RepresentedPerson()},
+	work, created, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: workOwner, AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: definition.RepresentedPerson()},
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: domain.WorkSubject{Kind: "case", ID: seed.subject}, ProjectID: workProject,
 		Capabilities: capabilities, TraceAttributes: definition.WorkTraceAttributes(nil), Admission: admission}, domain.WorkCreationFacts{})
 	require.NoError(t, err)

@@ -84,10 +84,12 @@ func randomAgentName() (string, error) {
 	return deagon.Name(deagon.NewCapitalizedSpaceFormatter(), int(binary.BigEndian.Uint32(entropy[:])&0x01ffffff)), nil
 }
 
-// ChangeAgentAppearance carries the trusted actor and the chosen appearance.
+// ChangeAgentAppearance carries the trusted requester and the chosen
+// appearance.
 type ChangeAgentAppearance struct {
-	AgentID, Actor, Name string
-	Glyph, Color         string
+	AgentID, Name string
+	Glyph, Color  string
+	Requester     domain.DefinitionRequester
 }
 
 type ChangeAgentAppearanceHandler struct {
@@ -111,7 +113,7 @@ func (h *ChangeAgentAppearanceHandler) Handle(ctx context.Context, input ChangeA
 		if err != nil {
 			return domain.AgentAppearance{}, err
 		}
-		changed, err := agent.ChangeAppearance(input.Actor, input.Name, icon)
+		changed, err := agent.ChangeAppearance(input.Requester, input.Name, icon)
 		if err != nil || !changed {
 			return agent.Appearance(), err
 		}

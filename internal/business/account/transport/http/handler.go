@@ -1,6 +1,7 @@
-// Package http serves Account's browser sign-in endpoints under /auth. They
-// are plain HTTP rather than Connect: they run before a token exists, follow
-// OAuth redirect and cookie semantics, and the JWKS must be a plain GET the
+// Package http serves Account's endpoints under /auth: a person's browser
+// sign-in and an Application's client credentials grant. They are plain HTTP
+// rather than Connect: they run before a token exists, follow OAuth redirect,
+// cookie and token-endpoint semantics, and the JWKS must be a plain GET the
 // gateway can fetch.
 package http
 
@@ -36,6 +37,7 @@ type Application interface {
 	RefreshLoginSession(ctx context.Context, cmd application.RefreshLoginSession) (application.SignedIn, error)
 	SignOut(ctx context.Context, accessToken string) error
 	PublishedKeys(ctx context.Context) ([]byte, error)
+	IssueApplicationIdentityToken(ctx context.Context, cmd application.IssueApplicationIdentityToken) (application.IssuedToken, error)
 }
 
 type Config struct {
@@ -80,6 +82,7 @@ func NewHandler(app Application, cfg Config, logger *slog.Logger) (*Handler, err
 	router.HandleFunc("POST "+refreshPath, h.refresh)
 	router.HandleFunc("POST /auth/logout", h.logout)
 	router.HandleFunc("GET /auth/jwks.json", h.jwks)
+	router.HandleFunc("POST "+tokenPath, h.token)
 	h.router = router
 	return h, nil
 }

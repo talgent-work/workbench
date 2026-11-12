@@ -9,7 +9,7 @@ import (
 )
 
 // An employee's Agent represents that employee, so every Work of it, a
-// caller's or a Personal Work, rolls up to that person's usage.
+// caller's or a Standalone Work, rolls up to that person's usage.
 func TestAnEmployeeAgentRepresentsTheEmployee(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.EmployeeDefinitionInput("employee-1"))
 	require.NoError(t, err)
@@ -26,5 +26,7 @@ func TestAnEmployeeDefinitionOfAnotherPurposeRepresentsNoPerson(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(input)
 	require.NoError(t, err)
 	require.Empty(t, agent.RepresentedPerson())
-	require.NotContains(t, agent.WorkTraceAttributes(nil), "talgent.user_id")
+	attributes := agent.WorkTraceAttributes(map[string]string{"talgent.application_id": "a-caller-claim"})
+	require.NotContains(t, attributes, "talgent.user_id")
+	require.NotContains(t, attributes, "talgent.application_id", "no caller attributes a Work to an Application")
 }

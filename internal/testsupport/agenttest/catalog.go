@@ -36,7 +36,7 @@ func (c *catalog) ResolvePlugin(_ context.Context, _ string, slug string) (domai
 		return release, nil
 	}
 	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"talgent","version":"1"}`),
-		Agents:     []domain.AgentComponent{{Name: "talgent:personal-work-executor", Description: "Personal Work executor"}},
+		Agents:     []domain.AgentComponent{{Name: "talgent:work-executor", Description: "Work executor"}},
 		Parameters: pluginconfig.ParameterDeclarations{"token": {Type: "string", Title: "Token", Description: "Fixture token", Sensitive: true}}}, nil
 }
 
@@ -75,6 +75,6 @@ func (s startCatalog) ListAccessibleRepositories(ctx context.Context, owner stri
 type fixtureRepositories struct{ authorizationcatalogtest.Empty }
 
 func (fixtureRepositories) ListAccessibleRepositories(_ context.Context, owner string) ([]domain.AccessibleRepository, error) {
-	return []domain.AccessibleRepository{{OwnerUserID: owner, Provider: "github", RepoID: "123",
+	return []domain.AccessibleRepository{{OwnerID: owner, Provider: "github", RepoID: "123",
 		RepoName: "example/project", CloneURL: "https://github.com/example/project.git", WebURL: "https://github.com/example/project", DefaultBranch: "main"}}, nil
 }

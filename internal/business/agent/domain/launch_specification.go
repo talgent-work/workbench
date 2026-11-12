@@ -50,12 +50,29 @@ type LaunchSpecification struct {
 	// it describes (Harness description).
 	AgentHarness string
 	// RepresentedPerson is the person the Work's Agent represents, whose
-	// credentials the run uses; empty for none.
+	// authorizations the run uses; empty for none.
 	RepresentedPerson string
-	TraceAttributes   map[string]string
+	// OwningApplication is the Application that owns the Work, which its
+	// Identity Token states and whose authorizations the run uses; empty for
+	// none.
+	OwningApplication string
+	// WorkLabels are the Work's Work Labels, which its Identity Token states;
+	// nil for none.
+	WorkLabels      map[string]string
+	TraceAttributes map[string]string
 	// StartingContext is the context the Work started from, if any; a start
 	// without a conversation of its own yet takes it up.
 	StartingContext *StartingContext
+}
+
+// AuthorizationOwner is whose Provider Authorizations the run uses: the
+// person the Work's Agent represents, or the Application that owns the Work;
+// empty for a run that uses none.
+func (l LaunchSpecification) AuthorizationOwner() string {
+	if l.RepresentedPerson != "" {
+		return l.RepresentedPerson
+	}
+	return l.OwningApplication
 }
 
 // HarnessExit is the acknowledged exit fact of the Work's current Harness

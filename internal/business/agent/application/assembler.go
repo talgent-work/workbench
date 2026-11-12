@@ -8,7 +8,7 @@ import (
 )
 
 func AssembleWorkServiceAccess(work *domain.AgentWork, observations []query.ServiceAccessObservation, repositories []query.RepositoryPreparation) query.WorkServiceAccess {
-	result := query.WorkServiceAccess{OwnerUserID: work.AuthorizationSelection.OwnerUserID, Observations: slices.Clone(observations), Repositories: slices.Clone(repositories)}
+	result := query.WorkServiceAccess{OwnerID: work.AuthorizationSelection.OwnerID, Observations: slices.Clone(observations), Repositories: slices.Clone(repositories)}
 	for _, authorization := range work.AuthorizationSelection.Authorizations {
 		result.SelectedServices = append(result.SelectedServices, authorization.Service)
 	}
@@ -33,7 +33,7 @@ func AssembleWorkPluginResults(work *domain.AgentWork, outcomes []query.PluginRe
 }
 
 func AssembleAgentDefinition(agent *domain.AgentDefinition) query.AgentDefinition {
-	return query.AgentDefinition{Owners: slices.Clone(agent.Owners), AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: agent.UsageScope, WorkLayout: agent.WorkLayout.Clone(), Visibility: agent.Visibility, ID: agent.ID, Capabilities: agent.ProvideCapabilities()}
+	return query.AgentDefinition{Owners: slices.Clone(agent.Owners), AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: agent.UsageScope, WorkLayout: agent.WorkLayout.Clone(), Visibility: agent.Visibility, ID: agent.ID, Capabilities: agent.ProvideCapabilities(), WorkDefaults: agent.WorkDefaults}
 }
 
 func AssembleAgentWorkEntity(session *domain.AgentWork, definition *domain.AgentDefinition) query.AgentWork {

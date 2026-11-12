@@ -13,6 +13,12 @@ type WorkStartOptions struct {
 	Plugins             []WorkPluginOption
 	Connectors          []domain.ConnectorOption
 	DefaultStartupAgent string
+	// DefaultModel is the definition's default Model Configuration while it
+	// is provided; zero defaults to the first of Models.
+	DefaultModel domain.WorkModelSelection
+	// DefaultThinkingLevel is the definition's default thinking level while
+	// the model a new Work takes offers it; empty takes that model's own.
+	DefaultThinkingLevel string
 }
 
 type WorkPluginOption struct {
@@ -38,7 +44,11 @@ type WorkModelOption struct {
 // Work under a person's employee definition.
 type WorkStartOptionsQuery struct {
 	SubjectID, WorkID string
-	EmployeeID        string
+	// EmployeeID names the person whose employee definition a new Work runs
+	// under; ApplicationID, when set instead, the Application whose
+	// definition it runs under.
+	EmployeeID    string
+	ApplicationID string
 	// ProjectID is the new Work's Project, whose scope's Built-in Plugins it
 	// loads; empty for a Work without one.
 	ProjectID string

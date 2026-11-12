@@ -70,6 +70,8 @@ type agentAccountDO struct {
 	WorkSubjectKind   string `xorm:"work_subject_kind"`
 	WorkSubjectID     string `xorm:"work_subject_id"`
 	RepresentedUserID string `xorm:"represented_user_id"`
+	ApplicationID     string `xorm:"application_id"`
+	WorkLabels        string `xorm:"work_labels JSON"`
 	Version           int    `xorm:"'version'"`
 	CreatedAt         int64  `xorm:"created_at"`
 	UpdatedAt         int64  `xorm:"updated_at"`
@@ -77,3 +79,34 @@ type agentAccountDO struct {
 }
 
 func (agentAccountDO) TableName() string { return "agent_account" }
+
+type applicationDO struct {
+	ID           string `xorm:"id pk"`
+	OwnerID      string `xorm:"owner_id"`
+	Name         string `xorm:"name"`
+	State        int    `xorm:"state"`
+	RegisteredAt int64  `xorm:"registered_at"`
+	Version      int    `xorm:"'version'"`
+	CreatedAt    int64  `xorm:"created_at"`
+	UpdatedAt    int64  `xorm:"updated_at"`
+	DeletedAt    int64  `xorm:"deleted_at"`
+}
+
+func (applicationDO) TableName() string { return "application" }
+
+type clientSecretDO struct {
+	ID            string `xorm:"id pk"`
+	ApplicationID string `xorm:"application_id"`
+	SecretDigest  string `xorm:"secret_digest"`
+	Hint          string `xorm:"hint"`
+	State         int    `xorm:"state"`
+	IssuedAt      int64  `xorm:"issued_at"`
+	OverlapEndsAt int64  `xorm:"overlap_ends_at"`
+	LastUsedAt    int64  `xorm:"last_used_at"`
+	Version       int    `xorm:"'version'"`
+	CreatedAt     int64  `xorm:"created_at"`
+	UpdatedAt     int64  `xorm:"updated_at"`
+	DeletedAt     int64  `xorm:"deleted_at"`
+}
+
+func (clientSecretDO) TableName() string { return "application_client_secret" }

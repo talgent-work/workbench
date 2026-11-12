@@ -36,6 +36,9 @@ type StartupCapabilityInput struct {
 	Connectors        []CatalogConnector
 	EnabledConnectors []string
 	ConnectorChoices  []ConnectorChoice
+	// ApplicationEndpoints are the Application's own MCP endpoints for the
+	// Work, outside the catalog.
+	ApplicationEndpoints []ApplicationMCPEndpoint
 }
 
 // SelectedSlugs allows application coordination to fetch only the releases
@@ -104,6 +107,7 @@ func NewCapabilitySnapshot(input StartupCapabilityInput, releases []PluginReleas
 	if snapshot.Connectors, err = input.selectConnectors(); err != nil {
 		return CapabilitySnapshot{}, err
 	}
+	snapshot.ApplicationEndpoints = cloneApplicationEndpoints(input.ApplicationEndpoints)
 	if input.Prompt != nil {
 		snapshot.Prompt = *input.Prompt
 	}

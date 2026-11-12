@@ -1,10 +1,7 @@
 # Product icons
 
-Shared by the prototype and production UI. Render with the existing
-`wpb-product-icon` image styles, including the dark-theme inversion.
-
-OpenAI, Anthropic, Notion and Linear are the existing product assets moved from
-`assets/prototype/product-icons`.
+Model vendor and product marks for the UI. Render them with the `wpb-product-icon` image styles,
+which include the dark-theme inversion.
 
 DeepSeek, GLM, Kimi, Qwen and MiniMax are vendored from
 `@lobehub/icons-static-svg@1.95.1` ([Lobe Icons](https://github.com/lobehub/lobe-icons)).

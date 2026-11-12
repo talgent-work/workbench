@@ -9,6 +9,7 @@ import (
 	componenttaskqueue "github.com/go-jimu/components/taskqueue"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
+	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
@@ -155,6 +156,8 @@ func TestRefreshAuthorizationProcessor_CompletesAfterSuccessfulRefresh(t *testin
 }
 
 type fakeAuthorizationRepository struct {
+	// The selections the refresh scan does not use stay unimplemented.
+	query.ProviderAuthorizationQueryRepository
 	queryError, loadError error
 	refreshCandidates     []*domain.ProviderAuthorization
 	listCutoff            time.Time
@@ -245,6 +248,8 @@ func newMaintenanceTaskRegistry(t *testing.T) *componenttaskqueue.SchemaRegistry
 }
 
 type fakeAuthorizationRefresher struct {
+	// Only renewal is exercised; GitHub's other operations stay unimplemented.
+	application.GitHubPort
 	authorizationID string
 	reason          string
 	err             error
@@ -258,11 +263,11 @@ func (r *fakeAuthorizationRefresher) RefreshProviderAuthorization(_ context.Cont
 
 func testAuthorization(id, owner string, expiresAt time.Time, status domain.ProviderAuthorizationStatus) *domain.ProviderAuthorization {
 	return &domain.ProviderAuthorization{
-		ID:          id,
-		OwnerUserID: owner,
-		Provider:    domain.ProviderGitHub,
-		Status:      status,
-		Version:     1,
+		ID:       id,
+		OwnerID:  owner,
+		Provider: domain.ProviderGitHub,
+		Status:   status,
+		Version:  1,
 
 		ExternalAccount: domain.ExternalAccount{
 			ProviderAccountID: owner + "-github",

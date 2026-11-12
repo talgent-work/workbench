@@ -21,7 +21,7 @@ func (a *PersonalConnections) HandleGitHubAppAuthorizationRevoked(ctx context.Co
 	}
 	now := time.Now().UTC()
 	for after := ""; ; {
-		page, err := a.authorizationEvents.AuthorizationIDsByAccount(ctx, domain.ProviderGitHub, accountID, after)
+		page, err := a.queries.AuthorizationIDsByAccount(ctx, domain.ProviderGitHub, accountID, after)
 		if err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func (a *PersonalConnections) HandleGitHubInstallationChanged(ctx context.Contex
 	if installationID == "" {
 		return domain.ErrInvalidRequiredField
 	}
-	if a.observations == nil {
+	if a.tasks == nil {
 		return ErrProviderUnavailable
 	}
 	scheduled := map[string]bool{}
@@ -83,7 +83,7 @@ func (a *PersonalConnections) HandleGitHubInstallationChanged(ctx context.Contex
 					continue
 				}
 				scheduled[id] = true
-				if err := a.observations.ScheduleObservation(ctx, id); err != nil {
+				if err := a.tasks.ScheduleAccessScopeObservation(ctx, id); err != nil {
 					return err
 				}
 			}
@@ -94,13 +94,13 @@ func (a *PersonalConnections) HandleGitHubInstallationChanged(ctx context.Contex
 		}
 	}
 	if err := schedule(func(after string) (query.MaintenanceIdentities, error) {
-		return a.authorizationEvents.AuthorizationIDsByInstallation(ctx, domain.ProviderGitHub, installationID, after)
+		return a.queries.AuthorizationIDsByInstallation(ctx, domain.ProviderGitHub, installationID, after)
 	}); err != nil {
 		return err
 	}
 	if sender := strings.TrimSpace(input.SenderAccountID); sender != "" {
 		return schedule(func(after string) (query.MaintenanceIdentities, error) {
-			return a.authorizationEvents.AuthorizationIDsByAccount(ctx, domain.ProviderGitHub, sender, after)
+			return a.queries.AuthorizationIDsByAccount(ctx, domain.ProviderGitHub, sender, after)
 		})
 	}
 	return nil

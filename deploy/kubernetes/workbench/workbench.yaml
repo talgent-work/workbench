@@ -1,0 +1,2041 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: talgent
+  labels:
+    gateway-access: shared-web
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dispatcher-config
+  namespace: talgent
+data:
+  defaults.yml: |
+    logger:
+      level: ${LOG_LEVEL:info}
+      output: ${LOG_OUTPUT:console}
+    http:
+      addr: :8083
+    grpc_addr: ${DISPATCHER_GRPC_ADDR:dispatcher:8083}
+    instance_id: ${DISPATCHER_INSTANCE_ID:}
+    redis:
+      addr: ${REDIS_ADDR}
+      password: ${REDIS_PASSWORD:}
+      db: ${REDIS_DB:0}
+    clickhouse:
+      dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}?database=default
+    kafka:
+      brokers:
+        - ${KAFKA_BROKER}
+    integration-messages:
+      consumer_group: dispatcher-service
+    nats:
+      url: ${NATS_URL}
+    agent-feedback:
+      addr: http://controlplane:8080
+      token: ${AGENT_FEEDBACK_TOKEN:}
+    native-execution:
+      control-token: ${DISPATCHER_EXECUTION_CONTROL_TOKEN:}
+    ownership:
+      ttl: 6s
+      heartbeat: 2s
+      scan: 3s
+      snapshot-ttl: 168h
+---
+# Model Templates: how the Harness reaches each vendor's models. Adding or
+# changing one needs no release: edit this ConfigMap, then
+# `kubectl -n talgent rollout restart deployment/controlplane`. A changed model
+# is published as a new template id. Model Configurations (name, template,
+# api key) live in Secret agent-model-configurations, key configurations.yml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-models
+  namespace: talgent
+data:
+  templates.yml: |
+    templates:
+      # https://api-docs.deepseek.com/zh-cn/quick_start/agent_integrations/claude_code
+      - id: deepseek-flash
+        vendor: deepseek
+        base-url: https://api.deepseek.com/anthropic
+        opus-model: deepseek-flash[1m]
+        sonnet-model: deepseek-flash[1m]
+        haiku-model: deepseek-flash
+        fable-model: deepseek-flash[1m]
+        subagent-model: deepseek-flash
+        thinking-levels: [low, high, max]
+        default-thinking-level: max
+        environment:
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: "786432"
+      # https://docs.bigmodel.cn/cn/coding-plan/tool/claude
+      - id: glm-5.3-coding-plan
+        vendor: zhipu
+        base-url: https://open.bigmodel.cn/api/anthropic
+        opus-model: glm-5.3[1m]
+        sonnet-model: glm-5.3[1m]
+        haiku-model: glm-5.3-flash[1m]
+        fable-model: glm-5.3[1m]
+        subagent-model: glm-5.3-flash[1m]
+        thinking-levels: [low, high, max]
+        default-thinking-level: max
+        environment:
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1000000"
+          API_TIMEOUT_MS: "3000000"
+      # Kimi Code membership: https://www.kimi.com/code/docs/third-party-tools/claude-code.html
+      # k3 serves 256K on Plus and 1M on Pro; the window fits both.
+      - id: kimi-k3-coding-plan
+        vendor: kimi
+        base-url: https://api.kimi.com/coding/
+        opus-model: k3
+        sonnet-model: k3
+        haiku-model: k3
+        fable-model: k3
+        subagent-model: k3
+        thinking-levels: [low, high, max]
+        default-thinking-level: high
+        environment:
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144"
+          CLAUDE_CODE_MAX_CONTEXT_TOKENS: "262144"
+      # https://platform.minimaxi.com/docs/coding-plan/claude-code
+      # Effort levels: https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
+      - id: minimax-m3.1-coding-plan
+        vendor: minimax
+        base-url: https://api.minimax.cn/anthropic
+        opus-model: MiniMax-M3.1-Flash-Preview[1m]
+        sonnet-model: MiniMax-M3.1-Flash-Preview[1m]
+        haiku-model: MiniMax-M3.1-Flash-Preview[1m]
+        fable-model: MiniMax-M3.1-Flash-Preview[1m]
+        subagent-model: MiniMax-M3.1-Flash-Preview[1m]
+        thinking-levels: [low, medium, high, xhigh, max]
+        default-thinking-level: max
+        environment:
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: "524288"
+      # https://help.aliyun.com/zh/model-studio/claude-code (Coding Plan)
+      # qwen3.7-plus accepts no effort setting, so no thinking levels are offered.
+      - id: qwen3.7-plus-coding-plan
+        vendor: qwen
+        base-url: https://coding.dashscope.aliyuncs.com/apps/anthropic
+        opus-model: qwen3.7-plus
+        sonnet-model: qwen3.7-plus
+        haiku-model: qwen3.7-plus
+        fable-model: qwen3.7-plus
+        subagent-model: qwen3.7-plus
+      # Alibaba Cloud Model Studio Token Plan: https://help.aliyun.com/zh/model-studio/claude-code
+      # Model ids and input limits were verified on the endpoint, which lists them at compatible-mode/v1/models.
+      - id: deepseek-v4.1-flash-token-plan
+        vendor: deepseek
+        base-url: https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic
+        opus-model: deepseek-v4.1-flash[1m]
+        sonnet-model: deepseek-v4.1-flash[1m]
+        haiku-model: deepseek-v4.1-flash
+        fable-model: deepseek-v4.1-flash[1m]
+        subagent-model: deepseek-v4.1-flash
+        thinking-levels: [low, high, max]
+        default-thinking-level: max
+        environment:
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: "786432"
+      - id: glm-5.3-token-plan
+        vendor: zhipu
+        base-url: https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic
+        opus-model: glm-5.3[1m]
+        sonnet-model: glm-5.3[1m]
+        haiku-model: glm-5.3[1m]
+        fable-model: glm-5.3[1m]
+        subagent-model: glm-5.3[1m]
+        thinking-levels: [low, high, max]
+        default-thinking-level: max
+        environment:
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1000000"
+          API_TIMEOUT_MS: "3000000"
+      # The template follows Model Studio's own Claude Code settings: "auto" routes the main
+      # model and subagents; every model's input limit is 983616 tokens.
+      - id: qwen3.8-max-token-plan
+        vendor: qwen
+        base-url: https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic
+        main-model: auto
+        opus-model: qwen3.8-max
+        sonnet-model: qwen3.8-flash
+        haiku-model: qwen3.6-flash
+        fable-model: qwen3.8-max
+        subagent-model: auto
+        thinking-levels: [low, high, max]
+        default-thinking-level: high
+        environment:
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: "786432"
+          CLAUDE_CODE_MAX_CONTEXT_TOKENS: "983616"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: streamgateway-config
+  namespace: talgent
+data:
+  defaults.yml: |
+    logger:
+      level: ${LOG_LEVEL:info}
+      output: ${LOG_OUTPUT:console}
+    http:
+      addr: :8084
+    clickhouse:
+      dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}?database=default
+    nats:
+      url: ${NATS_URL}
+    agent:
+      address: http://controlplane:8080
+      control-token: "${AGENT_CONTROL_TOKEN:}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: computer-gateway-config
+  namespace: talgent
+data:
+  defaults.yml: |
+    logger:
+      level: ${LOG_LEVEL:info}
+      output: ${LOG_OUTPUT:console}
+    http:
+      addr: :8085
+    redis:
+      addr: ${REDIS_ADDR}
+      password: ${REDIS_PASSWORD:}
+      db: 0
+    gateway:
+      computer-address: http://controlplane:8080
+      control-token: "${COMPUTER_CONTROL_TOKEN:}"
+      replica: "${POD_NAME:computer-gateway}"
+      endpoint: "${POD_IP:127.0.0.1}:8085"
+      # The platform release this deployment runs (X.Y.Z), which
+      # scripts/deploy/apply.sh fills in from a vX.Y.Z image tag.
+      release-version: "__TALGENT_RELEASE_VERSION__"
+---
+apiVersion: v1
+data:
+  defaults.yml: |
+    # Storage owns every space on JuiceFS and NAS.
+    storage:
+      persistent-root: /mnt/talgent
+      working-root: /mnt/nas
+      public-base-url: /api
+      link-secret: "${STORAGE_LINK_SECRET:}"
+      link-ttl: 15m
+      upload-link-ttl: 2m
+      max-upload-bytes: 1073741824
+      agent-token: "${STORAGE_AGENT_TOKEN:}"
+      # Callers beyond Agent; an empty token admits no one.
+      directory-tokens:
+        - "${STORAGE_DIRECTORY_TOKEN:}"
+      # Callers of whole content; each maps only beneath its mapping-prefix,
+      # and an empty prefix maps nowhere.
+      content-callers:
+        # This caller maps beneath project-originals, which
+        # talgent-juicefs-view-project-originals shows read-only to its
+        # standing reader.
+        - token: "${STORAGE_CONTENT_TOKEN:}"
+          mapping-prefix: project-originals
+      # Sandboxes mount each Directory from its backend's claim by subPath.
+      mounts:
+        nas-claim: talgent-nas-root
+        juicefs-claim: talgent-juicefs-directories
+        juicefs-root: talgent
+      # Every preview limit and timing in one place; conservative
+      # starting points, not capacity-tested.
+      preview:
+        gotenberg-address: "http://gotenberg:3000"
+        client-timeout: 65s
+        task-deadline: 90s
+        retention: 720h
+        office-source-bytes: 20971520
+        rendered-pdf-bytes: 52428800
+        native-pdf-bytes: 52428800
+        image-bytes: 20971520
+        text-bytes: 1048576
+        markup-bytes: 1048576
+      # Entries one workspace directory lists; a conservative starting point.
+      workspace-list-entries: 1000
+    agent-storage:
+      address: http://127.0.0.1:8080
+      token: "${STORAGE_AGENT_TOKEN:}"
+    agent-rpc:
+      control-token: ${AGENT_CONTROL_TOKEN:}
+      feedback-token: ${AGENT_FEEDBACK_TOKEN:}
+    agent-computer:
+      address: "${COMPUTER_ADDRESS:http://127.0.0.1:8080}"
+      token: "${COMPUTER_CONTROL_TOKEN:}"
+      # Computer Gateway's relay to Managed Computers;
+      # empty leaves Managed Computers unreachable.
+      relay-address: "${COMPUTER_RELAY_ADDRESS:http://computer-gateway.talgent.svc.cluster.local:8085}"
+      # The platform Connector's public HTTPS address a Managed Computer's
+      # local proxy reaches: the computer route's computer-mcp rule, which a
+      # deployment with a platform Connector adds, on the origin Talgent
+      # Computer connects to.
+      mcp-address: "${WORKBENCH_ORIGIN}/computer/v1/mcp"
+      # The entry, where a Managed Work calls the core's public APIs through
+      # its local proxy, which adds its Identity Token. Empty where Agents
+      # reach the platform only through a Gateway (AGENT_CORE_API_ACCESS).
+      api-address: "${PLATFORM_API_ADDRESS:}"
+      # Where Storage's Access Links are served on that origin, from which a
+      # Managed Computer downloads its Works' inputs: the web-api route's
+      # storage-content-api rule, which takes no Identity Token.
+      content-address: "${WORKBENCH_ORIGIN}/api/v1/storage/content"
+      # Where a reader's browser reaches Agent's links to a Managed Work's
+      # files: the web-api route's agent-workspace-file rule.
+      workspace-file-address: "${AGENT_WORKSPACE_FILE_ADDRESS:/api/v1/agent/workspace-files}"
+      # Where a Managed Work's Claude Code sends its telemetry with its run's
+      # telemetry token: the computer route's computer-telemetry rule, on the
+      # origin Talgent Computer connects to.
+      telemetry-address: "${WORKBENCH_ORIGIN}/computer/v1/otel"
+      # Where Agent forwards that telemetry once attributed to its run.
+      telemetry-collector-address: "${COMPUTER_TELEMETRY_COLLECTOR_ADDRESS:http://otel-collector:4318}"
+    # Computer owns every place a Work runs; each cluster is one Cloud.
+    computer:
+      control-token: "${COMPUTER_CONTROL_TOKEN:}"
+      # Where a person approves a Talgent Computer registration.
+      verification-uri: "${WORKBENCH_ORIGIN}/computers/connect"
+      # The oldest Talgent Computer release (X.Y.Z) a Managed Computer may take a run
+      # on, told to each machine as it connects; empty admits every release. Raise it
+      # only to a release published to npm, at or below the Target Version (the
+      # machine service's release-version): above it, every machine upgrades to the
+      # Target and still takes no run, and the machine service logs an error.
+      minimum-version: "${COMPUTER_MINIMUM_VERSION:}"
+      cloud:
+        # Fixed for good: every Work keeps the Cloud it started on.
+        id: "${COMPUTER_CLOUD_ID:01a19bc3-075a-7c57-b42b-7fdf73b611ed}"
+        name: "${COMPUTER_CLOUD_NAME:Talgent Cloud}"
+        # The room the platform gives runs: the quota below, in the sandbox
+        # namespace, counts only execution Pods; each admission still checks it.
+        capacity:
+          requests.cpu: "8"
+          requests.memory: "12Gi"
+          pods: "64"
+        namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
+        quota-name: agent-executions
+        # Everything the quota charges for one execution Pod, not just the sandbox
+        # container (agent-execution requests/limits): plus the egress sidecar
+        # (LimitRange default 100m/128Mi) and the kata-qemu-runtime-rs RuntimeClass
+        # overhead (250m/320Mi). Under-stating it admits starts that the quota then
+        # rejects at Pod creation. Keep in step with those three sources.
+        demand:
+          requests.cpu: "600m"
+          requests.memory: "960Mi"
+          limits.cpu: "2250m"
+          limits.memory: "2368Mi"
+          pods: "1"
+    agent-execution:
+      sandbox-namespace: ${SANDBOX_NAMESPACE:talgent-sandbox}
+      # Must equal the OpenSandbox server's sandbox_create_timeout_seconds
+      # (deploy/opensandbox/server.yaml); a create waits 30 seconds longer for
+      # its answer.
+      sandbox-creation-timeout: ${SANDBOX_CREATION_TIMEOUT:5m}
+      credential-transport: encrypted-network
+      # Model Templates (ConfigMap agent-models) and Model Configurations with
+      # their api keys (Secret agent-model-configurations), read once at startup.
+      models:
+        templates-path: "${MODEL_TEMPLATES_PATH:/etc/talgent/models/templates.yml}"
+        configurations-path: "${MODEL_CONFIGURATIONS_PATH:/etc/talgent/model-configurations/configurations.yml}"
+      network-allow:
+        - "${K8S_DNS_SERVICE_IP:10.43.0.10}"
+      network-deny: []
+      opensandbox:
+        address: ${OPENSANDBOX_ADDRESS:http://opensandbox:80}
+        api-key: ${OPENSANDBOX_API_KEY:}
+      native:
+        binary: claude
+      image: ghcr.io/talgent-work/sandbox:v0.15.6
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "2"
+        memory: "2Gi"
+      environment:
+        # The entry, where a sandbox's Agent calls the core's public APIs;
+        # its Credential Proxy adds the Work's Identity Token to every request
+        # to it. Empty where Agents reach the platform only through a Gateway
+        # (AGENT_CORE_API_ACCESS).
+        TALGENT_API_ADDRESS: "${PLATFORM_API_ADDRESS:}"
+        OTEL_EXPORTER_OTLP_ENDPOINT: "${NATIVE_OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector.talgent:4318}"
+      dispatcher:
+        address: ${DISPATCHER_NATIVE_ADDRESS:http://dispatcher:8083}
+        token: ${DISPATCHER_EXECUTION_CONTROL_TOKEN:}
+      # Every sandbox expires after its lease unless Agent renews it; a
+      # running Work's lease is renewed once less than the threshold remains.
+      lease:
+        duration: "2h"
+        renewal-threshold: "1h"
+    # Storage's and Marketplace's records.
+    workbench-mysql:
+      dsn: ${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_ADDR})/${WORKBENCH_MYSQL_DATABASE}?charset=utf8mb4&parseTime=true
+    execution-mysql:
+      dsn: ${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_ADDR})/${AGENT_MYSQL_DATABASE}?charset=utf8mb4&parseTime=true
+    marketplace:
+      # Account's private API, whose Application Ownership Query admits an
+      # Application Owner to the Application's installations and authorizations.
+      account:
+        address: http://127.0.0.1:8080
+      synchronization:
+        enabled: true
+        interval-seconds: 1800
+        timeout-seconds: 1200
+        acquisition:
+          workers: 4
+          request-timeout-seconds: 120
+          archive-base-url: ${MARKETPLACE_ARCHIVE_BASE_URL}
+          # Keyed by name: a profile (CONTROLPLANE_PROFILE) adds sources
+          # beside these.
+          sources:
+            claude-plugins-official:
+              uri: https://github.com/anthropics/claude-plugins-official.git
+              owned: false
+              priority: 10
+            talgent:
+              uri: https://github.com/talgent-work/marketplace.git
+              owned: true
+              priority: 100
+      provider-connectors:
+        - name: github
+          description: Read and change repositories, issues and pull requests through your GitHub authorization.
+          category: development
+          provider: github
+          target: github-api
+          authentication: credential_proxy
+          command: github-mcp-server
+          args: [stdio]
+          credential-environment: [GITHUB_PERSONAL_ACCESS_TOKEN]
+      directory: /mnt/talgent/marketplace
+      name: talgent
+      owner: Talgent
+      connections:
+        credential-token: "${AGENT_CONTROL_TOKEN:}"
+        github:
+          api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+          api-version: ${GITHUB_API_VERSION:2026-03-10}
+          app-id: ${GITHUB_APP_ID:}
+          app-slug: ${GITHUB_APP_SLUG:}
+          enabled: ${GITHUB_SCM_ENABLED:false}
+          oauth-client-id: ${GITHUB_OAUTH_CLIENT_ID:}
+          oauth-client-secret: ${GITHUB_OAUTH_CLIENT_SECRET:}
+          private-key-pem: ${GITHUB_APP_PRIVATE_KEY_PEM:}
+          token-cipher-key: ${GITHUB_SCM_TOKEN_CIPHER_KEY:}
+          web-base-url: ${GITHUB_WEB_BASE_URL:https://github.com}
+          webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
+        maintenance:
+          batch-size: 100
+          enabled: true
+          proactive-refresh-window: 30m
+          queue-name: scm-maintenance
+          refresh-lease-duration: 30s
+          request-refresh-skew: 5m
+          scan-interval: 5m
+    agent-marketplace:
+      credential-token: "${AGENT_CONTROL_TOKEN:}"
+      address: http://127.0.0.1:8080
+    # The Plugins every Work of a scope requires, by slug; a profile adds the
+    # Project scope's.
+    agent-built-in-plugins:
+      platform:
+        - talgent
+        # The core API plugin teaches Agents the core's public API; a deployment
+        # whose Agents have no direct access to it empties AGENT_API_PLUGIN.
+        - "${AGENT_API_PLUGIN:talgent-api}"
+      project: []
+    http:
+      addr: :8080
+    agent-account:
+      address: http://127.0.0.1:8080
+    account-mysql:
+      dsn: ${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_ADDR})/${ACCOUNT_MYSQL_DATABASE}?charset=utf8mb4&parseTime=true
+    account:
+      issuer: ${ACCOUNT_ISSUER}
+      audience: talgent
+      # Empty keeps the session cookies on the Workbench host.
+      cookie-domain: ${ACCOUNT_COOKIE_DOMAIN}
+      access-token-lifetime: 15m
+      agent-token-lifetime: 168h
+      application-token-lifetime: 15m
+      application-secret-overlap: 24h
+      session-sliding-lifetime: 720h
+      session-absolute-lifetime: 2160h
+      key-rotation-interval: 720h
+      key-overlap: 10m
+      master-key-path: /etc/talgent/account/master-key
+      github:
+        # The login OAuth App, not the Marketplace Provider App.
+        client-id: ${ACCOUNT_GITHUB_CLIENT_ID:}
+        client-secret: ${ACCOUNT_GITHUB_CLIENT_SECRET:}
+        redirect-url: ${WORKBENCH_ORIGIN}/auth/github/callback
+        web-base-url: https://github.com
+        api-base-url: https://api.github.com
+    marketplace-taskqueue:
+      queue-name: scm-maintenance
+      queue-names:
+        - marketplace-maintenance
+        - scm-maintenance
+      redis-addr: ${REDIS_ADDR}
+      redis-db: 0
+      redis-password: ${REDIS_PASSWORD:}
+      shutdown-timeout: 30s
+      worker-concurrency: 6
+    agent-taskqueue:
+      queue-name: agent-recovery
+      redis-addr: ${REDIS_ADDR}
+      redis-db: 0
+      redis-password: ${REDIS_PASSWORD:}
+      retry-delay-max: 60s
+      retry-delay-min: 1s
+      shutdown-timeout: 30s
+      worker-concurrency: 16
+    agent-preparation-taskqueue:
+      queue-name: agent-preparation
+      redis-addr: ${REDIS_ADDR}
+      redis-db: 0
+      redis-password: ${REDIS_PASSWORD:}
+      retry-delay-max: 60s
+      retry-delay-min: 1s
+      shutdown-timeout: 30s
+      # Each execution's long step (its creation's submission, up to the sandbox
+      # creation timeout, or its preparation) holds a worker while it runs.
+      worker-concurrency: 8
+    # Storage renders Preview Copies on one lane; scale worker-concurrency
+    # with Gotenberg's replicas (gotenberg.yaml).
+    storage-preview-taskqueue:
+      queue-name: storage-preview
+      redis-addr: ${REDIS_ADDR}
+      redis-db: 0
+      redis-password: ${REDIS_PASSWORD:}
+      retry-delay-max: 4s
+      retry-delay-min: 2s
+      shutdown-timeout: 30s
+      worker-concurrency: 1
+    # Storage removes reclaimed Directories' content, retrying while a
+    # publication copies from one, and lapses Preview Copies hourly.
+    storage-maintenance-taskqueue:
+      queue-name: storage-maintenance
+      redis-addr: ${REDIS_ADDR}
+      redis-db: 0
+      redis-password: ${REDIS_PASSWORD:}
+      retry-delay-max: 5m
+      retry-delay-min: 10s
+      shutdown-timeout: 30s
+      worker-concurrency: 2
+    # Account rotates signing keys hourly and forgets replaced refresh
+    # secrets daily.
+    account-maintenance-taskqueue:
+      queue-name: account-maintenance
+      redis-addr: ${REDIS_ADDR}
+      redis-db: 0
+      redis-password: ${REDIS_PASSWORD:}
+      retry-delay-max: 5m
+      retry-delay-min: 10s
+      shutdown-timeout: 30s
+      worker-concurrency: 1
+    clickhouse:
+      dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}?database=default
+    # Trace runs in this process with its own telemetry database; a
+    # Work with a Project is admitted by the Project access decision, which a
+    # deployment configures with trace-access.project-access-address.
+    trace-clickhouse:
+      dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}/talgent_trace
+    trace-access:
+      agent-address: http://127.0.0.1:8080
+      agent-control-token: "${AGENT_CONTROL_TOKEN:}"
+      account-address: http://127.0.0.1:8080
+    kafka:
+      brokers:
+        - ${KAFKA_BROKER}
+    kubernetes:
+      kubeconfig-path: ""
+    logger:
+      level: ${LOG_LEVEL:info}
+      output: ${LOG_OUTPUT:console}
+    nats:
+      url: ${NATS_URL}
+    redis:
+      addr: ${REDIS_ADDR}
+      db: 0
+      password: ${REDIS_PASSWORD:}
+kind: ConfigMap
+metadata:
+  name: controlplane-config
+  namespace: talgent
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: talgent-juicefs-root
+  labels:
+    talgent.io/storage: juicefs-root
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  # File attributes (uploader, producing Work) are extended attributes.
+  mountOptions:
+    - enable-xattr
+  csi:
+    driver: csi.juicefs.com
+    volumeHandle: talgent-juicefs-root-rustfs
+    fsType: juicefs
+    nodePublishSecretRef:
+      name: talgent-juicefs-secret
+      namespace: talgent
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: talgent-juicefs-root
+  namespace: talgent
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 100Gi
+  selector:
+    matchLabels:
+      talgent.io/storage: juicefs-root
+---
+# The same JuiceFS filesystem, claimed read-only at one mapped path of
+# Storage's Mapped View: project-originals, the mapping prefix of the
+# content caller above, for its standing reader. Storage creates the folder
+# at start and keeps it.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: talgent-juicefs-view-project-originals
+  labels:
+    talgent.io/storage: juicefs-view-project-originals
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - enable-xattr
+    - subdir=/talgent/assets/mapped-view/project-originals
+  csi:
+    driver: csi.juicefs.com
+    volumeHandle: talgent-juicefs-view-project-originals-rustfs
+    fsType: juicefs
+    readOnly: true
+    nodePublishSecretRef:
+      name: talgent-juicefs-secret
+      namespace: talgent
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: talgent-juicefs-view-project-originals
+  namespace: talgent
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 100Gi
+  selector:
+    matchLabels:
+      talgent.io/storage: juicefs-view-project-originals
+---
+# NAS Directories, which Storage alone allocates: directories/<owner>/<name>
+# under the share, with Storage's own staging and locks under storage/. A
+# static PV keeps that fixed layout. Sandboxes mount each Directory by subPath
+# through the claim of the same name in talgent-sandbox (sandbox.yaml).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: talgent-nas-root
+  labels:
+    talgent.io/storage: nas-root
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - timeo=600
+    - retrans=2
+    - noatime
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: talgent-nas-root
+    volumeAttributes:
+      server: nfs.example.com
+      share: /exports/talgent
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: talgent-nas-root
+  namespace: talgent
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 1Ti
+  selector:
+    matchLabels:
+      talgent.io/storage: nas-root
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: talgent-controlplane
+  namespace: talgent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatcher
+  namespace: talgent
+spec:
+  replicas: 2
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: dispatcher
+  template:
+    metadata:
+      labels:
+        app: dispatcher
+    spec:
+      automountServiceAccountToken: false
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+          - name: single-request-reopen
+          - name: timeout
+            value: "2"
+          - name: attempts
+            value: "2"
+      containers:
+        - name: dispatcher
+          image: ghcr.io/talgent-work/dispatcher:v0.15.6
+          envFrom:
+            - configMapRef:
+                name: workbench-environment
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8083
+          env:
+            # Every process reads the Redis password from one Secret; without
+            # it they connect with none.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+                  optional: true
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-auth
+                  key: talgent-password
+            - name: AGENT_FEEDBACK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: AGENT_FEEDBACK_TOKEN
+            - name: DISPATCHER_EXECUTION_CONTROL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: DISPATCHER_EXECUTION_CONTROL_TOKEN
+            - name: DISPATCHER_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: DISPATCHER_GRPC_ADDR
+              value: "$(POD_IP):8083"
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs/dispatcher
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 8083
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            tcpSocket:
+              port: 8083
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 2
+          startupProbe:
+            tcpSocket:
+              port: 8083
+            failureThreshold: 30
+            periodSeconds: 2
+            timeoutSeconds: 2
+      volumes:
+        - name: config
+          configMap:
+            name: dispatcher-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dispatcher
+  namespace: talgent
+spec:
+  selector:
+    app: dispatcher
+  ports:
+    - name: http
+      port: 8083
+      targetPort: 8083
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: controlplane
+  namespace: talgent
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: controlplane
+---
+# The Computer Gateway holds each Managed Computer's one outbound connection.
+# Talgent Computer reconnects to any replica, so a restart moves
+# its machines rather than losing them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: computer-gateway
+  namespace: talgent
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: computer-gateway
+  template:
+    metadata:
+      labels:
+        app: computer-gateway
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+      containers:
+        - name: computer-gateway
+          image: ghcr.io/talgent-work/computer-gateway:v0.15.6
+          envFrom:
+            - configMapRef:
+                name: workbench-environment
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8085
+          env:
+            # Every process reads the Redis password from one Secret; without
+            # it they connect with none.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+                  optional: true
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Admits the Gateway to Computer's private connection contract.
+            - name: COMPUTER_CONTROL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: COMPUTER_CONTROL_TOKEN
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs/computer-gateway
+              readOnly: true
+          # Keep accepting while Envoy drops the terminating Pod, then close
+          # every connection so its machine reconnects to another replica.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8085
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8085
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 2
+      volumes:
+        - name: config
+          configMap:
+            name: computer-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: computer-gateway
+  namespace: talgent
+spec:
+  selector:
+    app: computer-gateway
+  ports:
+    - name: http
+      port: 8085
+      targetPort: 8085
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamgateway
+  namespace: talgent
+spec:
+  replicas: 2
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: streamgateway
+  template:
+    metadata:
+      labels:
+        app: streamgateway
+    spec:
+      automountServiceAccountToken: false
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+          - name: single-request-reopen
+          - name: timeout
+            value: "2"
+          - name: attempts
+            value: "2"
+      containers:
+        - name: streamgateway
+          image: ghcr.io/talgent-work/streamgateway:v0.15.6
+          envFrom:
+            - configMapRef:
+                name: workbench-environment
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8084
+          env:
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-auth
+                  key: talgent-password
+            # Admits message-stream readers through Agent's private Work access API.
+            - name: AGENT_CONTROL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: AGENT_CONTROL_TOKEN
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs/streamgateway
+              readOnly: true
+          # Keep serving while Envoy drops the terminating Pod; then Shutdown
+          # ends open streams within fx's default 15s, inside the 30s grace period.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: 8084
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            tcpSocket:
+              port: 8084
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 2
+          startupProbe:
+            tcpSocket:
+              port: 8084
+            failureThreshold: 30
+            periodSeconds: 2
+            timeoutSeconds: 2
+      volumes:
+        - name: config
+          configMap:
+            name: streamgateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamgateway
+  namespace: talgent
+spec:
+  selector:
+    app: streamgateway
+  ports:
+    - name: http
+      port: 8084
+      targetPort: 8084
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controlplane
+  namespace: talgent
+spec:
+  replicas: 2
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: controlplane
+  template:
+    metadata:
+      labels:
+        app: controlplane
+    spec:
+      containers:
+        - envFrom:
+            - configMapRef:
+                name: workbench-environment
+          env:
+            # The entry's public origin, where Agents call the core's public
+            # APIs. AGENT_CORE_API_ACCESS=disabled empties it
+            # (components/core-api-without-agents).
+            - name: PLATFORM_API_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: workbench-environment
+                  key: WORKBENCH_ORIGIN
+            # Every process reads the Redis password from one Secret; without
+            # it they connect with none.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+                  optional: true
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-auth
+                  key: talgent-password
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-auth
+                  key: talgent-password
+            # Service metrics go to the shared collector.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4318"
+            - name: OPENSANDBOX_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opensandbox-api
+                  key: api-key
+            - name: AGENT_CONTROL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: AGENT_CONTROL_TOKEN
+            - name: AGENT_FEEDBACK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: AGENT_FEEDBACK_TOKEN
+            - name: DISPATCHER_EXECUTION_CONTROL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: DISPATCHER_EXECUTION_CONTROL_TOKEN
+            - name: STORAGE_DIRECTORY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: STORAGE_DIRECTORY_TOKEN
+            - name: STORAGE_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: STORAGE_AGENT_TOKEN
+            - name: COMPUTER_CONTROL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: COMPUTER_CONTROL_TOKEN
+            - name: STORAGE_CONTENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: STORAGE_CONTENT_TOKEN
+            - name: STORAGE_LINK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: native-execution-control
+                  key: STORAGE_LINK_SECRET
+            - name: GITHUB_SCM_ENABLED
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_SCM_ENABLED
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_APP_ID
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_APP_SLUG
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_APP_SLUG
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_APP_PRIVATE_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_APP_PRIVATE_KEY_PEM
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_OAUTH_CLIENT_ID
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_OAUTH_CLIENT_SECRET
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_SCM_TOKEN_CIPHER_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_SCM_TOKEN_CIPHER_KEY
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_WEBHOOK_SECRET
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_WEB_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_WEB_BASE_URL
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_API_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_API_BASE_URL
+                  name: github-scm
+                  optional: true
+            - name: GITHUB_API_VERSION
+              valueFrom:
+                secretKeyRef:
+                  key: GITHUB_API_VERSION
+                  name: github-scm
+                  optional: true
+            - name: ACCOUNT_GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: account-github-oauth
+                  key: client-id
+            - name: ACCOUNT_GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: account-github-oauth
+                  key: client-secret
+          image: ghcr.io/talgent-work/controlplane:v0.15.6
+          imagePullPolicy: IfNotPresent
+          # Envoy drops a terminating Pod from its endpoints a few seconds after
+          # Kubernetes signals it; keep serving through that window. Then
+          # Shutdown ends open streams, drains requests and stops modules within
+          # fx's 30s, inside the 45s grace period.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          livenessProbe:
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            tcpSocket:
+              port: 8080
+            timeoutSeconds: 2
+          name: controlplane
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            tcpSocket:
+              port: 8080
+            timeoutSeconds: 2
+          startupProbe:
+            failureThreshold: 30
+            periodSeconds: 2
+            tcpSocket:
+              port: 8080
+            timeoutSeconds: 2
+          volumeMounts:
+            - mountPath: /app/configs/controlplane
+              name: config
+              readOnly: true
+            - mountPath: /etc/talgent/account
+              name: account-master-key
+              readOnly: true
+            - mountPath: /etc/talgent/models
+              name: agent-models
+              readOnly: true
+            - mountPath: /etc/talgent/model-configurations
+              name: agent-model-configurations
+              readOnly: true
+            # Storage is the only writer of both stores.
+            - mountPath: /mnt/talgent
+              name: juicefs-root
+              subPath: talgent
+            - mountPath: /mnt/nas
+              name: nas-root
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+          - name: single-request-reopen
+          - name: timeout
+            value: "2"
+          - name: attempts
+            value: "2"
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: ghcr-pull
+      serviceAccountName: talgent-controlplane
+      terminationGracePeriodSeconds: 45
+      volumes:
+        - configMap:
+            name: controlplane-config
+          name: config
+        - name: account-master-key
+          secret:
+            secretName: account-master-key
+            items:
+              - key: master-key
+                path: master-key
+        - name: agent-models
+          configMap:
+            name: agent-models
+        - name: agent-model-configurations
+          secret:
+            secretName: agent-model-configurations
+            items:
+              - key: configurations.yml
+                path: configurations.yml
+        - name: juicefs-root
+          persistentVolumeClaim:
+            claimName: talgent-juicefs-root
+        - name: nas-root
+          persistentVolumeClaim:
+            claimName: talgent-nas-root
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workbench-web
+  namespace: talgent
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: workbench-web
+  template:
+    metadata:
+      labels:
+        app: workbench-web
+    spec:
+      automountServiceAccountToken: false
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+          - name: single-request-reopen
+          - name: timeout
+            value: "2"
+          - name: attempts
+            value: "2"
+      containers:
+        - name: workbench-web
+          image: ghcr.io/talgent-work/workbench-web:v0.15.6
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          # Envoy drops a terminating Pod from its endpoints a few seconds after
+          # Kubernetes signals it; nginx keeps serving through that window, then
+          # SIGQUIT (the image's stop signal) lets in-flight requests finish.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 2
+          startupProbe:
+            httpGet:
+              path: /
+              port: 3000
+            failureThreshold: 30
+            periodSeconds: 2
+            timeoutSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workbench-web
+  namespace: talgent
+spec:
+  selector:
+    app: workbench-web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+# The Workbench's web app.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: workbench-web
+  namespace: talgent
+spec:
+  parentRefs:
+    - name: public
+      namespace: envoy-gateway-system
+      sectionName: http
+  hostnames:
+    - workbench.example.com
+  rules:
+    - name: public-portal
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: workbench-web
+          port: 3000
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web-api
+  namespace: talgent
+spec:
+  parentRefs:
+    - name: public
+      namespace: envoy-gateway-system
+      sectionName: http
+  hostnames:
+    - workbench.example.com
+  rules:
+    - name: session-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/account.public.v1.SessionService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /account.public.v1.SessionService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: application-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/account.public.v1.ApplicationService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /account.public.v1.ApplicationService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: agent-work-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.AgentWorkService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.AgentWorkService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: work-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v2.WorkService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v2.WorkService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # Retiring: agent.public.v2.WorkService replaces it; it goes once no web app
+    # on an earlier workbench-ui and no Work on an earlier talgent-api calls it.
+    - name: personal-work-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.PersonalWorkService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.PersonalWorkService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: work-file-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.WorkFileService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.WorkFileService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # A Work's Agent asks who it is.
+    - name: agent-identity-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.IdentityService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.IdentityService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # A Work's Agent publishes and deletes its Artifacts, with its Space Token;
+    # a publication carries up to 64 MiB.
+    - name: storage-artifact-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/storage.public.v1.ArtifactService
+      timeouts:
+        request: 300s
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /storage.public.v1.ArtifactService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: computer-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/computer.public.v1.ComputerService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /computer.public.v1.ComputerService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: marketplace-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/marketplace.public.v1.MarketplaceService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /marketplace.public.v1.MarketplaceService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: marketplace-content
+      matches:
+        - path:
+            type: Exact
+            value: /marketplace/marketplace.json
+        - path:
+            type: PathPrefix
+            value: /marketplace/archives
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: scm-github-webhook
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/scm/github/webhook
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: storage-content-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/storage
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /v1/storage
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # Agent's links to a Managed Work's files, read from its machine; each
+    # link carries its own signed grant, so no JWT policy targets it.
+    - name: agent-workspace-file
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/agent/workspace-files
+      timeouts:
+        request: 0s
+        backendRequest: 0s
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /v1/agent/workspace-files
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: streamgateway-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/streamgateway.public.v1.StreamGatewayService
+      timeouts:
+        request: 0s
+        backendRequest: 0s
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /streamgateway.public.v1.StreamGatewayService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: streamgateway
+          port: 8084
+    - name: trace-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/trace.public.v1.TraceQueryService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /trace.public.v1.TraceQueryService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      # Trace runs in controlplane.
+      backendRefs:
+        - name: controlplane
+          port: 8080
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: web-auth
+  namespace: talgent
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: session-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: application-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: agent-work-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: work-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: personal-work-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: work-file-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: marketplace-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: computer-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: streamgateway-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: trace-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: agent-identity-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
+      sectionName: storage-artifact-api
+  # Account issues every Principal's Identity Token; the gateway validates
+  # them against Account's published keys and writes their claims as
+  # x-talgent-* headers, a claim the token lacks writing none, after the
+  # ClientTrafficPolicy identity-headers removed any a client sent. Each
+  # service admits the Principals its procedures declare, and every context
+  # authorizes on those claims itself. AGENT_CORE_API_ACCESS=disabled admits
+  # people and Applications only (components/core-api-without-agents).
+  jwt:
+    providers:
+      - name: account
+        issuer: https://workbench.example.com/auth
+        audiences:
+          - talgent
+        extractFrom:
+          cookies:
+            - talgent-access
+          headers:
+            - name: Authorization
+              valuePrefix: "Bearer "
+        remoteJWKS:
+          uri: http://controlplane.talgent.svc.cluster.local:8080/auth/jwks.json
+          backendRefs:
+            - group: ""
+              kind: Service
+              name: controlplane
+              port: 8080
+          cacheDuration: 300s
+        claimToHeaders:
+          - claim: principal
+            header: x-talgent-principal
+          - claim: iss
+            header: x-talgent-issuer
+          - claim: sub
+            header: x-talgent-subject
+          - claim: preferred_username
+            header: x-talgent-username
+          - claim: email
+            header: x-talgent-email
+          - claim: name
+            header: x-talgent-display-name
+          - claim: picture
+            header: x-talgent-avatar-url
+          - claim: roles
+            header: x-talgent-roles
+          - claim: project_id
+            header: x-talgent-project-id
+          - claim: agent_id
+            header: x-talgent-agent-id
+          - claim: purpose
+            header: x-talgent-purpose
+          - claim: work_subject_kind
+            header: x-talgent-work-subject-kind
+          - claim: work_subject_id
+            header: x-talgent-work-subject-id
+          - claim: for
+            header: x-talgent-represented-user-id
+          - claim: application_id
+            header: x-talgent-application-id
+---
+# Every request through the entry loses the identity headers a client sent
+# before routing, so only the gateway's JWT validation and its routes write
+# them: the verified identity, and a trusted service's delegation, which
+# only reaches a service from inside the cluster. Capabilities, such as the
+# Space Token, pass through. It sits beside the Gateway, which the
+# deployment provides (docs/self-hosting.md).
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: identity-headers
+  namespace: envoy-gateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+  headers:
+    earlyRequestHeaders:
+      remove:
+        - x-talgent-authenticated-by
+        - x-talgent-issuer
+        - x-talgent-principal
+        - x-talgent-subject
+        - x-talgent-username
+        - x-talgent-email
+        - x-talgent-display-name
+        - x-talgent-avatar-url
+        - x-talgent-roles
+        - x-talgent-project-id
+        - x-talgent-agent-id
+        - x-talgent-purpose
+        - x-talgent-work-subject-kind
+        - x-talgent-work-subject-id
+        - x-talgent-represented-user-id
+        - x-talgent-application-id
+        - x-talgent-service-id
+        - x-talgent-delegated-user-id
+        - x-talgent-delegated-actor-id
+        - x-talgent-reader-admission
+        - x-talgent-runtime-instance-id
+        - x-talgent-runtime-purpose
+        - x-talgent-runtime-owner-ref
+---
+# Account's browser sign-in endpoints. They run before a token exists, so no
+# JWT policy targets this route.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: auth
+  namespace: talgent
+spec:
+  parentRefs:
+    - name: public
+      namespace: envoy-gateway-system
+      sectionName: http
+  hostnames:
+    - workbench.example.com
+  rules:
+    # Starting and completing a GitHub sign-in; rate limited below.
+    - name: account-sign-in
+      matches:
+        - path:
+            type: Exact
+            value: /auth/github/login
+        - path:
+            type: Exact
+            value: /auth/github/callback
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # Session refresh, sign-out, the published keys and Applications' client
+    # credentials grant (/auth/token). Not rate limited: a shared limit here
+    # would let one client stall everyone's silent refresh, and a Client
+    # Secret carries 256 bits that no guessing reaches.
+    - name: account-session
+      matches:
+        - path:
+            type: PathPrefix
+            value: /auth/
+      backendRefs:
+        - name: controlplane
+          port: 8080
+---
+# What Talgent Computer reaches before and without a browser sign-in: device
+# code registration, its outbound connection and its installer. No JWT policy
+# targets this route; the device code and the Computer Credential are checked
+# by Computer.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: computer
+  namespace: talgent
+spec:
+  parentRefs:
+    - name: public
+      namespace: envoy-gateway-system
+      sectionName: http
+  hostnames:
+    - workbench.example.com
+  rules:
+    - name: computer-registration
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/computer.public.v1.RegistrationService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /computer.public.v1.RegistrationService
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    # A Managed Work's Claude Code sends its OTLP telemetry here, with its
+    # run's telemetry token and its Work identity. Agent checks the token,
+    # puts the run's own attribution on everything sent and forwards it to
+    # the OTel Collector, so no JWT policy targets it; the credentials a
+    # caller presents itself pass.
+    - name: computer-telemetry
+      matches:
+        - path:
+            type: PathPrefix
+            value: /computer/v1/otel
+      timeouts:
+        request: 30s
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /v1/agent/telemetry
+      backendRefs:
+        - name: controlplane
+          port: 8080
+    - name: computer-connection
+      matches:
+        - path:
+            type: PathPrefix
+            value: /computer/
+      timeouts:
+        request: 0s
+        backendRequest: 0s
+      backendRefs:
+        - name: computer-gateway
+          port: 8085
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: computer-registration-rate-limit
+  namespace: talgent
+spec:
+  # One shared ceiling on starting and polling registrations; Talgent
+  # Computer polls every 5 seconds while a person approves.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: computer
+      sectionName: computer-registration
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - limit:
+            requests: 600
+            unit: Minute
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: computer-connection-rate-limit
+  namespace: talgent
+spec:
+  # A shared ceiling on connection attempts, installer and program
+  # downloads; each upgrade checks its credential against Computer. A
+  # machine reconnects at most every second and backs off to 30 seconds.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: computer
+      sectionName: computer-connection
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - limit:
+            requests: 1200
+            unit: Minute
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: computer-telemetry-rate-limit
+  namespace: talgent
+spec:
+  # Each Managed Work's telemetry is limited on its own, by the Work identity
+  # its Claude Code sends; it exports a batch of traces and one of log events
+  # about every 5 seconds. A shared ceiling above them bounds requests with
+  # made-up identities, each of which Agent checks against the Work's live
+  # run. Agent bounds each request's size.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: computer
+      sectionName: computer-telemetry
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-talgent-work-id
+                  type: Distinct
+          limit:
+            requests: 120
+            unit: Minute
+        - limit:
+            requests: 6000
+            unit: Minute
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: auth-rate-limit
+  namespace: talgent
+spec:
+  # The gateway sits behind the TLS terminator, so client addresses are not
+  # distinct here; this is one shared ceiling on starting sign-ins.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: auth
+      sectionName: account-sign-in
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - limit:
+            requests: 120
+            unit: Minute

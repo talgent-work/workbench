@@ -23,7 +23,7 @@ func TestFreshUserTokenManager_ConcurrentReloadCannotChangeAuthorizationOwner(t 
 		acquireErr:          domain.ErrConcurrentModification,
 	}
 	manager := newFreshUserTokenManager(enabledConfig(t), http.DefaultClient, repo, &passthroughTokenCipher{}, func() time.Time { return now })
-	_, token, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerUserID: "user-1", Provider: domain.ProviderGitHub})
+	_, token, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerID: "user-1", Provider: domain.ProviderGitHub})
 	if !errors.Is(err, domain.ErrPermissionDenied) || token != "" {
 		t.Fatalf("concurrent recovery must reject foreign ownership without returning credentials: %v", err)
 	}
@@ -69,9 +69,9 @@ func TestFreshUserTokenManager_RefreshesNearExpiryAuthorizationWithLease(t *test
 	manager := newFreshUserTokenManager(cfg, server.Client(), repo, cipher, func() time.Time { return now })
 
 	refreshed, token, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{
-		OwnerUserID: "user-1",
-		Provider:    domain.ProviderGitHub,
-		Reason:      "test",
+		OwnerID:  "user-1",
+		Provider: domain.ProviderGitHub,
+		Reason:   "test",
 	})
 	if err != nil {
 		t.Fatalf("EnsureFreshUserToken: %v", err)
@@ -110,7 +110,7 @@ func TestFreshUserTokenManager_UsesValidTokenWithoutRefresh(t *testing.T) {
 	}
 	manager := newFreshUserTokenManager(enabledConfig(t), http.DefaultClient, repo, &passthroughTokenCipher{}, func() time.Time { return now })
 
-	auth, token, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerUserID: "user-1", Provider: domain.ProviderGitHub})
+	auth, token, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerID: "user-1", Provider: domain.ProviderGitHub})
 	if err != nil {
 		t.Fatalf("EnsureFreshUserToken: %v", err)
 	}
@@ -132,8 +132,8 @@ func TestFreshUserTokenManager_MissingRefreshTokenMarksReconnectRequired(t *test
 	manager := newFreshUserTokenManager(enabledConfig(t), http.DefaultClient, repo, &passthroughTokenCipher{}, func() time.Time { return now })
 
 	_, _, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{
-		OwnerUserID: "user-1",
-		Provider:    domain.ProviderGitHub,
+		OwnerID:  "user-1",
+		Provider: domain.ProviderGitHub,
 	})
 	var providerErr *application.ProviderError
 	if !errors.As(err, &providerErr) || providerErr.Code != providerErrorGitHubReconnectRequired {
@@ -163,7 +163,7 @@ func TestFreshUserTokenManager_EncryptFailureAfterRotationMarksReconnectRequired
 	cfg.WebBaseURL = server.URL
 	manager := newFreshUserTokenManager(cfg, server.Client(), repo, failingEncryptCipher{}, func() time.Time { return now })
 
-	_, _, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerUserID: "user-1", Provider: domain.ProviderGitHub})
+	_, _, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerID: "user-1", Provider: domain.ProviderGitHub})
 	var providerErr *application.ProviderError
 	if !errors.As(err, &providerErr) || providerErr.Code != providerErrorGitHubReconnectRequired {
 		t.Fatalf("err=%v, want reconnect provider error", err)
@@ -203,7 +203,7 @@ func TestFreshUserTokenManager_RejectedRefreshTokenRequiresReauthorization(t *te
 			manager := newFreshUserTokenManager(cfg, server.Client(), repo, &passthroughTokenCipher{}, func() time.Time { return now })
 
 			for range 2 {
-				_, token, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerUserID: "user-1", Provider: domain.ProviderGitHub})
+				_, token, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerID: "user-1", Provider: domain.ProviderGitHub})
 				var providerErr *application.ProviderError
 				require.ErrorAs(t, err, &providerErr)
 				require.Equal(t, providerErrorGitHubReconnectRequired, providerErr.Code)
@@ -231,7 +231,7 @@ func TestFreshUserTokenManager_ConcurrentLeaseReloadsWinnerOrReturnsInProgress(t
 	manager := newFreshUserTokenManager(enabledConfig(t), http.DefaultClient, repo, &passthroughTokenCipher{}, func() time.Time { return now })
 
 	repo.reloadAuthorization = mustAuthorization(t, "user-1", "winner-access", now.Add(time.Hour))
-	auth, token, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerUserID: "user-1", Provider: domain.ProviderGitHub})
+	auth, token, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerID: "user-1", Provider: domain.ProviderGitHub})
 	if err != nil {
 		t.Fatalf("EnsureFreshUserToken winner: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestFreshUserTokenManager_ConcurrentLeaseReloadsWinnerOrReturnsInProgress(t
 
 	repo.authorization = stale
 	repo.reloadAuthorization = nil
-	_, _, err = manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerUserID: "user-1", Provider: domain.ProviderGitHub})
+	_, _, err = manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerID: "user-1", Provider: domain.ProviderGitHub})
 	var providerErr *application.ProviderError
 	if !errors.As(err, &providerErr) || providerErr.Code != providerErrorGitHubRefreshInProgress || !providerErr.Retryable {
 		t.Fatalf("err=%v, want retryable refresh-in-progress", err)
@@ -264,7 +264,7 @@ func TestFreshUserTokenManager_TransientRefreshFailureRecordsFailureAndClearsLea
 	cfg.WebBaseURL = server.URL
 	manager := newFreshUserTokenManager(cfg, server.Client(), repo, &passthroughTokenCipher{}, func() time.Time { return now })
 
-	_, _, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerUserID: "user-1", Provider: domain.ProviderGitHub})
+	_, _, err := manager.EnsureFreshUserToken(context.Background(), EnsureFreshUserTokenInput{OwnerID: "user-1", Provider: domain.ProviderGitHub})
 	var providerErr *application.ProviderError
 	if !errors.As(err, &providerErr) || providerErr.Code != providerErrorGitHubProviderTransient || !providerErr.Retryable {
 		t.Fatalf("err=%v, want retryable transient provider error", err)

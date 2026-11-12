@@ -12,15 +12,17 @@ const MaxSoulRunes = 8000
 
 var (
 	// ErrSoulForbidden refuses reading or writing a Soul to anyone but one of
-	// the definition's Owners.
+	// the definition's Owners or an Application's Agent's Application Owner.
 	ErrSoulForbidden = errors.New("agent: only an Owner of the Agent reads or writes its Soul")
 	// ErrInvalidSoul refuses a Soul longer than MaxSoulRunes.
 	ErrInvalidSoul = fmt.Errorf("agent: a Soul is at most %d characters", MaxSoulRunes)
 )
 
-// ReadSoul returns the Soul to one of the definition's Owners.
-func (a *AgentDefinition) ReadSoul(requester string) (string, error) {
-	if !a.IsOwner(requester) {
+// ReadSoul returns the Soul to one of the definition's Owners, or to an
+// Application's Agent's Application Owner (Soul authorship, Application Owner
+// configuration).
+func (a *AgentDefinition) ReadSoul(requester DefinitionRequester) (string, error) {
+	if !a.admitsConfiguration(requester) {
 		return "", ErrSoulForbidden
 	}
 	return a.Soul, nil
@@ -29,8 +31,8 @@ func (a *AgentDefinition) ReadSoul(requester string) (string, error) {
 // ChangeSoul replaces the Soul when the requester is one of the definition's
 // Owners. Running Turns keep the Soul their execution took up; each Work
 // takes up the new one at its next start.
-func (a *AgentDefinition) ChangeSoul(requester, soul string) (bool, error) {
-	if !a.IsOwner(requester) {
+func (a *AgentDefinition) ChangeSoul(requester DefinitionRequester, soul string) (bool, error) {
+	if !a.admitsConfiguration(requester) {
 		return false, ErrSoulForbidden
 	}
 	soul = strings.TrimSpace(soul)

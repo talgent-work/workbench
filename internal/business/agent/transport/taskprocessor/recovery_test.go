@@ -113,10 +113,10 @@ var removedTypes = []struct {
 	{true, "agent.initial-execution.prepare.v1"},
 }
 
-// Agent recovers through exactly five tasks: Reconcile execution, Run long
-// execution step, Recover Work, Request workspace reclamation and the
-// Recovery sweep.
-func TestAgentRecoversThroughFiveTasks(t *testing.T) {
+// Agent's queues serve exactly six tasks: Reconcile execution, Run long
+// execution step, Recover Work, Request workspace reclamation, Close removed
+// Application's Work and the Recovery sweep.
+func TestAgentServesSixTasks(t *testing.T) {
 	recovery, _ := recovery(t, &observed{})
 	removed := map[taskqueue.TaskType]bool{}
 	for _, step := range removedTypes {
@@ -128,7 +128,7 @@ func TestAgentRecoversThroughFiveTasks(t *testing.T) {
 			served = append(served, processor.TaskType())
 		}
 	}
-	require.ElementsMatch(t, []taskqueue.TaskType{agenttask.ReconcileExecutionType, agenttask.RunLongExecutionStepType, agenttask.RecoverWorkType, agenttask.RequestWorkReclamationType, agenttask.SweepRecoveryType}, served)
+	require.ElementsMatch(t, []taskqueue.TaskType{agenttask.ReconcileExecutionType, agenttask.RunLongExecutionStepType, agenttask.RecoverWorkType, agenttask.RequestWorkReclamationType, agenttask.CloseRemovedApplicationWorkType, agenttask.SweepRecoveryType}, served)
 }
 
 // A task queued under a type no longer enqueued is dropped without

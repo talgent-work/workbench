@@ -29,7 +29,7 @@ func TestSessionUsesAuthorizedReferencesAndCapturedCapabilities(t *testing.T) {
 	require.Equal(t, "caller", store.subject)
 	require.Equal(t, domain.ClaudeCode.ID, store.session.AgentHarnessReference)
 	require.Equal(t, "employee", store.session.RepresentedPerson)
-	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "Changed"}))
+	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "Changed"}, agent.WorkDefaults.StartupAgent))
 	require.Equal(t, "Original", store.session.CapabilitySnapshot.Prompt)
 }
 

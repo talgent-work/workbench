@@ -33,7 +33,7 @@ func begin(t *testing.T, repository *AgentExecutionRepository, workID string, ad
 	t.Helper()
 	launch := request()
 	launch.WorkID = workID
-	launch.AuthorizationSelection = domain.WorkAuthorizationSelection{OwnerUserID: launch.RepresentedPerson, Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: usedAuthorization, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
+	launch.AuthorizationSelection = domain.WorkAuthorizationSelection{OwnerID: launch.RepresentedPerson, Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: usedAuthorization, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
 	run, err := domain.BeginExecution(domain.ExecutionBeginning{Admitted: domain.WorkStartAdmitted{WorkID: workID, StartAdmittedAt: admittedAt, DeskID: "desk-" + workID}, Launch: launch, Realization: realization})
 	require.NoError(t, err)
 	require.NoError(t, repository.Save(context.Background(), run))

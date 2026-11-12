@@ -35,11 +35,11 @@ type CreateWork struct {
 	// StartingContext, when supplied, starts a new Work from another Work of
 	// the same definition; a reused Work keeps its own.
 	StartingContext *domain.StartingContextSource
-	// WorkID, when supplied, is the identity the caller allocated; a Personal
+	// WorkID, when supplied, is the identity the caller allocated; a Standalone
 	// Work's File Space is opened under it before the Work exists. Otherwise
 	// the creation request identity names the Work.
 	WorkID string
-	// DisplayTitle is a Personal Work's initial display title.
+	// DisplayTitle is a Standalone Work's initial display title.
 	DisplayTitle string
 	// ComputerID is the Computer its starter chose; empty runs it on the
 	// default Computer (see workComputer).
@@ -50,6 +50,8 @@ type CreateWork struct {
 	// AgentHarness names the Agent Harness the Work runs; empty chooses the
 	// default.
 	AgentHarness string
+	// WorkLabels are the starter's Work Labels for a new Work.
+	WorkLabels domain.WorkLabels
 }
 
 // CreateWorkHandler creates at most one Work per caller request identity: the
@@ -172,19 +174,34 @@ func (h *CreateWorkHandler) created(ctx context.Context, request CreateWork, wor
 }
 
 // workModel is the model a new Work retains: the requested one, or, with none
-// requested, the machine's Claude login on a Managed Computer and the first
-// provided Model Configuration elsewhere.
-func (h *CreateWorkHandler) workModel(requested domain.WorkModelSelection, managed bool) domain.WorkModelSelection {
+// requested, the machine's Claude login on a Managed Computer, and elsewhere
+// the definition's default model while it is provided, else the first
+// provided Model Configuration (Model choice).
+func (h *CreateWorkHandler) workModel(requested domain.WorkModelSelection, defaults domain.WorkDefaults, managed bool) domain.WorkModelSelection {
 	if requested != (domain.WorkModelSelection{}) {
 		return requested
 	}
 	if managed {
 		return domain.MachineLoginModel()
 	}
+	if _, provided := h.models.Option(defaults.Model()); defaults.ModelConfigurationID != "" && provided {
+		return defaults.Model()
+	}
 	if option, ok := h.models.Default(); ok {
 		return option.Selection
 	}
 	return requested
+}
+
+// defaultThinkingLevel is what a start that names no thinking level takes:
+// the definition's default when the Work's model offers it, and otherwise
+// the Model Template default (Thinking-level default).
+func (h *CreateWorkHandler) defaultThinkingLevel(model domain.WorkModelSelection, defaults domain.WorkDefaults) string {
+	levels, templateDefault, _ := h.models.ThinkingLevels(model)
+	if defaults.ThinkingLevel != "" && slices.Contains(levels, defaults.ThinkingLevel) {
+		return defaults.ThinkingLevel
+	}
+	return templateDefault
 }
 
 func validateInitialThinkingLevel(models query.ModelConfigurations, model domain.WorkModelSelection, level string) error {

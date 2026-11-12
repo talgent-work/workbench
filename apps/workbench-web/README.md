@@ -1,8 +1,8 @@
 # Talgent Workbench Web
 
 Talgent Workbench's web app, served on `workbench.<domain>`.
-`src/workbench-routes.tsx` registers its routes: New work, a Work, Library, Usage,
-Marketplace, Profile and Computers, all pages of [`workbench-ui`](../../packages/workbench-ui)
+`src/workbench-routes.tsx` registers its routes: New work, Works, Library, Usage,
+Marketplace, Profile, Computers and Applications, all pages of [`workbench-ui`](../../packages/workbench-ui)
 in the Workbench's own shell.
 
 ## Local development

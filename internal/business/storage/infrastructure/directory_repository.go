@@ -22,7 +22,7 @@ const (
 var (
 	directoryColumns = []string{"owner_key", "name", "backend", "lifetime", "state", "space_token", "granted_read_write", "version"}
 	mappingColumns   = []string{"path", "owner_key", "directory_name"}
-	shareLinkColumns = []string{"token", "owner_key", "directory_name", "target_name", "created_by", "state", "created_at"}
+	shareLinkColumns = []string{"token", "owner_key", "directory_name", "target_name", "created_by", "created_by_application", "state", "created_at"}
 )
 
 // DirectoryRepository persists Directories with their Share Links and
@@ -128,11 +128,11 @@ func saveDirectory(tx *xorm.Session, row *directoryDO, directory *domain.Directo
 	for _, link := range directory.ShareLinks {
 		data := shareLinkToDO(directory.ID, link)
 		_, err := tx.Exec(
-			"INSERT INTO storage_share_link (token, owner_key, directory_name, target_name, created_by, state, version, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0) "+
+			"INSERT INTO storage_share_link (token, owner_key, directory_name, target_name, created_by, created_by_application, state, version, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0) "+
 				// MySQL assigns left to right: version compares the stored values first.
 				"ON DUPLICATE KEY UPDATE version = IF(target_name <> VALUES(target_name) OR state <> VALUES(state), version + 1, version), "+
 				"target_name = VALUES(target_name), state = VALUES(state), updated_at = VALUES(updated_at)",
-			data.Token, data.OwnerKey, data.DirectoryName, data.TargetName, data.CreatedBy, data.State, data.CreatedAt, now)
+			data.Token, data.OwnerKey, data.DirectoryName, data.TargetName, data.CreatedBy, data.CreatedByApplication, data.State, data.CreatedAt, now)
 		if err != nil {
 			return oops.With("operation", "storage.share_link.save", "owner_key", row.OwnerKey).Wrap(err)
 		}

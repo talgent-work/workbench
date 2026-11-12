@@ -37,7 +37,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 	}})
 	require.NoError(t, err)
 	authorizationID := uuid.NewString()
-	work, _ := f.createWithAuthorization(t, ctx, snapshot, domain.WorkAuthorizationInput{OwnerUserID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerUserID: "lifecycle-owner", AuthorizationID: authorizationID, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}})
+	work, _ := f.createWithAuthorization(t, ctx, snapshot, domain.WorkAuthorizationInput{OwnerID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerID: "lifecycle-owner", AuthorizationID: authorizationID, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}})
 	stored, err := f.works.Get(ctx, work.ID)
 	require.NoError(t, err)
 	selection := stored.AuthorizationSelection.Clone()
@@ -108,7 +108,7 @@ func TestServiceVaultReconcilesCurrentCredentialsWithoutChangingWorkSelection(t 
 		}
 	}
 	for _, request := range supply.received {
-		require.Equal(t, "lifecycle-owner", request.OwnerUserID)
+		require.Equal(t, "lifecycle-owner", request.OwnerID)
 		require.Equal(t, authorizationID, request.AuthorizationID)
 		require.Contains(t, []string{"github-api", "github-remote-mcp"}, request.Target)
 	}
@@ -185,7 +185,7 @@ func TestCredentialChangeRedeliversEveryWorkUsingTheAuthorization(t *testing.T) 
 	}})
 	require.NoError(t, err)
 	authorizationID := uuid.NewString()
-	shared := domain.WorkAuthorizationInput{OwnerUserID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerUserID: "lifecycle-owner", AuthorizationID: authorizationID, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
+	shared := domain.WorkAuthorizationInput{OwnerID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerID: "lifecycle-owner", AuthorizationID: authorizationID, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}}}}
 	// Each Work's execution owns its own sandbox.
 	f.external.distinct = true
 	first, _ := f.createWithAuthorization(t, ctx, snapshot, shared)

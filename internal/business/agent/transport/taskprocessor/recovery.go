@@ -38,6 +38,21 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 				}
 				return err
 			}),
+		processor(logger, agenttask.CloseRemovedApplicationWorkType, func() *agenttaskv1.CloseRemovedApplicationWorkTaskV1 {
+			return &agenttaskv1.CloseRemovedApplicationWorkTaskV1{}
+		},
+			func(ctx context.Context, p *agenttaskv1.CloseRemovedApplicationWorkTaskV1) error {
+				err := recovery.CloseRemovedApplicationWork(ctx, p.GetApplicationId(), p.GetWorkId())
+				if err != nil && pkgtaskqueue.LastAttempt(ctx) {
+					// Agent keeps no obligation for the close: it ends here,
+					// the Work stops at its idle timeout, and only this error
+					// shows it.
+					execution, _ := taskqueue.ExecutionInfoFromContext(ctx)
+					logger.ErrorContext(ctx, "removed application work close failed", slog.String("work_id", p.GetWorkId()),
+						slog.String("application_id", p.GetApplicationId()), slog.String("task_id", execution.TaskID()), slog.Any("error", err))
+				}
+				return err
+			}),
 		processor(logger, agenttask.SweepRecoveryType, func() *agenttaskv1.SweepRecoveryTaskV1 { return &agenttaskv1.SweepRecoveryTaskV1{} },
 			func(ctx context.Context, _ *agenttaskv1.SweepRecoveryTaskV1) error { return recovery.Sweep(ctx) }),
 	}, retired(logger, retiredRecoveryTypes)...)

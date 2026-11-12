@@ -27,15 +27,15 @@ type MarketplacePort interface {
 	SupplyServiceCredential(context.Context, ServiceCredentialRequest) (ServiceCredentialMaterial, error)
 }
 
-// ConnectorSelection is Marketplace's catalog with the delegated user's enabled
-// installation identities.
+// ConnectorSelection is Marketplace's catalog with the delegated owner's
+// enabled installation identities: a person's or an Application's.
 type ConnectorSelection struct {
 	Catalog           []domain.CatalogConnector
 	EnabledConnectors []string
 }
 
 type RepositoryCredentialRequest struct {
-	OwnerUserID, AuthorizationID, RepositoryID, CloneURL string
+	OwnerID, AuthorizationID, RepositoryID, CloneURL string
 }
 
 type RepositoryCredentialMaterial struct {
@@ -43,7 +43,7 @@ type RepositoryCredentialMaterial struct {
 	ExpiresAt          time.Time
 }
 
-type ServiceCredentialRequest struct{ OwnerUserID, AuthorizationID, Target string }
+type ServiceCredentialRequest struct{ OwnerID, AuthorizationID, Target string }
 
 type ServiceCredentialMaterial struct {
 	Token     string

@@ -24,8 +24,7 @@ a smaller size. Tests cover the Workbench's own code; external components such a
 execd, asynq and the databases are trusted to their own tests.
 
 Images build with `scripts/deploy/build-and-push-images.sh` (see the
-[self-hosting guide](self-hosting.md#images)).
-
+[self-hosting guide](self-hosting.md#6-deploy)).
 
 ## Releases
 

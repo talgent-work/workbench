@@ -14,9 +14,9 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
 
-// The core's Personal Work role and roles a caller supplies from its own plugin.
+// The core's Standalone Work role and roles a caller supplies from its own plugin.
 var defaultRoleCases = []struct{ purpose, scope, plugin, agent string }{
-	{"work", "employee", "talgent", "talgent:personal-work-executor"},
+	{"work", "employee", "talgent", "talgent:work-executor"},
 	{"work", "employee", "caller-plugin", "caller-plugin:case-executor"},
 	{"project_coordination", "project", "caller-plugin", "caller-plugin:coordinator"},
 }
@@ -32,7 +32,7 @@ func TestConfiguredRolesResolveDeploymentCapabilities(t *testing.T) {
 			input := request()
 			definition := definitions.value.ProvideCapabilities()
 			require.Equal(t, []string{tc.plugin}, definition.RequiredPlugins)
-			input.Capabilities, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.RequiredPlugins, DefaultStartupAgent: definition.StartupAgent}, []domain.PluginRelease{{CatalogName: "talgent", Slug: tc.plugin, Source: "owned", Version: "1.0.0", RetrievalRef: "archive:runtime", NativeEntry: []byte(`{"name":"` + tc.plugin + `","version":"1.0.0","source":{"source":"url","url":"https://example.invalid/runtime.zip","sha256":"abc"}}`), Agents: []domain.AgentComponent{{Name: tc.agent}}}})
+			input.Capabilities, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.RequiredPlugins, DefaultStartupAgent: definitions.value.WorkDefaults.StartupAgent}, []domain.PluginRelease{{CatalogName: "talgent", Slug: tc.plugin, Source: "owned", Version: "1.0.0", RetrievalRef: "archive:runtime", NativeEntry: []byte(`{"name":"` + tc.plugin + `","version":"1.0.0","source":{"source":"url","url":"https://example.invalid/runtime.zip","sha256":"abc"}}`), Agents: []domain.AgentComponent{{Name: tc.agent}}}})
 			require.NoError(t, err)
 			launch, err := config.prepare(sandboxLayout, input, owner(input), "")
 			require.NoError(t, err, "launch must consume the selected immutable runtime release")
@@ -83,6 +83,6 @@ func (*nativeDefaultDefinition) FindForPurpose(context.Context, query.GetAgentDe
 func suppliedRoleDefinition(scope, owner, purpose, plugin, startupAgent string) command.EnsureAgentDefinition {
 	return command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"owner"},
 		UsageScope: domain.UsageScope{Kind: scope, Reference: owner}, Purpose: purpose,
-		Capabilities: domain.CapabilityConfiguration{StartupAgent: startupAgent, RequiredPlugins: []string{plugin}},
+		Capabilities: domain.CapabilityConfiguration{RequiredPlugins: []string{plugin}}, WorkDefaults: domain.WorkDefaults{StartupAgent: startupAgent},
 	}, EmployeeDisplayName: "Jack"}
 }

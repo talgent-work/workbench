@@ -26,7 +26,7 @@ import (
 // checkoutSelection selects acme/api and acme/private on the work branch
 // talgent/TAL-396.
 func checkoutSelection() domain.WorkRepositorySelection {
-	return domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-396", Repositories: []domain.WorkRepository{
+	return domain.WorkRepositorySelection{OwnerID: "owner", WorkBranch: "talgent/TAL-396", Repositories: []domain.WorkRepository{
 		{Provider: "github", RepoID: "github:1", RepoName: "acme/api", CloneURL: "https://github.com/acme/api.git", DefaultBranch: "main", BaseBranch: "main"},
 		{Provider: "github", RepoID: "github:2", RepoName: "acme/private", CloneURL: "https://github.com/acme/private.git", DefaultBranch: "main", BaseBranch: "main"},
 	}}

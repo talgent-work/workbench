@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
-	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	agentpublicv2 "github.com/talgent-work/contracts/gen/go/agent/public/v2"
 	computerpublicv1 "github.com/talgent-work/contracts/gen/go/computer/public/v1"
 	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 )
@@ -25,15 +25,15 @@ func method(file protoreflect.FileDescriptor, service, name string) protoreflect
 
 var (
 	// Declared for a user only.
-	userOnly = method(agentpublicv1.File_agent_public_v1_personal_work_proto, "PersonalWorkService", "StartPersonalWork")
+	userOnly = method(agentpublicv2.File_agent_public_v2_work_proto, "WorkService", "GrantWorkShare")
 	// Declared for a user or an agent.
-	userOrAgent = method(agentpublicv1.File_agent_public_v1_personal_work_proto, "PersonalWorkService", "ListLibraryFiles")
+	userOrAgent = method(agentpublicv2.File_agent_public_v2_work_proto, "WorkService", "ListLibraryFiles")
 	// Declared for no caller: a private procedure no entry reaches.
 	undeclared = method(agentprivatev1.File_agent_private_v1_acting_work_proto, "ActingWorkService", "AdmitAgentAction")
 	// Declared anonymous.
 	anonymous = method(computerpublicv1.File_computer_public_v1_registration_proto, "RegistrationService", "StartRegistration")
-	// A user-only server-streaming procedure.
-	userStream = method(streamgatewaypublicv1.File_streamgateway_public_v1_streamgateway_proto, "StreamGatewayService", "WatchStream")
+	// A server-streaming procedure declared for a person or an Application.
+	ownerStream = method(streamgatewaypublicv1.File_streamgateway_public_v1_streamgateway_proto, "StreamGatewayService", "WatchStream")
 )
 
 // noStream is a server stream the handlers under test never use.
@@ -123,7 +123,7 @@ func TestUndeclaredPrincipalIsRefusedBeforeTheHandler(t *testing.T) {
 	}{
 		"agent on a user procedure":    {userOnly, agentHeaders()},
 		"user on undeclared procedure": {undeclared, userHeaders()},
-		"agent on a user stream":       {userStream, agentHeaders()},
+		"agent on a user stream":       {ownerStream, agentHeaders()},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, ran, err := call(t, NewPrincipalInterceptor(), tc.procedure, tc.header)
@@ -131,7 +131,7 @@ func TestUndeclaredPrincipalIsRefusedBeforeTheHandler(t *testing.T) {
 			require.False(t, ran)
 		})
 	}
-	_, ran, err := call(t, NewPrincipalInterceptor(), userStream, userHeaders())
+	_, ran, err := call(t, NewPrincipalInterceptor(), ownerStream, userHeaders())
 	require.NoError(t, err)
 	require.True(t, ran, "a declared stream admits its Principal")
 }
@@ -172,6 +172,7 @@ func TestUnverifiedIdentityIsUnauthenticated(t *testing.T) {
 		"agent without purpose":  with(agentHeaders(), HeaderPurpose, ""),
 		"agent without its def":  with(agentHeaders(), HeaderAgentID, ""),
 		"invalid represented id": with(agentHeaders(), HeaderRepresentedUserID, "someone"),
+		"invalid application id": with(agentHeaders(), HeaderApplicationID, "someone"),
 		"only a delegated user":  {HeaderDelegatedUserID: userID},
 		"only a service":         {HeaderServiceID: "work"},
 		"invalid delegated user": {HeaderServiceID: "work", HeaderDelegatedUserID: "issuer#sub-1"},

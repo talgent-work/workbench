@@ -20,8 +20,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
-var _ application.ProviderAuthorizer = (*Authorizer)(nil)
-
 const providerAuthorizationStateTTL = 15 * time.Minute
 
 type Authorizer struct {
@@ -55,7 +53,7 @@ func (a *Authorizer) BeginProviderAuthorization(_ context.Context, input applica
 		return application.BeginProviderAuthorizationResult{}, application.ErrProviderUnavailable
 	}
 	state, err := a.signState(providerAuthorizationState{
-		OwnerUserID:  strings.TrimSpace(input.OwnerUserID),
+		OwnerID:      strings.TrimSpace(input.OwnerID),
 		RedirectURI:  strings.TrimSpace(input.RedirectURI),
 		IssuedAtUnix: a.now().UTC().Unix(),
 	})
@@ -73,7 +71,7 @@ func (a *Authorizer) CompleteProviderAuthorization(ctx context.Context, input ap
 	if err != nil {
 		return nil, err
 	}
-	if state.OwnerUserID != strings.TrimSpace(input.OwnerUserID) {
+	if state.OwnerID != strings.TrimSpace(input.OwnerID) {
 		return nil, domain.ErrPermissionDenied
 	}
 	redirectURI := strings.TrimSpace(input.RedirectURI)
@@ -111,7 +109,7 @@ func (a *Authorizer) CompleteProviderAuthorization(ctx context.Context, input ap
 		refreshExpiresAt = a.now().UTC().Add(time.Duration(token.RefreshTokenExpiresIn) * time.Second)
 	}
 	return domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
-		OwnerUserID:            strings.TrimSpace(input.OwnerUserID),
+		OwnerID:                strings.TrimSpace(input.OwnerID),
 		Provider:               domain.ProviderGitHub,
 		ProviderAccountID:      strconv.FormatInt(user.ID, 10),
 		ProviderLogin:          user.Login,
@@ -185,7 +183,7 @@ func (a *Authorizer) currentUser(ctx context.Context, accessToken string) (githu
 }
 
 func (a *Authorizer) signState(state providerAuthorizationState) (string, error) {
-	if strings.TrimSpace(state.OwnerUserID) == "" {
+	if strings.TrimSpace(state.OwnerID) == "" {
 		return "", domain.ErrInvalidRequiredField
 	}
 	payload, err := json.Marshal(state)
@@ -215,7 +213,7 @@ func (a *Authorizer) verifyState(raw string) (providerAuthorizationState, error)
 	if err := json.Unmarshal(payload, &state); err != nil {
 		return zero, domain.ErrPermissionDenied
 	}
-	if strings.TrimSpace(state.OwnerUserID) == "" {
+	if strings.TrimSpace(state.OwnerID) == "" {
 		return zero, domain.ErrPermissionDenied
 	}
 	issuedAt := time.Unix(state.IssuedAtUnix, 0).UTC()
@@ -232,7 +230,7 @@ func (a *Authorizer) sign(payload string) string {
 }
 
 type providerAuthorizationState struct {
-	OwnerUserID  string `json:"owner_user_id"`
+	OwnerID      string `json:"owner_id"`
 	RedirectURI  string `json:"redirect_uri,omitempty"`
 	IssuedAtUnix int64  `json:"issued_at_unix"`
 }

@@ -20,6 +20,9 @@ import (
 type fakeApp struct {
 	signOut  error
 	signOuts []string
+	grant    error
+	grants   []application.IssueApplicationIdentityToken
+	now      time.Time
 }
 
 func (f *fakeApp) SignInURL(string, string) string { return "https://github.test/authorize" }
@@ -34,6 +37,13 @@ func (f *fakeApp) SignOut(_ context.Context, token string) error {
 	return f.signOut
 }
 func (f *fakeApp) PublishedKeys(context.Context) ([]byte, error) { return []byte(`{"keys":[]}`), nil }
+func (f *fakeApp) IssueApplicationIdentityToken(_ context.Context, cmd application.IssueApplicationIdentityToken) (application.IssuedToken, error) {
+	f.grants = append(f.grants, cmd)
+	if f.grant != nil {
+		return application.IssuedToken{}, f.grant
+	}
+	return application.IssuedToken{Token: "signed", ExpiresAt: f.now.Add(15 * time.Minute)}, nil
+}
 
 func signOutWith(t *testing.T, app *fakeApp, cookieDomain ...string) *http.Response {
 	t.Helper()

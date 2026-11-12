@@ -10,7 +10,7 @@ import (
 
 func AssembleInstalledPluginEntity(plugin *domain.InstalledPlugin) query.InstalledPlugin {
 	return query.InstalledPlugin{
-		UserID: plugin.UserID, Slug: plugin.Slug, Enabled: plugin.State == domain.Enabled,
+		OwnerID: plugin.OwnerID, Slug: plugin.Slug, Enabled: plugin.State == domain.Enabled,
 		Configuration: plugin.ManualConfiguration.Clone(), Version: plugin.Version,
 	}
 }
@@ -64,7 +64,7 @@ func copyBound(value *float64) *float64 {
 }
 
 func providerAuthorizationInfo(auth *domain.ProviderAuthorization) ProviderAuthorizationInfo {
-	return ProviderAuthorizationInfo{ID: auth.ID, OwnerUserID: auth.OwnerUserID, Provider: string(auth.Provider), ProviderAccountID: auth.ProviderAccountID, ProviderLogin: auth.ProviderLogin, Status: string(auth.Status)}
+	return ProviderAuthorizationInfo{ID: auth.ID, OwnerID: auth.OwnerID, Provider: string(auth.Provider), ProviderAccountID: auth.ProviderAccountID, ProviderLogin: auth.ProviderLogin, Status: string(auth.Status)}
 }
 
 func AssemblePluginReleaseDTO(value PluginRelease) domain.PluginRelease {

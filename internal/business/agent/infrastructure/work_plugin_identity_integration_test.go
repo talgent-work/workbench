@@ -56,9 +56,9 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "fixture"},
 		Subject:   f.request.Subject, ProjectID: f.request.ProjectID,
-		AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner", Available: []domain.PersonalAuthorization{
-			{OwnerUserID: "owner", AuthorizationID: selectedID, Provider: "github", Service: "github"},
-			{OwnerUserID: "owner", AuthorizationID: otherID, Provider: "other", Service: "other"},
+		AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: "owner", Available: []domain.PersonalAuthorization{
+			{OwnerID: "owner", AuthorizationID: selectedID, Provider: "github", Service: "github"},
+			{OwnerID: "owner", AuthorizationID: otherID, Provider: "other", Service: "other"},
 		}},
 	}
 	work, created, err := agent.CreateWork(input, subjectWork(t, f.sessions, agent.ID, input.Subject))
@@ -67,7 +67,7 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 	require.NoError(t, f.sessions.Save(t.Context(), work))
 	retained, err := f.sessions.Get(t.Context(), work.ID)
 	require.NoError(t, err)
-	want := domain.WorkAuthorizationSelection{OwnerUserID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: selectedID, Provider: "github", Service: "github"}, {AuthorizationID: otherID, Provider: "other", Service: "other"}}}
+	want := domain.WorkAuthorizationSelection{OwnerID: "owner", Authorizations: []domain.WorkServiceAuthorization{{AuthorizationID: selectedID, Provider: "github", Service: "github"}, {AuthorizationID: otherID, Provider: "other", Service: "other"}}}
 	require.Equal(t, want, retained.AuthorizationSelection)
 	// A reused binding keeps the original selection even when available facts change.
 	input.AuthorizationInput.Available = input.AuthorizationInput.Available[:1]

@@ -8,7 +8,7 @@ import (
 )
 
 type workAuthorizationRecord struct {
-	OwnerUserID    string                     `json:"owner_user_id"`
+	OwnerID        string                     `json:"owner_id"`
 	Authorizations []workServiceAuthorization `json:"authorizations"`
 }
 
@@ -20,7 +20,7 @@ type workServiceAuthorization struct {
 }
 
 func encodeWorkAuthorization(selection domain.WorkAuthorizationSelection) (string, error) {
-	record := workAuthorizationRecord{OwnerUserID: selection.OwnerUserID}
+	record := workAuthorizationRecord{OwnerID: selection.OwnerID}
 	for _, ref := range selection.Authorizations {
 		record.Authorizations = append(record.Authorizations, workServiceAuthorization{
 			AuthorizationID: ref.AuthorizationID, Provider: ref.Provider, Service: ref.Service, SupportedTargets: ref.SupportedTargets,
@@ -34,7 +34,7 @@ func decodeWorkAuthorization(data string) (domain.WorkAuthorizationSelection, er
 	if err := json.Unmarshal([]byte(data), &record); err != nil {
 		return domain.WorkAuthorizationSelection{}, oops.Wrap(err)
 	}
-	selection := domain.WorkAuthorizationSelection{OwnerUserID: record.OwnerUserID}
+	selection := domain.WorkAuthorizationSelection{OwnerID: record.OwnerID}
 	for _, ref := range record.Authorizations {
 		selection.Authorizations = append(selection.Authorizations, domain.WorkServiceAuthorization{
 			AuthorizationID: ref.AuthorizationID, Provider: ref.Provider, Service: ref.Service, SupportedTargets: ref.SupportedTargets,

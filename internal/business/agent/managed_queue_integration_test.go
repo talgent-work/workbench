@@ -4,6 +4,7 @@ package agent_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -130,12 +131,20 @@ func (q *managedQueue) executionsOf(t *testing.T, workID string) []*domain.Agent
 	return result
 }
 
-// reconcile runs the reconciliation of the Work's latest execution.
+// reconcile runs the reconciliation of the Work's latest execution. The
+// module's own Policies may save the execution meanwhile; reconciliation then
+// reports a concurrent modification and, as its task does, runs again on the
+// saved state.
 func (q *managedQueue) reconcile(t *testing.T, ctx context.Context, workID string) {
 	t.Helper()
 	latest := q.runs.latest(t, ctx, workID)
 	require.NotNil(t, latest)
-	_, err := q.reconciliation.Reconcile(ctx, latest.ID)
+	var err error
+	for range 5 {
+		if _, err = q.reconciliation.Reconcile(ctx, latest.ID); !errors.Is(err, domain.ErrConcurrentModification) {
+			break
+		}
+	}
 	require.NoError(t, err)
 }
 

@@ -82,7 +82,7 @@ func (h *WorkHandler) SetPermissionMode(ctx context.Context, request *agentpubli
 	if mode == "" {
 		return nil, mapAgentError(domain.ErrInvalidWork)
 	}
-	accepted, err := h.application.SetPermissionMode(ctx, application.SetPermissionMode{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Mode: mode})
+	accepted, err := h.application.SetPermissionMode(ctx, application.SetPermissionMode{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Mode: mode})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}

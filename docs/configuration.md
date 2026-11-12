@@ -16,7 +16,7 @@ types they fill; the [self-hosting guide](self-hosting.md) shows how a deploymen
   image's file, mounted at `/app/configs/<process>/`. Its `${NAME}` values come from ConfigMap
   `workbench-environment` and from Secrets, both as environment variables. The environment's
   `CONTROLPLANE_PROFILE` activates a controlplane profile from ConfigMap `controlplane-profile`
-  ([switches](self-hosting.md#switches)).
+  ([switches](self-hosting.md#3-environment-file)).
 - Processes read their configuration once; restart them after a change.
 
 In the tables, **Default** is the value of `configs/<process>/defaults.yml`, which suits a local
@@ -75,7 +75,7 @@ contracts. Agents reach it only through the entry, under their Identity Tokens.
 
 ### account
 
-Sign-in with GitHub and the session tokens the gateway validates.
+Sign-in with GitHub, Applications' client credentials grant, and the Identity Tokens the gateway validates.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -85,6 +85,8 @@ Sign-in with GitHub and the session tokens the gateway validates.
 | `return-origins` | none | Base addresses of other entries a sign-in may return to, beside the one receiving GitHub's callback |
 | `access-token-lifetime` | `15m` | Lifetime of a person's Identity Token |
 | `agent-token-lifetime` | `168h` | Lifetime of a Work's agent Identity Token, never refreshed; a retiring signing key stays published this long |
+| `application-token-lifetime` | `15m` | Lifetime of an Application's Identity Token from the client credentials grant, never refreshed; at most `access-token-lifetime`, since it bounds how long a revoked secret or removed Application keeps passing |
+| `application-secret-overlap` | `24h` | How long a replaced Client Secret keeps matching after its Application Owner rotates it |
 | `session-sliding-lifetime` | `720h` | A session ends after this long unused |
 | `session-absolute-lifetime` | `2160h` | A session ends this long after sign-in; access ≤ sliding ≤ absolute |
 | `key-rotation-interval` | `720h` | How often a new signing key is made |
@@ -153,7 +155,7 @@ Where Works run: this cluster's Cloud and people's Managed Computers.
 | `cloud.id`, `cloud.name` | `${COMPUTER_CLOUD_ID:01a19bc3-075a-7c57-b42b-7fdf73b611ed}`, `${COMPUTER_CLOUD_NAME:Talgent Cloud}` | The Cloud's identity, which Works keep for good, and its name |
 | `cloud.capacity` | `requests.cpu: "8"`, `requests.memory: 12Gi`, `pods: "64"` | The room runs get; keep it with ResourceQuota `agent-executions` |
 | `cloud.namespace`, `cloud.quota-name` | `${SANDBOX_NAMESPACE:talgent-sandbox}`, `agent-executions` | The ResourceQuota each admission checks; it must be in the sandboxes' namespace, so it counts only their Pods |
-| `cloud.demand` | requests 600m CPU and 960Mi, limits 2250m and 2368Mi, 1 Pod | Everything the quota charges for one run: the sandbox container, its egress sidecar and the Kata RuntimeClass overhead |
+| `cloud.demand` | requests 600m CPU and 960Mi, limits 2250m and 2368Mi, 1 Pod | Everything the quota charges for one run: the sandbox container, its egress sidecar and the sandbox RuntimeClass's Pod overhead (250m/320Mi for the bundled `kata-qemu-runtime-rs`); change it with the RuntimeClass |
 
 ### agent-computer
 
@@ -181,7 +183,7 @@ How Agent reaches Computer and Managed Computers.
 | `agent-account.address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's private API: the directory of people a Work is shared with, and each Work's Identity Token |
 | `agent-recovery.sweep-interval` | `60s` | How often obligations no event woke are checked; at most one minute |
 | `agent-recovery.inputs-refresh-interval` | `10m` | How often a Managed Work's inputs are synced again; inside `storage.link-ttl` |
-| `agent-credential-changes.consumer-group`, `agent-input-changes`, `agent-desk-assignments`, `agent-computer-presence` | `${AGENT_CREDENTIAL_CHANGES_GROUP:agent-credential-changes}`, `${AGENT_INPUT_CHANGES_GROUP:agent-input-changes}`, `${AGENT_DESK_ASSIGNMENTS_GROUP:agent-desk-assignments}`, `${AGENT_COMPUTER_PRESENCE_GROUP:agent-computer-presence}` | Kafka consumer groups; the same names when unset |
+| `agent-credential-changes.consumer-group`, `agent-input-changes`, `agent-desk-assignments`, `agent-computer-presence`, `agent-application-removal` | `${AGENT_CREDENTIAL_CHANGES_GROUP:agent-credential-changes}`, `${AGENT_INPUT_CHANGES_GROUP:agent-input-changes}`, `${AGENT_DESK_ASSIGNMENTS_GROUP:agent-desk-assignments}`, `${AGENT_COMPUTER_PRESENCE_GROUP:agent-computer-presence}`, `${AGENT_APPLICATION_REMOVAL_GROUP:agent-application-removal}` | Kafka consumer groups; the same names when unset |
 | `agent-taskqueue` | queue `agent-recovery`, concurrency 16, retry `1s`–`60s` | Recovery tasks |
 | `agent-preparation-taskqueue` | queue `agent-preparation`, concurrency 8, retry `1s`–`60s` | Each execution's long step holds a worker while it runs |
 | `storage-preview-taskqueue` | queue `storage-preview`, concurrency 1, retry `2s`–`4s` | Preview renderings; raise with Gotenberg's replicas |
@@ -203,6 +205,7 @@ How Agent reaches Computer and Managed Computers.
 | `platform-connector.gateway-address` | `${NATIVE_GATEWAY_ADDRESS:}` | The MCP server every Work connects to as the platform Connector, with `description` and `category`; empty publishes none |
 | `directory` | `${MARKETPLACE_DIRECTORY:/mnt/talgent/marketplace}` | Where owned archives are kept |
 | `name`, `owner` | `talgent`, `Talgent` | The catalog's name and owner |
+| `account.address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's private API, whose Application Ownership Query admits an Application Owner to the Application's installations and Provider Authorizations |
 | `connections.credential-token` | `${AGENT_CONTROL_TOKEN:}` | Admits callers of Marketplace's private services: Work selection, Provider credentials, and synchronization (`marketplace.private.v1.SynchronizationService`, with `Authorization: Bearer <token>`) |
 | `connections.github.*` | `${GITHUB_SCM_ENABLED:false}`, `${GITHUB_APP_ID:}`, `${GITHUB_APP_SLUG:}`, `${GITHUB_APP_PRIVATE_KEY_PEM:}`, `${GITHUB_OAUTH_CLIENT_ID:}`, `${GITHUB_OAUTH_CLIENT_SECRET:}`, `${GITHUB_WEB_BASE_URL:https://github.com}`, `${GITHUB_API_BASE_URL:https://api.github.com}`, `${GITHUB_API_VERSION:2026-03-10}`, `${GITHUB_SCM_TOKEN_CIPHER_KEY:}`, `${GITHUB_WEBHOOK_SECRET:}` | The GitHub App for repository access (keys `enabled`, `app-id`, `app-slug`, `private-key-pem`, `oauth-client-id`, `oauth-client-secret`, `web-base-url`, `api-base-url`, `api-version`, `token-cipher-key`, `webhook-secret`). Enabled, it requires the App ID, private key, OAuth client and cipher key. Base: Secret `github-scm`. |
 | `connections.maintenance.*` | `enabled: true`, `scan-interval: 5m`, `proactive-refresh-window: 30m`, `request-refresh-skew: 5m`, `refresh-lease-duration: 30s`, `batch-size: 100`, `queue-name: scm-maintenance` | Refreshing Provider tokens before they expire |
@@ -212,7 +215,8 @@ How Agent reaches Computer and Managed Computers.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `trace-access.agent-address`, `agent-control-token` | `${WORK_AGENT_ADDR:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent's Work access, which admits readers of a Work's telemetry |
+| `trace-access.agent-address`, `agent-control-token` | `${WORK_AGENT_ADDR:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent's Work access, which admits readers of a Work's telemetry, and its Work attribution, which names an Application's Works with their Work Labels |
+| `trace-access.account-address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's Application Ownership Query, which admits an Application Owner to the Application's usage |
 | `trace-access.project-access-address` | `${TRACE_PROJECT_ACCESS_ADDRESS:}` | The Project access decision, served by a service built on the Workbench; empty in a Workbench deployment |
 
 ## dispatcher
@@ -285,27 +289,29 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
   `talgent-sandbox`, which must equal controlplane's `SANDBOX_NAMESPACE`. The render drops the
   chart's ClusterRole: the Server's permissions are in the base's `sandbox.yaml`, a Role in
   `talgent-sandbox` and, at cluster scope, only reading Namespaces and RuntimeClasses. The
-  workload template, ConfigMap `opensandbox-workload-template` in `resources.yaml`, sets the Kata
-  RuntimeClass, `fsGroup: 1000`, DNS `ndots: 1` and the image pull Secret `ghcr-pull`. The
+  workload template, ConfigMap `opensandbox-workload-template` in `resources.yaml`, sets the sandbox
+  RuntimeClass (`TALGENT_SANDBOX_RUNTIME_CLASS`), `fsGroup: 1000`, DNS `ndots: 1` and the image pull Secret `ghcr-pull`. The
   Server's API key is Secret `opensandbox-api`.
-- **Gotenberg.** `deploy/k3s/workbench/gotenberg.yaml`, settings in ConfigMap `gotenberg-config`.
+- **Gotenberg.** `deploy/kubernetes/workbench/gotenberg.yaml`, settings in ConfigMap `gotenberg-config`.
 - **workbench-web** takes no configuration; it serves the built app on port 3000.
 
 ## Deployment script variables
 
 | Variable | Script | Meaning |
 |---|---|---|
-| `TALGENT_ENVIRONMENT_FILE` | `apply-k3s.sh`, `render-k3s.sh` | The environment, a `KEY=VALUE` file outside the repository; unset reads ConfigMap `workbench-environment` |
-| `TALGENT_IMAGE_TAG`, `TALGENT_REGISTRY` | `render-k3s.sh`, `build-and-push-images.sh` | Tag of the Workbench's images (listed in `scripts/deploy/lib/images.sh`), and registry (default `ghcr.io/talgent-work`) |
-| `TALGENT_OVERLAY_IMAGE_TAG` | `render-k3s.sh` | Tag of an overlay's own images of `ghcr.io/talgent-work`; required when the overlay names any |
+| `TALGENT_ENVIRONMENT_FILE` | `apply.sh`, `render.sh` | The environment, a `KEY=VALUE` file outside the repository; unset reads ConfigMap `workbench-environment` |
+| `TALGENT_IMAGE_TAG`, `TALGENT_REGISTRY` | `render.sh`, `build-and-push-images.sh` | Tag of the Workbench's images (listed in `scripts/deploy/lib/images.sh`), and registry (default `ghcr.io/talgent-work`) |
+| `TALGENT_OVERLAY_IMAGE_TAG` | `render.sh` | Tag of an overlay's own images of `ghcr.io/talgent-work`; required when the overlay names any |
 | `TALGENT_PUSH_IMAGES` | `build-and-push-images.sh` | `1` pushes what it builds |
 | `TALGENT_NAMESPACE` | all | The platform namespace; must be `talgent` |
-| `TALGENT_SKIP_DB_BOOTSTRAP`, `TALGENT_SKIP_CLICKHOUSE_MIGRATION` | `apply-k3s.sh` | `1` skips the MySQL schema or the ClickHouse projections |
-| `MYSQL_PASSWORD`, `CLICKHOUSE_TALGENT_PASSWORD` | `apply-k3s.sh`, `bootstrap-mysql.sh` | Service account passwords; written to Secrets `mysql-auth`, `clickhouse-auth` |
-| `REDIS_PASSWORD` | `apply-k3s.sh` | The Redis password, written to the optional Secret `redis-auth` when set |
-| `ACCOUNT_GITHUB_CLIENT_ID`, `ACCOUNT_GITHUB_CLIENT_SECRET` | `apply-k3s.sh` | Written to Secret `account-github-oauth` |
+| `TALGENT_SKIP_DB_BOOTSTRAP`, `TALGENT_SKIP_CLICKHOUSE_MIGRATION` | `apply.sh` | `1` skips the MySQL schema or the ClickHouse projections |
+| `MYSQL_PASSWORD`, `CLICKHOUSE_TALGENT_PASSWORD` | `apply.sh`, `bootstrap-mysql.sh` | Service account passwords; written to Secrets `mysql-auth`, `clickhouse-auth` |
+| `REDIS_PASSWORD` | `apply.sh` | The Redis password, written to the optional Secret `redis-auth` when set |
+| `ACCOUNT_GITHUB_CLIENT_ID`, `ACCOUNT_GITHUB_CLIENT_SECRET` | `apply.sh` | Written to Secret `account-github-oauth` |
 | `TALGENT_EXECD_IMAGE` | `apply-opensandbox.sh` | Another execd image than the pinned one |
-| `CLICKHOUSE_ADDR`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_MIGRATION_USER`, `CLICKHOUSE_MIGRATION_PASSWORD`, `CLICKHOUSE_MIGRATION_SQL`, `CLICKHOUSE_CONTAINER`, `CLICKHOUSE_WAIT_SECONDS` | `bootstrap-clickhouse.sh` | Defaults `127.0.0.1:9000`, `talgent_trace`, `default`, empty, `deploy/middleware/init/clickhouse/002-talgent.sql`, none, 0 (`apply-k3s.sh`: 120): how long to wait for the Collector's tables |
+| `TALGENT_SANDBOX_RUNTIME_CLASS` | `apply-opensandbox.sh` | The VM-isolating RuntimeClass sandboxes run with; default `kata-qemu-runtime-rs`. The script refuses to deploy when it does not exist |
+| `TALGENT_POD_NETWORK_CHECK` | `apply-opensandbox.sh` | How the encrypted pod network is confirmed: `flannel-wireguard` (default) requires every node to report Flannel's WireGuard backend with a public key; `operator` means the operator vouches for their network's encryption and nothing is checked |
+| `CLICKHOUSE_ADDR`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_MIGRATION_USER`, `CLICKHOUSE_MIGRATION_PASSWORD`, `CLICKHOUSE_MIGRATION_SQL`, `CLICKHOUSE_CONTAINER`, `CLICKHOUSE_WAIT_SECONDS` | `bootstrap-clickhouse.sh` | Defaults `127.0.0.1:9000`, `talgent_trace`, `default`, empty, `deploy/middleware/init/clickhouse/002-talgent.sql`, none, 0 (`apply.sh`: 120): how long to wait for the Collector's tables |
 | `KAFKA_BOOTSTRAP_SERVER`, `KAFKA_PARTITIONS`, `KAFKA_REPLICATION_FACTOR`, `KAFKA_CONTAINER` | `bootstrap-kafka.sh` | Defaults `127.0.0.1:9092`, 10, 1, `kafka` |
-| `JUICEFS_CSI_VERSION`, `JUICEFS_CSI_CONTROLLER_REPLICAS`, `JUICEFS_CSI_DASHBOARD_REPLICAS`, `JUICEFS_CSI_INSTALL_CONFIRM` | `scripts/juicefs/install-csi-k3s.sh` | Defaults `v0.31.6`, 1, 0; confirm with `local-k3s` |
+| `JUICEFS_CSI_VERSION`, `JUICEFS_CSI_CONTROLLER_REPLICAS`, `JUICEFS_CSI_DASHBOARD_REPLICAS`, `JUICEFS_CSI_INSTALL_CONFIRM` | `scripts/juicefs/install-csi.sh` | Defaults `v0.31.6`, 1, 0; it installs cluster-wide resources and runs only with `JUICEFS_CSI_INSTALL_CONFIRM=cluster-wide` |
 | `JUICEFS_META_URL`, `REDIS_PASSWORD` | `scripts/juicefs/metadata.sh` | The metadata Redis URL without credentials, and its password |

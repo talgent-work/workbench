@@ -43,7 +43,7 @@ func (a *ServiceAccess) Resolve(ctx context.Context, owner, workID string, requi
 	if err != nil {
 		return ServiceAccessResult{}, err
 	}
-	if owner == "" || owner != work.RepresentedPerson {
+	if owner == "" || owner != work.AuthorizationOwner() {
 		return ServiceAccessResult{}, access.ErrAccessDenied
 	}
 	if err := work.AuthorizeCredentialAccess(); err != nil {
@@ -63,7 +63,7 @@ func (a *ServiceAccess) Resolve(ctx context.Context, owner, workID string, requi
 			result.Unavailable = append(result.Unavailable, UnavailableService{Service: requirement.Service, Target: requirement.Target, Reason: "incompatible"})
 			continue
 		}
-		material, err := a.supply.SupplyServiceCredential(ctx, ServiceCredentialRequest{OwnerUserID: owner, AuthorizationID: ref.AuthorizationID, Target: requirement.Target})
+		material, err := a.supply.SupplyServiceCredential(ctx, ServiceCredentialRequest{OwnerID: owner, AuthorizationID: ref.AuthorizationID, Target: requirement.Target})
 		if err != nil {
 			if ctx.Err() != nil {
 				return ServiceAccessResult{}, ctx.Err()

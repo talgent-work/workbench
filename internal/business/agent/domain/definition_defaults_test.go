@@ -16,23 +16,23 @@ func TestChangeAppearanceAdmitsOnlyTheRepresentedHuman(t *testing.T) {
 	rocket, err := domain.NewAgentIcon("rocket", "violet")
 	require.NoError(t, err)
 
-	_, err = a.ChangeAppearance("someone-else", "Imposter", rocket)
+	_, err = a.ChangeAppearance(domain.DefinitionRequester{ID: "someone-else"}, "Imposter", rocket)
 	require.ErrorIs(t, err, domain.ErrAgentAppearanceForbidden)
 	for _, name := range []string{" ", strings.Repeat("名", 41)} {
-		_, err = a.ChangeAppearance("jack", name, rocket)
+		_, err = a.ChangeAppearance(domain.DefinitionRequester{ID: "jack"}, name, rocket)
 		require.ErrorIs(t, err, domain.ErrInvalidAgentAppearance, "name %q", name)
 	}
-	_, err = a.ChangeAppearance("jack", "Scout", domain.AgentIcon{Glyph: "unicorn", Color: "violet"})
+	_, err = a.ChangeAppearance(domain.DefinitionRequester{ID: "jack"}, "Scout", domain.AgentIcon{Glyph: "unicorn", Color: "violet"})
 	require.ErrorIs(t, err, domain.ErrInvalidAgentAppearance)
 	require.Equal(t, "Jack's Agent", a.AgentName)
 	require.Equal(t, domain.DefaultAgentIcon, a.Appearance().Icon)
 
-	changed, err := a.ChangeAppearance("jack", " "+strings.Repeat("名", 40)+" ", rocket)
+	changed, err := a.ChangeAppearance(domain.DefinitionRequester{ID: "jack"}, " "+strings.Repeat("名", 40)+" ", rocket)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, strings.Repeat("名", 40), a.AgentName)
 	require.Equal(t, rocket, a.Appearance().Icon)
-	changed, err = a.ChangeAppearance("jack", strings.Repeat("名", 40), rocket)
+	changed, err = a.ChangeAppearance(domain.DefinitionRequester{ID: "jack"}, strings.Repeat("名", 40), rocket)
 	require.NoError(t, err)
 	require.False(t, changed, "the same appearance is no change")
 	require.Equal(t, "Retained instructions", a.Capabilities.Prompt)
@@ -41,7 +41,7 @@ func TestChangeAppearanceAdmitsOnlyTheRepresentedHuman(t *testing.T) {
 func TestProjectDefinitionsKeepTheirEstablishedAppearance(t *testing.T) {
 	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Brisk Falcon", Purpose: "project_coordination", UsageScope: domain.UsageScope{Kind: "project", Reference: "jack"}})
 	require.NoError(t, err)
-	_, err = a.ChangeAppearance("jack", "Renamed", domain.DefaultAgentIcon)
+	_, err = a.ChangeAppearance(domain.DefinitionRequester{ID: "jack"}, "Renamed", domain.DefaultAgentIcon)
 	require.ErrorIs(t, err, domain.ErrAgentAppearanceForbidden, "a project scope reference is not a represented human")
 }
 
@@ -57,7 +57,7 @@ func TestEstablishAppearanceSetsDefaultsOnlyWhereUnset(t *testing.T) {
 
 	cat, err := domain.NewAgentIcon("cat", "rose")
 	require.NoError(t, err)
-	_, err = a.ChangeAppearance("jack", "Whiskers", cat)
+	_, err = a.ChangeAppearance(domain.DefinitionRequester{ID: "jack"}, "Whiskers", cat)
 	require.NoError(t, err)
 	changed, err = a.EstablishAppearance("Jack", "")
 	require.NoError(t, err)
@@ -81,6 +81,6 @@ func TestEmployeeDefaultAgentName(t *testing.T) {
 	require.Equal(t, strings.Repeat("名", 32)+"'s Agent", long, "a long display name is shortened so the default stays a valid name")
 	a, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"jack"}, AgentName: long, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}})
 	require.NoError(t, err)
-	_, err = a.ChangeAppearance("jack", long, domain.AgentIcon{Glyph: "cat", Color: "rose"})
+	_, err = a.ChangeAppearance(domain.DefinitionRequester{ID: "jack"}, long, domain.AgentIcon{Glyph: "cat", Color: "rose"})
 	require.NoError(t, err, "only the icon changes")
 }

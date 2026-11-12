@@ -34,7 +34,7 @@ func permissionApplication(mode domain.PermissionMode) (*application.Application
 // process a Stop or Resume replaced cannot overwrite the Work.
 func TestTheStarterSwitchesARunningManagedWork(t *testing.T) {
 	app, store, harness := permissionApplication(domain.PermissionBypass)
-	mode, err := app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorUserID: "starter", WorkID: "work", Mode: domain.PermissionPlan})
+	mode, err := app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorID: "starter", WorkID: "work", Mode: domain.PermissionPlan})
 	require.NoError(t, err)
 	require.Equal(t, domain.PermissionPlan, mode)
 	require.Equal(t, []domain.PermissionMode{domain.PermissionPlan}, harness.calls)
@@ -45,24 +45,24 @@ func TestTheStarterSwitchesARunningManagedWork(t *testing.T) {
 // Work or a stopped one, and a refused change keeps the previous mode.
 func TestAPermissionModeChangeIsRefusedWithoutReachingTheHarness(t *testing.T) {
 	app, _, harness := permissionApplication(domain.PermissionBypass)
-	_, err := app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorUserID: "another-owner", WorkID: "work", Mode: domain.PermissionPlan})
+	_, err := app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorID: "another-owner", WorkID: "work", Mode: domain.PermissionPlan})
 	require.ErrorIs(t, err, domain.ErrPermissionModeStarterOnly)
 	require.Empty(t, harness.calls)
 
 	app, _, harness = permissionApplication("")
-	_, err = app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorUserID: "starter", WorkID: "work", Mode: domain.PermissionPlan})
+	_, err = app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorID: "starter", WorkID: "work", Mode: domain.PermissionPlan})
 	require.ErrorIs(t, err, domain.ErrHarnessChoiceNotManaged)
 	require.Empty(t, harness.calls)
 
 	app, store, harness := permissionApplication(domain.PermissionBypass)
 	store.work.State = domain.WorkStopped
-	_, err = app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorUserID: "starter", WorkID: "work", Mode: domain.PermissionPlan})
+	_, err = app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorID: "starter", WorkID: "work", Mode: domain.PermissionPlan})
 	require.ErrorIs(t, err, domain.ErrWorkTransition)
 	require.Empty(t, harness.calls)
 
 	app, store, harness = permissionApplication(domain.PermissionBypass)
 	harness.err = errors.New("refused")
-	_, err = app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorUserID: "starter", WorkID: "work", Mode: domain.PermissionPlan})
+	_, err = app.SetPermissionMode(context.Background(), application.SetPermissionMode{ActorID: "starter", WorkID: "work", Mode: domain.PermissionPlan})
 	require.Error(t, err)
 	require.Equal(t, domain.PermissionBypass, store.work.PermissionMode)
 	require.Zero(t, store.saves)

@@ -27,14 +27,25 @@ func (modulePluginCatalog) ListPersonalPlugins(_ context.Context, subject string
 	if subject == "" {
 		return nil, errors.New("fixture: personal selection requires a subject")
 	}
+	if subject == supportDesk {
+		return supportDeskPlugins, nil
+	}
 	return nil, nil
 }
+
+// supportDeskPlugins are the Support Desk Application's installations: one
+// enabled, one disabled.
+var supportDeskPlugins = []domain.PersonalPlugin{{Slug: "custom", Enabled: true}, {Slug: "caller-plugin", Enabled: false}}
+
+// supportDeskConnector is the catalog Connector the Support Desk Application
+// installed and enabled.
+var supportDeskConnector = connectorcatalogtest.GitHub()
 
 func (modulePluginCatalog) ResolvePlugin(_ context.Context, subject, slug string) (domain.PluginRelease, error) {
 	if subject == "" {
 		return domain.PluginRelease{}, errors.New("fixture: release selection requires a subject")
 	}
-	roles := map[string][]string{"custom": {"custom:base", "custom:author"}, "talgent": {"talgent:personal-work-executor"}, "caller-plugin": {"caller-plugin:case-executor", "caller-plugin:coordinator", "caller-plugin:reviewer"}}
+	roles := map[string][]string{"custom": {"custom:base", "custom:author"}, "talgent": {"talgent:work-executor"}, "caller-plugin": {"caller-plugin:case-executor", "caller-plugin:coordinator", "caller-plugin:reviewer"}}
 	names, ok := roles[slug]
 	if !ok {
 		return domain.PluginRelease{}, errors.New("fixture: unknown release")
@@ -52,6 +63,11 @@ type moduleAvailableCapacity struct{}
 
 func (moduleAvailableCapacity) AdmitRoom(context.Context) error { return nil }
 
-func (modulePluginCatalog) ReadConnectorSelection(context.Context, string) (command.ConnectorSelection, error) {
-	return connectorcatalogtest.Selection(), nil
+func (modulePluginCatalog) ReadConnectorSelection(_ context.Context, subject string) (command.ConnectorSelection, error) {
+	selection := connectorcatalogtest.Selection()
+	selection.Catalog = append(selection.Catalog, supportDeskConnector)
+	if subject == supportDesk {
+		selection.EnabledConnectors = []string{supportDeskConnector.ID}
+	}
+	return selection, nil
 }

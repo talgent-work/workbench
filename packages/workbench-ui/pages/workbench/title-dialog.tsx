@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Alert, Button, Input, Label, Modal, TextField, Tooltip } from "@heroui/react";
 import { Pencil } from "lucide-react";
-import { useChangePersonalWorkTitle } from "../../lib/personal-work-service";
+import { useChangeWorkTitle } from "../../lib/standalone-work-service";
 
-/** Renames a Personal Work: its display title starts from its first input
+/** Renames a Standalone Work: its display title starts from its first input
  * and is the owner's to change. */
 export function TitleButton({ workId, title }: { workId: string; title: string }) {
   const [open, setOpen] = useState(false);
@@ -15,7 +15,7 @@ export function TitleButton({ workId, title }: { workId: string; title: string }
 
 function TitleDialog({ workId, title, onClose }: { workId: string; title: string; onClose: () => void }) {
   const [value, setValue] = useState(title);
-  const change = useChangePersonalWorkTitle(workId);
+  const change = useChangeWorkTitle(workId);
   const trimmed = value.trim();
   const submit = () => {
     if (!trimmed || trimmed === title || change.isPending) return;

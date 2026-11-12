@@ -13,7 +13,7 @@ import (
 
 type RefreshScanProcessor struct {
 	authorizations domain.ProviderAuthorizationRepository
-	candidates     query.AuthorizationMaintenanceQueryRepository
+	candidates     query.ProviderAuthorizationQueryRepository
 	enqueuer       componenttaskqueue.Enqueuer
 	registry       *componenttaskqueue.SchemaRegistry
 	cfg            Config
@@ -22,7 +22,7 @@ type RefreshScanProcessor struct {
 
 func NewRefreshScanProcessor(
 	authorizations domain.ProviderAuthorizationRepository,
-	candidates query.AuthorizationMaintenanceQueryRepository,
+	candidates query.ProviderAuthorizationQueryRepository,
 	enqueuer componenttaskqueue.Enqueuer,
 	registry *componenttaskqueue.SchemaRegistry,
 	cfg Config,

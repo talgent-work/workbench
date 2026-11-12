@@ -15,7 +15,7 @@ func TestApplication_CompleteProviderAuthorization_SavesActorScopedAuthorization
 	app.authorizer.authorization = mustAuthorization(t, "user-1", "octocat")
 
 	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "user-1"})
-	resp, err := app.CompletePersonalAuthorization(ctx, CompleteProviderAuthorizationInput{OwnerUserID: "user-1",
+	resp, err := app.CompletePersonalAuthorization(ctx, CompleteProviderAuthorizationInput{OwnerID: "user-1",
 		Provider:    "github",
 		Code:        "code-1",
 		State:       "state-1",
@@ -31,7 +31,7 @@ func TestApplication_CompleteProviderAuthorization_SavesActorScopedAuthorization
 	if err != nil {
 		t.Fatalf("saved authorization: %v", err)
 	}
-	if saved.OwnerUserID != "user-1" || saved.ProviderLogin != "octocat" {
+	if saved.OwnerID != "user-1" || saved.ProviderLogin != "octocat" {
 		t.Fatalf("saved=%+v", saved)
 	}
 }
@@ -47,7 +47,7 @@ func TestApplication_CompleteProviderAuthorization_ReplacesExistingAuthorization
 	app.authorizer.authorization.RefreshTokenExpiresAt = refreshExpiresAt
 
 	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "user-1"})
-	_, err := app.CompletePersonalAuthorization(ctx, CompleteProviderAuthorizationInput{OwnerUserID: "user-1",
+	_, err := app.CompletePersonalAuthorization(ctx, CompleteProviderAuthorizationInput{OwnerID: "user-1",
 		Provider: "github",
 		Code:     "code-1",
 		State:    "state-1",

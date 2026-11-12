@@ -19,6 +19,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
@@ -58,15 +59,15 @@ func setup(t *testing.T) (*xorm.Engine, *infrastructure.InstalledPluginRepositor
 	return setupWithCatalog(t, catalogFixture{})
 }
 
-func setupWithCatalog(t *testing.T, catalog application.CatalogPort) (*xorm.Engine, *infrastructure.InstalledPluginRepository, *application.Application, marketplacepublicv1connect.MarketplaceServiceClient, *httptest.Server) {
+func setupWithCatalog(t *testing.T, catalog application.PluginCatalogQueryRepository) (*xorm.Engine, *infrastructure.InstalledPluginRepository, *application.Application, marketplacepublicv1connect.MarketplaceServiceClient, *httptest.Server) {
 	t.Helper()
 	db, err := xorm.NewEngine("mysql", mysqltest.Database(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	repository := infrastructure.NewInstalledPluginRepository(db)
-	app := application.NewApplication(repository, repository, catalog, infrastructure.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), Queries: infrastructure.NewConnectorRepository(db)})
+	app := application.NewApplication(repository, repository, catalog, persistence.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), CatalogQueries: infrastructure.NewConnectorRepository(db), InstalledQueries: infrastructure.NewInstalledConnectorRepository(db)})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
-		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app))
+		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
@@ -119,7 +120,7 @@ func TestPersonalPluginAPI(t *testing.T) {
 	require.Equal(t, []string{"token"}, installed.Plugin.RedactedParameters)
 	require.Equal(t, false, installed.Plugin.Configuration.AsMap()["enabled"])
 	require.Equal(t, []any{"src", "docs"}, installed.Plugin.Configuration.AsMap()["paths"])
-	rows, err := db.QueryString("SELECT configuration FROM marketplace_installed_plugin WHERE user_id = ? AND slug = ?", "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "reviewer")
+	rows, err := db.QueryString("SELECT configuration FROM marketplace_installed_plugin WHERE owner_id = ? AND slug = ?", "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "reviewer")
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	// Sensitive is a display boundary: storage keeps typed JSON and
@@ -145,7 +146,7 @@ func TestPersonalPluginAPI(t *testing.T) {
 	require.NotContains(t, deleted.Plugin.Configuration.AsMap(), "enabled", "deletion does not materialize the default")
 	_, err = client.UninstallPlugin(as(ctx, "e6c7e756-007d-5236-a492-7f4b9be0b2e8"), &marketplacepublicv1.UninstallPluginRequest{Slug: "reviewer", Version: deleted.Plugin.Version})
 	require.NoError(t, err)
-	rows, err = db.QueryString("SELECT id FROM marketplace_installed_plugin WHERE user_id = ? AND slug = ?", "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "reviewer")
+	rows, err = db.QueryString("SELECT id FROM marketplace_installed_plugin WHERE owner_id = ? AND slug = ?", "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "reviewer")
 	require.NoError(t, err)
 	require.Empty(t, rows, "uninstall removes the record, including ciphertext")
 }
@@ -157,7 +158,7 @@ func TestPersonalInstallationConcurrencyAndPagination(t *testing.T) {
 	results := make(chan error, 8)
 	for range 8 {
 		wg.Go(func() {
-			_, err := app.Install(ctx, application.InstallPlugin{ActorUserID: "owner", Slug: "reviewer"})
+			_, err := app.Install(ctx, application.InstallPlugin{OwnerID: "owner", Slug: "reviewer"})
 			results <- err
 		})
 	}

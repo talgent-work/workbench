@@ -21,7 +21,7 @@ func agentDefinitionToDO(agent *domain.AgentDefinition) (*agentDefinitionDO, err
 	if err := agent.Validate(); err != nil {
 		return nil, err
 	}
-	capabilities, err := encodeCapabilities(agent.Capabilities)
+	capabilities, err := encodeCapabilities(agent.Capabilities, agent.WorkDefaults)
 	if err != nil {
 		return nil, err
 	}
@@ -33,11 +33,11 @@ func agentDefinitionToDO(agent *domain.AgentDefinition) (*agentDefinitionDO, err
 	if err != nil {
 		return nil, err
 	}
-	return &agentDefinitionDO{Owners: owners, AgentName: agent.AgentName, IconGlyph: agent.Icon.Glyph, IconColor: agent.Icon.Color, Purpose: agent.Purpose, ScopeKind: agent.UsageScope.Kind, ScopeRef: agent.UsageScope.Reference, WorkLayout: layout, VisibilityPublic: agent.Visibility.Public, ID: agent.ID, Capabilities: capabilities, Soul: agent.Soul, Version: agent.Version}, nil
+	return &agentDefinitionDO{Owners: owners, AgentName: agent.AgentName, IconGlyph: agent.Icon.Glyph, IconColor: agent.Icon.Color, Purpose: agent.Purpose, ScopeKind: agent.UsageScope.Kind, ScopeRef: agent.UsageScope.Reference, WorkLayout: layout, VisibilityPublic: agent.Visibility.Public, ID: agent.ID, Capabilities: capabilities, Soul: agent.Soul, ApplicationRemoved: agent.ApplicationRemoved, Version: agent.Version}, nil
 }
 
 func agentDefinitionFromDO(row *agentDefinitionDO) (*domain.AgentDefinition, error) {
-	capabilities, err := decodeCapabilities(row.Capabilities)
+	capabilities, defaults, err := decodeCapabilities(row.Capabilities)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func agentDefinitionFromDO(row *agentDefinitionDO) (*domain.AgentDefinition, err
 	if err != nil {
 		return nil, err
 	}
-	agent := &domain.AgentDefinition{Owners: owners, AgentName: row.AgentName, Icon: domain.AgentIcon{Glyph: row.IconGlyph, Color: row.IconColor}, Purpose: row.Purpose, UsageScope: domain.UsageScope{Kind: row.ScopeKind, Reference: row.ScopeRef}, WorkLayout: layout, Visibility: domain.VisibilityRule{Public: row.VisibilityPublic}, ID: row.ID, Capabilities: capabilities, Soul: row.Soul, Version: row.Version}
+	agent := &domain.AgentDefinition{Owners: owners, AgentName: row.AgentName, Icon: domain.AgentIcon{Glyph: row.IconGlyph, Color: row.IconColor}, Purpose: row.Purpose, UsageScope: domain.UsageScope{Kind: row.ScopeKind, Reference: row.ScopeRef}, WorkLayout: layout, Visibility: domain.VisibilityRule{Public: row.VisibilityPublic}, ID: row.ID, Capabilities: capabilities, WorkDefaults: defaults, Soul: row.Soul, ApplicationRemoved: row.ApplicationRemoved, Version: row.Version}
 	return agent, agent.Validate()
 }
 
@@ -113,7 +113,7 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	if err != nil {
 		return nil, err
 	}
-	row := &agentWorkDO{LocatedLayout: layout, AgentHarness: session.AgentHarnessReference, DisplayTitle: session.DisplayTitle, ProjectRef: session.ProjectID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, ComputerKind: string(session.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, StartingContext: starting, RepresentedPerson: session.RepresentedPerson, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, ReachResumeFailures: session.ReachResumeFailures, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
+	row := &agentWorkDO{LocatedLayout: layout, AgentHarness: session.AgentHarnessReference, DisplayTitle: session.DisplayTitle, ProjectRef: session.ProjectID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, ComputerKind: string(session.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, StartingContext: starting, RepresentedPerson: session.RepresentedPerson, OwningApplication: session.OwningApplication, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, ReachResumeFailures: session.ReachResumeFailures, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
 	if session.Subject.Present() {
 		kind, id := string(session.Subject.Kind), session.Subject.ID
 		row.SubjectKind, row.SubjectID = &kind, &id
@@ -161,7 +161,7 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	if err := json.Unmarshal([]byte(row.HarnessProcess), &current); err != nil {
 		return nil, oops.Wrap(err)
 	}
-	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, ComputerKind: domain.ComputerKind(row.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, AgentHarnessReference: row.AgentHarness, RepresentedPerson: row.RepresentedPerson, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, ReachResumeFailures: row.ReachResumeFailures, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
+	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, ComputerKind: domain.ComputerKind(row.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, AgentHarnessReference: row.AgentHarness, RepresentedPerson: row.RepresentedPerson, OwningApplication: row.OwningApplication, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, ReachResumeFailures: row.ReachResumeFailures, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
 	if err := json.Unmarshal([]byte(row.TraceAttributes), &session.TraceAttributes); err != nil {
 		return nil, err
 	}

@@ -30,14 +30,14 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work",
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: "owner"},
-		Capabilities: domain.CapabilityConfiguration{Prompt: "Original", StartupAgent: "employees:member", RequiredPlugins: []string{"employees"}},
+		Capabilities: domain.CapabilityConfiguration{Prompt: "Original", RequiredPlugins: []string{"employees"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "employees:member"},
 	})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
 	agent, err = agents.Get(ctx, agent.ID)
 	require.NoError(t, err)
 	admission := domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
-	capabilities, err := command.ResolveStartupCapabilities(ctx, commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), "owner", domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: agent.Capabilities.RequiredPlugins, DefaultStartupAgent: agent.Capabilities.StartupAgent})
+	capabilities, err := command.ResolveStartupCapabilities(ctx, commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), "owner", domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: agent.Capabilities.RequiredPlugins, DefaultStartupAgent: agent.WorkDefaults.StartupAgent})
 	require.NoError(t, err)
 	subject := domain.WorkSubject{Kind: "case", ID: "Work-A"}
 	creation, isNew, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", Admission: admission, Capabilities: capabilities, WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: subject, ProjectID: "project-a"}, subjectWork(t, sessions, agent.ID, subject))
@@ -45,7 +45,7 @@ func TestWorkSubjectLocatesTheSameWorkForGood(t *testing.T) {
 	require.True(t, isNew)
 	require.NoError(t, sessions.Save(ctx, creation))
 	originalID, originalContext := creation.ID, creation.HarnessSessionReference
-	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "Changed", StartupAgent: "employees:architect", RequiredPlugins: []string{"employees"}}))
+	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "Changed", RequiredPlugins: []string{"employees"}}, "employees:architect"))
 	require.NoError(t, agents.Save(ctx, agent))
 	require.NoError(t, db.Close())
 	db, err = xorm.NewEngine("mysql", dsn)

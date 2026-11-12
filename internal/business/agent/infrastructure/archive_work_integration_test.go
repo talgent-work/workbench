@@ -130,6 +130,7 @@ func TestExecutionArchiveAndResumeCannotBothCommitFromStoppedRevision(t *testing
 			name = "resume commits after archive read"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f, id := stoppedContinuationSession(t)
 			ctx := context.Background()
 			other, err := xorm.NewEngine("mysql", f.dsn)

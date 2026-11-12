@@ -18,6 +18,8 @@ type IssueWorkIdentityToken struct {
 	SubjectKind       string
 	SubjectID         string
 	RepresentedPerson string
+	OwningApplication string
+	WorkLabels        map[string]string
 }
 
 // IssuedToken is a signed Identity Token and its expiry.
@@ -36,7 +38,7 @@ func (a *Application) IssueWorkIdentityToken(ctx context.Context, cmd IssueWorkI
 	if err != nil {
 		return IssuedToken{}, err
 	}
-	facts, err := domain.NewWorkFacts(cmd.ProjectID, cmd.AgentID, cmd.Purpose, cmd.SubjectKind, cmd.SubjectID, cmd.RepresentedPerson)
+	facts, err := domain.NewWorkFacts(cmd.ProjectID, cmd.AgentID, cmd.Purpose, cmd.SubjectKind, cmd.SubjectID, cmd.RepresentedPerson, cmd.OwningApplication, cmd.WorkLabels)
 	if err != nil {
 		return IssuedToken{}, err
 	}

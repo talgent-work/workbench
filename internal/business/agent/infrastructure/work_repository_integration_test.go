@@ -23,7 +23,7 @@ import (
 type creationConnections struct{ authorizationcatalogtest.Empty }
 
 func (creationConnections) ListAccessibleRepositories(_ context.Context, owner string) ([]domain.AccessibleRepository, error) {
-	return []domain.AccessibleRepository{{OwnerUserID: owner, Provider: "github", RepoID: "123",
+	return []domain.AccessibleRepository{{OwnerID: owner, Provider: "github", RepoID: "123",
 		RepoName: "example/project", CloneURL: "https://github.com/example/project.git", WebURL: "https://github.com/example/project", DefaultBranch: "main"}}, nil
 }
 
@@ -34,7 +34,7 @@ func TestWorkRepositorySelectionSurvivesReloadAndReuse(t *testing.T) {
 	require.NoError(t, err)
 	work, err := f.sessions.Get(t.Context(), id)
 	require.NoError(t, err)
-	want := domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-342", Repositories: []domain.WorkRepository{{Provider: "github", RepoID: "123",
+	want := domain.WorkRepositorySelection{OwnerID: "owner", WorkBranch: "talgent/TAL-342", Repositories: []domain.WorkRepository{{Provider: "github", RepoID: "123",
 		RepoName: "example/project", CloneURL: "https://github.com/example/project.git", WebURL: "https://github.com/example/project", DefaultBranch: "main", BaseBranch: "release"}}}
 	require.Equal(t, want, work.RepositorySelection, "the selection keeps the branch the creating caller named")
 	require.Empty(t, work.RepositoryCheckouts)

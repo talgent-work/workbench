@@ -74,7 +74,7 @@ func TestThinkingLevelReadSurvivesWorkLifecycle(t *testing.T) {
 			app, store, auth, harness := thinkingApplication()
 			store.work.State = state
 			app.Harness = nil // Reading must not contact an execution, even if it is unavailable.
-			level, err := app.GetThinkingLevel(context.Background(), application.ControlWork{ActorUserID: "reader", WorkID: "work"})
+			level, err := app.GetThinkingLevel(context.Background(), application.ControlWork{ActorID: "reader", WorkID: "work"})
 			require.NoError(t, err)
 			require.Equal(t, "low", level)
 			require.Equal(t, "reader", auth.subject, "only the owner reads its Work")
@@ -100,7 +100,7 @@ func TestThinkingLevelChangePersistsOnlyAcceptedSetting(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			app, store, auth, harness := thinkingApplication()
 			store.work.State, store.saveErr, harness.err = test.state, test.saveErr, test.nativeErr
-			err := app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorUserID: "writer", WorkID: "work", Level: test.level})
+			err := app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorID: "writer", WorkID: "work", Level: test.level})
 			require.ErrorIs(t, err, test.wantErr)
 			require.Equal(t, test.want, store.work.ThinkingLevel)
 			require.Equal(t, "writer", auth.subject, "only the owner changes its Work")
@@ -122,10 +122,10 @@ func TestThinkingLevelChangePersistsOnlyAcceptedSetting(t *testing.T) {
 func TestThinkingLevelRequiresTheWorkOwner(t *testing.T) {
 	app, store, auth, harness := thinkingApplication()
 	auth.err = access.ErrAccessDenied
-	level, err := app.GetThinkingLevel(context.Background(), application.ControlWork{ActorUserID: "outsider", WorkID: "work"})
+	level, err := app.GetThinkingLevel(context.Background(), application.ControlWork{ActorID: "outsider", WorkID: "work"})
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 	require.Empty(t, level)
-	require.ErrorIs(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorUserID: "outsider", WorkID: "work", Level: "high"}), access.ErrAccessDenied)
+	require.ErrorIs(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorID: "outsider", WorkID: "work", Level: "high"}), access.ErrAccessDenied)
 	require.Empty(t, harness.calls)
 	require.Zero(t, store.saves)
 }
@@ -139,7 +139,7 @@ func TestThinkingLevelPersistenceKeepsConcurrentLifecycleWithoutReplayingControl
 		}
 		return nil
 	}
-	require.NoError(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorUserID: "writer", WorkID: "work", Level: "high"}))
+	require.NoError(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorID: "writer", WorkID: "work", Level: "high"}))
 	require.Equal(t, domain.WorkStopped, store.work.State)
 	require.Equal(t, "high", store.work.ThinkingLevel)
 	require.Equal(t, []string{"high"}, harness.calls)
@@ -149,7 +149,7 @@ func TestThinkingLevelPersistenceKeepsConcurrentLifecycleWithoutReplayingControl
 func TestThinkingLevelPersistenceDoesNotReplaceCompetingSetting(t *testing.T) {
 	app, store, _, harness := thinkingApplication()
 	store.onSave = func() error { store.work.ThinkingLevel = "max"; return domain.ErrConcurrentModification }
-	require.ErrorIs(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorUserID: "writer", WorkID: "work", Level: "high"}), domain.ErrConcurrentModification)
+	require.ErrorIs(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorID: "writer", WorkID: "work", Level: "high"}), domain.ErrConcurrentModification)
 	require.Equal(t, "max", store.work.ThinkingLevel)
 	require.Equal(t, []string{"high"}, harness.calls)
 	require.Equal(t, 1, store.saves)
@@ -160,8 +160,8 @@ func TestThinkingLevelPersistenceDoesNotReplaceCompetingSetting(t *testing.T) {
 func TestAMachineLoginWorkOffersEveryHarnessThinkingLevel(t *testing.T) {
 	app, store, _, harness := thinkingApplication()
 	store.work.WorkModel = domain.MachineLoginModel()
-	require.NoError(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorUserID: "owner", WorkID: "work", Level: "max"}))
+	require.NoError(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorID: "owner", WorkID: "work", Level: "max"}))
 	require.Equal(t, []string{"max"}, harness.calls)
 	require.Equal(t, "max", store.work.ThinkingLevel)
-	require.ErrorIs(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorUserID: "owner", WorkID: "work", Level: "extreme"}), domain.ErrInvalidWork)
+	require.ErrorIs(t, app.SetThinkingLevel(context.Background(), application.SetThinkingLevel{ActorID: "owner", WorkID: "work", Level: "extreme"}), domain.ErrInvalidWork)
 }

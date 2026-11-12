@@ -25,7 +25,10 @@ func requestedWorkID(requestID string) string {
 }
 
 // requestedDeskID is the Desk a creation, Resume or Restart request asks its
-// Work's Computer for.
-func requestedDeskID(requestID string) string {
-	return uuid.NewSHA1(requestDeskNamespace, []byte(requestID)).String()
+// Work's Computer for. A request identity is its caller's own, so the Desk is
+// scoped to whom the Work acts as: equal request identities of two owners
+// never name the same Desk, while one owner reusing its request identity for
+// another Work meets the Desk it already took.
+func requestedDeskID(workPrincipal, requestID string) string {
+	return uuid.NewSHA1(requestDeskNamespace, []byte(workPrincipal+"/"+requestID)).String()
 }

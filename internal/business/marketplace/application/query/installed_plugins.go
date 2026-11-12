@@ -3,7 +3,7 @@ package query
 import "context"
 
 type InstalledPlugin struct {
-	UserID             string
+	OwnerID            string
 	Slug               string
 	Enabled            bool
 	Configuration      map[string]any

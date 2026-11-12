@@ -1,21 +1,21 @@
 # Sourced by the deploy scripts. ConfigMap workbench-environment is the single
-# source of a deployment's environment. The environment.env files of the k3s
+# source of a deployment's environment. The environment.env files of the Kubernetes
 # kustomizations hold placeholders only; a deploy reads the real values from
 # TALGENT_ENVIRONMENT_FILE, a KEY=VALUE file kept outside the repository (for
 # a first deploy, or to change values), or else from the cluster's ConfigMap.
 
-K3S_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../deploy/k3s" && pwd -P)"
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../deploy/kubernetes" && pwd -P)"
 # The repository the deploy runs from, which may hold the Workbench in a
 # subdirectory.
-REPOSITORY_DIR="$(cd "$(git -C "${K3S_DIR}" rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "${K3S_DIR}")")" && pwd -P)"
+REPOSITORY_DIR="$(cd "$(git -C "${DEPLOY_DIR}" rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "${DEPLOY_DIR}")")" && pwd -P)"
 
-# k3s_placeholder_files DIR prints the environment.env files kustomize merges
+# deploy_placeholder_files DIR prints the environment.env files kustomize merges
 # for the kustomization DIR: the Workbench base's, then DIR's own.
-k3s_placeholder_files() {
+deploy_placeholder_files() {
   local dir
   dir="$(cd "$1" && pwd -P)"
-  printf '%s\n' "${K3S_DIR}/workbench/environment.env"
-  if [[ "${dir}" != "${K3S_DIR}/workbench" && -f "${dir}/environment.env" ]]; then
+  printf '%s\n' "${DEPLOY_DIR}/workbench/environment.env"
+  if [[ "${dir}" != "${DEPLOY_DIR}/workbench" && -f "${dir}/environment.env" ]]; then
     printf '%s\n' "${dir}/environment.env"
   fi
 }
@@ -35,12 +35,12 @@ env_file_keys() {
   done < "$1"
 }
 
-# resolve_k3s_environment DIR OUT writes the deployment's environment for the
+# resolve_deploy_environment DIR OUT writes the deployment's environment for the
 # kustomization DIR to OUT and fails unless it sets every key DIR's
 # placeholders name.
-resolve_k3s_environment() {
+resolve_deploy_environment() {
   local dir="$1" out="$2" namespace="${TALGENT_NAMESPACE:-talgent}" file key origin
-  # A deploy resolves its environment once (use_k3s_environment); the scripts
+  # A deploy resolves its environment once (use_deploy_environment); the scripts
   # it runs reuse that file, still checked against DIR's placeholders.
   if [[ -n "${TALGENT_RESOLVED_ENVIRONMENT:-}" ]]; then
     cp "${TALGENT_RESOLVED_ENVIRONMENT}" "${out}"
@@ -73,22 +73,22 @@ resolve_k3s_environment() {
   while IFS= read -r file; do
     while IFS= read -r key; do
       if [[ -z "${present[${key}]:-}" ]]; then
-        echo "the environment sets no ${key} (named in ${file#"${K3S_DIR}/"}); add it to TALGENT_ENVIRONMENT_FILE" >&2
+        echo "the environment sets no ${key} (named in ${file#"${DEPLOY_DIR}/"}); add it to TALGENT_ENVIRONMENT_FILE" >&2
         return 1
       fi
     done < <(env_file_keys "${file}")
-  done < <(k3s_placeholder_files "${dir}")
+  done < <(deploy_placeholder_files "${dir}")
   if [[ -n "${origin}" ]]; then
     echo "resolved the environment from ${origin}" >&2
   fi
 }
 
-# use_k3s_environment DIR WORK resolves the deployment's environment for the
+# use_deploy_environment DIR WORK resolves the deployment's environment for the
 # kustomization DIR into the directory WORK, unless the deploy running this
 # script already has, and exports it to this script and the ones it runs.
-use_k3s_environment() {
+use_deploy_environment() {
   if [[ -z "${TALGENT_RESOLVED_ENVIRONMENT:-}" ]]; then
-    resolve_k3s_environment "$1" "$2/environment.env"
+    resolve_deploy_environment "$1" "$2/environment.env"
     export TALGENT_RESOLVED_ENVIRONMENT="$2/environment.env"
   fi
   export_environment "${TALGENT_RESOLVED_ENVIRONMENT}"
@@ -124,10 +124,10 @@ environment_value() {
   printf '%s\n' "${value}"
 }
 
-# k3s_switch_components FILE... prints, one per line, the components of the
+# deploy_switch_components FILE... prints, one per line, the components of the
 # base's components/ that the deployment switches of the environment FILE...
 # turn on, failing on a value a switch does not take.
-k3s_switch_components() {
+deploy_switch_components() {
   access_switch_component AGENT_CORE_API_ACCESS core-api-without-agents "$@" || return 1
   value_switch_component ADDITIONAL_ENTRY_HOST additional-entry-host "$@" || return 1
   value_switch_component CONTROLPLANE_PROFILE controlplane-profile "$@" || return 1

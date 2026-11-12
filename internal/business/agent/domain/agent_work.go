@@ -41,6 +41,9 @@ const (
 	WorkClosed   WorkState = "closed"
 )
 
+// WorkStates are every Work State, in lifecycle order.
+var WorkStates = []WorkState{WorkStarting, WorkWorking, WorkStopping, WorkStopped, WorkFailed, WorkClosing, WorkClosed}
+
 type ContextMode string
 
 const (
@@ -63,6 +66,9 @@ type WorkInput struct {
 	// RepresentedPerson is the person the definition's Agent represents;
 	// empty for one that represents no person.
 	RepresentedPerson string
+	// OwningApplication is the Application that owns the definition's Agent;
+	// empty for none.
+	OwningApplication string
 	// StartingUser is the person starting the Work; empty for an automated
 	// start.
 	StartingUser string
@@ -72,6 +78,8 @@ type WorkInput struct {
 	// the Work runs for its life; empty chooses the default.
 	AgentHarnessID  string
 	TraceAttributes map[string]string
+	// WorkLabels are the starter's Work Labels, kept for the Work's life.
+	WorkLabels      WorkLabels
 	Visibility      VisibilityRule
 	DisplayTitle    string
 	StartingContext *StartingContext
@@ -253,14 +261,21 @@ type AgentWork struct {
 	// RepresentedPerson is the person the Work's Agent represents, fixed at
 	// creation; empty for a Work whose Agent represents no person.
 	RepresentedPerson string `validate:"max=255"`
+	// OwningApplication is the Application that owns the Work, fixed at
+	// creation; empty for a Work no Application owns.
+	OwningApplication string `validate:"max=255"`
 	// StartingContext is the context the Work started from, fixed at
 	// creation; nil for a Work that started afresh.
 	StartingContext *StartingContext
-	// DisplayTitle is a Personal Work's title, changed by its owner at any
+	// DisplayTitle is a Standalone Work's title, changed by its owner at any
 	// time; it never identifies the Work.
 	DisplayTitle    string
 	TraceAttributes map[string]string
-	HarnessProcess  *HarnessProcess
+	// WorkLabels are the Work Labels its starter gave it at creation, kept
+	// for good (Labels fixed); they never grant or limit access to it
+	// (Labels grant nothing).
+	WorkLabels     WorkLabels
+	HarnessProcess *HarnessProcess
 	// DisconnectedSince is the origin of the current Disconnection: the
 	// platform lost observation of the Work's execution environment then. It
 	// changes no State and is zero while the environment is observed.
@@ -304,7 +319,7 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 		StartedBy: input.StartedBy, PermissionMode: harness.PermissionMode,
 		WorkModel: input.WorkModel, ID: input.ID, AgentID: input.AgentID, ThinkingLevel: input.ThinkingLevel, State: WorkStarting, ComputerID: admission.Seat.ComputerID, ComputerKind: admission.Seat.Kind, HarnessProcess: admission.process(ContextFresh, time.Time{}), Subject: input.Subject, ProjectID: strings.TrimSpace(input.ProjectID),
 		CapabilitySnapshot: capabilities, HarnessSessionReference: uuid.Must(uuid.NewV7()).String(),
-		RepresentedPerson: input.RepresentedPerson, DisplayTitle: strings.TrimSpace(input.DisplayTitle), TraceAttributes: maps.Clone(input.TraceAttributes),
+		RepresentedPerson: input.RepresentedPerson, OwningApplication: input.OwningApplication, DisplayTitle: strings.TrimSpace(input.DisplayTitle), TraceAttributes: maps.Clone(input.TraceAttributes), WorkLabels: input.WorkLabels,
 		Visibility: WorkVisibility{Public: input.Visibility.Public && strings.TrimSpace(input.ProjectID) != ""}, StartingContext: input.StartingContext.clone(), Events: NewEventCollection(),
 	}
 	if initial := input.InitialTaskInput; initial != nil {
@@ -348,7 +363,7 @@ func (s *AgentWork) AdmitControlRequester(definition *AgentDefinition, participa
 	if definition == nil || definition.ID != s.AgentID {
 		return ErrControlRequesterNotOwner
 	}
-	return AdmitAgentOwner(definition.Owners, participant)
+	return AdmitAgentOwner(definition.AdmittedOwners(), participant)
 }
 
 func (s *AgentWork) Validate() error {
@@ -381,7 +396,7 @@ func (s *AgentWork) Validate() error {
 	if err := s.RepositorySelection.Validate(); err != nil {
 		return err
 	}
-	if err := validateDisplayTitle(s.DisplayTitle, s.Personal()); err != nil {
+	if err := validateDisplayTitle(s.DisplayTitle, s.Standalone()); err != nil {
 		return err
 	}
 	if err := s.validateLocatedLayout(); err != nil {
@@ -396,10 +411,13 @@ func (s *AgentWork) Validate() error {
 	if s.StartedBy != "" && s.StartedBy == s.AgentID {
 		return fmt.Errorf("%w: an AgentDefinition never starts a Work", ErrInvalidWork)
 	}
-	if owner := s.RepositorySelection.OwnerUserID; owner != "" && owner != s.RepresentedPerson {
+	if s.RepresentedPerson != "" && s.OwningApplication != "" {
+		return fmt.Errorf("%w: a Work represents a person or belongs to an Application, never both", ErrInvalidWork)
+	}
+	if owner := s.RepositorySelection.OwnerID; owner != "" && owner != s.AuthorizationOwner() {
 		return ErrInvalidWork
 	}
-	if owner := s.AuthorizationSelection.OwnerUserID; owner != "" && owner != s.RepresentedPerson {
+	if owner := s.AuthorizationSelection.OwnerID; owner != "" && owner != s.AuthorizationOwner() {
 		return ErrInvalidWork
 	}
 	if s.HarnessProcess == nil && s.State != WorkClosed {

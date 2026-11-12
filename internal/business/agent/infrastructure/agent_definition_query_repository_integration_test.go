@@ -101,7 +101,7 @@ func TestAgentAppearancesReadEmployeeWorkAgentsAndWorkAgents(t *testing.T) {
 	require.NoError(t, err)
 	bob, err := agents.Get(ctx, definitions["bob"].ID)
 	require.NoError(t, err)
-	_, err = bob.ChangeAppearance("bob", "Scout", rocket)
+	_, err = bob.ChangeAppearance(domain.DefinitionRequester{ID: "bob"}, "Scout", rocket)
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, bob))
 

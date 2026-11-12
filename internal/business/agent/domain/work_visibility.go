@@ -46,6 +46,9 @@ const (
 	ReadAsOwner  ReadBasis = "owner"
 	ReadAsShare  ReadBasis = "share"
 	ReadAsPublic ReadBasis = "public"
+	// ReadAsApplicationOwner is the Application Owner of the Application whose
+	// Work it is, who reads it and acts on none of it.
+	ReadAsApplicationOwner ReadBasis = "application_owner"
 )
 
 // ChangeVisibility switches the Work between private and public within its
@@ -143,6 +146,17 @@ func (s *AgentWork) AdmitStreamReader(definition *AgentDefinition, reader string
 		return ReadAsShare, nil
 	}
 	return "", ErrWorkReaderNotAdmitted
+}
+
+// AdmitApplicationOwnerReader admits the Application Owner of the Application
+// whose Agent runs the Work to read its message stream and files, also after
+// the Application's removal; reading admits no control (Application Owner
+// reading).
+func (s *AgentWork) AdmitApplicationOwnerReader(definition *AgentDefinition, requester DefinitionRequester) (ReadBasis, error) {
+	if definition == nil || definition.ID != s.AgentID || !definition.admitsApplicationOwner(requester) {
+		return "", ErrWorkReaderNotAdmitted
+	}
+	return ReadAsApplicationOwner, nil
 }
 
 // withinScope reports whether an admission names the Work's visibility

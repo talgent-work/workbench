@@ -11,6 +11,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	accountprivatev1 "github.com/talgent-work/contracts/gen/go/account/private/v1"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
@@ -59,7 +60,7 @@ func TestAuthorityFailuresNeverAdmit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			works, err := NewWorkAccess(server.Client(), cfg)
+			works, err := NewAgent(server.Client(), cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -92,6 +93,52 @@ func TestProjectAccessDelegatesTheReader(t *testing.T) {
 	}
 }
 
+// Agent attributes Works to an Application with the control token, and an
+// outage is never mistaken for an answer.
+func TestAgentAttributesWorksWithTheControlToken(t *testing.T) {
+	server := respond(t, http.StatusOK, "", &agentprivatev1.ListWorkAttributionsResponse{Works: []*agentprivatev1.WorkAttribution{{WorkId: "work-1", Labels: map[string]string{"tenant": "acme"}}}}, func(r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Error("missing control token")
+		}
+	})
+	agent, err := NewAgent(server.Client(), Config{AgentAddress: server.URL, AgentControlToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	works, err := agent.ListWorkAttributions(context.Background(), "application-1", []string{"work-1", "work-2"})
+	if err != nil || len(works) != 1 || works[0].WorkID != "work-1" || works[0].Labels["tenant"] != "acme" {
+		t.Fatalf("attributions = %#v, %v", works, err)
+	}
+	down := respond(t, http.StatusServiceUnavailable, `{"code":"unavailable"}`, nil, func(*http.Request) {})
+	agent, _ = NewAgent(down.Client(), Config{AgentAddress: down.URL, AgentControlToken: "token"})
+	if _, err := agent.ListWorkAttributions(context.Background(), "application-1", []string{"work-1"}); !errors.Is(err, query.ErrAuthorizationUnavailable) {
+		t.Fatalf("outage: %v", err)
+	}
+}
+
+// Account's Application Ownership Query is asked as Observability; an
+// Application Account never registered is unknown, not an outage.
+func TestAccountAnswersApplicationOwnership(t *testing.T) {
+	server := respond(t, http.StatusOK, "", &accountprivatev1.GetApplicationResponse{Application: &accountprivatev1.OwnedApplication{ApplicationId: "application-1", OwnerUserId: "owner-1", Removed: true}}, func(r *http.Request) {
+		if r.Header.Get(authn.HeaderServiceID) != "trace" {
+			t.Error("missing service identity")
+		}
+	})
+	accounts, err := NewAccount(server.Client(), Config{AccountAddress: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned, err := accounts.GetApplication(context.Background(), "application-1")
+	if err != nil || owned.OwnerUserID != "owner-1" || !owned.Removed {
+		t.Fatalf("owned = %#v, %v", owned, err)
+	}
+	unknown := respond(t, http.StatusNotFound, `{"code":"not_found"}`, nil, func(*http.Request) {})
+	accounts, _ = NewAccount(unknown.Client(), Config{AccountAddress: unknown.URL})
+	if _, err := accounts.GetApplication(context.Background(), "application-2"); !errors.Is(err, query.ErrApplicationUnknown) {
+		t.Fatalf("unknown: %v", err)
+	}
+}
+
 // Agent's Work access admits only the owner and Work Share holders; a public
 // Work's other readers need a Project, which a Work without one never has.
 func TestWorkAccessAdmitsOwnerAndShareHoldersOnly(t *testing.T) {
@@ -107,7 +154,7 @@ func TestWorkAccessAdmitsOwnerAndShareHoldersOnly(t *testing.T) {
 					t.Error("missing control token")
 				}
 			})
-			works, err := NewWorkAccess(server.Client(), Config{AgentAddress: server.URL, AgentControlToken: "token"})
+			works, err := NewAgent(server.Client(), Config{AgentAddress: server.URL, AgentControlToken: "token"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,7 +171,7 @@ func TestMissingReaderOrTargetIsRefusedLocally(t *testing.T) {
 	server := respond(t, http.StatusOK, "", &traceprivatev1.DecideProjectAccessResponse{}, func(*http.Request) { t.Error("authority asked") })
 	cfg := Config{ProjectAccessAddress: server.URL, AgentAddress: server.URL, AgentControlToken: "token"}
 	projects, _ := NewProjectAccess(server.Client(), cfg)
-	works, _ := NewWorkAccess(server.Client(), cfg)
+	works, _ := NewAgent(server.Client(), cfg)
 	if err := projects.AuthorizeProjectReader(context.Background(), "", "project-1"); !errors.Is(err, query.ErrAuthorizationUnauthenticated) {
 		t.Fatalf("anonymous: %v", err)
 	}
@@ -137,7 +184,7 @@ func TestMissingReaderOrTargetIsRefusedLocally(t *testing.T) {
 // without a Project stay readable under Agent's Work access, and nothing
 // answers for a Project.
 func TestUnconfiguredProjectAccessProvidesNoDecision(t *testing.T) {
-	cfg := Config{AgentAddress: "http://controlplane:8080", AgentControlToken: "token"}
+	cfg := Config{AgentAddress: "http://controlplane:8080", AgentControlToken: "token", AccountAddress: "http://controlplane:8080"}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("configuration without the Project access decision refused: %v", err)
 	}
@@ -148,7 +195,7 @@ func TestUnconfiguredProjectAccessProvidesNoDecision(t *testing.T) {
 	if projects != nil {
 		t.Fatalf("unconfigured Project access decision = %#v, want none", projects)
 	}
-	if err := (Config{ProjectAccessAddress: "project-access:8080", AgentAddress: "http://controlplane:8080", AgentControlToken: "token"}).Validate(); err == nil {
+	if err := (Config{ProjectAccessAddress: "project-access:8080", AgentAddress: "http://controlplane:8080", AgentControlToken: "token", AccountAddress: "http://controlplane:8080"}).Validate(); err == nil {
 		t.Fatal("a configured Project access address must be an absolute http(s) URL")
 	}
 }

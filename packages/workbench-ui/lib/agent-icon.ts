@@ -24,3 +24,6 @@ export function agentIconOf(icon: Partial<AgentIconValue> | undefined): { glyph:
   const color = (icon?.color && icon.color in agentColors ? icon.color : defaultAgentIcon.color) as AgentColor;
   return { glyph, color };
 }
+
+/** How an Agent is shown: its name and its icon. */
+export type AgentAppearanceValue = { name: string; icon: AgentIconValue };

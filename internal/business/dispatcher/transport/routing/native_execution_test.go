@@ -82,8 +82,8 @@ func TestNativeExecutionRoutingPreservesScopeAndPrivateAuthentication(t *testing
 // directory. Any other lookup failure stays Unavailable.
 func TestNativeExecutionRoutingAnswersALookupEndedByItsCallerWithItsCause(t *testing.T) {
 	for cause, code := range map[error]connect.Code{
-		context.Canceled:            connect.CodeCanceled,
-		context.DeadlineExceeded:    connect.CodeDeadlineExceeded,
+		context.Canceled:             connect.CodeCanceled,
+		context.DeadlineExceeded:     connect.CodeDeadlineExceeded,
 		errors.New("redis: refused"): connect.CodeUnavailable,
 	} {
 		handler := NewNativeExecutionHandler(&nativeRouteReceiver{}, &nativeRouteDirectory{err: fmt.Errorf("locate: %w", cause)}, "ingress", "shared-control", peer.NewNativeClients(http.DefaultClient))

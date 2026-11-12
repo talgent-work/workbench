@@ -14,10 +14,11 @@ type CreateAgentDefinition struct {
 	UsageScope   domain.UsageScope
 	Visibility   domain.VisibilityRule
 	Capabilities domain.CapabilityConfiguration
+	WorkDefaults domain.WorkDefaults
 }
 
 func (a *Application) CreateAgentDefinition(ctx context.Context, request CreateAgentDefinition) (string, error) {
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: request.Owners, AgentName: request.AgentName, Purpose: request.Purpose, UsageScope: request.UsageScope, Visibility: request.Visibility, Capabilities: request.Capabilities})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: request.Owners, AgentName: request.AgentName, Purpose: request.Purpose, UsageScope: request.UsageScope, Visibility: request.Visibility, Capabilities: request.Capabilities, WorkDefaults: request.WorkDefaults})
 	if err != nil {
 		return "", err
 	}
@@ -30,9 +31,12 @@ func (a *Application) CreateAgentDefinition(ctx context.Context, request CreateA
 	return agent.ID, nil
 }
 
+// ChangeAgentDefinitionCapabilities replaces a definition's base Prompt,
+// required Plugins and the startup Agent of its Work defaults.
 type ChangeAgentDefinitionCapabilities struct {
 	AgentID      string
 	Capabilities domain.CapabilityConfiguration
+	StartupAgent string
 }
 
 func (a *Application) ChangeAgentDefinitionCapabilities(ctx context.Context, request ChangeAgentDefinitionCapabilities) error {
@@ -40,7 +44,7 @@ func (a *Application) ChangeAgentDefinitionCapabilities(ctx context.Context, req
 	if err != nil {
 		return err
 	}
-	if err := agent.ChangeCapabilities(request.Capabilities); err != nil {
+	if err := agent.ChangeCapabilities(request.Capabilities, request.StartupAgent); err != nil {
 		return err
 	}
 	return a.Definitions.Save(ctx, agent)

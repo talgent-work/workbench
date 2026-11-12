@@ -10,7 +10,7 @@ import (
 var ErrWorkCapabilitiesUnavailable = errors.New("agent: current Harness capabilities unavailable")
 
 func (a *Application) GetWorkCapabilities(ctx context.Context, input ControlWork) (command.WorkCapabilities, error) {
-	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
+	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorID, input.WorkID); err != nil {
 		return command.WorkCapabilities{}, err
 	}
 	work, err := a.WorkQueries.GetWorkView(ctx, input.WorkID)

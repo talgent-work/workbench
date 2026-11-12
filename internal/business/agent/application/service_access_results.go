@@ -12,7 +12,7 @@ func (a *Application) GetWorkServiceAccess(ctx context.Context, input ControlWor
 	if strings.TrimSpace(input.WorkID) == "" {
 		return query.WorkServiceAccess{}, domain.ErrInvalidWork
 	}
-	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
+	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorID, input.WorkID); err != nil {
 		return query.WorkServiceAccess{}, err
 	}
 	work, err := a.Works.Get(ctx, input.WorkID)

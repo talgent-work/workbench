@@ -1,4 +1,4 @@
-import type { PluginRelease } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
+import type { PluginRelease, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 
 /** What presenting a Plugin needs; a full release and a catalog summary both carry it. */
 export type PresentablePlugin = Pick<PluginRelease, "slug" | "source" | "nativeEntry">;
@@ -45,4 +45,10 @@ export function groupPluginsByCategory<T extends PresentablePlugin>(plugins: T[]
     if (right === "Other") return -1;
     return left.localeCompare(right);
   }).map(([category, entries]) => ({ category, plugins: entries }));
+}
+
+/** What a Plugin brings, as counts of its Skills, Agents and MCP servers. */
+export function capabilityText(plugin: Pick<PluginSummary, "skillCount" | "agentCount" | "mcpServerCount">) {
+  const parts = [[plugin.skillCount, "Skill"], [plugin.agentCount, "Agent"], [plugin.mcpServerCount, "MCP server"]] as const;
+  return parts.filter(([count]) => count > 0).map(([count, noun]) => `${count} ${noun}${count === 1 ? "" : "s"}`).join(", ");
 }

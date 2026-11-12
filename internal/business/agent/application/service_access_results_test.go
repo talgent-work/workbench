@@ -20,9 +20,9 @@ func TestServiceAccessResultsPreserveOwnerAndReturnIndependentObservations(t *te
 	authorization := &thinkingAccess{}
 	reader := &serviceObservationReader{results: []query.ServiceAccessObservation{{Service: "github", Target: "github-api", Status: "unavailable", Reason: "revoked"}}}
 	app := &application.Application{Works: serviceAccessWorks{work: f.work}, WorkPrincipals: authorization, ExecutionQueries: reader}
-	result, err := app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorUserID: "viewer", WorkID: f.work.ID})
+	result, err := app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorID: "viewer", WorkID: f.work.ID})
 	require.NoError(t, err)
-	require.Equal(t, "owner", result.OwnerUserID)
+	require.Equal(t, "owner", result.OwnerID)
 	require.Equal(t, []string{"github"}, result.SelectedServices)
 	require.Equal(t, reader.results, result.Observations)
 	require.Equal(t, "viewer", authorization.subject, "the requester itself must be the owner")
@@ -39,11 +39,11 @@ func TestServiceAccessResultsDoNotHideAccessOrStorageFailures(t *testing.T) {
 	app := &application.Application{Works: serviceAccessWorks{work: f.work}, WorkPrincipals: authorization, ExecutionQueries: reader}
 	_, err := app.GetWorkServiceAccess(t.Context(), application.ControlWork{WorkID: " "})
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
-	_, err = app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorUserID: "outsider", WorkID: f.work.ID})
+	_, err = app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorID: "outsider", WorkID: f.work.ID})
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 	require.Zero(t, reader.calls)
 	authorization.err = nil
-	_, err = app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorUserID: "reader", WorkID: f.work.ID})
+	_, err = app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorID: "reader", WorkID: f.work.ID})
 	require.ErrorIs(t, err, reader.err)
 }
 
@@ -72,7 +72,7 @@ func newServiceAccessFixture(t *testing.T) *serviceAccessFixture {
 	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
 		WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
 		RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(),
-		AuthorizationInput: domain.WorkAuthorizationInput{OwnerUserID: "owner", Available: []domain.PersonalAuthorization{{OwnerUserID: "owner", AuthorizationID: "b5f00000-0000-4000-8000-000000000382", Provider: "github", Service: "github"}}},
+		AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: "owner", Available: []domain.PersonalAuthorization{{OwnerID: "owner", AuthorizationID: "b5f00000-0000-4000-8000-000000000382", Provider: "github", Service: "github"}}},
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	return &serviceAccessFixture{work: work}

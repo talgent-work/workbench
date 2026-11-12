@@ -57,7 +57,7 @@ func (a *Application) ReadAccess(ctx context.Context, token string) (OpenedFile,
 
 // CreateShareLink shares an existing Attachment or Artifact, also after the
 // work its Directory serves has ended.
-func (a *Application) CreateShareLink(ctx context.Context, at Position, createdBy string) (ShareLinkView, error) {
+func (a *Application) CreateShareLink(ctx context.Context, at Position, createdBy domain.Actor) (ShareLinkView, error) {
 	_, backend, position, err := a.existingFile(ctx, at)
 	if err != nil {
 		return ShareLinkView{}, err
@@ -78,10 +78,10 @@ func (a *Application) CreateShareLink(ctx context.Context, at Position, createdB
 	return a.shareLinkView(created), nil
 }
 
-// RevokeShareLinks ends a file's active Share Links, every one or only those
-// createdBy made when it is set. Like creating one, it is no file write, so
+// RevokeShareLinks ends a file's active Share Links, every one when createdBy
+// names no one, or only those createdBy made. Like creating one, it is no file write, so
 // the owner's context alone decides it, also after the work has ended.
-func (a *Application) RevokeShareLinks(ctx context.Context, at Position, createdBy string) (revoked, remaining int, err error) {
+func (a *Application) RevokeShareLinks(ctx context.Context, at Position, createdBy domain.Actor) (revoked, remaining int, err error) {
 	position, err := at.position()
 	if err != nil {
 		return 0, 0, err

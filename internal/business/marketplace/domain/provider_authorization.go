@@ -25,7 +25,7 @@ type ProviderAuthorization struct {
 	CredentialSet
 	AccessScope       AccessScope
 	ID                string `validate:"required"`
-	OwnerUserID       string `validate:"required"`
+	OwnerID           string `validate:"required"`
 	Provider          Provider
 	Status            ProviderAuthorizationStatus
 	LastRefreshedAt   time.Time
@@ -37,7 +37,7 @@ type ProviderAuthorization struct {
 }
 
 type ProviderAuthorizationInput struct {
-	OwnerUserID            string
+	OwnerID                string
 	Provider               Provider
 	ProviderAccountID      string
 	ProviderLogin          string
@@ -49,10 +49,10 @@ type ProviderAuthorizationInput struct {
 
 func NewProviderAuthorization(input ProviderAuthorizationInput) (*ProviderAuthorization, error) {
 	a := &ProviderAuthorization{
-		ID:          uuid.Must(uuid.NewV7()).String(),
-		OwnerUserID: strings.TrimSpace(input.OwnerUserID),
-		Provider:    input.Provider,
-		Status:      ProviderAuthorizationActive,
+		ID:       uuid.Must(uuid.NewV7()).String(),
+		OwnerID:  strings.TrimSpace(input.OwnerID),
+		Provider: input.Provider,
+		Status:   ProviderAuthorizationActive,
 
 		ExternalAccount: ExternalAccount{
 			ProviderAccountID: strings.TrimSpace(input.ProviderAccountID),
@@ -184,7 +184,7 @@ func (a *ProviderAuthorization) MarkProviderCheckSucceeded(now time.Time) error 
 }
 
 func (a *ProviderAuthorization) ReplaceWith(input ProviderAuthorizationInput) error {
-	if strings.TrimSpace(input.OwnerUserID) != a.OwnerUserID || input.Provider != a.Provider {
+	if strings.TrimSpace(input.OwnerID) != a.OwnerID || input.Provider != a.Provider {
 		return ErrPermissionDenied
 	}
 	candidate := *a

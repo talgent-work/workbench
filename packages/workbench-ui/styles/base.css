@@ -25,6 +25,13 @@ html {
   scroll-behavior: smooth;
 }
 
+/* The document scrolls, so a page whose content outgrows the window would add
+   a scrollbar and shift every centred element; keeping its gutter means
+   switching between a short and a long section moves nothing. */
+:root {
+  scrollbar-gutter: stable;
+}
+
 * {
   box-sizing: border-box;
 }

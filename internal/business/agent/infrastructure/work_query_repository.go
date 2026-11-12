@@ -316,7 +316,7 @@ func (r *WorkQueryRepository) ListRecentRepositoryIDs(ctx context.Context, owner
 		RepositorySelection string `xorm:"repository_selection"`
 	}
 	err := r.db.Context(ctx).Table("agent_session").Cols("repository_selection").
-		Where("represented_person = ? AND deleted_at = 0", owner).Desc("created_at").Desc("id").Limit(recentWorkScan).Find(&rows)
+		Where("(represented_person = ? OR owning_application = ?) AND deleted_at = 0", owner, owner).Desc("created_at").Desc("id").Limit(recentWorkScan).Find(&rows)
 	if err != nil {
 		return nil, oops.With("operation", "agent.recent_repositories").Wrap(err)
 	}

@@ -1,9 +1,6 @@
 package tokenmaintenance
 
-import (
-	"context"
-	"strings"
-)
+import "strings"
 
 type RefreshAuthorizationPayload struct {
 	AuthorizationID string `json:"authorization_id"`
@@ -17,8 +14,4 @@ func (p RefreshAuthorizationPayload) Validate() error {
 		return ErrInvalidPayload
 	}
 	return nil
-}
-
-type AuthorizationRefresher interface {
-	RefreshProviderAuthorization(ctx context.Context, authorizationID string, reason string) error
 }

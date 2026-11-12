@@ -29,7 +29,7 @@ func (p Position) position() (domain.FilePosition, error) {
 type ShareLinkView struct {
 	Token     string
 	URL       string
-	CreatedBy string
+	CreatedBy domain.Actor
 	CreatedAt time.Time
 }
 
@@ -146,20 +146,20 @@ func (a *Application) writtenFiles(ctx context.Context, backend DirectoryBackend
 	return written, nil
 }
 
-// IssueUpload is one intended Attachment write by a person.
+// IssueUpload is one intended Attachment write by a person or an Application.
 type IssueUpload struct {
-	Position       Position
-	SpaceToken     string
-	Replace        bool
-	UploaderUserID string
-	ContentType    string
+	Position    Position
+	SpaceToken  string
+	Replace     bool
+	Uploader    domain.Actor
+	ContentType string
 }
 
 // IssueUpload admits the write on the Space Token and returns its upload
 // link. A taken name refuses a Create and a free one a Replace now; the
 // commit decides again when the content arrives.
 func (a *Application) IssueUpload(ctx context.Context, request IssueUpload) (Link, error) {
-	writer, err := domain.PersonWriter(request.UploaderUserID)
+	writer, err := domain.AdmittedWriter(request.Uploader)
 	if err != nil {
 		return Link{}, err
 	}
@@ -181,12 +181,12 @@ func (a *Application) IssueUpload(ctx context.Context, request IssueUpload) (Lin
 		return Link{}, err
 	}
 	expiresAt := a.now().UTC().Add(a.uploadTTL)
-	grant := UploadGrant{Position: position, Replace: request.Replace, UploaderUserID: writer.UserID(), ContentType: declaredContentType(request.ContentType)}
+	grant := UploadGrant{Position: position, Replace: request.Replace, Uploader: writer.Actor(), ContentType: declaredContentType(request.ContentType)}
 	return Link{URL: a.links.UploadURL(grant, expiresAt), ExpiresAt: expiresAt}, nil
 }
 
 // Upload writes the content an upload link admitted. It is staged completely
-// before it becomes visible, so no reader sees a partial file. The person
+// before it becomes visible, so no reader sees a partial file. The uploader
 // was admitted when the link was issued; the Directory must still be
 // Allocated.
 func (a *Application) Upload(ctx context.Context, token string, content io.Reader) (DirectoryFile, error) {
@@ -194,7 +194,7 @@ func (a *Application) Upload(ctx context.Context, token string, content io.Reade
 	if err != nil {
 		return DirectoryFile{}, err
 	}
-	writer, err := domain.PersonWriter(grant.UploaderUserID)
+	writer, err := domain.AdmittedWriter(grant.Uploader)
 	if err != nil {
 		return DirectoryFile{}, err
 	}
@@ -212,7 +212,7 @@ func (a *Application) Upload(ctx context.Context, token string, content io.Reade
 	if err != nil {
 		return DirectoryFile{}, err
 	}
-	stored, err := a.writeFile(ctx, backend, grant.Position, content, FileAttributes{UploaderUserID: writer.UserID(), ContentType: grant.ContentType}, grant.Replace)
+	stored, err := a.writeFile(ctx, backend, grant.Position, content, FileAttributes{UploaderUserID: writer.UserID(), UploaderApplicationID: writer.ApplicationID(), ContentType: grant.ContentType}, grant.Replace)
 	if err != nil {
 		return DirectoryFile{}, err
 	}
@@ -307,10 +307,11 @@ func (a *Application) clearStaleShareLinks(ctx context.Context, backend Director
 	return err
 }
 
-// RenameFile moves a file to a free name for the person the owner's context
-// admitted; its active Share Links follow once the rename is carried out.
-func (a *Application) RenameFile(ctx context.Context, at Position, token, newName, actorUserID string) (DirectoryFile, error) {
-	writer, err := domain.PersonWriter(actorUserID)
+// RenameFile moves a file to a free name for the person or the Application
+// the owner's context admitted; its active Share Links follow once the rename
+// is carried out.
+func (a *Application) RenameFile(ctx context.Context, at Position, token, newName string, actor domain.Actor) (DirectoryFile, error) {
+	writer, err := domain.AdmittedWriter(actor)
 	if err != nil {
 		return DirectoryFile{}, err
 	}
@@ -362,10 +363,11 @@ func (a *Application) RenameFile(ctx context.Context, at Position, token, newNam
 	return a.directoryFile(recorded, stored), nil
 }
 
-// DeleteFile deletes a file for the person the owner's context admitted and
-// revokes its Share Links; deleting an absent file succeeds.
-func (a *Application) DeleteFile(ctx context.Context, at Position, token, actorUserID string) error {
-	writer, err := domain.PersonWriter(actorUserID)
+// DeleteFile deletes a file for the person or the Application the owner's
+// context admitted and revokes its Share Links; deleting an absent file
+// succeeds.
+func (a *Application) DeleteFile(ctx context.Context, at Position, token string, actor domain.Actor) error {
+	writer, err := domain.AdmittedWriter(actor)
 	if err != nil {
 		return err
 	}

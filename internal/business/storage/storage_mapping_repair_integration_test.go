@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/talgent-work/workbench/internal/business/storage/domain"
 )
 
 // One repair run aligns a deliberately misaligned view: a missing link is
@@ -68,7 +70,7 @@ func TestRepairRunsAlongsideConcurrentWritesAndMappings(t *testing.T) {
 			_, statErr := os.Stat(filepath.Join(f.folder(inputs), name))
 			switch {
 			case statErr == nil && i%2 == 0:
-				failures <- f.app.DeleteFile(t.Context(), at(inputs.Directory, name), token, "user-1")
+				failures <- f.app.DeleteFile(t.Context(), at(inputs.Directory, name), token, domain.Actor{UserID: "user-1"})
 			case statErr == nil:
 				failures <- statusError(f.upload(inputs.Directory, token, name, fmt.Sprint(i), true).StatusCode)
 			default:

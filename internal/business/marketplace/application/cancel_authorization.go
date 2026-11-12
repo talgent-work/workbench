@@ -21,7 +21,7 @@ func (a *PersonalConnections) CancelPersonalAuthorization(ctx context.Context, a
 	if err != nil {
 		return query.PersonalAuthorization{}, err
 	}
-	if auth.OwnerUserID != actor {
+	if auth.OwnerID != actor {
 		return query.PersonalAuthorization{}, domain.ErrProviderNotFound
 	}
 	now := time.Now().UTC()

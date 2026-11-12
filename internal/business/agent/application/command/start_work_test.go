@@ -132,8 +132,8 @@ func TestResumeAndRestartRetainCapabilitiesAndHarnessSession(t *testing.T) {
 			session := endedSessionFor(t, agents.agent, restart)
 			sessions.session = session
 			harnessSession := session.HarnessSessionReference
-			require.NoError(t, agents.agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "changed after session creation"}))
-			_, err := agents.agent.ChangeSoul(agents.agent.Owners[0], "Written after the Work started.")
+			require.NoError(t, agents.agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "changed after session creation"}, agents.agent.WorkDefaults.StartupAgent))
+			_, err := agents.agent.ChangeSoul(domain.DefinitionRequester{ID: agents.agent.Owners[0]}, "Written after the Work started.")
 			require.NoError(t, err)
 			request := command.StartWork{RequestID: uuid.Must(uuid.NewV7()).String(), SubjectID: "owner", WorkID: session.ID}
 			if restart {
@@ -308,7 +308,7 @@ func TestResumeAfterFirstStartContinuesTheSameConversation(t *testing.T) {
 	report(t, sessions.session, exitedReport)
 	report(t, sessions.session, releasedReport)
 	settled(sessions.session)
-	require.NoError(t, agents.agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "New definition instructions"}))
+	require.NoError(t, agents.agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "New definition instructions"}, agents.agent.WorkDefaults.StartupAgent))
 	second := command.StartWork{RequestID: uuid.NewString(), SubjectID: "owner", WorkID: originalID}
 	require.NoError(t, handler.Handle(ctx, second))
 	require.Len(t, sessions.admittedStarts(), 1)

@@ -51,6 +51,13 @@ type lifecycleModule struct {
 	recovery *command.RecoverWorkHandler
 	app      *application.Application
 	stop     func()
+	// public reaches the module's public APIs as the entry forwards them.
+	public *http.Client
+	url    string
+	// options compose beside the module, such as a case's own decorations.
+	options []fx.Option
+	// catalog replaces the module's Marketplace when a case sets it.
+	catalog command.MarketplacePort
 }
 
 // availableQuota is the cluster quota of the test Cloud with room for ten runs.
@@ -80,7 +87,11 @@ func (m *lifecycleModule) start() *lifecycleModule {
 	require.NoError(t, err)
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
-	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
+	catalog := moduleCatalog()
+	if m.catalog != nil {
+		catalog = fx.Replace(fx.Annotate(m.catalog, fx.As(new(command.MarketplacePort))))
+	}
+	app := fx.New(computer.Module, agent.Module, catalog, sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("10", "10Gi", "64")),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),
@@ -90,6 +101,7 @@ func (m *lifecycleModule) start() *lifecycleModule {
 		fx.Invoke(func(recovery *command.RecoverWorkHandler, app *application.Application) {
 			m.recovery, m.app = recovery, app
 		}),
+		fx.Options(m.options...),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(m.ctx))
@@ -102,6 +114,7 @@ func (m *lifecycleModule) start() *lifecycleModule {
 		})
 	}
 	t.Cleanup(m.stop)
+	m.public, m.url = server.Client(), server.URL
 	transport := connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))
 	m.client = agentprivatev1connect.NewAgentServiceClient(connect.NewClient(transport))
 	m.feedback = agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(transport))

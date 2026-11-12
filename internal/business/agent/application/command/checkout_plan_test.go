@@ -20,7 +20,7 @@ func TestCheckoutTargetsRemainUniqueAndStableRegardlessOfSelectionOrder(t *testi
 	}
 	plan := func(repos []domain.WorkRepository) map[string]string {
 		byRepository, used := map[string]string{}, map[string]bool{}
-		for _, checkout := range command.PlanCheckouts("work", domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-382", Repositories: repos}) {
+		for _, checkout := range command.PlanCheckouts("work", domain.WorkRepositorySelection{OwnerID: "owner", WorkBranch: "talgent/TAL-382", Repositories: repos}) {
 			require.False(t, used[checkout.TargetPath], "checkout paths must be globally unique")
 			used[checkout.TargetPath] = true
 			byRepository[checkout.RepoName] = checkout.TargetPath
@@ -35,7 +35,7 @@ func TestCheckoutTargetsRemainUniqueAndStableRegardlessOfSelectionOrder(t *testi
 }
 
 func TestCheckoutPlanFollowsTheRetainedSelection(t *testing.T) {
-	selection := domain.WorkRepositorySelection{OwnerUserID: "owner", WorkBranch: "talgent/TAL-382", Repositories: []domain.WorkRepository{
+	selection := domain.WorkRepositorySelection{OwnerID: "owner", WorkBranch: "talgent/TAL-382", Repositories: []domain.WorkRepository{
 		{Provider: "github", RepoID: "123", RepoName: "acme/api", CloneURL: "https://github.com/acme/api.git", DefaultBranch: "old-main", BaseBranch: "old-main"},
 		{Provider: "github", RepoID: "456", RepoName: "other/api", CloneURL: "https://github.com/other/api.git", DefaultBranch: "main", BaseBranch: "release"},
 	}}

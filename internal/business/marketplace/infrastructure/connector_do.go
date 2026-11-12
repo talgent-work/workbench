@@ -37,7 +37,7 @@ type providerAccessRecord struct {
 
 type installedConnectorDO struct {
 	ID          string `xorm:"id pk"`
-	UserID      string `xorm:"user_id"`
+	OwnerID     string `xorm:"owner_id"`
 	ConnectorID string `xorm:"connector_id"`
 	State       uint8  `xorm:"state"`
 	Version     int    `xorm:"version"`
@@ -48,4 +48,4 @@ type installedConnectorDO struct {
 
 func (installedConnectorDO) TableName() string { return "marketplace_installed_connector" }
 
-var installedConnectorColumns = []string{"id", "user_id", "connector_id", "state", "version"}
+var installedConnectorColumns = []string{"id", "owner_id", "connector_id", "state", "version"}

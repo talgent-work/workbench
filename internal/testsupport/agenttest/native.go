@@ -49,7 +49,7 @@ func platformConnector(t testing.TB, dsn, address string) domain.SelectedConnect
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	connectors := marketinfra.NewConnectorRepository(db)
-	app := marketapp.NewApplication(nil, nil, nil, nil, nil, marketapp.ConnectorRepositories{Catalog: connectors, Installed: marketinfra.NewInstalledConnectorRepository(db), Queries: connectors})
+	app := marketapp.NewApplication(nil, nil, nil, nil, nil, marketapp.ConnectorRepositories{Catalog: connectors, Installed: marketinfra.NewInstalledConnectorRepository(db), CatalogQueries: connectors, InstalledQueries: marketinfra.NewInstalledConnectorRepository(db)})
 	ctx := context.Background()
 	require.NoError(t, app.PublishConnector(ctx, marketapp.ConnectorPublication{Name: "talgent", Configuration: marketdomain.MCPConfiguration{Type: "http", URL: address}}))
 	mux := http.NewServeMux()

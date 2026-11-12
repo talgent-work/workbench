@@ -49,9 +49,12 @@ type StagedContent string
 // and the declared media type. Any other attribute a file carries is never
 // read.
 type FileAttributes struct {
-	UploaderUserID string
-	WorkID         string
-	ContentType    string
+	// UploaderUserID or UploaderApplicationID names who uploaded an
+	// Attachment: a person or an Application.
+	UploaderUserID        string
+	UploaderApplicationID string
+	WorkID                string
+	ContentType           string
 	// ContentDigest is the SHA-256 of the content, recorded when it is
 	// written; Preview Copies are keyed by it.
 	ContentDigest string
@@ -59,7 +62,9 @@ type FileAttributes struct {
 
 // Written reports whether Storage wrote the file: every file it writes
 // records its origin, an uploader or a producing Work.
-func (a FileAttributes) Written() bool { return a.UploaderUserID != "" || a.WorkID != "" }
+func (a FileAttributes) Written() bool {
+	return a.UploaderUserID != "" || a.UploaderApplicationID != "" || a.WorkID != ""
+}
 
 // StoredFile is a file at its position as its backend holds it.
 type StoredFile struct {
@@ -244,10 +249,10 @@ type ConverterPort interface {
 
 // UploadGrant is what an upload link authorizes: one Attachment write.
 type UploadGrant struct {
-	Position       domain.FilePosition
-	Replace        bool
-	UploaderUserID string
-	ContentType    string
+	Position    domain.FilePosition
+	Replace     bool
+	Uploader    domain.Actor
+	ContentType string
 }
 
 // AccessGrant is what an Access Link authorizes: one read of one file of a

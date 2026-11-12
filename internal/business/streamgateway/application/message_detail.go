@@ -12,7 +12,7 @@ func (a *Application) GetMessageDetail(ctx context.Context, request query.Messag
 	if request.AgentWorkID == "" || request.MessageID == "" {
 		return query.MessageDetail{}, query.ErrInvalidDetailRequest
 	}
-	if err := a.access.AuthorizeRead(ctx, request.ActorUserID, request.Admission, request.AgentWorkID); err != nil {
+	if err := a.access.AuthorizeRead(ctx, request.ReaderID, request.Admission, request.AgentWorkID); err != nil {
 		return query.MessageDetail{}, err
 	}
 	request.Limit = detailPageLimit(request.Limit)
@@ -24,7 +24,7 @@ func (a *Application) GetToolDetail(ctx context.Context, request query.ToolDetai
 	if request.AgentWorkID == "" || request.ToolCallID == "" {
 		return query.ToolDetail{}, query.ErrInvalidDetailRequest
 	}
-	if err := a.access.AuthorizeRead(ctx, request.ActorUserID, request.Admission, request.AgentWorkID); err != nil {
+	if err := a.access.AuthorizeRead(ctx, request.ReaderID, request.Admission, request.AgentWorkID); err != nil {
 		return query.ToolDetail{}, err
 	}
 	request.Limit = detailPageLimit(request.Limit)

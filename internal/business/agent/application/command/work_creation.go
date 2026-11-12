@@ -31,29 +31,36 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 		}
 		return h.created(ctx, request, existing.ID)
 	}
-	// Personal capabilities and authorizations belong to the represented human.
+	// Installed Plugins and Connectors belong to the represented human, or to
+	// the owning Application of an Application's definition (Application as
+	// owner); an automated start has no owner's defaults.
 	catalogUser := request.StartingUserID
 	if catalogUser == "" {
 		catalogUser = request.SubjectID
 	}
-	capabilities, err := resolveStartupCapabilities(ctx, h.catalog, catalogUser, request.StartingUserID, domain.StartupCapabilityInput{
-		BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: h.builtIns.ComposeRequiredPlugins(request.ProjectID, agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.Capabilities.StartupAgent,
+	defaultsOwner := request.StartingUserID
+	if application := agent.OwningApplication(); application != "" {
+		defaultsOwner = application
+	}
+	capabilities, err := resolveStartupCapabilities(ctx, h.catalog, catalogUser, defaultsOwner, domain.StartupCapabilityInput{
+		BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: h.builtIns.ComposeRequiredPlugins(request.ProjectID, agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.WorkDefaults.StartupAgent,
 		Prompt: request.CapabilityDifferences.Prompt, StartupAgent: request.CapabilityDifferences.StartupAgent, Plugins: request.CapabilityDifferences.Plugins,
-		ConnectorChoices: request.CapabilityDifferences.Connectors,
+		ConnectorChoices: request.CapabilityDifferences.Connectors, ApplicationEndpoints: request.CapabilityDifferences.ApplicationEndpoints,
 	})
 	if err != nil {
 		return "", err
 	}
 	// Every authorization usable at creation is selected, independently of
-	// Plugin and Connector choices.
-	authorizationInput := domain.WorkAuthorizationInput{OwnerUserID: agent.RepresentedPerson()}
-	if authorizationInput.OwnerUserID != "" {
-		authorizationInput.Available, err = h.catalog.ListPersonalAuthorizations(ctx, authorizationInput.OwnerUserID)
+	// Plugin and Connector choices: the represented person's, or the owning
+	// Application's.
+	authorizationInput := domain.WorkAuthorizationInput{OwnerID: agent.AuthorizationOwner()}
+	if authorizationInput.OwnerID != "" {
+		authorizationInput.Available, err = h.catalog.ListPersonalAuthorizations(ctx, authorizationInput.OwnerID)
 		if err != nil {
 			return "", err
 		}
 	}
-	repositories, err := h.repositoryInput(ctx, agent.RepresentedPerson(), request.InitialExecution)
+	repositories, err := h.repositoryInput(ctx, agent.AuthorizationOwner(), request.InitialExecution)
 	if err != nil {
 		return "", err
 	}
@@ -74,7 +81,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	if err := agent.AdmitComputer(managed); err != nil {
 		return h.reuseAfterRejection(ctx, agent, request, err)
 	}
-	model := h.workModel(request.WorkModel, managed)
+	model := h.workModel(request.WorkModel, agent.WorkDefaults, managed)
 	if err := model.Validate(); err != nil {
 		return "", err
 	}
@@ -87,7 +94,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	}
 	_, provided := h.models.Option(model)
 	available := model.Available(provided)
-	_, thinking, _ := h.models.ThinkingLevels(model)
+	thinking := h.defaultThinkingLevel(model, agent.WorkDefaults)
 	var initialInput *domain.InitialTaskInput
 	if initial := request.InitialExecution; initial != nil {
 		input, err := domain.NewInitialTaskInput(initial.Input.ID, initial.Input.Text)
@@ -111,7 +118,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	admission := domain.StartAdmission{AdmittedAt: h.now(), AgentID: agent.ID, ModelConfigurationProvided: provided, Soul: agent.Soul}
 	workID := request.workID()
 	if available {
-		seat, err := admitRun(ctx, h.computers, RunAdmission{ComputerID: computer.ID, DeskID: requestedDeskID(request.RequestID), WorkID: workID, WorkOwnerID: agent.WorkPrincipal(), StarterID: request.SubjectID, Sandbox: harness.Sandbox})
+		seat, err := admitRun(ctx, h.computers, RunAdmission{ComputerID: computer.ID, DeskID: requestedDeskID(agent.WorkPrincipal(), request.RequestID), WorkID: workID, WorkOwnerID: agent.WorkPrincipal(), StarterID: request.SubjectID, Sandbox: harness.Sandbox})
 		if err != nil {
 			return h.reuseAfterRejection(ctx, agent, request, err)
 		}
@@ -122,7 +129,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return "", err
 	}
-	work, established, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, HarnessChoice: harness, Subject: request.Subject, ProjectID: request.ProjectID, StartingUser: request.StartingUserID, AgentHarnessID: request.AgentHarness, Capabilities: capabilities, TraceAttributes: agent.WorkTraceAttributes(request.TraceAttributes), ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle, InitialTaskInput: initialInput}, facts)
+	work, established, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, HarnessChoice: harness, Subject: request.Subject, ProjectID: request.ProjectID, StartingUser: request.StartingUserID, AgentHarnessID: request.AgentHarness, Capabilities: capabilities, TraceAttributes: agent.WorkTraceAttributes(request.TraceAttributes), ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle, WorkLabels: request.WorkLabels, InitialTaskInput: initialInput}, facts)
 	if err != nil {
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return "", err

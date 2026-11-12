@@ -1,10 +1,6 @@
 package domain
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -17,38 +13,29 @@ import (
 // digest.
 type RefreshSecret string
 
-const refreshSecretBytes = 32
-
 func NewRefreshSecret() (RefreshSecret, error) {
-	raw := make([]byte, refreshSecretBytes)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return RefreshSecret(base64.RawURLEncoding.EncodeToString(raw)), nil
+	secret, err := newOpaqueSecret()
+	return RefreshSecret(secret), err
 }
 
 // ParseRefreshSecret accepts only the issued form so arbitrary input never
 // reaches a digest lookup.
 func ParseRefreshSecret(raw string) (RefreshSecret, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
-	if err != nil || len(decoded) != refreshSecretBytes {
+	raw = strings.TrimSpace(raw)
+	if !isOpaqueSecret(raw) {
 		return "", ErrRefreshSecretUnknown
 	}
-	return RefreshSecret(strings.TrimSpace(raw)), nil
+	return RefreshSecret(raw), nil
 }
 
 func (s RefreshSecret) Digest() RefreshSecretDigest {
-	sum := sha256.Sum256([]byte(s))
-	return RefreshSecretDigest(hex.EncodeToString(sum[:]))
+	return RefreshSecretDigest(opaqueDigest(string(s)))
 }
 
 // RefreshSecretDigest is the one-way form a Login Session retains.
 type RefreshSecretDigest string
 
-func (d RefreshSecretDigest) valid() bool {
-	decoded, err := hex.DecodeString(string(d))
-	return err == nil && len(decoded) == sha256.Size
-}
+func (d RefreshSecretDigest) valid() bool { return validOpaqueDigest(string(d)) }
 
 // SessionLifetimes are the platform's token lifetimes, supplied by the caller.
 type SessionLifetimes struct {

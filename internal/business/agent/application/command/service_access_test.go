@@ -33,7 +33,7 @@ func TestServiceAccessUsesCurrentCredentialsWithoutRepositoriesOrPlugins(t *test
 	require.Empty(t, f.work.RepositorySelection.Repositories)
 	require.Empty(t, f.work.CapabilitySnapshot.Plugins)
 	for _, request := range supplier.requests {
-		require.Equal(t, "owner", request.OwnerUserID)
+		require.Equal(t, "owner", request.OwnerID)
 		require.Equal(t, f.work.AuthorizationSelection.Authorizations[0].AuthorizationID, request.AuthorizationID)
 	}
 }
@@ -89,9 +89,9 @@ func serviceFixture(t *testing.T, selected bool) (*repositoryAccessFixture, *ser
 	agentID := uuid.NewString()
 	input := domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout()}
 	// A Work holds a Provider's authorization only when the owner had one usable at creation.
-	input.AuthorizationInput = domain.WorkAuthorizationInput{OwnerUserID: "owner"}
+	input.AuthorizationInput = domain.WorkAuthorizationInput{OwnerID: "owner"}
 	if selected {
-		input.AuthorizationInput.Available = []domain.PersonalAuthorization{{OwnerUserID: "owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}
+		input.AuthorizationInput.Available = []domain.PersonalAuthorization{{OwnerID: "owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}
 	}
 	work, err := domain.NewAgentWork(input, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)

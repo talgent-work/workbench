@@ -19,7 +19,8 @@ type ReaderAdmission struct{ Reference, Value string }
 
 // WorkAccessPort admits a reader of a Work's message stream from Agent's own
 // facts: the owner, a Work Share holder, or a reader admitted within the scope
-// of a public Work.
+// of a public Work. A reader is the id of the reading person or Application;
+// StreamGateway never tells them apart, Agent decides.
 type WorkAccessPort interface {
 	AuthorizeRead(ctx context.Context, reader string, admission ReaderAdmission, workID string) error
 }
@@ -32,9 +33,9 @@ type StreamAccessPort interface {
 }
 
 type MessageDetailRequest struct {
-	ActorUserID, AgentWorkID, MessageID string
-	Admission                           ReaderAdmission
-	Offset, Limit                       uint32
+	ReaderID, AgentWorkID, MessageID string
+	Admission                        ReaderAdmission
+	Offset, Limit                    uint32
 }
 
 // Offsets and lengths count Unicode code points, not bytes. Format zero means
@@ -48,9 +49,9 @@ type MessageDetail struct {
 // ToolDetail returns the recorded call and its latest result in one read.
 // A nil side is unavailable, distinct from a recorded empty body.
 type ToolDetailRequest struct {
-	ActorUserID, AgentWorkID, ToolCallID string
-	Admission                            ReaderAdmission
-	InputOffset, OutputOffset, Limit     uint32
+	ReaderID, AgentWorkID, ToolCallID string
+	Admission                         ReaderAdmission
+	InputOffset, OutputOffset, Limit  uint32
 }
 
 type ToolDetail struct {

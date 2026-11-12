@@ -25,10 +25,10 @@ func newSCMRepositoryTestEngine(t *testing.T) *xorm.Engine {
 	return engine
 }
 
-func newProviderAuthorizationForTest(t *testing.T, ownerUserID string) *domain.ProviderAuthorization {
+func newProviderAuthorizationForTest(t *testing.T, ownerID string) *domain.ProviderAuthorization {
 	t.Helper()
 	auth, err := domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
-		OwnerUserID:            ownerUserID,
+		OwnerID:                ownerID,
 		Provider:               domain.ProviderGitHub,
 		ProviderAccountID:      "12345",
 		ProviderLogin:          "octocat",
@@ -110,7 +110,7 @@ func TestAuthorizationMaintenanceQueries_ListRefreshCandidates(t *testing.T) {
 	}
 	for _, auth := range []*domain.ProviderAuthorization{future, due, stale, leased, reconnect} {
 		if err := repo.Save(ctx, auth); err != nil {
-			t.Fatalf("Save %s: %v", auth.OwnerUserID, err)
+			t.Fatalf("Save %s: %v", auth.OwnerID, err)
 		}
 	}
 
@@ -122,7 +122,7 @@ func TestAuthorizationMaintenanceQueries_ListRefreshCandidates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	candidates, err := NewAuthorizationMaintenanceQueries(repo.db).ListRefreshCandidates(ctx, now, now, 10)
+	candidates, err := NewProviderAuthorizationQueries(repo.db).ListRefreshCandidates(ctx, now, now, 10)
 	if err != nil {
 		t.Fatalf("ListRefreshCandidates: %v", err)
 	}
@@ -175,11 +175,11 @@ func TestAuthorizationEventQueries_Account(t *testing.T) {
 	second.ProviderAccountID = "account-2"
 	for _, auth := range []*domain.ProviderAuthorization{first, second} {
 		if err := repo.Save(ctx, auth); err != nil {
-			t.Fatalf("Save %s: %v", auth.OwnerUserID, err)
+			t.Fatalf("Save %s: %v", auth.OwnerID, err)
 		}
 	}
 
-	byAccount, err := NewAuthorizationMaintenanceQueries(repo.db).AuthorizationIDsByAccount(ctx, domain.ProviderGitHub, "account-1", "")
+	byAccount, err := NewProviderAuthorizationQueries(repo.db).AuthorizationIDsByAccount(ctx, domain.ProviderGitHub, "account-1", "")
 	if err != nil {
 		t.Fatalf("AuthorizationIDsByAccount: %v", err)
 	}

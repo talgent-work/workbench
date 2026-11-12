@@ -36,10 +36,12 @@ type agentDefinitionDO struct {
 	ID               string `xorm:"id pk varchar(36)"`
 	Capabilities     string `xorm:"capabilities text"`
 	Soul             string `xorm:"soul text"`
-	Version          int    `xorm:"'version' int"`
-	CreatedAt        int64  `xorm:"created_at bigint"`
-	UpdatedAt        int64  `xorm:"updated_at bigint"`
-	DeletedAt        int64  `xorm:"deleted_at bigint"`
+	// ApplicationRemoved records that the owning Application was removed.
+	ApplicationRemoved bool  `xorm:"application_removed"`
+	Version            int   `xorm:"'version' int"`
+	CreatedAt          int64 `xorm:"created_at bigint"`
+	UpdatedAt          int64 `xorm:"updated_at bigint"`
+	DeletedAt          int64 `xorm:"deleted_at bigint"`
 }
 
 func (agentDefinitionDO) TableName() string { return "agent_definition" }
@@ -78,6 +80,9 @@ type agentWorkDO struct {
 	// RepresentedPerson is the person the Work's Agent represents; empty for
 	// one that represents no person.
 	RepresentedPerson string `xorm:"represented_person varchar(255)"`
+	// OwningApplication is the Application that owns the Work; empty for
+	// one no Application owns.
+	OwningApplication string `xorm:"owning_application varchar(36)"`
 	TraceAttributes   string `xorm:"trace_attributes JSON"`
 	HarnessProcess    string `xorm:"harness_process text"`
 	HoldsProcess      bool   `xorm:"holds_process"`

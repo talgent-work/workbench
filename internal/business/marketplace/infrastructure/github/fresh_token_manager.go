@@ -30,7 +30,7 @@ const (
 )
 
 type EnsureFreshUserTokenInput struct {
-	OwnerUserID     string
+	OwnerID         string
 	Provider        domain.Provider
 	AuthorizationID string
 	ForceRefresh    bool
@@ -90,7 +90,7 @@ func newFreshUserTokenManager(cfg Config, httpClient *http.Client, authorization
 }
 
 func (m *FreshUserTokenManager) EnsureFreshUserToken(ctx context.Context, input EnsureFreshUserTokenInput) (*domain.ProviderAuthorization, string, error) {
-	if strings.TrimSpace(input.OwnerUserID) == "" {
+	if strings.TrimSpace(input.OwnerID) == "" {
 		return nil, "", domain.ErrPermissionDenied
 	}
 	auth, err := m.EnsureFreshAuthorization(ctx, input)
@@ -99,7 +99,7 @@ func (m *FreshUserTokenManager) EnsureFreshUserToken(ctx context.Context, input 
 	}
 	// This adapter calls the configured GitHub API for its verified built-in
 	// operations. Arbitrary consumer targets are verified before reaching it.
-	credentials, err := auth.SupplyValidCredentials(ctx, domain.CredentialRequirement{OwnerUserID: input.OwnerUserID, Provider: domain.ProviderGitHub, Applicable: true}, m.now().UTC(), 0, m.authorizationPort())
+	credentials, err := auth.SupplyValidCredentials(ctx, domain.CredentialRequirement{OwnerID: input.OwnerID, Provider: domain.ProviderGitHub, Applicable: true}, m.now().UTC(), 0, m.authorizationPort())
 	if err != nil {
 		return nil, "", authorizationError(err)
 	}
@@ -139,16 +139,16 @@ func (m *FreshUserTokenManager) loadAuthorization(ctx context.Context, input Ens
 		if err != nil {
 			return nil, providerUnavailableForNotFound(err)
 		}
-		if auth.Provider != domain.ProviderGitHub || (input.OwnerUserID != "" && auth.OwnerUserID != input.OwnerUserID) {
+		if auth.Provider != domain.ProviderGitHub || (input.OwnerID != "" && auth.OwnerID != input.OwnerID) {
 			return nil, domain.ErrPermissionDenied
 		}
 		return auth, nil
 	}
-	auth, err := m.authorizations.GetByOwnerAndProvider(ctx, strings.TrimSpace(input.OwnerUserID), domain.ProviderGitHub)
+	auth, err := m.authorizations.GetByOwnerAndProvider(ctx, strings.TrimSpace(input.OwnerID), domain.ProviderGitHub)
 	if err != nil {
 		return nil, providerUnavailableForNotFound(err)
 	}
-	if auth.OwnerUserID != input.OwnerUserID || auth.Provider != domain.ProviderGitHub {
+	if auth.OwnerID != input.OwnerID || auth.Provider != domain.ProviderGitHub {
 		return nil, domain.ErrPermissionDenied
 	}
 	return auth, nil

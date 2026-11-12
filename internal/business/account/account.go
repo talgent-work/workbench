@@ -1,5 +1,6 @@
 // Package account composes the Account context: GitHub sign-in, Login
-// Sessions, Agent Accounts, Identity Token keys and the User Directory.
+// Sessions, Agent Accounts, Applications, Identity Token keys and the User
+// Directory.
 package account
 
 import (
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	integrationmessage "github.com/go-jimu/components/ddd/message"
 	"go.uber.org/fx"
 	"xorm.io/xorm"
 
@@ -49,10 +51,16 @@ type Config struct {
 	AccessTokenLifetime string   `json:"access-token-lifetime" yaml:"access-token-lifetime" toml:"access-token-lifetime"`
 	// AgentTokenLifetime bounds an agent's Identity Token, which is never
 	// refreshed and outlives any run.
-	AgentTokenLifetime      string `json:"agent-token-lifetime" yaml:"agent-token-lifetime" toml:"agent-token-lifetime"`
-	SessionSlidingLifetime  string `json:"session-sliding-lifetime" yaml:"session-sliding-lifetime" toml:"session-sliding-lifetime"`
-	SessionAbsoluteLifetime string `json:"session-absolute-lifetime" yaml:"session-absolute-lifetime" toml:"session-absolute-lifetime"`
-	KeyRotationInterval     string `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
+	AgentTokenLifetime string `json:"agent-token-lifetime" yaml:"agent-token-lifetime" toml:"agent-token-lifetime"`
+	// ApplicationTokenLifetime bounds an Application's Identity Token, which
+	// is short and never refreshed: at most AccessTokenLifetime.
+	ApplicationTokenLifetime string `json:"application-token-lifetime" yaml:"application-token-lifetime" toml:"application-token-lifetime"`
+	// ApplicationSecretOverlap is how long a replaced Client Secret keeps
+	// matching after its Application Owner rotates it.
+	ApplicationSecretOverlap string `json:"application-secret-overlap" yaml:"application-secret-overlap" toml:"application-secret-overlap"`
+	SessionSlidingLifetime   string `json:"session-sliding-lifetime" yaml:"session-sliding-lifetime" toml:"session-sliding-lifetime"`
+	SessionAbsoluteLifetime  string `json:"session-absolute-lifetime" yaml:"session-absolute-lifetime" toml:"session-absolute-lifetime"`
+	KeyRotationInterval      string `json:"key-rotation-interval" yaml:"key-rotation-interval" toml:"key-rotation-interval"`
 	// KeyOverlap is how long a new key is published before it signs.
 	KeyOverlap string `json:"key-overlap" yaml:"key-overlap" toml:"key-overlap"`
 	// MasterKeyPath is a file holding 32 base64-encoded bytes that seal
@@ -73,6 +81,8 @@ type GitHubConfig struct {
 type policy struct {
 	lifetimes        domain.SessionLifetimes
 	agentToken       time.Duration
+	applicationToken time.Duration
+	secretOverlap    time.Duration
 	rotationInterval time.Duration
 	overlap          time.Duration
 }
@@ -86,6 +96,8 @@ func (c Config) policy() (policy, error) {
 	}{
 		{"access-token-lifetime", c.AccessTokenLifetime, &p.lifetimes.Access},
 		{"agent-token-lifetime", c.AgentTokenLifetime, &p.agentToken},
+		{"application-token-lifetime", c.ApplicationTokenLifetime, &p.applicationToken},
+		{"application-secret-overlap", c.ApplicationSecretOverlap, &p.secretOverlap},
 		{"session-sliding-lifetime", c.SessionSlidingLifetime, &p.lifetimes.Sliding},
 		{"session-absolute-lifetime", c.SessionAbsoluteLifetime, &p.lifetimes.Absolute},
 		{"key-rotation-interval", c.KeyRotationInterval, &p.rotationInterval},
@@ -102,6 +114,12 @@ func (c Config) policy() (policy, error) {
 	}
 	if p.agentToken < p.lifetimes.Access {
 		return policy{}, errors.New("account config: agent-token-lifetime must not be shorter than access-token-lifetime")
+	}
+	// An Application's token is short like a person's: the entry verifies it
+	// without calling Account, so its lifetime bounds how long a revoked
+	// Client Secret or a removed Application keeps passing.
+	if p.applicationToken > p.lifetimes.Access {
+		return policy{}, errors.New("account config: application-token-lifetime must not be longer than access-token-lifetime")
 	}
 	return p, nil
 }
@@ -161,7 +179,7 @@ func newRuntime(cfg Config) (runtime, error) {
 			MasterKey:             deriveKey(master, "signing-key-seal"),
 			Overlap:               p.overlap,
 			RotationInterval:      p.rotationInterval,
-			LongestTokenLifetime:  max(p.lifetimes.Access, p.agentToken),
+			LongestTokenLifetime:  max(p.lifetimes.Access, p.agentToken, p.applicationToken),
 			VerificationRetention: p.lifetimes.Absolute,
 		},
 		HTTP: accounthttp.Config{
@@ -181,7 +199,25 @@ func newRuntime(cfg Config) (runtime, error) {
 	}, nil
 }
 
-func newApplication(engine *xorm.Engine, p policy, keys *infrastructure.SigningKeys, github *infrastructure.GitHubIdentity) *application.Application {
+type applicationDependencies struct {
+	fx.In
+	Engine *xorm.Engine
+	Policy policy
+	Keys   *infrastructure.SigningKeys
+	GitHub *infrastructure.GitHubIdentity
+	// Bus publishes Application Removed; without it Agent never learns of a
+	// removal, and the removed Application's Works stop at their idle
+	// timeout.
+	Bus    integrationmessage.Publisher `optional:"true"`
+	Logger *slog.Logger
+}
+
+func newApplication(deps applicationDependencies) *application.Application {
+	engine, p, keys, github := deps.Engine, deps.Policy, deps.Keys, deps.GitHub
+	var publisher application.AccountPublisherPort
+	if deps.Bus != nil {
+		publisher = infrastructure.NewAccountPublisher(deps.Bus)
+	}
 	sessions := infrastructure.NewLoginSessionRepository(engine)
 	return application.NewApplication(application.Dependencies{
 		Accounts:           infrastructure.NewAccountRepository(engine),
@@ -192,6 +228,13 @@ func newApplication(engine *xorm.Engine, p policy, keys *infrastructure.SigningK
 		Lifetimes:          p.lifetimes,
 		AgentAccounts:      infrastructure.NewAgentAccountRepository(engine),
 		AgentTokenLifetime: p.agentToken,
+
+		Applications:             infrastructure.NewApplicationRepository(engine),
+		ApplicationQueries:       infrastructure.NewApplicationQueries(engine),
+		ApplicationTokenLifetime: p.applicationToken,
+		SecretOverlap:            p.secretOverlap,
+		Publisher:                publisher,
+		Logger:                   deps.Logger,
 	})
 }
 
@@ -218,10 +261,13 @@ func register(r registration) {
 	private := connectserver.New(r.Logger)
 	accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
 	accountprivatev1connect.RegisterAgentAccountServiceHandler(private, accountconnect.NewAgentAccounts(r.App))
+	accountprivatev1connect.RegisterApplicationOwnershipServiceHandler(private, accountconnect.NewApplicationOwnership(r.App))
 	connectserver.Mount(r.Mux, private)
-	// The browser reads who is signed in under the identity the entry verified.
+	// The browser reads who is signed in, and a person registers and reads
+	// their Applications, under the identity the entry verified.
 	public := connectserver.New(r.Logger, authn.NewPrincipalInterceptor())
 	accountpublicv1connect.RegisterSessionServiceHandler(public, accountconnect.Session{})
+	accountpublicv1connect.RegisterApplicationServiceHandler(public, accountconnect.NewApplications(r.App))
 	connectserver.Mount(r.Mux, public)
 }
 

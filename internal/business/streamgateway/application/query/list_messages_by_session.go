@@ -23,7 +23,7 @@ func (h *ListMessagesBySessionHandler) Handle(ctx context.Context, req ListMessa
 	if req.AgentWorkID == "" {
 		return nil, ErrSessionIDRequired
 	}
-	if err := h.access.AuthorizeRead(ctx, req.ActorUserID, req.Admission, req.AgentWorkID); err != nil {
+	if err := h.access.AuthorizeRead(ctx, req.ReaderID, req.Admission, req.AgentWorkID); err != nil {
 		return nil, err
 	}
 	req.Kinds = normalizeMessageFilters(req.Kinds)

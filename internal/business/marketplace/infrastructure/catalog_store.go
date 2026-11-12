@@ -28,8 +28,8 @@ type CatalogStore struct {
 	logger                 *slog.Logger
 }
 
-var _ application.CatalogPort = (*CatalogStore)(nil)
-var _ application.CatalogPublicationPort = (*CatalogStore)(nil)
+var _ application.PluginCatalogQueryRepository = (*CatalogStore)(nil)
+var _ application.CatalogStorePort = (*CatalogStore)(nil)
 
 func NewCatalogStore(engine *xorm.Engine, directory, name, owner string, logger *slog.Logger) (*CatalogStore, error) {
 	if engine == nil || !filepath.IsAbs(directory) || name == "" || owner == "" || logger == nil {

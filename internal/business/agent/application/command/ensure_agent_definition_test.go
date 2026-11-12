@@ -70,7 +70,7 @@ func changeDefinition(ctx context.Context, store *definitionFaultStore, operatio
 		_, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(ctx, command.EnsureAgentDefinition{AgentDefinitionInput: domain.AgentDefinitionInput{Owners: []string{"jack"}, UsageScope: domain.UsageScope{Kind: "employee", Reference: "jack"}, Purpose: "work"}, EmployeeDisplayName: "Jack"})
 		return err
 	}
-	_, err := command.NewChangeAgentAppearanceHandler(store).Handle(ctx, command.ChangeAgentAppearance{AgentID: store.value.ID, Actor: "jack", Name: "Scout", Glyph: "rocket", Color: "violet"})
+	_, err := command.NewChangeAgentAppearanceHandler(store).Handle(ctx, command.ChangeAgentAppearance{AgentID: store.value.ID, Requester: domain.DefinitionRequester{ID: "jack"}, Name: "Scout", Glyph: "rocket", Color: "violet"})
 	return err
 }
 
@@ -185,7 +185,7 @@ func TestDefinitionInitializationAppliesCallerConfigurationForEveryPurpose(t *te
 			store := &definitionFaultStore{}
 			configuration := domain.AgentDefinitionInput{Owners: []string{"owner"},
 				AgentName: "Caller supplied name", UsageScope: domain.UsageScope{Kind: "project", Reference: "project"}, Purpose: purpose,
-				Capabilities: domain.CapabilityConfiguration{StartupAgent: "custom:reviewer", RequiredPlugins: []string{"custom"}},
+				Capabilities: domain.CapabilityConfiguration{RequiredPlugins: []string{"custom"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "custom:reviewer"},
 			}
 			result, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: configuration})
 			require.NoError(t, err)
@@ -202,9 +202,9 @@ func TestDefinitionInitializationAppliesCallerConfigurationForEveryPurpose(t *te
 // does, keeps the appearance its human chose; only the human may change it.
 func TestEnsureKeepsAChosenAppearanceAndOnlyTheHumanChangesIt(t *testing.T) {
 	store := &definitionFaultStore{value: employeeDefinition(t)}
-	_, err := command.NewChangeAgentAppearanceHandler(store).Handle(t.Context(), command.ChangeAgentAppearance{AgentID: store.value.ID, Actor: "someone-else", Name: "Imposter", Glyph: "cat", Color: "rose"})
+	_, err := command.NewChangeAgentAppearanceHandler(store).Handle(t.Context(), command.ChangeAgentAppearance{AgentID: store.value.ID, Requester: domain.DefinitionRequester{ID: "someone-else"}, Name: "Imposter", Glyph: "cat", Color: "rose"})
 	require.ErrorIs(t, err, domain.ErrAgentAppearanceForbidden)
-	_, err = command.NewChangeAgentAppearanceHandler(store).Handle(t.Context(), command.ChangeAgentAppearance{AgentID: store.value.ID, Actor: "jack", Name: "Scout", Glyph: "unicorn", Color: "rose"})
+	_, err = command.NewChangeAgentAppearanceHandler(store).Handle(t.Context(), command.ChangeAgentAppearance{AgentID: store.value.ID, Requester: domain.DefinitionRequester{ID: "jack"}, Name: "Scout", Glyph: "unicorn", Color: "rose"})
 	require.ErrorIs(t, err, domain.ErrInvalidAgentAppearance)
 	require.Zero(t, store.saves)
 

@@ -29,7 +29,7 @@ type MessageHistoryPage struct {
 
 type ListMessagesBySessionRequest struct {
 	IncludeUnattributedErrors bool
-	ActorUserID               string
+	ReaderID                  string
 	Admission                 ReaderAdmission
 	Before                    *MessageHistoryCursor
 	From                      *MessageHistoryCursor

@@ -23,9 +23,10 @@ func NewWorkAccessHandler(app *application.Application, token string) *WorkAcces
 }
 
 var readBases = map[domain.ReadBasis]agentprivatev1.WorkReadBasis{
-	domain.ReadAsOwner:  agentprivatev1.WorkReadBasis_WORK_READ_BASIS_OWNER,
-	domain.ReadAsShare:  agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE,
-	domain.ReadAsPublic: agentprivatev1.WorkReadBasis_WORK_READ_BASIS_PUBLIC,
+	domain.ReadAsOwner:            agentprivatev1.WorkReadBasis_WORK_READ_BASIS_OWNER,
+	domain.ReadAsShare:            agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE,
+	domain.ReadAsPublic:           agentprivatev1.WorkReadBasis_WORK_READ_BASIS_PUBLIC,
+	domain.ReadAsApplicationOwner: agentprivatev1.WorkReadBasis_WORK_READ_BASIS_APPLICATION_OWNER,
 }
 
 func (h *WorkAccessHandler) AdmitWorkReader(ctx context.Context, request *agentprivatev1.AdmitWorkReaderRequest) (*agentprivatev1.AdmitWorkReaderResponse, error) {

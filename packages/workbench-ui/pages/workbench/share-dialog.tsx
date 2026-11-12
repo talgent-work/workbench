@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Alert, Button, ListBox, Modal, SearchField, Spinner } from "@heroui/react";
 import { Share2 } from "lucide-react";
-import { useDirectoryUsers, useGrantPersonalWorkShare, useRevokeWorkShare, useShareCandidates } from "../../lib/personal-work-service";
+import { useDirectoryUsers, useGrantWorkShare, useRevokeWorkShare, useShareCandidates } from "../../lib/standalone-work-service";
 import { personName } from "../../lib/user-display";
 import { Person } from "./person";
 
-/** Share: the people a Personal Work's owner lets read it. Anyone in the
+/** Share: the people a Standalone Work's owner lets read it. Anyone in the
  * User Directory may be added; the Work stays private to the rest. */
 export function ShareButton({ workId, ownerId, readerIds }: { workId: string; ownerId: string; readerIds: string[] }) {
   const [open, setOpen] = useState(false);
@@ -23,7 +23,7 @@ function ShareReaders({ workId, ownerId, readerIds }: { workId: string; ownerId:
   const [query, setQuery] = useState("");
   const candidates = useShareCandidates(query);
   const readers = useDirectoryUsers(readerIds);
-  const grant = useGrantPersonalWorkShare(workId);
+  const grant = useGrantWorkShare(workId);
   const revoke = useRevokeWorkShare(workId);
   const offered = (candidates.data ?? []).filter(user => user.userId !== ownerId && !readerIds.includes(user.userId));
   const error = grant.error ?? revoke.error;

@@ -19,7 +19,7 @@ func TestAuthorizationReferencesArePersonalAndPreserveInactiveIdentity(t *testin
 	id := uuid.NewString()
 	for _, record := range []struct{ id, owner, state string }{{id, owner, "reconnect_required"}, {uuid.NewString(), other, "active"}} {
 		_, err := db.Exec(`INSERT INTO scm_provider_authorization
-		 (id,owner_user_id,provider,status,access_token_ciphertext,refresh_token_ciphertext)
+		 (id,owner_id,provider,status,access_token_ciphertext,refresh_token_ciphertext)
 		 VALUES (?,?,?,?,?,?)`, record.id, record.owner, "github", record.state, "access-secret-canary", "refresh-secret-canary")
 		require.NoError(t, err)
 	}
@@ -36,7 +36,7 @@ func TestAuthorizationReferencesArePersonalAndPreserveInactiveIdentity(t *testin
 	facts, err := port.ListPersonalAuthorizations(t.Context(), owner)
 	require.NoError(t, err)
 	require.Len(t, facts, 1)
-	require.Equal(t, owner, facts[0].OwnerUserID)
+	require.Equal(t, owner, facts[0].OwnerID)
 	require.Equal(t, id, facts[0].AuthorizationID, "reconnection restores this reference instead of adding a later authorization")
 	_, err = db.Exec("UPDATE scm_provider_authorization SET status='revoked' WHERE id=?", id)
 	require.NoError(t, err)

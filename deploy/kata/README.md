@@ -1,71 +1,43 @@
-# Kata on K3s
+# Reference sandbox runtime: Kata Containers on k3s
 
-The accepted runtime is `kata-qemu-runtime-rs`, installed by the official 4.1.0
-chart. The installer verifies the chart checksum and pins the node installer
-image digest. QEMU Rust is the upstream 4.x default; the Go runtime is deprecated.
-Only nodes labeled `talgent.io/kata-install=true` are selected, sequentially.
-Installation restarts the node's container runtime. Plan this against live work.
+Sandboxes need a RuntimeClass that runs each Pod in its own VM. This directory is the bundled way
+to provide one on k3s: Kata Containers 4.1.0, RuntimeClass `kata-qemu-runtime-rs` (the QEMU
+runtime-rs, Kata 4.x's default). A cluster that already has a VM-isolating runtime uses it
+instead and sets `TALGENT_SANDBOX_RUNTIME_CLASS` ([self-hosting](../../docs/self-hosting.md#2-prerequisites)).
 
-Before labeling a node:
+## Install
 
-1. Verify VMX/SVM, `/dev/kvm`, KVM API version 12, available disk/memory and the
-   existing K3s/containerd configuration. A working KVM ioctl is not a VM test.
-2. Preserve any customized K3s `config-v3.toml.tmpl`. It must import the Kata
-   drop-in directory. The current K3s default data directory requires the
-   top-level TOML entry `imports = ["/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/*.toml"]`.
-   Merge this with existing imports; do not replace custom runtime definitions.
-   Restart K3s and verify the rendered configuration imports this directory.
-   The upstream installer refuses to continue if the rendered config cannot
-   load its drop-ins. This was observed on the current customized K3s node.
-3. Enable `flannel-backend: wireguard-native` in the K3s server configuration,
-   retain the network policy controller, restart the affected nodes, and verify
-   every node advertises `flannel.alpha.coreos.com/backend-type=wireguard` with a public key in `backend-data`.
-   Check actual WireGuard interfaces/peers and cross-node encrypted traffic
-   before sending production Vault materials. A management token does not
-   encrypt transport. All nodes need kernel WireGuard support.
-4. Label only the verified nodes and run `scripts/deploy/install-kata.sh`.
-   The script intentionally does not silently edit host configuration.
+`scripts/deploy/install-kata.sh` installs the kata-deploy chart, checksum-verified, with
+`values.yaml` and its node installer image pinned by digest, on nodes labeled
+`talgent.io/kata-install=true`, one at a time. It restarts each node's container runtime, so drain
+running sandboxes first. It needs `helm`, `kubectl`, `curl` and `sha256sum`.
 
-Use the workload image's non-root user and the upstream root init/egress containers.
-Keep fsGroup 1000, shared HOME, Workspace and Artifact semantics. Capacity
-experiments are outside the accepted scope.
+Check each node before labeling it:
 
-`values.yaml` overrides one upstream default: virtiofsd runs with 16 request threads
-instead of 1. A single thread forwards guest file operations one at a time, and
-on JuiceFS every close waits for its object upload, so parallel writers in a
-sandbox ran serially: a 2602-file checkout with 8 git workers took 277 s with one
-thread and 113 s with 16, matching a runc pod on the same mount. The drop-in replaces the whole
-upstream argument list, so recheck it against the runtime-rs default
-(`DEFVIRTIOFSEXTRAARGS`) when the chart version changes. Applying it reruns
-`scripts/deploy/install-kata.sh`, which restarts each selected node's container
-runtime; only sandboxes started afterwards get the new virtiofsd arguments.
+1. **Virtualization.** VMX or SVM is enabled, `/dev/kvm` exists, and the KVM API version is 12.
+2. **containerd drop-ins.** k3s's containerd config imports the Kata drop-in directory. With a
+   custom `config-v3.toml.tmpl`, merge this top-level entry into it and restart k3s:
+   `imports = ["/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/*.toml"]`.
+   The installer refuses a config that cannot load its drop-ins.
+3. **Encrypted pod network** (the reference network, verified by `apply-opensandbox.sh`): k3s
+   server option `flannel-backend: wireguard-native` with the network policy controller on; every
+   node then reports `flannel.alpha.coreos.com/backend-type=wireguard` and a public key in
+   `flannel.alpha.coreos.com/backend-data`. Nodes need kernel WireGuard support.
 
-Deploy the complete matching image set with `scripts/deploy/apply-opensandbox.sh`.
-That command refuses a missing Kata RuntimeClass or non-WireGuard node backend,
-and uses official Server v0.2.2 and egress v1.1.7 images pinned by digest. Sandboxes run the official execd v1.1.0 image, also pinned by digest; each Work has its own HOME, so execd needs no NSS bootstrap patch.
-The sandbox NetworkPolicies are declared in `deploy/k3s/workbench/sandbox.yaml`.
-Telemetry uses the `otel-collector.talgent:4318` Service in front of the
-in-cluster Collector Pods (`deploy/k3s/workbench/otel-collector.yaml`).
-NetworkPolicy admits port 4318 of the Collector Pods, selected by namespace and
-Pod labels, which is the backend CNI sees after Service DNAT. Agent provisioning
-excludes only the Service's ClusterIP from nft denies, never the node IP; nft
-blocks direct node traffic before host DNAT. Verify actual Service delivery and
-direct node port denials together.
-DNS and Collector service exceptions follow the same two-layer policy check.
+Done when `kubectl get runtimeclass kata-qemu-runtime-rs` succeeds and a sandbox Pod reaches
+`Running`.
 
-Upstream egress exports the public MITM certificate and upstream execd bootstrap
-builds `/opt/opensandbox/merged-ca-certificates.pem`. The shared runtime directory
-uses the upstream writable mount; the workload's fsGroup permits bundle creation.
-Bootstrap configures Node/Python trust; the sandbox image points Git/curl at the
-same merged bundle. CA private keys and Vault sockets stay in the sidecar.
+## Tuning
 
-There are no local CA, permission or management-port patches. The egress API uses
-upstream port 18080 with its independent authentication. Read-only public CA,
-CA-specific fail-closed startup, CA persistence across sidecar restarts, reserved
-port protection and immediate request-level Vault revocation are not promised.
-Execd uses the upstream PTY protocol without a recovery patch; see
-the deployment runbook's native process recovery.
+`values.yaml` runs virtiofsd with 16 request threads instead of 1: with one thread, parallel file
+writes on a JuiceFS mount (each close waits for its object upload) run serially, so checkouts slow
+down several times over. The override replaces the whole upstream argument list; recheck it
+against runtime-rs's `DEFVIRTIOFSEXTRAARGS` when the chart version changes. Re-running the
+installer applies a change; only sandboxes started afterwards get it.
 
-Sources: [Kata chart](https://kata-containers.github.io/kata-containers/installation/#helm-chart),
+The RuntimeClass's Pod overhead (250m CPU, 320Mi) is part of controlplane's `computer.cloud.demand`;
+keep the two in step.
+
+Sources: [Kata Helm chart](https://kata-containers.github.io/kata-containers/installation/#helm-chart),
 [Kata 4.1.0](https://github.com/kata-containers/kata-containers/releases/tag/4.1.0),
-[K3s networking](https://docs.k3s.io/networking/basic-network-options).
+[k3s networking](https://docs.k3s.io/networking/basic-network-options).

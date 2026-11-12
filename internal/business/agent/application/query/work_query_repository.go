@@ -7,7 +7,7 @@ import (
 
 // WorkQueryRepository reads Works without loading the AgentWork: their
 // views, lists, origins and lifecycle events, first-start preparations,
-// recent repositories, Personal Works and Library, history reports, and the
+// recent repositories, Standalone Works and Library, history reports, and the
 // facts Work access is decided from.
 type WorkQueryRepository interface {
 	// GetWorkView reads the Work's lifecycle, its current start and its
@@ -25,10 +25,13 @@ type WorkQueryRepository interface {
 	// ListRecentRepositoryIDs reads repository identities from the owner's
 	// own Works, most recently created first and without duplicates.
 	ListRecentRepositoryIDs(ctx context.Context, owner string) ([]string, error)
-	// ListPersonalWorks lists a definition's Works without a Subject or a
-	// Project, most recently updated first.
-	ListPersonalWorks(ctx context.Context, agentID string, limit int) ([]PersonalWorkSummary, error)
-	// ListLibraryWorks lists the person's Personal Works under their
+	// ListStandaloneWorks lists a definition's Works without a Subject or a
+	// Project, most recently updated first, narrowed as the filter states.
+	ListStandaloneWorks(ctx context.Context, filter StandaloneWorksFilter) ([]StandaloneWorkSummary, error)
+	// ListWorkAttributions reads those of the named Works that are the
+	// definition's Standalone Works, with their Work Labels.
+	ListWorkAttributions(ctx context.Context, agentID string, workIDs []string) ([]WorkAttribution, error)
+	// ListLibraryWorks lists the person's Standalone Works under their
 	// definition and the Works with an input source they hold a Work Share
 	// in, closed ones included, at most limit.
 	ListLibraryWorks(ctx context.Context, person, agentID string, limit int) ([]LibraryWork, error)

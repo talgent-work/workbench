@@ -69,7 +69,7 @@ type WorkStartupRequest struct {
 // workspace preparation has ended ("checked_out" or "not_checked_out").
 type WorkStartupRepository struct{ RepositoryID, Name, BaseBranch, CheckoutStatus, CheckoutReason string }
 
-type GetWorkView struct{ ActorUserID, WorkID string }
+type GetWorkView struct{ ActorID, WorkID string }
 
 type GetWorkViewHandler struct {
 	authorization access.WorkAuthorizer
@@ -86,7 +86,7 @@ func (h *GetWorkViewHandler) Handle(ctx context.Context, request GetWorkView) (W
 	if strings.TrimSpace(request.WorkID) == "" {
 		return WorkView{}, domain.ErrInvalidWork
 	}
-	if err := h.authorization.AuthorizeWork(ctx, request.ActorUserID, request.WorkID); err != nil {
+	if err := h.authorization.AuthorizeWork(ctx, request.ActorID, request.WorkID); err != nil {
 		return WorkView{}, err
 	}
 	value, err := h.reader.GetWorkView(ctx, request.WorkID)
@@ -105,7 +105,7 @@ func (h *GetWorkViewHandler) Handle(ctx context.Context, request GetWorkView) (W
 	case "working":
 		value.AllowedActions = []string{"stop"}
 		// Only the person who started a Managed Work switches its mode.
-		if value.PermissionMode != "" && domain.AdmitPermissionModeRequester(value.StartedBy, request.ActorUserID) == nil {
+		if value.PermissionMode != "" && domain.AdmitPermissionModeRequester(value.StartedBy, request.ActorID) == nil {
 			value.AllowedActions = append(value.AllowedActions, "set_permission_mode")
 		}
 	case "stopping":

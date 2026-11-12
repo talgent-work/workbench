@@ -18,20 +18,25 @@ import (
 )
 
 type fakeSpanQueryRepository struct {
-	listBySessionFn func(context.Context, query.SpanListOptions) (*query.SpanListResult, error)
-	listByOwnerFn   func(context.Context, query.SpanListOptions) (*query.SpanListResult, error)
-	listFn          func(context.Context, string, int) ([]*query.Span, error)
-	getFn           func(context.Context, query.SpanIdentity) (*query.Span, error)
+	listBySessionFn     func(context.Context, query.SpanListOptions) (*query.SpanListResult, error)
+	listByOwnerFn       func(context.Context, query.SpanListOptions) (*query.SpanListResult, error)
+	listByApplicationFn func(context.Context, query.SpanListOptions) (*query.SpanListResult, error)
+	listFn              func(context.Context, string, int) ([]*query.Span, error)
+	getFn               func(context.Context, query.SpanIdentity) (*query.Span, error)
 }
 
 type fakeTraceMetricRepository struct {
 	getBySessionFn func(context.Context, query.TraceMetricOptions) (*query.TraceMetricResult, error)
 	getByProjectFn func(context.Context, query.TraceMetricOptions) (*query.TraceMetricResult, error)
 	getByPersonFn  func(context.Context, string, query.TraceMetricOptions) (*query.TraceMetricResult, error)
+	// byApplication answers an Application's measurements; works are the
+	// Works it has measurements of.
+	byApplicationFn func(context.Context, string, query.ApplicationMetricOptions) (*query.TraceMetricResult, error)
+	works           []string
 }
 
-// fakeTraceAuthorizer stands for both the Project access decision and
-// Agent's Work access, recording whom each was asked about.
+// fakeTraceAuthorizer stands for the Project access decision, Agent and
+// Account, recording whom each was asked about.
 type fakeTraceAuthorizer struct {
 	projectActor string
 	projectID    string
@@ -39,6 +44,34 @@ type fakeTraceAuthorizer struct {
 	workActor    string
 	workID       string
 	workErr      error
+	// attributions are the Works each Application owns with their labels.
+	attributions map[string]map[string]map[string]string
+	// owners are the Application Owners Account answers.
+	owners map[string]string
+}
+
+func (f *fakeTraceAuthorizer) ListWorkAttributions(_ context.Context, applicationID string, workIDs []string) ([]query.WorkAttribution, error) {
+	var works []query.WorkAttribution
+	for _, id := range workIDs {
+		if labels, ok := f.attributions[applicationID][id]; ok {
+			works = append(works, query.WorkAttribution{WorkID: id, Labels: labels})
+		}
+	}
+	return works, nil
+}
+
+func (f *fakeTraceAuthorizer) GetApplication(_ context.Context, applicationID string) (query.OwnedApplication, error) {
+	owner, ok := f.owners[applicationID]
+	if !ok {
+		return query.OwnedApplication{}, query.ErrApplicationUnknown
+	}
+	return query.OwnedApplication{ID: applicationID, OwnerUserID: owner}, nil
+}
+
+// fakeEvidence is the native evidence of spans and events together.
+type fakeEvidence struct {
+	fakeSpanQueryRepository
+	fakeEventRepository
 }
 
 func (f *fakeTraceAuthorizer) AuthorizeProjectReader(_ context.Context, readerID, projectID string) error {
@@ -80,6 +113,13 @@ func (f fakeSpanQueryRepository) ListByOwner(ctx context.Context, opts query.Spa
 	return nil, nil
 }
 
+func (f fakeSpanQueryRepository) ListByApplication(ctx context.Context, opts query.SpanListOptions) (*query.SpanListResult, error) {
+	if f.listByApplicationFn != nil {
+		return f.listByApplicationFn(ctx, opts)
+	}
+	return &query.SpanListResult{}, nil
+}
+
 func (f fakeSpanQueryRepository) GetByIdentity(ctx context.Context, identity query.SpanIdentity) (*query.Span, error) {
 	if f.getFn != nil {
 		return f.getFn(ctx, identity)
@@ -106,6 +146,17 @@ func (f fakeTraceMetricRepository) GetByPerson(ctx context.Context, personID str
 		return f.getByPersonFn(ctx, personID, opts)
 	}
 	return nil, nil
+}
+
+func (f fakeTraceMetricRepository) GetByApplication(ctx context.Context, applicationID string, opts query.ApplicationMetricOptions) (*query.TraceMetricResult, error) {
+	if f.byApplicationFn != nil {
+		return f.byApplicationFn(ctx, applicationID, opts)
+	}
+	return &query.TraceMetricResult{}, nil
+}
+
+func (f fakeTraceMetricRepository) ListApplicationWorks(_ context.Context, _ string, _, _ time.Time, limit int) ([]string, error) {
+	return f.works[:min(len(f.works), limit)], nil
 }
 
 // Intent: a valid list request should return repository spans as the public
@@ -615,25 +666,26 @@ func TestGetSpan_NonWorkSpanWithoutProjectID_ReturnsPermissionDenied(t *testing.
 	}
 }
 
-func newTestApplication(repo query.SpanQueryRepository, authorities ...*fakeTraceAuthorizer) *Handler {
+func newTestApplication(repo fakeSpanQueryRepository, authorities ...*fakeTraceAuthorizer) *Handler {
 	return newTestApplicationWithMetrics(repo, fakeTraceMetricRepository{}, authorities...)
 }
 
 // newTestApplicationWithMetrics admits every reader unless given an authority;
 // an explicit nil authority leaves both decisions unavailable.
-func newTestApplicationWithMetrics(repo query.SpanQueryRepository, metrics query.TraceMetricRepository, authorities ...*fakeTraceAuthorizer) *Handler {
+func newTestApplicationWithMetrics(repo fakeSpanQueryRepository, metrics fakeTraceMetricRepository, authorities ...*fakeTraceAuthorizer) *Handler {
 	return newTestApplicationWithEvents(repo, metrics, fakeEventRepository{}, authorities...)
 }
 
-func newTestApplicationWithEvents(repo query.SpanQueryRepository, metrics query.TraceMetricRepository, events query.EventRepository, authorities ...*fakeTraceAuthorizer) *Handler {
+func newTestApplicationWithEvents(repo fakeSpanQueryRepository, metrics fakeTraceMetricRepository, events fakeEventRepository, authorities ...*fakeTraceAuthorizer) *Handler {
 	authority := &fakeTraceAuthorizer{}
 	if len(authorities) > 0 {
 		authority = authorities[0]
 	}
+	evidence := fakeEvidence{repo, events}
 	if authority == nil {
-		return NewHandler(application.NewApplication(query.NewQueries(repo, metrics, events, nil, nil)))
+		return NewHandler(application.NewApplication(query.NewQueries(evidence, metrics, nil, nil, nil)))
 	}
-	return NewHandler(application.NewApplication(query.NewQueries(repo, metrics, events, authority, authority)))
+	return NewHandler(application.NewApplication(query.NewQueries(evidence, metrics, authority, authority, authority)))
 }
 
 func sampleSpan(start time.Time) *query.Span {

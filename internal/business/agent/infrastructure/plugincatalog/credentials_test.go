@@ -28,7 +28,7 @@ func TestCredentialSupplyRetainsOwnerAuthorizationAndTarget(t *testing.T) {
 	t.Cleanup(server.Close)
 	client, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL, CredentialToken: "service-secret"})
 	require.NoError(t, err)
-	input := command.RepositoryCredentialRequest{OwnerUserID: "owner", AuthorizationID: "retained-authorization", RepositoryID: "123", CloneURL: "https://github.com/acme/project.git"}
+	input := command.RepositoryCredentialRequest{OwnerID: "owner", AuthorizationID: "retained-authorization", RepositoryID: "123", CloneURL: "https://github.com/acme/project.git"}
 	material, err := client.SupplyRepositoryCredential(t.Context(), input)
 	require.NoError(t, err)
 	require.Equal(t, input, service.received)
@@ -55,7 +55,7 @@ func TestCredentialSupplyDoesNotFollowRedirect(t *testing.T) {
 		}))
 		client, err := plugincatalog.NewClient(source.Client(), plugincatalog.Config{Address: source.URL, CredentialToken: "service-secret"})
 		require.NoError(t, err)
-		material, err := client.SupplyRepositoryCredential(t.Context(), command.RepositoryCredentialRequest{OwnerUserID: "owner", AuthorizationID: "retained"})
+		material, err := client.SupplyRepositoryCredential(t.Context(), command.RepositoryCredentialRequest{OwnerID: "owner", AuthorizationID: "retained"})
 		source.Close()
 		require.Error(t, err)
 		require.Empty(t, material.Password)
@@ -74,6 +74,6 @@ func (s *credentialService) SupplyRepositoryCredential(ctx context.Context, r *m
 	if s.reject || info.RequestHeader().Get("Authorization") != "Bearer service-secret" || info.RequestHeader().Get(authn.HeaderServiceID) != "agent" || info.RequestHeader().Get(authn.HeaderDelegatedUserID) != "owner" {
 		return nil, connect.NewError(connect.CodePermissionDenied, "")
 	}
-	s.received = command.RepositoryCredentialRequest{OwnerUserID: r.OwnerUserId, AuthorizationID: r.AuthorizationId, RepositoryID: r.RepositoryId, CloneURL: r.CloneUrl}
+	s.received = command.RepositoryCredentialRequest{OwnerID: r.OwnerUserId, AuthorizationID: r.AuthorizationId, RepositoryID: r.RepositoryId, CloneURL: r.CloneUrl}
 	return &marketplaceprivatev1.SupplyRepositoryCredentialResponse{Username: "x-access-token", Password: "provider-secret", ExpiresAtUnixMs: 1900000000000}, nil
 }

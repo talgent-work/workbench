@@ -35,8 +35,8 @@ export function useProviderAuthorizationCallback() {
       notify(`provider:${provider}`, "success", `${name} connected`, `Signed in as ${authorization.providerLogin}. Works you start from now on can use it.`);
       navigate(returnTo, { replace: true });
     }, () => {
-      notify(`provider:${provider}`, "danger", `${name} couldn’t be connected`, "Start connecting again from the Provider page.");
-      navigate(`/marketplace/providers/${provider}`, { replace: true });
+      notify(`provider:${provider}`, "danger", `${name} couldn’t be connected`, "Try connecting again.");
+      navigate(takeProviderReturn(provider), { replace: true });
     });
   }, [pending, declined, code, state, navigate, cache]);
   return pending;

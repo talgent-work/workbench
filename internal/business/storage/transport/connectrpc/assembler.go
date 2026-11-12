@@ -67,12 +67,12 @@ func directoryFileToProto(file application.DirectoryFile) *storageprivatev1.File
 func storedFileToProto(file application.StoredFile) *storageprivatev1.File {
 	return &storageprivatev1.File{
 		Position: positionToProto(file.Position), SizeBytes: file.SizeBytes, ContentType: file.ContentType(), UpdatedAt: timestamppb.New(file.ModifiedAt),
-		UploaderUserId: file.Attributes.UploaderUserID, WorkId: file.Attributes.WorkID,
+		UploaderUserId: file.Attributes.UploaderUserID, UploaderApplicationId: file.Attributes.UploaderApplicationID, WorkId: file.Attributes.WorkID,
 	}
 }
 
 func shareLinkToProto(link application.ShareLinkView) *storageprivatev1.ShareLink {
-	return &storageprivatev1.ShareLink{Token: link.Token, Url: link.URL, CreatedByUserId: link.CreatedBy, CreatedAt: timestamppb.New(link.CreatedAt)}
+	return &storageprivatev1.ShareLink{Token: link.Token, Url: link.URL, CreatedByUserId: link.CreatedBy.UserID, CreatedByApplicationId: link.CreatedBy.ApplicationID, CreatedAt: timestamppb.New(link.CreatedAt)}
 }
 
 func mountGrantToProto(grant application.MountGrant) *storageprivatev1.MountGrant {

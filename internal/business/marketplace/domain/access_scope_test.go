@@ -11,7 +11,7 @@ import (
 
 func activeAuthorization(t *testing.T) *domain.ProviderAuthorization {
 	t.Helper()
-	auth, err := domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{OwnerUserID: "owner", Provider: domain.ProviderGitHub, ProviderAccountID: "1", ProviderLogin: "octocat", AccessTokenCiphertext: "token"})
+	auth, err := domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{OwnerID: "owner", Provider: domain.ProviderGitHub, ProviderAccountID: "1", ProviderLogin: "octocat", AccessTokenCiphertext: "token"})
 	require.NoError(t, err)
 	return auth
 }
@@ -46,7 +46,7 @@ func TestReauthorizationAsAnotherAccountDropsTheScope(t *testing.T) {
 	}{{"1", true}, {"2", false}} {
 		auth := activeAuthorization(t)
 		require.NoError(t, auth.ObserveAccessScope(domain.AccessScope{ObservedAt: time.Now(), Accounts: []domain.ScopeAccount{{InstallationID: "9", Login: "acme"}}}))
-		require.NoError(t, auth.ReplaceWith(domain.ProviderAuthorizationInput{OwnerUserID: "owner", Provider: domain.ProviderGitHub, ProviderAccountID: tc.account, ProviderLogin: "login", AccessTokenCiphertext: "token"}))
+		require.NoError(t, auth.ReplaceWith(domain.ProviderAuthorizationInput{OwnerID: "owner", Provider: domain.ProviderGitHub, ProviderAccountID: tc.account, ProviderLogin: "login", AccessTokenCiphertext: "token"}))
 		require.Equal(t, tc.kept, auth.AccessScope.Observed(), "account %s", tc.account)
 	}
 }

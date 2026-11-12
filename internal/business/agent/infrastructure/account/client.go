@@ -1,6 +1,7 @@
 // Package account reaches Account's private API for Agent: the User Directory,
-// the people a Work without a Project may be shared with, and the Agent
-// Account Command that issues a Work's Identity Token.
+// the people a Work without a Project may be shared with, the Agent Account
+// Command that issues a Work's Identity Token, and the Application Ownership
+// Query.
 package account
 
 import (
@@ -38,6 +39,7 @@ const serviceID = "agent"
 type Client struct {
 	directory     accountprivatev1connect.UserDirectoryServiceClient
 	agentAccounts accountprivatev1connect.AgentAccountServiceClient
+	applications  accountprivatev1connect.ApplicationOwnershipServiceClient
 }
 
 var _ command.AccountPort = (*Client)(nil)
@@ -50,6 +52,7 @@ func NewClient(httpClient *http.Client, cfg Config) (*Client, error) {
 	return &Client{
 		directory:     accountprivatev1connect.NewUserDirectoryServiceClient(client),
 		agentAccounts: accountprivatev1connect.NewAgentAccountServiceClient(client),
+		applications:  accountprivatev1connect.NewApplicationOwnershipServiceClient(client),
 	}, nil
 }
 
@@ -76,6 +79,7 @@ func (c *Client) IssueWorkIdentityToken(ctx context.Context, facts command.WorkI
 	resp, err := c.agentAccounts.IssueWorkIdentityToken(asAgent(ctx), &accountprivatev1.IssueWorkIdentityTokenRequest{
 		WorkId: facts.WorkID, ProjectId: facts.ProjectID, AgentId: facts.AgentID, Purpose: facts.Purpose,
 		WorkSubjectKind: facts.SubjectKind, WorkSubjectId: facts.SubjectID, RepresentedUserId: facts.RepresentedPerson,
+		ApplicationId: facts.OwningApplication, WorkLabels: facts.WorkLabels,
 	})
 	if err != nil {
 		// A request carries no token, so its error cannot leak one.
@@ -85,6 +89,20 @@ func (c *Client) IssueWorkIdentityToken(ctx context.Context, facts command.WorkI
 		return command.IdentityToken{}, oops.With("operation", "account.issue_work_identity_token").With("work_id", facts.WorkID).Errorf("account answered without a token")
 	}
 	return command.IdentityToken{Token: resp.GetToken(), ExpiresAt: resp.GetExpiresAt().AsTime()}, nil
+}
+
+// GetApplication asks Account's Application Ownership Query for one
+// Application.
+func (c *Client) GetApplication(ctx context.Context, applicationID string) (command.OwnedApplication, error) {
+	resp, err := c.applications.GetApplication(asAgent(ctx), &accountprivatev1.GetApplicationRequest{ApplicationId: applicationID})
+	if connect.CodeOf(err) == connect.CodeNotFound {
+		return command.OwnedApplication{}, command.ErrApplicationUnknown
+	}
+	if err != nil {
+		return command.OwnedApplication{}, oops.With("operation", "account.get_application").With("application_id", applicationID).Wrap(err)
+	}
+	found := resp.GetApplication()
+	return command.OwnedApplication{ID: found.GetApplicationId(), Name: found.GetName(), OwnerUserID: found.GetOwnerUserId(), Removed: found.GetRemoved()}, nil
 }
 
 // asAgent names Agent as the calling service.

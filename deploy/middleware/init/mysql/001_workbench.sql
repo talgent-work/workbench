@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS `agent_account` (
   `work_subject_kind` varchar(255) NOT NULL DEFAULT '' COMMENT 'The kind of the Work''s Subject; empty for a Work without one',
   `work_subject_id` varchar(255) NOT NULL DEFAULT '' COMMENT 'The identity of the Work''s Subject',
   `represented_user_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Account id of the person the Agent represents; empty for an Agent representing no one',
+  `application_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'The Application that owns the Work; empty for a Work no Application owns',
+  `work_labels` json NOT NULL DEFAULT (json_object()) COMMENT 'The Work''s Work Labels as a key to value object; empty for a Work without labels',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Stored row version; the facts never change',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'First Identity Token request in Unix milliseconds',
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last update time in Unix milliseconds',
@@ -55,6 +57,7 @@ CREATE TABLE IF NOT EXISTS `agent_definition` (
   `agent_name` varchar(512) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Current public Agent name; empty until existing definition is initialized',
   `icon_glyph` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Preset icon glyph',
   `icon_color` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Preset icon color',
+  `application_removed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The owning Application was removed; it then acts as no Owner',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_agent_definition_scope_purpose` (`scope_kind`,`scope_ref`,`purpose`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentDefinition capability, appearance and Work Layout authority';
@@ -84,6 +87,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `display_title` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'A Personal Work''s display title: its first input''s first line, changed by its owner; empty for any other Work',
   `starting_context` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'JSON of the Work this one started from and the context position; empty when it started afresh',
   `represented_person` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Person the Work''s Agent represents, fixed at creation; empty when it represents none',
+  `owning_application` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Application that owns the Work, fixed at creation; empty when none does',
   `trace_attributes` json NOT NULL COMMENT 'Immutable caller telemetry attribution',
   `harness_process` json NOT NULL COMMENT 'Observed facts of the current Harness process; null before the first start',
   `holds_process` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'The Work holds a Harness process until its exit or environment loss is confirmed',
@@ -111,6 +115,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   KEY `idx_agent_id_holds_process_deleted_at` (`agent_id`,`holds_process`,`deleted_at`),
   KEY `idx_project_ref_deleted_at_created_at_id` (`project_ref`,`deleted_at`,`created_at`,`id`),
   KEY `idx_represented_person_deleted_at_created_at_id` (`represented_person`,`deleted_at`,`created_at`,`id`),
+  KEY `idx_owning_application_deleted_at_created_at_id` (`owning_application`,`deleted_at`,`created_at`,`id`),
   KEY `idx_started_by_deleted_at_updated_at_created_at_id` (`started_by`,`deleted_at`,`updated_at`,`created_at`,`id`),
   KEY `idx_computer_id_state_deleted_at_id` (`computer_id`,`state`,`deleted_at`,`id`) COMMENT 'Presence changes find the Works running on a Computer'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentWork conversation and Harness process lifecycle authority';
@@ -141,6 +146,46 @@ CREATE TABLE IF NOT EXISTS `agent_work_share` (
   PRIMARY KEY (`work_id`,`reader_id`),
   KEY `idx_reader_id_work_id` (`reader_id`,`work_id`) COMMENT 'A reader finds the Works shared with them'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Work Shares of an AgentWork, owned by agent_session';
+
+CREATE TABLE IF NOT EXISTS `agent_work_label` (
+  `work_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'The Work, an agent_session identity; its rows are written once, with the Work',
+  `label_key` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'A Work Label key its starter defined: letters, digits, dot, underscore, hyphen and slash',
+  `label_value` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'The value of that Work Label, compared exactly',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time of the Work, Unix milliseconds',
+  PRIMARY KEY (`work_id`,`label_key`),
+  KEY `idx_label_key_label_value_work_id` (`label_key`,`label_value`,`work_id`) COMMENT 'Listings narrow Works to those carrying a label'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Work Labels of an AgentWork, owned by agent_session and fixed at its creation';
+
+CREATE TABLE IF NOT EXISTS `application` (
+  `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Application UUIDv7 identity; its OAuth client id and the subject of its Identity Tokens',
+  `owner_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Account id of the Application Owner, the person who registered it; never changes',
+  `name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Name its Application Owner manages it by, 1 to 60 characters',
+  `state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1 active, 2 removed (terminal)',
+  `registered_at` bigint NOT NULL DEFAULT '0' COMMENT 'Registration time in Unix milliseconds',
+  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic aggregate version',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
+  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last update time in Unix milliseconds',
+  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; 0 means active',
+  PRIMARY KEY (`id`),
+  KEY `idx_owner_registered` (`owner_id`,`registered_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Application aggregate: a third-party program that calls the platform as itself';
+
+CREATE TABLE IF NOT EXISTS `application_client_secret` (
+  `id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'Client Secret UUIDv7 identity',
+  `application_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Owning Application',
+  `secret_digest` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'SHA-256 hex digest of the secret; the secret itself is never stored',
+  `hint` varchar(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Last characters of the secret, so its owner can tell secrets apart',
+  `state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1 current, 2 overlapping, 3 ended (terminal)',
+  `issued_at` bigint NOT NULL DEFAULT '0' COMMENT 'Issue time in Unix milliseconds',
+  `overlap_ends_at` bigint NOT NULL DEFAULT '0' COMMENT 'When an overlapping secret stops matching, in Unix milliseconds; 0 otherwise',
+  `last_used_at` bigint NOT NULL DEFAULT '0' COMMENT 'When the secret last obtained a token, in Unix milliseconds; 0 for never',
+  `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Stored row version; changes with its Application',
+  `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation time in Unix milliseconds',
+  `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last update time in Unix milliseconds',
+  `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Deletion time in Unix milliseconds; 0 means active',
+  PRIMARY KEY (`id`),
+  KEY `idx_application_id` (`application_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Client Secrets of an Application, owned by its aggregate';
 
 CREATE TABLE IF NOT EXISTS `computer` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Computer UUIDv7 identity; a Cloud''s is fixed by its cluster''s configuration',
@@ -366,7 +411,7 @@ CREATE TABLE IF NOT EXISTS `marketplace_connector` (
 
 CREATE TABLE IF NOT EXISTS `marketplace_installed_connector` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'UUIDv7 identity of this installation incarnation',
-  `user_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Authorized personal owner',
+  `owner_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Owner: a person or an Application',
   `connector_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Catalog Connector identity',
   `state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1 enabled; 2 disabled',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Optimistic row version',
@@ -374,12 +419,12 @@ CREATE TABLE IF NOT EXISTS `marketplace_installed_connector` (
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Zero for active rows; uninstall removes the row',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_user_id_connector_id` (`user_id`,`connector_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Personal installations of catalog Connectors';
+  UNIQUE KEY `uniq_owner_id_connector_id` (`owner_id`,`connector_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Owners'' installations of catalog Connectors';
 
 CREATE TABLE IF NOT EXISTS `marketplace_installed_plugin` (
   `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'UUIDv7 identity of this installation incarnation',
-  `user_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Authorized personal owner',
+  `owner_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Owner: a person or an Application',
   `slug` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Stable plugin slug',
   `state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '1 enabled; 2 disabled',
   `configuration` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'JSON typed manual values; no defaults',
@@ -388,8 +433,8 @@ CREATE TABLE IF NOT EXISTS `marketplace_installed_plugin` (
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update time in Unix milliseconds',
   `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Zero for active rows; uninstall removes the row',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_user_id_slug` (`user_id`,`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Independent personal plugin installations';
+  UNIQUE KEY `uniq_owner_id_slug` (`owner_id`,`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Owners'' independent plugin installations';
 
 CREATE TABLE IF NOT EXISTS `marketplace_plugin_release` (
   `id` varchar(36) COLLATE utf8mb4_bin NOT NULL COMMENT 'Storage locator, not release identity',
@@ -407,7 +452,7 @@ CREATE TABLE IF NOT EXISTS `marketplace_plugin_release` (
 
 CREATE TABLE IF NOT EXISTS `scm_provider_authorization` (
     `id` varchar(36) NOT NULL COMMENT 'Primary key ID, UUID format',
-    `owner_user_id` varchar(64) NOT NULL DEFAULT '' COMMENT 'Talgent user that owns this provider authorization',
+    `owner_id` varchar(64) NOT NULL DEFAULT '' COMMENT 'Owner of this provider authorization: a person or an Application',
     `provider` varchar(16) NOT NULL DEFAULT '' COMMENT 'SCM provider',
     `provider_account_id` varchar(128) NOT NULL DEFAULT '' COMMENT 'Provider account ID',
     `provider_login` varchar(128) NOT NULL DEFAULT '' COMMENT 'Provider login',
@@ -429,10 +474,10 @@ CREATE TABLE IF NOT EXISTS `scm_provider_authorization` (
     `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update timestamp in milliseconds',
     `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Soft delete timestamp in milliseconds',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uniq_owner_provider` (`owner_user_id`, `provider`, `deleted_at`),
+    UNIQUE KEY `uniq_owner_provider` (`owner_id`, `provider`, `deleted_at`),
     KEY `idx_scope_observation` (`status`, `access_scope_observed_at`, `deleted_at`),
     KEY `idx_scope_installations` ((CAST(`access_scope_json`->'$.installation_ids' AS CHAR(32) ARRAY))),
-    KEY `idx_owner_provider` (`owner_user_id`, `provider`, `deleted_at`),
+    KEY `idx_owner_provider` (`owner_id`, `provider`, `deleted_at`),
     KEY `idx_refresh_candidates` (`status`, `expires_at`, `refresh_lease_until`, `deleted_at`),
     KEY `idx_provider_account` (`provider`, `provider_account_id`, `deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='SCM provider authorizations';
@@ -477,7 +522,8 @@ CREATE TABLE IF NOT EXISTS `storage_share_link` (
   `owner_key` varchar(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Owner of the Directory holding the link',
   `directory_name` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Name of the Directory holding the link',
   `target_name` varchar(255) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Target File position name',
-  `created_by` varchar(64) NOT NULL DEFAULT '' COMMENT 'Person who created the link',
+  `created_by` varchar(64) NOT NULL DEFAULT '' COMMENT 'Person who created the link; empty when an Application did',
+  `created_by_application` varchar(64) NOT NULL DEFAULT '' COMMENT 'Application that created the link; empty when a person did',
   `state` varchar(16) NOT NULL DEFAULT '' COMMENT 'Lifecycle: active|revoked',
   `version` int unsigned NOT NULL DEFAULT '0' COMMENT 'Row version',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation timestamp (ms)',

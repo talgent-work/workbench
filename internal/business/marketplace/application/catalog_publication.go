@@ -30,7 +30,9 @@ type SourceReleases struct {
 	Failure error
 }
 
-type CatalogPublicationPort interface {
+// CatalogStorePort retains releases, commits a complete catalog atomically and
+// retires sources no longer configured.
+type CatalogStorePort interface {
 	CurrentSource(context.Context, string) ([]PluginRelease, error)
 	PublishedRelease(context.Context, string, string, string) (*PluginRelease, error)
 	RetainRelease(context.Context, PluginRelease) error
@@ -66,7 +68,7 @@ func (e *PluginSyncFailure) Unwrap() error { return e.Cause }
 // selected view visible in one commit. The sources given are the configured
 // ones: once the view no longer lists any other source, everything of those
 // is retired. A partial failure is reported after commit.
-func PublishCatalog(ctx context.Context, store CatalogPublicationPort, sources []SourceReleases, logger *slog.Logger) error {
+func PublishCatalog(ctx context.Context, store CatalogStorePort, sources []SourceReleases, logger *slog.Logger) error {
 	var failures []error
 	output := make([]SourceReleases, 0, len(sources))
 	policy := domain.PluginReleasePolicy{}

@@ -23,11 +23,11 @@ func TestRepositorySupplyValidatesRetainedAuthorizationAndObservedTarget(t *test
 			}
 			setRepository(repository)
 			supplier := &recordingRepositorySupplier{}
-			app.supplier = supplier
-			request := RepositoryCredentialRequest{OwnerUserID: "owner", AuthorizationID: authorization.ID, RepositoryID: "123", CloneURL: repository.CloneURL}
+			app.gitHub.supplier = supplier
+			request := RepositoryCredentialRequest{OwnerID: "owner", AuthorizationID: authorization.ID, RepositoryID: "123", CloneURL: repository.CloneURL}
 			switch scenario {
 			case "foreign owner":
-				request.OwnerUserID = "other-owner"
+				request.OwnerID = "other-owner"
 			case "unknown authorization":
 				request.AuthorizationID = "not-retained"
 			case "changed repository identity":
@@ -71,8 +71,8 @@ func TestRepositorySupplyAsksTheProviderWhenTheScopeIsStale(t *testing.T) {
 	repository := domain.ScopeRepository{RepoID: "123", CloneURL: "https://github.com/acme/new.git"}
 	app.observer.accounts = []domain.ScopeAccount{scopeAccount("1", "acme", repository)}
 	supplier := &recordingRepositorySupplier{}
-	app.supplier = supplier
-	material, err := app.SupplyRepositoryCredential(t.Context(), RepositoryCredentialRequest{OwnerUserID: "owner", AuthorizationID: authorization.ID, RepositoryID: "123", CloneURL: repository.CloneURL})
+	app.gitHub.supplier = supplier
+	material, err := app.SupplyRepositoryCredential(t.Context(), RepositoryCredentialRequest{OwnerID: "owner", AuthorizationID: authorization.ID, RepositoryID: "123", CloneURL: repository.CloneURL})
 	require.NoError(t, err)
 	require.Equal(t, "current-token", material.Password)
 	require.EqualValues(t, 2, app.observer.observations.Load())

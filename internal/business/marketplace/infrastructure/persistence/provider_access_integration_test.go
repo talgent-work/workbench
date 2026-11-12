@@ -95,7 +95,7 @@ type syncObservations struct {
 	connections *application.PersonalConnections
 }
 
-func (s syncObservations) ScheduleObservation(ctx context.Context, authorizationID string) error {
+func (s syncObservations) ScheduleAccessScopeObservation(ctx context.Context, authorizationID string) error {
 	return s.connections.ObserveAccessScope(ctx, authorizationID)
 }
 
@@ -131,7 +131,7 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	require.NoError(t, err)
 	owner := "e6c7e756-007d-5236-a492-7f4b9be0b2e8"
 	authorization, err := domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
-		OwnerUserID: owner, Provider: domain.ProviderGitHub, ProviderAccountID: "12345", ProviderLogin: "octocat",
+		OwnerID: owner, Provider: domain.ProviderGitHub, ProviderAccountID: "12345", ProviderLogin: "octocat",
 		AccessTokenCiphertext: token, ExpiresAt: time.Now().Add(8 * time.Hour),
 	})
 	require.NoError(t, err)
@@ -139,13 +139,13 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 
 	observer, err := scmgithub.NewCatalog(cfg, repo, cipher)
 	require.NoError(t, err)
-	queries := NewAuthorizationMaintenanceQueries(db)
+	queries := NewProviderAuthorizationQueries(db)
 	scheduler := &syncObservations{}
-	connections := application.NewPersonalConnections(repo, observer, scheduler, nil, nil, nil, repo, nil, queries)
+	connections := application.NewPersonalConnections(repo, queries, testGitHub{access: observer}, scheduler, nil)
 	scheduler.connections = connections
 	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
-		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app))
+		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)

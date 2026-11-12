@@ -15,13 +15,13 @@ import (
 // ChangeWorkVisibility switches the requester's own Work between private and
 // public within its captured scope.
 type ChangeWorkVisibility struct {
-	ActorUserID, WorkID string
-	Public              bool
+	ActorID, WorkID string
+	Public          bool
 }
 
 func (a *Application) ChangeWorkVisibility(ctx context.Context, input ChangeWorkVisibility) (query.WorkView, error) {
 	err := a.changeWork(ctx, input.WorkID, func(work *domain.AgentWork, definition *domain.AgentDefinition) (bool, error) {
-		return work.ChangeVisibility(definition, input.ActorUserID, input.Public, time.Now())
+		return work.ChangeVisibility(definition, input.ActorID, input.Public, time.Now())
 	})
 	if err != nil {
 		return query.WorkView{}, err
@@ -42,11 +42,11 @@ func (a *Application) GrantWorkShare(ctx context.Context, input GrantWorkShare) 
 	})
 }
 
-type RevokeWorkShare struct{ ActorUserID, WorkID, ReaderID string }
+type RevokeWorkShare struct{ ActorID, WorkID, ReaderID string }
 
 func (a *Application) RevokeWorkShare(ctx context.Context, input RevokeWorkShare) (query.WorkView, error) {
 	err := a.changeWork(ctx, input.WorkID, func(work *domain.AgentWork, definition *domain.AgentDefinition) (bool, error) {
-		return work.RevokeWorkShare(definition, input.ActorUserID, input.ReaderID, time.Now())
+		return work.RevokeWorkShare(definition, input.ActorID, input.ReaderID, time.Now())
 	})
 	if err != nil {
 		return query.WorkView{}, err
@@ -134,10 +134,23 @@ func (a *Application) admittedReaderWork(ctx context.Context, input AdmitWorkRea
 		return nil, "", err
 	}
 	basis, err := work.AdmitStreamReader(definition, input.ReaderID, input.Admission)
+	if errors.Is(err, domain.ErrWorkReaderNotAdmitted) && definition.OwningApplication() != "" {
+		basis, err = a.AdmitApplicationOwnerReader(ctx, work, definition, input.ReaderID)
+	}
 	if errors.Is(err, domain.ErrWorkReaderNotAdmitted) {
 		return nil, "", errors.Join(access.ErrAccessDenied, err)
 	}
 	return work, basis, err
+}
+
+// AdmitApplicationOwnerReader admits the Application Owner of the Application
+// whose Agent runs the Work, by Account's ownership answer.
+func (a *Application) AdmitApplicationOwnerReader(ctx context.Context, work *domain.AgentWork, definition *domain.AgentDefinition, reader string) (domain.ReadBasis, error) {
+	requester, err := a.ApplicationOwnerReader(ctx, definition, reader)
+	if err != nil {
+		return "", err
+	}
+	return work.AdmitApplicationOwnerReader(definition, requester)
 }
 
 // changeWork applies one owner or trusted-caller decision to a Work, retrying
@@ -191,11 +204,11 @@ func (a *Application) GetWorkFacts(ctx context.Context, workID string) (query.Wo
 	return view, nil
 }
 
-// ChangeDisplayTitle replaces the owner's Personal Work's display title.
-type ChangeDisplayTitle struct{ ActorUserID, WorkID, Title string }
+// ChangeDisplayTitle replaces the owner's Standalone Work's display title.
+type ChangeDisplayTitle struct{ ActorID, WorkID, Title string }
 
 func (a *Application) ChangeDisplayTitle(ctx context.Context, input ChangeDisplayTitle) error {
 	return a.changeWork(ctx, input.WorkID, func(work *domain.AgentWork, definition *domain.AgentDefinition) (bool, error) {
-		return work.ChangeDisplayTitle(definition, input.ActorUserID, input.Title)
+		return work.ChangeDisplayTitle(definition, input.ActorID, input.Title)
 	})
 }

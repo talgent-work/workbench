@@ -108,8 +108,24 @@ func storageStub() fx.Option {
 		fx.Supply(agent.StorageConfig{Address: "http://storage.invalid", Token: "storage-test"}),
 		fx.Supply(agent.AccountConfig{Address: "http://account.invalid"}),
 		fx.Decorate(func(command.StoragePort) command.StoragePort { return stubStorage{} }),
-		fx.Decorate(func(command.AccountPort) command.AccountPort { return &commandtest.Accounts{} }),
+		fx.Decorate(func(command.AccountPort) command.AccountPort {
+			return &commandtest.Accounts{Applications: moduleApplications}
+		}),
 	)
+}
+
+// The Applications Account knows in module tests: two active ones and one
+// removed for good.
+const (
+	supportDesk      = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4e"
+	billingBot       = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4f"
+	retiredReporting = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c50"
+)
+
+var moduleApplications = map[string]command.OwnedApplication{
+	supportDesk:      {ID: supportDesk, Name: "Support Desk", OwnerUserID: "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c51"},
+	billingBot:       {ID: billingBot, Name: "Billing Bot", OwnerUserID: "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c51"},
+	retiredReporting: {ID: retiredReporting, Name: "Reporting", OwnerUserID: "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c51", Removed: true},
 }
 
 type stubStorage struct{ command.StoragePort }
@@ -131,6 +147,32 @@ func (stubStorage) ListFiles(context.Context, domain.Directory) ([]command.Space
 }
 
 func (stubStorage) RequestWorkReclamation(context.Context, string) error { return nil }
+
+// IssueUpload names, in its link, the owner the upload is attributed to.
+func (stubStorage) IssueUpload(_ context.Context, position command.FilePosition, _ string, _ bool, _ string, uploader command.FileActor) (command.FileLink, error) {
+	return command.FileLink{URL: fmt.Sprintf("upload://%s/%s?user=%s&application=%s", position.Directory.Name, position.Name, uploader.UserID, uploader.ApplicationID)}, nil
+}
+
+func (stubStorage) RenameFile(context.Context, command.FilePosition, string, string, command.FileActor) error {
+	return nil
+}
+
+func (stubStorage) DeleteFile(context.Context, command.FilePosition, string, command.FileActor) error {
+	return nil
+}
+
+// CreateShareLink names, in its link, the owner who shares the file.
+func (stubStorage) CreateShareLink(_ context.Context, position command.FilePosition, actor command.FileActor) (command.ShareLink, error) {
+	return command.ShareLink{Token: "share-token", URL: fmt.Sprintf("share://%s/%s", position.Directory.Name, position.Name), CreatedBy: actor}, nil
+}
+
+func (stubStorage) RevokeShareLinks(context.Context, command.FilePosition, command.FileActor) error {
+	return nil
+}
+
+func (stubStorage) IssueAccessLink(_ context.Context, position command.FilePosition, _ bool) (command.FileLink, error) {
+	return command.FileLink{URL: "access://" + position.Directory.Name + "/" + position.Name}, nil
+}
 
 // Module tests use the real publication transport. Unauthenticated requests do
 // not connect; lifecycle fixtures exercise current schema and real NATS wiring.

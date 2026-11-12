@@ -10,14 +10,18 @@ const (
 	PrincipalUser Principal = "user"
 	// PrincipalAgent speaks for a Work's Agent by its Agent Account.
 	PrincipalAgent Principal = "agent"
+	// PrincipalApplication speaks for an Application by its id.
+	PrincipalApplication Principal = "application"
 )
 
 // IdentityClaims are what an Identity Token states; signing them is a
 // realization step outside the Aggregates. A user's claims carry the Profile
-// and Login Session; an agent's carry its Work's fixed facts.
+// and Login Session; an agent's carry its Work's fixed facts; an
+// Application's carry nothing beyond its id.
 type IdentityClaims struct {
 	Principal Principal
-	// Subject is the Account id of a user, the Work id of an agent.
+	// Subject is the Account id of a user, the Work id of an agent, the
+	// Application id of an Application.
 	Subject string
 	// Profile and SessionID are a user's.
 	Profile   Profile

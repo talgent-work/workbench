@@ -287,19 +287,19 @@ func (failingEncryptCipher) Decrypt(ciphertext string) (string, error) {
 	return ciphertext, nil
 }
 
-func mustAuthorization(t *testing.T, ownerUserID, accessTokenCiphertext string, expiresAt time.Time) *domain.ProviderAuthorization {
+func mustAuthorization(t *testing.T, ownerID, accessTokenCiphertext string, expiresAt time.Time) *domain.ProviderAuthorization {
 	t.Helper()
-	return mustActiveAuthorization(t, ownerUserID, accessTokenCiphertext, expiresAt)
+	return mustActiveAuthorization(t, ownerID, accessTokenCiphertext, expiresAt)
 }
 
-func mustActiveAuthorization(t *testing.T, ownerUserID, accessTokenCiphertext string, expiresAt time.Time) *domain.ProviderAuthorization {
+func mustActiveAuthorization(t *testing.T, ownerID, accessTokenCiphertext string, expiresAt time.Time) *domain.ProviderAuthorization {
 	t.Helper()
 	auth, err := domain.RehydrateProviderAuthorization(domain.ProviderAuthorization{
-		Status:      domain.ProviderAuthorizationActive,
-		ID:          "authorization-1",
-		OwnerUserID: ownerUserID,
-		Provider:    domain.ProviderGitHub,
-		Version:     1,
+		Status:   domain.ProviderAuthorizationActive,
+		ID:       "authorization-1",
+		OwnerID:  ownerID,
+		Provider: domain.ProviderGitHub,
+		Version:  1,
 
 		ExternalAccount: domain.ExternalAccount{
 			ProviderAccountID: "12345",

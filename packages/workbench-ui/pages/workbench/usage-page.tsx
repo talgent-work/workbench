@@ -6,7 +6,7 @@ import { TokenReport, type TokenRanking } from "../../components/analytics/token
 import { PageLayout } from "../../components/shell/page-layout";
 import { dashboardReportPeriod } from "../../lib/dashboard-report";
 import { usePersonalTokenAnalytics } from "../../lib/personal-usage-service";
-import { untitledWorkLabel, usePersonalWorks } from "../../lib/personal-work-service";
+import { untitledWorkLabel, useStandaloneWorks } from "../../lib/standalone-work-service";
 import { dashboardWindows, parseDashboardWindow } from "../../lib/dashboard";
 import type { TokenAnalytics } from "../../lib/token-analytics";
 import { tokenTotals } from "../../lib/trace-view-model";
@@ -36,7 +36,7 @@ export function UsagePage() {
 }
 
 function UsageReport({ analytics, hover, onHover }: { analytics: TokenAnalytics; hover: { index: number; chart: string } | null; onHover: (hover: { index: number; chart: string } | null) => void }) {
-  const personal = usePersonalWorks();
+  const personal = useStandaloneWorks();
   const rankings: TokenRanking[] = [{ title: "Top works", rows: topWorks(analytics, new Map((personal.data ?? []).map(work => [work.id, work.title]))) }];
   return <TokenReport analytics={analytics} rankings={rankings} hover={hover} onHover={onHover} />;
 }

@@ -73,7 +73,7 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	require.Empty(t, sessions.items)
 	createSession.Subject = nil
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "a Work with neither a Subject nor a Project is a Personal Work, which no caller creates")
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "a Work with neither a Subject nor a Project is a Standalone Work, which no caller creates")
 	createSession.RequestId = uuid.NewString()
 	createSession.ProjectId, createSession.AgentHarness = "project-a", "unknown-harness"
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)

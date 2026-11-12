@@ -88,8 +88,9 @@ test-scripts:
 	bash test/marketplace-sync-test.sh
 	bash test/marketplace-publish-test.sh
 	bash test/pre-push-leak-check-test.sh
-	bash test/k3s-render-test.sh
+	bash test/render-test.sh
 	bash test/request-catalog-sync-test.sh
+	bash test/apply-opensandbox-test.sh
 
 test-go:
 	set -o pipefail; TALGENT_TEST_SERVICES=nats bash scripts/test/with-middleware.sh go test -json -p=4 $(UNIT_TEST_FLAGS) $(UNIT_PACKAGES) \

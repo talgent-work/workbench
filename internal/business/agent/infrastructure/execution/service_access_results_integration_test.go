@@ -26,7 +26,7 @@ import (
 
 func TestServiceAccessResultsThroughAuthenticatedPublicAPI(t *testing.T) {
 	f := newNativeWorkLifecycle(t, t.Context())
-	work, _ := f.createWithAuthorization(t, t.Context(), domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, domain.WorkAuthorizationInput{OwnerUserID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerUserID: "lifecycle-owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}})
+	work, _ := f.createWithAuthorization(t, t.Context(), domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, domain.WorkAuthorizationInput{OwnerID: "lifecycle-owner", Available: []domain.PersonalAuthorization{{OwnerID: "lifecycle-owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}})
 	app := &application.Application{Works: f.works, WorkPrincipals: serviceObservationAccess{workID: work.ID}, ExecutionQueries: NewExecutionQueryRepository(f.db)}
 	mux := http.NewServeMux()
 	mux.Handle("/"+agentpublicv1connect.AgentWorkServiceName+"/", connecttest.Handler(func(s *connect.Server) {
