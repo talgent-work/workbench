@@ -40,7 +40,7 @@ func beginPluginRun(t *testing.T, repository *AgentExecutionRepository, workID s
 }
 
 func fixedRelease(slug, version string) domain.PluginRelease {
-	return domain.PluginRelease{Slug: slug, Source: "fixture", Version: version, RetrievalRef: "archive:" + slug, NativeEntry: []byte(`{"name":"` + slug + `","version":"` + version + `"}`)}
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "fixture", Version: version, RetrievalRef: "archive:" + slug, NativeEntry: []byte(`{"name":"` + slug + `","version":"` + version + `"}`)}
 }
 
 // reportLoads records the inventory the run's launched process reports and
@@ -70,15 +70,17 @@ func TestAgentExecutionRepositoryKeepsPluginOutcomesWithTheRun(t *testing.T) {
 	run, err := repository.Get(ctx, run.ID)
 	require.NoError(t, err)
 	require.Equal(t, []domain.PluginResult{
-		{Slug: "runtime", Installation: domain.PluginOutcome{Reported: true, Reason: "installation_failed"}, Loading: domain.PluginOutcome{Reported: true, Succeeded: true}},
+		{Slug: "runtime", Installation: domain.PluginOutcome{Reported: true, Reason: "installation_failed"}, Loading: domain.PluginOutcome{Reported: true, Succeeded: true}, LoadedVersion: "1.0.0"},
 		{Slug: "tools", Installation: domain.PluginOutcome{Reported: true, Succeeded: true}, Loading: domain.PluginOutcome{Reported: true, Reason: domain.PluginNotLoaded}},
 	}, run.PluginResults, "loading leaves the installation outcome as reported")
 
 	reportLoads(t, repository, run, domain.LoadedPlugin{Slug: "runtime", Version: "1.0.1"}, domain.LoadedPlugin{Slug: "tools", Version: "2.0.0"})
 	latest, err := repository.Latest(ctx, run.WorkID)
 	require.NoError(t, err)
-	require.Equal(t, domain.PluginOutcome{Reported: true, Reason: domain.PluginVersionMismatch}, latest.PluginResults[0].Loading, "a later report replaces the Plugin's outcome")
+	require.Equal(t, domain.PluginOutcome{Reported: true, Succeeded: true}, latest.PluginResults[0].Loading)
+	require.Equal(t, "1.0.1", latest.PluginResults[0].LoadedVersion, "a later report replaces the Plugin's outcome, at the version it loaded")
 	require.Equal(t, domain.PluginOutcome{Reported: true, Succeeded: true}, latest.PluginResults[1].Loading)
+	require.Equal(t, "2.0.0", latest.PluginResults[1].LoadedVersion)
 
 	// run was saved already: its version is stale, and its report is refused
 	// whole, its outcomes included.
@@ -128,7 +130,7 @@ func TestCurrentPluginResultsReadTheLatestExecutionOnly(t *testing.T) {
 	current, err = results.ListCurrentPluginResults(ctx, workID)
 	require.NoError(t, err)
 	require.Equal(t, []query.PluginResult{
-		{Slug: "runtime", LoadingReported: true, Loaded: true, UpdatedAt: at},
+		{Slug: "runtime", LoadedVersion: "1.0.0", LoadingReported: true, Loaded: true, UpdatedAt: at},
 		{Slug: "tools", LoadingReported: true, LoadingReason: domain.PluginNotLoaded, UpdatedAt: at},
 	}, current, "only the current run's outcomes are read")
 }

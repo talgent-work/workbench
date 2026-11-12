@@ -38,7 +38,7 @@ func TestNativeLaunchPreservesArgumentsAndSeparatesDiagnostics(t *testing.T) {
 	input.Capabilities.Prompt = "one ' two\n$(touch '" + filepath.Join(root, "injected") + "') `false` $HOME"
 	input.Capabilities.StartupAgent = "fixed:reviewer ' quoted"
 	input.Soul = "Be terse ' and $(echo kind)"
-	input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "fixed", Source: "owned", Version: "1", RetrievalRef: "archive:fixed", NativeEntry: []byte(`{"name":"fixed","version":"1","source":{"source":"url","url":"https://example.invalid/fixed.zip","sha256":"abc"}}`), Agents: []domain.AgentComponent{{Name: input.Capabilities.StartupAgent}}, Parameters: pluginconfig.ParameterDeclarations{"message": {Type: "string", Title: "Message", Description: "Message"}}}, Configuration: pluginconfig.Configuration{"message": "quoted ' option"}}}
+	input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "fixed", Source: "owned", Version: "1", RetrievalRef: "archive:fixed", NativeEntry: []byte(`{"name":"fixed","version":"1","source":{"source":"url","url":"https://example.invalid/fixed.zip","sha256":"abc"}}`), Agents: []domain.AgentComponent{{Name: input.Capabilities.StartupAgent}}, Parameters: pluginconfig.ParameterDeclarations{"message": {Type: "string", Title: "Message", Description: "Message"}}}, Configuration: pluginconfig.Configuration{"message": "quoted ' option"}}}
 	config := NativeLaunchConfig{Binary: binary}
 	input.Capabilities.Connectors[0].URL = "http://gateway.test/mcp?retained='quoted'"
 	launch, err := config.prepare(sandboxLayout, input, owner(input), "")
@@ -99,12 +99,41 @@ func TestNativeLaunchPreservesArgumentsAndSeparatesDiagnostics(t *testing.T) {
 		PluginConfigs map[string]struct{ Options map[string]string }
 	}
 	require.NoError(t, json.Unmarshal([]byte(value("--settings")), &settings))
-	require.Equal(t, "quoted ' option", settings.PluginConfigs["fixed@talgent-work-"+storageKey(input.WorkID)].Options["message"])
+	require.Equal(t, "quoted ' option", settings.PluginConfigs["fixed@talgent"].Options["message"])
 	_, err = os.Stat(filepath.Join(root, "injected"))
 	require.True(t, os.IsNotExist(err), "prompt must not execute shell syntax")
 	diagnostic, err := os.ReadFile(marker + ".stderr")
 	require.NoError(t, err)
 	require.Contains(t, string(diagnostic), "native diagnostic")
+}
+
+// A start whose startup Agent no release it took declares any more launches
+// without one (Dropped startup Agent); the Work's selection stays.
+func TestNativeLaunchRunsWithoutADroppedStartupAgent(t *testing.T) {
+	config := NativeLaunchConfig{Binary: "claude"}
+	input := request()
+	input.ContextMode = domain.ContextContinue
+	input.Capabilities.StartupAgent = "talgent:retired-role"
+	require.True(t, input.Capabilities.StartupAgentDropped())
+	launch, err := config.prepare(sandboxLayout, input, owner(input), "")
+	require.NoError(t, err)
+	require.NotContains(t, launch.Command, "--agent")
+	require.NotContains(t, launch.Command, "retired-role")
+}
+
+// The Harness's plugin configuration names each Plugin by the catalog its
+// release came from, the marketplace every Work installs it from; no Work
+// identity appears in it.
+func TestNativeLaunchNamesPluginConfigurationByCatalog(t *testing.T) {
+	config := NativeLaunchConfig{Binary: "claude"}
+	input := request()
+	input.ContextMode = domain.ContextFresh
+	input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "talgent", Source: "owned", Version: "1", RetrievalRef: "archive:talgent", NativeEntry: []byte(`{"name":"talgent","version":"1"}`)}}}
+	launch, err := config.prepare(sandboxLayout, input, owner(input), "")
+	require.NoError(t, err)
+	require.Contains(t, launch.Command, `"talgent@talgent":`)
+	require.Contains(t, launch.PreparationCommand, `"name":"talgent"`)
+	require.NotContains(t, launch.Command, "talgent-work-")
 }
 
 // A resumed Work rebuilds its system prompt, so the current Soul applies; a
@@ -145,7 +174,7 @@ func TestEveryRunOfAWorkContinuesItsHarnessSession(t *testing.T) {
 	separate, err := config.prepare(sandboxLayout, input, owner(input), "")
 	require.NoError(t, err)
 	require.NotEqual(t, restarted.SessionID, separate.SessionID)
-	input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "missing"}}}
+	input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "missing"}}}
 	_, err = config.prepare(sandboxLayout, input, owner(input), "")
 	require.ErrorIs(t, err, domain.ErrInvalidCapabilities)
 }

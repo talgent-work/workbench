@@ -17,7 +17,7 @@ func (rpcPluginCatalog) ListPersonalPlugins(context.Context, string) ([]domain.P
 	return []domain.PersonalPlugin{{Slug: "code-review", Enabled: true, Configuration: pluginconfig.Configuration{"mode": "original"}}}, nil
 }
 func (rpcPluginCatalog) ResolvePlugin(_ context.Context, _ string, slug string) (domain.PluginRelease, error) {
-	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:" + slug, NativeEntry: []byte(`{"name":"` + slug + `","version":"1"}`), Agents: []domain.AgentComponent{{Name: slug + ":architect"}, {Name: slug + ":reviewer"}}, Parameters: pluginconfig.ParameterDeclarations{"mode": {Type: "string", Title: "Mode", Description: "Mode"}, "language": {Type: "string", Title: "Language", Description: "Language"}}}, nil
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:" + slug, NativeEntry: []byte(`{"name":"` + slug + `","version":"1"}`), Agents: []domain.AgentComponent{{Name: slug + ":architect"}, {Name: slug + ":reviewer"}}, Parameters: pluginconfig.ParameterDeclarations{"mode": {Type: "string", Title: "Mode", Description: "Mode"}, "language": {Type: "string", Title: "Language", Description: "Language"}}}, nil
 }
 
 func (rpcPluginCatalog) ReadConnectorSelection(context.Context, string) (command.ConnectorSelection, error) {

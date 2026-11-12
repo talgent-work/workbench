@@ -33,7 +33,7 @@ func TestRecoveredCapabilitiesReuseOriginalAllocation(t *testing.T) {
 	executions := NewAgentExecutionRepository(db, time.Now)
 	empty, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}}, nil)
 	require.NoError(t, err)
-	components, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"review"}}, []domain.PluginRelease{{Slug: "review", Source: "owned", Version: "1", RetrievalRef: "archive:review-1", NativeEntry: []byte(`{"name":"review","version":"1"}`), Skills: []domain.SkillComponent{}, Agents: []domain.AgentComponent{}, MCPServers: []domain.MCPComponent{}}})
+	components, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"review"}}, []domain.PluginRelease{{CatalogName: "talgent", Slug: "review", Source: "owned", Version: "1", RetrievalRef: "archive:review-1", NativeEntry: []byte(`{"name":"review","version":"1"}`), Skills: []domain.SkillComponent{}, Agents: []domain.AgentComponent{}, MCPServers: []domain.MCPComponent{}}})
 	require.NoError(t, err)
 	for name, snapshot := range map[string]domain.CapabilitySnapshot{"nil plugins": {}, "empty plugins": empty, "empty components": components} {
 		t.Run(name, func(t *testing.T) {

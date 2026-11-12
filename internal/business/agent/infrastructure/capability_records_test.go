@@ -12,7 +12,7 @@ import (
 )
 
 func TestStoredCapabilitySnapshotRestoresTypedValuesAndReleaseDeclarations(t *testing.T) {
-	release := domain.PluginRelease{Slug: "review", Source: "owned", Version: "1.2.0", RetrievalRef: "archive:review-1.2.0", NativeEntry: []byte(`{"name":"review","version":"1.2.0"}`), Agents: []domain.AgentComponent{{Name: "review:architect", Description: "Architect"}}, Parameters: pluginconfig.ParameterDeclarations{
+	release := domain.PluginRelease{CatalogName: "talgent", Slug: "review", Source: "owned", Version: "1.2.0", RetrievalRef: "archive:review-1.2.0", NativeEntry: []byte(`{"name":"review","version":"1.2.0"}`), Agents: []domain.AgentComponent{{Name: "review:architect", Description: "Architect"}}, Parameters: pluginconfig.ParameterDeclarations{
 		"paths":   {Type: "string", Title: "Paths", Description: "Paths", Multiple: true, Default: []string{"src", "docs"}},
 		"enabled": {Type: "boolean", Title: "Enabled", Description: "Enabled", Default: true},
 	}}
@@ -45,7 +45,7 @@ func TestStoredCapabilitySnapshotPreservesEmptyCollectionShapes(t *testing.T) {
 	for name, snapshot := range map[string]domain.CapabilitySnapshot{
 		"nil plugins":   {},
 		"empty plugins": {Plugins: []domain.SelectedPlugin{}},
-		"empty components": {Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{
+		"empty components": {Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent",
 			Slug: "review", Source: "owned", Version: "1", RetrievalRef: "archive:review-1", NativeEntry: []byte(`{"name":"review","version":"1"}`),
 			Skills: []domain.SkillComponent{}, Agents: []domain.AgentComponent{}, MCPServers: []domain.MCPComponent{},
 		}}}},

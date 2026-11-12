@@ -30,7 +30,7 @@ func TestPreparationIsBoundedByTheStartupDeadline(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "timeout"), []byte("#!/bin/sh\necho \"$3 ${11}\"\n"), 0o755))
 			input := request()
 			input.PreparationBound = time.Now().Add(tc.bound)
-			input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "fixed", Source: "fixture", Version: "1", RetrievalRef: "archive:fixed", NativeEntry: []byte(`{"name":"fixed","version":"1"}`)}}}
+			input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "fixed", Source: "fixture", Version: "1", RetrievalRef: "archive:fixed", NativeEntry: []byte(`{"name":"fixed","version":"1"}`)}}}
 			launch, err := NativeLaunchConfig{Binary: "claude"}.prepare(sandboxLayout, input, SandboxOwner{WorkID: input.WorkID, ID: fixtureAllocationID}, "")
 			require.NoError(t, err)
 			require.NotContains(t, launch.PreparationCommand, "600s")

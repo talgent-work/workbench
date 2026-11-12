@@ -31,9 +31,9 @@ func (r *currentRunOutcomes) ListCurrentPluginResults(_ context.Context, workID 
 func TestPluginResultsListTheSelectionWithTheCurrentRunsOutcomes(t *testing.T) {
 	app, works, auth, _ := thinkingApplication()
 	works.work.CapabilitySnapshot.Plugins = []domain.SelectedPlugin{
-		{Release: domain.PluginRelease{Slug: "runtime", Version: "1.0.0", Source: "official"}},
-		{Release: domain.PluginRelease{Slug: "tools", Version: "2.0.0", Source: "community"}},
-		{Release: domain.PluginRelease{Slug: "missing", Version: "3.0.0", Source: "community"}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "runtime", Version: "1.0.0", Source: "official"}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "tools", Version: "2.0.0", Source: "community"}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "missing", Version: "3.0.0", Source: "community"}},
 	}
 	outcomes := &currentRunOutcomes{outcomes: []query.PluginResult{
 		{Slug: "runtime", InstallationReported: true, InstallationReason: "installation_failed", LoadingReported: true, Loaded: true},

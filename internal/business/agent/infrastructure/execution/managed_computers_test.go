@@ -294,7 +294,7 @@ func TestPreparationChecksOutIntoTheWorkRoot(t *testing.T) {
 	encodedPlan, err := json.Marshal(plan)
 	require.NoError(t, err)
 	input := request()
-	catalog := `{"name":"talgent-work-fixture","owner":{"name":"Talgent"},"plugins":[]}`
+	catalog := `{"name":"talgent","owner":{"name":"Talgent"},"plugins":[]}`
 	process := exec.Command("node", "-e", nativePreparation, "claude", catalog, storageKey(input.WorkID + ":" + fixtureAllocationID)[:32], string(encodedPlan), "600", "machine")
 	process.Dir = workRoot
 	process.Env = append(os.Environ(), "HOME="+t.TempDir(), "GIT_CONFIG_GLOBAL=/dev/null", "TALGENT_WORK_ROOT="+workRoot, "CLAUDE_CODE_PLUGIN_CACHE_DIR="+filepath.Join(workRoot, ".talgent", "claude-plugins"))

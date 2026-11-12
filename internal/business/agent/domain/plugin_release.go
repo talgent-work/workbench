@@ -8,9 +8,13 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 )
 
-// PluginRelease is an Agent-owned copy of immutable upstream catalog facts.
-// No catalog lookup or individual component upgrade occurs after capture.
+// PluginRelease is an Agent-owned copy of immutable upstream catalog facts:
+// the release declarations a Work last took. No individual component
+// upgrade occurs after capture.
 type PluginRelease struct {
+	// CatalogName names the catalog that publishes the release; the Harness
+	// installs the release from a marketplace of this name.
+	CatalogName  string
 	Slug         string
 	Source       string
 	Version      string
@@ -42,7 +46,7 @@ func (r PluginRelease) Validate() error {
 	if !pluginconfig.ValidPluginName(r.Slug) {
 		return fmt.Errorf("%w: invalid plugin slug", ErrInvalidCapabilities)
 	}
-	for _, value := range []string{r.Slug, r.Source, r.Version, r.RetrievalRef} {
+	for _, value := range []string{r.CatalogName, r.Slug, r.Source, r.Version, r.RetrievalRef} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%w: incomplete plugin release", ErrInvalidCapabilities)
 		}

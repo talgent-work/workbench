@@ -20,7 +20,7 @@ func TestNativePreparationNamesTheInvalidPluginRelease(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			input := request()
-			input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "talgent", Source: "fixture", Version: "1", RetrievalRef: "archive:talgent", NativeEntry: []byte(tc.entry)}}}
+			input.Capabilities.Plugins = []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "talgent", Source: "fixture", Version: "1", RetrievalRef: "archive:talgent", NativeEntry: []byte(tc.entry)}}}
 			_, err := NativeLaunchConfig{Binary: "claude"}.prepare(sandboxLayout, input, owner(input), "")
 			cause, definite := domain.DefiniteStartCause(err)
 			require.True(t, definite)

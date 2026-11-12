@@ -11,7 +11,7 @@ import (
 )
 
 func pluginRelease(slug, version string) domain.PluginRelease {
-	return domain.PluginRelease{Slug: slug, Source: "owned", Version: version, RetrievalRef: "https://plugins.example.invalid/" + slug + "/" + version + ".zip", NativeEntry: []byte(`{"name":"` + slug + `","version":"` + version + `"}`), Agents: []domain.AgentComponent{{Name: slug + ":worker"}}, Skills: []domain.SkillComponent{{Name: slug + ":check", ArgumentHint: "[path]"}}, Parameters: pluginconfig.ParameterDeclarations{
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "owned", Version: version, RetrievalRef: "https://plugins.example.invalid/" + slug + "/" + version + ".zip", NativeEntry: []byte(`{"name":"` + slug + `","version":"` + version + `"}`), Agents: []domain.AgentComponent{{Name: slug + ":worker"}}, Skills: []domain.SkillComponent{{Name: slug + ":check", ArgumentHint: "[path]"}}, Parameters: pluginconfig.ParameterDeclarations{
 		"flag":  {Type: "boolean", Title: "Flag", Description: "Feature flag", Default: true},
 		"paths": {Type: "string", Title: "Paths", Description: "Paths", Multiple: true, Default: []string{"src"}},
 	}}

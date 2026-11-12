@@ -5,6 +5,24 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that installs each Plugin release once per Harness state
+
+Before deploying it, run `deploy/middleware/migrations/20261112-plugin-catalog.sql` against the
+database named by `AGENT_MYSQL_DATABASE`, with no Work starting. When the Marketplace catalog's
+configured name (`marketplace.name`) is not `talgent`, set it first in the same session:
+`SET @catalog_name = '<name>';`. The script names each Work's retained releases after that
+catalog and adds `execution_plugin_result.loaded_version`; this release cannot read a Work whose
+releases name no catalog.
+
+Every Work now installs its Plugins from a marketplace named after the catalog, so a release is
+installed once per Harness state and later Works load it without installing. Each Work loads
+the latest installed release and reports the version it loaded; `version_mismatch` is gone, and
+the script turns past outcomes recorded with it into loaded ones. A start whose startup Agent the
+latest release dropped runs without one and logs the warning `work starts without its startup
+Agent`. The first preparation in each Harness state removes the packages, registrations and
+install records of the per-Work `talgent-work-*` marketplaces, and every preparation removes
+cached releases no install record references.
+
 ## The release that stops waiting for Claude Code's title
 
 Nothing to do beyond deploying it. Claude Code never titles a conversation that runs a

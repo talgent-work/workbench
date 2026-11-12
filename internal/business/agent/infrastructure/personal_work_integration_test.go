@@ -264,7 +264,7 @@ func (*personalStartupCatalog) ListPersonalPlugins(context.Context, string) ([]d
 }
 
 func (*personalStartupCatalog) ResolvePlugin(_ context.Context, _ string, slug string) (domain.PluginRelease, error) {
-	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"talgent","version":"1"}`), Agents: []domain.AgentComponent{{Name: "talgent:personal-work-executor", Description: "Personal Work executor"}}, Parameters: pluginconfig.ParameterDeclarations{"token": {Type: "string", Title: "Token", Description: "Fixture token", Sensitive: true}}}, nil
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"talgent","version":"1"}`), Agents: []domain.AgentComponent{{Name: "talgent:personal-work-executor", Description: "Personal Work executor"}}, Parameters: pluginconfig.ParameterDeclarations{"token": {Type: "string", Title: "Token", Description: "Fixture token", Sensitive: true}}}, nil
 }
 
 func (*personalStartupCatalog) ListAccessibleRepositories(context.Context, string) ([]domain.AccessibleRepository, error) {

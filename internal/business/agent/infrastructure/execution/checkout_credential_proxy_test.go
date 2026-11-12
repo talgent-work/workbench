@@ -72,7 +72,7 @@ func runCheckout(t *testing.T, workspace string, plan []repositoryCheckout, prox
 	encoded, err := json.Marshal(plan)
 	require.NoError(t, err)
 	encodedPlan := string(encoded)
-	process := exec.Command("node", "-e", nativePreparation, "claude", `{"name":"talgent-work-fixture","owner":{"name":"Talgent"},"plugins":[]}`, storageKey(input.WorkID + ":" + fixtureAllocationID)[:32], encodedPlan, "60")
+	process := exec.Command("node", "-e", nativePreparation, "claude", `{"name":"talgent","owner":{"name":"Talgent"},"plugins":[]}`, storageKey(input.WorkID + ":" + fixtureAllocationID)[:32], encodedPlan, "60")
 	process.Dir = workspace
 	process.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "GIT_CONFIG_GLOBAL=/dev/null", "NO_PROXY=", "no_proxy="}
 	if proxy != "" {

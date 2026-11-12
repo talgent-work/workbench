@@ -9,7 +9,7 @@ import (
 )
 
 func TestWorkSnapshotQueryRedactsSensitiveValuesWithoutChangingExecutionSnapshot(t *testing.T) {
-	snapshot := domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "tools", Source: "owned", Version: "1", RetrievalRef: "archive", NativeEntry: []byte(`{"name":"tools","userConfig":{"secret":{"sensitive":true,"default":"hidden-default"}}}`), Parameters: pluginconfig.ParameterDeclarations{"secret": {Type: "string", Title: "Secret", Description: "Sensitive option", Sensitive: true, Default: "hidden-default"}, "visible": {Type: "string", Title: "Visible", Description: "Ordinary option"}}}, Configuration: pluginconfig.Configuration{"secret": "hidden-manual", "visible": "shown"}}}}
+	snapshot := domain.CapabilitySnapshot{Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "tools", Source: "owned", Version: "1", RetrievalRef: "archive", NativeEntry: []byte(`{"name":"tools","userConfig":{"secret":{"sensitive":true,"default":"hidden-default"}}}`), Parameters: pluginconfig.ParameterDeclarations{"secret": {Type: "string", Title: "Secret", Description: "Sensitive option", Sensitive: true, Default: "hidden-default"}, "visible": {Type: "string", Title: "Visible", Description: "Ordinary option"}}}, Configuration: pluginconfig.Configuration{"secret": "hidden-manual", "visible": "shown"}}}}
 	output, err := capabilitySnapshotToProto(snapshot)
 	require.NoError(t, err)
 	require.NotContains(t, output.String(), "hidden-manual")

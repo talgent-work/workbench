@@ -21,6 +21,7 @@ type pluginResultDO struct {
 	LoadingReported      bool   `xorm:"loading_reported"`
 	Loaded               bool   `xorm:"loaded"`
 	LoadingReason        string `xorm:"loading_reason"`
+	LoadedVersion        string `xorm:"loaded_version"`
 	Version              int    `xorm:"'version'"`
 	CreatedAt            int64  `xorm:"created_at"`
 	UpdatedAt            int64  `xorm:"updated_at"`
@@ -30,21 +31,22 @@ type pluginResultDO struct {
 func (*pluginResultDO) TableName() string { return "execution_plugin_result" }
 
 // pluginResultColumns are the columns holding an outcome.
-var pluginResultColumns = []string{"installation_reported", "installed", "installation_reason", "loading_reported", "loaded", "loading_reason", "version", "updated_at"}
+var pluginResultColumns = []string{"installation_reported", "installed", "installation_reason", "loading_reported", "loaded", "loading_reason", "loaded_version", "version", "updated_at"}
 
 func pluginResultToDO(executionID string, result domain.PluginResult) pluginResultDO {
 	return pluginResultDO{
 		ExecutionID: executionID, Slug: result.Slug,
 		InstallationReported: result.Installation.Reported, Installed: result.Installation.Succeeded, InstallationReason: result.Installation.Reason,
-		LoadingReported: result.Loading.Reported, Loaded: result.Loading.Succeeded, LoadingReason: result.Loading.Reason,
+		LoadingReported: result.Loading.Reported, Loaded: result.Loading.Succeeded, LoadingReason: result.Loading.Reason, LoadedVersion: result.LoadedVersion,
 	}
 }
 
 func pluginResultFromDO(row pluginResultDO) domain.PluginResult {
 	return domain.PluginResult{
-		Slug:         row.Slug,
-		Installation: domain.PluginOutcome{Reported: row.InstallationReported, Succeeded: row.Installed, Reason: row.InstallationReason},
-		Loading:      domain.PluginOutcome{Reported: row.LoadingReported, Succeeded: row.Loaded, Reason: row.LoadingReason},
+		Slug:          row.Slug,
+		Installation:  domain.PluginOutcome{Reported: row.InstallationReported, Succeeded: row.Installed, Reason: row.InstallationReason},
+		Loading:       domain.PluginOutcome{Reported: row.LoadingReported, Succeeded: row.Loaded, Reason: row.LoadingReason},
+		LoadedVersion: row.LoadedVersion,
 	}
 }
 

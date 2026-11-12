@@ -35,7 +35,7 @@ func (c releaseCatalog) ResolvePlugin(_ context.Context, _ string, slug string) 
 	if slug != c.slug {
 		return domain.PluginRelease{}, fmt.Errorf("fixture: no release of %s", slug)
 	}
-	return domain.PluginRelease{Slug: slug, Source: "public", Version: c.version, RetrievalRef: "archive:" + slug + "-" + c.version,
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "public", Version: c.version, RetrievalRef: "archive:" + slug + "-" + c.version,
 		NativeEntry: []byte(fmt.Sprintf(`{"name":%q,"version":%q}`, slug, c.version)),
 		Skills:      []domain.SkillComponent{{Name: slug + ":interviewing", Description: "Interview the owner"}},
 		Agents:      []domain.AgentComponent{{Name: c.role, Description: "Personal Work executor"}}}, nil

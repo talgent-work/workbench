@@ -15,8 +15,9 @@ func AssembleWorkServiceAccess(work *domain.AgentWork, observations []query.Serv
 	return result
 }
 
-// AssembleWorkPluginResults lists each Plugin the Work selected, at its
-// selected release, with its outcome in the current run when one was reported.
+// AssembleWorkPluginResults lists each Plugin the Work selected, at the
+// release whose declarations it last took, with its outcome in the current
+// run when one was reported.
 func AssembleWorkPluginResults(work *domain.AgentWork, outcomes []query.PluginResult) []query.PluginResult {
 	bySlug := make(map[string]query.PluginResult, len(outcomes))
 	for _, result := range outcomes {

@@ -56,21 +56,24 @@ func resolveStartupCapabilities(ctx context.Context, catalog MarketplacePort, ca
 	return domain.NewCapabilitySnapshot(input, releases)
 }
 
-// PluginUpgrades reads the current release of each Plugin a Work selected,
-// which a Resume or Restart takes up while keeping the selection. A Plugin it
-// cannot resolve, or whose current release the Work cannot take up, is left
-// out, so the Work keeps its retained release.
+// PluginUpgrades reads the current release declarations of each Plugin a
+// Work selected, which each Resume or Restart takes while keeping the
+// selection (Start upgrade). A Plugin it cannot resolve is left out, so the
+// start uses the declarations the Work last took (Unresolvable release).
 type PluginUpgrades interface {
 	CurrentReleases(ctx context.Context, catalogUser string, capabilities domain.CapabilitySnapshot) ([]domain.PluginRelease, error)
+	// StartedWithoutStartupAgent reports an admitted start of work that runs
+	// without its dropped startup Agent (Dropped startup Agent warning).
+	StartedWithoutStartupAgent(ctx context.Context, work *domain.AgentWork)
 }
 
 // CatalogPluginUpgrades resolves current releases from Marketplace's catalog
-// as the requesting Owner sees it. An unavailable catalog, a withdrawn Plugin
-// or a current release that no longer declares the Work's startup Agent
-// degrades to the retained release instead of blocking the start. Each
-// degradation is logged for operators: a release that dropped an Agent still
-// in use calls for the Plugin's maintainer or a data migration, not for the
-// Work's user.
+// as the requesting Owner sees it. An unavailable catalog or a withdrawn
+// Plugin degrades to the declarations the Work last took instead of blocking
+// the start. Each degradation, and each start that runs without its dropped
+// startup Agent, is logged for operators and never shown to the Work's user:
+// a release that dropped an Agent still in use calls for the Plugin's
+// maintainer, not for the Work's user.
 type CatalogPluginUpgrades struct {
 	catalog MarketplacePort
 	logger  *slog.Logger
@@ -91,17 +94,20 @@ func (u *CatalogPluginUpgrades) CurrentReleases(ctx context.Context, catalogUser
 			return nil, ctxErr
 		}
 		if err != nil {
-			u.logger.WarnContext(ctx, "plugin keeps its retained release; its current release could not be resolved",
-				slog.String("plugin", plugin.Release.Slug), slog.String("retained_version", plugin.Release.Version), slog.Any("error", err))
-			continue
-		}
-		if !capabilities.TakesUp(release) {
-			u.logger.WarnContext(ctx, "plugin keeps its retained release; its current release no longer declares the Work's startup Agent",
-				slog.String("plugin", plugin.Release.Slug), slog.String("retained_version", plugin.Release.Version),
-				slog.String("current_version", release.Version), slog.String("startup_agent", capabilities.StartupAgent))
+			u.logger.WarnContext(ctx, "plugin's current release could not be resolved; the start uses the declarations the Work last took",
+				slog.String("plugin", plugin.Release.Slug), slog.String("last_taken_version", plugin.Release.Version), slog.Any("error", err))
 			continue
 		}
 		releases = append(releases, release)
 	}
 	return releases, nil
+}
+
+func (u *CatalogPluginUpgrades) StartedWithoutStartupAgent(ctx context.Context, work *domain.AgentWork) {
+	plugins := make([]string, 0, len(work.CapabilitySnapshot.Plugins))
+	for _, plugin := range work.CapabilitySnapshot.Plugins {
+		plugins = append(plugins, plugin.Release.Slug+"@"+plugin.Release.Version)
+	}
+	u.logger.WarnContext(ctx, "work starts without its startup Agent; no current release of its Plugins declares it",
+		slog.String("work_id", work.ID), slog.String("startup_agent", work.CapabilitySnapshot.StartupAgent), slog.Any("plugins", plugins))
 }

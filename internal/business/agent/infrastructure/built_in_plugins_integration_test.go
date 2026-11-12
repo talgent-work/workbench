@@ -51,7 +51,7 @@ func (*builtInCatalog) ResolvePlugin(_ context.Context, _ string, slug string) (
 	if !ok {
 		return domain.PluginRelease{}, fmt.Errorf("fixture: no release of %s", slug)
 	}
-	return domain.PluginRelease{Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:" + slug, NativeEntry: []byte(fmt.Sprintf(`{"name":%q,"version":"1"}`, slug)),
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:" + slug, NativeEntry: []byte(fmt.Sprintf(`{"name":%q,"version":"1"}`, slug)),
 		Agents:     []domain.AgentComponent{{Name: role, Description: "Fixture role"}},
 		Parameters: pluginconfig.ParameterDeclarations{"mode": {Type: "string", Title: "Mode", Description: "Fixture mode", Default: "release-default"}}}, nil
 }

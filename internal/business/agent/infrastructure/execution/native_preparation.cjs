@@ -18,9 +18,12 @@ const plan = encodedPlan ? JSON.parse(encodedPlan) : null;
 const deadline = Date.now() + Math.max(0, Number(budget) * 1000 - 5000);
 const remaining = () => Math.max(0, deadline - Date.now());
 const workspace = process.cwd();
+// The local marketplace is named after the Work's catalog and lives at the
+// same path in every Cloud Work's workspace, so its registration and install
+// records in the shared Harness state serve every Work of the definition.
 const root = path.join(workspace, '.claude', 'talgent', catalog.name);
 // One report per execution: a re-run of a finished preparation reports it.
-const reportPath = path.join(root, 'report-' + receipt + '.json');
+const reportPath = path.join(workspace, '.claude', 'talgent', 'reports', 'report-' + receipt + '.json');
 const settingsPath = path.join(workspace, '.claude', 'settings.local.json');
 // A Plugin package cache of the Work's own (CLAUDE_CODE_PLUGIN_CACHE_DIR, on a
 // Managed Computer) has one installer; the cache in HOME is shared.
@@ -94,11 +97,14 @@ const invoke = async (...args) => {
   return await run(binary, args, { cwd: workspace, env }, Math.min(180000, remaining())) === 0;
 };
 
-// The native install records, where Claude Code keeps them: in the Work's own
-// package cache when it has one, else under its configuration directory.
-const installRecordsPath = process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR
-  ? path.join(process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR, 'installed_plugins.json')
-  : path.join(process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME, '.claude'), 'plugins', 'installed_plugins.json');
+// Claude Code's plugin state: its install records, marketplace registrations
+// and package cache, in the Work's own package cache directory when it has
+// one, else under its configuration directory. Talgent reads the records and
+// registrations and never writes them; native commands do.
+const pluginsRoot = process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR
+  || path.join(process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME, '.claude'), 'plugins');
+const installRecordsPath = path.join(pluginsRoot, 'installed_plugins.json');
+const packageCache = path.join(pluginsRoot, 'cache');
 
 // The native install records, or null when they cannot be read; an absent
 // file records nothing.
@@ -106,22 +112,76 @@ const readInstallRecords = () => {
   try { return read(installRecordsPath); } catch { return null; }
 };
 
-// Whether a Plugin may be recorded at another version than the pinned one: it
-// is recorded for this workspace at a different version, or the records
-// cannot be read.
-const mayBeStale = (records, id, version) => {
-  if (records === null) return true;
-  const recorded = recordedVersion(records, id);
-  return recorded !== undefined && recorded !== String(version);
+// This workspace's install record of a Plugin, or undefined when it has none.
+const workspaceRecord = (records, id) => {
+  const entries = records.plugins && Array.isArray(records.plugins[id]) ? records.plugins[id] : [];
+  return entries.find(item => item && item.scope === 'project' && item.projectPath === workspace);
 };
 
-// The version this workspace recorded for a Plugin before this preparation,
-// or undefined when it had none.
-const recordedVersion = (records, id) => {
-  const entries = records.plugins && Array.isArray(records.plugins[id]) ? records.plugins[id] : [];
-  const entry = entries.find(item => item && item.scope === 'project' && item.projectPath === workspace);
-  return entry ? String(entry.version) : undefined;
+const directoryExists = (target) => {
+  try { return fs.statSync(target).isDirectory(); } catch { return false; }
 };
+
+// What installing a Plugin's resolved release takes, from this workspace's
+// install record:
+// - recorded at the release's version with its package present: nothing,
+//   the Harness loads the recorded release;
+// - unrecorded, or its package missing: a native install;
+// - recorded at another version, or records that cannot be read: install,
+//   which keeps a recorded version, then update, which moves the record to
+//   the release the manifest names.
+const installSteps = (records, id, version) => {
+  if (records === null) return ['install', 'update'];
+  const record = workspaceRecord(records, id);
+  if (record === undefined) return ['install'];
+  const present = typeof record.installPath === 'string' && directoryExists(record.installPath);
+  if (String(record.version) === String(version)) return present ? [] : ['install'];
+  return ['install', 'update'];
+};
+
+const listDirectory = (directory) => {
+  try { return fs.readdirSync(directory, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name); }
+  catch { return []; }
+};
+
+// Marketplaces named per Work by earlier preparations.
+const legacyMarketplace = (name) => name.startsWith('talgent-work-') && name !== catalog.name;
+
+// cleanUp bounds the package cache by the releases still in use. Every
+// release directory of the catalog's marketplace that no install record
+// references is removed, and every marketplace an earlier preparation named
+// per Work loses its registration and install records (through the native
+// command) and its cached packages. It runs under the install lock, after
+// installation, so no other Work installs meanwhile; a running Work is not
+// protected. A cleanup step that fails leaves its files for the next
+// preparation and never fails this one.
+async function cleanUp() {
+  const registrations = (() => { try { return read(path.join(pluginsRoot, 'known_marketplaces.json')); } catch { return {}; } })();
+  for (const name of Object.keys(registrations).filter(legacyMarketplace)) {
+    if (remaining() === 0) return;
+    await run(binary, ['plugin', 'marketplace', 'remove', name], { cwd: workspace, env: { ...process.env, DISABLE_AUTOUPDATER: '1' } }, Math.min(30000, remaining()));
+  }
+  for (const name of listDirectory(packageCache).filter(legacyMarketplace)) {
+    fs.rmSync(path.join(packageCache, name), { recursive: true, force: true });
+  }
+  const records = readInstallRecords();
+  if (records === null) return;
+  const referenced = new Set();
+  for (const entries of Object.values(records.plugins || {})) {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (entry && typeof entry.installPath === 'string') referenced.add(path.resolve(entry.installPath));
+    }
+  }
+  const marketplace = path.join(packageCache, catalog.name);
+  for (const plugin of listDirectory(marketplace)) {
+    const releases = path.join(marketplace, plugin);
+    for (const version of listDirectory(releases)) {
+      const release = path.join(releases, version);
+      if (!referenced.has(release)) fs.rmSync(release, { recursive: true, force: true });
+    }
+    if (listDirectory(releases).length === 0) fs.rmSync(releases, { recursive: true, force: true });
+  }
+}
 
 async function installPlugins() {
   const release = catalog.plugins.length === 0 || !sharedCache ? () => {} : await acquireInstallLock();
@@ -142,15 +202,11 @@ async function installPlugins() {
     const records = readInstallRecords();
     for (const plugin of catalog.plugins) {
       const id = plugin.name + '@' + catalog.name;
-      // Install leaves an installed Plugin at its recorded version when the
-      // manifest above now pins another release (a reused HOME and workspace);
-      // update moves the record to the pinned release. A Plugin recorded at no
-      // version or at the pinned one is at that release once installed, so
-      // update, a native check of the package's source taking seconds, is
-      // skipped; records that cannot be read keep the update.
-      const stale = mayBeStale(records, id, plugin.version);
-      const installed = available && await invoke('plugin', 'install', '--scope', 'project', id)
-        && (!stale || await invoke('plugin', 'update', '--scope', 'project', id));
+      let installed = available;
+      for (const step of available ? installSteps(records, id, plugin.version) : []) {
+        installed = await invoke('plugin', step, '--scope', 'project', id);
+        if (!installed) break;
+      }
       enabled[id] = installed;
       results.push({ slug: plugin.name, installed, reason: installed ? '' : (available ? 'installation_failed' : 'marketplace_unavailable') });
     }
@@ -159,6 +215,9 @@ async function installPlugins() {
     const current = read(settingsPath);
     current.enabledPlugins = enabled;
     save(settingsPath, current);
+    if (catalog.plugins.length > 0) {
+      try { await cleanUp(); } catch {}
+    }
     return results;
   } finally {
     release();
@@ -251,7 +310,7 @@ async function main() {
     process.stdout.write(JSON.stringify(finished) + '\n');
     return;
   }
-  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true, mode: 0o700 });
   const report = { results: await installPlugins(), repositories: await checkOutRepositories() };
   save(reportPath, report);
   process.stdout.write(JSON.stringify(report) + '\n');

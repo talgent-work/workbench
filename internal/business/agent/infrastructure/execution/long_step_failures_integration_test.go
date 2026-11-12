@@ -17,7 +17,7 @@ import (
 func TestAnInvalidPluginReleaseRejectsTheStartOnItsFirstAttempt(t *testing.T) {
 	ctx := context.Background()
 	capabilities := domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors, Prompt: "task", Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{
-		Slug: "talgent", Source: "fixture", Version: "1.0.0", RetrievalRef: "archive:talgent", NativeEntry: []byte(`{"name":"talgent-runtime","version":"1.0.0"}`)}}}}
+		CatalogName: "talgent", Slug: "talgent", Source: "fixture", Version: "1.0.0", RetrievalRef: "archive:talgent", NativeEntry: []byte(`{"name":"talgent-runtime","version":"1.0.0"}`)}}}}
 	f := newCloudStartWith(t, capabilities)
 	require.True(t, f.reconcile(t), "the creation's submission is a long step")
 

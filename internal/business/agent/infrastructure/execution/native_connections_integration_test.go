@@ -65,7 +65,7 @@ func TestConnectionPersistsHandleBeforeRPCAndRetainsItOnRetry(t *testing.T) {
 	attachNativeCredentials(t, db, provisioning, lifecycle)
 	input := request()
 	input.TraceAttributes = map[string]string{"talgent.case_id": "case-native-connection"}
-	input.Capabilities, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"fixed"}, DefaultStartupAgent: "fixed:reviewer"}, []domain.PluginRelease{{Slug: "fixed", Source: "fixture", Version: "1", RetrievalRef: "archive:fixed", NativeEntry: []byte(`{"name":"fixed","version":"1"}`), Agents: []domain.AgentComponent{{Name: "fixed:reviewer"}}, Parameters: pluginconfig.ParameterDeclarations{"paths": {Type: "string", Title: "Paths", Description: "Paths", Multiple: true, Default: []string{"src"}}}}})
+	input.Capabilities, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"fixed"}, DefaultStartupAgent: "fixed:reviewer"}, []domain.PluginRelease{{CatalogName: "talgent", Slug: "fixed", Source: "fixture", Version: "1", RetrievalRef: "archive:fixed", NativeEntry: []byte(`{"name":"fixed","version":"1"}`), Agents: []domain.AgentComponent{{Name: "fixed:reviewer"}}, Parameters: pluginconfig.ParameterDeclarations{"paths": {Type: "string", Title: "Paths", Description: "Paths", Multiple: true, Default: []string{"src"}}}}})
 	require.NoError(t, err)
 	record, err := register(ctx, provisioning, input, testMounts)
 	require.NoError(t, err)

@@ -48,15 +48,15 @@ func (h *SelectionHandler) ResolvePlugin(ctx context.Context, request *marketpla
 	if actor, ok := authn.DelegatedUserID(info.RequestHeader()); !ok || actor == "" {
 		return nil, connect.NewError(connect.CodePermissionDenied, "trusted owner required")
 	}
-	release, err := h.app.GetRelease(ctx, request.GetSlug())
+	resolved, err := h.app.ResolveRelease(ctx, request.GetSlug())
 	if err != nil {
 		return nil, mapError(err)
 	}
-	message, err := releaseMessageForExecution(release, true)
+	message, err := releaseMessageForExecution(resolved.Release, true)
 	if err != nil {
 		return nil, mapError(err)
 	}
-	return &marketplaceprivatev1.ResolvePluginResponse{Plugin: message}, nil
+	return &marketplaceprivatev1.ResolvePluginResponse{Plugin: message, CatalogName: resolved.CatalogName}, nil
 }
 func (h *SelectionHandler) ReadConnectorSelection(ctx context.Context, request *marketplaceprivatev1.ReadConnectorSelectionRequest) (*marketplaceprivatev1.ReadConnectorSelectionResponse, error) {
 	info, _ := connect.CallInfoForServerContext(ctx)

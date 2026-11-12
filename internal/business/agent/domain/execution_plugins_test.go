@@ -16,8 +16,8 @@ func pluginWork(t *testing.T) *domain.AgentWork {
 	t.Helper()
 	work := newSession(t)
 	work.CapabilitySnapshot.Plugins = []domain.SelectedPlugin{
-		{Release: domain.PluginRelease{Slug: "runtime", Version: "1.0.0"}},
-		{Release: domain.PluginRelease{Slug: "tools", Version: "2.0.0"}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "runtime", Version: "1.0.0"}},
+		{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "tools", Version: "2.0.0"}},
 	}
 	return work
 }
@@ -56,26 +56,31 @@ func reportLoaded(t *testing.T, execution *domain.AgentExecution, loaded ...doma
 	return changed
 }
 
-func loadingOf(t *testing.T, execution *domain.AgentExecution, slug string) domain.PluginOutcome {
+func resultOf(t *testing.T, execution *domain.AgentExecution, slug string) domain.PluginResult {
 	t.Helper()
 	for _, result := range execution.PluginResults {
 		if result.Slug == slug {
-			return result.Loading
+			return result
 		}
 	}
 	t.Fatalf("no outcome for Plugin %s", slug)
-	return domain.PluginOutcome{}
+	return domain.PluginResult{}
+}
+
+func loadingOf(t *testing.T, execution *domain.AgentExecution, slug string) domain.PluginOutcome {
+	t.Helper()
+	return resultOf(t, execution, slug).Loading
 }
 
 var (
-	succeeded   = domain.PluginOutcome{Reported: true, Succeeded: true}
-	notLoaded   = domain.PluginOutcome{Reported: true, Reason: domain.PluginNotLoaded}
-	mismatching = domain.PluginOutcome{Reported: true, Reason: domain.PluginVersionMismatch}
+	succeeded = domain.PluginOutcome{Reported: true, Succeeded: true}
+	notLoaded = domain.PluginOutcome{Reported: true, Reason: domain.PluginNotLoaded}
 )
 
 // The preparation's report records each selected Plugin's installation with
-// the end of preparation (Preparation ownership); a missing or mismatched
-// release is a loading failure, and loading stays apart from installation.
+// the end of preparation (Preparation ownership); a Plugin missing from the
+// Harness's inventory failed to load, and loading stays apart from
+// installation.
 func TestPreparationRecordsEachSelectedPluginsInstallationAndLoading(t *testing.T) {
 	execution := boundPluginExecution(t)
 	changed, err := execution.RecordPreparation(domain.PreparationReport{Installations: []domain.PluginInstallation{
@@ -102,15 +107,15 @@ func TestPreparationRecordsEachSelectedPluginsInstallationAndLoading(t *testing.
 	require.Equal(t, succeeded, execution.PluginResults[0].Installation)
 }
 
-// The Harness reports a Plugin's version only from the Plugin's own manifest,
-// so a Plugin whose manifest names none, versioned in the catalog by its pin,
-// is reported without one: that is no evidence of another release, and the
-// Plugin counts as loaded. A different reported version is still a mismatch.
-func TestAPluginReportedWithoutAVersionIsLoaded(t *testing.T) {
+// The Harness loads the latest release installed in its Harness state, which
+// may be newer than the one the run took (Latest loaded release): a Plugin
+// the Harness reports loaded counts as loaded at the version it reports,
+// none when it reports none (Loading outcome).
+func TestAPluginLoadedAtAnotherVersionIsLoadedAtThatVersion(t *testing.T) {
 	execution := preparedPluginExecution(t)
 	require.True(t, reportLoaded(t, execution, domain.LoadedPlugin{Slug: "runtime"}, domain.LoadedPlugin{Slug: "tools", Version: "9.9.9"}))
-	require.Equal(t, succeeded, loadingOf(t, execution, "runtime"))
-	require.Equal(t, mismatching, loadingOf(t, execution, "tools"))
+	require.Equal(t, domain.PluginResult{Slug: "runtime", Installation: succeeded, Loading: succeeded}, resultOf(t, execution, "runtime"))
+	require.Equal(t, domain.PluginResult{Slug: "tools", Installation: succeeded, Loading: succeeded, LoadedVersion: "9.9.9"}, resultOf(t, execution, "tools"))
 }
 
 // When a later report for a Plugin arrives, the execution replaces that
@@ -118,10 +123,12 @@ func TestAPluginReportedWithoutAVersionIsLoaded(t *testing.T) {
 func TestALaterReportReplacesThatPluginsOutcome(t *testing.T) {
 	execution := preparedPluginExecution(t)
 	require.True(t, reportLoaded(t, execution, domain.LoadedPlugin{Slug: "runtime", Version: "1.0.0"}, domain.LoadedPlugin{Slug: "tools", Version: "1.0.0"}))
-	require.Equal(t, mismatching, loadingOf(t, execution, "tools"))
+	require.Equal(t, "1.0.0", resultOf(t, execution, "tools").LoadedVersion)
 
 	require.True(t, reportLoaded(t, execution, domain.LoadedPlugin{Slug: "tools", Version: "2.0.0"}))
 	require.Equal(t, succeeded, loadingOf(t, execution, "tools"))
+	require.Equal(t, "2.0.0", resultOf(t, execution, "tools").LoadedVersion)
+	require.Empty(t, resultOf(t, execution, "runtime").LoadedVersion, "a Plugin no longer loaded has no loaded version")
 	require.Equal(t, notLoaded, loadingOf(t, execution, "runtime"), "the later inventory replaces every selected Plugin's loading")
 
 	require.False(t, reportLoaded(t, execution, domain.LoadedPlugin{Slug: "tools", Version: "2.0.0"}), "the same outcomes reported again change nothing")

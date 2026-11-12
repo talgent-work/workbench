@@ -57,4 +57,5 @@ func TestSensitiveDefaultsAreHiddenFromDiscoveryButRetainedForExecution(t *testi
 	require.NoError(t, err)
 	require.Equal(t, "hidden-fixture-default", execution.Plugin.Parameters["token"].Default.GetStringValue())
 	require.Contains(t, string(execution.Plugin.NativeEntry), "hidden-fixture-default")
+	require.Equal(t, "talgent", execution.CatalogName, "a resolution names the catalog that publishes the release")
 }

@@ -63,6 +63,26 @@ type CatalogPort interface {
 	List(ctx context.Context, afterSlug string, limit int, component string) (ReleasePage, error)
 	Marketplace(ctx context.Context) ([]byte, error)
 	OpenArchive(ctx context.Context, digest string) (io.ReadSeekCloser, error)
+	// Name is the catalog's own name, which names it wherever it is
+	// distributed.
+	Name() string
+}
+
+// ResolvedRelease is a Plugin's current release as a Work's execution takes
+// it, with the name of the catalog that publishes it: a Harness installs the
+// release from a marketplace of that name.
+type ResolvedRelease struct {
+	Release     PluginRelease
+	CatalogName string
+}
+
+// ResolveRelease resolves a Plugin's current release for Work execution.
+func (a *Application) ResolveRelease(ctx context.Context, slug string) (ResolvedRelease, error) {
+	release, err := a.GetRelease(ctx, slug)
+	if err != nil {
+		return ResolvedRelease{}, err
+	}
+	return ResolvedRelease{Release: release, CatalogName: a.catalog.Name()}, nil
 }
 
 func (a *Application) GetRelease(ctx context.Context, slug string) (PluginRelease, error) {

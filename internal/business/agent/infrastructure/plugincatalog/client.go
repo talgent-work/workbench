@@ -125,7 +125,10 @@ func (c *Client) ResolvePlugin(ctx context.Context, user, slug string) (domain.P
 	if err != nil {
 		return domain.PluginRelease{}, err
 	}
-	release, err := pluginRelease(response.GetPlugin())
+	if strings.TrimSpace(response.GetCatalogName()) == "" {
+		return domain.PluginRelease{}, errors.New("agent: Marketplace resolved a release without its catalog")
+	}
+	release, err := pluginRelease(response.GetPlugin(), response.GetCatalogName())
 	if err != nil {
 		return domain.PluginRelease{}, err
 	}

@@ -146,8 +146,10 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	// settings are disabled. Keep workspace configuration and explicit snapshot
 	// settings; neither platform config supplies a finite retention period.
 	args = append(args, "--setting-sources", "project,local")
-	if request.Capabilities.StartupAgent != "" {
-		args = append(args, "--agent", request.Capabilities.StartupAgent)
+	// A startup Agent that no release the Work took declares any more is
+	// left out: the start runs without one (Dropped startup Agent).
+	if agent := request.Capabilities.LaunchedStartupAgent(); agent != "" {
+		args = append(args, "--agent", agent)
 	}
 	// Platform declarations come from the Work's retained Marketplace Connectors.
 	// Plugin-owned MCP declarations remain in their native packages. Work identity
@@ -163,10 +165,11 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 		return nativeLaunch{}, err
 	}
 	args = append(args, "--mcp-config", string(mcp))
-	preparation, marketplace, err := c.preparationCommand(layout, harness, request, owner)
+	preparation, err := c.preparationCommand(layout, harness, request, owner)
 	if err != nil {
 		return nativeLaunch{}, err
 	}
+	marketplace := request.Capabilities.PluginCatalog()
 	configs := make(map[string]any, len(request.Capabilities.Plugins))
 	for _, selection := range request.Capabilities.Plugins {
 		options := map[string]any(selection.Configuration)

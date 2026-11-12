@@ -68,7 +68,7 @@ func TestPluginPreparationRecoveryRetainsHandleAndReportsDegradation(t *testing.
 	client, err := execd.NewClient(server.Client(), server.URL, "fixture-token")
 	require.NoError(t, err)
 	n := &NativeConnections{provisioning: &Provisioning{records: records{db: db}, now: time.Now}}
-	launch := domain.LaunchSpecification{Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{Slug: "runtime"}}}}}
+	launch := domain.LaunchSpecification{Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "runtime"}}}}}
 	_, err = n.prepareEnvironment(observation, &record, client, launch)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, "prepare-1", <-attachedHandle, "the handle is durable before observation stops")

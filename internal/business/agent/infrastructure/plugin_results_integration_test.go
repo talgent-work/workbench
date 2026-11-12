@@ -118,7 +118,10 @@ func TestPluginResultsThroughAuthenticatedPublicAndFeedbackAPIs(t *testing.T) {
 	require.NoError(t, feedback.ReportExecution(t.Context(), observation))
 	response, err = read("0ba1b686-0dfe-53b5-9f82-930f94137cd8", id)
 	require.NoError(t, err)
-	require.Equal(t, "version_mismatch", response.Plugins[0].LoadingReason)
+	require.Equal(t, agentpublicv1.PluginPreparationStatus_PLUGIN_PREPARATION_STATUS_SUCCEEDED, response.Plugins[0].Loading, "a newer release the Harness loaded counts as loaded")
+	require.Empty(t, response.Plugins[0].LoadingReason)
+	require.Equal(t, "2", response.Plugins[0].LoadedVersion)
+	require.Equal(t, "1", response.Plugins[0].ReleaseVersion, "the release the Work took stays as taken")
 	observation.LoadedPlugins[0].Version = "1"
 	require.NoError(t, feedback.ReportExecution(t.Context(), observation))
 	// Reject malformed feedback atomically instead of replacing existing facts.

@@ -18,7 +18,7 @@ func (h *WorkHandler) GetWorkPluginResults(ctx context.Context, request *agentpu
 	}
 	response := &agentpublicv1.GetWorkPluginResultsResponse{}
 	for _, result := range results {
-		item := &agentpublicv1.WorkPluginResult{Slug: result.Slug, ReleaseVersion: result.ReleaseVersion, Source: result.Source, Installation: pluginStatus(result.InstallationReported, result.Installed), InstallationReason: result.InstallationReason, Loading: pluginStatus(result.LoadingReported, result.Loaded), LoadingReason: result.LoadingReason}
+		item := &agentpublicv1.WorkPluginResult{Slug: result.Slug, ReleaseVersion: result.ReleaseVersion, Source: result.Source, Installation: pluginStatus(result.InstallationReported, result.Installed), InstallationReason: result.InstallationReason, Loading: pluginStatus(result.LoadingReported, result.Loaded), LoadingReason: result.LoadingReason, LoadedVersion: result.LoadedVersion}
 		if !result.UpdatedAt.IsZero() {
 			item.UpdatedAt = timestamppb.New(result.UpdatedAt)
 		}
