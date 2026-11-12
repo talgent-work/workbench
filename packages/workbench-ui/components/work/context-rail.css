@@ -16,7 +16,8 @@
 .cr-file-icon[data-kind="code"] { color: var(--muted); }
 .cr-file-more { min-width: 22px; width: 22px; height: 28px; padding: 0; color: var(--muted); opacity: 0; }
 .cr-file-row:hover .cr-file-more,.cr-file-row:focus-within .cr-file-more { opacity: 1; }
-.cr-todos, .cr-todos>li { display: flex; gap: 10px; align-items: center; min-width: 0; color: var(--foreground); }
+.cr-todos, .cr-plugins { display: grid; gap: 2px; margin: 0; padding: 8px 0 0; list-style: none; font-size: 13px; line-height: 26px; }
+.cr-todos>li { display: flex; gap: 10px; align-items: center; min-width: 0; color: var(--foreground); }
 .cr-todos>li>span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cr-todos svg, .cr-todo-now { flex-shrink: 0; }
 .cr-todos [data-status="completed"] { color: var(--muted); }
@@ -27,6 +28,11 @@
 .cr-todo-now::after { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--foreground); animation: cr-todo-pulse 1.8s ease-in-out infinite; }
 @keyframes cr-todo-pulse { 50% { opacity: .25; transform: scale(.6); } }
 @media (prefers-reduced-motion: reduce) { .cr-todo-now::after { animation: none; } }
+/* Plugins: name on the left, the loaded version right-aligned in tabular figures. */
+.cr-plugins>li { display: flex; gap: 12px; justify-content: space-between; min-width: 0; color: var(--foreground); }
+.cr-plugins>li>span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-plugins>li>span+span { flex-shrink: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cr-plugins [data-state="not-loaded"] { color: var(--warning); }
 .cr-popover { width: 300px; max-width: calc(100vw - 24px); }
 .cr-popover .popover__dialog { display: grid; gap: 12px; }
 .cr-manifest { max-height: 240px; overflow: auto; font-size: 12px; overflow-wrap: anywhere; }
@@ -58,8 +64,3 @@
 }
 
 @media (max-width: 800px) { .p-page { --context-content-gutter: 18px; } }
-/* Plugins: name on the left, the loaded version right-aligned in tabular figures. */
-.cr-plugins>li { display: flex; gap: 12px; justify-content: space-between; min-width: 0; color: var(--foreground); }
-.cr-plugins>li>span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cr-plugins>li>span+span { flex-shrink: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
-.cr-plugins [data-state="not-loaded"] { color: var(--warning); }
