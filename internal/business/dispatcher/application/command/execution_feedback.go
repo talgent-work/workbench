@@ -38,6 +38,8 @@ type ExecutionObservation struct {
 	// PermissionMode is the native mode an ExecutionPermissionModeObserved
 	// report names.
 	PermissionMode string
+	// Title is the title an ExecutionTitleObserved report names.
+	Title string
 	// DetachedSince is when the attachment an ExecutionAttachmentLost or
 	// ExecutionAttachmentReturned report is about was lost.
 	DetachedSince time.Time
@@ -60,6 +62,9 @@ const (
 	// ExecutionPermissionModeObserved reports the permission mode the process
 	// now applies, whenever it reports a different one.
 	ExecutionPermissionModeObserved ExecutionObservationKind = "permission_mode_observed"
+	// ExecutionTitleObserved reports the title the Harness gave the Work's
+	// conversation, whenever it reports a different one.
+	ExecutionTitleObserved ExecutionObservationKind = "title_observed"
 	// ExecutionTurnActivity reports that the Work's Turn progresses in its
 	// Harness Output Stream, at most once a minute.
 	ExecutionTurnActivity ExecutionObservationKind = "turn_activity"

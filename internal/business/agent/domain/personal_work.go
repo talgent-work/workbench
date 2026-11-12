@@ -20,6 +20,10 @@ var (
 
 const maxDisplayTitleLength = 200
 
+// startingTitleLength bounds the title a Work takes from its first input: a
+// first line is often the whole instruction, too long to name the Work by.
+const startingTitleLength = 80
+
 // Personal tells whether this is a Personal Work: a Work with neither a
 // Subject nor a Project. No separate kind is recorded.
 func (s *AgentWork) Personal() bool { return !s.Subject.Present() && s.ProjectID == "" }
@@ -44,12 +48,13 @@ func (s *AgentWork) AdmitDelegatedControl() error {
 }
 
 // DisplayTitleFrom is the display title a Personal Work starts with: the
-// first line of its first input, cut to the title's length.
+// first line of its first input, cut with an ellipsis when longer than a
+// starting title.
 func DisplayTitleFrom(input string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(input), "\n")
 	line = strings.TrimSpace(line)
-	if utf8.RuneCountInString(line) > maxDisplayTitleLength {
-		line = string([]rune(line)[:maxDisplayTitleLength])
+	if utf8.RuneCountInString(line) > startingTitleLength {
+		line = strings.TrimSpace(string([]rune(line)[:startingTitleLength-1])) + "…"
 	}
 	return line
 }
@@ -83,11 +88,24 @@ func (s *AgentWork) ChangeDisplayTitle(definition *AgentDefinition, requester, t
 	if err := validateDisplayTitle(title, true); err != nil {
 		return false, err
 	}
-	if s.DisplayTitle == title {
+	if s.DisplayTitle == title && s.DisplayTitleChosen {
 		return false, nil
 	}
-	s.DisplayTitle = title
+	s.DisplayTitle, s.DisplayTitleChosen = title, true
 	return true, nil
+}
+
+// RecordHarnessTitle takes the title the Harness gave a Personal Work's
+// conversation as its display title until the owner chooses one, and tells
+// whether the display title changed. A title no display title may be is
+// ignored, as is one of any other Work.
+func (s *AgentWork) RecordHarnessTitle(title string) bool {
+	title = strings.TrimSpace(title)
+	if !s.Personal() || s.DisplayTitleChosen || title == "" || s.DisplayTitle == title || validateDisplayTitle(title, true) != nil {
+		return false
+	}
+	s.DisplayTitle = title
+	return true
 }
 
 // AdmitFileChange admits a change to a Personal Work's files: only its owner,

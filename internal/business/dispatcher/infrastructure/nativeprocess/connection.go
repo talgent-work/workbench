@@ -48,7 +48,10 @@ type Message struct {
 	CommandState    string          `json:"state"`
 	// PermissionMode is the mode a system init or status message reports.
 	PermissionMode string `json:"permissionMode"`
-	Event          struct {
+	// Content is a system message's own content, such as the text of an
+	// informational one. Raw: its shape is the message kind's.
+	Content json.RawMessage `json:"content"`
+	Event     struct {
 		Type string `json:"type"`
 	} `json:"event"`
 	RequestID string `json:"request_id"`

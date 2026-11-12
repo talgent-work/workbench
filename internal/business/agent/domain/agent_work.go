@@ -258,9 +258,12 @@ type AgentWork struct {
 	StartingContext *StartingContext
 	// DisplayTitle is a Personal Work's title, changed by its owner at any
 	// time; it never identifies the Work.
-	DisplayTitle    string
-	TraceAttributes map[string]string
-	HarnessProcess  *HarnessProcess
+	DisplayTitle string
+	// DisplayTitleChosen records that the owner chose the display title; the
+	// Harness's title for the conversation no longer replaces it.
+	DisplayTitleChosen bool
+	TraceAttributes    map[string]string
+	HarnessProcess     *HarnessProcess
 	// DisconnectedSince is the origin of the current Disconnection: the
 	// platform lost observation of the Work's execution environment then. It
 	// changes no State and is zero while the environment is observed.

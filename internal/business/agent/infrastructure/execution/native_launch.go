@@ -177,7 +177,7 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	}
 
 	// Snapshot settings are passed only to this process, never written over HOME.
-	flagSettings := map[string]any{"pluginConfigs": configs}
+	flagSettings := map[string]any{"pluginConfigs": configs, "hooks": map[string]any{"Stop": []any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": titleHook}}}}}}
 	if request.Capabilities.Sandbox {
 		// The Work runs sandboxed or not at all: the Harness refuses to start
 		// without a working sandbox, and no command may leave it.
