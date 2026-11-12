@@ -7,8 +7,8 @@ import (
 )
 
 type SendWorkMessage struct {
-	ActorUserID, WorkID string
-	Input               ExecutionInput
+	ActorID, WorkID string
+	Input           ExecutionInput
 }
 
 type SendWorkMessageHandler struct {
@@ -21,7 +21,7 @@ func NewSendWorkMessageHandler(authorization access.WorkAuthorizer, input *Deliv
 }
 
 func (h *SendWorkMessageHandler) Handle(ctx context.Context, request SendWorkMessage) error {
-	subject := request.ActorUserID
+	subject := request.ActorID
 	if err := h.authorization.AuthorizeWork(ctx, subject, request.WorkID); err != nil {
 		return err
 	}
@@ -30,8 +30,8 @@ func (h *SendWorkMessageHandler) Handle(ctx context.Context, request SendWorkMes
 }
 
 type ReplyToWorkInteraction struct {
-	ActorUserID, WorkID string
-	Response            InteractionResponse
+	ActorID, WorkID string
+	Response        InteractionResponse
 }
 
 type ReplyToWorkInteractionHandler struct {
@@ -44,7 +44,7 @@ func NewReplyToWorkInteractionHandler(authorization access.WorkAuthorizer, inter
 }
 
 func (h *ReplyToWorkInteractionHandler) Handle(ctx context.Context, request ReplyToWorkInteraction) error {
-	subject := request.ActorUserID
+	subject := request.ActorID
 	if err := h.authorization.AuthorizeWork(ctx, subject, request.WorkID); err != nil {
 		return err
 	}

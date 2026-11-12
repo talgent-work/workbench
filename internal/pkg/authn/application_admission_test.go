@@ -110,3 +110,21 @@ func TestApplicationWithoutAValidSubjectIsUnauthenticated(t *testing.T) {
 		})
 	}
 }
+
+// An Application's Work's Agent states which Application owns its Work and
+// still speaks only for that Agent: neither for the Application nor for a
+// person.
+func TestAgentOfAnApplicationsWorkNamesItsApplicationOnly(t *testing.T) {
+	header := map[string]string{
+		HeaderAuthenticatedBy: "envoy", HeaderPrincipal: "agent", HeaderSubject: workID,
+		HeaderAgentID: "agent-definition", HeaderPurpose: "work", HeaderApplicationID: applicationID,
+	}
+	principal, ran, err := call(t, NewPrincipalInterceptor(), userOrAgent, header)
+	require.NoError(t, err)
+	require.True(t, ran)
+	agent, ok := principal.Agent()
+	require.True(t, ok)
+	require.Equal(t, Agent{WorkID: workID, AgentID: "agent-definition", Purpose: "work", ApplicationID: applicationID}, agent)
+	_, isApplication := principal.Application()
+	require.False(t, isApplication, "the Agent never speaks for the Application")
+}

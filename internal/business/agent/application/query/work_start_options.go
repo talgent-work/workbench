@@ -38,7 +38,11 @@ type WorkModelOption struct {
 // Work under a person's employee definition.
 type WorkStartOptionsQuery struct {
 	SubjectID, WorkID string
-	EmployeeID        string
+	// EmployeeID names the person whose employee definition a new Work runs
+	// under; ApplicationID, when set instead, the Application whose
+	// definition it runs under.
+	EmployeeID    string
+	ApplicationID string
 	// ProjectID is the new Work's Project, whose scope's Built-in Plugins it
 	// loads; empty for a Work without one.
 	ProjectID string

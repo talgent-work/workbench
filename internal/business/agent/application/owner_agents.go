@@ -24,8 +24,29 @@ func (a *Application) EnsureEmployeeAgent(ctx context.Context, employeeID, displ
 // FindEmployeeAgent locates a person's employee definition without
 // establishing it.
 func (a *Application) FindEmployeeAgent(ctx context.Context, employeeID string) (string, bool, error) {
-	employee := domain.EmployeeDefinitionInput(strings.TrimSpace(employeeID))
-	id, err := a.DefinitionQueries.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: employee.UsageScope.Kind, ScopeReference: employee.UsageScope.Reference, Purpose: employee.Purpose})
+	return a.findDefinition(ctx, domain.EmployeeDefinitionInput(strings.TrimSpace(employeeID)))
+}
+
+// EnsureApplicationAgent returns an Application's one definition,
+// establishing it on the Application's first need from product defaults and
+// the Application's name, which only names a new definition (Application
+// definition, Default Application name).
+func (a *Application) EnsureApplicationAgent(ctx context.Context, applicationID, applicationName string) (command.InitializedAgentDefinition, error) {
+	applicationID = strings.TrimSpace(applicationID)
+	if applicationID == "" {
+		return command.InitializedAgentDefinition{}, domain.ErrInvalidAgentDefinition
+	}
+	return a.Commands.EnsureAgentDefinition.Handle(ctx, command.EnsureAgentDefinition{AgentDefinitionInput: domain.ApplicationDefinitionInput(applicationID, applicationName)})
+}
+
+// FindApplicationAgent locates an Application's definition without
+// establishing it.
+func (a *Application) FindApplicationAgent(ctx context.Context, applicationID string) (string, bool, error) {
+	return a.findDefinition(ctx, domain.ApplicationDefinitionInput(strings.TrimSpace(applicationID), ""))
+}
+
+func (a *Application) findDefinition(ctx context.Context, owner domain.AgentDefinitionInput) (string, bool, error) {
+	id, err := a.DefinitionQueries.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: owner.UsageScope.Kind, ScopeReference: owner.UsageScope.Reference, Purpose: owner.Purpose})
 	if errors.Is(err, domain.ErrAgentDefinitionNotFound) {
 		return "", false, nil
 	}

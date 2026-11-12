@@ -8,10 +8,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-type CancelTurn struct{ ActorUserID, WorkID, TurnID string }
+type CancelTurn struct{ ActorID, WorkID, TurnID string }
 
 func (a *Application) CancelTurn(ctx context.Context, input CancelTurn) error {
-	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
+	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorID, input.WorkID); err != nil {
 		return err
 	}
 	work, err := a.Works.Get(ctx, input.WorkID)
@@ -31,7 +31,7 @@ func (a *Application) CancelTurn(ctx context.Context, input CancelTurn) error {
 	return a.Harness.CancelTurn(ctx, work.ID, input.TurnID)
 }
 func (a *Application) GetCurrentTurn(ctx context.Context, input ControlWork) (command.CurrentTurn, error) {
-	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
+	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorID, input.WorkID); err != nil {
 		return command.CurrentTurn{}, err
 	}
 	work, err := a.WorkQueries.GetWorkView(ctx, input.WorkID)

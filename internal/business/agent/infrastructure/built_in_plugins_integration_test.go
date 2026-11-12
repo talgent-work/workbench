@@ -93,7 +93,7 @@ func newBuiltInFixture(t *testing.T, builtIns domain.BuiltInPlugins, catalog com
 func (f builtInFixture) startStandalone(t *testing.T, person string) map[string]any {
 	t.Helper()
 	ctx := context.Background()
-	id, err := f.works.Start(ctx, standalonework.StartWork{Person: standalonework.Person{UserID: person, DisplayName: person}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
+	id, err := f.works.Start(ctx, standalonework.StartWork{Caller: standalonework.Caller{UserID: person, DisplayName: person}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
 	require.NoError(t, err)
 	return f.retained(t, id)
 }
@@ -144,7 +144,7 @@ func configuredBuiltIns(t *testing.T, platform, project []string) domain.BuiltIn
 // person's definition names none, and Start Work offers them as required.
 func TestAStandaloneWorkLoadsThePlatformScopeAlone(t *testing.T) {
 	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, []string{projectPlugin}), &builtInCatalog{})
-	options, err := f.works.StartOptions(context.Background(), standalonework.Person{UserID: "alice"})
+	options, err := f.works.StartOptions(context.Background(), standalonework.Caller{UserID: "alice"})
 	require.NoError(t, err)
 	require.Equal(t, personalRole, options.DefaultStartupAgent)
 	require.Equal(t, map[string]bool{platformPlugin: true}, requiredOptions(options))
@@ -159,7 +159,7 @@ func TestAPersonalDisableOrUninstallKeepsABuiltInPlugin(t *testing.T) {
 		"disabled": {{Slug: platformPlugin, Enabled: false, Configuration: pluginconfig.Configuration{"mode": "saved"}}, {Slug: "chosen", Enabled: true}},
 	}}
 	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, nil), catalog)
-	options, err := f.works.StartOptions(context.Background(), standalonework.Person{UserID: "disabled"})
+	options, err := f.works.StartOptions(context.Background(), standalonework.Caller{UserID: "disabled"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{platformPlugin: true, "chosen": false}, requiredOptions(options))
 
@@ -231,7 +231,7 @@ func TestStartOptionsOfAnExistingWorkReportItsBuiltInPluginsAsRequired(t *testin
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{platformPlugin: true, projectPlugin: true, "caller-plugin": false}, requiredOptions(options))
 
-	id, err := f.works.Start(context.Background(), standalonework.StartWork{Person: standalonework.Person{UserID: "alice", DisplayName: "alice"}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
+	id, err := f.works.Start(context.Background(), standalonework.StartWork{Caller: standalonework.Caller{UserID: "alice", DisplayName: "alice"}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
 	require.NoError(t, err)
 	options, err = f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "alice", WorkID: id, ProjectID: "project"})
 	require.NoError(t, err)

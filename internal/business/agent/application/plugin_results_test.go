@@ -41,7 +41,7 @@ func TestPluginResultsListTheSelectionWithTheCurrentRunsOutcomes(t *testing.T) {
 		{Slug: "unselected", Loaded: true},
 	}}
 	app.ExecutionQueries = outcomes
-	results, err := app.GetWorkPluginResults(t.Context(), application.ControlWork{ActorUserID: "reader", WorkID: "work"})
+	results, err := app.GetWorkPluginResults(t.Context(), application.ControlWork{ActorID: "reader", WorkID: "work"})
 	require.NoError(t, err)
 	require.Equal(t, "reader", auth.subject)
 	require.Equal(t, "work", outcomes.workID)
@@ -60,12 +60,12 @@ func TestPluginResultsEnforceAccessAndPropagateStorageFailure(t *testing.T) {
 	auth.err = access.ErrAccessDenied
 	outcomes := &currentRunOutcomes{}
 	app.ExecutionQueries = outcomes
-	_, err = app.GetWorkPluginResults(t.Context(), application.ControlWork{ActorUserID: "outsider", WorkID: "work"})
+	_, err = app.GetWorkPluginResults(t.Context(), application.ControlWork{ActorID: "outsider", WorkID: "work"})
 	require.ErrorIs(t, err, access.ErrAccessDenied, "authorization precedes reading Plugin outcomes")
 	require.Empty(t, outcomes.workID)
 	auth.err = nil
 	unavailable := errors.New("execution query storage unavailable")
 	app.ExecutionQueries = &currentRunOutcomes{err: unavailable}
-	_, err = app.GetWorkPluginResults(t.Context(), application.ControlWork{ActorUserID: "reader", WorkID: "work"})
+	_, err = app.GetWorkPluginResults(t.Context(), application.ControlWork{ActorID: "reader", WorkID: "work"})
 	require.ErrorIs(t, err, unavailable)
 }

@@ -29,7 +29,7 @@ func NewWorkspaceReadingHandler(app *application.Application, token string) *Wor
 }
 
 func readWorkspace(workID, readerID, path string, admission *agentprivatev1.ReaderAdmission) application.ReadWorkspace {
-	return application.ReadWorkspace{ActorUserID: strings.TrimSpace(readerID), WorkID: strings.TrimSpace(workID), Path: path, Admission: readerAdmissionFromProto(admission)}
+	return application.ReadWorkspace{ActorID: strings.TrimSpace(readerID), WorkID: strings.TrimSpace(workID), Path: path, Admission: readerAdmissionFromProto(admission)}
 }
 
 func (h *WorkspaceReadingHandler) BrowseWorkspace(ctx context.Context, request *agentprivatev1.BrowseWorkspaceRequest) (*agentprivatev1.BrowseWorkspaceResponse, error) {

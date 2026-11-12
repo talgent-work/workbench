@@ -30,14 +30,17 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 		}
 		return value, nil
 	}
-	employee := domain.EmployeeDefinitionInput(strings.TrimSpace(input.EmployeeID))
-	if err := employee.UsageScope.Validate(); err != nil {
+	owner := domain.EmployeeDefinitionInput(strings.TrimSpace(input.EmployeeID))
+	if input.ApplicationID != "" {
+		owner = domain.ApplicationDefinitionInput(input.ApplicationID, "")
+	}
+	if err := owner.UsageScope.Validate(); err != nil {
 		return query.WorkStartOptions{}, err
 	}
-	id, err := a.DefinitionQueries.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: employee.UsageScope.Kind, ScopeReference: employee.UsageScope.Reference, Purpose: employee.Purpose})
+	id, err := a.DefinitionQueries.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: owner.UsageScope.Kind, ScopeReference: owner.UsageScope.Reference, Purpose: owner.Purpose})
 	switch {
 	case errors.Is(err, domain.ErrAgentDefinitionNotFound):
-		base = employee.Capabilities.Clone()
+		base = owner.Capabilities.Clone()
 	case err != nil:
 		return query.WorkStartOptions{}, err
 	default:

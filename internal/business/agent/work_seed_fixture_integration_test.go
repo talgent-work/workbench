@@ -34,7 +34,7 @@ var (
 // with base capabilities that every Work of these cases overrides.
 func seedDefinition(t *testing.T, db *xorm.Engine) *domain.AgentDefinition {
 	t.Helper()
-	created, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{workOwner}, AgentName: "Fixture Agent", Purpose: domain.EmployeeWorkPurpose,
+	created, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{workOwner}, AgentName: "Fixture Agent", Purpose: domain.StandaloneWorkPurpose,
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: workOwner},
 		Capabilities: domain.CapabilityConfiguration{Prompt: "base prompt", StartupAgent: "custom:base", RequiredPlugins: []string{"custom"}},
 	})

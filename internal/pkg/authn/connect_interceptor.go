@@ -34,6 +34,7 @@ const (
 	HeaderWorkSubjectKind   = "x-talgent-work-subject-kind"
 	HeaderWorkSubjectID     = "x-talgent-work-subject-id"
 	HeaderRepresentedUserID = "x-talgent-represented-user-id"
+	HeaderApplicationID     = "x-talgent-application-id"
 	// A trusted service's call on a person's behalf.
 	HeaderServiceID         = "x-talgent-service-id"
 	HeaderDelegatedUserID   = "x-talgent-delegated-user-id"
@@ -151,6 +152,11 @@ func establish(header headerReader) (Principal, error) {
 		if represented := strings.TrimSpace(header.Get(HeaderRepresentedUserID)); represented != "" {
 			if agent.RepresentedUserID, ok = canonicalUUID(represented); !ok {
 				return Principal{}, connect.NewError(connect.CodeUnauthenticated, "the agent's represented person is invalid")
+			}
+		}
+		if owner := strings.TrimSpace(header.Get(HeaderApplicationID)); owner != "" {
+			if agent.ApplicationID, ok = canonicalUUID(owner); !ok {
+				return Principal{}, connect.NewError(connect.CodeUnauthenticated, "the agent's owning Application is invalid")
 			}
 		}
 		if agent.AgentID == "" || agent.Purpose == "" {

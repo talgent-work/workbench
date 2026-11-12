@@ -8,8 +8,8 @@ import (
 
 // SetPermissionMode changes a running Managed Work's permission mode.
 type SetPermissionMode struct {
-	ActorUserID, WorkID string
-	Mode                domain.PermissionMode
+	ActorID, WorkID string
+	Mode            domain.PermissionMode
 }
 
 // SetPermissionMode applies the mode to the running Harness at once and
@@ -19,14 +19,14 @@ type SetPermissionMode struct {
 // changes nothing, and a change the Harness makes itself, such as leaving
 // plan mode, is retained the same way (Agent model: Managed permission mode).
 func (a *Application) SetPermissionMode(ctx context.Context, input SetPermissionMode) (domain.PermissionMode, error) {
-	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
+	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorID, input.WorkID); err != nil {
 		return "", err
 	}
 	work, err := a.Works.Get(ctx, input.WorkID)
 	if err != nil {
 		return "", err
 	}
-	if err := work.AdmitPermissionModeChange(input.ActorUserID, input.Mode); err != nil {
+	if err := work.AdmitPermissionModeChange(input.ActorID, input.Mode); err != nil {
 		return "", err
 	}
 	return a.Harness.SetPermissionMode(ctx, work.ID, input.Mode)

@@ -52,6 +52,10 @@ type LaunchSpecification struct {
 	// RepresentedPerson is the person the Work's Agent represents, whose
 	// credentials the run uses; empty for none.
 	RepresentedPerson string
+	// OwningApplication is the Application that owns the Work, which its
+	// Identity Token states; empty for none. Like Purpose, it is taken from
+	// the definition when the run begins.
+	OwningApplication string
 	TraceAttributes   map[string]string
 	// StartingContext is the context the Work started from, if any; a start
 	// without a conversation of its own yet takes it up.

@@ -33,6 +33,9 @@ type Agent struct {
 	// RepresentedUserID is the Account the Agent represents; empty for an
 	// Agent that represents no one.
 	RepresentedUserID string
+	// ApplicationID is the Application that owns the Work; empty for a Work
+	// no Application owns. The Agent never speaks for that Application.
+	ApplicationID string
 }
 
 // Application is an application Principal: a third-party program that calls

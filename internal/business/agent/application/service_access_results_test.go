@@ -20,7 +20,7 @@ func TestServiceAccessResultsPreserveOwnerAndReturnIndependentObservations(t *te
 	authorization := &thinkingAccess{}
 	reader := &serviceObservationReader{results: []query.ServiceAccessObservation{{Service: "github", Target: "github-api", Status: "unavailable", Reason: "revoked"}}}
 	app := &application.Application{Works: serviceAccessWorks{work: f.work}, WorkPrincipals: authorization, ExecutionQueries: reader}
-	result, err := app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorUserID: "viewer", WorkID: f.work.ID})
+	result, err := app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorID: "viewer", WorkID: f.work.ID})
 	require.NoError(t, err)
 	require.Equal(t, "owner", result.OwnerUserID)
 	require.Equal(t, []string{"github"}, result.SelectedServices)
@@ -39,11 +39,11 @@ func TestServiceAccessResultsDoNotHideAccessOrStorageFailures(t *testing.T) {
 	app := &application.Application{Works: serviceAccessWorks{work: f.work}, WorkPrincipals: authorization, ExecutionQueries: reader}
 	_, err := app.GetWorkServiceAccess(t.Context(), application.ControlWork{WorkID: " "})
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
-	_, err = app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorUserID: "outsider", WorkID: f.work.ID})
+	_, err = app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorID: "outsider", WorkID: f.work.ID})
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 	require.Zero(t, reader.calls)
 	authorization.err = nil
-	_, err = app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorUserID: "reader", WorkID: f.work.ID})
+	_, err = app.GetWorkServiceAccess(t.Context(), application.ControlWork{ActorID: "reader", WorkID: f.work.ID})
 	require.ErrorIs(t, err, reader.err)
 }
 

@@ -49,6 +49,29 @@ func TestDeliveryCarriesTheWorksIdentityTokenAndFallsDueADayEarly(t *testing.T) 
 	require.Equal(t, token.ExpiresAt.Add(-24*time.Hour), delivered.ExpiresAt, "redelivered while the old token still works")
 }
 
+// An Application's Work's token states the Application that owns it, taken
+// from its definition, and represents no person (Fixed facts).
+func TestAnApplicationsWorkTokenStatesItsApplication(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t, startingSession(t))
+	const application = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4e"
+	w.coordination = command.NewExecutionCoordination(w.now, w.works, commandtest.Definitions{Purpose: domain.StandaloneWorkPurpose, Application: application}, w.executions, w.computers, w.harness)
+	w.begin(t)
+	w.change(t, func(execution *domain.AgentExecution) {
+		require.True(t, commandtest.Submit(execution))
+		_, err := execution.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "environment"})
+		require.NoError(t, err)
+	})
+	w.environment.Observation = running("environment")
+	_, err := w.reconciliation().Reconcile(ctx, w.execution(t).ID)
+	require.NoError(t, err)
+
+	issued := w.accounts.Issued()
+	require.Len(t, issued, 1)
+	require.Equal(t, application, issued[0].OwningApplication)
+	require.Equal(t, domain.StandaloneWorkPurpose, issued[0].Purpose)
+}
+
 // A token Account does not issue fails the delivery, so the Harness never
 // starts; the Startup Deadline then fails the Work.
 func TestAFailedTokenIssueLeavesTheHarnessUnstarted(t *testing.T) {

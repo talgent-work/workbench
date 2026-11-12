@@ -1790,6 +1790,8 @@ spec:
             header: x-talgent-work-subject-id
           - claim: for
             header: x-talgent-represented-user-id
+          - claim: application_id
+            header: x-talgent-application-id
 ---
 # Every request through the entry loses the identity headers a client sent
 # before routing, so only the gateway's JWT validation and its routes write
@@ -1825,6 +1827,7 @@ spec:
         - x-talgent-work-subject-kind
         - x-talgent-work-subject-id
         - x-talgent-represented-user-id
+        - x-talgent-application-id
         - x-talgent-service-id
         - x-talgent-delegated-user-id
         - x-talgent-delegated-actor-id

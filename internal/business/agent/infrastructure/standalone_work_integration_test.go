@@ -102,6 +102,10 @@ func (knownPeople) IssueWorkIdentityToken(context.Context, command.WorkIdentityF
 	return command.IdentityToken{}, errors.New("personal Works issue no token here")
 }
 
+func (knownPeople) GetApplication(context.Context, string) (command.OwnedApplication, error) {
+	return command.OwnedApplication{}, command.ErrApplicationUnknown
+}
+
 func standaloneWorksFixture(t *testing.T, db *xorm.Engine, spaces *librarySpaces) (*standalonework.StandaloneWorks, *application.Application) {
 	t.Helper()
 	options := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
@@ -126,23 +130,23 @@ func TestStandaloneWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	spaces := &librarySpaces{}
 	works, app := standaloneWorksFixture(t, db, spaces)
-	owner := standalonework.Person{UserID: "owner", DisplayName: "Owner"}
-	reader := standalonework.Person{UserID: "reader"}
-	stranger := standalonework.Person{UserID: "stranger"}
+	owner := standalonework.Caller{UserID: "owner", DisplayName: "Owner"}
+	reader := standalonework.Caller{UserID: "reader"}
+	stranger := standalonework.Caller{UserID: "stranger"}
 
-	_, err = works.Start(ctx, standalonework.StartWork{Person: owner, RequestID: "not-a-uuid", InitialMessage: "x"})
+	_, err = works.Start(ctx, standalonework.StartWork{Caller: owner, RequestID: "not-a-uuid", InitialMessage: "x"})
 	require.ErrorIs(t, err, standalonework.ErrInvalidRequest)
 	empty, err := works.List(ctx, owner, 0)
 	require.NoError(t, err)
 	require.Empty(t, empty, "a person without a definition has no Standalone Works")
 
 	request := uuid.NewString()
-	first, err := works.Start(ctx, standalonework.StartWork{Person: owner, RequestID: request, InitialMessage: "Draft the plan\nwith details"})
+	first, err := works.Start(ctx, standalonework.StartWork{Caller: owner, RequestID: request, InitialMessage: "Draft the plan\nwith details"})
 	require.NoError(t, err)
-	again, err := works.Start(ctx, standalonework.StartWork{Person: owner, RequestID: request, InitialMessage: "Draft the plan\nwith details"})
+	again, err := works.Start(ctx, standalonework.StartWork{Caller: owner, RequestID: request, InitialMessage: "Draft the plan\nwith details"})
 	require.NoError(t, err)
 	require.Equal(t, first, again, "a repeated request returns the Work it started")
-	second, err := works.Start(ctx, standalonework.StartWork{Person: owner, RequestID: uuid.NewString(), InitialMessage: "Summarize the notes"})
+	second, err := works.Start(ctx, standalonework.StartWork{Caller: owner, RequestID: uuid.NewString(), InitialMessage: "Summarize the notes"})
 	require.NoError(t, err)
 
 	stored, err := app.Works.Get(ctx, first)
@@ -244,7 +248,7 @@ func TestStandaloneWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	mine, err = works.Library(ctx, owner, standalonework.LibraryFilter{})
 	require.NoError(t, err)
 	require.Equal(t, []string{"notes.md", "plan.pdf"}, names(mine))
-	_, err = app.RevokeWorkShare(ctx, application.RevokeWorkShare{ActorUserID: "owner", WorkID: first, ReaderID: "reader"})
+	_, err = app.RevokeWorkShare(ctx, application.RevokeWorkShare{ActorID: "owner", WorkID: first, ReaderID: "reader"})
 	require.NoError(t, err)
 	shared, err = works.Library(ctx, reader, standalonework.LibraryFilter{})
 	require.NoError(t, err)

@@ -23,7 +23,7 @@ func NewWorkFileHandler(works *standalonework.StandaloneWorks) *WorkFileHandler 
 }
 
 func (h *WorkFileHandler) ListWorkFiles(ctx context.Context, request *agentpublicv1.ListWorkFilesRequest) (*agentpublicv1.ListWorkFilesResponse, error) {
-	files, err := h.works.ListFiles(ctx, currentPerson(ctx), request.GetWorkId())
+	files, err := h.works.ListFiles(ctx, currentCaller(ctx), request.GetWorkId())
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
@@ -43,7 +43,7 @@ func (h *WorkFileHandler) ListWorkFiles(ctx context.Context, request *agentpubli
 
 func (h *WorkFileHandler) CreateWorkAttachmentUpload(ctx context.Context, request *agentpublicv1.CreateWorkAttachmentUploadRequest) (*agentpublicv1.CreateWorkAttachmentUploadResponse, error) {
 	msg := request
-	link, err := h.works.IssueAttachmentUpload(ctx, currentPerson(ctx), msg.GetWorkId(), msg.GetName(), msg.GetReplace(), msg.GetContentType())
+	link, err := h.works.IssueAttachmentUpload(ctx, currentCaller(ctx), msg.GetWorkId(), msg.GetName(), msg.GetReplace(), msg.GetContentType())
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
@@ -52,7 +52,7 @@ func (h *WorkFileHandler) CreateWorkAttachmentUpload(ctx context.Context, reques
 
 func (h *WorkFileHandler) RenameWorkAttachment(ctx context.Context, request *agentpublicv1.RenameWorkAttachmentRequest) (*agentpublicv1.RenameWorkAttachmentResponse, error) {
 	msg := request
-	if err := h.works.RenameAttachment(ctx, currentPerson(ctx), msg.GetWorkId(), msg.GetName(), msg.GetNewName()); err != nil {
+	if err := h.works.RenameAttachment(ctx, currentCaller(ctx), msg.GetWorkId(), msg.GetName(), msg.GetNewName()); err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	return &agentpublicv1.RenameWorkAttachmentResponse{}, nil
@@ -61,7 +61,7 @@ func (h *WorkFileHandler) RenameWorkAttachment(ctx context.Context, request *age
 func (h *WorkFileHandler) DeleteWorkFile(ctx context.Context, request *agentpublicv1.DeleteWorkFileRequest) (*agentpublicv1.DeleteWorkFileResponse, error) {
 	file, err := workFile(request.GetWorkId(), request.GetKind(), request.GetName())
 	if err == nil {
-		err = h.works.DeleteFile(ctx, currentPerson(ctx), file)
+		err = h.works.DeleteFile(ctx, currentCaller(ctx), file)
 	}
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
@@ -75,7 +75,7 @@ func (h *WorkFileHandler) CreateWorkFileAccessLink(ctx context.Context, request 
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	inline := request.GetDisposition() == agentpublicv1.WorkFileAccessDisposition_WORK_FILE_ACCESS_DISPOSITION_PREVIEW
-	link, err := h.works.IssueAccessLink(ctx, currentPerson(ctx), file, inline)
+	link, err := h.works.IssueAccessLink(ctx, currentCaller(ctx), file, inline)
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
@@ -87,7 +87,7 @@ func (h *WorkFileHandler) CreateWorkFileShareLink(ctx context.Context, request *
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
-	link, err := h.works.CreateShareLink(ctx, currentPerson(ctx), file)
+	link, err := h.works.CreateShareLink(ctx, currentCaller(ctx), file)
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
@@ -97,7 +97,7 @@ func (h *WorkFileHandler) CreateWorkFileShareLink(ctx context.Context, request *
 func (h *WorkFileHandler) StopWorkFileSharing(ctx context.Context, request *agentpublicv1.StopWorkFileSharingRequest) (*agentpublicv1.StopWorkFileSharingResponse, error) {
 	file, err := workFile(request.GetWorkId(), request.GetKind(), request.GetName())
 	if err == nil {
-		err = h.works.StopSharing(ctx, currentPerson(ctx), file)
+		err = h.works.StopSharing(ctx, currentCaller(ctx), file)
 	}
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
@@ -126,7 +126,7 @@ func (h *WorkFileHandler) preview(ctx context.Context, workID string, kind agent
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
-	preview, err := h.works.FilePreview(ctx, currentPerson(ctx), file, render)
+	preview, err := h.works.FilePreview(ctx, currentCaller(ctx), file, render)
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}

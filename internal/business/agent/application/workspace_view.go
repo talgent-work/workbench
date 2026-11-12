@@ -115,8 +115,8 @@ type WorkspaceFileLink struct {
 // ReadWorkspace names a Work, a path in its workspace, the reader and the
 // reader's admission a trusted caller supplied.
 type ReadWorkspace struct {
-	ActorUserID, WorkID, Path string
-	Admission                 domain.ReaderAdmission
+	ActorID, WorkID, Path string
+	Admission             domain.ReaderAdmission
 }
 
 // BrowseWorkspace serves Storage's Workspace View to a reader Work access
@@ -154,10 +154,10 @@ func (a *Application) DownloadWorkspaceFile(ctx context.Context, input ReadWorks
 // whose readers are pointed to its Artifacts, and names where the Work's
 // files are read.
 func (a *Application) readableWorkspace(ctx context.Context, input ReadWorkspace) (domain.WorkspaceLocation, error) {
-	if strings.TrimSpace(input.ActorUserID) == "" {
+	if strings.TrimSpace(input.ActorID) == "" {
 		return domain.WorkspaceLocation{}, domain.ErrInvalidWork
 	}
-	work, _, err := a.admittedReaderWork(ctx, AdmitWorkReader{ReaderID: input.ActorUserID, WorkID: input.WorkID, Admission: input.Admission})
+	work, _, err := a.admittedReaderWork(ctx, AdmitWorkReader{ReaderID: input.ActorID, WorkID: input.WorkID, Admission: input.Admission})
 	if err != nil {
 		return domain.WorkspaceLocation{}, err
 	}

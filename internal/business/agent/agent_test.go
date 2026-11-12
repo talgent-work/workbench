@@ -108,8 +108,24 @@ func storageStub() fx.Option {
 		fx.Supply(agent.StorageConfig{Address: "http://storage.invalid", Token: "storage-test"}),
 		fx.Supply(agent.AccountConfig{Address: "http://account.invalid"}),
 		fx.Decorate(func(command.StoragePort) command.StoragePort { return stubStorage{} }),
-		fx.Decorate(func(command.AccountPort) command.AccountPort { return &commandtest.Accounts{} }),
+		fx.Decorate(func(command.AccountPort) command.AccountPort {
+			return &commandtest.Accounts{Applications: moduleApplications}
+		}),
 	)
+}
+
+// The Applications Account knows in module tests: two active ones and one
+// removed for good.
+const (
+	supportDesk      = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4e"
+	billingBot       = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4f"
+	retiredReporting = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c50"
+)
+
+var moduleApplications = map[string]command.OwnedApplication{
+	supportDesk:      {ID: supportDesk, Name: "Support Desk", OwnerUserID: "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c51"},
+	billingBot:       {ID: billingBot, Name: "Billing Bot", OwnerUserID: "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c51"},
+	retiredReporting: {ID: retiredReporting, Name: "Reporting", OwnerUserID: "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c51", Removed: true},
 }
 
 type stubStorage struct{ command.StoragePort }

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS `agent_account` (
   `work_subject_kind` varchar(255) NOT NULL DEFAULT '' COMMENT 'The kind of the Work''s Subject; empty for a Work without one',
   `work_subject_id` varchar(255) NOT NULL DEFAULT '' COMMENT 'The identity of the Work''s Subject',
   `represented_user_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Account id of the person the Agent represents; empty for an Agent representing no one',
+  `application_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'The Application that owns the Work; empty for a Work no Application owns',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT 'Stored row version; the facts never change',
   `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'First Identity Token request in Unix milliseconds',
   `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Last update time in Unix milliseconds',

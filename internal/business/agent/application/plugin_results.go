@@ -14,7 +14,7 @@ func (a *Application) GetWorkPluginResults(ctx context.Context, input ControlWor
 	if strings.TrimSpace(input.WorkID) == "" {
 		return nil, domain.ErrInvalidWork
 	}
-	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
+	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorID, input.WorkID); err != nil {
 		return nil, err
 	}
 	work, err := a.Works.Get(ctx, input.WorkID)

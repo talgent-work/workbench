@@ -107,7 +107,8 @@ func (s *EnvironmentSupplies) credentials(ctx context.Context, execution *domain
 
 // identityToken asks Account for the Work's agent Identity Token, stating the
 // Work's fixed facts as its start fixed them: its Project, AgentDefinition
-// and its purpose, Subject and the person its Agent represents.
+// and its purpose, Subject, the person its Agent represents and the
+// Application that owns it.
 func (s *EnvironmentSupplies) identityToken(ctx context.Context, launch domain.LaunchSpecification) (IdentityToken, error) {
 	return s.accounts.IssueWorkIdentityToken(ctx, WorkIdentityFacts{
 		WorkID:            launch.WorkID,
@@ -117,6 +118,7 @@ func (s *EnvironmentSupplies) identityToken(ctx context.Context, launch domain.L
 		SubjectKind:       string(launch.Subject.Kind),
 		SubjectID:         launch.Subject.ID,
 		RepresentedPerson: launch.RepresentedPerson,
+		OwningApplication: launch.OwningApplication,
 	})
 }
 

@@ -31,21 +31,30 @@ func NewStandaloneWorkHandler(works *standalonework.StandaloneWorks) *Standalone
 	return &StandaloneWorkHandler{works: works}
 }
 
-// currentPerson maps the request's Principal to the person Standalone Works
-// act for: a user asks for themselves; an agent asks on behalf of the person
-// its Work represents, from its Work's Project and purpose, and the
-// application decides what that Agent may read. An absent person is refused
-// by the application.
-func currentPerson(ctx context.Context) standalonework.Person {
-	if agent, ok := authn.CurrentAgent(ctx); ok {
-		return standalonework.Person{UserID: agent.RepresentedUserID, Agent: &standalonework.ActingAgent{ProjectID: agent.ProjectID, Purpose: agent.Purpose}}
+// currentCaller maps the request's Principal to whom Standalone Works act
+// for: a user or an Application asks for itself; an agent asks on behalf of
+// the person its Work represents, from its Work's Project and purpose, and
+// the application decides what that Agent may read. An absent owner is
+// refused by the application.
+func currentCaller(ctx context.Context) standalonework.Caller {
+	principal, _ := authn.PrincipalFrom(ctx)
+	if agent, ok := principal.Agent(); ok {
+		return standalonework.Caller{UserID: agent.RepresentedUserID, Agent: &standalonework.ActingAgent{ProjectID: agent.ProjectID, Purpose: agent.Purpose}}
+	}
+	if application, ok := principal.Application(); ok {
+		return standalonework.Caller{ApplicationID: application.ID}
 	}
 	user, _ := authn.CurrentUser(ctx)
-	return standalonework.Person{UserID: user.ID, DisplayName: user.DisplayName}
+	return standalonework.Caller{UserID: user.ID, DisplayName: user.DisplayName}
 }
 
+// currentOwner is the owner a Work operation acts for: the person or the
+// Application the request speaks for; empty for an Agent, which owns no
+// Work.
+func currentOwner(ctx context.Context) string { return currentCaller(ctx).Owner() }
+
 func (h *StandaloneWorkHandler) GetWorkStartOptions(ctx context.Context, _ *agentpublicv2.GetWorkStartOptionsRequest) (*agentpublicv2.GetWorkStartOptionsResponse, error) {
-	value, err := h.works.StartOptions(ctx, currentPerson(ctx))
+	value, err := h.works.StartOptions(ctx, currentCaller(ctx))
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
@@ -53,7 +62,7 @@ func (h *StandaloneWorkHandler) GetWorkStartOptions(ctx context.Context, _ *agen
 }
 
 func (h *StandaloneWorkHandler) ListWorkStartRepositories(ctx context.Context, _ *agentpublicv2.ListWorkStartRepositoriesRequest) (*agentpublicv2.ListWorkStartRepositoriesResponse, error) {
-	value, err := h.works.StartRepositories(ctx, currentPerson(ctx))
+	value, err := h.works.StartRepositories(ctx, currentCaller(ctx))
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
@@ -63,7 +72,7 @@ func (h *StandaloneWorkHandler) ListWorkStartRepositories(ctx context.Context, _
 func (h *StandaloneWorkHandler) StartWork(ctx context.Context, request *agentpublicv2.StartWorkRequest) (*agentpublicv2.StartWorkResponse, error) {
 	msg := request
 	start := standalonework.StartWork{
-		Person: currentPerson(ctx), RequestID: strings.TrimSpace(msg.GetRequestId()), InitialMessage: msg.GetInitialMessage(),
+		Caller: currentCaller(ctx), RequestID: strings.TrimSpace(msg.GetRequestId()), InitialMessage: msg.GetInitialMessage(),
 		Capabilities: creationCapabilitiesFromProto(msg.GetCreationCapabilities()), WorkModel: workModelFromProto(msg.GetModel()),
 		ThinkingLevel: strings.TrimSpace(msg.GetThinkingLevel()), ComputerID: strings.TrimSpace(msg.GetComputerId()),
 		Harness: harnessChoiceFromProto(msg.GetHarness()),
@@ -101,7 +110,7 @@ func creationCapabilitiesFromProto(value *agentpublicv1.CreationCapabilities) do
 }
 
 func (h *StandaloneWorkHandler) ListWorks(ctx context.Context, request *agentpublicv2.ListWorksRequest) (*agentpublicv2.ListWorksResponse, error) {
-	works, err := h.works.List(ctx, currentPerson(ctx), int(request.GetLimit()))
+	works, err := h.works.List(ctx, currentCaller(ctx), int(request.GetLimit()))
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
@@ -117,14 +126,14 @@ func (h *StandaloneWorkHandler) ListWorks(ctx context.Context, request *agentpub
 
 func (h *StandaloneWorkHandler) ChangeWorkTitle(ctx context.Context, request *agentpublicv2.ChangeWorkTitleRequest) (*agentpublicv2.ChangeWorkTitleResponse, error) {
 	title := strings.TrimSpace(request.GetTitle())
-	if err := h.works.ChangeTitle(ctx, currentPerson(ctx), request.GetWorkId(), title); err != nil {
+	if err := h.works.ChangeTitle(ctx, currentCaller(ctx), request.GetWorkId(), title); err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	return &agentpublicv2.ChangeWorkTitleResponse{Title: title}, nil
 }
 
 func (h *StandaloneWorkHandler) SearchShareReaders(ctx context.Context, request *agentpublicv2.SearchShareReadersRequest) (*agentpublicv2.SearchShareReadersResponse, error) {
-	users, err := h.works.SearchShareReaders(ctx, currentPerson(ctx), request.GetQuery(), int(request.GetLimit()))
+	users, err := h.works.SearchShareReaders(ctx, currentCaller(ctx), request.GetQuery(), int(request.GetLimit()))
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
@@ -132,7 +141,7 @@ func (h *StandaloneWorkHandler) SearchShareReaders(ctx context.Context, request 
 }
 
 func (h *StandaloneWorkHandler) GetShareReaders(ctx context.Context, request *agentpublicv2.GetShareReadersRequest) (*agentpublicv2.GetShareReadersResponse, error) {
-	users, err := h.works.GetShareReaders(ctx, currentPerson(ctx), request.GetUserIds())
+	users, err := h.works.GetShareReaders(ctx, currentCaller(ctx), request.GetUserIds())
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
@@ -148,7 +157,7 @@ func directoryUsersToProto(users []command.DirectoryUser) []*agentpublicv2.Direc
 }
 
 func (h *StandaloneWorkHandler) GrantWorkShare(ctx context.Context, request *agentpublicv2.GrantWorkShareRequest) (*agentpublicv2.GrantWorkShareResponse, error) {
-	if err := h.works.GrantShare(ctx, currentPerson(ctx), request.GetWorkId(), request.GetReaderUserId()); err != nil {
+	if err := h.works.GrantShare(ctx, currentCaller(ctx), request.GetWorkId(), request.GetReaderUserId()); err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}
 	return &agentpublicv2.GrantWorkShareResponse{}, nil
@@ -163,7 +172,7 @@ func (h *StandaloneWorkHandler) ListLibraryFiles(ctx context.Context, request *a
 	if msg.AddedBefore != nil {
 		filter.AddedBefore = msg.GetAddedBefore().AsTime()
 	}
-	library, err := h.works.Library(ctx, currentPerson(ctx), filter)
+	library, err := h.works.Library(ctx, currentCaller(ctx), filter)
 	if err != nil {
 		return nil, mapStandaloneWorkError(ctx, err)
 	}

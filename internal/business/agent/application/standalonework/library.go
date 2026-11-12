@@ -39,8 +39,8 @@ type Library struct {
 // they hold a Work Share in, most recently added first. A shared Work with a
 // Subject or a Project contributes only the Artifacts it published itself:
 // its publication target may hold its Subject's other Works' files.
-func (p *StandaloneWorks) Library(ctx context.Context, person Person, filter LibraryFilter) (Library, error) {
-	reader := person.libraryReader()
+func (p *StandaloneWorks) Library(ctx context.Context, caller Caller, filter LibraryFilter) (Library, error) {
+	reader := caller.libraryReader()
 	if reader == "" {
 		return Library{}, access.ErrAccessDenied
 	}

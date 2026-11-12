@@ -51,11 +51,11 @@ func TestLiveTurnControlsAreUnobservedDuringADisconnection(t *testing.T) {
 	store.work.DisconnectedSince = since
 	app.WorkQueries = disconnectedView{view: query.WorkView{WorkID: "work", State: "working", DisconnectedSince: since}}
 	app.Harness = unreachedTurns{t: t}
-	work := application.ControlWork{ActorUserID: "owner", WorkID: "work"}
+	work := application.ControlWork{ActorID: "owner", WorkID: "work"}
 
 	_, err := app.GetCurrentTurn(ctx, work)
 	require.ErrorIs(t, err, domain.ErrExecutionUnobserved)
 	_, err = app.ListPendingInteractions(ctx, work)
 	require.ErrorIs(t, err, domain.ErrExecutionUnobserved)
-	require.ErrorIs(t, app.CancelTurn(ctx, application.CancelTurn{ActorUserID: "owner", WorkID: "work", TurnID: "turn"}), domain.ErrExecutionUnobserved)
+	require.ErrorIs(t, app.CancelTurn(ctx, application.CancelTurn{ActorID: "owner", WorkID: "work", TurnID: "turn"}), domain.ErrExecutionUnobserved)
 }

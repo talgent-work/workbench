@@ -237,6 +237,7 @@ func register(r registration) {
 	private := connectserver.New(r.Logger)
 	accountprivatev1connect.RegisterUserDirectoryServiceHandler(private, accountconnect.NewUserDirectory(r.App))
 	accountprivatev1connect.RegisterAgentAccountServiceHandler(private, accountconnect.NewAgentAccounts(r.App))
+	accountprivatev1connect.RegisterApplicationOwnershipServiceHandler(private, accountconnect.NewApplicationOwnership(r.App))
 	connectserver.Mount(r.Mux, private)
 	// The browser reads who is signed in, and a person registers and reads
 	// their Applications, under the identity the entry verified.

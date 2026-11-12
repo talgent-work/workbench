@@ -9,10 +9,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-type SetThinkingLevel struct{ ActorUserID, WorkID, Level string }
+type SetThinkingLevel struct{ ActorID, WorkID, Level string }
 
 func (a *Application) GetThinkingLevel(ctx context.Context, input ControlWork) (string, error) {
-	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
+	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorID, input.WorkID); err != nil {
 		return "", err
 	}
 	session, err := a.Works.Get(ctx, input.WorkID)
@@ -23,7 +23,7 @@ func (a *Application) GetThinkingLevel(ctx context.Context, input ControlWork) (
 }
 
 func (a *Application) SetThinkingLevel(ctx context.Context, input SetThinkingLevel) error {
-	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
+	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorID, input.WorkID); err != nil {
 		return err
 	}
 	session, err := a.Works.Get(ctx, input.WorkID)

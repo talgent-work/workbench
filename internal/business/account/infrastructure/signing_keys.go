@@ -155,6 +155,7 @@ func withAgentClaims(builder *jwt.Builder, work domain.WorkFacts) *jwt.Builder {
 		{"work_subject_kind", work.Subject.Kind},
 		{"work_subject_id", work.Subject.ID},
 		{"for", string(work.RepresentedPerson)},
+		{"application_id", string(work.OwningApplication)},
 	} {
 		if claim.value != "" {
 			builder = builder.Claim(claim.name, claim.value)

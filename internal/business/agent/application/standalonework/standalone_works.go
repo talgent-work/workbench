@@ -2,6 +2,7 @@ package standalonework
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -13,112 +14,104 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// StandaloneWorks serves a person's own Works under their employee
-// definition, their files and sharing, and their Personal Library.
+// StandaloneWorks serves an owner's own Works under its definition, a
+// person's or an Application's, a person's files and sharing, and their
+// Personal Library.
 type StandaloneWorks struct {
-	app       *application.Application
-	works     query.WorkQueryRepository
-	files     command.StoragePort
-	directory command.AccountPort
+	app      *application.Application
+	works    query.WorkQueryRepository
+	files    command.StoragePort
+	accounts command.AccountPort
 }
 
-func New(app *application.Application, works query.WorkQueryRepository, files command.StoragePort, directory command.AccountPort) *StandaloneWorks {
-	return &StandaloneWorks{app: app, works: works, files: files, directory: directory}
+func New(app *application.Application, works query.WorkQueryRepository, files command.StoragePort, accounts command.AccountPort) *StandaloneWorks {
+	return &StandaloneWorks{app: app, works: works, files: files, accounts: accounts}
 }
 
-// Person is the authenticated person a request acts for. Agent, when set, is
-// the Agent of one of that person's Works asking on their behalf.
-type Person struct {
-	UserID, DisplayName string
-	Agent               *ActingAgent
-}
-
-// ActingAgent is the Work an Agent asks from: its Project, if any, and its
-// definition's purpose.
-type ActingAgent struct{ ProjectID, Purpose string }
-
-// self is the person asking for themselves; an Agent asks for no one here.
-func (p Person) self() string {
-	if p.Agent != nil {
-		return ""
-	}
-	return p.UserID
-}
-
-// libraryReader is whom a Library read is for: the person asking for
-// themselves, or the owner of the Work without a Project, of the work
-// purpose, whose Agent asks. The Agent of any other Work reads no one's
-// Library.
-func (p Person) libraryReader() string {
-	if p.Agent != nil && (p.Agent.ProjectID != "" || p.Agent.Purpose != domain.EmployeeWorkPurpose) {
-		return ""
-	}
-	return p.UserID
-}
-
-// StartOptions lists what a new Standalone Work may start with.
-func (p *StandaloneWorks) StartOptions(ctx context.Context, person Person) (query.WorkStartOptions, error) {
-	if person.self() == "" {
+// StartOptions lists what a new Standalone Work may start with under the
+// owner's definition.
+func (p *StandaloneWorks) StartOptions(ctx context.Context, caller Caller) (query.WorkStartOptions, error) {
+	owner := caller.Owner()
+	if owner == "" {
 		return query.WorkStartOptions{}, access.ErrAccessDenied
 	}
-	return p.app.GetWorkStartOptions(ctx, query.WorkStartOptionsQuery{SubjectID: person.UserID, EmployeeID: person.UserID})
+	return p.app.GetWorkStartOptions(ctx, query.WorkStartOptionsQuery{SubjectID: owner, EmployeeID: caller.self(), ApplicationID: caller.ApplicationID})
 }
 
 // StartRepositories lists the repositories the person may check out.
-func (p *StandaloneWorks) StartRepositories(ctx context.Context, person Person) (query.WorkStartRepositories, error) {
-	if person.self() == "" {
+func (p *StandaloneWorks) StartRepositories(ctx context.Context, caller Caller) (query.WorkStartRepositories, error) {
+	if caller.self() == "" {
 		return query.WorkStartRepositories{}, access.ErrAccessDenied
 	}
-	return p.app.ListWorkStartRepositories(ctx, person.UserID)
+	return p.app.ListWorkStartRepositories(ctx, caller.UserID)
 }
 
 // StartWork is a new Standalone Work and its first input.
 type StartWork struct {
-	Person         Person
+	Caller         Caller
 	RequestID      string
 	InitialMessage string
 	Selections     []command.RepositorySelection
 	Capabilities   domain.CapabilityDifferences
 	WorkModel      domain.WorkModelSelection
 	ThinkingLevel  string
-	// ComputerID is the Computer the person chose; empty runs it on the
+	// ComputerID is the Computer the owner chose; empty runs it on the
 	// default Computer, as command.CreateWork.ComputerID describes.
 	ComputerID string
-	// Harness is the person's choice for the Work's Harness, admitted only
-	// on a Managed Computer.
+	// Harness is the owner's choice for the Work's Harness, admitted only on
+	// a Managed Computer.
 	Harness domain.HarnessChoice
 }
 
 // standaloneWorkSpace derives a Standalone Work's identity, and with it the owner
-// of its File Spaces, from the person and the request identity: a repeated
+// of its File Spaces, from its owner and the request identity: a repeated
 // request names the same Work.
 var standaloneWorkSpace = uuid.MustParse("6f5c1c8e-9a0b-4c7e-8a51-3d2f0b9e4a17")
 
 // Start creates the Work under the identity Agent allocates for it and admits
 // its first input. The Work has no Subject and no Project, so its layout
 // locates its own inputs and publication target; only its creation request
-// identity deduplicates it.
+// identity deduplicates it. A person starts it for themselves; an
+// Application starts it as itself, with no person starting it.
 func (p *StandaloneWorks) Start(ctx context.Context, input StartWork) (string, error) {
-	if input.Person.UserID == "" {
+	owner := input.Caller.Owner()
+	if owner == "" {
 		return "", access.ErrAccessDenied
 	}
 	if uuid.Validate(input.RequestID) != nil || strings.TrimSpace(input.InitialMessage) == "" {
 		return "", ErrInvalidRequest
 	}
-	definition, err := p.app.EnsureEmployeeAgent(ctx, input.Person.UserID, input.Person.DisplayName)
+	definition, err := p.ensureDefinition(ctx, input.Caller)
 	if err != nil {
 		return "", err
 	}
-	workID := uuid.NewSHA1(standaloneWorkSpace, []byte(input.Person.UserID+"/"+input.RequestID)).String()
+	workID := uuid.NewSHA1(standaloneWorkSpace, []byte(owner+"/"+input.RequestID)).String()
 	initial := command.PrepareWorkExecution{
-		SubjectID: input.Person.UserID, RequestID: input.RequestID, ThinkingLevel: input.ThinkingLevel,
+		SubjectID: owner, RequestID: input.RequestID, ThinkingLevel: input.ThinkingLevel,
 		WorkBranch: "talgent/" + workID[:8], Input: command.ExecutionInput{ID: input.RequestID, Text: input.InitialMessage}, Selections: input.Selections,
 	}
 	return p.app.Commands.CreateWork.Handle(ctx, command.CreateWork{
-		StartingUserID: input.Person.UserID, SubjectID: input.Person.UserID, RequestID: input.RequestID, AgentID: definition.AgentID,
+		StartingUserID: input.Caller.self(), SubjectID: owner, RequestID: input.RequestID, AgentID: definition.AgentID,
 		WorkID: workID, DisplayTitle: domain.DisplayTitleFrom(input.InitialMessage),
 		WorkModel: input.WorkModel, CapabilityDifferences: input.Capabilities, InitialExecution: &initial, ComputerID: input.ComputerID, Harness: input.Harness,
 	})
+}
+
+// ensureDefinition returns the owner's definition, establishing it on its
+// first need: a person's from their trusted identity, an Application's from
+// its name in Account. A removed or unknown Application starts nothing.
+func (p *StandaloneWorks) ensureDefinition(ctx context.Context, caller Caller) (command.InitializedAgentDefinition, error) {
+	if caller.ApplicationID == "" {
+		return p.app.EnsureEmployeeAgent(ctx, caller.UserID, caller.DisplayName)
+	}
+	found, err := p.accounts.GetApplication(ctx, caller.ApplicationID)
+	if errors.Is(err, command.ErrApplicationUnknown) || (err == nil && found.Removed) {
+		return command.InitializedAgentDefinition{}, access.ErrAccessDenied
+	}
+	if err != nil {
+		return command.InitializedAgentDefinition{}, err
+	}
+	return p.app.EnsureApplicationAgent(ctx, found.ID, found.Name)
 }
 
 const (
@@ -126,10 +119,10 @@ const (
 	maxListedWorks     = 100
 )
 
-// List lists the person's Standalone Works, closed ones included, most
-// recently updated first; a person without a definition yet has none.
-func (p *StandaloneWorks) List(ctx context.Context, person Person, limit int) ([]query.StandaloneWorkSummary, error) {
-	agentID, found, err := p.employeeDefinition(ctx, person)
+// List lists the owner's Standalone Works, closed ones included, most
+// recently updated first; an owner without a definition yet has none.
+func (p *StandaloneWorks) List(ctx context.Context, caller Caller, limit int) ([]query.StandaloneWorkSummary, error) {
+	agentID, found, err := p.ownDefinition(ctx, caller)
 	if err != nil || !found {
 		return nil, err
 	}
@@ -139,21 +132,25 @@ func (p *StandaloneWorks) List(ctx context.Context, person Person, limit int) ([
 	return p.works.ListStandaloneWorks(ctx, agentID, min(limit, maxListedWorks))
 }
 
-// employeeDefinition locates the person's employee definition without
-// establishing it.
-func (p *StandaloneWorks) employeeDefinition(ctx context.Context, person Person) (string, bool, error) {
-	if person.self() == "" {
+// ownDefinition locates the owner's definition without establishing it.
+func (p *StandaloneWorks) ownDefinition(ctx context.Context, caller Caller) (string, bool, error) {
+	switch {
+	case caller.Owner() == "":
 		return "", false, access.ErrAccessDenied
+	case caller.ApplicationID != "":
+		return p.app.FindApplicationAgent(ctx, caller.ApplicationID)
+	default:
+		return p.app.FindEmployeeAgent(ctx, caller.UserID)
 	}
-	return p.app.FindEmployeeAgent(ctx, person.UserID)
 }
 
 // ChangeTitle replaces the owner's Standalone Work's display title.
-func (p *StandaloneWorks) ChangeTitle(ctx context.Context, person Person, workID, title string) error {
-	if person.self() == "" {
+func (p *StandaloneWorks) ChangeTitle(ctx context.Context, caller Caller, workID, title string) error {
+	owner := caller.Owner()
+	if owner == "" {
 		return access.ErrAccessDenied
 	}
-	return p.app.ChangeDisplayTitle(ctx, application.ChangeDisplayTitle{ActorUserID: person.UserID, WorkID: strings.TrimSpace(workID), Title: title})
+	return p.app.ChangeDisplayTitle(ctx, application.ChangeDisplayTitle{ActorID: owner, WorkID: strings.TrimSpace(workID), Title: title})
 }
 
 const (
@@ -163,8 +160,8 @@ const (
 )
 
 // SearchShareReaders finds people in the User Directory.
-func (p *StandaloneWorks) SearchShareReaders(ctx context.Context, person Person, search string, limit int) ([]command.DirectoryUser, error) {
-	if person.self() == "" {
+func (p *StandaloneWorks) SearchShareReaders(ctx context.Context, caller Caller, search string, limit int) ([]command.DirectoryUser, error) {
+	if caller.self() == "" {
 		return nil, access.ErrAccessDenied
 	}
 	if strings.TrimSpace(search) == "" {
@@ -173,12 +170,12 @@ func (p *StandaloneWorks) SearchShareReaders(ctx context.Context, person Person,
 	if limit <= 0 {
 		limit = defaultDirectoryResults
 	}
-	return p.directory.SearchUsers(ctx, strings.TrimSpace(search), min(limit, maxDirectoryResults))
+	return p.accounts.SearchUsers(ctx, strings.TrimSpace(search), min(limit, maxDirectoryResults))
 }
 
 // GetShareReaders shows people in the User Directory by identity.
-func (p *StandaloneWorks) GetShareReaders(ctx context.Context, person Person, userIDs []string) ([]command.DirectoryUser, error) {
-	if person.self() == "" {
+func (p *StandaloneWorks) GetShareReaders(ctx context.Context, caller Caller, userIDs []string) ([]command.DirectoryUser, error) {
+	if caller.self() == "" {
 		return nil, access.ErrAccessDenied
 	}
 	if len(userIDs) > maxDirectoryLookup {
@@ -187,26 +184,26 @@ func (p *StandaloneWorks) GetShareReaders(ctx context.Context, person Person, us
 	if len(userIDs) == 0 {
 		return nil, nil
 	}
-	return p.directory.GetUsers(ctx, userIDs)
+	return p.accounts.GetUsers(ctx, userIDs)
 }
 
 // GrantShare lets one person in the User Directory read the owner's
 // Standalone Work: a deployment is one enterprise, so the directory is the
 // scope of a Work without a Project.
-func (p *StandaloneWorks) GrantShare(ctx context.Context, person Person, workID, reader string) error {
-	if person.self() == "" {
+func (p *StandaloneWorks) GrantShare(ctx context.Context, caller Caller, workID, reader string) error {
+	if caller.self() == "" {
 		return access.ErrAccessDenied
 	}
 	reader = strings.TrimSpace(reader)
 	if reader == "" {
 		return domain.ErrInvalidVisibility
 	}
-	known, err := p.directory.GetUsers(ctx, []string{reader})
+	known, err := p.accounts.GetUsers(ctx, []string{reader})
 	if err != nil {
 		return err
 	}
 	if len(known) == 0 || known[0].UserID != reader {
 		return ErrReaderUnknown
 	}
-	return p.app.GrantWorkShare(ctx, application.GrantWorkShare{RequesterID: person.UserID, WorkID: strings.TrimSpace(workID), ReaderID: reader, Admission: domain.ReaderAdmission{Directory: true}})
+	return p.app.GrantWorkShare(ctx, application.GrantWorkShare{RequesterID: caller.UserID, WorkID: strings.TrimSpace(workID), ReaderID: reader, Admission: domain.ReaderAdmission{Directory: true}})
 }

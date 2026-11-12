@@ -8,7 +8,7 @@ import (
 )
 
 func (a *Application) ListPendingInteractions(ctx context.Context, input ControlWork) ([]command.PendingInteraction, error) {
-	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorUserID, input.WorkID); err != nil {
+	if err := a.WorkPrincipals.AuthorizeWork(ctx, input.ActorID, input.WorkID); err != nil {
 		return nil, err
 	}
 	work, err := a.WorkQueries.GetWorkView(ctx, input.WorkID)

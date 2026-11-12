@@ -157,7 +157,7 @@ def rules(rendered, route):
 # its own. Capabilities pass through.
 identity_headers = {"x-talgent-" + h for h in (
     "authenticated-by", "issuer", "principal", "subject", "username", "email", "display-name", "avatar-url", "roles",
-    "project-id", "agent-id", "purpose", "work-subject-kind", "work-subject-id", "represented-user-id",
+    "project-id", "agent-id", "purpose", "work-subject-kind", "work-subject-id", "represented-user-id", "application-id",
     "service-id", "delegated-user-id", "delegated-actor-id", "reader-admission",
     "runtime-instance-id", "runtime-purpose", "runtime-owner-ref")}
 entry = find(docs, "ClientTrafficPolicy", "identity-headers")
@@ -180,7 +180,8 @@ want_claims = {"principal": "x-talgent-principal", "iss": "x-talgent-issuer", "s
                "preferred_username": "x-talgent-username", "email": "x-talgent-email", "name": "x-talgent-display-name",
                "picture": "x-talgent-avatar-url", "roles": "x-talgent-roles", "project_id": "x-talgent-project-id",
                "agent_id": "x-talgent-agent-id", "purpose": "x-talgent-purpose", "work_subject_kind": "x-talgent-work-subject-kind",
-               "work_subject_id": "x-talgent-work-subject-id", "for": "x-talgent-represented-user-id"}
+               "work_subject_id": "x-talgent-work-subject-id", "for": "x-talgent-represented-user-id",
+               "application_id": "x-talgent-application-id"}
 check(claims == want_claims, f"web-auth writes every claim as its header, got {claims}")
 targets = {t["sectionName"] for t in auth["spec"]["targetRefs"]}
 for section in ("agent-identity-api", "storage-artifact-api", "work-api", "personal-work-api", "work-file-api", "application-api"):

@@ -6,12 +6,11 @@ import (
 
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func (h *WorkHandler) GetWorkCapabilities(ctx context.Context, request *agentpublicv1.GetWorkCapabilitiesRequest) (*agentpublicv1.GetWorkCapabilitiesResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.GetWorkCapabilities(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
+	actor := currentOwner(ctx)
+	value, err := h.application.GetWorkCapabilities(ctx, application.ControlWork{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}

@@ -38,6 +38,7 @@ func (h *AgentAccounts) IssueWorkIdentityToken(ctx context.Context, req *account
 		SubjectKind:       req.GetWorkSubjectKind(),
 		SubjectID:         req.GetWorkSubjectId(),
 		RepresentedPerson: req.GetRepresentedUserId(),
+		OwningApplication: req.GetApplicationId(),
 	})
 	switch {
 	case errors.Is(err, domain.ErrInvalidAgentAccount):

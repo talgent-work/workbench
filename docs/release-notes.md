@@ -5,6 +5,18 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that lets Applications run Works
+
+Before deploying it, run `deploy/middleware/migrations/20261113-agent-account-application.sql`
+against the database named by `ACCOUNT_MYSQL_DATABASE`; it adds `agent_account.application_id`
+and can run while the previous release serves. Then deploy the entry with the rest: it forwards
+an agent token's `application_id` claim as `x-talgent-application-id`.
+
+An Application now starts Standalone Works with `agent.public.v2.WorkService` and drives them
+with `agent.public.v1.AgentWorkService` under its own token; it reaches only its own Works. Its
+Works run under one Agent named after it, only on a Cloud, and their agent tokens state the
+Application.
+
 ## The release that names the Work API neutrally
 
 Nothing to do beyond deploying it; the entry routes `/api/agent.public.v2.WorkService`. A

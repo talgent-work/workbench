@@ -36,7 +36,7 @@ func TestOwnerWorkActionsFollowStateAndPendingOperations(t *testing.T) {
 				ports.value.StartupProgress = &query.StartupProgress{Status: "failed"}
 				ports.value.StartupRequest = &query.WorkStartupRequest{InitialMessage: "Original task"}
 			}
-			value, err := query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorUserID: "actor", WorkID: "session"})
+			value, err := query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorID: "actor", WorkID: "session"})
 			require.NoError(t, err)
 			require.Equal(t, "session", value.WorkID)
 			require.Equal(t, test.want, value.AllowedActions)
@@ -46,14 +46,14 @@ func TestOwnerWorkActionsFollowStateAndPendingOperations(t *testing.T) {
 
 func TestOnlyTheOwnerReadsItsWork(t *testing.T) {
 	ctx := context.Background()
-	request := query.GetWorkView{ActorUserID: "reader", WorkID: "session"}
+	request := query.GetWorkView{ActorID: "reader", WorkID: "session"}
 	ports := &historyPorts{owner: "actor"}
 	value, err := query.NewGetWorkViewHandler(ports, ports).Handle(ctx, request)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
 	require.Zero(t, ports.reads, "ownership must precede Work data access")
 	require.Empty(t, value.WorkID)
 	ports.dataErr = errors.New("query unavailable")
-	_, err = query.NewGetWorkViewHandler(ports, ports).Handle(ctx, query.GetWorkView{ActorUserID: "actor", WorkID: "session"})
+	_, err = query.NewGetWorkViewHandler(ports, ports).Handle(ctx, query.GetWorkView{ActorID: "actor", WorkID: "session"})
 	require.ErrorIs(t, err, ports.dataErr)
 	_, err = query.NewGetWorkViewHandler(nil, nil).Handle(ctx, query.GetWorkView{WorkID: " "})
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
@@ -85,16 +85,16 @@ func TestADisconnectedWorkIsOfferedWhatIsAdmittedAtOnce(t *testing.T) {
 	lost := time.Now()
 	for state, want := range map[string][]string{"working": {"stop"}, "stopping": {"stop", "archive"}} {
 		ports := &historyPorts{owner: "co-owner", value: query.WorkView{WorkID: "session", State: state, StartedBy: "actor", PermissionMode: domain.PermissionBypass, DisconnectedSince: lost}}
-		value, err := query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorUserID: "co-owner", WorkID: "session"})
+		value, err := query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorID: "co-owner", WorkID: "session"})
 		require.NoError(t, err)
 		require.Equal(t, want, value.AllowedActions, state)
 	}
 	ports := &historyPorts{owner: "actor", value: query.WorkView{WorkID: "session", State: "stopping", DisconnectedSince: lost}}
-	value, err := query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorUserID: "actor", WorkID: "session"})
+	value, err := query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorID: "actor", WorkID: "session"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"stop", "archive"}, value.AllowedActions, "a Cloud Work's stop or close reclaims its sandbox at once")
 	ports.value.DisconnectedSince = time.Time{}
-	value, err = query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorUserID: "actor", WorkID: "session"})
+	value, err = query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorID: "actor", WorkID: "session"})
 	require.NoError(t, err)
 	require.Empty(t, value.AllowedActions, "a connected Stopping Work waits for its exit")
 }
@@ -104,7 +104,7 @@ func TestADisconnectedWorkIsOfferedWhatIsAdmittedAtOnce(t *testing.T) {
 func TestOnlyTheStarterIsOfferedThePermissionModeSwitch(t *testing.T) {
 	for actor, want := range map[string][]string{"actor": {"stop", "set_permission_mode"}, "co-owner": {"stop"}} {
 		ports := &historyPorts{owner: actor, value: query.WorkView{WorkID: "session", State: "working", StartedBy: "actor", PermissionMode: domain.PermissionBypass}}
-		value, err := query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorUserID: actor, WorkID: "session"})
+		value, err := query.NewGetWorkViewHandler(ports, ports).Handle(context.Background(), query.GetWorkView{ActorID: actor, WorkID: "session"})
 		require.NoError(t, err)
 		require.Equal(t, want, value.AllowedActions, actor)
 	}

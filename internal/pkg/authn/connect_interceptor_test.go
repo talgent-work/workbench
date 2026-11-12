@@ -25,7 +25,7 @@ func method(file protoreflect.FileDescriptor, service, name string) protoreflect
 
 var (
 	// Declared for a user only.
-	userOnly = method(agentpublicv2.File_agent_public_v2_work_proto, "WorkService", "StartWork")
+	userOnly = method(agentpublicv2.File_agent_public_v2_work_proto, "WorkService", "GrantWorkShare")
 	// Declared for a user or an agent.
 	userOrAgent = method(agentpublicv2.File_agent_public_v2_work_proto, "WorkService", "ListLibraryFiles")
 	// Declared for no caller: a private procedure no entry reaches.
@@ -172,6 +172,7 @@ func TestUnverifiedIdentityIsUnauthenticated(t *testing.T) {
 		"agent without purpose":  with(agentHeaders(), HeaderPurpose, ""),
 		"agent without its def":  with(agentHeaders(), HeaderAgentID, ""),
 		"invalid represented id": with(agentHeaders(), HeaderRepresentedUserID, "someone"),
+		"invalid application id": with(agentHeaders(), HeaderApplicationID, "someone"),
 		"only a delegated user":  {HeaderDelegatedUserID: userID},
 		"only a service":         {HeaderServiceID: "work"},
 		"invalid delegated user": {HeaderServiceID: "work", HeaderDelegatedUserID: "issuer#sub-1"},

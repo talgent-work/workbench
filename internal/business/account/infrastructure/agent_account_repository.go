@@ -12,7 +12,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 )
 
-var agentAccountColumns = []string{"work_id", "project_id", "agent_id", "purpose", "work_subject_kind", "work_subject_id", "represented_user_id", "version", "created_at"}
+var agentAccountColumns = []string{"work_id", "project_id", "agent_id", "purpose", "work_subject_kind", "work_subject_id", "represented_user_id", "application_id", "version", "created_at"}
 
 // AgentAccountRepository persists Agent Accounts. An Agent Account's facts
 // never change, so it is only ever inserted.
@@ -71,6 +71,7 @@ func agentAccountToDO(account *domain.AgentAccount) *agentAccountDO {
 		WorkSubjectKind:   facts.Subject.Kind,
 		WorkSubjectID:     facts.Subject.ID,
 		RepresentedUserID: string(facts.RepresentedPerson),
+		ApplicationID:     string(facts.OwningApplication),
 		CreatedAt:         account.CreatedAt.UnixMilli(),
 	}
 }
@@ -80,7 +81,7 @@ func agentAccountFromDO(row *agentAccountDO) (*domain.AgentAccount, error) {
 	if err != nil {
 		return nil, err
 	}
-	facts, err := domain.NewWorkFacts(row.ProjectID, row.AgentID, row.Purpose, row.WorkSubjectKind, row.WorkSubjectID, row.RepresentedUserID)
+	facts, err := domain.NewWorkFacts(row.ProjectID, row.AgentID, row.Purpose, row.WorkSubjectKind, row.WorkSubjectID, row.RepresentedUserID, row.ApplicationID)
 	if err != nil {
 		return nil, err
 	}

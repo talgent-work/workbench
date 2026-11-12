@@ -18,7 +18,7 @@ func (h *WorkHandler) GetMyWorkAgent(ctx context.Context, _ *agentpublicv1.GetMy
 	if !ok || user.ID == "" {
 		return nil, errNoPerson
 	}
-	agent, err := h.application.Queries.ResolveAgents.OfEmployee(ctx, domain.EmployeeWorkPurpose, user.ID, nameOf(user))
+	agent, err := h.application.Queries.ResolveAgents.OfEmployee(ctx, domain.StandaloneWorkPurpose, user.ID, nameOf(user))
 	if err != nil {
 		return nil, mapAgentError(err)
 	}

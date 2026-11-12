@@ -9,12 +9,12 @@ import (
 )
 
 type ControlWork struct {
-	ActorUserID, WorkID string
-	ExpectedVersion     *int
+	ActorID, WorkID string
+	ExpectedVersion *int
 }
 
 func (a *Application) StopWork(ctx context.Context, request ControlWork) (query.WorkView, error) {
-	subject := request.ActorUserID
+	subject := request.ActorID
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, subject, request.WorkID); err != nil {
 		return query.WorkView{}, err
 	}
@@ -40,7 +40,7 @@ func (a *Application) StopWork(ctx context.Context, request ControlWork) (query.
 }
 
 func (a *Application) ResumeWork(ctx context.Context, request ControlWork) (query.WorkView, error) {
-	subject := request.ActorUserID
+	subject := request.ActorID
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, subject, request.WorkID); err != nil {
 		return query.WorkView{}, err
 	}
@@ -52,7 +52,7 @@ func (a *Application) ResumeWork(ctx context.Context, request ControlWork) (quer
 }
 
 func (a *Application) RestartWork(ctx context.Context, request ControlWork) (query.WorkView, error) {
-	subject := request.ActorUserID
+	subject := request.ActorID
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, subject, request.WorkID); err != nil {
 		return query.WorkView{}, err
 	}
@@ -66,7 +66,7 @@ func (a *Application) RestartWork(ctx context.Context, request ControlWork) (que
 // CloseWork closes a Work for its owner in the Portal, where it is called
 // archiving.
 func (a *Application) CloseWork(ctx context.Context, request ControlWork) (query.WorkView, error) {
-	subject := request.ActorUserID
+	subject := request.ActorID
 	if err := a.WorkPrincipals.AuthorizeWork(ctx, subject, request.WorkID); err != nil {
 		return query.WorkView{}, err
 	}

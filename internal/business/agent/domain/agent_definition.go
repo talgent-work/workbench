@@ -83,8 +83,9 @@ func (s UsageScope) Validate() error {
 }
 
 type AgentDefinitionInput struct {
-	// Owners are the people the Agent acts for: the person for a person's
-	// Agent, the Project's Owner for a project-scoped definition's Agent.
+	// Owners are whom the Agent acts for: the person for a person's Agent,
+	// the Application for an Application's Agent, the Project's Owner for a
+	// project-scoped definition's Agent.
 	Owners       []string
 	AgentName    string
 	Purpose      string
@@ -144,14 +145,15 @@ type WorkCreationRequest struct {
 // RepresentsHuman reports whether this definition's Works belong to a human:
 // an employee scope. A project scope's Works belong to the definition's own
 // Agent, which represents no human.
-func (a *AgentDefinition) RepresentsHuman() bool { return a.UsageScope.Kind == "employee" }
+func (a *AgentDefinition) RepresentsHuman() bool { return a.UsageScope.Kind == EmployeeScopeKind }
 
 // WorkPrincipal is whom every Work of this definition acts as: a person's
-// Agent acts for that person, its first Owner; an Agent that represents no
-// human, such as a project-scoped one, acts as the definition itself, never as
-// the human who owns it. The definition is never one of its own Owners.
+// Agent acts for that person, and an Application's Agent for that
+// Application, its first Owner; any other Agent, such as a project-scoped
+// one, acts as the definition itself, never as the human who owns it. The
+// definition is never one of its own Owners.
 func (a *AgentDefinition) WorkPrincipal() string {
-	if !a.RepresentsHuman() {
+	if !a.RepresentsHuman() && a.OwningApplication() == "" {
 		return a.ID
 	}
 	if len(a.Owners) == 0 {
@@ -166,7 +168,7 @@ func (a *AgentDefinition) WorkPrincipal() string {
 // project-scoped one or an employee's definition of another purpose,
 // represents no person, never a caller or a triggering user.
 func (a *AgentDefinition) RepresentedPerson() string {
-	if !a.RepresentsHuman() || a.Purpose != EmployeeWorkPurpose {
+	if !a.RepresentsHuman() || a.Purpose != StandaloneWorkPurpose {
 		return ""
 	}
 	return a.UsageScope.Reference
@@ -191,8 +193,8 @@ func (a *AgentDefinition) WorkTraceAttributes(supplied map[string]string) map[st
 }
 
 type AgentDefinition struct {
-	// Owners are the Agent Owners of every Work of this definition, a set
-	// (one person today); no Work records its own.
+	// Owners are the Agent Owners of every Work of this definition: a set of
+	// people, or the one Application; no Work records its own.
 	Owners     []string
 	AgentName  string `validate:"max=512"`
 	Icon       AgentIcon
@@ -233,6 +235,9 @@ func (a *AgentDefinition) Validate() error {
 	if err := validateOwners(a.Owners, a.ID); err != nil {
 		return err
 	}
+	if application := a.OwningApplication(); application != "" && !slices.Equal(a.Owners, []string{application}) {
+		return fmt.Errorf("%w: an Application's Agent is owned by that Application alone", ErrInvalidAgentDefinition)
+	}
 	if err := validateSoul(a.Soul); err != nil {
 		return err
 	}
@@ -246,8 +251,11 @@ func (a *AgentDefinition) IsOwner(participant string) bool {
 
 // TransferOwners replaces the Owners with the supplied people; every Work of
 // the definition answers to them from then on. It reports whether they
-// changed.
+// changed. An Application's Agent stays the Application's.
 func (a *AgentDefinition) TransferOwners(owners []string) (bool, error) {
+	if a.OwningApplication() != "" {
+		return false, fmt.Errorf("%w: an Application's Agent is the Application's", ErrInvalidAgentDefinition)
+	}
 	owners = normalizeOwners(owners)
 	if err := validateOwners(owners, a.ID); err != nil {
 		return false, err

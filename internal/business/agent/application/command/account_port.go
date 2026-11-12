@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -11,8 +12,9 @@ type DirectoryUser struct {
 }
 
 // WorkIdentityFacts are a Work's fixed facts, which Account copies into the
-// Work's agent Identity Token: its Project, AgentDefinition, purpose, Subject
-// and the person its Agent represents, each empty when the Work has none.
+// Work's agent Identity Token: its Project, AgentDefinition, purpose,
+// Subject, the person its Agent represents and the Application that owns it,
+// each empty when the Work has none.
 type WorkIdentityFacts struct {
 	WorkID            string
 	ProjectID         string
@@ -21,6 +23,7 @@ type WorkIdentityFacts struct {
 	SubjectKind       string
 	SubjectID         string
 	RepresentedPerson string
+	OwningApplication string
 }
 
 // IdentityToken is a Work's agent Identity Token as Account issued it. It is
@@ -30,15 +33,29 @@ type IdentityToken struct {
 	ExpiresAt time.Time
 }
 
+// OwnedApplication is an Application as Account's Application Ownership
+// Query answers it: its name and its Application Owner, also once removed.
+type OwnedApplication struct {
+	ID, Name, OwnerUserID string
+	Removed               bool
+}
+
+// ErrApplicationUnknown means Account knows no such Application.
+var ErrApplicationUnknown = errors.New("agent: account knows no such application")
+
 // AccountPort reaches Account: the User Directory, everyone in the
 // deployment's one enterprise, which a Work without a Project is shared
-// within; and the Agent Account Command, which issues a Work's Identity Token.
+// within; the Agent Account Command, which issues a Work's Identity Token;
+// and the Application Ownership Query.
 type AccountPort interface {
 	SearchUsers(ctx context.Context, query string, limit int) ([]DirectoryUser, error)
 	GetUsers(ctx context.Context, userIDs []string) ([]DirectoryUser, error)
 	// IssueWorkIdentityToken issues the Work's agent Identity Token; Account
 	// refuses facts that differ from those of the Work's first request.
 	IssueWorkIdentityToken(ctx context.Context, facts WorkIdentityFacts) (IdentityToken, error)
+	// GetApplication reads one Application, removed or not; an unknown one
+	// is ErrApplicationUnknown.
+	GetApplication(ctx context.Context, applicationID string) (OwnedApplication, error)
 }
 
 // identityTokenRenewalLead is how long before its Identity Token expires a

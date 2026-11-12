@@ -70,6 +70,7 @@ type agentAccountDO struct {
 	WorkSubjectKind   string `xorm:"work_subject_kind"`
 	WorkSubjectID     string `xorm:"work_subject_id"`
 	RepresentedUserID string `xorm:"represented_user_id"`
+	ApplicationID     string `xorm:"application_id"`
 	Version           int    `xorm:"'version'"`
 	CreatedAt         int64  `xorm:"created_at"`
 	UpdatedAt         int64  `xorm:"updated_at"`

@@ -6,13 +6,12 @@ import (
 
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func (h *WorkHandler) GetWorkPluginResults(ctx context.Context, request *agentpublicv1.GetWorkPluginResultsRequest) (*agentpublicv1.GetWorkPluginResultsResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	results, err := h.application.GetWorkPluginResults(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.WorkId)})
+	actor := currentOwner(ctx)
+	results, err := h.application.GetWorkPluginResults(ctx, application.ControlWork{ActorID: actor, WorkID: strings.TrimSpace(request.WorkId)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}

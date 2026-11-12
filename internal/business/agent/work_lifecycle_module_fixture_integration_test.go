@@ -51,6 +51,9 @@ type lifecycleModule struct {
 	recovery *command.RecoverWorkHandler
 	app      *application.Application
 	stop     func()
+	// public reaches the module's public APIs as the entry forwards them.
+	public *http.Client
+	url    string
 }
 
 // availableQuota is the cluster quota of the test Cloud with room for ten runs.
@@ -102,6 +105,7 @@ func (m *lifecycleModule) start() *lifecycleModule {
 		})
 	}
 	t.Cleanup(m.stop)
+	m.public, m.url = server.Client(), server.URL
 	transport := connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))
 	m.client = agentprivatev1connect.NewAgentServiceClient(connect.NewClient(transport))
 	m.feedback = agentprivatev1connect.NewExecutionFeedbackServiceClient(connect.NewClient(transport))

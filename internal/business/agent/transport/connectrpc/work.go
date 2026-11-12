@@ -28,8 +28,8 @@ func NewWorkHandler(app *application.Application) *WorkHandler {
 }
 
 func (h *WorkHandler) SetThinkingLevel(ctx context.Context, request *agentpublicv1.SetThinkingLevelRequest) (*agentpublicv1.SetThinkingLevelResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	err := h.application.SetThinkingLevel(ctx, application.SetThinkingLevel{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Level: request.GetLevel()})
+	actor := currentOwner(ctx)
+	err := h.application.SetThinkingLevel(ctx, application.SetThinkingLevel{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Level: request.GetLevel()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -37,8 +37,8 @@ func (h *WorkHandler) SetThinkingLevel(ctx context.Context, request *agentpublic
 }
 
 func (h *WorkHandler) GetThinkingLevel(ctx context.Context, request *agentpublicv1.GetThinkingLevelRequest) (*agentpublicv1.GetThinkingLevelResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	level, err := h.application.GetThinkingLevel(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
+	actor := currentOwner(ctx)
+	level, err := h.application.GetThinkingLevel(ctx, application.ControlWork{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -46,8 +46,8 @@ func (h *WorkHandler) GetThinkingLevel(ctx context.Context, request *agentpublic
 }
 
 func (h *WorkHandler) SendMessage(ctx context.Context, request *agentpublicv1.SendMessageRequest) (*agentpublicv1.SendMessageResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	err := h.application.Commands.SendMessage.Handle(ctx, command.SendWorkMessage{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Input: command.ExecutionInput{ID: strings.TrimSpace(request.GetInputId()), Text: request.GetText()}})
+	actor := currentOwner(ctx)
+	err := h.application.Commands.SendMessage.Handle(ctx, command.SendWorkMessage{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Input: command.ExecutionInput{ID: strings.TrimSpace(request.GetInputId()), Text: request.GetText()}})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -55,8 +55,8 @@ func (h *WorkHandler) SendMessage(ctx context.Context, request *agentpublicv1.Se
 }
 
 func (h *WorkHandler) RespondToInteraction(ctx context.Context, request *agentpublicv1.RespondToInteractionRequest) (*agentpublicv1.RespondToInteractionResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	err := h.application.Commands.ReplyToInteraction.Handle(ctx, command.ReplyToWorkInteraction{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Response: command.InteractionResponse{InteractionID: strings.TrimSpace(request.GetInteractionId()), Allow: request.GetAllow(), AlwaysAllow: request.GetAlwaysAllow(), UpdatedInputJSON: request.GetUpdatedInputJson()}})
+	actor := currentOwner(ctx)
+	err := h.application.Commands.ReplyToInteraction.Handle(ctx, command.ReplyToWorkInteraction{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Response: command.InteractionResponse{InteractionID: strings.TrimSpace(request.GetInteractionId()), Allow: request.GetAllow(), AlwaysAllow: request.GetAlwaysAllow(), UpdatedInputJSON: request.GetUpdatedInputJson()}})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -64,8 +64,8 @@ func (h *WorkHandler) RespondToInteraction(ctx context.Context, request *agentpu
 }
 
 func (h *WorkHandler) GetWork(ctx context.Context, request *agentpublicv1.GetWorkRequest) (*agentpublicv1.GetWorkResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.Queries.GetWorkView.Handle(ctx, query.GetWorkView{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
+	actor := currentOwner(ctx)
+	value, err := h.application.Queries.GetWorkView.Handle(ctx, query.GetWorkView{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -73,8 +73,8 @@ func (h *WorkHandler) GetWork(ctx context.Context, request *agentpublicv1.GetWor
 }
 
 func (h *WorkHandler) ListWorkLifecycleEvents(ctx context.Context, request *agentpublicv1.ListWorkLifecycleEventsRequest) (*agentpublicv1.ListWorkLifecycleEventsResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	events, err := h.application.Queries.ListWorkLifecycleEvents.Handle(ctx, query.ListWorkLifecycleEvents{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
+	actor := currentOwner(ctx)
+	events, err := h.application.Queries.ListWorkLifecycleEvents.Handle(ctx, query.ListWorkLifecycleEvents{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -86,8 +86,8 @@ func (h *WorkHandler) ListWorkLifecycleEvents(ctx context.Context, request *agen
 }
 
 func (h *WorkHandler) StopWork(ctx context.Context, request *agentpublicv1.StopWorkRequest) (*agentpublicv1.StopWorkResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.StopWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
+	actor := currentOwner(ctx)
+	value, err := h.application.StopWork(ctx, application.ControlWork{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -95,8 +95,8 @@ func (h *WorkHandler) StopWork(ctx context.Context, request *agentpublicv1.StopW
 }
 
 func (h *WorkHandler) ResumeWork(ctx context.Context, request *agentpublicv1.ResumeWorkRequest) (*agentpublicv1.ResumeWorkResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.ResumeWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
+	actor := currentOwner(ctx)
+	value, err := h.application.ResumeWork(ctx, application.ControlWork{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -104,8 +104,8 @@ func (h *WorkHandler) ResumeWork(ctx context.Context, request *agentpublicv1.Res
 }
 
 func (h *WorkHandler) ArchiveWork(ctx context.Context, request *agentpublicv1.ArchiveWorkRequest) (*agentpublicv1.ArchiveWorkResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.CloseWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
+	actor := currentOwner(ctx)
+	value, err := h.application.CloseWork(ctx, application.ControlWork{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -113,8 +113,8 @@ func (h *WorkHandler) ArchiveWork(ctx context.Context, request *agentpublicv1.Ar
 }
 
 func (h *WorkHandler) RestartWork(ctx context.Context, request *agentpublicv1.RestartWorkRequest) (*agentpublicv1.RestartWorkResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.RestartWork(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
+	actor := currentOwner(ctx)
+	value, err := h.application.RestartWork(ctx, application.ControlWork{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ExpectedVersion: expectedVersion(request.ExpectedVersion)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -123,7 +123,7 @@ func (h *WorkHandler) RestartWork(ctx context.Context, request *agentpublicv1.Re
 
 func (h *WorkHandler) ChangeWorkVisibility(ctx context.Context, request *agentpublicv1.ChangeWorkVisibilityRequest) (*agentpublicv1.ChangeWorkVisibilityResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.ChangeWorkVisibility(ctx, application.ChangeWorkVisibility{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Public: request.GetPublic()})
+	value, err := h.application.ChangeWorkVisibility(ctx, application.ChangeWorkVisibility{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), Public: request.GetPublic()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -132,7 +132,7 @@ func (h *WorkHandler) ChangeWorkVisibility(ctx context.Context, request *agentpu
 
 func (h *WorkHandler) RevokeWorkShare(ctx context.Context, request *agentpublicv1.RevokeWorkShareRequest) (*agentpublicv1.RevokeWorkShareResponse, error) {
 	actor, _ := authn.CurrentUserID(ctx)
-	value, err := h.application.RevokeWorkShare(ctx, application.RevokeWorkShare{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ReaderID: strings.TrimSpace(request.GetReaderUserId())})
+	value, err := h.application.RevokeWorkShare(ctx, application.RevokeWorkShare{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId()), ReaderID: strings.TrimSpace(request.GetReaderUserId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -222,8 +222,8 @@ var modelVendors = map[string]agentpublicv1.ModelVendor{
 }
 
 func (h *WorkHandler) ListPendingInteractions(ctx context.Context, request *agentpublicv1.ListPendingInteractionsRequest) (*agentpublicv1.ListPendingInteractionsResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	items, err := h.application.ListPendingInteractions(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
+	actor := currentOwner(ctx)
+	items, err := h.application.ListPendingInteractions(ctx, application.ControlWork{ActorID: actor, WorkID: strings.TrimSpace(request.GetWorkId())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -235,16 +235,16 @@ func (h *WorkHandler) ListPendingInteractions(ctx context.Context, request *agen
 }
 
 func (h *WorkHandler) CancelTurn(ctx context.Context, request *agentpublicv1.CancelTurnRequest) (*agentpublicv1.CancelTurnResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	err := h.application.CancelTurn(ctx, application.CancelTurn{ActorUserID: actor, WorkID: strings.TrimSpace(request.WorkId), TurnID: request.TurnId})
+	actor := currentOwner(ctx)
+	err := h.application.CancelTurn(ctx, application.CancelTurn{ActorID: actor, WorkID: strings.TrimSpace(request.WorkId), TurnID: request.TurnId})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
 	return &agentpublicv1.CancelTurnResponse{}, nil
 }
 func (h *WorkHandler) GetCurrentTurn(ctx context.Context, request *agentpublicv1.GetCurrentTurnRequest) (*agentpublicv1.GetCurrentTurnResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	turn, err := h.application.GetCurrentTurn(ctx, application.ControlWork{ActorUserID: actor, WorkID: strings.TrimSpace(request.WorkId)})
+	actor := currentOwner(ctx)
+	turn, err := h.application.GetCurrentTurn(ctx, application.ControlWork{ActorID: actor, WorkID: strings.TrimSpace(request.WorkId)})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
