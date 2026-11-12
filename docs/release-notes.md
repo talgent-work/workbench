@@ -17,7 +17,18 @@ with `agent.public.v1.AgentWorkService` under its own token; it reaches only its
 Works run under one Agent named after it, only on a Cloud, and their agent tokens state the
 Application. Its owner renames it and configures its Agent in the web app: the Agent's name,
 icon and Soul, and the model, thinking level and Startup Agent a Work starts with when its start
-request names none (`AgentWorkService.ChangeAgentWorkDefaults`).
+request names none (`AgentWorkService.ChangeAgentWorkDefaults`). `StartWork` takes the Application's own MCP endpoints in
+`application_mcp_endpoints`, for that Work only: the Work sends each endpoint's headers unchanged
+for its life, and no read of the Work returns them. A header value or URL containing `${` is
+refused, since the Agent Harness would expand it from the run's environment.
+
+Before deploying it, also run `deploy/middleware/migrations/20261114-agent-account-work-labels.sql`
+against the database named by `ACCOUNT_MYSQL_DATABASE`; it adds `agent_account.work_labels` and
+can run while the previous release serves. Agent's new `agent_work_label` table comes with the
+canonical schema (`scripts/deploy/bootstrap-mysql.sh`). A Work's starter may give it Work Labels
+(`StartWorkRequest.labels`), which it keeps for its life; `ListWorks` shows them and narrows by
+labels and Work State, and an agent token carries them as claim `work_labels`, which the entry
+does not forward.
 
 ## The release that names the Work API neutrally
 

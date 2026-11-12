@@ -50,6 +50,8 @@ type CreateWork struct {
 	// AgentHarness names the Agent Harness the Work runs; empty chooses the
 	// default.
 	AgentHarness string
+	// WorkLabels are the starter's Work Labels for a new Work.
+	WorkLabels domain.WorkLabels
 }
 
 // CreateWorkHandler creates at most one Work per caller request identity: the

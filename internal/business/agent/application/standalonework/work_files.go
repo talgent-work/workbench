@@ -22,10 +22,11 @@ type ownedWork struct {
 	definition *domain.AgentDefinition
 }
 
-// loadWork loads a Work for a reader of its files: the person, or the Agent
-// reading its owner's Library.
+// loadWork loads a Work for a reader of its files: the owner asking for
+// itself, a person or an Application, or the Agent reading its owner's
+// Library.
 func (p *StandaloneWorks) loadWork(ctx context.Context, caller Caller, workID string) (ownedWork, error) {
-	if caller.libraryReader() == "" {
+	if caller.fileReader() == "" {
 		return ownedWork{}, access.ErrAccessDenied
 	}
 	work, definition, err := p.app.WorkWithDefinition(ctx, workID)
@@ -40,7 +41,7 @@ func (p *StandaloneWorks) ListFiles(ctx context.Context, caller Caller, workID s
 	if err != nil {
 		return nil, err
 	}
-	basis, err := owned.work.AdmitFileReader(owned.definition, caller.UserID)
+	basis, err := owned.work.AdmitFileReader(owned.definition, caller.fileReader())
 	if err != nil {
 		return nil, denied(err)
 	}
@@ -68,17 +69,17 @@ func (p *StandaloneWorks) ListFiles(ctx context.Context, caller Caller, workID s
 }
 
 // changeableSpace admits the owner's change to a Standalone Work's file of the
-// kind and opens the File Space holding it for its Space Token; an Agent
-// changes none.
+// kind and opens the File Space holding it for its Space Token: a person or
+// an Application changes its own Works' files, an Agent none.
 func (p *StandaloneWorks) changeableSpace(ctx context.Context, caller Caller, workID string, kind command.FileKind) (domain.Directory, string, error) {
-	if caller.self() == "" {
+	if caller.Owner() == "" {
 		return domain.Directory{}, "", access.ErrAccessDenied
 	}
 	owned, err := p.loadWork(ctx, caller, workID)
 	if err != nil {
 		return domain.Directory{}, "", err
 	}
-	if err := owned.work.AdmitFileChange(owned.definition, caller.UserID); err != nil {
+	if err := owned.work.AdmitFileChange(owned.definition, caller.Owner()); err != nil {
 		return domain.Directory{}, "", denied(err)
 	}
 	space, err := standaloneSpace(owned.work, kind)
@@ -112,7 +113,7 @@ func (p *StandaloneWorks) IssueAttachmentUpload(ctx context.Context, caller Call
 	if err != nil {
 		return command.FileLink{}, err
 	}
-	return p.files.IssueUpload(ctx, command.FilePosition{Directory: space, Name: name}, token, replace, contentType, caller.UserID)
+	return p.files.IssueUpload(ctx, command.FilePosition{Directory: space, Name: name}, token, replace, contentType, caller.fileOwner())
 }
 
 // RenameAttachment moves the owner's Attachment to a free name.
@@ -121,7 +122,7 @@ func (p *StandaloneWorks) RenameAttachment(ctx context.Context, caller Caller, w
 	if err != nil {
 		return err
 	}
-	return p.files.RenameFile(ctx, command.FilePosition{Directory: space, Name: name}, token, newName, caller.UserID)
+	return p.files.RenameFile(ctx, command.FilePosition{Directory: space, Name: name}, token, newName, caller.fileOwner())
 }
 
 // DeleteFile deletes the owner's Attachment or Artifact.
@@ -130,7 +131,7 @@ func (p *StandaloneWorks) DeleteFile(ctx context.Context, caller Caller, file Wo
 	if err != nil {
 		return err
 	}
-	return p.files.DeleteFile(ctx, command.FilePosition{Directory: space, Name: file.Name}, token, caller.UserID)
+	return p.files.DeleteFile(ctx, command.FilePosition{Directory: space, Name: file.Name}, token, caller.fileOwner())
 }
 
 // CreateShareLink lets the owner share one file of a Standalone Work by link,
@@ -153,7 +154,8 @@ func (p *StandaloneWorks) StopSharing(ctx context.Context, caller Caller, file W
 }
 
 // sharingPosition admits the owner's sharing of a Standalone Work's file and
-// names its File position; an Agent shares none.
+// names its File position: Share Links are a person owner's, so neither an
+// Application nor an Agent shares.
 func (p *StandaloneWorks) sharingPosition(ctx context.Context, caller Caller, file WorkFile) (command.FilePosition, error) {
 	if caller.self() == "" {
 		return command.FilePosition{}, access.ErrAccessDenied
@@ -172,7 +174,7 @@ func (p *StandaloneWorks) sharingPosition(ctx context.Context, caller Caller, fi
 	return command.FilePosition{Directory: space.Directory, Name: file.Name}, nil
 }
 
-// IssueAccessLink issues a short-lived link to read one file the person may
+// IssueAccessLink issues a short-lived link to read one file the caller may
 // read.
 func (p *StandaloneWorks) IssueAccessLink(ctx context.Context, caller Caller, file WorkFile, inline bool) (command.FileLink, error) {
 	position, err := p.readablePosition(ctx, caller, file)
@@ -192,7 +194,7 @@ func (p *StandaloneWorks) FilePreview(ctx context.Context, caller Caller, file W
 	return p.files.FilePreview(ctx, position, render)
 }
 
-// readablePosition admits the person to read one file and names its File
+// readablePosition admits the caller to read one file and names its File
 // position: in a Standalone Work's own File Spaces, or, for another Work, an
 // Artifact it published itself into its publication target. An Agent reads
 // its owner's Library, which holds Artifacts only.
@@ -204,7 +206,7 @@ func (p *StandaloneWorks) readablePosition(ctx context.Context, caller Caller, f
 	if err != nil {
 		return command.FilePosition{}, err
 	}
-	if _, err := owned.work.AdmitFileReader(owned.definition, caller.UserID); err != nil {
+	if _, err := owned.work.AdmitFileReader(owned.definition, caller.fileReader()); err != nil {
 		return command.FilePosition{}, denied(err)
 	}
 	if owned.work.Standalone() {

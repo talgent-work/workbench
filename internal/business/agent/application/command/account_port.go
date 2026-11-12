@@ -13,8 +13,8 @@ type DirectoryUser struct {
 
 // WorkIdentityFacts are a Work's fixed facts, which Account copies into the
 // Work's agent Identity Token: its Project, AgentDefinition, purpose,
-// Subject, the person its Agent represents and the Application that owns it,
-// each empty when the Work has none.
+// Subject, the person its Agent represents, the Application that owns it and
+// its Work Labels, each empty when the Work has none.
 type WorkIdentityFacts struct {
 	WorkID            string
 	ProjectID         string
@@ -24,6 +24,8 @@ type WorkIdentityFacts struct {
 	SubjectID         string
 	RepresentedPerson string
 	OwningApplication string
+	// WorkLabels are the Work's Work Labels; nil for none.
+	WorkLabels map[string]string
 }
 
 // IdentityToken is a Work's agent Identity Token as Account issued it. It is

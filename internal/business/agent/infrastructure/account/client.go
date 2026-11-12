@@ -79,7 +79,7 @@ func (c *Client) IssueWorkIdentityToken(ctx context.Context, facts command.WorkI
 	resp, err := c.agentAccounts.IssueWorkIdentityToken(asAgent(ctx), &accountprivatev1.IssueWorkIdentityTokenRequest{
 		WorkId: facts.WorkID, ProjectId: facts.ProjectID, AgentId: facts.AgentID, Purpose: facts.Purpose,
 		WorkSubjectKind: facts.SubjectKind, WorkSubjectId: facts.SubjectID, RepresentedUserId: facts.RepresentedPerson,
-		ApplicationId: facts.OwningApplication,
+		ApplicationId: facts.OwningApplication, WorkLabels: facts.WorkLabels,
 	})
 	if err != nil {
 		// A request carries no token, so its error cannot leak one.

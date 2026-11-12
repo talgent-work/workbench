@@ -53,7 +53,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.NoError(t, agents.Save(ctx, first))
 	require.Equal(t, 1, first.Version)
 	require.ErrorIs(t, agents.Save(ctx, second), domain.ErrConcurrentModification)
-	require.NoError(t, (&application.Application{Definitions: agents}).ChangeAgentDefinitionCapabilities(ctx, application.ChangeAgentDefinitionCapabilities{AgentID: agent.ID, Capabilities: agent.Capabilities}))
+	require.NoError(t, (&application.Application{Definitions: agents}).ChangeAgentDefinitionCapabilities(ctx, application.ChangeAgentDefinitionCapabilities{AgentID: agent.ID, Capabilities: agent.Capabilities, StartupAgent: agent.WorkDefaults.StartupAgent}))
 	agent, err = agents.Get(ctx, agent.ID)
 	require.NoError(t, err)
 	require.Equal(t, "Original instructions", agent.Capabilities.Prompt)

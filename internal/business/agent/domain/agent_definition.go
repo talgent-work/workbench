@@ -31,6 +31,9 @@ type CapabilityDifferences struct {
 	StartupAgent *string
 	Plugins      []PluginChoice
 	Connectors   []ConnectorChoice
+	// ApplicationEndpoints are the Application's own MCP endpoints for this
+	// Work only; only an Application's definition admits them.
+	ApplicationEndpoints []ApplicationMCPEndpoint
 	// RequiredPlugins are the caller's own, such as the plugin of the role it
 	// names; a per-Work exclusion does not drop them.
 	RequiredPlugins []string
@@ -129,6 +132,9 @@ type WorkCreationRequest struct {
 	ProjectID       string
 	Capabilities    CapabilitySnapshot
 	TraceAttributes map[string]string
+	// WorkLabels are the starter's Work Labels for a new Work; a reused Work
+	// keeps its own.
+	WorkLabels WorkLabels
 	// WorkID, when supplied, is the identity application coordination
 	// allocated beforehand, such as the owner of a Standalone Work's File
 	// Space; otherwise the Work gets a new one.
@@ -353,6 +359,9 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 	if err := request.Capabilities.Validate(); err != nil {
 		return nil, false, err
 	}
+	if len(request.Capabilities.ApplicationEndpoints) > 0 && a.OwningApplication() == "" {
+		return nil, false, fmt.Errorf("%w: only an Application's Work takes Application MCP endpoints", ErrInvalidCapabilities)
+	}
 	for _, slug := range a.Capabilities.RequiredPlugins {
 		if !slices.ContainsFunc(request.Capabilities.Plugins, func(p SelectedPlugin) bool { return p.Release.Slug == slug }) {
 			return nil, false, fmt.Errorf("%w: missing required plugin %s", ErrInvalidCapabilities, slug)
@@ -385,7 +394,7 @@ func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCrea
 		ThinkingLevel:      request.ThinkingLevel,
 		ID:                 workID, AgentID: a.ID, Subject: request.Subject, ProjectID: request.ProjectID, DisplayTitle: request.DisplayTitle,
 		WorkModel: request.WorkModel, Capabilities: request.Capabilities, RepresentedPerson: a.RepresentedPerson(), StartingUser: request.StartingUser,
-		WorkLayout: a.WorkLayout, AgentHarnessID: request.AgentHarnessID, TraceAttributes: request.TraceAttributes,
+		WorkLayout: a.WorkLayout, AgentHarnessID: request.AgentHarnessID, TraceAttributes: request.TraceAttributes, WorkLabels: request.WorkLabels,
 		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, HarnessChoice: request.HarnessChoice, InitialTaskInput: request.InitialTaskInput,
 	}, request.Admission)
 	if err != nil {

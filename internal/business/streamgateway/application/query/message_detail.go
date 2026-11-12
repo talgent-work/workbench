@@ -32,9 +32,9 @@ type StreamAccessPort interface {
 }
 
 type MessageDetailRequest struct {
-	ActorUserID, AgentWorkID, MessageID string
-	Admission                           ReaderAdmission
-	Offset, Limit                       uint32
+	ReaderID, AgentWorkID, MessageID string
+	Admission                        ReaderAdmission
+	Offset, Limit                    uint32
 }
 
 // Offsets and lengths count Unicode code points, not bytes. Format zero means
@@ -48,9 +48,9 @@ type MessageDetail struct {
 // ToolDetail returns the recorded call and its latest result in one read.
 // A nil side is unavailable, distinct from a recorded empty body.
 type ToolDetailRequest struct {
-	ActorUserID, AgentWorkID, ToolCallID string
-	Admission                            ReaderAdmission
-	InputOffset, OutputOffset, Limit     uint32
+	ReaderID, AgentWorkID, ToolCallID string
+	Admission                         ReaderAdmission
+	InputOffset, OutputOffset, Limit  uint32
 }
 
 type ToolDetail struct {

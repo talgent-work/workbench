@@ -23,7 +23,16 @@ type snapshotRecord struct {
 	StartupAgent string                 `json:"startup_agent"`
 	Plugins      []selectedPluginRecord `json:"plugins"`
 	Connectors   []connectorRecord      `json:"connectors"`
-	Sandbox      bool                   `json:"sandbox,omitempty"`
+	// ApplicationEndpoints keeps the headers the Application gave; they
+	// leave storage only for the Work's own launch.
+	ApplicationEndpoints []applicationEndpointRecord `json:"application_endpoints,omitempty"`
+	Sandbox              bool                        `json:"sandbox,omitempty"`
+}
+
+type applicationEndpointRecord struct {
+	Name    string            `json:"name"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 type connectorRecord struct {
@@ -102,6 +111,9 @@ func encodeCapabilitySnapshot(value domain.CapabilitySnapshot) (string, error) {
 		record.Connectors = append(record.Connectors, connectorRecord{ID: c.ID, Name: c.Name, Required: c.Required, Command: c.Command, Arguments: c.Arguments, Authentication: c.Authentication,
 			Type: c.Type, URL: c.URL, Environment: c.Environment, Headers: c.Headers, Provider: c.Provider, Target: c.Target, ProviderAuthentication: c.ProviderAuthentication})
 	}
+	for _, endpoint := range value.ApplicationEndpoints {
+		record.ApplicationEndpoints = append(record.ApplicationEndpoints, applicationEndpointRecord{Name: endpoint.Name, URL: endpoint.URL, Headers: endpoint.Headers})
+	}
 	if value.Plugins != nil {
 		record.Plugins = make([]selectedPluginRecord, 0, len(value.Plugins))
 	}
@@ -143,6 +155,9 @@ func decodeCapabilitySnapshot(body string) (domain.CapabilitySnapshot, error) {
 	for _, c := range record.Connectors {
 		value.Connectors = append(value.Connectors, domain.SelectedConnector{ID: c.ID, Name: c.Name, Required: c.Required, Command: c.Command, Arguments: c.Arguments, Authentication: c.Authentication,
 			Type: c.Type, URL: c.URL, Environment: c.Environment, Headers: c.Headers, Provider: c.Provider, Target: c.Target, ProviderAuthentication: c.ProviderAuthentication})
+	}
+	for _, endpoint := range record.ApplicationEndpoints {
+		value.ApplicationEndpoints = append(value.ApplicationEndpoints, domain.ApplicationMCPEndpoint{Name: endpoint.Name, URL: endpoint.URL, Headers: endpoint.Headers})
 	}
 	if record.Plugins != nil {
 		value.Plugins = make([]domain.SelectedPlugin, 0, len(record.Plugins))

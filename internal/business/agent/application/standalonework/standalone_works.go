@@ -2,6 +2,8 @@ package standalonework
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -60,6 +62,8 @@ type StartWork struct {
 	// Harness is the owner's choice for the Work's Harness, admitted only on
 	// a Managed Computer.
 	Harness domain.HarnessChoice
+	// Labels are the Work Labels the owner gives the Work, kept for its life.
+	Labels map[string]string
 }
 
 // standaloneWorkSpace derives a Standalone Work's identity, and with it the owner
@@ -80,6 +84,10 @@ func (p *StandaloneWorks) Start(ctx context.Context, input StartWork) (string, e
 	if uuid.Validate(input.RequestID) != nil || strings.TrimSpace(input.InitialMessage) == "" {
 		return "", ErrInvalidRequest
 	}
+	labels, err := domain.NewWorkLabels(input.Labels)
+	if err != nil {
+		return "", err
+	}
 	definition, err := p.ensureDefinition(ctx, input.Caller)
 	if err != nil {
 		return "", err
@@ -92,7 +100,7 @@ func (p *StandaloneWorks) Start(ctx context.Context, input StartWork) (string, e
 	return p.app.Commands.CreateWork.Handle(ctx, command.CreateWork{
 		StartingUserID: input.Caller.self(), SubjectID: owner, RequestID: input.RequestID, AgentID: definition.AgentID,
 		WorkID: workID, DisplayTitle: domain.DisplayTitleFrom(input.InitialMessage),
-		WorkModel: input.WorkModel, CapabilityDifferences: input.Capabilities, InitialExecution: &initial, ComputerID: input.ComputerID, Harness: input.Harness,
+		WorkModel: input.WorkModel, CapabilityDifferences: input.Capabilities, InitialExecution: &initial, ComputerID: input.ComputerID, Harness: input.Harness, WorkLabels: labels,
 	})
 }
 
@@ -111,17 +119,48 @@ const (
 	maxListedWorks     = 100
 )
 
+// ListWorks narrows the owner's Standalone Works: to those carrying every one
+// of Labels and, when States is not empty, to those in one of them. At most
+// Limit are listed; zero lists the default number.
+type ListWorks struct {
+	Caller Caller
+	Limit  int
+	Labels map[string]string
+	States []string
+}
+
 // List lists the owner's Standalone Works, closed ones included, most
 // recently updated first; an owner without a definition yet has none.
-func (p *StandaloneWorks) List(ctx context.Context, caller Caller, limit int) ([]query.StandaloneWorkSummary, error) {
-	agentID, found, err := p.ownDefinition(ctx, caller)
+func (p *StandaloneWorks) List(ctx context.Context, input ListWorks) ([]query.StandaloneWorkSummary, error) {
+	labels, err := domain.NewWorkLabels(input.Labels)
+	if err != nil {
+		return nil, err
+	}
+	states, err := listedStates(input.States)
+	if err != nil {
+		return nil, err
+	}
+	agentID, found, err := p.ownDefinition(ctx, input.Caller)
 	if err != nil || !found {
 		return nil, err
 	}
+	limit := input.Limit
 	if limit <= 0 {
 		limit = defaultListedWorks
 	}
-	return p.works.ListStandaloneWorks(ctx, agentID, min(limit, maxListedWorks))
+	return p.works.ListStandaloneWorks(ctx, query.StandaloneWorksFilter{AgentID: agentID, Labels: labels.Pairs(), States: states, Limit: min(limit, maxListedWorks)})
+}
+
+// listedStates are the Work States a listing asks for, as Works show them.
+func listedStates(requested []string) ([]domain.WorkState, error) {
+	states := make([]domain.WorkState, 0, len(requested))
+	for _, state := range requested {
+		if !slices.Contains(domain.WorkStates, domain.WorkState(state)) {
+			return nil, fmt.Errorf("%w: unknown work state %q", ErrInvalidRequest, state)
+		}
+		states = append(states, domain.WorkState(state))
+	}
+	return states, nil
 }
 
 // ownDefinition locates the owner's definition without establishing it.

@@ -52,7 +52,7 @@ func TestMessageReadsShareWorkAuthorizationAndBoundDetails(t *testing.T) {
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	_, err = handler.ListMessagesBySession(ctx, &streamgatewaypublicv1.ListMessagesBySessionRequest{AgentWorkId: "work"})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-	err = app.Queries.WatchStream.Run(ctx, query.WatchStreamRequest{ActorUserID: "viewer", AgentWorkID: "work"}, func(query.PortalLivePayload) error { t.Fatal("denied stream sent data"); return nil })
+	err = app.Queries.WatchStream.Run(ctx, query.WatchStreamRequest{ReaderID: "viewer", AgentWorkID: "work"}, func(query.PortalLivePayload) error { t.Fatal("denied stream sent data"); return nil })
 	require.ErrorIs(t, err, query.ErrWorkAccessDenied)
 	require.Empty(t, requests)
 	require.Empty(t, store.recordedMessageCalls())

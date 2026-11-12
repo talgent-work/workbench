@@ -61,3 +61,18 @@ func TestStoredCapabilitySnapshotPreservesEmptyCollectionShapes(t *testing.T) {
 		})
 	}
 }
+
+// A Work's Application MCP endpoints keep their headers through storage, and
+// a Work without any stores none.
+func TestStoredCapabilitySnapshotKeepsApplicationEndpoints(t *testing.T) {
+	snapshot := domain.CapabilitySnapshot{ApplicationEndpoints: []domain.ApplicationMCPEndpoint{{Name: "tickets", URL: "https://desk.example/mcp", Headers: map[string]string{"Authorization": "Bearer desk-key"}}, {Name: "open", URL: "https://open.example/mcp"}}}
+	encoded, err := encodeCapabilitySnapshot(snapshot)
+	require.NoError(t, err)
+	retained, err := decodeCapabilitySnapshot(encoded)
+	require.NoError(t, err)
+	require.Equal(t, snapshot, retained)
+
+	plain, err := encodeCapabilitySnapshot(domain.CapabilitySnapshot{})
+	require.NoError(t, err)
+	require.NotContains(t, plain, "application_endpoints")
+}

@@ -9,7 +9,7 @@ import (
 
 type WatchStreamRequest struct {
 	IncludeUnattributedErrors bool
-	ActorUserID               string
+	ReaderID                  string
 	Admission                 ReaderAdmission
 	Agent                     *string
 	Kinds                     []string
@@ -73,7 +73,7 @@ func (w *WatchStream) Run(
 		return errors.Join(ErrLiveUnavailable, err)
 	}
 	defer w.registry.Release(hub, sub)
-	starting, err := w.access.AdmitStreamReader(ctx, req.ActorUserID, req.Admission, sessionID)
+	starting, err := w.access.AdmitStreamReader(ctx, req.ReaderID, req.Admission, sessionID)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (w *WatchStream) Run(
 			return err
 		}
 	}
-	reader := req.ActorUserID
+	reader := req.ReaderID
 	withdrawing := func(payload PortalLivePayload) error {
 		access, ok := payload.(*WorkAccessPayload)
 		if !ok {
@@ -140,7 +140,7 @@ func (w *WatchStream) readmit(ctx context.Context, stop context.CancelCauseFunc,
 			return
 		case <-ticker.C:
 		}
-		err := w.access.AuthorizeRead(ctx, req.ActorUserID, req.Admission, workID)
+		err := w.access.AuthorizeRead(ctx, req.ReaderID, req.Admission, workID)
 		if errors.Is(err, ErrWorkAccessDenied) {
 			stop(ErrWorkAccessWithdrawn)
 			return

@@ -59,6 +59,8 @@ func openChildDirectory(parent int, name string, create bool, mode uint32) (int,
 const (
 	// attributeUploader is the account id of the human who uploaded an Attachment.
 	attributeUploader = "user.talgent.uploader"
+	// attributeUploaderApplication is the Application that uploaded an Attachment.
+	attributeUploaderApplication = "user.talgent.uploader_application"
 	// attributeWork is the Work that published an Artifact.
 	attributeWork = "user.talgent.work"
 	// attributeContentType is the media type declared at upload.
@@ -67,7 +69,7 @@ const (
 	attributeDigest = "user.talgent.digest"
 )
 
-var attributeKeys = []string{attributeUploader, attributeWork, attributeContentType, attributeDigest}
+var attributeKeys = []string{attributeUploader, attributeUploaderApplication, attributeWork, attributeContentType, attributeDigest}
 
 // maxAttributeBytes bounds one attribute value, so every value written is
 // read back whole.
@@ -75,10 +77,11 @@ const maxAttributeBytes = 512
 
 func writeAttributes(fd int, attributes application.FileAttributes) error {
 	for key, value := range map[string]string{
-		attributeUploader:    attributes.UploaderUserID,
-		attributeWork:        attributes.WorkID,
-		attributeContentType: attributes.ContentType,
-		attributeDigest:      attributes.ContentDigest,
+		attributeUploader:            attributes.UploaderUserID,
+		attributeUploaderApplication: attributes.UploaderApplicationID,
+		attributeWork:                attributes.WorkID,
+		attributeContentType:         attributes.ContentType,
+		attributeDigest:              attributes.ContentDigest,
 	} {
 		if value == "" {
 			continue
@@ -109,10 +112,11 @@ func readAttributes(fd int) (application.FileAttributes, error) {
 		}
 	}
 	return application.FileAttributes{
-		UploaderUserID: values[attributeUploader],
-		WorkID:         values[attributeWork],
-		ContentType:    values[attributeContentType],
-		ContentDigest:  values[attributeDigest],
+		UploaderUserID:        values[attributeUploader],
+		UploaderApplicationID: values[attributeUploaderApplication],
+		WorkID:                values[attributeWork],
+		ContentType:           values[attributeContentType],
+		ContentDigest:         values[attributeDigest],
 	}, nil
 }
 

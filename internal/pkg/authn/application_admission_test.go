@@ -73,7 +73,6 @@ func TestApplicationIsAdmittedOnlyWhereDeclared(t *testing.T) {
 	for name, procedure := range map[string]protoreflect.MethodDescriptor{
 		"user procedure":           userOnly,
 		"user or agent procedure":  userOrAgent,
-		"user stream":              userStream,
 		"undeclared procedure":     undeclared,
 		"user and agent, declared": declared(t, "people_and_agents", admissionv1.Principal_PRINCIPAL_USER, admissionv1.Principal_PRINCIPAL_AGENT),
 	} {
@@ -83,10 +82,14 @@ func TestApplicationIsAdmittedOnlyWhereDeclared(t *testing.T) {
 			require.False(t, ran)
 		})
 	}
+	// A server stream that declares the Application admits it too.
+	_, ran, err := call(t, NewPrincipalInterceptor(), ownerStream, applicationHeaders())
+	require.NoError(t, err)
+	require.True(t, ran)
 	// Declaring the Application admits it beside the others it names, and
 	// still refuses those it does not.
 	shared := declared(t, "shared", admissionv1.Principal_PRINCIPAL_USER, admissionv1.Principal_PRINCIPAL_APPLICATION)
-	_, ran, err := call(t, NewPrincipalInterceptor(), shared, applicationHeaders())
+	_, ran, err = call(t, NewPrincipalInterceptor(), shared, applicationHeaders())
 	require.NoError(t, err)
 	require.True(t, ran)
 	_, ran, err = call(t, NewPrincipalInterceptor(), shared, userHeaders())
