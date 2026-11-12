@@ -3,7 +3,8 @@ import { useCallback, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import type { StartupProgress } from "@talgent/contracts/agent/public/v1/startup_pb";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { useEntryShell } from "../../components/shell/entry-shell";
 import { PageLayout } from "../../components/shell/page-layout";
 import { ConversationUnavailable } from "../../components/work/conversation-unavailable";
 import { WorkConversation } from "../../components/work/work-conversation";
@@ -23,6 +24,8 @@ import { TitleButton } from "./title-dialog";
  * Its owner continues, renames and shares it; a Work Share holder reads it. */
 export function PersonalWorkPage() {
   const { workId = "" } = useParams();
+  const navigate = useNavigate();
+  const { personal: paths } = useEntryShell();
   const userId = useCurrentUser().data?.user?.id ?? "";
   const snapshot = useAgentWork(workId);
   const work = snapshot.data?.work;
@@ -57,7 +60,7 @@ export function PersonalWorkPage() {
     : refused === Code.NotFound ? <WorkSnapshotUnavailable notFound onRetry={refresh} />
     : snapshot.isError && !reader ? <WorkSnapshotUnavailable notFound={false} onRetry={refresh} />
     : null;
-  return <PageLayout workspaceTitle={title} topActions={work && personal && <>
+  return <PageLayout workspaceTitle={title} trail={[{ label: "Works", onPress: () => navigate(paths.works) }]} topActions={work && personal && <>
     <TitleButton workId={workId} title={title} />
     <ShareButton workId={workId} ownerId={userId} readerIds={work.shareReaderIds} />
   </>}>

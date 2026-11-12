@@ -56,7 +56,10 @@
 .p-body,.p-grow { min-width: 0; }
 .p-grow { flex: 1; display: grid; overflow-wrap: anywhere; }
 .p-topbar { position: sticky; top: 0; z-index: 20; background: var(--background); min-height: var(--topbar-height); display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 16px; padding: 4px 24px 4px 4px; }
-.p-location { flex-wrap: wrap; min-width: 0; }
+.p-location { flex-wrap: nowrap; min-width: 0; }
+/* The current page's name, such as a Work's title, may be long: it shrinks to an ellipsis instead of running under the actions. */
+.p-location .breadcrumbs__item:last-child { flex-shrink: 1; min-width: 0; }
+.p-location .breadcrumbs__item:last-child .breadcrumbs__link { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .p-page-actions { margin-inline-start: auto; }
 .p-breadcrumb,.p-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
 .p-mobile-toggle { display: none; }

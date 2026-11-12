@@ -15,10 +15,10 @@ export function PersonalWorksPage() {
   const works = usePersonalWorks();
   const navigate = useNavigate();
   const now = useNow();
-  return <PageLayout workspaceTitle="Personal works" topActions={<Link to={personal.newWork} className={buttonVariants({ size: "sm" })}><Plus size={16} aria-hidden="true" />New work</Link>}>
+  return <PageLayout workspaceTitle="Works" topActions={<Link to={personal.newWork} className={buttonVariants({ size: "sm" })}><Plus size={16} aria-hidden="true" />New work</Link>}>
     <div className="mx-auto flex w-full max-w-[960px] flex-col gap-6 pb-24 pt-4">
       {works.isError && <Alert status="danger" role="alert"><Alert.Indicator /><Alert.Content><Alert.Description>Your works couldn’t be loaded.</Alert.Description></Alert.Content><Button size="sm" variant="secondary" onPress={() => void works.refetch()}>Retry</Button></Alert>}
-      <Table><Table.ScrollContainer><Table.Content aria-label="Personal works" className="w-full" onRowAction={key => navigate(personal.work(String(key)))}>
+      <Table><Table.ScrollContainer><Table.Content aria-label="Works" className="w-full" onRowAction={key => navigate(personal.work(String(key)))}>
         <Table.Header><Table.Column isRowHeader>Work</Table.Column><Table.Column className="w-56">State</Table.Column><Table.Column className="w-28">Updated</Table.Column></Table.Header>
         <Table.Body renderEmptyState={() => <div className="py-8 text-center text-sm text-muted">{works.isPending ? <span role="status">Loading your works…</span> : works.isError ? null : "Works you start for yourself show up here."}</div>}>
           {(works.data ?? []).map(work => {

@@ -11,6 +11,7 @@ import { ProfilePage } from "@talgent/workbench-ui/pages/profile-page";
 import { LibraryPage } from "@talgent/workbench-ui/pages/workbench/library-page";
 import { NewWorkPage } from "@talgent/workbench-ui/pages/workbench/new-work-page";
 import { PersonalWorkPage } from "@talgent/workbench-ui/pages/workbench/personal-work-page";
+import { PersonalWorksPage } from "@talgent/workbench-ui/pages/workbench/personal-works-page";
 import { UsagePage } from "@talgent/workbench-ui/pages/workbench/usage-page";
 import { WorkbenchLayout } from "./workbench-layout";
 
@@ -22,6 +23,7 @@ export default function WorkbenchRoutes() {
   return <EntryShellContext value={workbenchShell}><Routes>
     <Route path="/" element={page("New work", <NewWorkPage />)} />
     <Route path="/login" element={<DocumentTitle title="Sign in"><LoginPage /></DocumentTitle>} />
+    <Route path="/works" element={page("Works", <PersonalWorksPage />)} />
     <Route path="/works/:workId" element={page("Work", <PersonalWorkPage />)} />
     <Route path="/library" element={page("Library", <LibraryPage />)} />
     <Route path="/usage" element={page("Usage", <UsagePage />)} />
