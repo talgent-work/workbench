@@ -73,14 +73,15 @@ func fileChangeMessage(change FileChange, occurredAt time.Time) *storageintegrat
 		directory.Owner = append(directory.Owner, &storageintegrationv1.OwnerFact{Condition: fact.Condition, Value: fact.Value})
 	}
 	return &storageintegrationv1.FileChangedV1{
-		EventId:      uuid.Must(uuid.NewV7()).String(),
-		OccurredAt:   timestamppb.New(occurredAt),
-		Directory:    directory,
-		Name:         change.Name,
-		PreviousName: change.PreviousName,
-		Operation:    fileOperations[change.Operation],
-		ActorUserId:  change.Writer.UserID(),
-		ActorWorkId:  change.Writer.WorkID(),
+		EventId:            uuid.Must(uuid.NewV7()).String(),
+		OccurredAt:         timestamppb.New(occurredAt),
+		Directory:          directory,
+		Name:               change.Name,
+		PreviousName:       change.PreviousName,
+		Operation:          fileOperations[change.Operation],
+		ActorUserId:        change.Writer.UserID(),
+		ActorWorkId:        change.Writer.WorkID(),
+		ActorApplicationId: change.Writer.ApplicationID(),
 	}
 }
 

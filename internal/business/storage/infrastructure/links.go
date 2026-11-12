@@ -36,19 +36,21 @@ func NewLinks(baseURL, secret string, paths LinkPaths) *Links {
 type linkClaims struct {
 	Purpose string `json:"p"`
 	// Owner and Directory name the Directory: its owner element and name.
-	Owner       string `json:"o"`
-	Directory   string `json:"dn"`
-	Path        string `json:"n"`
-	Workspace   bool   `json:"w,omitempty"`
-	Replace     bool   `json:"r,omitempty"`
-	Uploader    string `json:"u,omitempty"`
-	ContentType string `json:"c,omitempty"`
-	Download    bool   `json:"d,omitempty"`
-	Digest      string `json:"h,omitempty"`
-	PreviewCopy bool   `json:"v,omitempty"`
-	FileSize    int64  `json:"ws,omitempty"`
-	FileTime    int64  `json:"wt,omitempty"`
-	ExpiresAt   int64  `json:"e"`
+	Owner     string `json:"o"`
+	Directory string `json:"dn"`
+	Path      string `json:"n"`
+	Workspace bool   `json:"w,omitempty"`
+	Replace   bool   `json:"r,omitempty"`
+	Uploader  string `json:"u,omitempty"`
+	// UploaderApplication is the Application an upload is attributed to.
+	UploaderApplication string `json:"ua,omitempty"`
+	ContentType         string `json:"c,omitempty"`
+	Download            bool   `json:"d,omitempty"`
+	Digest              string `json:"h,omitempty"`
+	PreviewCopy         bool   `json:"v,omitempty"`
+	FileSize            int64  `json:"ws,omitempty"`
+	FileTime            int64  `json:"wt,omitempty"`
+	ExpiresAt           int64  `json:"e"`
 }
 
 const (
@@ -59,7 +61,7 @@ const (
 func (l *Links) UploadURL(grant application.UploadGrant, expiresAt time.Time) string {
 	claims := linkClaims{
 		Purpose: uploadPurpose, Owner: ownerKey(grant.Position.Directory.Owner), Directory: grant.Position.Directory.Name, Path: grant.Position.Name,
-		Replace: grant.Replace, Uploader: grant.UploaderUserID, ContentType: grant.ContentType, ExpiresAt: expiresAt.Unix(),
+		Replace: grant.Replace, Uploader: grant.Uploader.UserID, UploaderApplication: grant.Uploader.ApplicationID, ContentType: grant.ContentType, ExpiresAt: expiresAt.Unix(),
 	}
 	return l.baseURL + l.signedPath(l.paths.Upload, claims)
 }
@@ -77,7 +79,7 @@ func (l *Links) VerifyUpload(token string, now time.Time) (application.UploadGra
 	if err != nil {
 		return application.UploadGrant{}, application.ErrInvalidLink
 	}
-	return application.UploadGrant{Position: position, Replace: claims.Replace, UploaderUserID: claims.Uploader, ContentType: claims.ContentType}, nil
+	return application.UploadGrant{Position: position, Replace: claims.Replace, Uploader: application.Actor{UserID: claims.Uploader, ApplicationID: claims.UploaderApplication}, ContentType: claims.ContentType}, nil
 }
 
 func (l *Links) AccessLink(grant application.AccessGrant, expiresAt time.Time) application.AccessLink {

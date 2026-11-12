@@ -33,9 +33,9 @@ type StoragePort interface {
 	// ListDirectoryFiles lists the files of the given Directories, without
 	// Share Links.
 	ListDirectoryFiles(ctx context.Context, directories []domain.Directory) ([]SpaceFile, error)
-	IssueUpload(ctx context.Context, position FilePosition, spaceToken string, replace bool, contentType, uploader string) (FileLink, error)
-	RenameFile(ctx context.Context, position FilePosition, spaceToken, newName, actor string) error
-	DeleteFile(ctx context.Context, position FilePosition, spaceToken, actor string) error
+	IssueUpload(ctx context.Context, position FilePosition, spaceToken string, replace bool, contentType string, uploader FileOwner) (FileLink, error)
+	RenameFile(ctx context.Context, position FilePosition, spaceToken, newName string, actor FileOwner) error
+	DeleteFile(ctx context.Context, position FilePosition, spaceToken string, actor FileOwner) error
 	IssueAccessLink(ctx context.Context, position FilePosition, inline bool) (FileLink, error)
 	CreateShareLink(ctx context.Context, position FilePosition, actor string) (ShareLink, error)
 	RevokeShareLinks(ctx context.Context, position FilePosition, actor string) error
@@ -76,11 +76,16 @@ type SpaceFile struct {
 	SizeBytes      int64
 	ContentType    string
 	UpdatedAt      time.Time
-	UploaderUserID string
+	// Uploader is the owner that uploaded an Attachment.
+	Uploader FileOwner
 	// WorkID is the Work that published an Artifact.
 	WorkID     string
 	ShareLinks []ShareLink
 }
+
+// FileOwner is the owner of a Standalone Work changing its files, a person or
+// an Application; exactly one is named.
+type FileOwner struct{ UserID, ApplicationID string }
 
 // ShareLink is one active Share Link of a file.
 type ShareLink struct {

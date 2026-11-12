@@ -11,7 +11,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/standalonework"
 )
 
-// WorkFileHandler serves Work files for the gateway-asserted person.
+// WorkFileHandler serves Work files for the gateway-asserted person or
+// Application, or a Work's Agent reading its owner's Library.
 type WorkFileHandler struct {
 	works *standalonework.StandaloneWorks
 }
@@ -31,7 +32,8 @@ func (h *WorkFileHandler) ListWorkFiles(ctx context.Context, request *agentpubli
 	for _, file := range files {
 		item := &agentpublicv1.WorkFile{
 			WorkId: request.GetWorkId(), Kind: workFileKindToProto(file.Kind), Name: file.Name, SizeBytes: file.SizeBytes,
-			ContentType: file.ContentType, UpdatedAt: timestamppb.New(file.UpdatedAt), UploaderUserId: file.UploaderUserID,
+			ContentType: file.ContentType, UpdatedAt: timestamppb.New(file.UpdatedAt),
+			UploaderUserId: file.Uploader.UserID, UploaderApplicationId: file.Uploader.ApplicationID,
 		}
 		for _, link := range file.ShareLinks {
 			item.ShareLinks = append(item.ShareLinks, shareLinkToProto(link))

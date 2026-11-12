@@ -67,13 +67,13 @@ func TestFileChangesReachTheMappedPaths(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "a, revised", string(content))
 
-	_, err = f.app.RenameFile(t.Context(), at(inputs.Directory, "b.md"), token, "a.md", "user-1")
+	_, err = f.app.RenameFile(t.Context(), at(inputs.Directory, "b.md"), token, "a.md", application.Actor{UserID: "user-1"})
 	require.ErrorIs(t, err, application.ErrNameTaken)
 	both("a.md", "b.md")
-	_, err = f.app.RenameFile(t.Context(), at(inputs.Directory, "b.md"), token, "c.md", "user-1")
+	_, err = f.app.RenameFile(t.Context(), at(inputs.Directory, "b.md"), token, "c.md", application.Actor{UserID: "user-1"})
 	require.NoError(t, err)
 	both("a.md", "c.md")
-	require.NoError(t, f.app.DeleteFile(t.Context(), at(inputs.Directory, "a.md"), token, "user-1"))
+	require.NoError(t, f.app.DeleteFile(t.Context(), at(inputs.Directory, "a.md"), token, application.Actor{UserID: "user-1"}))
 	both("c.md")
 
 	artifact, err := f.app.PublishArtifact(t.Context(), application.ArtifactSource{SpaceToken: token, WorkID: "work-1", Content: []byte("report")}, "report.md", false)
@@ -135,9 +135,9 @@ func TestAnInterruptedChangeLeavesTheViewWithFewerFilesNeverMore(t *testing.T) {
 	// A link that cannot go: the deletion, replacement and rename are refused
 	// before the Directory changes, so no file stays shown that it lacks.
 	unblock = f.blockView("view/p1/case-2", "kept.md")
-	require.Error(t, f.app.DeleteFile(t.Context(), at(inputs.Directory, "kept.md"), token, "user-1"))
+	require.Error(t, f.app.DeleteFile(t.Context(), at(inputs.Directory, "kept.md"), token, application.Actor{UserID: "user-1"}))
 	require.NotEqual(t, 200, f.upload(inputs.Directory, token, "kept.md", "changed", true).StatusCode)
-	_, err := f.app.RenameFile(t.Context(), at(inputs.Directory, "kept.md"), token, "moved.md", "user-1")
+	_, err := f.app.RenameFile(t.Context(), at(inputs.Directory, "kept.md"), token, "moved.md", application.Actor{UserID: "user-1"})
 	require.Error(t, err)
 	content, err := os.ReadFile(filepath.Join(f.folder(inputs), "kept.md"))
 	require.NoError(t, err)

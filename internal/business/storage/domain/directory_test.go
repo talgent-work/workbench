@@ -81,7 +81,7 @@ func TestADirectoryIsMountedAndWrittenOnlyOnceAllocated(t *testing.T) {
 	require.Equal(t, DirectoryAllocating, d.State)
 	require.NotEmpty(t, d.SpaceToken)
 	require.True(t, d.AwaitsAllocation())
-	writer, _ := PersonWriter("u1")
+	writer, _ := AdmittedWriter("u1", "")
 
 	_, err := d.GrantMount(false, nil)
 	require.ErrorIs(t, err, ErrDirectoryNotAllocated, "nothing is mounted before its space exists")
@@ -132,7 +132,7 @@ func TestOnlyAWorkDirectoryIsReclaimedAndReclamationIsFinal(t *testing.T) {
 	require.NoError(t, d.Reclaim(), "a repeated request changes nothing")
 	require.Equal(t, DirectoryReclaimed, d.State)
 
-	writer, _ := PersonWriter("u1")
+	writer, _ := AdmittedWriter("u1", "")
 	require.ErrorIs(t, d.Open(), ErrDirectoryReclaimed, "a reclaimed Directory is never recreated")
 	require.ErrorIs(t, d.RecordAllocation(), ErrDirectoryReclaimed)
 	_, err = d.GrantMount(false, nil)
@@ -189,15 +189,22 @@ func TestStaleShareLinksNeverReachANewFile(t *testing.T) {
 }
 
 func TestFileWriterNamesExactlyOneWriter(t *testing.T) {
-	person, err := PersonWriter(" u1 ")
+	person, err := AdmittedWriter(" u1 ", "")
 	require.NoError(t, err)
 	require.Equal(t, "u1", person.UserID())
+	require.Empty(t, person.ApplicationID())
 	require.Empty(t, person.WorkID())
+	application, err := AdmittedWriter("", "a1")
+	require.NoError(t, err)
+	require.Equal(t, "a1", application.ApplicationID())
+	require.Empty(t, application.UserID())
 	work, err := WorkWriter("w1")
 	require.NoError(t, err)
 	require.Equal(t, "w1", work.WorkID())
-	_, err = PersonWriter(" ")
+	_, err = AdmittedWriter(" ", "")
 	require.ErrorIs(t, err, ErrFileWriterRequired)
+	_, err = AdmittedWriter("u1", "a1")
+	require.ErrorIs(t, err, ErrFileWriterRequired, "a write is admitted for one person or one Application")
 	_, err = WorkWriter("")
 	require.ErrorIs(t, err, ErrFileWriterRequired)
 }

@@ -148,6 +148,23 @@ func (stubStorage) ListFiles(context.Context, domain.Directory) ([]command.Space
 
 func (stubStorage) RequestWorkReclamation(context.Context, string) error { return nil }
 
+// IssueUpload names, in its link, the owner the upload is attributed to.
+func (stubStorage) IssueUpload(_ context.Context, position command.FilePosition, _ string, _ bool, _ string, uploader command.FileOwner) (command.FileLink, error) {
+	return command.FileLink{URL: fmt.Sprintf("upload://%s/%s?user=%s&application=%s", position.Directory.Name, position.Name, uploader.UserID, uploader.ApplicationID)}, nil
+}
+
+func (stubStorage) RenameFile(context.Context, command.FilePosition, string, string, command.FileOwner) error {
+	return nil
+}
+
+func (stubStorage) DeleteFile(context.Context, command.FilePosition, string, command.FileOwner) error {
+	return nil
+}
+
+func (stubStorage) IssueAccessLink(_ context.Context, position command.FilePosition, _ bool) (command.FileLink, error) {
+	return command.FileLink{URL: "access://" + position.Directory.Name + "/" + position.Name}, nil
+}
+
 // Module tests use the real publication transport. Unauthenticated requests do
 // not connect; lifecycle fixtures exercise current schema and real NATS wiring.
 func sessionStateTransport(t *testing.T) fx.Option {
