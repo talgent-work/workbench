@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Runs the upstream node installer, which restarts K3s/containerd on selected nodes.
+# Runs the upstream node installer, which restarts the container runtime on selected nodes.
 # Node labeling is intentionally separate: only label a node after checking /dev/kvm.
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 for tool in helm kubectl curl sha256sum; do command -v "$tool" >/dev/null; done

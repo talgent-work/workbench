@@ -1,6 +1,6 @@
 # otel-collector-contrib pipeline
-# The official image reads it as /etc/otelcol-contrib/config.yaml; k3s loads it
-# through the otelcol-config ConfigMap (deploy/k3s/workbench/otel-collector.yaml).
+# The official image reads it as /etc/otelcol-contrib/config.yaml; the deployment loads it
+# through the otelcol-config ConfigMap (deploy/kubernetes/workbench/otel-collector.yaml).
 
 receivers:
   otlp:
@@ -58,7 +58,7 @@ exporters:
       max_interval: 30s
 
 extensions:
-  # Liveness and readiness for the k3s Deployment.
+  # Liveness and readiness for the Kubernetes Deployment.
   health_check:
     endpoint: 0.0.0.0:13133
 

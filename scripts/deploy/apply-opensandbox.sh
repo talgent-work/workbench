@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploys OpenSandbox. Its argument is the k3s manifest
-# scripts/deploy/render-k3s.sh rendered; the server's permissions, in the
+# Deploys OpenSandbox. Its argument is the manifest
+# scripts/deploy/render.sh rendered; the server's permissions, in the
 # sandbox namespace, are applied from it. The sandbox namespace and its
 # NetworkPolicies come with that manifest.
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 if [[ $# -ne 1 || ! -r "$1" ]]; then
-  echo "usage: $(basename "$0") <rendered k3s manifest>" >&2
+  echo "usage: $(basename "$0") <rendered manifest>" >&2
   exit 2
 fi
 manifest=$1

@@ -14,15 +14,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// The configuration the k3s deployment mounts passes the same validation the
+// The configuration the Kubernetes base mounts passes the same validation the
 // controlplane runs at startup, so a key the binary requires is never left
 // out of the deployed ConfigMap. The deployment's environment takes its placeholders
 // (environment.env), and values the Pod receives with no default, such as
 // Secrets, take a stand-in.
-func TestTheK3sConfigurationIsValid(t *testing.T) {
+func TestTheDeployedConfigurationIsValid(t *testing.T) {
 	_, source, _, ok := runtime.Caller(0)
 	require.True(t, ok)
-	manifest, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../../deploy/k3s/workbench/workbench.yaml"))
+	manifest, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../../deploy/kubernetes/workbench/workbench.yaml"))
 	require.NoError(t, err)
 
 	var defaults string
@@ -40,9 +40,9 @@ func TestTheK3sConfigurationIsValid(t *testing.T) {
 			defaults = document.Data["defaults.yml"]
 		}
 	}
-	require.NotEmpty(t, defaults, "deploy/k3s/workbench declares ConfigMap controlplane-config")
+	require.NotEmpty(t, defaults, "deploy/kubernetes/workbench declares ConfigMap controlplane-config")
 
-	environment, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../../deploy/k3s/workbench/environment.env"))
+	environment, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../../deploy/kubernetes/workbench/environment.env"))
 	require.NoError(t, err)
 	for _, line := range strings.Split(string(environment), "\n") {
 		key, value, found := strings.Cut(line, "=")

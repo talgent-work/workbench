@@ -11,8 +11,8 @@ root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-TALGENT_IMAGE_TAG=v0.0.0 bash "$root_dir/scripts/deploy/render-k3s.sh" --placeholders \
-  "$root_dir/deploy/k3s/workbench" > "$work/rendered.yaml"
+TALGENT_IMAGE_TAG=v0.0.0 bash "$root_dir/scripts/deploy/render.sh" --placeholders \
+  "$root_dir/deploy/kubernetes/workbench" > "$work/rendered.yaml"
 
 # The placeholders with every switch turned, as a deployment's environment
 # file outside the repository.
@@ -22,17 +22,17 @@ switched=(
   CONTROLPLANE_PROFILE=example
 )
 {
-  grep -vE "^($(printf '%s\n' "${switched[@]%%=*}" | paste -sd'|'))=" "$root_dir/deploy/k3s/workbench/environment.env"
+  grep -vE "^($(printf '%s\n' "${switched[@]%%=*}" | paste -sd'|'))=" "$root_dir/deploy/kubernetes/workbench/environment.env"
   printf '%s\n' "${switched[@]}"
 } > "$work/switched.env"
 TALGENT_ENVIRONMENT_FILE="$work/switched.env" TALGENT_IMAGE_TAG=v0.0.0 \
-  bash "$root_dir/scripts/deploy/render-k3s.sh" "$root_dir/deploy/k3s/workbench" > "$work/switched.yaml" 2> "$work/switched.log" \
+  bash "$root_dir/scripts/deploy/render.sh" "$root_dir/deploy/kubernetes/workbench" > "$work/switched.yaml" 2> "$work/switched.log" \
   || { cat "$work/switched.log" >&2; exit 1; }
 
 # A switch refuses a value it does not take instead of rendering its default.
 sed 's/^AGENT_CORE_API_ACCESS=.*/AGENT_CORE_API_ACCESS=off/' "$work/switched.env" > "$work/invalid.env"
 if TALGENT_ENVIRONMENT_FILE="$work/invalid.env" TALGENT_IMAGE_TAG=v0.0.0 \
-  bash "$root_dir/scripts/deploy/render-k3s.sh" "$root_dir/deploy/k3s/workbench" > /dev/null 2> "$work/invalid.log"; then
+  bash "$root_dir/scripts/deploy/render.sh" "$root_dir/deploy/kubernetes/workbench" > /dev/null 2> "$work/invalid.log"; then
   echo "expected: the render refuses AGENT_CORE_API_ACCESS=off" >&2
   exit 1
 fi
@@ -297,4 +297,4 @@ if failures:
     print("\n".join(f"expected: {f}" for f in failures), file=sys.stderr)
     sys.exit(1)
 PYTHON
-echo "k3s-render: ok"
+echo "render: ok"

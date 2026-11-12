@@ -3,11 +3,11 @@
 # them to ClickHouse (CLICKHOUSE_ADDR of workbench-environment) as the
 # CLICKHOUSE_USER account.
 #
-# scripts/deploy/apply-k3s.sh applies these objects (selected by their
+# scripts/deploy/apply.sh applies these objects (selected by their
 # app.kubernetes.io/name label) before the ClickHouse migration, which reads
 # the native tables the Collector creates. It also creates the otelcol-config
 # ConfigMap from configs/otelcol/config.yaml (the only copy of the pipeline);
-# scripts/deploy/render-k3s.sh stamps its hash below so a config change rolls
+# scripts/deploy/render.sh stamps its hash below so a config change rolls
 # the Pods.
 #
 # Stateless: every batch goes straight to ClickHouse, so replicas only add

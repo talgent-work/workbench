@@ -18,8 +18,8 @@ charts="$render_dir/source/kubernetes/charts"
 helm template opensandbox-controller "$charts/opensandbox-controller" --namespace opensandbox-system > "$render_dir/controller.yaml"
 helm template opensandbox "$charts/opensandbox-server" --namespace talgent -f "$root_dir/deploy/opensandbox/server-values.yaml" > "$render_dir/server.yaml"
 # The chart grants the server a ClusterRole over Pods, Secrets and every other
-# resource it manages, in any namespace. The k3s base grants it those only in
-# the sandbox namespace (deploy/k3s/workbench/sandbox.yaml), so the chart's
+# resource it manages, in any namespace. The Kubernetes base grants it those only in
+# the sandbox namespace (deploy/kubernetes/workbench/sandbox.yaml), so the chart's
 # cluster-scoped RBAC is dropped from the server's manifest.
 drop_cluster_rbac() {
   awk '

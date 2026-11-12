@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Renders a k3s kustomization (the Workbench base under deploy/k3s, or an
+# Renders a Kubernetes kustomization (the Workbench base under deploy/kubernetes, or an
 # overlay of it kept elsewhere, which names the base ../workbench) as it is
 # applied: the deployment's environment (lib/environment.sh) in place of the
 # placeholders, the components its deployment switches turn on, images at
@@ -28,7 +28,7 @@ if [[ $# -ne 1 || ! -f "$1/kustomization.yaml" ]]; then
 fi
 target="$(cd "$1" && pwd -P)"
 
-# Every kustomization in a copy of the Workbench's deploy/k3s reads the
+# Every kustomization in a copy of the Workbench's deploy/kubernetes reads the
 # deployment's environment instead of its placeholders, so the ConfigMap and
 # the replacements that copy its values carry the real ones at every level.
 # An overlay kept elsewhere names the base ../workbench: its copy goes beside
@@ -36,17 +36,17 @@ target="$(cd "$1" && pwd -P)"
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 if [[ "${placeholders}" == "0" ]]; then
-  resolve_k3s_environment "${target}" "${work}/environment.env"
+  resolve_deploy_environment "${target}" "${work}/environment.env"
 fi
-cp -R "${K3S_DIR}/." "${work}/tree"
+cp -R "${DEPLOY_DIR}/." "${work}/tree"
 # A Workbench read from the Go module cache is read-only, and so is its copy.
 chmod -R u+w "${work}/tree"
-if [[ "${target}" == "${K3S_DIR}" || "${target}" == "${K3S_DIR}/"* ]]; then
-  build="${work}/tree${target#"${K3S_DIR}"}"
+if [[ "${target}" == "${DEPLOY_DIR}" || "${target}" == "${DEPLOY_DIR}/"* ]]; then
+  build="${work}/tree${target#"${DEPLOY_DIR}"}"
 else
   build="${work}/tree/$(basename "${target}")"
   if [[ -e "${build}" ]]; then
-    echo "the overlay ${target} shares its name with a kustomization of the Workbench's deploy/k3s" >&2
+    echo "the overlay ${target} shares its name with a kustomization of the Workbench's deploy/kubernetes" >&2
     exit 1
   fi
   cp -R "${target}" "${build}"
@@ -56,13 +56,13 @@ if [[ "${placeholders}" == "0" ]]; then
   find "${work}/tree" -name environment.env -exec cp "${work}/environment.env" {} \;
   environment_files=("${work}/environment.env")
 else
-  mapfile -t environment_files < <(k3s_placeholder_files "${target}")
+  mapfile -t environment_files < <(deploy_placeholder_files "${target}")
 fi
 
 # The deployment switches of the environment: each one turned away from its
 # default adds a component of the base's components/, whichever kustomization
 # is rendered.
-switch_components="$(k3s_switch_components "${environment_files[@]}")"
+switch_components="$(deploy_switch_components "${environment_files[@]}")"
 if [[ -n "${switch_components}" ]]; then
   {
     echo "components:"

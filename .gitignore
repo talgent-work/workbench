@@ -78,7 +78,7 @@ Thumbs.db
 .superpowers/
 
 # Local rendered deployment files
-/deploy/k3s/talgent.rendered.yaml
+/deploy/kubernetes/talgent.rendered.yaml
 .playwright-mcp/
 **/__pycache__/
 **/*.pyc

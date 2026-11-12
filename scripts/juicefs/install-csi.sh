@@ -9,7 +9,7 @@ CONFIRM="${JUICEFS_CSI_INSTALL_CONFIRM:-}"
 
 kubectl cluster-info >/dev/null
 
-if [ "$CONFIRM" != "local-k3s" ]; then
+if [ "$CONFIRM" != "cluster-wide" ]; then
   current_context="$(kubectl config current-context 2>/dev/null || true)"
   cluster_server="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || true)"
   cat >&2 <<EOF
@@ -17,7 +17,7 @@ Refusing to install or modify cluster-wide JuiceFS CSI resources without confirm
 Current context: ${current_context:-unknown}
 Cluster server: ${cluster_server:-unknown}
 
-Set JUICEFS_CSI_INSTALL_CONFIRM=local-k3s only for the dedicated local k3s PoC cluster.
+Set JUICEFS_CSI_INSTALL_CONFIRM=cluster-wide to confirm that this cluster may receive the cluster-wide JuiceFS CSI driver.
 EOF
   exit 2
 fi

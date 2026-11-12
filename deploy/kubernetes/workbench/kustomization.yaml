@@ -4,9 +4,9 @@
 # value of one: the services read it as environment variables, and the
 # replacements below copy the values that live inside resource specs (route
 # hostnames, the issuer web-auth validates, the NAS export). environment.env
-# holds placeholders only; scripts/deploy/render-k3s.sh renders a deployment
+# holds placeholders only; scripts/deploy/render.sh renders a deployment
 # with its real environment, read from the cluster's ConfigMap or from a file
-# outside the repository, and scripts/deploy/apply-k3s.sh applies it. The
+# outside the repository, and scripts/deploy/apply.sh applies it. The
 # environment's deployment switches add components of components/ at render
 # time; each component says what its switch changes.
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -24,7 +24,7 @@ configMapGenerator:
     namespace: talgent
     envs:
       - environment.env
-    # scripts/deploy/apply-k3s.sh applies it ahead of the Collector.
+    # scripts/deploy/apply.sh applies it ahead of the Collector.
     options:
       labels:
         app.kubernetes.io/name: workbench-environment

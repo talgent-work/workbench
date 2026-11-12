@@ -208,7 +208,7 @@ data:
       replica: "${POD_NAME:computer-gateway}"
       endpoint: "${POD_IP:127.0.0.1}:8085"
       # The platform release this deployment runs (X.Y.Z), which
-      # scripts/deploy/apply-k3s.sh fills in from a vX.Y.Z image tag.
+      # scripts/deploy/apply.sh fills in from a vX.Y.Z image tag.
       release-version: "__TALGENT_RELEASE_VERSION__"
 ---
 apiVersion: v1

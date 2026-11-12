@@ -1,5 +1,5 @@
 # Sourced by the image build scripts, run from the root of the repository
-# whose images they build, and by scripts/deploy/render-k3s.sh, which deploys
+# whose images they build, and by scripts/deploy/render.sh, which deploys
 # the images they build.
 
 REGISTRY="${TALGENT_REGISTRY:-ghcr.io/talgent-work}"

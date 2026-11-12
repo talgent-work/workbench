@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys a k3s kustomization of the Workbench: the base or an overlay of it,
+# Deploys a Kubernetes kustomization of the Workbench: the base or an overlay of it,
 # with the deployment's environment (lib/environment.sh). It ensures the
 # Workbench's credentials and schemas, deploys OpenSandbox and the Collector,
 # then applies everything the kustomization renders.
@@ -34,11 +34,11 @@ fi
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 # Resolved once: the render and the database bootstrap use the same values.
-use_k3s_environment "${KUSTOMIZATION}" "${work}"
+use_deploy_environment "${KUSTOMIZATION}" "${work}"
 
 kubectl create namespace "${NS}" --dry-run=client -o yaml | kubectl apply -f -
 rendered="${work}/rendered.yaml"
-bash "${ROOT_DIR}/scripts/deploy/render-k3s.sh" "${KUSTOMIZATION}" > "${rendered}"
+bash "${ROOT_DIR}/scripts/deploy/render.sh" "${KUSTOMIZATION}" > "${rendered}"
 
 secret_data_value() {
   local secret="$1" key="$2"
@@ -64,7 +64,7 @@ ensure_account_oauth_secret() {
     echo "${ACCOUNT_OAUTH_SECRET} already exists" >&2
     return
   fi
-  echo "missing ${ACCOUNT_OAUTH_SECRET}; create it with client-id/client-secret of the login GitHub OAuth App or export ACCOUNT_GITHUB_CLIENT_ID and ACCOUNT_GITHUB_CLIENT_SECRET before applying k3s manifests" >&2
+  echo "missing ${ACCOUNT_OAUTH_SECRET}; create it with client-id/client-secret of the login GitHub OAuth App or export ACCOUNT_GITHUB_CLIENT_ID and ACCOUNT_GITHUB_CLIENT_SECRET before applying the manifests" >&2
   exit 1
 }
 
@@ -104,7 +104,7 @@ ensure_password_secret() {
     echo "${secret} already exists" >&2
     return
   fi
-  echo "missing ${secret}; export ${variable} with the service account password before applying k3s manifests" >&2
+  echo "missing ${secret}; export ${variable} with the service account password before applying the manifests" >&2
   exit 1
 }
 

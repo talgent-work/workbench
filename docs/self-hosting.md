@@ -1,6 +1,6 @@
 # Self-hosting guide
 
-Deploys Talgent Workbench to a Kubernetes cluster from the base `deploy/k3s/workbench` with the
+Deploys Talgent Workbench to a Kubernetes cluster from the base `deploy/kubernetes/workbench` with the
 scripts in `scripts/deploy/`. The scripts and manifests are authoritative for every command and
 value; this guide orders them, states what the cluster must provide and how to check it, and
 lists failures with their fix. Each process's settings are in the
@@ -55,9 +55,9 @@ Check each requirement; where it fails, satisfy it or stop and report it to the 
 | HTTPS terminated in front of that listener, without response buffering or read timeouts (Work messages stream as server-sent events; Talgent Computer holds a WebSocket) | `curl -sI <origin>` answers over HTTPS | Ask the operator for the TLS front: session cookies are `Secure` and Managed Computers need `https://`. |
 | A RuntimeClass that runs untrusted workloads in a VM | `kubectl get runtimeclass` | Bundled reference: Kata Containers, RuntimeClass `kata-qemu-runtime-rs`, installed by `scripts/deploy/install-kata.sh` ([deploy/kata](../deploy/kata/README.md)). Another runtime: set `TALGENT_SANDBOX_RUNTIME_CLASS` to its name and set controlplane's `computer.cloud.demand` to include its Pod overhead. |
 | Pod traffic between nodes encrypted (credential traffic to sandboxes crosses nodes) and NetworkPolicy enforced | `kubectl get nodes -o json \| jq '.items[].metadata.annotations'` | Bundled reference: Flannel with the `wireguard-native` backend, which `apply-opensandbox.sh` verifies from node annotations. A different encrypting CNI: confirm encryption with the operator, then set `TALGENT_POD_NETWORK_CHECK=operator`. |
-| JuiceFS CSI driver (`csi.juicefs.com`) | `kubectl get csidriver csi.juicefs.com` | `scripts/juicefs/install-csi-k3s.sh` installs it on k3s (needs `JUICEFS_CSI_INSTALL_CONFIRM=local-k3s`); elsewhere use the JuiceFS CSI chart. |
+| JuiceFS CSI driver (`csi.juicefs.com`) | `kubectl get csidriver csi.juicefs.com` | `scripts/juicefs/install-csi.sh` applies the upstream JuiceFS CSI manifest (needs `JUICEFS_CSI_INSTALL_CONFIRM=cluster-wide`); the JuiceFS CSI Helm chart works too. |
 | NFS CSI driver (`nfs.csi.k8s.io`) with fsGroup policy off | `kubectl get csidriver nfs.csi.k8s.io -o jsonpath='{.spec.fsGroupPolicy}'` prints `None` | Install with `feature.enableFSGroupPolicy=false`: sandboxes run with `fsGroup: 1000`, and the policy would re-own the whole volume on each mount. |
-| Cluster DNS Pods labeled `k8s-app: kube-dns` in `kube-system` | `kubectl -n kube-system get pods -l k8s-app=kube-dns` | Adjust the label in `deploy/k3s/workbench/sandbox.yaml`. |
+| Cluster DNS Pods labeled `k8s-app: kube-dns` in `kube-system` | `kubectl -n kube-system get pods -l k8s-app=kube-dns` | Adjust the label in `deploy/kubernetes/workbench/sandbox.yaml`. |
 | Cluster DNS Service address | `kubectl -n kube-system get svc kube-dns -o jsonpath='{.spec.clusterIP}'` | If it is not `10.43.0.10`, set `K8S_DNS_SERVICE_IP` in the environment. |
 | Redis with `appendonly yes` and `maxmemory-policy noeviction` | `redis-cli CONFIG GET appendonly maxmemory-policy` | Set both; queues and Dispatcher state must survive restarts. The JuiceFS metadata database needs the same and must be a database no business key uses. |
 | NFS export, NFS 4.1, root not squashed, open to the nodes only | Mount it from a node | controlplane creates directories as root and hands them to UID 1000. |
@@ -89,7 +89,7 @@ spec:
 ## 3. Environment file
 
 ConfigMap `workbench-environment` is the deployment's only source of environment values.
-`deploy/k3s/workbench/environment.env` names every key with a placeholder and a comment; the
+`deploy/kubernetes/workbench/environment.env` names every key with a placeholder and a comment; the
 deploy refuses an environment that lacks any of them.
 
 1. Write a `KEY=VALUE` file **outside the repository** with every key of `environment.env` and
@@ -139,7 +139,7 @@ done
   `installation_repositories`.
 - The sign-in OAuth App's callback is `<origin>/auth/github/callback`, scopes `read:user user:email`.
 
-`apply-k3s.sh` writes `mysql-auth`, `clickhouse-auth`, `redis-auth` and `account-github-oauth`
+`apply.sh` writes `mysql-auth`, `clickhouse-auth`, `redis-auth` and `account-github-oauth`
 from the shell variables of §1, and creates once, never replacing:
 
 | Secret | Keep in mind |
@@ -151,7 +151,7 @@ from the shell variables of §1, and creates once, never replacing:
 ## 5. Models
 
 The models people choose are Model Configurations: a Model Template from ConfigMap
-`agent-models` (`deploy/k3s/workbench`, Anthropic-compatible endpoints, no keys) paired with a key.
+`agent-models` (`deploy/kubernetes/workbench`, Anthropic-compatible endpoints, no keys) paired with a key.
 List them in `configurations.yml`; the first is the default:
 
 ```yaml
@@ -177,11 +177,11 @@ export CLICKHOUSE_MIGRATION_USER=<migration account>
 read -rs CLICKHOUSE_MIGRATION_PASSWORD && export CLICKHOUSE_MIGRATION_PASSWORD
 export ACCOUNT_GITHUB_CLIENT_ID=<client id>     # first deploy only
 read -rs ACCOUNT_GITHUB_CLIENT_SECRET && export ACCOUNT_GITHUB_CLIENT_SECRET
-scripts/deploy/render-k3s.sh deploy/k3s/workbench > /tmp/rendered.yaml   # review before applying
-scripts/deploy/apply-k3s.sh deploy/k3s/workbench
+scripts/deploy/render.sh deploy/kubernetes/workbench > /tmp/rendered.yaml   # review before applying
+scripts/deploy/apply.sh deploy/kubernetes/workbench
 ```
 
-`apply-k3s.sh` performs the deploy in order: namespaces, Secrets, the MySQL schema
+`apply.sh` performs the deploy in order: namespaces, Secrets, the MySQL schema
 (`bootstrap-mysql.sh`), OpenSandbox (`apply-opensandbox.sh`, which first checks the sandbox
 RuntimeClass and the pod network), the environment ConfigMap and the Collector, the ClickHouse
 projections once the Collector has created its tables (`bootstrap-clickhouse.sh`, waiting up to
