@@ -111,7 +111,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	admission := domain.StartAdmission{AdmittedAt: h.now(), AgentID: agent.ID, ModelConfigurationProvided: provided, Soul: agent.Soul}
 	workID := request.workID()
 	if available {
-		seat, err := admitRun(ctx, h.computers, RunAdmission{ComputerID: computer.ID, DeskID: requestedDeskID(request.RequestID), WorkID: workID, WorkOwnerID: agent.WorkPrincipal(), StarterID: request.SubjectID, Sandbox: harness.Sandbox})
+		seat, err := admitRun(ctx, h.computers, RunAdmission{ComputerID: computer.ID, DeskID: requestedDeskID(workID, request.RequestID), WorkID: workID, WorkOwnerID: agent.WorkPrincipal(), StarterID: request.SubjectID, Sandbox: harness.Sandbox})
 		if err != nil {
 			return h.reuseAfterRejection(ctx, agent, request, err)
 		}

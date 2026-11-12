@@ -99,6 +99,24 @@ func TestAnApplicationStartsItsOwnWorksUnderItsOneAgent(t *testing.T) {
 	require.Equal(t, definition.WorkDefaults.StartupAgent, options.GetOptions().GetDefaultStartupAgent(), "start options come from its own Agent")
 }
 
+// A request identity is its caller's own: two owners that happen to choose
+// the same one each start their own Work, on their own Desk.
+func TestEqualRequestIdentitiesOfTwoOwnersStartTwoWorks(t *testing.T) {
+	m := newLifecycleModule(t).start()
+	desk, billing := m.as("application", supportDesk), m.as("application", billingBot)
+	person := m.as("user", uuid.NewString())
+
+	request := uuid.NewString()
+	works := map[string]bool{}
+	for _, owner := range []ownerClients{desk, billing, person} {
+		work, err := owner.start(t, request, "Answer ticket 42")
+		require.NoError(t, err)
+		works[work] = true
+		require.Equal(t, []string{work}, owner.listed(t))
+	}
+	require.Len(t, works, 3)
+}
+
 // An Application drives its own Work, and only its own: another Application
 // and a person reach none of it, and the Application reaches no person's
 // Work. Procedures that are a person's alone refuse it.

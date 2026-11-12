@@ -84,7 +84,7 @@ func (h workStartup) admit(ctx context.Context, request StartWork, operation sta
 	if err != nil {
 		return false, err
 	}
-	deskID := requestedDeskID(request.RequestID)
+	deskID := requestedDeskID(request.WorkID, request.RequestID)
 	if session.StartHoldsDesk(deskID) {
 		return true, nil
 	}
