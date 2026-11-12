@@ -12,7 +12,7 @@ The Personal Library is the Artifacts of your owner's Works and of the Works sha
 Every call is a JSON `POST` to `$TALGENT_API_ADDRESS/api/<procedure>`:
 
 ```sh
-curl -sS -X POST "$TALGENT_API_ADDRESS/api/agent.public.v1.PersonalWorkService/ListLibraryFiles" \
+curl -sS -X POST "$TALGENT_API_ADDRESS/api/agent.public.v2.WorkService/ListLibraryFiles" \
   -H 'Content-Type: application/json' -d '{}'
 ```
 
@@ -20,7 +20,7 @@ The Work's environment adds its identity to every request sent there: you call a
 
 ## Finding and downloading a file
 
-1. **Search**: `agent.public.v1.PersonalWorkService/ListLibraryFiles` with `{"nameQuery": "<part of a name>"}`, and `"workId"` to narrow to one Work; both are optional. It answers `files`, newest first, each with `workId`, `name`, `sizeBytes`, `contentType` and `addedAt`, and `works` with each Work's `title`.
+1. **Search**: `agent.public.v2.WorkService/ListLibraryFiles` with `{"nameQuery": "<part of a name>"}`, and `"workId"` to narrow to one Work; both are optional. It answers `files`, newest first, each with `workId`, `name`, `sizeBytes`, `contentType` and `addedAt`, and `works` with each Work's `title`.
 2. **Get a link**: `agent.public.v1.WorkFileService/CreateWorkFileAccessLink` with `{"workId": "<workId>", "kind": "WORK_FILE_KIND_ARTIFACT", "name": "<name>", "disposition": "WORK_FILE_ACCESS_DISPOSITION_DOWNLOAD"}`. It answers `accessUrl`, the link as a path on the entry, and `expiresAt`.
 3. **Download** within the link's lifetime, outside `inputs/`:
 

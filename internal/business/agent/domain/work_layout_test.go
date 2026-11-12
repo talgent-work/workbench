@@ -139,7 +139,7 @@ func TestAWorkWithoutSubjectOrProjectLocatesItsOwnFiles(t *testing.T) {
 	require.False(t, ok, "a mount following a fact the Work lacks is left out")
 	require.Len(t, work.LocatedLayout.Mounts, 4)
 	require.Equal(t, located("artifacts", domain.BackendJuiceFS, domain.LifetimePermanent, "work", work.ID), work.LocatedLayout.PublicationTarget)
-	spaces, err := work.PersonalFileSpaces()
+	spaces, err := work.StandaloneFileSpaces()
 	require.NoError(t, err)
 	require.Equal(t, inputs.Directory, spaces.Inputs)
 	require.Equal(t, work.LocatedLayout.PublicationTarget, spaces.Artifacts)

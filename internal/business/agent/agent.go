@@ -13,6 +13,7 @@ import (
 
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
+	"github.com/talgent-work/contracts/gen/go/agent/public/v2/agentpublicv2connect"
 	transport "github.com/talgent-work/workbench/internal/business/agent/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 
@@ -22,8 +23,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/application/eventhandler"
-	"github.com/talgent-work/workbench/internal/business/agent/application/personalwork"
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/application/standalonework"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	agentaccount "github.com/talgent-work/workbench/internal/business/agent/infrastructure/account"
@@ -65,9 +66,9 @@ var Module = fx.Module("domain.agent",
 	// Agent's Domain Events stops before the dispatcher drains.
 	fx.Invoke(registerDomainEventLifecycle),
 	fx.Invoke(fx.Annotate(RegisterRPCHandlers, fx.ParamTags(``, ``, ``, ``, `optional:"true"`))),
-	fx.Invoke(RegisterPersonalWorkHandlers),
+	fx.Invoke(RegisterStandaloneWorkHandlers),
 	fx.Provide(fx.Annotate(agentaccount.NewClient, fx.As(new(command.AccountPort)))),
-	fx.Provide(personalwork.New, fx.Private),
+	fx.Provide(standalonework.New, fx.Private),
 	fx.Provide(newLiveStreamPublisher, newWorkStateUpdates),
 	fx.Provide(newDomainEventDispatcher, fx.Private),
 	fx.Provide(func(d *domainevent.InMemoryDispatcher) domainevent.Dispatcher { return d }, fx.Private),
@@ -171,12 +172,15 @@ func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, confi
 	connectserver.Mount(mux, private)
 }
 
-// RegisterPersonalWorkHandlers mounts a person's own Works and their files for
-// the person the entry verified, and the Library reads for an Agent acting for
-// the person its Work represents.
-func RegisterPersonalWorkHandlers(mux *http.ServeMux, works *personalwork.PersonalWorks, logger *slog.Logger) {
+// RegisterStandaloneWorkHandlers mounts an owner's Standalone Works and their
+// files for the person the entry verified, and the Library reads for an Agent
+// acting for the person its Work represents. The retiring PersonalWorkService
+// serves the same operations under its old names until its last consumer moves.
+func RegisterStandaloneWorkHandlers(mux *http.ServeMux, works *standalonework.StandaloneWorks, logger *slog.Logger) {
 	server := connectserver.New(logger, authn.NewPrincipalInterceptor())
-	agentpublicv1connect.RegisterPersonalWorkServiceHandler(server, transport.NewPersonalWorkHandler(works))
+	standalone := transport.NewStandaloneWorkHandler(works)
+	agentpublicv2connect.RegisterWorkServiceHandler(server, standalone)
+	agentpublicv1connect.RegisterPersonalWorkServiceHandler(server, transport.NewPersonalWorkHandler(standalone))
 	agentpublicv1connect.RegisterWorkFileServiceHandler(server, transport.NewWorkFileHandler(works))
 	connectserver.Mount(mux, server)
 }

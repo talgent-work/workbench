@@ -8,8 +8,8 @@ vi.mock("../lib/account-service", () => ({ useCurrentUser: () => ({ data: { user
 // A deployment whose Agents have no direct API access leaves the core API
 // plugin out and declares a Built-in Plugin of its own.
 vi.mock("../lib/client", () => ({
-  personalWorkClient: {
-    getPersonalWorkStartOptions: async () => ({ options: { models: [], connectors: [], plugins: [
+  workClient: {
+    getWorkStartOptions: async () => ({ options: { models: [], connectors: [], plugins: [
       { name: "talgent", required: true },
       { name: "example-plugin", required: true },
       { name: "chosen-plugin", required: false },

@@ -191,7 +191,7 @@ func (a *Application) GetWorkFacts(ctx context.Context, workID string) (query.Wo
 	return view, nil
 }
 
-// ChangeDisplayTitle replaces the owner's Personal Work's display title.
+// ChangeDisplayTitle replaces the owner's Standalone Work's display title.
 type ChangeDisplayTitle struct{ ActorUserID, WorkID, Title string }
 
 func (a *Application) ChangeDisplayTitle(ctx context.Context, input ChangeDisplayTitle) error {

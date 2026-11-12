@@ -113,7 +113,7 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 
 // A Work without a Subject is never located by one: each creation
 // establishes its own Work and keeps the trace attributes its caller
-// supplied. Without a Project it is a Personal Work, private whatever its
+// supplied. Without a Project it is a Standalone Work, private whatever its
 // definition declares.
 func TestWorkWithoutSubjectIsNeverReused(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work",

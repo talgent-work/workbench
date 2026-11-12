@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
-	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
+	agentpublicv2 "github.com/talgent-work/contracts/gen/go/agent/public/v2"
 	computerpublicv1 "github.com/talgent-work/contracts/gen/go/computer/public/v1"
 	streamgatewaypublicv1 "github.com/talgent-work/contracts/gen/go/streamgateway/public/v1"
 )
@@ -25,9 +25,9 @@ func method(file protoreflect.FileDescriptor, service, name string) protoreflect
 
 var (
 	// Declared for a user only.
-	userOnly = method(agentpublicv1.File_agent_public_v1_personal_work_proto, "PersonalWorkService", "StartPersonalWork")
+	userOnly = method(agentpublicv2.File_agent_public_v2_work_proto, "WorkService", "StartWork")
 	// Declared for a user or an agent.
-	userOrAgent = method(agentpublicv1.File_agent_public_v1_personal_work_proto, "PersonalWorkService", "ListLibraryFiles")
+	userOrAgent = method(agentpublicv2.File_agent_public_v2_work_proto, "WorkService", "ListLibraryFiles")
 	// Declared for no caller: a private procedure no entry reaches.
 	undeclared = method(agentprivatev1.File_agent_private_v1_acting_work_proto, "ActingWorkService", "AdmitAgentAction")
 	// Declared anonymous.

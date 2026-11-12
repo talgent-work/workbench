@@ -35,11 +35,11 @@ type CreateWork struct {
 	// StartingContext, when supplied, starts a new Work from another Work of
 	// the same definition; a reused Work keeps its own.
 	StartingContext *domain.StartingContextSource
-	// WorkID, when supplied, is the identity the caller allocated; a Personal
+	// WorkID, when supplied, is the identity the caller allocated; a Standalone
 	// Work's File Space is opened under it before the Work exists. Otherwise
 	// the creation request identity names the Work.
 	WorkID string
-	// DisplayTitle is a Personal Work's initial display title.
+	// DisplayTitle is a Standalone Work's initial display title.
 	DisplayTitle string
 	// ComputerID is the Computer its starter chose; empty runs it on the
 	// default Computer (see workComputer).

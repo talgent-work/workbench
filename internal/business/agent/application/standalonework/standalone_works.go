@@ -1,4 +1,4 @@
-package personalwork
+package standalonework
 
 import (
 	"context"
@@ -13,17 +13,17 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// PersonalWorks serves a person's own Works under their employee
+// StandaloneWorks serves a person's own Works under their employee
 // definition, their files and sharing, and their Personal Library.
-type PersonalWorks struct {
+type StandaloneWorks struct {
 	app       *application.Application
 	works     query.WorkQueryRepository
 	files     command.StoragePort
 	directory command.AccountPort
 }
 
-func New(app *application.Application, works query.WorkQueryRepository, files command.StoragePort, directory command.AccountPort) *PersonalWorks {
-	return &PersonalWorks{app: app, works: works, files: files, directory: directory}
+func New(app *application.Application, works query.WorkQueryRepository, files command.StoragePort, directory command.AccountPort) *StandaloneWorks {
+	return &StandaloneWorks{app: app, works: works, files: files, directory: directory}
 }
 
 // Person is the authenticated person a request acts for. Agent, when set, is
@@ -56,8 +56,8 @@ func (p Person) libraryReader() string {
 	return p.UserID
 }
 
-// StartOptions lists what a new Personal Work may start with.
-func (p *PersonalWorks) StartOptions(ctx context.Context, person Person) (query.WorkStartOptions, error) {
+// StartOptions lists what a new Standalone Work may start with.
+func (p *StandaloneWorks) StartOptions(ctx context.Context, person Person) (query.WorkStartOptions, error) {
 	if person.self() == "" {
 		return query.WorkStartOptions{}, access.ErrAccessDenied
 	}
@@ -65,15 +65,15 @@ func (p *PersonalWorks) StartOptions(ctx context.Context, person Person) (query.
 }
 
 // StartRepositories lists the repositories the person may check out.
-func (p *PersonalWorks) StartRepositories(ctx context.Context, person Person) (query.WorkStartRepositories, error) {
+func (p *StandaloneWorks) StartRepositories(ctx context.Context, person Person) (query.WorkStartRepositories, error) {
 	if person.self() == "" {
 		return query.WorkStartRepositories{}, access.ErrAccessDenied
 	}
 	return p.app.ListWorkStartRepositories(ctx, person.UserID)
 }
 
-// StartPersonalWork is a new Personal Work and its first input.
-type StartPersonalWork struct {
+// StartWork is a new Standalone Work and its first input.
+type StartWork struct {
 	Person         Person
 	RequestID      string
 	InitialMessage string
@@ -89,16 +89,16 @@ type StartPersonalWork struct {
 	Harness domain.HarnessChoice
 }
 
-// personalWorkSpace derives a Personal Work's identity, and with it the owner
+// standaloneWorkSpace derives a Standalone Work's identity, and with it the owner
 // of its File Spaces, from the person and the request identity: a repeated
 // request names the same Work.
-var personalWorkSpace = uuid.MustParse("6f5c1c8e-9a0b-4c7e-8a51-3d2f0b9e4a17")
+var standaloneWorkSpace = uuid.MustParse("6f5c1c8e-9a0b-4c7e-8a51-3d2f0b9e4a17")
 
 // Start creates the Work under the identity Agent allocates for it and admits
 // its first input. The Work has no Subject and no Project, so its layout
 // locates its own inputs and publication target; only its creation request
 // identity deduplicates it.
-func (p *PersonalWorks) Start(ctx context.Context, input StartPersonalWork) (string, error) {
+func (p *StandaloneWorks) Start(ctx context.Context, input StartWork) (string, error) {
 	if input.Person.UserID == "" {
 		return "", access.ErrAccessDenied
 	}
@@ -109,7 +109,7 @@ func (p *PersonalWorks) Start(ctx context.Context, input StartPersonalWork) (str
 	if err != nil {
 		return "", err
 	}
-	workID := uuid.NewSHA1(personalWorkSpace, []byte(input.Person.UserID+"/"+input.RequestID)).String()
+	workID := uuid.NewSHA1(standaloneWorkSpace, []byte(input.Person.UserID+"/"+input.RequestID)).String()
 	initial := command.PrepareWorkExecution{
 		SubjectID: input.Person.UserID, RequestID: input.RequestID, ThinkingLevel: input.ThinkingLevel,
 		WorkBranch: "talgent/" + workID[:8], Input: command.ExecutionInput{ID: input.RequestID, Text: input.InitialMessage}, Selections: input.Selections,
@@ -126,9 +126,9 @@ const (
 	maxListedWorks     = 100
 )
 
-// List lists the person's Personal Works, closed ones included, most
+// List lists the person's Standalone Works, closed ones included, most
 // recently updated first; a person without a definition yet has none.
-func (p *PersonalWorks) List(ctx context.Context, person Person, limit int) ([]query.PersonalWorkSummary, error) {
+func (p *StandaloneWorks) List(ctx context.Context, person Person, limit int) ([]query.StandaloneWorkSummary, error) {
 	agentID, found, err := p.employeeDefinition(ctx, person)
 	if err != nil || !found {
 		return nil, err
@@ -136,20 +136,20 @@ func (p *PersonalWorks) List(ctx context.Context, person Person, limit int) ([]q
 	if limit <= 0 {
 		limit = defaultListedWorks
 	}
-	return p.works.ListPersonalWorks(ctx, agentID, min(limit, maxListedWorks))
+	return p.works.ListStandaloneWorks(ctx, agentID, min(limit, maxListedWorks))
 }
 
 // employeeDefinition locates the person's employee definition without
 // establishing it.
-func (p *PersonalWorks) employeeDefinition(ctx context.Context, person Person) (string, bool, error) {
+func (p *StandaloneWorks) employeeDefinition(ctx context.Context, person Person) (string, bool, error) {
 	if person.self() == "" {
 		return "", false, access.ErrAccessDenied
 	}
 	return p.app.FindEmployeeAgent(ctx, person.UserID)
 }
 
-// ChangeTitle replaces the owner's Personal Work's display title.
-func (p *PersonalWorks) ChangeTitle(ctx context.Context, person Person, workID, title string) error {
+// ChangeTitle replaces the owner's Standalone Work's display title.
+func (p *StandaloneWorks) ChangeTitle(ctx context.Context, person Person, workID, title string) error {
 	if person.self() == "" {
 		return access.ErrAccessDenied
 	}
@@ -163,7 +163,7 @@ const (
 )
 
 // SearchShareReaders finds people in the User Directory.
-func (p *PersonalWorks) SearchShareReaders(ctx context.Context, person Person, search string, limit int) ([]command.DirectoryUser, error) {
+func (p *StandaloneWorks) SearchShareReaders(ctx context.Context, person Person, search string, limit int) ([]command.DirectoryUser, error) {
 	if person.self() == "" {
 		return nil, access.ErrAccessDenied
 	}
@@ -177,7 +177,7 @@ func (p *PersonalWorks) SearchShareReaders(ctx context.Context, person Person, s
 }
 
 // GetShareReaders shows people in the User Directory by identity.
-func (p *PersonalWorks) GetShareReaders(ctx context.Context, person Person, userIDs []string) ([]command.DirectoryUser, error) {
+func (p *StandaloneWorks) GetShareReaders(ctx context.Context, person Person, userIDs []string) ([]command.DirectoryUser, error) {
 	if person.self() == "" {
 		return nil, access.ErrAccessDenied
 	}
@@ -191,9 +191,9 @@ func (p *PersonalWorks) GetShareReaders(ctx context.Context, person Person, user
 }
 
 // GrantShare lets one person in the User Directory read the owner's
-// Personal Work: a deployment is one enterprise, so the directory is the
+// Standalone Work: a deployment is one enterprise, so the directory is the
 // scope of a Work without a Project.
-func (p *PersonalWorks) GrantShare(ctx context.Context, person Person, workID, reader string) error {
+func (p *StandaloneWorks) GrantShare(ctx context.Context, person Person, workID, reader string) error {
 	if person.self() == "" {
 		return access.ErrAccessDenied
 	}

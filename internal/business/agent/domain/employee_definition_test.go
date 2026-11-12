@@ -9,7 +9,7 @@ import (
 )
 
 // An employee's Agent represents that employee, so every Work of it, a
-// caller's or a Personal Work, rolls up to that person's usage.
+// caller's or a Standalone Work, rolls up to that person's usage.
 func TestAnEmployeeAgentRepresentsTheEmployee(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.EmployeeDefinitionInput("employee-1"))
 	require.NoError(t, err)

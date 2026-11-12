@@ -251,7 +251,7 @@ var sessionStates = map[domain.WorkState]agentprivatev1.WorkState{
 func mapAgentError(err error) error {
 	code := connect.CodeInternal
 	switch {
-	case errors.Is(err, access.ErrAccessDenied), errors.Is(err, domain.ErrControlRequesterNotOwner), errors.Is(err, domain.ErrWorkReaderNotAdmitted), errors.Is(err, domain.ErrAgentAppearanceForbidden), errors.Is(err, domain.ErrSoulForbidden), errors.Is(err, domain.ErrWorkFileNotAdmitted), errors.Is(err, domain.ErrPersonalWorkOwnerOnly), errors.Is(err, domain.ErrPermissionModeStarterOnly):
+	case errors.Is(err, access.ErrAccessDenied), errors.Is(err, domain.ErrControlRequesterNotOwner), errors.Is(err, domain.ErrWorkReaderNotAdmitted), errors.Is(err, domain.ErrAgentAppearanceForbidden), errors.Is(err, domain.ErrSoulForbidden), errors.Is(err, domain.ErrWorkFileNotAdmitted), errors.Is(err, domain.ErrStandaloneWorkOwnerOnly), errors.Is(err, domain.ErrPermissionModeStarterOnly):
 		code = connect.CodePermissionDenied
 	case errors.Is(err, domain.ErrAgentDefinitionNotFound), errors.Is(err, domain.ErrWorkNotFound):
 		code = connect.CodeNotFound
@@ -261,7 +261,7 @@ func mapAgentError(err error) error {
 		code = connect.CodeResourceExhausted
 	case errors.Is(err, domain.ErrConcurrentModification):
 		code = connect.CodeAborted
-	case errors.Is(err, application.ErrWorkCapabilitiesUnavailable), errors.Is(err, domain.ErrTurnActive), errors.Is(err, domain.ErrWorkVisibilityFixed), errors.Is(err, domain.ErrWorkWithoutProject), errors.Is(err, command.ErrDeskUnavailable), errors.Is(err, domain.ErrStartRequestSpent), errors.Is(err, command.ErrStartRequestConflict), errors.Is(err, domain.ErrWorkTransition), errors.Is(err, domain.ErrExecutionNotPermitted), errors.Is(err, domain.ErrComputeReclamationPending), errors.Is(err, domain.ErrModelConfigurationWithdrawn), domain.RefusedByComputer(err), errors.Is(err, domain.ErrNotPersonalWork), errors.Is(err, domain.ErrWorkNotActing), errors.Is(err, domain.ErrWorkFilesUnavailable), errors.Is(err, domain.ErrWorkFilesClosed):
+	case errors.Is(err, application.ErrWorkCapabilitiesUnavailable), errors.Is(err, domain.ErrTurnActive), errors.Is(err, domain.ErrWorkVisibilityFixed), errors.Is(err, domain.ErrWorkWithoutProject), errors.Is(err, command.ErrDeskUnavailable), errors.Is(err, domain.ErrStartRequestSpent), errors.Is(err, command.ErrStartRequestConflict), errors.Is(err, domain.ErrWorkTransition), errors.Is(err, domain.ErrExecutionNotPermitted), errors.Is(err, domain.ErrComputeReclamationPending), errors.Is(err, domain.ErrModelConfigurationWithdrawn), domain.RefusedByComputer(err), errors.Is(err, domain.ErrNotStandaloneWork), errors.Is(err, domain.ErrWorkNotActing), errors.Is(err, domain.ErrWorkFilesUnavailable), errors.Is(err, domain.ErrWorkFilesClosed):
 		code = connect.CodeFailedPrecondition
 	case errors.Is(err, domain.ErrExecutionUnobserved):
 		code = connect.CodeUnavailable

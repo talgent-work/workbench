@@ -128,10 +128,10 @@ type WorkCreationRequest struct {
 	Capabilities    CapabilitySnapshot
 	TraceAttributes map[string]string
 	// WorkID, when supplied, is the identity application coordination
-	// allocated beforehand, such as the owner of a Personal Work's File
+	// allocated beforehand, such as the owner of a Standalone Work's File
 	// Space; otherwise the Work gets a new one.
 	WorkID string
-	// DisplayTitle is a Personal Work's initial display title.
+	// DisplayTitle is a Standalone Work's initial display title.
 	DisplayTitle string
 	// StartingContext, when supplied, starts a new Work from another Work's
 	// context; reuse neither compares nor replaces it.

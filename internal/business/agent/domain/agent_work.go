@@ -256,7 +256,7 @@ type AgentWork struct {
 	// StartingContext is the context the Work started from, fixed at
 	// creation; nil for a Work that started afresh.
 	StartingContext *StartingContext
-	// DisplayTitle is a Personal Work's title, changed by its owner at any
+	// DisplayTitle is a Standalone Work's title, changed by its owner at any
 	// time; it never identifies the Work.
 	DisplayTitle    string
 	TraceAttributes map[string]string
@@ -381,7 +381,7 @@ func (s *AgentWork) Validate() error {
 	if err := s.RepositorySelection.Validate(); err != nil {
 		return err
 	}
-	if err := validateDisplayTitle(s.DisplayTitle, s.Personal()); err != nil {
+	if err := validateDisplayTitle(s.DisplayTitle, s.Standalone()); err != nil {
 		return err
 	}
 	if err := s.validateLocatedLayout(); err != nil {

@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { Alert, Button, Label, ListBox, SearchField, Select, Table } from "@heroui/react";
 import { WorkFileKind, WorkFileSchema } from "@talgent/contracts/agent/public/v1/work_file_pb";
-import type { LibraryFile, LibraryWork } from "@talgent/contracts/agent/public/v1/personal_work_pb";
+import type { LibraryFile, LibraryWork } from "@talgent/contracts/agent/public/v2/work_pb";
 import { FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { formatAgo } from "../../components/analytics/work-usage/work-status";
@@ -13,7 +13,7 @@ import { useEntryShell } from "../../components/shell/entry-shell";
 import { useReadingArea } from "../../components/shell/reading-context";
 import { useDebounced } from "../../hooks/use-debounced";
 import { useNow } from "../../lib/use-now";
-import { untitledWorkLabel, useDirectoryUsers, useLibrary } from "../../lib/personal-work-service";
+import { untitledWorkLabel, useDirectoryUsers, useLibrary } from "../../lib/standalone-work-service";
 import { Person } from "./person";
 
 const periods = [{ id: "any", label: "Any time", days: null }, { id: "1", label: "Last 24 hours", days: 1 }, { id: "7", label: "Last 7 days", days: 7 }, { id: "30", label: "Last 30 days", days: 30 }] as const;
@@ -25,7 +25,7 @@ function libraryWorkTitle(work: Pick<LibraryWork, "title"> | undefined) {
 
 const rowKey = (file: LibraryFile) => `${file.workId}/${file.name}`;
 
-/** Library: the Artifacts of the person's Personal Works and of the Works
+/** Library: the Artifacts of the person's Standalone Works and of the Works
  * shared with them, searched by name and narrowed by Work and time. */
 export function LibraryPage() {
   return <PageLayout workspaceTitle="Library"><LibraryTable /></PageLayout>;

@@ -12,7 +12,7 @@ import (
 // uses: the Mount Grants of a Cloud start, one per located Directory, the
 // Work Reclamation Request of a Closed Work, the opening of a located
 // Directory for its Space Token, and the File Space commands and queries of
-// Personal Work files and the Personal Library, each naming a Directory by
+// Standalone Work files and the Personal Library, each naming a Directory by
 // its owner and name. Agent decides every access itself before calling
 // Storage; Storage decides where each Directory lives.
 type StoragePort interface {

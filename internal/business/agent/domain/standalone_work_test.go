@@ -12,9 +12,9 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
 
-// personalWork is a Work without a Subject or a Project, with its own File
+// standaloneWork is a Work without a Subject or a Project, with its own File
 // Space, under an employee definition owned by "owner".
-func personalWork(t *testing.T) visibleWork {
+func standaloneWork(t *testing.T) visibleWork {
 	t.Helper()
 	definition := newDefinition(t, "employee", domain.VisibilityRule{})
 	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID,
@@ -22,7 +22,7 @@ func personalWork(t *testing.T) visibleWork {
 		RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(), Visibility: definition.Visibility,
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
-	require.True(t, work.Personal())
+	require.True(t, work.Standalone())
 	return visibleWork{AgentWork: work, definition: definition}
 }
 
@@ -33,14 +33,14 @@ func TestDisplayTitleStartsFromTheFirstLineOfTheFirstInput(t *testing.T) {
 	require.Equal(t, strings.Repeat("a", 78)+"…", domain.DisplayTitleFrom(strings.Repeat("a", 78)+" tail of the instruction"), "no space is left before the ellipsis")
 }
 
-func TestOnlyAPersonalWorkHasADisplayTitle(t *testing.T) {
+func TestOnlyAStandaloneWorkHasADisplayTitle(t *testing.T) {
 	work := humanWork(t)
 	_, err := work.ChangeDisplayTitle(work.definition, "owner", "Renamed")
-	require.ErrorIs(t, err, domain.ErrNotPersonalWork)
+	require.ErrorIs(t, err, domain.ErrNotStandaloneWork)
 }
 
-func TestOwnerRenamesTheirPersonalWork(t *testing.T) {
-	work := personalWork(t)
+func TestOwnerRenamesTheirStandaloneWork(t *testing.T) {
+	work := standaloneWork(t)
 	_, err := work.ChangeDisplayTitle(work.definition, "reader", "Renamed")
 	require.ErrorIs(t, err, domain.ErrControlRequesterNotOwner)
 	for _, invalid := range []string{"  ", "two\nlines", strings.Repeat("x", 201)} {
@@ -56,8 +56,8 @@ func TestOwnerRenamesTheirPersonalWork(t *testing.T) {
 	require.False(t, changed)
 }
 
-func TestOnlyTheOwnerChangesAPersonalWorksFilesUntilItCloses(t *testing.T) {
-	work := personalWork(t)
+func TestOnlyTheOwnerChangesAStandaloneWorksFilesUntilItCloses(t *testing.T) {
+	work := standaloneWork(t)
 	require.NoError(t, work.AdmitFileChange(work.definition, "owner"))
 	require.ErrorIs(t, work.AdmitFileChange(work.definition, "reader"), domain.ErrWorkFileNotAdmitted)
 
@@ -71,7 +71,7 @@ func TestOnlyTheOwnerChangesAPersonalWorksFilesUntilItCloses(t *testing.T) {
 }
 
 func TestOwnerAndWorkShareHoldersReadAWorksFiles(t *testing.T) {
-	work := personalWork(t)
+	work := standaloneWork(t)
 	_, err := work.GrantWorkShare(work.definition, "owner", "reader", member)
 	require.ErrorIs(t, err, domain.ErrWorkShareOutOfScope, "a Work without a Project is shared within the User Directory only")
 	_, err = work.GrantWorkShare(work.definition, "owner", "reader", domain.ReaderAdmission{Directory: true})
@@ -104,9 +104,9 @@ func TestAnEmployeeDefinitionRepresentsItsPersonPrivately(t *testing.T) {
 	require.Empty(t, definition.ProvideCapabilities().RequiredPlugins, "the deployment's Built-in Plugins supply the core plugin")
 }
 
-// A Personal Work starts from another Personal Work of its definition, never
+// A Standalone Work starts from another Standalone Work of its definition, never
 // from one of its definition's Works with a Project.
-func TestAPersonalWorkStartsOnlyFromAnotherPersonalWork(t *testing.T) {
+func TestAStandaloneWorkStartsOnlyFromAnotherStandaloneWork(t *testing.T) {
 	definition := newDefinition(t, "employee", domain.VisibilityRule{})
 	request := func(subject domain.WorkSubject, project string, source *domain.StartingContextSource) domain.WorkCreationRequest {
 		return domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
@@ -126,10 +126,10 @@ func TestAPersonalWorkStartsOnlyFromAnotherPersonalWork(t *testing.T) {
 	require.Equal(t, earlier.ID, continued.StartingContext.SourceWorkID)
 }
 
-func TestNoCallerCreatesOrActsOnAPersonalWork(t *testing.T) {
-	require.ErrorIs(t, domain.AdmitCallerCreation(domain.WorkSubject{}, ""), domain.ErrPersonalWorkOwnerOnly)
+func TestNoCallerCreatesOrActsOnAStandaloneWork(t *testing.T) {
+	require.ErrorIs(t, domain.AdmitCallerCreation(domain.WorkSubject{}, ""), domain.ErrStandaloneWorkOwnerOnly)
 	require.NoError(t, domain.AdmitCallerCreation(domain.WorkSubject{}, "project-a"))
 	require.NoError(t, domain.AdmitCallerCreation(domain.WorkSubject{Kind: "case", ID: "case-1"}, ""))
-	require.ErrorIs(t, personalWork(t).AdmitDelegatedControl(), domain.ErrPersonalWorkOwnerOnly)
+	require.ErrorIs(t, standaloneWork(t).AdmitDelegatedControl(), domain.ErrStandaloneWorkOwnerOnly)
 	require.NoError(t, humanWork(t).AdmitDelegatedControl())
 }

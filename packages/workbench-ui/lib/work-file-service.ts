@@ -7,7 +7,7 @@ import { NameTakenError } from "./name-taken-error";
 import type { PreviewVerdict } from "../components/preview/preview-verdict";
 import { previewVerdict } from "./preview-verdict";
 
-// A Personal Work's files, by their position: Work, kind and name. Its owner
+// A Standalone Work's files, by their position: Work, kind and name. Its owner
 // and Work Share holders read them; only the owner changes them.
 export type WorkFileRef = Pick<WorkFile, "kind" | "name">;
 
