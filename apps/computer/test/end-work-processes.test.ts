@@ -45,7 +45,9 @@ afterEach(async () => {
     const [work, id] = entry.split('/')
     await processes.delete(work, id)
   }
-  await rm(dir, { recursive: true, force: true })
+  // On Windows an ended process tree can hold its Work directory for a moment
+  // after it is recorded as exited, so removal retries a bounded few times.
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 // A Work process that runs until it is ended: it waits for stdin.
