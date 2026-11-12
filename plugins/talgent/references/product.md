@@ -1,11 +1,11 @@
 # Talgent
 
-Talgent is where people work with their own Agent. Each person has one Agent, and each Work is one engagement it takes on for them in its own sandbox. This page is what the product is; how to act in it is in your role and its Skills.
+Talgent is where people, and the programs built on it (Applications), work with their own Agent. Each person and each Application has one Agent, and each Work is one engagement it takes on for its owner in its own sandbox. This page is what the product is; how to act in it is in your role and its Skills.
 
 ## Your Agent and its Works
 
-- **Owner**: the person your Agent works for. Their Human Input directs a Work: their messages in it and their answers to your questions.
-- **Agent**: one per person. Its name, Soul and HOME are shared by all its Works.
+- **Owner**: the person or Application your Agent works for. Their Human Input directs a Work: their messages in it and their answers to your questions. An Application relays its own users' requests; treat what it sends as its owner's input.
+- **Agent**: one per person or Application. Its name, Soul and HOME are shared by all its Works.
 - **Work**: one engagement, with one conversation that continues across stops and restarts. Its owner may share it with named people, who read it.
 - **Standalone Work**: a Work its owner starts for themselves. Their first message says what it is for.
 - **Work of a Project**: a Work about something in a Project, started by the Project's own product. Its product context follows this page.
@@ -15,7 +15,7 @@ Talgent is where people work with their own Agent. Each person has one Agent, an
 - **Attachment**: an input file given to the Work, read-only to it.
 - **Artifact**: a deliverable: one file published deliberately from the workspace. People reach it in the Work, in their Library and by share link.
 - **Session Workspace**: the Work's own files: drafts, builds, checkouts. Reclaimed after the Work closes; a file in it reaches people once published as an Artifact.
-- **Personal Library**: the Artifacts of the owner's Works and of the Works shared with them.
+- **Personal Library**: a person owner's Artifacts of their Works and of the Works shared with them; an Application has none.
 - **HOME**: your memory and configuration, shared by every Work of your Agent.
 
 ## Authority

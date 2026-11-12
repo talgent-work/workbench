@@ -163,6 +163,7 @@ moves by two days and every owner is told. The EU pricing rules are kept for the
 | Processes, stores and repository layout | [Architecture](docs/architecture.md) |
 | Building, testing and releases | [Development](docs/development.md) |
 | Talgent Computer and its gateway | [Talgent Computer protocol](docs/computer-protocol.md) |
+| Calling Workbench as an Application: tokens, APIs, identity | [Contracts repository](https://github.com/talgent-work/contracts): `docs/application-tokens.md`, `proto/*/public` |
 
 ## Contributing
 

@@ -6,12 +6,12 @@ each part lives in this repository. For what the product does, see the [README](
 ## Processes
 
 ```text
- browser ──HTTPS──▶ Envoy Gateway ──▶ workbench-web       pages
-                     (JWT check)  ├──▶ controlplane       Account, Marketplace, Agent,
-                                  │                       Storage, Computer, Trace
-                                  ├──▶ streamgateway      live and replayed Work messages
-                                  └──▶ computer-gateway   Talgent Computer connections
- Talgent Computer ──WebSocket────────▶ computer-gateway
+ browser ─────HTTPS──▶ Envoy Gateway ──▶ workbench-web       pages
+ Application ─HTTPS──▶  (JWT check)  ├──▶ controlplane       Account, Marketplace, Agent,
+                                     │                       Storage, Computer, Trace
+                                     ├──▶ streamgateway      live and replayed Work messages
+                                     └──▶ computer-gateway   Talgent Computer connections
+ Talgent Computer ──WebSocket───────────▶ computer-gateway
 
  controlplane ──▶ OpenSandbox ──▶ sandbox (VM):   Claude Code + execd
  dispatcher ──────────────────────▶ execd: drives Claude Code, collects its output
@@ -20,7 +20,7 @@ each part lives in this repository. For what the product does, see the [README](
 
 | Process | Responsibilities |
 |---|---|
-| `controlplane` | Account (GitHub sign-in, session tokens and the keys the gateway checks them with), Marketplace (catalogs, Plugins, Connectors, Provider authorization), Agent (Works, their lifecycle and execution), Storage (File Spaces, workspaces and HOMEs, previews), Computer (Cloud capacity, Managed Computers), Trace (Usage queries) |
+| `controlplane` | Account (GitHub sign-in, session tokens, Applications and their client credentials grant, and the keys the gateway checks every token with), Marketplace (catalogs, Plugins, Connectors, Provider authorization), Agent (Works, their lifecycle and execution), Storage (File Spaces, workspaces and HOMEs, previews), Computer (Cloud capacity, Managed Computers), Trace (Usage queries) |
 | `dispatcher` | Connects to each running Work's execd, drives native Claude Code, folds its output stream and records it; replicas hand Works over and take them over |
 | `streamgateway` | Serves each Work's message stream to browsers, replayed and live |
 | `computer-gateway` | Holds each Managed Computer's outbound connection and relays execution calls over it ([protocol](computer-protocol.md)) |
@@ -51,11 +51,13 @@ names a release: the current one is whichever the latest catalog generation sele
 greatest. An entry whose source runs a command on the installing machine (`command`) can never
 be acquired by the platform; synchronization skips it with a warning instead of failing.
 
-The browser signs in through Account; Envoy Gateway validates the session token against
-Account's published keys and passes the identity on, and each context authorizes on it. An Agent
+A request speaks for one of three callers, each with a token Account signs: a person (the
+browser signs in through Account), an Application (a third-party program that exchanges its
+client credentials at `POST /auth/token`), or an Agent. Envoy Gateway validates every token
+against Account's published keys and passes the identity on, and each context authorizes on it:
+an Application stands where a person stands, reaching only what it owns. An Agent
 reaches the platform's API from its sandbox with its Work's credential, which the sandbox's
 Credential Proxy adds; the core API plugin (`plugins/talgent-api`) teaches it the calls.
-
 
 ## Repository
 

@@ -7,98 +7,54 @@ GitHub release page.
 
 ## The release that lets Applications run Works
 
-Before deploying it, run `deploy/middleware/migrations/20261113-agent-account-application.sql`
-against the database named by `ACCOUNT_MYSQL_DATABASE`; it adds `agent_account.application_id`
-and can run while the previous release serves. Then deploy the entry with the rest: it forwards
-an agent token's `application_id` claim as `x-talgent-application-id`.
+Before deploying, in this order:
 
-An Application now starts Standalone Works with `agent.public.v2.WorkService` and drives them
-with `agent.public.v1.AgentWorkService` under its own token; it reaches only its own Works. Its
-Works run under one Agent named after it, only on a Cloud, and their agent tokens state the
-Application. Its owner renames it and configures its Agent in the web app: the Agent's name,
-icon and Soul, and the model, thinking level and Startup Agent a Work starts with when its start
-request names none (`AgentWorkService.ChangeAgentWorkDefaults`). `StartWork` takes the Application's own MCP endpoints in
-`application_mcp_endpoints`, for that Work only: the Work sends each endpoint's headers unchanged
-for its life, and no read of the Work returns them. A header value or URL containing `${` is
-refused, since the Agent Harness would expand it from the run's environment.
+1. Confirm the public catalog lists the `talgent` release that declares the Startup Agent
+   `work-executor` (renamed from `personal-work-executor`).
+2. Run each script in `deploy/middleware/migrations/` below against its database. Each can run
+   more than once; "Before" scripts can run while the previous release serves, "With" scripts
+   rename what the previous release reads, so run them as part of the deployment.
 
-Before deploying it, also run `deploy/middleware/migrations/20261114-agent-account-work-labels.sql`
-against the database named by `ACCOUNT_MYSQL_DATABASE`; it adds `agent_account.work_labels` and
-can run while the previous release serves. Agent's new `agent_work_label` table comes with the
-canonical schema (`scripts/deploy/bootstrap-mysql.sh`). A Work's starter may give it Work Labels
-(`StartWorkRequest.labels`), which it keeps for its life; `ListWorks` shows them and narrows by
-labels and Work State, and an agent token carries them as claim `work_labels`, which the entry
-does not forward.
+   | Script | Database | When |
+   |---|---|---|
+   | `20261113-agent-account-application.sql` | `ACCOUNT_MYSQL_DATABASE` | Before |
+   | `20261114-agent-account-work-labels.sql` | `ACCOUNT_MYSQL_DATABASE` | Before |
+   | `20261113-core-startup-agent-rename.sql` | `AGENT_MYSQL_DATABASE`, `WORKBENCH_MYSQL_DATABASE` | Before (after step 1) |
+   | `20261115-agent-definition-application-removed.sql` | `AGENT_MYSQL_DATABASE` | Before |
+   | `20261115-agent-work-owning-application.sql` | `AGENT_MYSQL_DATABASE` | Before |
+   | `20261116-agent-work-selection-owner.sql` | `AGENT_MYSQL_DATABASE` | With |
+   | `20261115-storage-share-link-application-creator.sql` | `WORKBENCH_MYSQL_DATABASE` | Before |
+   | `20261115-marketplace-installation-owner.sql` | `WORKBENCH_MYSQL_DATABASE` | With |
+   | `20261116-marketplace-authorization-owner.sql` | `WORKBENCH_MYSQL_DATABASE` | With |
 
-The core plugin's Startup Agent is renamed `talgent:work-executor` (it was
-`talgent:personal-work-executor`). Once the public catalog lists the `talgent` release that
-declares `work-executor`, and before the new controlplane deploys, run
-`deploy/middleware/migrations/20261113-core-startup-agent-rename.sql` against the databases named
-by `AGENT_MYSQL_DATABASE` and `WORKBENCH_MYSQL_DATABASE`; it rewrites the name in stored
-definitions and Works and can run more than once. Without it, a definition still naming the old
-Startup Agent starts no Standalone Work.
+3. Run `scripts/deploy/bootstrap-kafka.sh`: it creates `account.integration.v1.ApplicationRemovedV1`.
+4. Deploy with the ClickHouse schema step (leave `TALGENT_SKIP_CLICKHOUSE_MIGRATION` unset): it
+   adds `trace_work_measurements.application_id`.
+5. Deploy the entry together with the services: it forwards an agent token's `application_id`
+   claim as `x-talgent-application-id`.
 
-Before deploying it, also run
-`deploy/middleware/migrations/20261115-agent-definition-application-removed.sql` against the
-database named by `AGENT_MYSQL_DATABASE`; it adds `agent_definition.application_removed` and can
-run while the previous release serves. Once Agent learns that an Application was removed, the
-Application acts on nothing of its Agent's: a message stream it still holds ends at its next
-re-admission.
+What changes:
 
-Before deploying it, also run
-`deploy/middleware/migrations/20261115-storage-share-link-application-creator.sql` against the
-database named by `WORKBENCH_MYSQL_DATABASE`; it adds `storage_share_link.created_by_application`
-and can run while the previous release serves. An Application now creates and stops Share Links
-to its own Works' files with `CreateWorkFileShareLink` and `StopWorkFileSharing`; a link names
-its creator in `created_by_user_id` or `created_by_application_id`.
-
-Deploy it with the ClickHouse schema step (do not skip it with
-`TALGENT_SKIP_CLICKHOUSE_MIGRATION`): it adds `trace_work_measurements.application_id`, which a
-new Work of an Application fills from its telemetry; measurements taken earlier belong to no
-Application. controlplane reads Account's Application Ownership Query at
-`trace-access.account-address`, by default its own listener. An Application, and its owner,
-read its usage with `trace.public.v1.TraceQueryService.GetApplicationTraceMetrics`, narrowed by
-Work Labels and broken down by one label key, and its Works' spans with `ListSpansByApplication`;
-the Application also reads its own Works' spans, events and measurements by Work. Observability
-keeps no Work Label: it resolves labels to Works through Agent each time.
-
-Run `scripts/deploy/bootstrap-kafka.sh` again before deploying it, too: it creates the topic
-`account.integration.v1.ApplicationRemovedV1`, on which Account tells Agent that an Application
-was removed. An Application Owner removes an Application with
-`ApplicationService.RemoveApplication`: its secrets stop at once, and Agent closes its open
-Works.
-
-Before deploying it, run `deploy/middleware/migrations/20261115-marketplace-installation-owner.sql`
-against the database named by `WORKBENCH_MYSQL_DATABASE`; it renames the owner column of
-Marketplace's Plugin and Connector installations from `user_id` to `owner_id`, which the previous
-release does not read, so run it as part of the deployment. An Application installs, configures,
-enables and removes Plugins and catalog Connectors for itself, and its owner does so in the web
-app: each owner-scoped Marketplace request takes `application_id`. The Application's enabled
-installations are the default selection of every Work it starts, which a start request adds to
-or leaves out, and its Plugins offer its Works' Startup Agents.
-
-Before deploying it, also run
-`deploy/middleware/migrations/20261116-marketplace-authorization-owner.sql` against the database
-named by `WORKBENCH_MYSQL_DATABASE`; it renames `scm_provider_authorization.owner_user_id` to
-`owner_id`, since an authorization's owner is a person or an Application. The previous release
-does not read `owner_id`, so run it as part of the deployment; it can run more than once.
-
-Before deploying it, also run
-`deploy/middleware/migrations/20261115-agent-work-owning-application.sql` against the database
-named by `AGENT_MYSQL_DATABASE`; it records the owning Application on the existing Works of
-Applications' definitions and can run more than once. An Application's owner connects its
-Provider Authorizations in the web app; its Works check out repositories with them, never with a
-person's, and a start with no usable authorization is refused.
-
-Before deploying it, also run
-`deploy/middleware/migrations/20261116-agent-work-selection-owner.sql` against the database named
-by `AGENT_MYSQL_DATABASE`; it renames the owner key of each Work's stored repository and
-authorization selections from `owner_user_id` to `owner_id`, since the owner is a person or an
-Application. The previous release does not read `owner_id`, so run it as part of the
-deployment; it can run more than once.
-
-`ApplicationService.ListOwnedApplications` and `GetApplication` now answer removed Applications
-too, marked `removed` and holding no secret: their owner still reads their Works and usage.
+- **Applications.** A third-party program registers as an Application, exchanges its client
+  credentials at `POST /auth/token` for a short-lived token, starts Standalone Works with
+  `agent.public.v2.WorkService` and drives them with `agent.public.v1.AgentWorkService`. It
+  reaches only its own Works, files, Share Links and usage; its Works run under one Agent named
+  after it, only on a Cloud. Its owner manages it in the web app (Applications in the account
+  menu): credentials, the Agent's name, icon, Soul and Work defaults, Plugins, Connectors,
+  Provider Authorizations, its Works read-only, usage, and removal. A removed Application's
+  secrets stop at once and Agent closes its open Works; its owner still reads them.
+- **Work Labels.** `StartWorkRequest.labels` attaches `key=value` pairs a Work keeps for its
+  life; `ListWorks` narrows by them and by Work State, usage breaks down by one label key, and
+  Observability resolves labels to Works through Agent rather than storing them.
+- **Application MCP endpoints.** `StartWorkRequest.application_mcp_endpoints` gives one Work the
+  Application's own MCP servers; the Work sends each endpoint's headers unchanged for its life,
+  no read returns them, and a value containing `${` is refused.
+- **Neutral Work API.** `agent.public.v2.WorkService` (`StartWork`, `ListWorks`, ...) replaces
+  `agent.public.v1.PersonalWorkService`, which stays only until its last client moves.
+- **Configuration.** controlplane reads `marketplace.account.address` and
+  `trace-access.account-address` (both default to its own listener) and
+  `account.application-token-lifetime` and `account.application-secret-overlap`
+  ([configuration](configuration.md)).
 
 ## The release that names the Work API neutrally
 

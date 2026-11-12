@@ -26,7 +26,6 @@ execd, asynq and the databases are trusted to their own tests.
 Images build with `scripts/deploy/build-and-push-images.sh` (see the
 [self-hosting guide](self-hosting.md#6-deploy)).
 
-
 ## Releases
 
 Every merge to the main branch is a release `vX.Y.Z`. That one version names the Go module, the
