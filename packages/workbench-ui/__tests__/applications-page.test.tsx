@@ -40,6 +40,9 @@ const startOptions = {
   plugins: [{ name: "support", displayName: "Support", agents: [{ name: "support:triage", description: "Sorts tickets" }], skills: [] }],
   connectors: [],
 };
+// The Application's GitHub authorization as Marketplace holds it; null when none.
+let deskGitHub: { authorizationId: string; login: string } | null = null;
+const marketplaceCalls: Array<{ method: string; request: unknown }> = [];
 // The Application's usage as Observability answers it: Works with their Work
 // Labels and output tokens, which a label key breaks down.
 type MeasuredWork = { labels: Record<string, string>; output: number };
@@ -47,6 +50,22 @@ const measured: MeasuredWork[] = [];
 const usageRequests: Array<{ applicationId: string; breakdownKey: string; listLabelKeys: boolean }> = [];
 const totalsOf = (works: MeasuredWork[]) => works.length ? [{ metricKind: "output_tokens", dimension: "model", value: works.reduce((sum, work) => sum + work.output, 0), unknownCount: 0n }] : [];
 vi.mock("../lib/client", () => ({
+  marketplaceClient: {
+    getProviderConnectionState: async (request: { provider: string; applicationId: string }) => {
+      marketplaceCalls.push({ method: "getProviderConnectionState", request });
+      if (request.applicationId !== deskId || !deskGitHub) return { state: { provider: "github", status: "none", authorizationId: "" } };
+      return { state: { provider: "github", status: "active", authorizationId: deskGitHub.authorizationId, providerLogin: deskGitHub.login } };
+    },
+    beginProviderAuthorization: async (request: { provider: string; applicationId: string }) => {
+      marketplaceCalls.push({ method: "beginProviderAuthorization", request });
+      return { authorizationUrl: "https://github.example/authorize" };
+    },
+    cancelPersonalAuthorization: async (request: { authorizationId: string; applicationId: string }) => {
+      marketplaceCalls.push({ method: "cancelPersonalAuthorization", request });
+      deskGitHub = null;
+      return { authorization: { id: request.authorizationId, provider: "github", status: "revoked" } };
+    },
+  },
   traceClient: {
     getApplicationTraceMetrics: async (request: { applicationId: string; breakdownKey: string; listLabelKeys: boolean }) => {
       usageRequests.push(request);
@@ -131,6 +150,8 @@ beforeEach(() => {
   measured.length = 0;
   usageRequests.length = 0;
   agentCalls.length = 0;
+  marketplaceCalls.length = 0;
+  deskGitHub = null;
   removalUnavailable = false;
   Object.assign(agentState, { name: "", icon: { glyph: "bot", color: "green" }, soul: "", defaults: { startupAgent: "", modelConfigurationId: "", thinkingLevel: "" } });
 });
@@ -396,6 +417,44 @@ it("renames the application in its settings", async () => {
   await user.type(name, "  Help Center ");
   await user.click(within(form).getByRole("button", { name: "Save" }));
   expect(await screen.findByRole("button", { name: "Application menu: Help Center" })).toBeInTheDocument();
+});
+
+it("connects GitHub for the application, never for its owner, through the Provider", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  renderPage(`/applications?app=${deskId}&section=agent`);
+
+  const providers = await screen.findByRole("list", { name: "Support Desk Providers" });
+  expect(await within(providers).findByText("Not connected")).toBeInTheDocument();
+  expect(marketplaceCalls).toContainEqual({ method: "getProviderConnectionState", request: { provider: "github", applicationId: deskId } });
+  const assign = vi.fn();
+  vi.stubGlobal("location", { ...window.location, origin: window.location.origin, assign });
+  try {
+    await user.click(within(providers).getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://github.example/authorize"));
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  expect(marketplaceCalls).toContainEqual({ method: "beginProviderAuthorization", request: expect.objectContaining({ provider: "github", applicationId: deskId }) });
+  // The callback completes the connection for the application it began for.
+  expect(window.sessionStorage.getItem("talgent.providerAuthorization.application")).toBe(deskId);
+  window.sessionStorage.clear();
+});
+
+it("shows the application's connected account and disconnects it only after confirmation", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  deskGitHub = { authorizationId: "0193a7c2-6f1e-7c2a-9b3d-00000000aa01", login: "acme-support-bot" };
+  renderPage(`/applications?app=${deskId}&section=agent`);
+
+  const providers = await screen.findByRole("list", { name: "Support Desk Providers" });
+  expect(await within(providers).findByText("Connected as acme-support-bot")).toBeInTheDocument();
+  await user.click(within(providers).getByRole("button", { name: "Disconnect" }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Disconnect GitHub from Support Desk?" });
+  expect(marketplaceCalls.some(call => call.method === "cancelPersonalAuthorization")).toBe(false);
+  await user.click(within(dialog).getByRole("button", { name: "Disconnect" }));
+  await waitFor(() => expect(marketplaceCalls).toContainEqual({ method: "cancelPersonalAuthorization", request: { authorizationId: "0193a7c2-6f1e-7c2a-9b3d-00000000aa01", applicationId: deskId } }));
+  expect(await within(providers).findByText("Not connected")).toBeInTheDocument();
 });
 
 it("shows the application's tokens and secret state, and breaks its usage down by a Work Label key", async () => {

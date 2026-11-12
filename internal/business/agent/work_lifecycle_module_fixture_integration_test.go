@@ -56,6 +56,8 @@ type lifecycleModule struct {
 	url    string
 	// options compose beside the module, such as a case's own decorations.
 	options []fx.Option
+	// catalog replaces the module's Marketplace when a case sets it.
+	catalog command.MarketplacePort
 }
 
 // availableQuota is the cluster quota of the test Cloud with room for ten runs.
@@ -85,7 +87,11 @@ func (m *lifecycleModule) start() *lifecycleModule {
 	require.NoError(t, err)
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
-	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
+	catalog := moduleCatalog()
+	if m.catalog != nil {
+		catalog = fx.Replace(fx.Annotate(m.catalog, fx.As(new(command.MarketplacePort))))
+	}
+	app := fx.New(computer.Module, agent.Module, catalog, sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		fx.Supply(mux, slog.Default(), agent.RPCConfig{ControlToken: "control", FeedbackToken: "feedback"}, defaultBuiltIns, agent.ComputerConfig{Address: server.URL, Token: "computer"}, testCloud("10", "10Gi", "64")),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"execution"`))),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return db }, fx.ResultTags(`name:"workbench"`))),

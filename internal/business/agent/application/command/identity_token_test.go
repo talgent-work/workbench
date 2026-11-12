@@ -49,12 +49,14 @@ func TestDeliveryCarriesTheWorksIdentityTokenAndFallsDueADayEarly(t *testing.T) 
 	require.Equal(t, token.ExpiresAt.Add(-24*time.Hour), delivered.ExpiresAt, "redelivered while the old token still works")
 }
 
-// An Application's Work's token states the Application that owns it, taken
-// from its definition, and represents no person (Fixed facts).
+// An Application's Work's token states the Application that owns it, a fact
+// the Work fixed at creation, and represents no person (Fixed facts).
 func TestAnApplicationsWorkTokenStatesItsApplication(t *testing.T) {
 	ctx := context.Background()
-	w := newWorld(t, startingSession(t))
 	const application = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4e"
+	work := startingSession(t)
+	work.RepresentedPerson, work.OwningApplication = "", application
+	w := newWorld(t, work)
 	w.coordination = command.NewExecutionCoordination(w.now, w.works, commandtest.Definitions{Purpose: domain.StandaloneWorkPurpose, Application: application}, w.executions, w.computers, w.harness)
 	w.begin(t)
 	w.change(t, func(execution *domain.AgentExecution) {

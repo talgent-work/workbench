@@ -8,11 +8,13 @@ import (
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func (h *Handler) BeginProviderAuthorization(ctx context.Context, req *marketplacepublicv1.BeginProviderAuthorizationRequest) (*marketplacepublicv1.BeginProviderAuthorizationResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
+	actor, err := h.owner(ctx, req.GetApplicationId())
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
 	provider, err := connectionProvider(req.GetProvider())
 	if err != nil {
 		return nil, err
@@ -27,7 +29,10 @@ func (h *Handler) BeginProviderAuthorization(ctx context.Context, req *marketpla
 }
 
 func (h *Handler) CompleteProviderAuthorization(ctx context.Context, req *marketplacepublicv1.CompleteProviderAuthorizationRequest) (*marketplacepublicv1.CompleteProviderAuthorizationResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
+	actor, err := h.owner(ctx, req.GetApplicationId())
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
 	provider, err := connectionProvider(req.GetProvider())
 	if err != nil {
 		return nil, err
@@ -47,7 +52,10 @@ func (h *Handler) CompleteProviderAuthorization(ctx context.Context, req *market
 }
 
 func (h *Handler) GetProviderConnectionState(ctx context.Context, req *marketplacepublicv1.GetProviderConnectionStateRequest) (*marketplacepublicv1.GetProviderConnectionStateResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
+	actor, err := h.owner(ctx, req.GetApplicationId())
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
 	provider, err := connectionProvider(req.GetProvider())
 	if err != nil {
 		return nil, err
@@ -60,7 +68,10 @@ func (h *Handler) GetProviderConnectionState(ctx context.Context, req *marketpla
 }
 
 func (h *Handler) ListAccessibleRepositories(ctx context.Context, req *marketplacepublicv1.ListAccessibleRepositoriesRequest) (*marketplacepublicv1.ListAccessibleRepositoriesResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
+	actor, err := h.owner(ctx, req.GetApplicationId())
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
 	provider, err := connectionProvider(req.GetProvider())
 	if err != nil {
 		return nil, err
@@ -73,7 +84,10 @@ func (h *Handler) ListAccessibleRepositories(ctx context.Context, req *marketpla
 }
 
 func (h *Handler) GetProviderAccess(ctx context.Context, req *marketplacepublicv1.GetProviderAccessRequest) (*marketplacepublicv1.GetProviderAccessResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
+	actor, err := h.owner(ctx, req.GetApplicationId())
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
 	provider, err := connectionProvider(req.GetProvider())
 	if err != nil {
 		return nil, err
@@ -86,7 +100,10 @@ func (h *Handler) GetProviderAccess(ctx context.Context, req *marketplacepublicv
 }
 
 func (h *Handler) RefreshProviderAccess(ctx context.Context, req *marketplacepublicv1.RefreshProviderAccessRequest) (*marketplacepublicv1.RefreshProviderAccessResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
+	actor, err := h.owner(ctx, req.GetApplicationId())
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
 	provider, err := connectionProvider(req.GetProvider())
 	if err != nil {
 		return nil, err

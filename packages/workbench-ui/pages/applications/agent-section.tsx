@@ -15,6 +15,7 @@ import type { Capability } from "../../lib/work-start-loadout";
 import { startModels } from "../../lib/work-model";
 import "../../components/composer/work-start.css";
 import "../../components/work-start/work-start-tray.css";
+import { ProvidersSection } from "./providers-section";
 import "./applications.css";
 
 /** The Application's Agent: how it appears, its Soul, and what its Works
@@ -48,6 +49,7 @@ export function AgentSection({ application }: { application: Application }) {
       <Defaults agentId={agent.data.agentId} />
     </section>
     <Installations application={application} agentId={agent.data.agentId} />
+    <ProvidersSection application={application} />
   </>;
 }
 

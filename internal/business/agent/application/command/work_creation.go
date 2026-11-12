@@ -51,15 +51,16 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 		return "", err
 	}
 	// Every authorization usable at creation is selected, independently of
-	// Plugin and Connector choices.
-	authorizationInput := domain.WorkAuthorizationInput{OwnerUserID: agent.RepresentedPerson()}
+	// Plugin and Connector choices: the represented person's, or the owning
+	// Application's.
+	authorizationInput := domain.WorkAuthorizationInput{OwnerUserID: agent.AuthorizationOwner()}
 	if authorizationInput.OwnerUserID != "" {
 		authorizationInput.Available, err = h.catalog.ListPersonalAuthorizations(ctx, authorizationInput.OwnerUserID)
 		if err != nil {
 			return "", err
 		}
 	}
-	repositories, err := h.repositoryInput(ctx, agent.RepresentedPerson(), request.InitialExecution)
+	repositories, err := h.repositoryInput(ctx, agent.AuthorizationOwner(), request.InitialExecution)
 	if err != nil {
 		return "", err
 	}

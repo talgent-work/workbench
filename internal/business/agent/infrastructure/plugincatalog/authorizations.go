@@ -2,7 +2,10 @@ package plugincatalog
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"connectrpc.com/connect/v2"
 
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -43,6 +46,11 @@ func (c *Client) ListAccessibleRepositories(ctx context.Context, owner string) (
 		return nil, err
 	}
 	response, err := c.client.ListAccessibleRepositories(ctx, &marketplacepublicv1.ListAccessibleRepositoriesRequest{})
+	// Marketplace refuses the listing while the owner has no usable
+	// authorization: none connected, or one that needs reconnecting.
+	if connect.CodeOf(err) == connect.CodeFailedPrecondition {
+		return nil, errors.Join(domain.ErrRepositoryAuthorizationMissing, err)
+	}
 	if err != nil {
 		return nil, err
 	}

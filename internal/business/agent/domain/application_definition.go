@@ -24,6 +24,17 @@ func ApplicationDefinitionInput(applicationID, applicationName string) AgentDefi
 	}
 }
 
+// AuthorizationOwner is whose Provider Authorizations this definition's
+// Works use: the person its Agent represents, or the Application that owns
+// it; empty for a definition whose Works use none (No inherited
+// authorization).
+func (a *AgentDefinition) AuthorizationOwner() string {
+	if person := a.RepresentedPerson(); person != "" {
+		return person
+	}
+	return a.OwningApplication()
+}
+
 // OwningApplication is the Application that owns this definition's Agent and
 // all its Works; empty for a definition no Application owns.
 func (a *AgentDefinition) OwningApplication() string {
