@@ -67,6 +67,27 @@ func (r *WorkQueryRepository) ListStandaloneWorks(ctx context.Context, filter qu
 	return works, nil
 }
 
+func (r *WorkQueryRepository) ListWorkAttributions(ctx context.Context, agentID string, workIDs []string) ([]query.WorkAttribution, error) {
+	if len(workIDs) == 0 {
+		return nil, nil
+	}
+	var ids []string
+	err := r.db.Context(ctx).Table("agent_session").Alias("s").Cols("s.id").
+		Where("s.deleted_at=0").And(standaloneWorkCondition(agentID)).And(builder.In("s.id", workIDs)).Find(&ids)
+	if err != nil {
+		return nil, oops.With("operation", "agent.list_work_attributions").Wrap(err)
+	}
+	labels, err := listedWorkLabels(r.db.Context(ctx), ids)
+	if err != nil {
+		return nil, err
+	}
+	works := make([]query.WorkAttribution, 0, len(ids))
+	for _, id := range ids {
+		works = append(works, query.WorkAttribution{WorkID: id, Labels: labels[id]})
+	}
+	return works, nil
+}
+
 // stateCodes are the stored codes of the Work States.
 func stateCodes(states []domain.WorkState) ([]uint8, error) {
 	codes := make([]uint8, 0, len(states))

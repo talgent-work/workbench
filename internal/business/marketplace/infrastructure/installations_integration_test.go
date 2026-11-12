@@ -119,7 +119,7 @@ func TestPersonalPluginAPI(t *testing.T) {
 	require.Equal(t, []string{"token"}, installed.Plugin.RedactedParameters)
 	require.Equal(t, false, installed.Plugin.Configuration.AsMap()["enabled"])
 	require.Equal(t, []any{"src", "docs"}, installed.Plugin.Configuration.AsMap()["paths"])
-	rows, err := db.QueryString("SELECT configuration FROM marketplace_installed_plugin WHERE user_id = ? AND slug = ?", "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "reviewer")
+	rows, err := db.QueryString("SELECT configuration FROM marketplace_installed_plugin WHERE owner_id = ? AND slug = ?", "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "reviewer")
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	// Sensitive is a display boundary: storage keeps typed JSON and
@@ -145,7 +145,7 @@ func TestPersonalPluginAPI(t *testing.T) {
 	require.NotContains(t, deleted.Plugin.Configuration.AsMap(), "enabled", "deletion does not materialize the default")
 	_, err = client.UninstallPlugin(as(ctx, "e6c7e756-007d-5236-a492-7f4b9be0b2e8"), &marketplacepublicv1.UninstallPluginRequest{Slug: "reviewer", Version: deleted.Plugin.Version})
 	require.NoError(t, err)
-	rows, err = db.QueryString("SELECT id FROM marketplace_installed_plugin WHERE user_id = ? AND slug = ?", "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "reviewer")
+	rows, err = db.QueryString("SELECT id FROM marketplace_installed_plugin WHERE owner_id = ? AND slug = ?", "e6c7e756-007d-5236-a492-7f4b9be0b2e8", "reviewer")
 	require.NoError(t, err)
 	require.Empty(t, rows, "uninstall removes the record, including ciphertext")
 }
@@ -157,7 +157,7 @@ func TestPersonalInstallationConcurrencyAndPagination(t *testing.T) {
 	results := make(chan error, 8)
 	for range 8 {
 		wg.Go(func() {
-			_, err := app.Install(ctx, application.InstallPlugin{ActorUserID: "owner", Slug: "reviewer"})
+			_, err := app.Install(ctx, application.InstallPlugin{OwnerID: "owner", Slug: "reviewer"})
 			results <- err
 		})
 	}

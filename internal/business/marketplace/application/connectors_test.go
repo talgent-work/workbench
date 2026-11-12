@@ -71,7 +71,7 @@ func (s *connectorStore) ListCatalog(context.Context) ([]query.CatalogConnector,
 func (s *connectorStore) ListInstalled(_ context.Context, user string) ([]query.InstalledConnector, error) {
 	var result []query.InstalledConnector
 	for _, installation := range s.installed {
-		if installation.UserID == user {
+		if installation.OwnerID == user {
 			result = append(result, query.InstalledConnector{ConnectorID: installation.ConnectorID, Enabled: installation.State == domain.Enabled, Version: installation.Version})
 		}
 	}
@@ -94,7 +94,7 @@ func (s installedConnectors) Get(_ context.Context, user, connectorID string) (*
 }
 
 func (s installedConnectors) Save(_ context.Context, installation *domain.InstalledConnector) error {
-	key := installation.UserID + "/" + installation.ConnectorID
+	key := installation.OwnerID + "/" + installation.ConnectorID
 	if current, found := s.installed[key]; (found && current.Version != installation.Version) || (!found && installation.Version != 0) {
 		return domain.ErrConcurrentModification
 	}
@@ -105,7 +105,7 @@ func (s installedConnectors) Save(_ context.Context, installation *domain.Instal
 }
 
 func (s installedConnectors) Delete(_ context.Context, installation *domain.InstalledConnector) error {
-	delete(s.installed, installation.UserID+"/"+installation.ConnectorID)
+	delete(s.installed, installation.OwnerID+"/"+installation.ConnectorID)
 	return nil
 }
 
@@ -193,15 +193,15 @@ func TestConnectorEnablementAndUninstallation(t *testing.T) {
 	app, store := connectorApplication(t)
 	installed, err := app.InstallConnector(t.Context(), "user", "github")
 	require.NoError(t, err)
-	_, err = app.DisableConnector(t.Context(), ConnectorInstallationCommand{ActorUserID: "user", Name: "github", Version: installed.InstallationVersion + 1})
+	_, err = app.DisableConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github", Version: installed.InstallationVersion + 1})
 	require.ErrorIs(t, err, domain.ErrConcurrentModification, "a stale version is rejected")
-	disabled, err := app.DisableConnector(t.Context(), ConnectorInstallationCommand{ActorUserID: "user", Name: "github", Version: installed.InstallationVersion})
+	disabled, err := app.DisableConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github", Version: installed.InstallationVersion})
 	require.NoError(t, err)
 	require.Equal(t, ConnectorDisabled, disabled.Status)
 	selection, err := app.ReadConnectorSelection(t.Context(), "user")
 	require.NoError(t, err)
 	require.Empty(t, selection.EnabledConnectorIDs, "disabled installations leave the default selection")
-	enabled, err := app.EnableConnector(t.Context(), ConnectorInstallationCommand{ActorUserID: "user", Name: "github", Version: disabled.InstallationVersion})
+	enabled, err := app.EnableConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github", Version: disabled.InstallationVersion})
 	require.NoError(t, err)
 	require.Equal(t, ConnectorEnabled, enabled.Status)
 	selection, err = app.ReadConnectorSelection(t.Context(), "user")
@@ -212,8 +212,8 @@ func TestConnectorEnablementAndUninstallation(t *testing.T) {
 	installedList, err := app.ListInstalledConnectors(t.Context(), "user")
 	require.NoError(t, err)
 	require.Len(t, installedList, 2, "required entries appear with the user's installations")
-	require.NoError(t, app.UninstallConnector(t.Context(), ConnectorInstallationCommand{ActorUserID: "user", Name: "github", Version: enabled.InstallationVersion}))
-	require.NoError(t, app.UninstallConnector(t.Context(), ConnectorInstallationCommand{ActorUserID: "user", Name: "github"}), "uninstalling an absent installation succeeds")
+	require.NoError(t, app.UninstallConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github", Version: enabled.InstallationVersion}))
+	require.NoError(t, app.UninstallConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github"}), "uninstalling an absent installation succeeds")
 	installedList, err = app.ListInstalledConnectors(t.Context(), "user")
 	require.NoError(t, err)
 	require.Len(t, installedList, 1)

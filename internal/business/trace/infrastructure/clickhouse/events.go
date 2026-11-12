@@ -10,8 +10,6 @@ import (
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 )
 
-var _ query.EventRepository = (*Repository)(nil)
-
 // Keep the evidence identity identical to trace_logs_measurements_mv. It includes the
 // native sequence and timestamp; identical OTLP retries therefore share an ID.
 const logEvidenceID = `talgent_log_evidence_id(TraceId, Timestamp, Body, LogAttributes)`

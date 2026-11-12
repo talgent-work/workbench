@@ -88,6 +88,35 @@ func (h *Handler) GetPersonalTraceMetrics(ctx context.Context, req *tracepublicv
 	return personalTraceMetricsToProto(result), nil
 }
 
+func (h *Handler) GetApplicationTraceMetrics(ctx context.Context, req *tracepublicv1.GetApplicationTraceMetricsRequest) (*tracepublicv1.GetApplicationTraceMetricsResponse, error) {
+	if err := validateProtoTimes(req.GetStartTime(), req.GetEndTime()); err != nil {
+		return nil, mapError(err)
+	}
+	usage, err := h.app.Queries.GetApplicationTraceMetrics(ctx, query.ApplicationUsageOptions{
+		ApplicationID: req.GetApplicationId(),
+		TraceMetricOptions: query.TraceMetricOptions{
+			StartTime: protoTime(req.GetStartTime()), EndTime: protoTime(req.GetEndTime()),
+			StepSeconds: int(req.GetStepSeconds()), MetricKinds: cloneStrings(req.GetMetricKinds()),
+		},
+		Labels: cloneStringMap(req.GetLabels()), BreakdownKey: req.GetBreakdownKey(), ListLabelKeys: req.GetListLabelKeys(),
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return applicationUsageToProto(usage), nil
+}
+
+func (h *Handler) ListSpansByApplication(ctx context.Context, req *tracepublicv1.ListSpansByApplicationRequest) (*tracepublicv1.ListSpansByApplicationResponse, error) {
+	result, err := h.app.Queries.ListSpansByApplication(ctx, query.ApplicationSpanOptions{
+		ApplicationID: req.GetApplicationId(), Labels: cloneStringMap(req.GetLabels()),
+		Limit: int(req.GetLimit()), AfterCursor: req.GetAfterCursor(),
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &tracepublicv1.ListSpansByApplicationResponse{Spans: spansToProto(result.Spans), NextCursor: result.NextCursor}, nil
+}
+
 func mapError(err error) error {
 	if err == nil {
 		return nil

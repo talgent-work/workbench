@@ -24,6 +24,9 @@ import (
 // ran it.
 const corePluginRenameMigration = "../../../../deploy/middleware/migrations/20261111-core-plugin-rename.sql"
 
+// installationOwnerMigration renames the installation owner column after it.
+const installationOwnerMigration = "../../../../deploy/middleware/migrations/20261115-marketplace-installation-owner.sql"
+
 // releaseCatalog releases one Plugin, declaring one role, at one version.
 type releaseCatalog struct{ slug, role, version string }
 
@@ -64,6 +67,13 @@ func TestCorePluginRenameMigrationResolvesTalgentEverywhere(t *testing.T) {
 	require.NoError(t, err)
 
 	db := before.db.DB().DB
+	// The script predates the installation owner column's rename; the table
+	// takes the shape it was written for, and the later script follows it.
+	owner, err := os.ReadFile(installationOwnerMigration)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), string(owner)) })
+	_, err = db.ExecContext(ctx, "ALTER TABLE marketplace_installed_plugin RENAME COLUMN `owner_id` TO `user_id`, RENAME INDEX `uniq_owner_id_slug` TO `uniq_user_id_slug`")
+	require.NoError(t, err)
 	installations := map[string]struct {
 		state         int
 		configuration string
@@ -91,6 +101,8 @@ func TestCorePluginRenameMigrationResolvesTalgentEverywhere(t *testing.T) {
 		_, err = conn.ExecContext(ctx, string(script))
 		require.NoError(t, err, "the script is repeatable")
 	}
+	_, err = conn.ExecContext(ctx, string(owner))
+	require.NoError(t, err)
 
 	definition, err := before.app.Definitions.Get(ctx, definitionID)
 	require.NoError(t, err)
@@ -113,7 +125,7 @@ func TestCorePluginRenameMigrationResolvesTalgentEverywhere(t *testing.T) {
 	require.Len(t, current, 1, "the Work's next start takes up the current release of talgent")
 	require.Equal(t, [2]string{newSlug, "2"}, [2]string{current[0].Slug, current[0].Version})
 
-	rows, err := db.QueryContext(ctx, `SELECT user_id, slug, state, configuration FROM marketplace_installed_plugin WHERE slug <> 'other' ORDER BY user_id`)
+	rows, err := db.QueryContext(ctx, `SELECT owner_id, slug, state, configuration FROM marketplace_installed_plugin WHERE slug <> 'other' ORDER BY owner_id`)
 	require.NoError(t, err)
 	defer rows.Close()
 	var migrated []string

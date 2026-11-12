@@ -182,3 +182,59 @@ func TestARemovedApplicationStartsNothing(t *testing.T) {
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), application)
 	}
 }
+
+// A Work an Application starts loads the Application's own installations as
+// its default selection, an enabled Plugin and Connector, with the Work's
+// additions and drops, and takes its Startup Agent from the Application's
+// Plugins. A person's Work never loads them.
+func TestAnApplicationsWorkStartsWithItsInstallations(t *testing.T) {
+	m := newLifecycleModule(t).start()
+	desk := m.as("application", supportDesk)
+
+	defaulted, err := desk.start(t, uuid.NewString(), "Triage the queue")
+	require.NoError(t, err)
+	work, err := m.app.Works.Get(m.ctx, defaulted)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"talgent", "custom"}, selectedPlugins(work.CapabilitySnapshot), "its enabled installation joins the required Plugins")
+	require.ElementsMatch(t, []string{"talgent", "github"}, selectedConnectors(work.CapabilitySnapshot))
+
+	include, drop := true, false
+	chosen, err := desk.works.StartWork(desk.ctx, &agentpublicv2.StartWorkRequest{RequestId: uuid.NewString(), InitialMessage: "Review the refund",
+		CreationCapabilities: &agentpublicv1.CreationCapabilities{
+			Plugins:      []*agentpublicv1.CreationPlugin{{Name: "custom", Include: &drop}, {Name: "caller-plugin", Include: &include}},
+			Connectors:   []*agentpublicv1.CreationConnector{{Name: "github", Include: false}},
+			StartupAgent: ptr("caller-plugin:reviewer"),
+		}})
+	require.NoError(t, err)
+	work, err = m.app.Works.Get(m.ctx, chosen.GetWorkId())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"talgent", "caller-plugin"}, selectedPlugins(work.CapabilitySnapshot), "the Work adds its disabled installation and drops its enabled one")
+	require.ElementsMatch(t, []string{"talgent"}, selectedConnectors(work.CapabilitySnapshot))
+	require.Equal(t, "caller-plugin:reviewer", work.CapabilitySnapshot.StartupAgent)
+
+	person := m.as("user", "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c51")
+	own, err := person.start(t, uuid.NewString(), "My own task")
+	require.NoError(t, err)
+	work, err = m.app.Works.Get(m.ctx, own)
+	require.NoError(t, err)
+	require.Equal(t, []string{"talgent"}, selectedPlugins(work.CapabilitySnapshot), "the Application Owner's Work loads none of the Application's installations")
+	require.Equal(t, []string{"talgent"}, selectedConnectors(work.CapabilitySnapshot))
+}
+
+func selectedPlugins(snapshot domain.CapabilitySnapshot) []string {
+	slugs := make([]string, 0, len(snapshot.Plugins))
+	for _, plugin := range snapshot.Plugins {
+		slugs = append(slugs, plugin.Release.Slug)
+	}
+	return slugs
+}
+
+func selectedConnectors(snapshot domain.CapabilitySnapshot) []string {
+	names := make([]string, 0, len(snapshot.Connectors))
+	for _, connector := range snapshot.Connectors {
+		names = append(names, connector.Name)
+	}
+	return names
+}
+
+func ptr[T any](value T) *T { return &value }

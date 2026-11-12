@@ -12,9 +12,9 @@ var ErrConnectorInstallationNotFound = errors.New("personal Connector installati
 // owns only enablement; Provider authorization is neither a condition nor state.
 type InstalledConnector struct {
 	// ID identifies this persisted incarnation. Lookup and uniqueness remain
-	// UserID x ConnectorID, including across uninstall and reinstall.
+	// OwnerID x ConnectorID, including across uninstall and reinstall.
 	ID          string `validate:"required,uuid"`
-	UserID      string `validate:"required,max=255"`
+	OwnerID     string `validate:"required,max=255"`
 	ConnectorID string `validate:"required,uuid"`
 	State       InstallationState
 	Version     int
@@ -22,14 +22,14 @@ type InstalledConnector struct {
 
 // InstallConnector establishes an Enabled installation for an application-
 // authorized user after the catalog entry admits personal installation.
-func InstallConnector(userID string, connector *Connector) (*InstalledConnector, error) {
+func InstallConnector(ownerID string, connector *Connector) (*InstalledConnector, error) {
 	if err := connector.Validate(); err != nil {
 		return nil, err
 	}
 	if err := connector.AdmitInstallation(); err != nil {
 		return nil, err
 	}
-	installation := &InstalledConnector{ID: uuid.Must(uuid.NewV7()).String(), UserID: userID, ConnectorID: connector.ID, State: Enabled}
+	installation := &InstalledConnector{ID: uuid.Must(uuid.NewV7()).String(), OwnerID: ownerID, ConnectorID: connector.ID, State: Enabled}
 	return installation, installation.Validate()
 }
 

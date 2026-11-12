@@ -183,9 +183,11 @@ func (a *AgentDefinition) RepresentedPerson() string {
 
 // WorkTraceAttributes is what a new Work's telemetry carries from its
 // creation: the attributes its caller supplied, beside the definition's own
-// facts no caller attribute replaces, its runtime purpose and the person its
-// Agent represents, the one Observability rolls the Work's usage up to. A
-// definition that represents no person gives none.
+// facts no caller attribute replaces, its runtime purpose, the person its
+// Agent represents and the Application that owns it, which Observability
+// rolls the Work's usage up to. A definition that represents no person, or
+// that no Application owns, gives none of that one. Work Labels never travel
+// with telemetry.
 func (a *AgentDefinition) WorkTraceAttributes(supplied map[string]string) map[string]string {
 	attributes := maps.Clone(supplied)
 	if attributes == nil {
@@ -195,6 +197,10 @@ func (a *AgentDefinition) WorkTraceAttributes(supplied map[string]string) map[st
 	delete(attributes, "talgent.user_id")
 	if person := a.RepresentedPerson(); person != "" {
 		attributes["talgent.user_id"] = person
+	}
+	delete(attributes, "talgent.application_id")
+	if application := a.OwningApplication(); application != "" {
+		attributes["talgent.application_id"] = application
 	}
 	return attributes
 }

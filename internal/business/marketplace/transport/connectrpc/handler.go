@@ -62,8 +62,11 @@ func (h *Handler) GetPlugin(ctx context.Context, request *marketplacepublicv1.Ge
 	return &marketplacepublicv1.GetPluginResponse{Plugin: message}, nil
 }
 func (h *Handler) ListInstalledPlugins(ctx context.Context, request *marketplacepublicv1.ListInstalledPluginsRequest) (*marketplacepublicv1.ListInstalledPluginsResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	page, err := h.application.ListInstallations(ctx, actor, request.GetCursor(), int(request.GetPageSize()))
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	page, err := h.application.ListInstallations(ctx, owner, request.GetCursor(), int(request.GetPageSize()))
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -78,8 +81,11 @@ func (h *Handler) ListInstalledPlugins(ctx context.Context, request *marketplace
 	return result, nil
 }
 func (h *Handler) GetInstalledPlugin(ctx context.Context, request *marketplacepublicv1.GetInstalledPluginRequest) (*marketplacepublicv1.GetInstalledPluginResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	plugin, err := h.application.GetInstallation(ctx, actor, request.GetSlug())
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	plugin, err := h.application.GetInstallation(ctx, owner, request.GetSlug())
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -90,8 +96,11 @@ func (h *Handler) GetInstalledPlugin(ctx context.Context, request *marketplacepu
 	return &marketplacepublicv1.GetInstalledPluginResponse{Plugin: message}, nil
 }
 func (h *Handler) InstallPlugin(ctx context.Context, request *marketplacepublicv1.InstallPluginRequest) (*marketplacepublicv1.InstallPluginResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	plugin, err := h.application.Install(ctx, application.InstallPlugin{ActorUserID: actor, Slug: request.GetSlug(), Configuration: request.GetConfiguration().AsMap()})
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	plugin, err := h.application.Install(ctx, application.InstallPlugin{OwnerID: owner, Slug: request.GetSlug(), Configuration: request.GetConfiguration().AsMap()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -102,8 +111,11 @@ func (h *Handler) InstallPlugin(ctx context.Context, request *marketplacepublicv
 	return &marketplacepublicv1.InstallPluginResponse{Plugin: message}, nil
 }
 func (h *Handler) EnablePlugin(ctx context.Context, request *marketplacepublicv1.EnablePluginRequest) (*marketplacepublicv1.EnablePluginResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	plugin, err := h.application.Enable(ctx, application.InstallationCommand{ActorUserID: actor, Slug: request.GetSlug(), Version: int(request.GetVersion())})
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	plugin, err := h.application.Enable(ctx, application.InstallationCommand{OwnerID: owner, Slug: request.GetSlug(), Version: int(request.GetVersion())})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -114,8 +126,11 @@ func (h *Handler) EnablePlugin(ctx context.Context, request *marketplacepublicv1
 	return &marketplacepublicv1.EnablePluginResponse{Plugin: message}, nil
 }
 func (h *Handler) DisablePlugin(ctx context.Context, request *marketplacepublicv1.DisablePluginRequest) (*marketplacepublicv1.DisablePluginResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	plugin, err := h.application.Disable(ctx, application.InstallationCommand{ActorUserID: actor, Slug: request.GetSlug(), Version: int(request.GetVersion())})
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	plugin, err := h.application.Disable(ctx, application.InstallationCommand{OwnerID: owner, Slug: request.GetSlug(), Version: int(request.GetVersion())})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -126,8 +141,11 @@ func (h *Handler) DisablePlugin(ctx context.Context, request *marketplacepublicv
 	return &marketplacepublicv1.DisablePluginResponse{Plugin: message}, nil
 }
 func (h *Handler) SetPluginConfiguration(ctx context.Context, request *marketplacepublicv1.SetPluginConfigurationRequest) (*marketplacepublicv1.SetPluginConfigurationResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	plugin, err := h.application.SetConfiguration(ctx, application.SetConfiguration{InstallationCommand: application.InstallationCommand{ActorUserID: actor, Slug: request.GetSlug(), Version: int(request.GetVersion())}, Values: request.GetValues().AsMap()})
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	plugin, err := h.application.SetConfiguration(ctx, application.SetConfiguration{InstallationCommand: application.InstallationCommand{OwnerID: owner, Slug: request.GetSlug(), Version: int(request.GetVersion())}, Values: request.GetValues().AsMap()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -138,8 +156,11 @@ func (h *Handler) SetPluginConfiguration(ctx context.Context, request *marketpla
 	return &marketplacepublicv1.SetPluginConfigurationResponse{Plugin: message}, nil
 }
 func (h *Handler) DeletePluginConfiguration(ctx context.Context, request *marketplacepublicv1.DeletePluginConfigurationRequest) (*marketplacepublicv1.DeletePluginConfigurationResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	plugin, err := h.application.DeleteConfiguration(ctx, application.DeleteConfiguration{InstallationCommand: application.InstallationCommand{ActorUserID: actor, Slug: request.GetSlug(), Version: int(request.GetVersion())}, Names: request.GetNames()})
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	plugin, err := h.application.DeleteConfiguration(ctx, application.DeleteConfiguration{InstallationCommand: application.InstallationCommand{OwnerID: owner, Slug: request.GetSlug(), Version: int(request.GetVersion())}, Names: request.GetNames()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -150,8 +171,11 @@ func (h *Handler) DeletePluginConfiguration(ctx context.Context, request *market
 	return &marketplacepublicv1.DeletePluginConfigurationResponse{Plugin: message}, nil
 }
 func (h *Handler) UninstallPlugin(ctx context.Context, request *marketplacepublicv1.UninstallPluginRequest) (*marketplacepublicv1.UninstallPluginResponse, error) {
-	actor, _ := authn.CurrentUserID(ctx)
-	err := h.application.Uninstall(ctx, application.InstallationCommand{ActorUserID: actor, Slug: request.GetSlug(), Version: int(request.GetVersion())})
+	owner, err := h.owner(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	err = h.application.Uninstall(ctx, application.InstallationCommand{OwnerID: owner, Slug: request.GetSlug(), Version: int(request.GetVersion())})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -167,6 +191,8 @@ func mapError(err error) error {
 		return connect.NewError(connect.CodeDeadlineExceeded, err.Error()).WithCause(err)
 	case errors.Is(err, application.ErrUnauthenticated):
 		return connect.NewError(connect.CodeUnauthenticated, err.Error()).WithCause(err)
+	case errors.Is(err, domain.ErrPermissionDenied):
+		return connect.NewError(connect.CodePermissionDenied, err.Error()).WithCause(err)
 	case errors.Is(err, domain.ErrConcurrentModification):
 		return connect.NewError(connect.CodeAborted, err.Error()).WithCause(err)
 	case errors.Is(err, domain.ErrConnectorNotFound), errors.Is(err, domain.ErrInstallationNotFound), errors.Is(err, domain.ErrConnectorInstallationNotFound), errors.Is(err, application.ErrReleaseNotFound), errors.Is(err, domain.ErrProviderNotFound):

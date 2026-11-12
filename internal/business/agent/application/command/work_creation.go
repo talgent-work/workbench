@@ -31,12 +31,18 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 		}
 		return h.created(ctx, request, existing.ID)
 	}
-	// Personal capabilities and authorizations belong to the represented human.
+	// Installed Plugins and Connectors belong to the represented human, or to
+	// the owning Application of an Application's definition (Application as
+	// owner); an automated start has no owner's defaults.
 	catalogUser := request.StartingUserID
 	if catalogUser == "" {
 		catalogUser = request.SubjectID
 	}
-	capabilities, err := resolveStartupCapabilities(ctx, h.catalog, catalogUser, request.StartingUserID, domain.StartupCapabilityInput{
+	defaultsOwner := request.StartingUserID
+	if application := agent.OwningApplication(); application != "" {
+		defaultsOwner = application
+	}
+	capabilities, err := resolveStartupCapabilities(ctx, h.catalog, catalogUser, defaultsOwner, domain.StartupCapabilityInput{
 		BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: h.builtIns.ComposeRequiredPlugins(request.ProjectID, agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.WorkDefaults.StartupAgent,
 		Prompt: request.CapabilityDifferences.Prompt, StartupAgent: request.CapabilityDifferences.StartupAgent, Plugins: request.CapabilityDifferences.Plugins,
 		ConnectorChoices: request.CapabilityDifferences.Connectors, ApplicationEndpoints: request.CapabilityDifferences.ApplicationEndpoints,

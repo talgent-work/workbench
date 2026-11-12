@@ -15,14 +15,18 @@ func ResolveStartupCapabilities(ctx context.Context, catalog MarketplacePort, st
 	return resolveStartupCapabilities(ctx, catalog, startingUser, startingUser, input)
 }
 
-func resolveStartupCapabilities(ctx context.Context, catalog MarketplacePort, catalogUser, startingUser string, input domain.StartupCapabilityInput) (domain.CapabilitySnapshot, error) {
+// resolveStartupCapabilities composes a new Work's capabilities from the
+// catalog as catalogUser sees it and the default selection of defaultsOwner,
+// the person or Application whose installations the Work starts with; an
+// empty defaultsOwner starts with none.
+func resolveStartupCapabilities(ctx context.Context, catalog MarketplacePort, catalogUser, defaultsOwner string, input domain.StartupCapabilityInput) (domain.CapabilitySnapshot, error) {
 	if strings.TrimSpace(catalogUser) == "" {
 		return domain.CapabilitySnapshot{}, access.ErrAccessDenied
 	}
 	var personal []domain.PersonalPlugin
-	if startingUser != "" {
+	if defaultsOwner != "" {
 		var err error
-		personal, err = catalog.ListPersonalPlugins(ctx, startingUser)
+		personal, err = catalog.ListPersonalPlugins(ctx, defaultsOwner)
 		if err != nil {
 			return domain.CapabilitySnapshot{}, err
 		}
@@ -35,10 +39,10 @@ func resolveStartupCapabilities(ctx context.Context, catalog MarketplacePort, ca
 	}
 	// The catalog, including required platform integrations, is supplied only by
 	// Marketplace; a caller-provided declaration never replaces it. Automated
-	// starts have no starting user and therefore no personal Connector defaults.
+	// starts have no owner's defaults and therefore no installed Connectors.
 	input.Connectors = connectors.Catalog
 	input.EnabledConnectors = nil
-	if startingUser != "" {
+	if defaultsOwner != "" {
 		input.EnabledConnectors = connectors.EnabledConnectors
 	}
 	slugs, err := input.SelectedSlugs()
