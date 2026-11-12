@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { Alert, AlertDialog, Button, Modal } from "@heroui/react";
-import { secretLabel, useRevokeClientSecret, useRotateClientSecret, type Application, type ClientSecret, type RotatedSecret } from "../../lib/application-service";
+import { overlapText, secretLabel, useRevokeClientSecret, useRotateClientSecret, type Application, type ClientSecret, type RotatedSecret } from "../../lib/application-service";
 import { SecretOnce, StoredGate } from "./secret-once";
 
 const failure = (error: unknown) => ConnectError.from(error).code === Code.NotFound
-  ? "The application or secret no longer exists. Reload the page."
+  ? "It no longer exists or has already ended. The list is up to date now."
   : "Try again in a moment.";
 
 /** Issues a new current secret and shows it once; the replaced one keeps
@@ -27,7 +27,7 @@ export function RotateSecretDialog({ application, onClose }: { application: Appl
       <StoredGate onDone={onClose} />
     </> : <>
       <Modal.Body className="grid gap-3">
-        <p className="text-[14px]">Workbench issues a new secret. The current one keeps working for a limited overlap, then ends.</p>
+        <p className="text-[14px]">Workbench issues a new secret. The current one keeps working for {overlapText(application.secretOverlapMs)}, then ends.</p>
         {overlapping && <Alert status="warning"><Alert.Indicator /><Alert.Content><Alert.Description>Secret {secretLabel(overlapping)} is still in its overlap. Rotating again ends it now.</Alert.Description></Alert.Content></Alert>}
         {rotate.isError && <Alert status="danger"><Alert.Indicator /><Alert.Content><Alert.Title>The secret couldn’t be rotated</Alert.Title><Alert.Description>{failure(rotate.error)}</Alert.Description></Alert.Content></Alert>}
       </Modal.Body>
@@ -40,9 +40,8 @@ export function RotateSecretDialog({ application, onClose }: { application: Appl
 }
 
 /** Ends one secret at once, confirmed first. */
-export function RevokeSecretDialog({ application, secret, onClose }: { application: Application; secret: ClientSecret; onClose: () => void }) {
+export function RevokeSecretDialog({ application, secret, last, onClose }: { application: Application; secret: ClientSecret; last: boolean; onClose: () => void }) {
   const revoke = useRevokeClientSecret();
-  const last = application.secrets.length === 1;
   return <AlertDialog><AlertDialog.Backdrop isOpen onOpenChange={open => { if (!open && !revoke.isPending) onClose(); }}><AlertDialog.Container><AlertDialog.Dialog className="sm:max-w-[440px]">
     <AlertDialog.Header><AlertDialog.Icon status="danger" /><AlertDialog.Heading>Revoke secret {secretLabel(secret)}?</AlertDialog.Heading></AlertDialog.Header>
     <AlertDialog.Body className="grid gap-2">

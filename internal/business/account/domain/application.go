@@ -2,6 +2,7 @@ package domain
 
 import (
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -133,9 +134,9 @@ func (a *Application) OwnedBy(person AccountID) bool {
 	return person != "" && a.ApplicationOwner == person
 }
 
-// manageableBy tells whether person may manage the Application now: its
-// Application Owner, while it is active (Owner manages, Removal is final).
-func (a *Application) manageableBy(person AccountID) bool {
+// ManageableBy tells whether person may read and manage the Application now:
+// its Application Owner, while it is active (Owner manages, Removal is final).
+func (a *Application) ManageableBy(person AccountID) bool {
 	return a.State == ApplicationActive && a.OwnedBy(person)
 }
 
@@ -160,11 +161,13 @@ func (a *Application) ValidSecrets(now time.Time) []*ClientSecret {
 // rotates (Owner manages): any other person, like a removed Application, answers
 // ErrApplicationNotFound.
 func (a *Application) RotateSecret(by AccountID, now time.Time, overlap time.Duration) (ClientSecretValue, error) {
-	if !a.manageableBy(by) {
+	if !a.ManageableBy(by) {
 		return "", ErrApplicationNotFound
 	}
 	if overlap <= 0 {
-		return "", fmt.Errorf("%w: the rotation overlap must be positive", ErrInvalidApplication)
+		// A deployment fault, never the caller's: configuration requires a
+		// positive overlap.
+		return "", errors.New("account: the rotation overlap must be positive")
 	}
 	issued, value, err := IssueClientSecret(now)
 	if err != nil {
@@ -186,7 +189,7 @@ func (a *Application) RotateSecret(by AccountID, now time.Time, overlap time.Dur
 // (Secret revocation). Tokens it already obtained stop at their expiry. Only
 // its Application Owner revokes (Owner manages).
 func (a *Application) RevokeSecret(by AccountID, id string, now time.Time) error {
-	if !a.manageableBy(by) {
+	if !a.ManageableBy(by) {
 		return ErrApplicationNotFound
 	}
 	for _, secret := range a.Secrets {

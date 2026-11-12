@@ -153,7 +153,7 @@ func TestOwnedByIsTheApplicationOwnerOnly(t *testing.T) {
 
 const rotationOverlap = 24 * time.Hour
 
-func issues(t *testing.T, application *Application, secret ClientSecretValue, at time.Time) bool {
+func grantSucceeds(t *testing.T, application *Application, secret ClientSecretValue, at time.Time) bool {
 	t.Helper()
 	_, _, err := application.IssueIdentityToken(secret, at, applicationLifetime)
 	if err != nil {
@@ -178,10 +178,10 @@ func TestRotateSecretKeepsTheReplacedSecretForTheOverlap(t *testing.T) {
 	require.Equal(t, ClientSecretOverlapping, valid[1].State)
 	require.Equal(t, now.Add(rotationOverlap), valid[1].OverlapEndsAt)
 
-	require.True(t, issues(t, application, first, now.Add(rotationOverlap-time.Second)))
-	require.True(t, issues(t, application, second, now.Add(rotationOverlap-time.Second)))
-	require.False(t, issues(t, application, first, now.Add(rotationOverlap)), "the overlap has ended")
-	require.True(t, issues(t, application, second, now.Add(rotationOverlap)))
+	require.True(t, grantSucceeds(t, application, first, now.Add(rotationOverlap-time.Second)))
+	require.True(t, grantSucceeds(t, application, second, now.Add(rotationOverlap-time.Second)))
+	require.False(t, grantSucceeds(t, application, first, now.Add(rotationOverlap)), "the overlap has ended")
+	require.True(t, grantSucceeds(t, application, second, now.Add(rotationOverlap)))
 }
 
 func TestRotatingDuringAnOverlapEndsTheEarlierOverlapAtOnce(t *testing.T) {
@@ -194,9 +194,9 @@ func TestRotatingDuringAnOverlapEndsTheEarlierOverlapAtOnce(t *testing.T) {
 	require.NoError(t, application.Validate())
 
 	at := now.Add(2 * time.Hour)
-	require.False(t, issues(t, application, first, at))
-	require.True(t, issues(t, application, second, at))
-	require.True(t, issues(t, application, third, at))
+	require.False(t, grantSucceeds(t, application, first, at))
+	require.True(t, grantSucceeds(t, application, second, at))
+	require.True(t, grantSucceeds(t, application, third, at))
 	require.Len(t, application.ValidSecrets(at), 2)
 }
 
@@ -207,19 +207,19 @@ func TestRevokeSecretRefusesItAtOnce(t *testing.T) {
 	overlapping := application.ValidSecrets(now)[1]
 
 	require.NoError(t, application.RevokeSecret(application.ApplicationOwner, overlapping.ID, now))
-	require.False(t, issues(t, application, first, now))
-	require.True(t, issues(t, application, second, now))
+	require.False(t, grantSucceeds(t, application, first, now))
+	require.True(t, grantSucceeds(t, application, second, now))
 	require.ErrorIs(t, application.RevokeSecret(application.ApplicationOwner, overlapping.ID, now), ErrClientSecretNotFound, "an ended secret is not revoked twice")
 
 	current := application.ValidSecrets(now)[0]
 	require.NoError(t, application.RevokeSecret(application.ApplicationOwner, current.ID, now))
-	require.False(t, issues(t, application, second, now))
+	require.False(t, grantSucceeds(t, application, second, now))
 	require.Empty(t, application.ValidSecrets(now))
 	require.NoError(t, application.Validate())
 
 	third, err := application.RotateSecret(application.ApplicationOwner, now, rotationOverlap)
 	require.NoError(t, err)
-	require.True(t, issues(t, application, third, now), "rotation restores a secret after the last was revoked")
+	require.True(t, grantSucceeds(t, application, third, now), "rotation restores a secret after the last was revoked")
 	require.Len(t, application.ValidSecrets(now), 1)
 }
 
@@ -253,5 +253,13 @@ func TestOnlyTheOwnerRotatesOrRevokes(t *testing.T) {
 	require.ErrorIs(t, err, ErrApplicationNotFound)
 	require.ErrorIs(t, application.RevokeSecret(stranger, application.Secrets[0].ID, now), ErrApplicationNotFound)
 	require.Len(t, application.Secrets, 1)
-	require.True(t, issues(t, application, secret, now), "the refused attempts changed nothing")
+	require.True(t, grantSucceeds(t, application, secret, now), "the refused attempts changed nothing")
+}
+
+func TestRotateSecretRefusesANonPositiveOverlapAsAFault(t *testing.T) {
+	application, _, now := registered(t)
+	_, err := application.RotateSecret(application.ApplicationOwner, now, 0)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrInvalidApplication, "a misconfigured overlap is not the caller's fault")
+	require.Len(t, application.Secrets, 1)
 }

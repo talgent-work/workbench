@@ -24,6 +24,8 @@ export type Application = {
   name: string;
   registeredAt: Date;
   secrets: ClientSecret[];
+  /** How long a replaced secret keeps working after a rotation. */
+  secretOverlapMs: number;
 };
 
 const at = (unixMs: bigint) => unixMs > 0n ? new Date(Number(unixMs)) : null;
@@ -41,11 +43,25 @@ export function applicationOf(message: ApplicationMessage): Application {
       lastUsedAt: at(secret.lastUsedAtUnixMs),
       overlapEndsAt: at(secret.overlapEndsAtUnixMs),
     })),
+    secretOverlapMs: Number(message.secretOverlapSeconds) * 1000,
   };
 }
 
 /** How a Client Secret reads, from the prefix every secret starts with. */
 export const secretLabel = (secret: Pick<ClientSecret, "hint">) => `wbs_…${secret.hint}`;
+
+/** The secrets that still match at now: an overlap that ended since the list
+ * was read no longer counts. */
+export const liveSecrets = (application: Application, now: number) =>
+  application.secrets.filter(secret => !secret.overlapEndsAt || secret.overlapEndsAt.getTime() > now);
+
+/** A rotation overlap in words, such as "24 hours". */
+export function overlapText(ms: number): string {
+  const hours = ms / 3_600_000;
+  if (Number.isInteger(hours)) return hours === 1 ? "1 hour" : `${hours} hours`;
+  const minutes = Math.round(ms / 60_000);
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
 
 export const maxApplicationName = 60;
 
@@ -87,21 +103,24 @@ export function useRegisterApplication() {
   });
 }
 
-/** Puts the Application a change answered with into the owner's list. */
-function useReplaceOwnedApplication() {
+/** Puts the Application a change answered with into the owner's list, or
+ * rereads the list after a change failed. */
+function useOwnedApplicationUpdates() {
   const queryClient = useQueryClient();
   const userId = useCurrentUser().data?.user?.id;
-  return (application: Application) => {
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ownedApplicationsKey(userId) });
+  const replace = (application: Application) => {
     queryClient.setQueryData<Application[]>(ownedApplicationsKey(userId), current => current?.map(item => item.id === application.id ? application : item));
-    void queryClient.invalidateQueries({ queryKey: ownedApplicationsKey(userId) });
+    refresh();
   };
+  return { replace, refresh };
 }
 
 /** A rotated Application with the new Client Secret only this response shows. */
 export type RotatedSecret = { application: Application; clientSecret: string };
 
 export function useRotateClientSecret() {
-  const replace = useReplaceOwnedApplication();
+  const { replace, refresh } = useOwnedApplicationUpdates();
   return useMutation({
     mutationFn: async (applicationId: string): Promise<RotatedSecret> => {
       const response = await applicationClient.rotateClientSecret({ applicationId });
@@ -109,11 +128,12 @@ export function useRotateClientSecret() {
       return { application: applicationOf(response.application), clientSecret: response.clientSecret };
     },
     onSuccess: ({ application }) => replace(application),
+    onError: refresh,
   });
 }
 
 export function useRevokeClientSecret() {
-  const replace = useReplaceOwnedApplication();
+  const { replace, refresh } = useOwnedApplicationUpdates();
   return useMutation({
     mutationFn: async ({ applicationId, clientSecretId }: { applicationId: string; clientSecretId: string }): Promise<Application> => {
       const response = await applicationClient.revokeClientSecret({ applicationId, clientSecretId });
@@ -121,5 +141,7 @@ export function useRevokeClientSecret() {
       return applicationOf(response.application);
     },
     onSuccess: replace,
+    // A secret that ended meanwhile answers NotFound; the list shows why.
+    onError: refresh,
   });
 }

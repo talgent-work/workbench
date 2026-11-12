@@ -34,6 +34,7 @@ func TestRotatedSecretKeepsWorkingForTheOverlapThenStops(t *testing.T) {
 	require.Equal(t, second[len(second)-4:], secrets[0].GetHint())
 	require.Equal(t, accountpublicv1.ClientSecretState_CLIENT_SECRET_STATE_OVERLAPPING, secrets[1].GetState())
 	require.Equal(t, h.clock.Now().Add(secretOverlap).UnixMilli(), secrets[1].GetOverlapEndsAtUnixMs())
+	require.Equal(t, int64(secretOverlap.Seconds()), rotated.GetApplication().GetSecretOverlapSeconds(), "the owner learns the overlap")
 
 	h.clock.Advance(secretOverlap - time.Minute)
 	status, _ := h.grant(id, first)

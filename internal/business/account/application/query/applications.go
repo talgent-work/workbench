@@ -14,6 +14,9 @@ type OwnedApplication struct {
 	// Secrets are its Client Secrets that still match: the current one first,
 	// then one in its rotation overlap.
 	Secrets []ClientSecret
+	// SecretOverlap is how long a replaced Client Secret keeps matching
+	// after a rotation, the deployment's Rotation overlap.
+	SecretOverlap time.Duration
 }
 
 // ClientSecretState is where a listed Client Secret stands.

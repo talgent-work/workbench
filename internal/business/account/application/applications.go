@@ -36,7 +36,7 @@ func (a *Application) RegisterApplication(ctx context.Context, cmd RegisterAppli
 	if err := a.applications.Save(ctx, registered); err != nil {
 		return RegisteredApplication{}, err
 	}
-	return RegisteredApplication{Application: assembleOwnedApplication(registered, a.now()), ClientSecret: string(secret)}, nil
+	return RegisteredApplication{Application: assembleOwnedApplication(registered, a.now(), a.secretOverlap), ClientSecret: string(secret)}, nil
 }
 
 // OwnedApplications lists the Applications the person owns.
@@ -45,7 +45,14 @@ func (a *Application) OwnedApplications(ctx context.Context, owner string) ([]qu
 	if err != nil {
 		return nil, err
 	}
-	return a.applicationQueries.OwnedApplications(ctx, string(person), a.now())
+	owned, err := a.applicationQueries.OwnedApplications(ctx, string(person), a.now())
+	if err != nil {
+		return nil, err
+	}
+	for i := range owned {
+		owned[i].SecretOverlap = a.secretOverlap
+	}
+	return owned, nil
 }
 
 // OwnedApplication reads one Application the person owns; any other answers
@@ -55,10 +62,10 @@ func (a *Application) OwnedApplication(ctx context.Context, owner, id string) (q
 	if err != nil {
 		return query.OwnedApplication{}, err
 	}
-	if !found.OwnedBy(person) || found.State != domain.ApplicationActive {
+	if !found.ManageableBy(person) {
 		return query.OwnedApplication{}, domain.ErrApplicationNotFound
 	}
-	return assembleOwnedApplication(found, a.now()), nil
+	return assembleOwnedApplication(found, a.now(), a.secretOverlap), nil
 }
 
 // RotateClientSecret names an Application its owner rotates the secret of.
@@ -92,7 +99,7 @@ func (a *Application) RotateClientSecret(ctx context.Context, cmd RotateClientSe
 		if err := a.applications.Save(ctx, found); err != nil {
 			return err
 		}
-		rotated = RotatedClientSecret{Application: assembleOwnedApplication(found, now), ClientSecret: string(secret)}
+		rotated = RotatedClientSecret{Application: assembleOwnedApplication(found, now, a.secretOverlap), ClientSecret: string(secret)}
 		return nil
 	})
 	return rotated, err
@@ -120,7 +127,7 @@ func (a *Application) RevokeClientSecret(ctx context.Context, cmd RevokeClientSe
 		if err := a.applications.Save(ctx, found); err != nil {
 			return err
 		}
-		revoked = assembleOwnedApplication(found, now)
+		revoked = assembleOwnedApplication(found, now, a.secretOverlap)
 		return nil
 	})
 	return revoked, err

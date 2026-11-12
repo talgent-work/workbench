@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { ClientSecretState } from "@talgent/contracts/account/public/v1/application_pb";
 import { EntryShellContext, personalPathsAt, type PageLayoutProps } from "../components/shell/entry-shell";
 import { applicationNameProblem } from "../lib/application-service";
@@ -15,10 +16,10 @@ const ciId = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4f";
 const secret = "wbs_" + "A".repeat(39) + "k4Qz";
 const rotatedSecret = "wbs_" + "B".repeat(39) + "Zr9x";
 
-type Stored = { id: string; name: string; registeredAtUnixMs: bigint; clientSecrets: Array<Record<string, unknown>> };
+type Stored = { id: string; name: string; registeredAtUnixMs: bigint; secretOverlapSeconds: bigint; clientSecrets: Array<Record<string, unknown>> };
 const stored: Stored[] = [];
 const applicationOf = (id: string, name: string, lastUsed = 0n): Stored => ({
-  id, name, registeredAtUnixMs: BigInt(Date.now()),
+  id, name, registeredAtUnixMs: BigInt(Date.now()), secretOverlapSeconds: 24n * 3600n,
   clientSecrets: [{ id: `${id}-s`, state: ClientSecretState.CURRENT, hint: "k4Qz", issuedAtUnixMs: BigInt(Date.now()), lastUsedAtUnixMs: lastUsed, overlapEndsAtUnixMs: 0n }],
 });
 
@@ -43,6 +44,7 @@ vi.mock("../lib/client", () => ({
     },
     revokeClientSecret: async ({ applicationId, clientSecretId }: { applicationId: string; clientSecretId: string }) => {
       const application = stored.find(item => item.id === applicationId)!;
+      if (!application.clientSecrets.some(item => item.id === clientSecretId)) throw new ConnectError("client secret not found", Code.NotFound);
       application.clientSecrets = application.clientSecrets.filter(item => item.id !== clientSecretId);
       return { application };
     },
@@ -116,8 +118,10 @@ it("rotates a secret, shows the new one once and keeps the replaced one overlapp
   renderPage();
 
   await screen.findByRole("list", { name: "Support Desk credentials" });
+  expect(screen.getByText("Rotating keeps the replaced secret working for 24 hours.")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Rotate secret" }));
   const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/keeps working for 24 hours, then ends/)).toBeInTheDocument();
   await user.click(within(dialog).getByRole("button", { name: "Rotate secret" }));
   expect(await within(dialog).findByRole("heading", { name: "New secret issued" })).toBeInTheDocument();
   expect(within(dialog).getByText(rotatedSecret)).toBeInTheDocument();
@@ -147,6 +151,31 @@ it("revokes a secret after confirmation and warns when it is the last one", asyn
   await user.click(within(dialog).getByRole("button", { name: "Revoke secret" }));
 
   await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+  expect(await screen.findByText("No secret")).toBeInTheDocument();
+});
+
+it("hides an overlap that ended since the list was read", async () => {
+  const application = applicationOf(deskId, "Support Desk");
+  application.clientSecrets.push({ id: "ended", state: ClientSecretState.OVERLAPPING, hint: "Old1", issuedAtUnixMs: 0n, lastUsedAtUnixMs: 0n, overlapEndsAtUnixMs: BigInt(Date.now() - 1000) });
+  stored.push(application);
+  renderPage();
+
+  const credentials = await screen.findByRole("list", { name: "Support Desk credentials" });
+  expect(within(credentials).getByText("wbs_…k4Qz")).toBeInTheDocument();
+  expect(within(credentials).queryByText("wbs_…Old1")).not.toBeInTheDocument();
+});
+
+it("explains a secret that ended before the revocation and rereads the list", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  renderPage();
+
+  await user.click(await screen.findByRole("button", { name: "Revoke secret wbs_…k4Qz" }));
+  stored[0].clientSecrets = [];
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: "Revoke secret" }));
+
+  expect(await within(dialog).findByText("The secret couldn’t be revoked")).toBeInTheDocument();
   expect(await screen.findByText("No secret")).toBeInTheDocument();
 });
 
