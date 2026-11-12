@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"xorm.io/xorm"
@@ -211,6 +212,15 @@ func TestSandboxObserverSelectsByTheOwnershipLabel(t *testing.T) {
 		selectors = append(selectors, action.(k8stesting.ListAction).GetListRestrictions().Labels.String())
 		return false, nil, nil
 	})
+	// The informer lists, then watches; a sandbox created between the two never
+	// reaches the fake's watch. Open the watch here so the test knows when it is.
+	watching := make(chan struct{})
+	var watchOnce sync.Once
+	client.PrependWatchReactor("batchsandboxes", func(action k8stesting.Action) (bool, watch.Interface, error) {
+		w, err := client.Tracker().Watch(action.GetResource(), action.GetNamespace())
+		watchOnce.Do(func() { close(watching) })
+		return true, w, err
+	})
 	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("unlabelled", unlabelled), metav1.CreateOptions{})
 	require.NoError(t, err)
 	var woken []string
@@ -224,7 +234,11 @@ func TestSandboxObserverSelectsByTheOwnershipLabel(t *testing.T) {
 	require.NoError(t, err)
 	go func() { _ = observer.Run(ctx) }()
 
-	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(selectors) > 0 }, 5*time.Second, 10*time.Millisecond)
+	select {
+	case <-watching:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the observer never watched batchsandboxes")
+	}
 	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("late-unlabelled", unlabelled), metav1.CreateOptions{})
 	require.NoError(t, err)
 	_, err = client.Resource(BatchSandboxes).Namespace("talgent").Create(ctx, batchSandbox("owned", owned), metav1.CreateOptions{})
