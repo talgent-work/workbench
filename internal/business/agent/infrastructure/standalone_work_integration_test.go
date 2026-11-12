@@ -136,7 +136,7 @@ func TestStandaloneWorksStartListShareAndFillTheLibrary(t *testing.T) {
 
 	_, err = works.Start(ctx, standalonework.StartWork{Caller: owner, RequestID: "not-a-uuid", InitialMessage: "x"})
 	require.ErrorIs(t, err, standalonework.ErrInvalidRequest)
-	empty, err := works.List(ctx, owner, 0)
+	empty, err := works.List(ctx, standalonework.ListWorks{Caller: owner})
 	require.NoError(t, err)
 	require.Empty(t, empty, "a person without a definition has no Standalone Works")
 
@@ -158,7 +158,7 @@ func TestStandaloneWorksStartListShareAndFillTheLibrary(t *testing.T) {
 
 	require.NoError(t, works.ChangeTitle(ctx, owner, first, "Plan"))
 	require.ErrorIs(t, works.ChangeTitle(ctx, stranger, first, "Mine"), domain.ErrControlRequesterNotOwner)
-	listed, err := works.List(ctx, owner, 0)
+	listed, err := works.List(ctx, standalonework.ListWorks{Caller: owner})
 	require.NoError(t, err)
 	require.Len(t, listed, 2)
 	titles := map[string]string{listed[0].WorkID: listed[0].Title, listed[1].WorkID: listed[1].Title}
@@ -166,7 +166,7 @@ func TestStandaloneWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.Equal(t, first, listed[0].WorkID, "the most recently updated Work comes first")
 	_, err = db.Exec("UPDATE agent_session SET stop_reason='disconnected' WHERE id=?", second)
 	require.NoError(t, err)
-	listed, err = works.List(ctx, owner, 0)
+	listed, err = works.List(ctx, standalonework.ListWorks{Caller: owner})
 	require.NoError(t, err)
 	require.Equal(t, "disconnected", listed[1].StateReason, "the list carries why a Work stopped")
 
@@ -268,7 +268,7 @@ func (*personalStartupCatalog) ListPersonalPlugins(context.Context, string) ([]d
 }
 
 func (*personalStartupCatalog) ResolvePlugin(_ context.Context, _ string, slug string) (domain.PluginRelease, error) {
-	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"talgent","version":"1"}`), Agents: []domain.AgentComponent{{Name: "talgent:personal-work-executor", Description: "Personal Work executor"}}, Parameters: pluginconfig.ParameterDeclarations{"token": {Type: "string", Title: "Token", Description: "Fixture token", Sensitive: true}}}, nil
+	return domain.PluginRelease{CatalogName: "talgent", Slug: slug, Source: "owned", Version: "1", RetrievalRef: "archive:runtime-1", NativeEntry: []byte(`{"name":"talgent","version":"1"}`), Agents: []domain.AgentComponent{{Name: "talgent:work-executor", Description: "Work executor"}}, Parameters: pluginconfig.ParameterDeclarations{"token": {Type: "string", Title: "Token", Description: "Fixture token", Sensitive: true}}}, nil
 }
 
 func (*personalStartupCatalog) ListAccessibleRepositories(context.Context, string) ([]domain.AccessibleRepository, error) {

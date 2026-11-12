@@ -9,6 +9,7 @@ import (
 	"xorm.io/builder"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // standaloneWorkCondition selects a definition's Works without a Subject or a
@@ -29,14 +30,30 @@ type standaloneWorkRow struct {
 	UpdatedAt      int64  `xorm:"updated_at"`
 }
 
-func (r *WorkQueryRepository) ListStandaloneWorks(ctx context.Context, agentID string, limit int) ([]query.StandaloneWorkSummary, error) {
+func (r *WorkQueryRepository) ListStandaloneWorks(ctx context.Context, filter query.StandaloneWorksFilter) ([]query.StandaloneWorkSummary, error) {
+	condition := standaloneWorkCondition(filter.AgentID).And(carryingWorkLabels(filter.Labels))
+	if len(filter.States) > 0 {
+		codes, err := stateCodes(filter.States)
+		if err != nil {
+			return nil, err
+		}
+		condition = condition.And(builder.In("s.state", codes))
+	}
 	var rows []standaloneWorkRow
 	err := r.db.Context(ctx).Table("agent_session").Alias("s").
 		Select("s.id,s.display_title,s.state,s.harness_process,s.stop_reason,s.disconnected_since,s.failure_reason,s.created_at,s.updated_at").
-		Where("s.deleted_at=0").And(standaloneWorkCondition(agentID)).
-		Desc("s.updated_at", "s.created_at", "s.id").Limit(limit).Find(&rows)
+		Where("s.deleted_at=0").And(condition).
+		Desc("s.updated_at", "s.created_at", "s.id").Limit(filter.Limit).Find(&rows)
 	if err != nil {
 		return nil, oops.With("operation", "agent.list_standalone_works").Wrap(err)
+	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	labels, err := listedWorkLabels(r.db.Context(ctx), ids)
+	if err != nil {
+		return nil, err
 	}
 	works := make([]query.StandaloneWorkSummary, 0, len(rows))
 	for _, row := range rows {
@@ -45,9 +62,22 @@ func (r *WorkQueryRepository) ListStandaloneWorks(ctx context.Context, agentID s
 		if err != nil {
 			return nil, err
 		}
-		works = append(works, query.StandaloneWorkSummary{WorkID: view.WorkID, Title: row.DisplayTitle, State: view.State, Waiting: view.Waiting, StateReason: view.StateReason, DisconnectedSince: view.DisconnectedSince, CreatedAt: view.CreatedAt, UpdatedAt: view.UpdatedAt})
+		works = append(works, query.StandaloneWorkSummary{WorkID: view.WorkID, Title: row.DisplayTitle, Labels: labels[row.ID], State: view.State, Waiting: view.Waiting, StateReason: view.StateReason, DisconnectedSince: view.DisconnectedSince, CreatedAt: view.CreatedAt, UpdatedAt: view.UpdatedAt})
 	}
 	return works, nil
+}
+
+// stateCodes are the stored codes of the Work States.
+func stateCodes(states []domain.WorkState) ([]uint8, error) {
+	codes := make([]uint8, 0, len(states))
+	for _, state := range states {
+		code := slices.Index(sessionStates[:], state)
+		if code <= 0 {
+			return nil, oops.With("operation", "agent.list_standalone_works").Errorf("unknown work state %q", state)
+		}
+		codes = append(codes, uint8(code))
+	}
+	return codes, nil
 }
 
 type libraryWorkRow struct {

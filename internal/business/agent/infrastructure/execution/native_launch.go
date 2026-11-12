@@ -154,11 +154,16 @@ func (c NativeLaunchConfig) prepare(layout launchLayout, request domain.LaunchSp
 	// Platform declarations come from the Work's retained Marketplace Connectors.
 	// Plugin-owned MCP declarations remain in their native packages. Work identity
 	// and current Provider credentials are supplied separately at runtime.
-	servers := make(map[string]any, len(request.Capabilities.Connectors))
+	servers := make(map[string]any, len(request.Capabilities.Connectors)+len(request.Capabilities.ApplicationEndpoints))
 	for _, connector := range request.Capabilities.Connectors {
 		if server, declared := layout.server(connector); declared {
 			servers[connector.Name] = server
 		}
+	}
+	// An Application's own endpoints are declared as the Application gave
+	// them, headers unchanged, in every layout (Fixed endpoint headers).
+	for _, endpoint := range request.Capabilities.ApplicationEndpoints {
+		servers[endpoint.Name] = applicationServer(endpoint)
 	}
 	mcp, err := json.Marshal(map[string]any{"mcpServers": servers})
 	if err != nil {
@@ -352,4 +357,14 @@ func sandboxConnectorURL(connector domain.SelectedConnector) string {
 	origin := address.Scheme + "://" + address.Host
 	address.Scheme, address.Host = "", ""
 	return "${" + gatewayAddressEnv + ":-" + origin + "}" + address.String()
+}
+
+// applicationServer declares an Application MCP endpoint over streamable
+// HTTP with the headers its Application gave.
+func applicationServer(endpoint domain.ApplicationMCPEndpoint) map[string]any {
+	server := map[string]any{"type": "http", "url": endpoint.URL}
+	if len(endpoint.Headers) > 0 {
+		server["headers"] = endpoint.Headers
+	}
+	return server
 }

@@ -1,6 +1,6 @@
 ---
 name: interviewing
-description: Find with the person you work for - a Personal Work's owner, or whom a Work of a Project's product context names - what they actually want, one question at a time in conversation. Use whenever something needs their decision - what the Work should produce, a plan, a change to either - and when another Agent needs their answer.
+description: Find with the person you work for - a Standalone Work's owner, or whom a Work of a Project's product context names - what they actually want, one question at a time in conversation. Use whenever something needs their decision - what the Work should produce, a plan, a change to either - and when another Agent needs their answer.
 ---
 
 # Interviewing

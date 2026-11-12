@@ -56,7 +56,10 @@ type LaunchSpecification struct {
 	// Identity Token states; empty for none. Like Purpose, it is taken from
 	// the definition when the run begins.
 	OwningApplication string
-	TraceAttributes   map[string]string
+	// WorkLabels are the Work's Work Labels, which its Identity Token states;
+	// nil for none.
+	WorkLabels      map[string]string
+	TraceAttributes map[string]string
 	// StartingContext is the context the Work started from, if any; a start
 	// without a conversation of its own yet takes it up.
 	StartingContext *StartingContext

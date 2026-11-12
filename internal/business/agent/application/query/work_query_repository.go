@@ -26,8 +26,8 @@ type WorkQueryRepository interface {
 	// own Works, most recently created first and without duplicates.
 	ListRecentRepositoryIDs(ctx context.Context, owner string) ([]string, error)
 	// ListStandaloneWorks lists a definition's Works without a Subject or a
-	// Project, most recently updated first.
-	ListStandaloneWorks(ctx context.Context, agentID string, limit int) ([]StandaloneWorkSummary, error)
+	// Project, most recently updated first, narrowed as the filter states.
+	ListStandaloneWorks(ctx context.Context, filter StandaloneWorksFilter) ([]StandaloneWorkSummary, error)
 	// ListLibraryWorks lists the person's Standalone Works under their
 	// definition and the Works with an input source they hold a Work Share
 	// in, closed ones included, at most limit.
