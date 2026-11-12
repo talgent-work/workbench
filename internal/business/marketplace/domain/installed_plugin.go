@@ -24,9 +24,9 @@ const (
 
 type InstalledPlugin struct {
 	// ID identifies this persisted installation incarnation. Personal lookup and
-	// uniqueness remain UserID x Slug, including across uninstall/reinstall.
+	// uniqueness remain OwnerID x Slug, including across uninstall/reinstall.
 	ID                  string `validate:"required,uuid"`
-	UserID              string `validate:"required,max=255"`
+	OwnerID             string `validate:"required,max=255"`
 	Slug                string `validate:"required,max=128"`
 	State               InstallationState
 	ManualConfiguration Configuration
@@ -35,12 +35,12 @@ type InstalledPlugin struct {
 
 // Install is called with an application-authorized user, never an owner chosen
 // independently by a public request. It creates no runtime installation.
-func Install(userID, slug string, manual Configuration, declarations ParameterDeclarations) (*InstalledPlugin, error) {
+func Install(ownerID, slug string, manual Configuration, declarations ParameterDeclarations) (*InstalledPlugin, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
 		return nil, err
 	}
-	plugin := &InstalledPlugin{ID: id.String(), UserID: userID, Slug: slug, State: Enabled, ManualConfiguration: manual.Clone()}
+	plugin := &InstalledPlugin{ID: id.String(), OwnerID: ownerID, Slug: slug, State: Enabled, ManualConfiguration: manual.Clone()}
 	if err := plugin.Validate(); err != nil {
 		return nil, err
 	}

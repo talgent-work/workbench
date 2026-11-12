@@ -537,6 +537,7 @@ data:
     trace-access:
       agent-address: http://127.0.0.1:8080
       agent-control-token: "${AGENT_CONTROL_TOKEN:}"
+      account-address: http://127.0.0.1:8080
     kafka:
       brokers:
         - ${KAFKA_BROKER}

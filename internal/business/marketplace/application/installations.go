@@ -10,13 +10,13 @@ import (
 )
 
 type InstallationCommand struct {
-	ActorUserID string
-	Slug        string
-	Version     int
+	OwnerID string
+	Slug    string
+	Version int
 }
 
 type InstallPlugin struct {
-	ActorUserID   string
+	OwnerID       string
 	Slug          string
 	Configuration map[string]any
 }
@@ -64,10 +64,10 @@ func (a *Application) ListInstallations(ctx context.Context, userID, afterSlug s
 }
 
 func (a *Application) Install(ctx context.Context, command InstallPlugin) (query.InstalledPlugin, error) {
-	if strings.TrimSpace(command.ActorUserID) == "" {
+	if strings.TrimSpace(command.OwnerID) == "" {
 		return query.InstalledPlugin{}, ErrUnauthenticated
 	}
-	existing, err := a.installations.Get(ctx, command.ActorUserID, command.Slug)
+	existing, err := a.installations.Get(ctx, command.OwnerID, command.Slug)
 	if err == nil {
 		return a.presentInstallation(ctx, AssembleInstalledPluginEntity(existing))
 	}
@@ -78,7 +78,7 @@ func (a *Application) Install(ctx context.Context, command InstallPlugin) (query
 	if err != nil {
 		return query.InstalledPlugin{}, err
 	}
-	plugin, err := domain.Install(command.ActorUserID, command.Slug, AssembleConfigurationDTO(command.Configuration), AssembleParameterDeclarationsDTO(release.Parameters))
+	plugin, err := domain.Install(command.OwnerID, command.Slug, AssembleConfigurationDTO(command.Configuration), AssembleParameterDeclarationsDTO(release.Parameters))
 	if err != nil {
 		return query.InstalledPlugin{}, err
 	}
@@ -87,7 +87,7 @@ func (a *Application) Install(ctx context.Context, command InstallPlugin) (query
 	}
 	// Reload after either insert or a concurrent install. The saved instance's
 	// version is stale, and repeated install must not reset existing preferences.
-	return a.GetInstallation(ctx, command.ActorUserID, command.Slug)
+	return a.GetInstallation(ctx, command.OwnerID, command.Slug)
 }
 
 func (a *Application) Enable(ctx context.Context, command InstallationCommand) (query.InstalledPlugin, error) {
@@ -151,10 +151,10 @@ func (a *Application) Uninstall(ctx context.Context, command InstallationCommand
 }
 
 func (a *Application) loadForChange(ctx context.Context, command InstallationCommand) (*domain.InstalledPlugin, error) {
-	if strings.TrimSpace(command.ActorUserID) == "" {
+	if strings.TrimSpace(command.OwnerID) == "" {
 		return nil, ErrUnauthenticated
 	}
-	plugin, err := a.installations.Get(ctx, command.ActorUserID, command.Slug)
+	plugin, err := a.installations.Get(ctx, command.OwnerID, command.Slug)
 	if err != nil {
 		return nil, err
 	}
@@ -168,5 +168,5 @@ func (a *Application) save(ctx context.Context, plugin *domain.InstalledPlugin) 
 	if err := a.installations.Save(ctx, plugin); err != nil {
 		return query.InstalledPlugin{}, err
 	}
-	return a.GetInstallation(ctx, plugin.UserID, plugin.Slug)
+	return a.GetInstallation(ctx, plugin.OwnerID, plugin.Slug)
 }

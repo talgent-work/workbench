@@ -40,7 +40,30 @@ const startOptions = {
   plugins: [{ name: "support", displayName: "Support", agents: [{ name: "support:triage", description: "Sorts tickets" }], skills: [] }],
   connectors: [],
 };
+// The Application's usage as Observability answers it: Works with their Work
+// Labels and output tokens, which a label key breaks down.
+type MeasuredWork = { labels: Record<string, string>; output: number };
+const measured: MeasuredWork[] = [];
+const usageRequests: Array<{ applicationId: string; breakdownKey: string; listLabelKeys: boolean }> = [];
+const totalsOf = (works: MeasuredWork[]) => works.length ? [{ metricKind: "output_tokens", dimension: "model", value: works.reduce((sum, work) => sum + work.output, 0), unknownCount: 0n }] : [];
 vi.mock("../lib/client", () => ({
+  traceClient: {
+    getApplicationTraceMetrics: async (request: { applicationId: string; breakdownKey: string; listLabelKeys: boolean }) => {
+      usageRequests.push(request);
+      const key = request.breakdownKey;
+      const groups = new Map<string, MeasuredWork[]>();
+      for (const work of measured) {
+        const group = key in work.labels ? `=${work.labels[key]}` : "";
+        groups.set(group, [...(groups.get(group) ?? []), work]);
+      }
+      return {
+        buckets: [],
+        totals: totalsOf(measured),
+        labelKeys: [...new Set(measured.flatMap(work => Object.keys(work.labels)))].sort(),
+        breakdown: key ? [...groups].map(([group, works]) => ({ value: group.slice(1), labelled: group !== "", totals: totalsOf(works), workCount: works.length })) : [],
+      };
+    },
+  },
   agentWorkClient: {
     ensureApplicationAgent: async (request: { applicationId: string }) => {
       agentCalls.push({ method: "ensureApplicationAgent", request });
@@ -105,6 +128,8 @@ vi.mock("../lib/client", () => ({
 
 beforeEach(() => {
   stored.length = 0;
+  measured.length = 0;
+  usageRequests.length = 0;
   agentCalls.length = 0;
   removalUnavailable = false;
   Object.assign(agentState, { name: "", icon: { glyph: "bot", color: "green" }, soul: "", defaults: { startupAgent: "", modelConfigurationId: "", thinkingLevel: "" } });
@@ -371,4 +396,48 @@ it("renames the application in its settings", async () => {
   await user.type(name, "  Help Center ");
   await user.click(within(form).getByRole("button", { name: "Save" }));
   expect(await screen.findByRole("button", { name: "Application menu: Help Center" })).toBeInTheDocument();
+});
+
+it("shows the application's tokens and secret state, and breaks its usage down by a Work Label key", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  measured.push(
+    { labels: { tenant: "acme", user: "u1" }, output: 1500 },
+    { labels: { tenant: "acme", user: "u2" }, output: 500 },
+    { labels: { user: "u3" }, output: 250 },
+  );
+  renderPage(`/applications?app=${deskId}&section=overview`);
+
+  const glance = await screen.findByRole("group", { name: "Support Desk at a glance" });
+  expect(await within(glance).findByText("2.3k")).toBeInTheDocument();
+  expect(within(glance).getByText("Input 0 · Cache read 0 · Cache write 0 · Output 2.3k")).toBeInTheDocument();
+  expect(within(glance).getByText("1 current")).toBeInTheDocument();
+
+  const byTenant = await screen.findByRole("list", { name: "Usage by tenant" });
+  const rows = within(byTenant).getAllByRole("listitem");
+  expect(rows.map(row => row.textContent)).toEqual([
+    expect.stringContaining("tenant=acme2k · 2 Works"),
+    expect.stringContaining("No tenant250 · 1 Work"),
+  ]);
+  expect(usageRequests.every(request => request.applicationId === deskId && request.listLabelKeys)).toBe(true);
+
+  await user.click(screen.getByRole("button", { name: /By tenant/ }));
+  await user.click(await screen.findByRole("option", { name: "user" }));
+  const byUser = await screen.findByRole("list", { name: "Usage by user" });
+  expect(within(byUser).getAllByRole("listitem")).toHaveLength(3);
+
+  await user.click(within(glance).getByRole("button", { name: "Secrets: 1 current" }));
+  expect(await screen.findByRole("list", { name: "Support Desk credentials" })).toBeInTheDocument();
+});
+
+it("explains an application with no usage, and one whose Works carry no labels", async () => {
+  stored.push(applicationOf(deskId, "Support Desk"), applicationOf(ciId, "CI Triage"));
+  stored[1].clientSecrets = [];
+  renderPage(`/applications?app=${deskId}&section=overview`);
+  expect(await screen.findByText("Usage appears once Support Desk runs Works.")).toBeInTheDocument();
+
+  measured.push({ labels: {}, output: 10 });
+  renderPage(`/applications?app=${ciId}&section=overview`);
+  expect(await screen.findByText("CI Triage’s Works carry no Work Labels to break their usage down by.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Secrets: None" })).toBeInTheDocument();
 });

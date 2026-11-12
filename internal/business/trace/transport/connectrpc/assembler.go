@@ -92,6 +92,7 @@ func traceMetricsToProto(result *query.TraceMetricResult) ([]*tracepublicv1.Trac
 			OwnerContext:   bucket.OwnerContext,
 			OwnerId:        bucket.OwnerID,
 			UserId:         bucket.UserID,
+			ApplicationId:  bucket.ApplicationID,
 			MetricKind:     bucket.MetricKind,
 			Dimension:      bucket.Dimension,
 			Value:          bucket.Value,
@@ -99,8 +100,12 @@ func traceMetricsToProto(result *query.TraceMetricResult) ([]*tracepublicv1.Trac
 			Gaps:           bucket.Gaps,
 		})
 	}
-	totals := make([]*tracepublicv1.TraceMetricTotal, 0, len(result.Totals))
-	for _, total := range result.Totals {
+	return buckets, totalsToProto(result.Totals)
+}
+
+func totalsToProto(in []query.TraceMetricTotal) []*tracepublicv1.TraceMetricTotal {
+	totals := make([]*tracepublicv1.TraceMetricTotal, 0, len(in))
+	for _, total := range in {
 		totals = append(totals, &tracepublicv1.TraceMetricTotal{
 			MetricKind:   total.MetricKind,
 			Dimension:    total.Dimension,
@@ -108,7 +113,16 @@ func traceMetricsToProto(result *query.TraceMetricResult) ([]*tracepublicv1.Trac
 			UnknownCount: total.UnknownCount,
 		})
 	}
-	return buckets, totals
+	return totals
+}
+
+func applicationUsageToProto(usage *query.ApplicationUsage) *tracepublicv1.GetApplicationTraceMetricsResponse {
+	buckets, totals := traceMetricsToProto(&usage.TraceMetricResult)
+	response := &tracepublicv1.GetApplicationTraceMetricsResponse{Buckets: buckets, Totals: totals, LabelKeys: usage.LabelKeys}
+	for _, group := range usage.Breakdown {
+		response.Breakdown = append(response.Breakdown, &tracepublicv1.LabelUsage{Value: group.Value, Labelled: group.Labelled, Totals: totalsToProto(group.Totals), WorkCount: int32(group.WorkCount)})
+	}
+	return response
 }
 
 func sessionTraceMetricsToProto(result *query.TraceMetricResult) *tracepublicv1.GetSessionTraceMetricsResponse {
@@ -164,5 +178,6 @@ func publicSpanAttributes(attributes map[string]string) map[string]string {
 	result := cloneStringMap(attributes)
 	delete(result, "talgent.agent_id")
 	delete(result, "talgent.work_id")
+	delete(result, "talgent.application_id")
 	return result
 }

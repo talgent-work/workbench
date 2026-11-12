@@ -32,6 +32,13 @@ type StandaloneWorkSummary struct {
 	CreatedAt, UpdatedAt time.Time
 }
 
+// WorkAttribution is one Standalone Work with the Work Labels it carries.
+type WorkAttribution struct {
+	WorkID string
+	// Labels are its Work Labels; nil for none.
+	Labels map[string]string
+}
+
 // LibraryWork is one Work whose Artifacts a person's Personal Library holds:
 // one of their Standalone Works, or one they hold a Work Share in, shared by
 // its owner.

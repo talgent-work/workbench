@@ -26,7 +26,7 @@ func NewInstalledPluginRepository(engine *xorm.Engine) *InstalledPluginRepositor
 
 func (r *InstalledPluginRepository) Get(ctx context.Context, userID, slug string) (*domain.InstalledPlugin, error) {
 	var row installedPluginDO
-	found, err := r.engine.Context(ctx).Cols(installationColumns...).Where("user_id = ? AND slug = ? AND deleted_at = 0", userID, slug).Get(&row)
+	found, err := r.engine.Context(ctx).Cols(installationColumns...).Where("owner_id = ? AND slug = ? AND deleted_at = 0", userID, slug).Get(&row)
 	if err != nil {
 		return nil, oops.With("operation", "marketplace.installation.get").Wrap(err)
 	}
@@ -55,7 +55,7 @@ func (r *InstalledPluginRepository) Save(ctx context.Context, plugin *domain.Ins
 		row.Version, row.CreatedAt = 1, row.UpdatedAt
 		affected, err = r.engine.Context(ctx).Insert(&row)
 	} else {
-		affected, err = r.engine.Context(ctx).Cols("state", "configuration", "updated_at").Incr("version").Where("id = ? AND user_id = ? AND slug = ? AND version = ? AND deleted_at = 0", plugin.ID, plugin.UserID, plugin.Slug, plugin.Version).Update(&row)
+		affected, err = r.engine.Context(ctx).Cols("state", "configuration", "updated_at").Incr("version").Where("id = ? AND owner_id = ? AND slug = ? AND version = ? AND deleted_at = 0", plugin.ID, plugin.OwnerID, plugin.Slug, plugin.Version).Update(&row)
 	}
 	if err != nil {
 		var mysqlError *mysqldriver.MySQLError
@@ -71,7 +71,7 @@ func (r *InstalledPluginRepository) Save(ctx context.Context, plugin *domain.Ins
 }
 
 func (r *InstalledPluginRepository) Delete(ctx context.Context, plugin *domain.InstalledPlugin) error {
-	affected, err := r.engine.Context(ctx).Where("id = ? AND user_id = ? AND slug = ? AND version = ? AND deleted_at = 0", plugin.ID, plugin.UserID, plugin.Slug, plugin.Version).Delete(&installedPluginDO{})
+	affected, err := r.engine.Context(ctx).Where("id = ? AND owner_id = ? AND slug = ? AND version = ? AND deleted_at = 0", plugin.ID, plugin.OwnerID, plugin.Slug, plugin.Version).Delete(&installedPluginDO{})
 	if err != nil {
 		return oops.With("operation", "marketplace.installation.delete").Wrap(err)
 	}
@@ -83,7 +83,7 @@ func (r *InstalledPluginRepository) Delete(ctx context.Context, plugin *domain.I
 
 func (r *InstalledPluginRepository) List(ctx context.Context, userID, afterSlug string, limit int) (query.InstalledPluginPage, error) {
 	rows := make([]installedPluginDO, 0, limit+1)
-	err := r.engine.Context(ctx).Cols(installationColumns...).Where("user_id = ? AND slug > ? AND deleted_at = 0", userID, afterSlug).Asc("slug").Limit(limit + 1).Find(&rows)
+	err := r.engine.Context(ctx).Cols(installationColumns...).Where("owner_id = ? AND slug > ? AND deleted_at = 0", userID, afterSlug).Asc("slug").Limit(limit + 1).Find(&rows)
 	if err != nil {
 		return query.InstalledPluginPage{}, oops.With("operation", "marketplace.installation.list").Wrap(err)
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// ReadConnectorSelection reads the catalog and the delegated user's enabled
+// ReadConnectorSelection reads the catalog and the delegated owner's enabled
 // installations through the trusted selection contract.
 func (c *Client) ReadConnectorSelection(ctx context.Context, user string) (command.ConnectorSelection, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

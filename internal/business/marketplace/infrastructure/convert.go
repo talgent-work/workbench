@@ -9,11 +9,11 @@ import (
 )
 
 func installationToDO(plugin *domain.InstalledPlugin, encrypted string) installedPluginDO {
-	return installedPluginDO{ID: plugin.ID, UserID: plugin.UserID, Slug: plugin.Slug, State: uint8(plugin.State), Configuration: encrypted, Version: plugin.Version}
+	return installedPluginDO{ID: plugin.ID, OwnerID: plugin.OwnerID, Slug: plugin.Slug, State: uint8(plugin.State), Configuration: encrypted, Version: plugin.Version}
 }
 
 func installationFromDO(row installedPluginDO, manual domain.Configuration) (*domain.InstalledPlugin, error) {
-	plugin := &domain.InstalledPlugin{ID: row.ID, UserID: row.UserID, Slug: row.Slug, State: domain.InstallationState(row.State), ManualConfiguration: manual.Clone(), Version: row.Version}
+	plugin := &domain.InstalledPlugin{ID: row.ID, OwnerID: row.OwnerID, Slug: row.Slug, State: domain.InstallationState(row.State), ManualConfiguration: manual.Clone(), Version: row.Version}
 	if row.Version < 1 {
 		return nil, domain.ErrInvalidInstallation
 	}
@@ -24,7 +24,7 @@ func installationFromDO(row installedPluginDO, manual domain.Configuration) (*do
 }
 
 func installationReadModel(row installedPluginDO, manual domain.Configuration) query.InstalledPlugin {
-	return query.InstalledPlugin{UserID: row.UserID, Slug: row.Slug, Enabled: row.State == uint8(domain.Enabled), Configuration: manual.Clone(), Version: row.Version}
+	return query.InstalledPlugin{OwnerID: row.OwnerID, Slug: row.Slug, Enabled: row.State == uint8(domain.Enabled), Configuration: manual.Clone(), Version: row.Version}
 }
 
 func decodeConfiguration(encoded []byte) (domain.Configuration, error) {
@@ -94,13 +94,13 @@ func connectorFromDO(row connectorDO) (*domain.Connector, error) {
 }
 
 func installedConnectorToDO(installation *domain.InstalledConnector) installedConnectorDO {
-	return installedConnectorDO{ID: installation.ID, UserID: installation.UserID, ConnectorID: installation.ConnectorID, State: uint8(installation.State), Version: installation.Version}
+	return installedConnectorDO{ID: installation.ID, OwnerID: installation.OwnerID, ConnectorID: installation.ConnectorID, State: uint8(installation.State), Version: installation.Version}
 }
 
 func installedConnectorFromDO(row installedConnectorDO) (*domain.InstalledConnector, error) {
 	if row.Version < 1 {
 		return nil, domain.ErrInvalidInstallation
 	}
-	installation := &domain.InstalledConnector{ID: row.ID, UserID: row.UserID, ConnectorID: row.ConnectorID, State: domain.InstallationState(row.State), Version: row.Version}
+	installation := &domain.InstalledConnector{ID: row.ID, OwnerID: row.OwnerID, ConnectorID: row.ConnectorID, State: domain.InstallationState(row.State), Version: row.Version}
 	return installation, installation.Validate()
 }

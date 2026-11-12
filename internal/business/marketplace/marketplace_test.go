@@ -15,7 +15,7 @@ import (
 
 func TestModuleWiring(t *testing.T) {
 	err := fx.ValidateApp(marketplace.Module, fx.NopLogger,
-		fx.Supply(marketplace.Config{}, slog.Default(), http.NewServeMux()),
+		fx.Supply(marketplace.Config{}, slog.Default(), http.NewServeMux(), &http.Client{}),
 		fx.Provide(fx.Annotate(func() *xorm.Engine { return nil }, fx.ResultTags(`name:"workbench"`))),
 		fx.Provide(fx.Annotate(func() componenttaskqueue.Enqueuer { return nil }, fx.ResultTags(`name:"marketplace"`))),
 		fx.Provide(fx.Annotate(func() *componenttaskqueue.SchemaRegistry { return nil }, fx.ResultTags(`name:"marketplace"`))),

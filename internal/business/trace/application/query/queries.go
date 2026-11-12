@@ -10,15 +10,16 @@ import (
 
 // Queries owns authorized native evidence and derived measurement reads.
 type Queries struct {
-	spans    SpanQueryRepository
-	metrics  TraceMetricRepository
-	events   EventRepository
-	projects ProjectAccessDecision
-	works    WorkAccess
+	evidence     NativeEvidenceQueryRepository
+	measurements MeasurementQueryRepository
+	projects     ProjectAccessPort
+	agent        AgentPort
+	accounts     AccountPort
 }
 
-func NewQueries(spans SpanQueryRepository, metrics TraceMetricRepository, events EventRepository, projects ProjectAccessDecision, works WorkAccess) *Queries {
-	return &Queries{spans: spans, metrics: metrics, events: events, projects: projects, works: works}
+// NewQueries takes no Project access where no context decides it.
+func NewQueries(evidence NativeEvidenceQueryRepository, measurements MeasurementQueryRepository, projects ProjectAccessPort, agent AgentPort, accounts AccountPort) *Queries {
+	return &Queries{evidence: evidence, measurements: measurements, projects: projects, agent: agent, accounts: accounts}
 }
 
 var ErrInvalidQuery = errors.New("invalid trace query")
@@ -52,7 +53,7 @@ func (h *Queries) ListSpansBySession(ctx context.Context, opts SpanListOptions) 
 		return nil, err
 	}
 	opts.ProjectID, opts.AgentWorkID = scope.ProjectID, scope.AgentWorkID
-	return h.spans.ListBySession(ctx, opts)
+	return h.evidence.ListBySession(ctx, opts)
 }
 
 func (h *Queries) ListSpansByOwner(ctx context.Context, opts SpanListOptions) (*SpanListResult, error) {
@@ -70,7 +71,7 @@ func (h *Queries) ListSpansByOwner(ctx context.Context, opts SpanListOptions) (*
 	if err = h.authorizeProject(ctx, opts.ProjectID); err != nil {
 		return nil, err
 	}
-	return h.spans.ListByOwner(ctx, opts)
+	return h.evidence.ListByOwner(ctx, opts)
 }
 
 // GetSpan looks a span up within the authorized Project, or, without one,
@@ -88,7 +89,7 @@ func (h *Queries) GetSpan(ctx context.Context, identity SpanIdentity) (*Span, er
 		return nil, err
 	}
 	identity.ProjectID, identity.AgentWorkID = scope.ProjectID, scope.AgentWorkID
-	span, err := h.spans.GetByIdentity(ctx, identity)
+	span, err := h.evidence.GetByIdentity(ctx, identity)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +112,7 @@ func (h *Queries) GetSessionTraceMetrics(ctx context.Context, opts TraceMetricOp
 		return nil, err
 	}
 	opts.ProjectID, opts.AgentWorkID = scope.ProjectID, scope.AgentWorkID
-	return h.metrics.GetBySession(ctx, opts)
+	return h.measurements.GetBySession(ctx, opts)
 }
 
 func (h *Queries) GetProjectTraceMetrics(ctx context.Context, opts TraceMetricOptions) (*TraceMetricResult, error) {
@@ -125,7 +126,7 @@ func (h *Queries) GetProjectTraceMetrics(ctx context.Context, opts TraceMetricOp
 	if err := h.authorizeProject(ctx, opts.ProjectID); err != nil {
 		return nil, err
 	}
-	return h.metrics.GetByProject(ctx, opts)
+	return h.measurements.GetByProject(ctx, opts)
 }
 
 // GetPersonalTraceMetrics reads the authenticated person's own usage across
@@ -134,10 +135,10 @@ func (h *Queries) GetPersonalTraceMetrics(ctx context.Context, opts TraceMetricO
 	if err := validateMetricOptions(opts); err != nil {
 		return nil, err
 	}
-	person, err := actor(ctx)
+	reader, err := person(ctx)
 	if err != nil {
 		return nil, err
 	}
 	opts.ProjectID, opts.AgentWorkID = "", strings.TrimSpace(opts.AgentWorkID)
-	return h.metrics.GetByPerson(ctx, person, opts)
+	return h.measurements.GetByPerson(ctx, reader, opts)
 }
