@@ -102,6 +102,17 @@ func TestPreparationRecordsEachSelectedPluginsInstallationAndLoading(t *testing.
 	require.Equal(t, succeeded, execution.PluginResults[0].Installation)
 }
 
+// The Harness reports a Plugin's version only from the Plugin's own manifest,
+// so a Plugin whose manifest names none, versioned in the catalog by its pin,
+// is reported without one: that is no evidence of another release, and the
+// Plugin counts as loaded. A different reported version is still a mismatch.
+func TestAPluginReportedWithoutAVersionIsLoaded(t *testing.T) {
+	execution := preparedPluginExecution(t)
+	require.True(t, reportLoaded(t, execution, domain.LoadedPlugin{Slug: "runtime"}, domain.LoadedPlugin{Slug: "tools", Version: "9.9.9"}))
+	require.Equal(t, succeeded, loadingOf(t, execution, "runtime"))
+	require.Equal(t, mismatching, loadingOf(t, execution, "tools"))
+}
+
 // When a later report for a Plugin arrives, the execution replaces that
 // Plugin's outcome (Plugin result replacement).
 func TestALaterReportReplacesThatPluginsOutcome(t *testing.T) {
