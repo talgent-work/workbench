@@ -55,14 +55,15 @@ func (a *Application) OwnedApplications(ctx context.Context, owner string) ([]qu
 	return owned, nil
 }
 
-// OwnedApplication reads one Application the person owns; any other answers
-// ErrApplicationNotFound, as an unknown one does.
+// OwnedApplication reads one Application the person owns, removed or not
+// (Ownership answered); any other answers ErrApplicationNotFound, as an
+// unknown one does.
 func (a *Application) OwnedApplication(ctx context.Context, owner, id string) (query.OwnedApplication, error) {
 	person, found, err := a.applicationFor(ctx, owner, id)
 	if err != nil {
 		return query.OwnedApplication{}, err
 	}
-	if !found.ManageableBy(person) {
+	if !found.OwnedBy(person) {
 		return query.OwnedApplication{}, domain.ErrApplicationNotFound
 	}
 	return assembleOwnedApplication(found, a.now(), a.secretOverlap), nil

@@ -40,11 +40,22 @@ func TestRemovalRevokesEverySecretAtOnceAndPublishesIt(t *testing.T) {
 	require.WithinDuration(t, h.clock.Now().Add(applicationTokenLifetime), expires, time.Second,
 		"a token already issued is not recalled: it stops at its short expiry")
 
-	_, err = service.GetApplication(as("user", owner), &accountpublicv1.GetApplicationRequest{ApplicationId: id})
-	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+	// Its owner still reads it, marked removed and holding no secret; nobody
+	// else learns of it.
+	read, err := service.GetApplication(as("user", owner), &accountpublicv1.GetApplicationRequest{ApplicationId: id})
+	require.NoError(t, err)
+	require.True(t, read.GetApplication().GetRemoved())
+	require.Empty(t, read.GetApplication().GetClientSecrets())
 	listed, err := service.ListOwnedApplications(as("user", owner), &accountpublicv1.ListOwnedApplicationsRequest{})
 	require.NoError(t, err)
-	require.Empty(t, listed.GetApplications())
+	require.Len(t, listed.GetApplications(), 1)
+	require.Equal(t, id, listed.GetApplications()[0].GetId())
+	require.True(t, listed.GetApplications()[0].GetRemoved())
+	require.Empty(t, listed.GetApplications()[0].GetClientSecrets())
+	_, err = service.GetApplication(as("user", newPerson()), &accountpublicv1.GetApplicationRequest{ApplicationId: id})
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+	_, err = service.RotateClientSecret(as("user", owner), &accountpublicv1.RotateClientSecretRequest{ApplicationId: id})
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "a removed Application is read, never managed")
 
 	require.Equal(t, []domain.ApplicationRemovedEvent{{ApplicationID: domain.ApplicationID(id), OccurredAt: h.clock.Now()}}, h.removals.published())
 }

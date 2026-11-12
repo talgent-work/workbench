@@ -320,6 +320,10 @@ github.com/talgent-work/contracts v0.5.24 h1:o2r7looxxjHhw8hz2+iYjVbU2ABXDoFYY2s
 github.com/talgent-work/contracts v0.5.24/go.mod h1:dwq89uUFAHjxXlq/yc6j3TlEJ58n06C3d8ygENkxizE=
 github.com/talgent-work/contracts v0.5.26 h1:P1S6AzCt2gwMq9rxTLHWHk4iLPfeCDdME5TITOiXDp4=
 github.com/talgent-work/contracts v0.5.26/go.mod h1:dwq89uUFAHjxXlq/yc6j3TlEJ58n06C3d8ygENkxizE=
+github.com/talgent-work/contracts v0.5.27-0.20261112112945-6f0194823c24 h1:f0h3ZwkllCjGYelIsHSjhXCY1AffYkkpQavGpe2kCSI=
+github.com/talgent-work/contracts v0.5.27-0.20261112112945-6f0194823c24/go.mod h1:dwq89uUFAHjxXlq/yc6j3TlEJ58n06C3d8ygENkxizE=
+github.com/talgent-work/contracts v0.5.27 h1:If9yyYhaDxrWv3wuSBWxrhRU7nR101+JCrCPAXd2bj4=
+github.com/talgent-work/contracts v0.5.27/go.mod h1:dwq89uUFAHjxXlq/yc6j3TlEJ58n06C3d8ygENkxizE=
 github.com/testcontainers/testcontainers-go v0.42.0 h1:He3IhTzTZOygSXLJPMX7n44XtK+qhjat1nI9cneBbUY=
 github.com/testcontainers/testcontainers-go v0.42.0/go.mod h1:vZjdY1YmUA1qEForxOIOazfsrdyORJAbhi0bp8plN30=
 github.com/tidwall/pretty v1.0.0/go.mod h1:XNkn88O1ChpSDQmQeStsy+sBenx6DDtFZJxhVysOjyk=

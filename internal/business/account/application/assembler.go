@@ -40,5 +40,5 @@ func assembleOwnedApplication(entity *domain.Application, now time.Time, overlap
 			LastUsedAt: secret.LastUsedAt, OverlapEndsAt: secret.OverlapEndsAt,
 		})
 	}
-	return query.OwnedApplication{ID: string(entity.ID), Name: entity.Name, RegisteredAt: entity.RegisteredAt, Secrets: secrets, SecretOverlap: overlap}
+	return query.OwnedApplication{ID: string(entity.ID), Name: entity.Name, RegisteredAt: entity.RegisteredAt, Secrets: secrets, SecretOverlap: overlap, Removed: entity.State == domain.ApplicationRemoved}
 }

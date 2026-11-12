@@ -171,7 +171,7 @@ func applicationMessage(owned query.OwnedApplication) *accountpublicv1.Applicati
 	}
 	return &accountpublicv1.Application{
 		Id: owned.ID, Name: owned.Name, RegisteredAtUnixMs: unixMillis(owned.RegisteredAt), ClientSecrets: secrets,
-		SecretOverlapSeconds: int64(owned.SecretOverlap.Seconds()),
+		SecretOverlapSeconds: int64(owned.SecretOverlap.Seconds()), Removed: owned.Removed,
 	}
 }
 
