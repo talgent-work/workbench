@@ -207,3 +207,29 @@ func TestParallelGrantsOfOneApplicationAllSucceed(t *testing.T) {
 		require.Equal(t, http.StatusOK, <-statuses)
 	}
 }
+
+func TestAGrantThatIssuesNoTokenRecordsNoUse(t *testing.T) {
+	h := newHarness(t)
+	service := h.applicationService()
+	owner := newPerson()
+	registered, err := service.RegisterApplication(as("user", owner), &accountpublicv1.RegisterApplicationRequest{Name: "Support Desk"})
+	require.NoError(t, err)
+	id := registered.GetApplication().GetId()
+	h.clock.Advance(time.Minute)
+
+	h.signer.failing.Store(true)
+	status, body := h.grant(id, registered.GetClientSecret())
+	require.Equal(t, http.StatusServiceUnavailable, status)
+	require.Equal(t, "temporarily_unavailable", body["error"])
+
+	read, err := service.GetApplication(as("user", owner), &accountpublicv1.GetApplicationRequest{ApplicationId: id})
+	require.NoError(t, err)
+	require.Zero(t, read.GetApplication().GetClientSecrets()[0].GetLastUsedAtUnixMs(), "a grant without a token is no use")
+
+	h.signer.failing.Store(false)
+	status, _ = h.grant(id, registered.GetClientSecret())
+	require.Equal(t, http.StatusOK, status)
+	read, err = service.GetApplication(as("user", owner), &accountpublicv1.GetApplicationRequest{ApplicationId: id})
+	require.NoError(t, err)
+	require.Equal(t, h.clock.Now().UnixMilli(), read.GetApplication().GetClientSecrets()[0].GetLastUsedAtUnixMs())
+}

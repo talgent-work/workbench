@@ -225,14 +225,16 @@ func (a *Application) issueApplicationTokenOnce(ctx context.Context, id domain.A
 	if err != nil {
 		return IssuedToken{}, err
 	}
+	// Sign first: a grant that ends without a token records no use, so the
+	// last use an owner reads always obtained one.
+	token, err := a.tokens.Sign(ctx, claims)
+	if err != nil {
+		return IssuedToken{}, err
+	}
 	if recorded {
 		if err := a.applications.Save(ctx, found); err != nil {
 			return IssuedToken{}, err
 		}
-	}
-	token, err := a.tokens.Sign(ctx, claims)
-	if err != nil {
-		return IssuedToken{}, err
 	}
 	return IssuedToken{Token: token, ExpiresAt: claims.ExpiresAt}, nil
 }

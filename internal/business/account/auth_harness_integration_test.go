@@ -5,6 +5,7 @@ package account_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -116,6 +118,22 @@ type harness struct {
 	server *httptest.Server
 	// removals are the Application Removed facts Account published.
 	removals *recordedRemovals
+	// signer signs with keys unless a test makes signing fail.
+	signer *switchableSigner
+}
+
+// switchableSigner signs with the harness's keys, or fails while failing is
+// set, standing in for a key that cannot be loaded or sealed.
+type switchableSigner struct {
+	*infrastructure.SigningKeys
+	failing atomic.Bool
+}
+
+func (s *switchableSigner) Sign(ctx context.Context, claims domain.IdentityClaims) (string, error) {
+	if s.failing.Load() {
+		return "", errors.New("signing key unavailable")
+	}
+	return s.SigningKeys.Sign(ctx, claims)
 }
 
 // recordedRemovals records Account's Application Removed publications; fail
@@ -166,9 +184,10 @@ func newHarness(t *testing.T) *harness {
 	require.NoError(t, err)
 	sessions := infrastructure.NewLoginSessionRepository(engine)
 	removals := &recordedRemovals{}
+	signer := &switchableSigner{SigningKeys: keys}
 	app := application.NewApplication(application.Dependencies{
 		Accounts: infrastructure.NewAccountRepository(engine), Sessions: sessions, GitHub: github,
-		Tokens: keys, Directory: infrastructure.NewUserDirectoryQueries(engine),
+		Tokens: signer, Directory: infrastructure.NewUserDirectoryQueries(engine),
 		Lifetimes: lifetimes, Now: c.Now,
 		AgentAccounts: infrastructure.NewAgentAccountRepository(engine), AgentTokenLifetime: agentTokenLifetime,
 		Applications: infrastructure.NewApplicationRepository(engine), ApplicationQueries: infrastructure.NewApplicationQueries(engine),
@@ -184,7 +203,7 @@ func newHarness(t *testing.T) *harness {
 	mux.Handle(accounthttp.PathPrefix, handler)
 	server := httptest.NewTLSServer(mux)
 	t.Cleanup(server.Close)
-	return &harness{t: t, clock: c, engine: engine, github: gh, app: app, keys: keys, server: server, removals: removals}
+	return &harness{t: t, clock: c, engine: engine, github: gh, app: app, keys: keys, signer: signer, server: server, removals: removals}
 }
 
 // device is one browser: its own cookie jar, never following redirects.

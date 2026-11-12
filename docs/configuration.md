@@ -85,7 +85,7 @@ Sign-in with GitHub, Applications' client credentials grant, and the Identity To
 | `return-origins` | none | Base addresses of other entries a sign-in may return to, beside the one receiving GitHub's callback |
 | `access-token-lifetime` | `15m` | Lifetime of a person's Identity Token |
 | `agent-token-lifetime` | `168h` | Lifetime of a Work's agent Identity Token, never refreshed; a retiring signing key stays published this long |
-| `application-token-lifetime` | `15m` | Lifetime of an Application's Identity Token from the client credentials grant, never refreshed; at most `agent-token-lifetime` |
+| `application-token-lifetime` | `15m` | Lifetime of an Application's Identity Token from the client credentials grant, never refreshed; at most `access-token-lifetime`, since it bounds how long a revoked secret or removed Application keeps passing |
 | `application-secret-overlap` | `24h` | How long a replaced Client Secret keeps matching after its Application Owner rotates it |
 | `session-sliding-lifetime` | `720h` | A session ends after this long unused |
 | `session-absolute-lifetime` | `2160h` | A session ends this long after sign-in; access ≤ sliding ≤ absolute |

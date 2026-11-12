@@ -43,7 +43,10 @@ func (r *ApplicationRepository) Get(ctx context.Context, id domain.ApplicationID
 	}
 	application, err := applicationFromDO(row, secrets)
 	if err != nil {
-		return nil, oops.With("operation", "application.rehydrate").With("application_id", row.ID).Wrap(err)
+		// A stored Application the domain refuses is a storage fault, not a
+		// caller's invalid input, so the domain error stays out of its chain.
+		return nil, oops.With("operation", "application.rehydrate").With("application_id", row.ID).
+			Errorf("stored application is not valid: %v", err)
 	}
 	return application, nil
 }

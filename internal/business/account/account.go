@@ -53,7 +53,7 @@ type Config struct {
 	// refreshed and outlives any run.
 	AgentTokenLifetime string `json:"agent-token-lifetime" yaml:"agent-token-lifetime" toml:"agent-token-lifetime"`
 	// ApplicationTokenLifetime bounds an Application's Identity Token, which
-	// is short and never refreshed.
+	// is short and never refreshed: at most AccessTokenLifetime.
 	ApplicationTokenLifetime string `json:"application-token-lifetime" yaml:"application-token-lifetime" toml:"application-token-lifetime"`
 	// ApplicationSecretOverlap is how long a replaced Client Secret keeps
 	// matching after its Application Owner rotates it.
@@ -115,8 +115,11 @@ func (c Config) policy() (policy, error) {
 	if p.agentToken < p.lifetimes.Access {
 		return policy{}, errors.New("account config: agent-token-lifetime must not be shorter than access-token-lifetime")
 	}
-	if p.applicationToken > p.agentToken {
-		return policy{}, errors.New("account config: application-token-lifetime must not be longer than agent-token-lifetime")
+	// An Application's token is short like a person's: the entry verifies it
+	// without calling Account, so its lifetime bounds how long a revoked
+	// Client Secret or a removed Application keeps passing.
+	if p.applicationToken > p.lifetimes.Access {
+		return policy{}, errors.New("account config: application-token-lifetime must not be longer than access-token-lifetime")
 	}
 	return p, nil
 }
