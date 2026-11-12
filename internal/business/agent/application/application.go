@@ -13,6 +13,7 @@ type Commands struct {
 	EnsureAgentDefinition  *command.EnsureAgentDefinitionHandler
 	ChangeAgentAppearance  *command.ChangeAgentAppearanceHandler
 	ChangeAgentSoul        *command.ChangeAgentSoulHandler
+	ChangeWorkDefaults     *command.ChangeAgentWorkDefaultsHandler
 	SendMessage            *command.SendWorkMessageHandler
 	ReplyToInteraction     *command.ReplyToWorkInteractionHandler
 	PrepareWorkExecution   *command.PrepareWorkExecutionHandler
@@ -66,9 +67,12 @@ type Application struct {
 	BuiltInPlugins    domain.BuiltInPlugins
 	Definitions       domain.AgentDefinitionRepository
 	DefinitionQueries query.AgentDefinitionQueryRepository
-	Logger            *slog.Logger
-	Commands          Commands
-	Queries           Queries
+	// Accounts answers Account's Application Ownership Query, which admits
+	// an Application Owner to the Application's Agent.
+	Accounts command.AccountPort
+	Logger   *slog.Logger
+	Commands Commands
+	Queries  Queries
 }
 
 func NewApplication(
@@ -83,6 +87,7 @@ func NewApplication(
 	builtIns domain.BuiltInPlugins,
 	definitions domain.AgentDefinitionRepository,
 	definitionQueries query.AgentDefinitionQueryRepository,
+	accounts command.AccountPort,
 	logger *slog.Logger,
 	workReport *query.GetWorkReportHandler,
 	ensure *command.EnsureAgentDefinitionHandler,
@@ -129,11 +134,13 @@ func NewApplication(
 		BuiltInPlugins:    builtIns,
 		Definitions:       definitions,
 		DefinitionQueries: definitionQueries,
+		Accounts:          accounts,
 		Logger:            logger,
 		Commands: Commands{
 			EnsureAgentDefinition:  ensure,
 			ChangeAgentAppearance:  appearance,
 			ChangeAgentSoul:        command.NewChangeAgentSoulHandler(definitions),
+			ChangeWorkDefaults:     command.NewChangeAgentWorkDefaultsHandler(definitions, models),
 			SendMessage:            sendMessage,
 			ReplyToInteraction:     reply,
 			PrepareWorkExecution:   prepare,

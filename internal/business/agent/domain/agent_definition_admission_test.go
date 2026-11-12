@@ -29,7 +29,7 @@ func TestDefinitionRequiresCompleteSnapshotOnlyForNewWork(t *testing.T) {
 	require.True(t, created)
 	snapshot.Plugins[0].Configuration["flag"] = false
 	require.Equal(t, true, work.CapabilitySnapshot.Plugins[0].Configuration["flag"])
-	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{RequiredPlugins: []string{"new-plugin"}}))
+	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{RequiredPlugins: []string{"new-plugin"}}, agent.WorkDefaults.StartupAgent))
 	lookup.session = work
 	reused, created, err := createWork(agent, domain.WorkCreationRequest{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}}, lookup)
 	require.NoError(t, err)

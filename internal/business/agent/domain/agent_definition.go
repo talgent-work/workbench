@@ -19,10 +19,10 @@ var (
 	validation                = validator.New()
 )
 
-// CapabilityConfiguration declares requirements for new Works, not personal defaults.
+// CapabilityConfiguration declares requirements for new Works, not personal
+// defaults: the base Prompt and the required Plugin slugs.
 type CapabilityConfiguration struct {
 	Prompt          string
-	StartupAgent    string
 	RequiredPlugins []string
 }
 
@@ -92,6 +92,7 @@ type AgentDefinitionInput struct {
 	UsageScope   UsageScope
 	Visibility   VisibilityRule
 	Capabilities CapabilityConfiguration
+	WorkDefaults WorkDefaults
 }
 
 // WorkCreationFacts are the Works a creation supplies, loaded through the
@@ -205,6 +206,9 @@ type AgentDefinition struct {
 	Visibility   VisibilityRule
 	ID           string `validate:"required,uuid"`
 	Capabilities CapabilityConfiguration
+	// WorkDefaults are what its new Works start with when their start names
+	// none.
+	WorkDefaults WorkDefaults
 	// Soul is the persona and working style its Owners write; each of its
 	// Works takes it up at its next start. Only its Owners read or write it.
 	Soul    string
@@ -212,7 +216,7 @@ type AgentDefinition struct {
 }
 
 func NewAgentDefinition(input AgentDefinitionInput) (*AgentDefinition, error) {
-	agent := &AgentDefinition{Owners: normalizeOwners(input.Owners), AgentName: strings.TrimSpace(input.AgentName), Icon: DefaultAgentIcon, Purpose: strings.TrimSpace(input.Purpose), ID: uuid.Must(uuid.NewV7()).String(), UsageScope: input.UsageScope, WorkLayout: DefaultWorkLayout(), Visibility: input.Visibility, Capabilities: input.Capabilities.Clone()}
+	agent := &AgentDefinition{Owners: normalizeOwners(input.Owners), AgentName: strings.TrimSpace(input.AgentName), Icon: DefaultAgentIcon, Purpose: strings.TrimSpace(input.Purpose), ID: uuid.Must(uuid.NewV7()).String(), UsageScope: input.UsageScope, WorkLayout: DefaultWorkLayout(), Visibility: input.Visibility, Capabilities: input.Capabilities.Clone(), WorkDefaults: input.WorkDefaults.normalized()}
 	if err := agent.Validate(); err != nil {
 		return nil, err
 	}
@@ -240,6 +244,12 @@ func (a *AgentDefinition) Validate() error {
 	}
 	if err := validateSoul(a.Soul); err != nil {
 		return err
+	}
+	if err := a.WorkDefaults.validate(); err != nil {
+		return err
+	}
+	if a.WorkDefaults.holdsModel() && a.OwningApplication() == "" {
+		return fmt.Errorf("%w: only an Application's Agent holds a default model and thinking level", ErrInvalidAgentDefinition)
 	}
 	return a.Capabilities.Validate()
 }
@@ -302,11 +312,14 @@ func validateOwners(owners []string, definitionID string) error {
 	return nil
 }
 
-func (a *AgentDefinition) ChangeCapabilities(capabilities CapabilityConfiguration) error {
+// ChangeCapabilities replaces the base Prompt, the required Plugins and the
+// startup Agent of the Work defaults, for new Works only.
+func (a *AgentDefinition) ChangeCapabilities(capabilities CapabilityConfiguration, startupAgent string) error {
 	if err := capabilities.Validate(); err != nil {
 		return err
 	}
 	a.Capabilities = capabilities.Clone()
+	a.WorkDefaults.StartupAgent = strings.TrimSpace(startupAgent)
 	return nil
 }
 

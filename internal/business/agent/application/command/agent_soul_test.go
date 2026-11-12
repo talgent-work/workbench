@@ -46,16 +46,16 @@ func soulOwnedBy(t *testing.T, owner string) *domain.AgentDefinition {
 // endless conflict gives up rather than loop.
 func TestChangeSoulRetriesAConcurrentChangeAndGivesUp(t *testing.T) {
 	store := &conflictingAgents{agent: soulOwnedBy(t, "alice"), conflicts: 2}
-	soul, err := command.NewChangeAgentSoulHandler(store).Handle(t.Context(), command.ChangeAgentSoul{AgentID: store.agent.ID, Requester: "alice", Soul: "Be terse."})
+	soul, err := command.NewChangeAgentSoulHandler(store).Handle(t.Context(), command.ChangeAgentSoul{AgentID: store.agent.ID, Requester: domain.DefinitionRequester{ID: "alice"}, Soul: "Be terse."})
 	require.NoError(t, err)
 	require.Equal(t, "Be terse.", soul)
 	require.Equal(t, "Be terse.", store.agent.Soul)
 
 	endless := &conflictingAgents{agent: soulOwnedBy(t, "alice"), conflicts: 100}
-	_, err = command.NewChangeAgentSoulHandler(endless).Handle(t.Context(), command.ChangeAgentSoul{AgentID: endless.agent.ID, Requester: "alice", Soul: "Be terse."})
+	_, err = command.NewChangeAgentSoulHandler(endless).Handle(t.Context(), command.ChangeAgentSoul{AgentID: endless.agent.ID, Requester: domain.DefinitionRequester{ID: "alice"}, Soul: "Be terse."})
 	require.ErrorIs(t, err, domain.ErrConcurrentModification)
 
-	_, err = command.NewChangeAgentSoulHandler(store).Handle(t.Context(), command.ChangeAgentSoul{AgentID: store.agent.ID, Requester: "mallory", Soul: "Leak."})
+	_, err = command.NewChangeAgentSoulHandler(store).Handle(t.Context(), command.ChangeAgentSoul{AgentID: store.agent.ID, Requester: domain.DefinitionRequester{ID: "mallory"}, Soul: "Leak."})
 	require.ErrorIs(t, err, domain.ErrSoulForbidden)
 }
 

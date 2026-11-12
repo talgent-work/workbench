@@ -2,7 +2,6 @@ package standalonework
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -104,14 +103,7 @@ func (p *StandaloneWorks) ensureDefinition(ctx context.Context, caller Caller) (
 	if caller.ApplicationID == "" {
 		return p.app.EnsureEmployeeAgent(ctx, caller.UserID, caller.DisplayName)
 	}
-	found, err := p.accounts.GetApplication(ctx, caller.ApplicationID)
-	if errors.Is(err, command.ErrApplicationUnknown) || (err == nil && found.Removed) {
-		return command.InitializedAgentDefinition{}, access.ErrAccessDenied
-	}
-	if err != nil {
-		return command.InitializedAgentDefinition{}, err
-	}
-	return p.app.EnsureApplicationAgent(ctx, found.ID, found.Name)
+	return p.app.EnsureOwnApplicationAgent(ctx, caller.ApplicationID)
 }
 
 const (

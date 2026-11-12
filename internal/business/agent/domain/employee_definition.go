@@ -26,6 +26,6 @@ func EmployeeDefinitionInput(employeeID string) AgentDefinitionInput {
 		Owners:       []string{employeeID},
 		UsageScope:   UsageScope{Kind: EmployeeScopeKind, Reference: employeeID},
 		Purpose:      StandaloneWorkPurpose,
-		Capabilities: CapabilityConfiguration{StartupAgent: standaloneStartupAgent},
+		WorkDefaults: WorkDefaults{StartupAgent: standaloneStartupAgent},
 	}
 }

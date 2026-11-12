@@ -24,8 +24,51 @@ const applicationOf = (id: string, name: string, lastUsed = 0n): Stored => ({
 });
 
 vi.mock("../lib/account-service", () => ({ useCurrentUser: () => ({ data: { user: { id: userId } } }) }));
+vi.mock("../lib/notifications", () => ({ notify: vi.fn() }));
+
+const agentId = "0193a7c2-6f1e-7c2a-9b3d-00000000a9e1";
+type AgentState = { name: string; icon: { glyph: string; color: string }; soul: string; defaults: { startupAgent: string; modelConfigurationId: string; thinkingLevel: string } };
+const agentState: AgentState = { name: "", icon: { glyph: "bot", color: "green" }, soul: "", defaults: { startupAgent: "", modelConfigurationId: "", thinkingLevel: "" } };
+const agentCalls: Array<{ method: string; request: unknown }> = [];
+const startOptions = {
+  models: [
+    { configurationId: "standard", name: "Standard", vendor: 1, thinkingLevels: ["low", "medium"], defaultThinkingLevel: "medium" },
+    { configurationId: "fast", name: "Fast", vendor: 1, thinkingLevels: ["low", "high"], defaultThinkingLevel: "low" },
+  ],
+  plugins: [{ name: "support", displayName: "Support", agents: [{ name: "support:triage", description: "Sorts tickets" }], skills: [] }],
+  connectors: [],
+};
 vi.mock("../lib/client", () => ({
+  agentWorkClient: {
+    ensureApplicationAgent: async (request: { applicationId: string }) => {
+      agentCalls.push({ method: "ensureApplicationAgent", request });
+      if (!agentState.name) agentState.name = stored.find(item => item.id === request.applicationId)?.name ?? "";
+      return { agentId, appearance: { name: agentState.name, icon: agentState.icon } };
+    },
+    changeWorkAgentAppearance: async (request: { agentId: string; name: string; icon: { glyph: string; color: string } }) => {
+      agentCalls.push({ method: "changeWorkAgentAppearance", request });
+      agentState.name = request.name; agentState.icon = request.icon;
+      return { appearance: { name: request.name, icon: request.icon } };
+    },
+    getAgentSoul: async () => ({ soul: agentState.soul }),
+    changeAgentSoul: async (request: { agentId: string; soul: string }) => {
+      agentCalls.push({ method: "changeAgentSoul", request });
+      agentState.soul = request.soul;
+      return { soul: request.soul };
+    },
+    getAgentWorkDefaults: async () => ({ defaults: { ...agentState.defaults }, options: startOptions }),
+    changeAgentWorkDefaults: async (request: { agentId: string; defaults: AgentState["defaults"] }) => {
+      agentCalls.push({ method: "changeAgentWorkDefaults", request });
+      agentState.defaults = { ...request.defaults };
+      return { defaults: request.defaults };
+    },
+  },
   applicationClient: {
+    renameApplication: async ({ applicationId, name }: { applicationId: string; name: string }) => {
+      const application = stored.find(item => item.id === applicationId)!;
+      application.name = name;
+      return { application };
+    },
     listOwnedApplications: async () => ({ applications: [...stored] }),
     registerApplication: async ({ name }: { name: string }) => {
       const application = applicationOf(deskId, name);
@@ -51,7 +94,11 @@ vi.mock("../lib/client", () => ({
   },
 }));
 
-beforeEach(() => { stored.length = 0; });
+beforeEach(() => {
+  stored.length = 0;
+  agentCalls.length = 0;
+  Object.assign(agentState, { name: "", icon: { glyph: "bot", color: "green" }, soul: "", defaults: { startupAgent: "", modelConfigurationId: "", thinkingLevel: "" } });
+});
 
 // The frame a page renders in: its lead, tabs and crumbs, as an entry draws them.
 function Layout({ children, lead, centerActions, trail = [], workspaceTitle }: PageLayoutProps) {
@@ -189,4 +236,60 @@ it("bounds a name to 60 characters after trimming", () => {
   expect(applicationNameProblem("   ")).toBe("Enter a name.");
   expect(applicationNameProblem(` ${"x".repeat(60)} `)).toBe("");
   expect(applicationNameProblem("x".repeat(61))).toBe("Use at most 60 characters.");
+});
+
+it("configures the application's Agent: its appearance, its Soul and its Work defaults", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  renderPage(`/applications?app=${deskId}&section=agent`);
+
+  const appearance = await screen.findByRole("form", { name: "Support Desk’s Agent" });
+  const name = within(appearance).getByRole("textbox", { name: "Name" });
+  expect(name).toHaveValue("Support Desk");
+  expect(within(appearance).getByText("Every Work of Support Desk runs as this Agent and shares its memory.")).toBeInTheDocument();
+  await user.clear(name);
+  await user.type(name, "Desk Bot");
+  await user.click(within(appearance).getByRole("radio", { name: "Rocket" }));
+  await user.click(within(appearance).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(agentCalls).toContainEqual({ method: "changeWorkAgentAppearance", request: { agentId, name: "Desk Bot", icon: { glyph: "rocket", color: "green" } } }));
+
+  const soul = await screen.findByRole("form", { name: "Soul" });
+  await user.type(within(soul).getByRole("textbox", { name: "Soul" }), "Answer customers kindly.");
+  await user.click(within(soul).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(agentCalls).toContainEqual({ method: "changeAgentSoul", request: { agentId, soul: "Answer customers kindly." } }));
+
+  const defaults = await screen.findByRole("list", { name: "Work defaults" });
+  expect(within(defaults).getByRole("button", { name: "Model and thinking effort" })).toHaveTextContent("Standard");
+  await user.click(within(defaults).getByRole("button", { name: "Model and thinking effort" }));
+  await user.click(await screen.findByRole("option", { name: /Fast/ }));
+  await waitFor(() => expect(agentCalls).toContainEqual({ method: "changeAgentWorkDefaults", request: { agentId, defaults: { startupAgent: "", modelConfigurationId: "fast", thinkingLevel: "low" } } }));
+});
+
+it("chooses the Startup Agent from the Plugins the application's Works load, and warns about one none declares", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  agentState.defaults = { startupAgent: "retired:helper", modelConfigurationId: "", thinkingLevel: "" };
+  renderPage(`/applications?app=${deskId}&section=agent`);
+
+  expect(await screen.findByText(/helper isn’t declared by any Plugin its Works load/)).toBeInTheDocument();
+  const defaults = screen.getByRole("list", { name: "Work defaults" });
+  await user.click(within(defaults).getByRole("button", { name: /Startup Agent/ }));
+  await user.click(await screen.findByRole("option", { name: /triage/ }));
+  await waitFor(() => expect(agentCalls).toContainEqual({ method: "changeAgentWorkDefaults", request: { agentId, defaults: { startupAgent: "support:triage", modelConfigurationId: "", thinkingLevel: "" } } }));
+  await waitFor(() => expect(screen.queryByText(/isn’t declared by any Plugin/)).not.toBeInTheDocument());
+});
+
+it("renames the application in its settings", async () => {
+  const user = userEvent.setup();
+  stored.push(applicationOf(deskId, "Support Desk"));
+  renderPage(`/applications?app=${deskId}&section=settings`);
+
+  const form = await screen.findByRole("form", { name: "Application name" });
+  const name = within(form).getByRole("textbox", { name: "Name" });
+  await user.clear(name);
+  await user.click(within(form).getByRole("button", { name: "Save" }));
+  expect(within(form).getByText("Enter a name.")).toBeInTheDocument();
+  await user.type(name, "  Help Center ");
+  await user.click(within(form).getByRole("button", { name: "Save" }));
+  expect(await screen.findByRole("button", { name: "Application menu: Help Center" })).toBeInTheDocument();
 });

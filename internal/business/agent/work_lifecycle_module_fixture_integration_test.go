@@ -54,6 +54,8 @@ type lifecycleModule struct {
 	// public reaches the module's public APIs as the entry forwards them.
 	public *http.Client
 	url    string
+	// options compose beside the module, such as a case's own decorations.
+	options []fx.Option
 }
 
 // availableQuota is the cluster quota of the test Cloud with room for ten runs.
@@ -93,6 +95,7 @@ func (m *lifecycleModule) start() *lifecycleModule {
 		fx.Invoke(func(recovery *command.RecoverWorkHandler, app *application.Application) {
 			m.recovery, m.app = recovery, app
 		}),
+		fx.Options(m.options...),
 	)
 	require.NoError(t, app.Err())
 	require.NoError(t, app.Start(m.ctx))

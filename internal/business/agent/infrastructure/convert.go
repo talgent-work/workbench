@@ -21,7 +21,7 @@ func agentDefinitionToDO(agent *domain.AgentDefinition) (*agentDefinitionDO, err
 	if err := agent.Validate(); err != nil {
 		return nil, err
 	}
-	capabilities, err := encodeCapabilities(agent.Capabilities)
+	capabilities, err := encodeCapabilities(agent.Capabilities, agent.WorkDefaults)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func agentDefinitionToDO(agent *domain.AgentDefinition) (*agentDefinitionDO, err
 }
 
 func agentDefinitionFromDO(row *agentDefinitionDO) (*domain.AgentDefinition, error) {
-	capabilities, err := decodeCapabilities(row.Capabilities)
+	capabilities, defaults, err := decodeCapabilities(row.Capabilities)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func agentDefinitionFromDO(row *agentDefinitionDO) (*domain.AgentDefinition, err
 	if err != nil {
 		return nil, err
 	}
-	agent := &domain.AgentDefinition{Owners: owners, AgentName: row.AgentName, Icon: domain.AgentIcon{Glyph: row.IconGlyph, Color: row.IconColor}, Purpose: row.Purpose, UsageScope: domain.UsageScope{Kind: row.ScopeKind, Reference: row.ScopeRef}, WorkLayout: layout, Visibility: domain.VisibilityRule{Public: row.VisibilityPublic}, ID: row.ID, Capabilities: capabilities, Soul: row.Soul, Version: row.Version}
+	agent := &domain.AgentDefinition{Owners: owners, AgentName: row.AgentName, Icon: domain.AgentIcon{Glyph: row.IconGlyph, Color: row.IconColor}, Purpose: row.Purpose, UsageScope: domain.UsageScope{Kind: row.ScopeKind, Reference: row.ScopeRef}, WorkLayout: layout, Visibility: domain.VisibilityRule{Public: row.VisibilityPublic}, ID: row.ID, Capabilities: capabilities, WorkDefaults: defaults, Soul: row.Soul, Version: row.Version}
 	return agent, agent.Validate()
 }
 

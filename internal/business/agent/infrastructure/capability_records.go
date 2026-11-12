@@ -7,10 +7,15 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/pluginconfig"
 )
 
+// definitionCapabilitiesRecord is a definition's capabilities column: its
+// base Prompt and required Plugins, and its Work defaults, whose startup
+// Agent the column has always held beside them.
 type definitionCapabilitiesRecord struct {
-	Prompt          string   `json:"prompt"`
-	StartupAgent    string   `json:"startup_agent"`
-	RequiredPlugins []string `json:"required_plugins"`
+	Prompt               string   `json:"prompt"`
+	StartupAgent         string   `json:"startup_agent"`
+	RequiredPlugins      []string `json:"required_plugins"`
+	DefaultModel         string   `json:"default_model_configuration_id,omitempty"`
+	DefaultThinkingLevel string   `json:"default_thinking_level,omitempty"`
 }
 
 type snapshotRecord struct {
@@ -71,17 +76,19 @@ type mcpRecord struct {
 	Definition   []byte                               `json:"definition"`
 }
 
-func encodeCapabilities(value domain.CapabilityConfiguration) (string, error) {
-	return encode(definitionCapabilitiesRecord{Prompt: value.Prompt, StartupAgent: value.StartupAgent, RequiredPlugins: value.RequiredPlugins})
+func encodeCapabilities(value domain.CapabilityConfiguration, defaults domain.WorkDefaults) (string, error) {
+	return encode(definitionCapabilitiesRecord{Prompt: value.Prompt, StartupAgent: defaults.StartupAgent, RequiredPlugins: value.RequiredPlugins,
+		DefaultModel: defaults.ModelConfigurationID, DefaultThinkingLevel: defaults.ThinkingLevel})
 }
 
-func decodeCapabilities(body string) (domain.CapabilityConfiguration, error) {
+func decodeCapabilities(body string) (domain.CapabilityConfiguration, domain.WorkDefaults, error) {
 	var record definitionCapabilitiesRecord
 	if err := json.Unmarshal([]byte(body), &record); err != nil {
-		return domain.CapabilityConfiguration{}, err
+		return domain.CapabilityConfiguration{}, domain.WorkDefaults{}, err
 	}
-	value := domain.CapabilityConfiguration{Prompt: record.Prompt, StartupAgent: record.StartupAgent, RequiredPlugins: record.RequiredPlugins}
-	return value, value.Validate()
+	value := domain.CapabilityConfiguration{Prompt: record.Prompt, RequiredPlugins: record.RequiredPlugins}
+	defaults := domain.WorkDefaults{StartupAgent: record.StartupAgent, ModelConfigurationID: record.DefaultModel, ThinkingLevel: record.DefaultThinkingLevel}
+	return value, defaults, value.Validate()
 }
 
 func encodeCapabilitySnapshot(value domain.CapabilitySnapshot) (string, error) {

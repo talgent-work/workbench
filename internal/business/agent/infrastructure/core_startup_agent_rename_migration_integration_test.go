@@ -41,7 +41,7 @@ func TestCoreStartupAgentRenameMigrationNamesWorkExecutor(t *testing.T) {
 
 	definition, err := fixture.app.Definitions.Get(ctx, definitionID)
 	require.NoError(t, err)
-	require.Equal(t, newRole, definition.Capabilities.StartupAgent)
+	require.Equal(t, newRole, definition.WorkDefaults.StartupAgent)
 
 	work, err := fixture.app.Works.Get(ctx, workID)
 	require.NoError(t, err)

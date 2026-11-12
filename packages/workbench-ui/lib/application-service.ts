@@ -145,3 +145,16 @@ export function useRevokeClientSecret() {
     onError: refresh,
   });
 }
+
+export function useRenameApplication() {
+  const { replace, refresh } = useOwnedApplicationUpdates();
+  return useMutation({
+    mutationFn: async ({ applicationId, name }: { applicationId: string; name: string }): Promise<Application> => {
+      const response = await applicationClient.renameApplication({ applicationId, name: name.trim() });
+      if (!response.application) throw new Error("The renamed application is missing from the response.");
+      return applicationOf(response.application);
+    },
+    onSuccess: replace,
+    onError: refresh,
+  });
+}

@@ -6,13 +6,18 @@ import { LoadState } from "../../components/marketplace/marketplace-shared";
 import { ObjectSwitcher } from "../../components/shell/object-switcher";
 import { PageLayout } from "../../components/shell/page-layout";
 import { useOwnedApplications, type Application } from "../../lib/application-service";
+import { AgentSection } from "./agent-section";
 import { CredentialsSection } from "./credentials-section";
 import { RegisterApplicationDialog } from "./register-application-dialog";
+import { SettingsSection } from "./settings-section";
 import "../../components/marketplace/marketplace.css";
 
 /** The sections of an Application's page, switched by the topbar tabs. */
-const sections = [{ id: "credentials", label: "Credentials" }] as const;
+const sections = [{ id: "agent", label: "Agent" }, { id: "credentials", label: "Credentials" }, { id: "settings", label: "Settings" }] as const;
 type SectionId = typeof sections[number]["id"];
+/** A page without ?section= opens where a new Application's owner goes first:
+ * its credentials. */
+const defaultSection: SectionId = "credentials";
 
 const applicationIcon = <AppWindow size={18} className="shrink-0 text-muted" aria-hidden="true" />;
 
@@ -25,7 +30,7 @@ export function ApplicationsPage() {
   const [registering, setRegistering] = useState(false);
   const list = applications.data ?? [];
   const selected = list.find(application => application.id === params.get("app")) ?? list[0];
-  const sectionId: SectionId = sections.find(item => item.id === params.get("section"))?.id ?? sections[0].id;
+  const sectionId: SectionId = sections.find(item => item.id === params.get("section"))?.id ?? defaultSection;
   const section = sections.find(item => item.id === sectionId)!;
   const update = (change: (next: URLSearchParams) => void) => setParams(current => { const next = new URLSearchParams(current); change(next); return next; }, { replace: true });
   const select = (id: string) => update(next => next.set("app", id));
@@ -50,7 +55,9 @@ export function ApplicationsPage() {
 
 function ApplicationSection({ application, section }: { application: Application; section: SectionId }) {
   switch (section) {
+    case "agent": return <AgentSection application={application} />;
     case "credentials": return <CredentialsSection application={application} />;
+    case "settings": return <SettingsSection application={application} />;
   }
 }
 

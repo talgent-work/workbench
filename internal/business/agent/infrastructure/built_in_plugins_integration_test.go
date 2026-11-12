@@ -114,7 +114,7 @@ func (f builtInFixture) retained(t *testing.T, workID string) map[string]any {
 func (f builtInFixture) projectDefinition(t *testing.T, startupAgent string, required ...string) string {
 	t.Helper()
 	definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Project Agent", Purpose: "coordination", UsageScope: domain.UsageScope{Kind: "project", Reference: uuid.NewString()},
-		Capabilities: domain.CapabilityConfiguration{StartupAgent: startupAgent, RequiredPlugins: required}})
+		Capabilities: domain.CapabilityConfiguration{RequiredPlugins: required}, WorkDefaults: domain.WorkDefaults{StartupAgent: startupAgent}})
 	require.NoError(t, err)
 	require.NoError(t, f.app.Definitions.Save(context.Background(), definition))
 	return definition.ID

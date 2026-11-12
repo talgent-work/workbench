@@ -36,7 +36,7 @@ func seedDefinition(t *testing.T, db *xorm.Engine) *domain.AgentDefinition {
 	t.Helper()
 	created, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{workOwner}, AgentName: "Fixture Agent", Purpose: domain.StandaloneWorkPurpose,
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: workOwner},
-		Capabilities: domain.CapabilityConfiguration{Prompt: "base prompt", StartupAgent: "custom:base", RequiredPlugins: []string{"custom"}},
+		Capabilities: domain.CapabilityConfiguration{Prompt: "base prompt", RequiredPlugins: []string{"custom"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "custom:base"},
 	})
 	require.NoError(t, err)
 	definitions := infrastructure.NewAgentDefinitionRepository(db, time.Now)
@@ -79,7 +79,7 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	builtIns, err := domain.NewBuiltInPlugins(defaultBuiltIns.Platform, nil)
 	require.NoError(t, err)
 	capabilities, err := command.ResolveStartupCapabilities(ctx, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), workOwner, domain.StartupCapabilityInput{
-		BasePrompt: definition.Capabilities.Prompt, RequiredPlugins: builtIns.ComposeRequiredPlugins(workProject, definition.Capabilities.RequiredPlugins, nil), DefaultStartupAgent: definition.Capabilities.StartupAgent,
+		BasePrompt: definition.Capabilities.Prompt, RequiredPlugins: builtIns.ComposeRequiredPlugins(workProject, definition.Capabilities.RequiredPlugins, nil), DefaultStartupAgent: definition.WorkDefaults.StartupAgent,
 		Prompt: &workPrompt, StartupAgent: &workStartupAgent,
 	})
 	require.NoError(t, err)

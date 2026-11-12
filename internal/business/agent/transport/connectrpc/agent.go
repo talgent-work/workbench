@@ -74,7 +74,7 @@ func (h *AgentHandler) CreateAgentDefinition(ctx context.Context, req *agentpriv
 	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	id, err := h.application.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: req.GetOwners(), AgentName: req.GetAgentName(), Purpose: req.GetPurpose(), UsageScope: domain.UsageScope{Kind: req.GetUsageScope().GetKind(), Reference: req.GetUsageScope().GetReference()}, Visibility: visibilityRuleFromProto(req.GetVisibilityRule()), Capabilities: capabilitiesFromProto(req.GetCapabilities())})
+	id, err := h.application.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: req.GetOwners(), AgentName: req.GetAgentName(), Purpose: req.GetPurpose(), UsageScope: domain.UsageScope{Kind: req.GetUsageScope().GetKind(), Reference: req.GetUsageScope().GetReference()}, Visibility: visibilityRuleFromProto(req.GetVisibilityRule()), Capabilities: capabilitiesFromProto(req.GetCapabilities()), WorkDefaults: domain.WorkDefaults{StartupAgent: req.GetCapabilities().GetStartupAgent()}})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -198,8 +198,11 @@ func visibilityRuleFromProto(value *agentprivatev1.VisibilityRule) domain.Visibi
 	return domain.VisibilityRule{Public: value.GetPublic()}
 }
 
+// capabilitiesFromProto maps a caller's definition capabilities: the base
+// Prompt and required Plugins; their startup Agent is the definition's Work
+// defaults'.
 func capabilitiesFromProto(value *agentprivatev1.Capabilities) domain.CapabilityConfiguration {
-	return domain.CapabilityConfiguration{Prompt: value.GetPrompt(), StartupAgent: value.GetStartupAgent(), RequiredPlugins: slices.Clone(value.GetRequiredPlugins())}
+	return domain.CapabilityConfiguration{Prompt: value.GetPrompt(), RequiredPlugins: slices.Clone(value.GetRequiredPlugins())}
 }
 
 // startingContextFromProto maps an optional starting context; absent means
@@ -234,8 +237,8 @@ func capabilityDifferencesFromProto(value *agentprivatev1.CapabilityDifferences)
 	return result
 }
 
-func capabilitiesToProto(value domain.CapabilityConfiguration) *agentprivatev1.Capabilities {
-	return &agentprivatev1.Capabilities{Prompt: value.Prompt, StartupAgent: value.StartupAgent, RequiredPlugins: slices.Clone(value.RequiredPlugins)}
+func capabilitiesToProto(value domain.CapabilityConfiguration, defaults domain.WorkDefaults) *agentprivatev1.Capabilities {
+	return &agentprivatev1.Capabilities{Prompt: value.Prompt, StartupAgent: defaults.StartupAgent, RequiredPlugins: slices.Clone(value.RequiredPlugins)}
 }
 
 var sessionStates = map[domain.WorkState]agentprivatev1.WorkState{
@@ -251,11 +254,11 @@ var sessionStates = map[domain.WorkState]agentprivatev1.WorkState{
 func mapAgentError(err error) error {
 	code := connect.CodeInternal
 	switch {
-	case errors.Is(err, access.ErrAccessDenied), errors.Is(err, domain.ErrControlRequesterNotOwner), errors.Is(err, domain.ErrWorkReaderNotAdmitted), errors.Is(err, domain.ErrAgentAppearanceForbidden), errors.Is(err, domain.ErrSoulForbidden), errors.Is(err, domain.ErrWorkFileNotAdmitted), errors.Is(err, domain.ErrStandaloneWorkOwnerOnly), errors.Is(err, domain.ErrPermissionModeStarterOnly):
+	case errors.Is(err, access.ErrAccessDenied), errors.Is(err, domain.ErrControlRequesterNotOwner), errors.Is(err, domain.ErrWorkReaderNotAdmitted), errors.Is(err, domain.ErrAgentAppearanceForbidden), errors.Is(err, domain.ErrSoulForbidden), errors.Is(err, domain.ErrWorkDefaultsForbidden), errors.Is(err, domain.ErrWorkFileNotAdmitted), errors.Is(err, domain.ErrStandaloneWorkOwnerOnly), errors.Is(err, domain.ErrPermissionModeStarterOnly):
 		code = connect.CodePermissionDenied
 	case errors.Is(err, domain.ErrAgentDefinitionNotFound), errors.Is(err, domain.ErrWorkNotFound):
 		code = connect.CodeNotFound
-	case errors.Is(err, pluginconfig.ErrInvalidConfiguration), errors.Is(err, query.ErrInvalidWorkReport), errors.Is(err, command.ErrInputAdmissionConflict), errors.Is(err, query.ErrInvalidDefinitionSelection), errors.Is(err, domain.ErrInvalidWorkSubject), errors.Is(err, domain.ErrInvalidAgentDefinition), errors.Is(err, domain.ErrInvalidCapabilities), errors.Is(err, domain.ErrInvalidWork), errors.Is(err, command.ErrInvalidStartRequest), errors.Is(err, domain.ErrInvalidVisibility), errors.Is(err, domain.ErrWorkShareOutOfScope), errors.Is(err, domain.ErrInvalidAgentAppearance), errors.Is(err, domain.ErrInvalidSoul), errors.Is(err, domain.ErrStartingContextNotAdmitted), errors.Is(err, domain.ErrInvalidDisplayTitle):
+	case errors.Is(err, pluginconfig.ErrInvalidConfiguration), errors.Is(err, query.ErrInvalidWorkReport), errors.Is(err, command.ErrInputAdmissionConflict), errors.Is(err, query.ErrInvalidDefinitionSelection), errors.Is(err, domain.ErrInvalidWorkSubject), errors.Is(err, domain.ErrInvalidAgentDefinition), errors.Is(err, domain.ErrInvalidCapabilities), errors.Is(err, domain.ErrInvalidWork), errors.Is(err, command.ErrInvalidStartRequest), errors.Is(err, domain.ErrInvalidVisibility), errors.Is(err, domain.ErrWorkShareOutOfScope), errors.Is(err, domain.ErrInvalidAgentAppearance), errors.Is(err, domain.ErrInvalidSoul), errors.Is(err, domain.ErrInvalidWorkDefaults), errors.Is(err, domain.ErrStartingContextNotAdmitted), errors.Is(err, domain.ErrInvalidDisplayTitle):
 		code = connect.CodeInvalidArgument
 	case errors.Is(err, domain.ErrCapacityUnavailable), errors.Is(err, command.ErrInputBacklog):
 		code = connect.CodeResourceExhausted
@@ -277,7 +280,7 @@ func (h *AgentHandler) ChangeAgentDefinitionCapabilities(ctx context.Context, re
 	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	err := h.application.ChangeAgentDefinitionCapabilities(ctx, application.ChangeAgentDefinitionCapabilities{AgentID: req.GetAgentId(), Capabilities: capabilitiesFromProto(req.GetCapabilities())})
+	err := h.application.ChangeAgentDefinitionCapabilities(ctx, application.ChangeAgentDefinitionCapabilities{AgentID: req.GetAgentId(), Capabilities: capabilitiesFromProto(req.GetCapabilities()), StartupAgent: req.GetCapabilities().GetStartupAgent()})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -291,7 +294,7 @@ func (h *AgentHandler) GetAgentDefinition(ctx context.Context, req *agentprivate
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return &agentprivatev1.GetAgentDefinitionResponse{Owners: agent.Owners, AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: &agentprivatev1.UsageScope{Kind: agent.UsageScope.Kind, Reference: agent.UsageScope.Reference}, VisibilityRule: &agentprivatev1.VisibilityRule{Public: agent.Visibility.Public}, AgentId: agent.ID, Capabilities: capabilitiesToProto(agent.Capabilities)}, nil
+	return &agentprivatev1.GetAgentDefinitionResponse{Owners: agent.Owners, AgentName: agent.AgentName, Purpose: agent.Purpose, UsageScope: &agentprivatev1.UsageScope{Kind: agent.UsageScope.Kind, Reference: agent.UsageScope.Reference}, VisibilityRule: &agentprivatev1.VisibilityRule{Public: agent.Visibility.Public}, AgentId: agent.ID, Capabilities: capabilitiesToProto(agent.Capabilities, agent.WorkDefaults)}, nil
 }
 
 func (h *AgentHandler) RespondToInteraction(ctx context.Context, req *agentprivatev1.RespondToInteractionRequest) (*agentprivatev1.RespondToInteractionResponse, error) {
@@ -404,6 +407,7 @@ func (h *AgentHandler) EnsureAgentDefinition(ctx context.Context, req *agentpriv
 		Purpose: req.GetPurpose(), AgentName: req.GetAgentName(),
 		Visibility:   visibilityRuleFromProto(req.GetVisibilityRule()),
 		Capabilities: capabilitiesFromProto(req.GetCapabilities()),
+		WorkDefaults: domain.WorkDefaults{StartupAgent: req.GetCapabilities().GetStartupAgent()},
 	}, EmployeeDisplayName: req.GetEmployeeDisplayName()})
 	if err != nil {
 		return nil, mapAgentError(err)

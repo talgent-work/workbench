@@ -61,6 +61,19 @@ func (m ModelConfigurations) ThinkingLevels(selection domain.WorkModelSelection)
 	return option.ThinkingLevels, option.DefaultThinkingLevel, ok
 }
 
+// Offer is what a default model offers: whether it is provided now and its
+// Model Template's thinking levels. A zero selection asks about the first
+// provided configuration, the one a Work takes when its definition names no
+// default model.
+func (m ModelConfigurations) Offer(selection domain.WorkModelSelection) domain.ModelOffer {
+	if selection == (domain.WorkModelSelection{}) {
+		first, ok := m.Default()
+		return domain.ModelOffer{Provided: ok, ThinkingLevels: first.ThinkingLevels}
+	}
+	option, ok := m.Option(selection)
+	return domain.ModelOffer{Provided: ok, ThinkingLevels: option.ThinkingLevels}
+}
+
 // modelOptionViews adds the current option of each Work's retained Model
 // Configuration to its view, so every reader presents the same model; the
 // repository's other reads pass through.

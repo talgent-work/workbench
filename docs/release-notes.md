@@ -15,7 +15,9 @@ an agent token's `application_id` claim as `x-talgent-application-id`.
 An Application now starts Standalone Works with `agent.public.v2.WorkService` and drives them
 with `agent.public.v1.AgentWorkService` under its own token; it reaches only its own Works. Its
 Works run under one Agent named after it, only on a Cloud, and their agent tokens state the
-Application.
+Application. Its owner renames it and configures its Agent in the web app: the Agent's name,
+icon and Soul, and the model, thinking level and Startup Agent a Work starts with when its start
+request names none (`AgentWorkService.ChangeAgentWorkDefaults`).
 
 ## The release that names the Work API neutrally
 

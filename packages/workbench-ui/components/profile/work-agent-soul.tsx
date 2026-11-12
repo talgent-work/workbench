@@ -1,8 +1,8 @@
-import { useState, type FormEvent } from "react";
-import { Alert, Button, Card, FieldError, Label, Skeleton, TextArea, TextField, Tooltip } from "@heroui/react";
+import { Alert, Button, Card, Skeleton, Tooltip } from "@heroui/react";
 import { Info } from "lucide-react";
+import { AgentSoulEditor } from "../agent/agent-soul-editor";
 import { useMyWorkAgent } from "../../lib/agent-appearance-service";
-import { MAX_SOUL, soulErrorMessage, useChangeWorkAgentSoul, useWorkAgentSoul } from "../../lib/agent-soul-service";
+import { soulErrorMessage, useChangeWorkAgentSoul, useWorkAgentSoul } from "../../lib/agent-soul-service";
 
 // Profile › Soul: the persona and working style of the person's own Work Agent.
 // When it applies lives in the tooltip beside the title. A Work Agent that
@@ -41,36 +41,6 @@ export function WorkAgentSoul() {
 
 function SoulEditor({ agentId, saved }: { agentId: string; saved: string }) {
   const change = useChangeWorkAgentSoul();
-  const [draft, setDraft] = useState(saved);
-  const soul = draft.trim();
-  const problem = Array.from(soul).length > MAX_SOUL ? `Use at most ${MAX_SOUL} characters.` : "";
-  const dirty = soul !== saved;
-  const save = (event: FormEvent) => {
-    event.preventDefault();
-    if (!dirty || problem || change.isPending) return;
-    change.mutate({ agentId, soul });
-  };
-  return (
-    <Card className="mk-group">
-      <form onSubmit={save} aria-label="Soul">
-        <Card.Content className="grid gap-4 p-5">
-          <TextField value={draft} onChange={setDraft} isInvalid={Boolean(problem)} isDisabled={change.isPending}>
-            <Label className="sr-only">Soul</Label>
-            <TextArea rows={5} placeholder="How your Work Agent should talk and work" />
-            <FieldError>{problem}</FieldError>
-          </TextField>
-          {change.isError && (
-            <Alert status="danger">
-              <Alert.Indicator />
-              <Alert.Content><Alert.Title>{soulErrorMessage(change.error)}</Alert.Title></Alert.Content>
-            </Alert>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" isDisabled={!dirty || change.isPending} onPress={() => { change.reset(); setDraft(saved); }}>Discard</Button>
-            <Button size="sm" type="submit" isDisabled={!dirty || Boolean(problem)} isPending={change.isPending}>{change.isPending ? "Saving" : "Save"}</Button>
-          </div>
-        </Card.Content>
-      </form>
-    </Card>
-  );
+  return <AgentSoulEditor saved={saved} placeholder="How your Work Agent should talk and work" saving={change.isPending}
+    error={change.isError ? soulErrorMessage(change.error) : ""} onSave={soul => change.mutate({ agentId, soul })} onDiscard={() => change.reset()} />;
 }

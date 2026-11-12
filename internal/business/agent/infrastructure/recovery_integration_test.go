@@ -128,7 +128,7 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	agents := infrastructure.NewAgentDefinitionRepository(db, time.Now)
 	sessions := infrastructure.NewAgentWorkRepository(db, time.Now)
-	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Original", RequiredPlugins: []string{"review"}, StartupAgent: "review:architect"}})
+	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{Prompt: "Original", RequiredPlugins: []string{"review"}}, WorkDefaults: domain.WorkDefaults{StartupAgent: "review:architect"}})
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, agent))
 	run := newRuns(t, db, sessions)

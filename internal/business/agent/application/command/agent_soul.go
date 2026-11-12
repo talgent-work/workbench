@@ -9,7 +9,8 @@ import (
 
 // ChangeAgentSoul carries the trusted requester and the new Soul.
 type ChangeAgentSoul struct {
-	AgentID, Requester, Soul string
+	AgentID, Soul string
+	Requester     domain.DefinitionRequester
 }
 
 type ChangeAgentSoulHandler struct {
@@ -20,7 +21,8 @@ func NewChangeAgentSoulHandler(agents domain.AgentDefinitionRepository) *ChangeA
 	return &ChangeAgentSoulHandler{agents: agents}
 }
 
-// Handle replaces the Soul for one of the definition's Owners and returns it
+// Handle replaces the Soul for one of the definition's Owners, or an
+// Application's Agent's Application Owner, and returns it
 // as saved, retrying a concurrent change of the definition.
 func (h *ChangeAgentSoulHandler) Handle(ctx context.Context, input ChangeAgentSoul) (string, error) {
 	for range 8 {

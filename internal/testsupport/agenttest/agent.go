@@ -209,7 +209,7 @@ func (a *Agent) EmployeeDefinition(ctx context.Context, user string) (Definition
 	if err != nil {
 		return Definition{}, err
 	}
-	return Definition{Name: definition.AgentName, StartupAgent: definition.Capabilities.StartupAgent}, nil
+	return Definition{Name: definition.AgentName, StartupAgent: definition.WorkDefaults.StartupAgent}, nil
 }
 
 func (cfg Config) models() query.ModelConfigurations {

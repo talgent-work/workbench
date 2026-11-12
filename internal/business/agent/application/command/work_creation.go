@@ -37,7 +37,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 		catalogUser = request.SubjectID
 	}
 	capabilities, err := resolveStartupCapabilities(ctx, h.catalog, catalogUser, request.StartingUserID, domain.StartupCapabilityInput{
-		BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: h.builtIns.ComposeRequiredPlugins(request.ProjectID, agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.Capabilities.StartupAgent,
+		BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: h.builtIns.ComposeRequiredPlugins(request.ProjectID, agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.WorkDefaults.StartupAgent,
 		Prompt: request.CapabilityDifferences.Prompt, StartupAgent: request.CapabilityDifferences.StartupAgent, Plugins: request.CapabilityDifferences.Plugins,
 		ConnectorChoices: request.CapabilityDifferences.Connectors,
 	})
@@ -74,7 +74,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	if err := agent.AdmitComputer(managed); err != nil {
 		return h.reuseAfterRejection(ctx, agent, request, err)
 	}
-	model := h.workModel(request.WorkModel, managed)
+	model := h.workModel(request.WorkModel, agent.WorkDefaults, managed)
 	if err := model.Validate(); err != nil {
 		return "", err
 	}
@@ -87,7 +87,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	}
 	_, provided := h.models.Option(model)
 	available := model.Available(provided)
-	_, thinking, _ := h.models.ThinkingLevels(model)
+	thinking := h.defaultThinkingLevel(model, agent.WorkDefaults)
 	var initialInput *domain.InitialTaskInput
 	if initial := request.InitialExecution; initial != nil {
 		input, err := domain.NewInitialTaskInput(initial.Input.ID, initial.Input.Text)

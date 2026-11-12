@@ -44,7 +44,7 @@ func (p *definitionSessionLookup) facts(request domain.WorkCreationRequest) doma
 func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work",
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: "employee-a"},
-		Capabilities: domain.CapabilityConfiguration{Prompt: "Base", StartupAgent: "employees:member"},
+		Capabilities: domain.CapabilityConfiguration{Prompt: "Base"}, WorkDefaults: domain.WorkDefaults{StartupAgent: "employees:member"},
 	})
 	require.NoError(t, err)
 	lookup := &definitionSessionLookup{}
@@ -62,7 +62,7 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 	require.Equal(t, subject, session.Subject)
 	require.Equal(t, "project-a", session.ProjectID)
 
-	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "Changed", StartupAgent: "other:role"}))
+	require.NoError(t, agent.ChangeCapabilities(domain.CapabilityConfiguration{Prompt: "Changed"}, "other:role"))
 	lookup.session = session
 	request.Capabilities = domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, StartupAgent: "missing:role"}
 	reused, isNew, err := createWork(agent, request, lookup)
@@ -118,8 +118,8 @@ func TestDefinitionCreatesAndReusesWorksBySubject(t *testing.T) {
 func TestWorkWithoutSubjectIsNeverReused(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work",
 		UsageScope:   domain.UsageScope{Kind: "employee", Reference: "owner"},
-		Capabilities: domain.CapabilityConfiguration{Prompt: "Base", StartupAgent: "employees:member"},
-		Visibility:   domain.VisibilityRule{Public: true},
+		Capabilities: domain.CapabilityConfiguration{Prompt: "Base"}, WorkDefaults: domain.WorkDefaults{StartupAgent: "employees:member"},
+		Visibility: domain.VisibilityRule{Public: true},
 	})
 	require.NoError(t, err)
 	existing := &domain.AgentWork{ID: "existing"}

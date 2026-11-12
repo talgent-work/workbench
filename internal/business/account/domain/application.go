@@ -201,6 +201,23 @@ func (a *Application) RevokeSecret(by AccountID, id string, now time.Time) error
 	return ErrClientSecretNotFound
 }
 
+// Rename replaces the Name its Application Owner manages it by, while it is
+// active (Owner manages). It reports whether the Name changed.
+func (a *Application) Rename(by AccountID, name string) (bool, error) {
+	if !a.ManageableBy(by) {
+		return false, ErrApplicationNotFound
+	}
+	name, err := normalizeApplicationName(name)
+	if err != nil {
+		return false, err
+	}
+	if name == a.Name {
+		return false, nil
+	}
+	a.Name = name
+	return true, nil
+}
+
 // IssueIdentityToken states the Application's claims for lifetime, for a
 // presented secret one of its Client Secrets accepts, and records that
 // secret's use (Client credentials, An Application's tokens are short). It

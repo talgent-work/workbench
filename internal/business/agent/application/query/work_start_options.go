@@ -13,6 +13,12 @@ type WorkStartOptions struct {
 	Plugins             []WorkPluginOption
 	Connectors          []domain.ConnectorOption
 	DefaultStartupAgent string
+	// DefaultModel is the definition's default Model Configuration while it
+	// is provided; zero defaults to the first of Models.
+	DefaultModel domain.WorkModelSelection
+	// DefaultThinkingLevel is the definition's default thinking level while
+	// the model a new Work takes offers it; empty takes that model's own.
+	DefaultThinkingLevel string
 }
 
 type WorkPluginOption struct {

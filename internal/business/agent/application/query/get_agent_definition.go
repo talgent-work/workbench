@@ -15,6 +15,7 @@ type AgentDefinition struct {
 	Visibility   domain.VisibilityRule
 	ID           string
 	Capabilities domain.CapabilityConfiguration
+	WorkDefaults domain.WorkDefaults
 }
 
 type GetAgentDefinitionHandler struct {

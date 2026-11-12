@@ -1,0 +1,2 @@
+/* The Work defaults reuse the New work page's controls inside a settings row. */
+.ap-work-defaults .wpb-model-trigger { margin-left: 0; max-width: 100%; }

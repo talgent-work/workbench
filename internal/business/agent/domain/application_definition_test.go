@@ -26,7 +26,7 @@ func TestAnApplicationsAgentIsTheApplications(t *testing.T) {
 	require.False(t, agent.RepresentsHuman())
 	require.NotContains(t, agent.WorkTraceAttributes(nil), "talgent.user_id")
 	require.ErrorIs(t, agent.AdmitComputer(true), domain.ErrCloudOnlyAgent)
-	require.Equal(t, domain.EmployeeDefinitionInput("employee-1").Capabilities, agent.ProvideCapabilities(), "it starts its Works with the Standalone Work role")
+	require.Equal(t, domain.EmployeeDefinitionInput("employee-1").WorkDefaults, agent.WorkDefaults, "it starts its Works with the Standalone Work role")
 }
 
 // A person's Agent owns no Application, and an Application's Agent keeps the

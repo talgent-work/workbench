@@ -94,7 +94,7 @@ func TestCorePluginRenameMigrationResolvesTalgentEverywhere(t *testing.T) {
 
 	definition, err := before.app.Definitions.Get(ctx, definitionID)
 	require.NoError(t, err)
-	require.Equal(t, newRole, definition.Capabilities.StartupAgent)
+	require.Equal(t, newRole, definition.WorkDefaults.StartupAgent)
 	require.Equal(t, []string{newSlug}, definition.Capabilities.RequiredPlugins)
 
 	work, err := before.app.Works.Get(ctx, workID)

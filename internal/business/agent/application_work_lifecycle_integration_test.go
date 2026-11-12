@@ -96,7 +96,7 @@ func TestAnApplicationStartsItsOwnWorksUnderItsOneAgent(t *testing.T) {
 
 	options, err := desk.works.GetWorkStartOptions(desk.ctx, &agentpublicv2.GetWorkStartOptionsRequest{})
 	require.NoError(t, err)
-	require.Equal(t, definition.ProvideCapabilities().StartupAgent, options.GetOptions().GetDefaultStartupAgent(), "start options come from its own Agent")
+	require.Equal(t, definition.WorkDefaults.StartupAgent, options.GetOptions().GetDefaultStartupAgent(), "start options come from its own Agent")
 }
 
 // An Application drives its own Work, and only its own: another Application

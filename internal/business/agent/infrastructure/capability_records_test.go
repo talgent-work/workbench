@@ -34,11 +34,13 @@ func TestStoredCapabilitySnapshotRestoresTypedValuesAndReleaseDeclarations(t *te
 
 func TestStoredDefinitionCapabilitiesRoundTrip(t *testing.T) {
 	definition := domain.CapabilityConfiguration{Prompt: "Base", RequiredPlugins: []string{"review"}}
-	encoded, err := encodeCapabilities(definition)
+	defaults := domain.WorkDefaults{StartupAgent: "review:architect", ModelConfigurationID: "default", ThinkingLevel: "high"}
+	encoded, err := encodeCapabilities(definition, defaults)
 	require.NoError(t, err)
-	retained, err := decodeCapabilities(encoded)
+	retained, retainedDefaults, err := decodeCapabilities(encoded)
 	require.NoError(t, err)
 	require.Equal(t, definition, retained)
+	require.Equal(t, defaults, retainedDefaults)
 }
 
 func TestStoredCapabilitySnapshotPreservesEmptyCollectionShapes(t *testing.T) {

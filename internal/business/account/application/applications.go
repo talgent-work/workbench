@@ -133,6 +133,36 @@ func (a *Application) RevokeClientSecret(ctx context.Context, cmd RevokeClientSe
 	return revoked, err
 }
 
+// RenameApplication names the Application its owner renames.
+type RenameApplication struct {
+	Owner         string
+	ApplicationID string
+	Name          string
+}
+
+// RenameApplication replaces the Application's Name.
+func (a *Application) RenameApplication(ctx context.Context, cmd RenameApplication) (query.OwnedApplication, error) {
+	var renamed query.OwnedApplication
+	err := retryOnceOnConflict(func() error {
+		owner, found, err := a.applicationFor(ctx, cmd.Owner, cmd.ApplicationID)
+		if err != nil {
+			return err
+		}
+		changed, err := found.Rename(owner, cmd.Name)
+		if err != nil {
+			return err
+		}
+		if changed {
+			if err := a.applications.Save(ctx, found); err != nil {
+				return err
+			}
+		}
+		renamed = assembleOwnedApplication(found, a.now(), a.secretOverlap)
+		return nil
+	})
+	return renamed, err
+}
+
 // applicationFor parses the trusted caller and loads the Application they
 // name; the Application itself decides what that caller may do.
 func (a *Application) applicationFor(ctx context.Context, caller, id string) (domain.AccountID, *domain.Application, error) {

@@ -9,7 +9,7 @@ import (
 
 var (
 	ErrInvalidAgentAppearance   = errors.New("agent: name must be 1 to 40 characters and the icon a preset glyph and color")
-	ErrAgentAppearanceForbidden = errors.New("agent: only an Owner of a person's Work Agent changes its appearance")
+	ErrAgentAppearanceForbidden = errors.New("agent: only an Owner of a person's Work Agent, or an Application's Application Owner, changes its appearance")
 )
 
 const maxAgentNameRunes = 40
@@ -92,9 +92,11 @@ func (a *AgentDefinition) EstablishAppearance(employeeDisplayName, projectInitia
 	return true, nil
 }
 
-// ChangeAppearance admits only an Owner of a person's Work Agent.
-func (a *AgentDefinition) ChangeAppearance(actor, name string, icon AgentIcon) (bool, error) {
-	if !a.RepresentsHuman() || !a.IsOwner(actor) {
+// ChangeAppearance admits only an Owner of a person's Work Agent (Appearance
+// change) and, for an Application's Agent, its Application Owner, never the
+// Application itself (Application appearance change).
+func (a *AgentDefinition) ChangeAppearance(requester DefinitionRequester, name string, icon AgentIcon) (bool, error) {
+	if !(a.RepresentsHuman() && a.IsOwner(requester.ID)) && !a.admitsApplicationOwner(requester) {
 		return false, ErrAgentAppearanceForbidden
 	}
 	name = strings.TrimSpace(name)

@@ -20,7 +20,7 @@ func ApplicationDefinitionInput(applicationID, applicationName string) AgentDefi
 		AgentName:    strings.TrimSpace(applicationName),
 		UsageScope:   UsageScope{Kind: ApplicationScopeKind, Reference: applicationID},
 		Purpose:      StandaloneWorkPurpose,
-		Capabilities: CapabilityConfiguration{StartupAgent: standaloneStartupAgent},
+		WorkDefaults: WorkDefaults{StartupAgent: standaloneStartupAgent},
 	}
 }
 
@@ -31,4 +31,30 @@ func (a *AgentDefinition) OwningApplication() string {
 		return ""
 	}
 	return a.UsageScope.Reference
+}
+
+// DefinitionRequester is who asks an AgentDefinition to read or change its
+// configuration: a participant, and the Application whose Application Owner
+// Account answered that participant is, when it is. Agent decides nothing
+// about ownership itself; it takes Account's answer as a supplied fact.
+type DefinitionRequester struct {
+	ID string
+	// OwnedApplication is the Application Account says ID owns; empty when
+	// the request concerns no Application.
+	OwnedApplication string
+}
+
+// admitsApplicationOwner reports whether the requester is the Application
+// Owner of the Application that owns this definition's Agent. The
+// Application Owner is no Agent Owner (Application Agent ownership).
+func (a *AgentDefinition) admitsApplicationOwner(requester DefinitionRequester) bool {
+	application := a.OwningApplication()
+	return application != "" && requester.ID != "" && requester.OwnedApplication == application
+}
+
+// admitsConfiguration reports whether the requester reads and replaces the
+// definition's Soul: one of its Owners, or, for an Application's Agent, its
+// Application Owner (Soul authorship, Application Owner configuration).
+func (a *AgentDefinition) admitsConfiguration(requester DefinitionRequester) bool {
+	return a.IsOwner(requester.ID) || a.admitsApplicationOwner(requester)
 }

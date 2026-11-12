@@ -4,12 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"connectrpc.com/connect/v2"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 func appearanceToProto(appearance domain.AgentAppearance) *agentpublicv1.AgentAppearance {
@@ -65,15 +63,17 @@ func (h *AgentHandler) ResolveWorkAgents(ctx context.Context, request *agentpriv
 	return response, nil
 }
 
-// ChangeWorkAgentAppearance lets the signed-in human change the Work Agent
-// that represents them; the definition decides whether they are that human.
+// ChangeWorkAgentAppearance lets the signed-in person change the Work Agent
+// that represents them, or, as Application Owner, an Application's Agent; the
+// definition decides whether they may.
 func (h *WorkHandler) ChangeWorkAgentAppearance(ctx context.Context, request *agentpublicv1.ChangeWorkAgentAppearanceRequest) (*agentpublicv1.ChangeWorkAgentAppearanceResponse, error) {
-	actor, ok := authn.CurrentUserID(ctx)
-	if !ok || actor == "" {
-		return nil, connect.NewError(connect.CodeUnauthenticated, domain.ErrAgentAppearanceForbidden.Error()).WithCause(domain.ErrAgentAppearanceForbidden)
+	agentID := strings.TrimSpace(request.GetAgentId())
+	requester, err := h.definitionRequester(ctx, agentID, domain.ErrAgentAppearanceForbidden)
+	if err != nil {
+		return nil, err
 	}
 	appearance, err := h.application.Commands.ChangeAgentAppearance.Handle(ctx, command.ChangeAgentAppearance{
-		AgentID: strings.TrimSpace(request.GetAgentId()), Actor: actor, Name: request.GetName(),
+		AgentID: agentID, Requester: requester, Name: request.GetName(),
 		Glyph: request.GetIcon().GetGlyph(), Color: request.GetIcon().GetColor(),
 	})
 	if err != nil {
