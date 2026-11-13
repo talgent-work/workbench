@@ -72,8 +72,9 @@ type WorkScope struct {
 	AgentWorkID string
 }
 
-// errWorkNotObserved marks a Standalone Work with no measurements: there is
-// nothing to disclose, so a read answers with nothing.
+// errWorkNotObserved marks a Standalone Work its admitted reader reads before
+// it has measurements: there is nothing to disclose, so a read answers with
+// nothing.
 var errWorkNotObserved = errors.New("work has no observations")
 
 // reader is the authenticated person or Application a read is for, never
@@ -119,21 +120,26 @@ func (q *Queries) authorizeWorkCaller(ctx context.Context, caller WorkCaller) er
 	if err != nil {
 		return err
 	}
-	if q.workCallers == nil {
-		return ErrAuthorizationUnavailable
-	}
 	return q.workCallers.AuthorizeWorkCallerReader(ctx, reader, caller)
 }
 
 // authorizeScope admits the reader to the scope and resolves it to the Work
-// Caller evidence carries. An Extension Work Caller is admitted by its
-// extension's access decision, and a Work named under it must be one of its
-// Works. Without a Work Caller the scope is one Standalone Work, admitted by
-// Agent's Work access. A Work outside the scope it is named in is
-// ErrWorkNotFound once the reader is admitted, so the refusal discloses
-// nothing about Works the reader cannot read; a Standalone Work without
-// measurements is errWorkNotObserved. workRequired also requires the Work
-// under a Work Caller.
+// Caller evidence carries. workRequired also requires the Work under a Work
+// Caller.
+//
+// Without a Work Caller the scope is one Standalone Work, and Agent's Work
+// access admits the reader to that Work itself. With one, the extension's
+// access decision admits the reader to the Work Caller, not to any Work, so a
+// Work named under it must be proven one of its Works by the Work Caller its
+// measurements carry.
+//
+// Unobserved Works follow from what the reader was admitted to. A Work the
+// reader was admitted to itself but that has no measurements yet answers with
+// nothing (errWorkNotObserved): its existence is no news to that reader. A
+// Work not proven under the Work Caller it is named in is ErrWorkNotFound,
+// whether it has no measurements or carries another Work Caller, and so is an
+// Extension Work named as a Standalone one; the refusals look alike, so no
+// reader probes which Works exist under Work Callers they cannot read.
 func (q *Queries) authorizeScope(ctx context.Context, scope WorkScope, workRequired bool) (WorkScope, error) {
 	scope.AgentWorkID = strings.TrimSpace(scope.AgentWorkID)
 	if workRequired || !scope.WorkCaller.Present() {
@@ -183,7 +189,7 @@ func (q *Queries) authorizeExtensionScope(ctx context.Context, scope WorkScope) 
 	if err != nil {
 		return scope, err
 	}
-	if observed && actual != caller {
+	if !observed || actual != caller {
 		return scope, ErrWorkNotFound
 	}
 	return scope, nil

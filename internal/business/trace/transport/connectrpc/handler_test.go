@@ -369,12 +369,13 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+// Without Agent's Work access no Standalone Work is read.
 func TestMissingAuthorityCannotReadSpans(t *testing.T) {
 	app := newTestApplication(fakeSpanQueryRepository{listBySessionFn: func(context.Context, query.SpanListOptions) (*query.SpanListResult, error) {
 		t.Fatal("must not query spans without authority")
 		return nil, nil
 	}}, nil)
-	_, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "reader"}), &tracepublicv1.ListSpansBySessionRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "team", Id: "team-1"}, AgentWorkId: "private"})
+	_, err := app.ListSpansBySession(authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "reader"}), &tracepublicv1.ListSpansBySessionRequest{AgentWorkId: "private"})
 	if connect.CodeOf(err) != connect.CodeUnavailable {
 		t.Fatalf("missing authority: %v", err)
 	}

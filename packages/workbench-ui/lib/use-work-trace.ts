@@ -16,7 +16,10 @@ export function useWorkTrace({ workCaller, agentWorkId, workCreatedAt = null, is
 }) {
   const enabled = Boolean(agentWorkId);
   const terminalKey = useRef<string | null>(null);
-  const currentKey = `${agentWorkId}:${workLifecycleGeneration}`;
+  // A Work is read in its scope: the same Work under another Work Caller is
+  // another read, with its own terminal grace polling.
+  const scopeKey = `${workCaller?.kind ?? ""}:${workCaller?.id ?? ""}:${agentWorkId}`;
+  const currentKey = `${scopeKey}:${workLifecycleGeneration}`;
   const activeTraceSeenRef = useRef(false);
   const terminalGraceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const terminalGracePollsRemainingRef = useRef(0);
@@ -85,7 +88,7 @@ export function useWorkTrace({ workCaller, agentWorkId, workCreatedAt = null, is
       clearTimeout(terminalGraceTimerRef.current);
       terminalGraceTimerRef.current = null;
     }
-  }, [agentWorkId]);
+  }, [scopeKey]);
 
   useEffect(() => {
     if (!shouldQueryTrace) {

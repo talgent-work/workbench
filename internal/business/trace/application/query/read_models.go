@@ -160,7 +160,8 @@ type MeasurementQueryRepository interface {
 	// ListWorkCallerWorks lists the Works a Work Caller has measurements of
 	// within the window, at most limit.
 	ListWorkCallerWorks(ctx context.Context, caller WorkCaller, start, end time.Time, limit int) ([]string, error)
-	// GetWorkCaller reads the Work Caller a Work's measurements carry, with
-	// false when the Work has none.
+	// GetWorkCaller reads the one Work Caller a Work's retained measurements
+	// carry, ignoring measurements without one, with false when none carries
+	// one; measurements carrying different Work Callers are an error.
 	GetWorkCaller(ctx context.Context, workID string) (WorkCaller, bool, error)
 }

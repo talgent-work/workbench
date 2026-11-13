@@ -1,10 +1,13 @@
 package access
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	traceprivatev1 "github.com/talgent-work/contracts/gen/go/trace/private/v1"
@@ -56,7 +59,7 @@ func TestAuthorityFailuresNeverAdmit(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := respond(t, tc.status, tc.body, nil, func(*http.Request) {})
 			cfg := Config{WorkCallerAccessAddresses: map[string]string{"team": server.URL}, AgentAddress: server.URL, AgentControlToken: "token"}
-			callers, err := NewWorkCallerAccess(server.Client(), cfg)
+			callers, err := NewWorkCallerAccess(server.Client(), cfg, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -78,9 +81,10 @@ func TestAuthorityFailuresNeverAdmit(t *testing.T) {
 
 // The Work Caller's kind selects the extension asked, on the reader's behalf
 // through the trusted delegation headers; a kind no extension decides here
-// admits no one, and nothing is asked.
+// admits no one, nothing is asked, and the misconfiguration is logged.
 func TestWorkCallerKindSelectsTheExtensionAsked(t *testing.T) {
 	asked := map[string]string{}
+	var logged bytes.Buffer
 	extension := func(name string) *httptest.Server {
 		return respond(t, http.StatusOK, "", &traceprivatev1.DecideWorkCallerAccessResponse{}, func(r *http.Request) {
 			if r.Header.Get(authn.HeaderServiceID) != "trace" || r.Header.Get(authn.HeaderDelegatedUserID) != "reader" {
@@ -90,7 +94,7 @@ func TestWorkCallerKindSelectsTheExtensionAsked(t *testing.T) {
 		})
 	}
 	teams, boards := extension("teams"), extension("boards")
-	callers, err := NewWorkCallerAccess(teams.Client(), Config{WorkCallerAccessAddresses: map[string]string{"team": teams.URL, "board": boards.URL + "/"}})
+	callers, err := NewWorkCallerAccess(teams.Client(), Config{WorkCallerAccessAddresses: map[string]string{"team": teams.URL, "board": boards.URL + "/"}}, slog.New(slog.NewTextHandler(&logged, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +109,9 @@ func TestWorkCallerKindSelectsTheExtensionAsked(t *testing.T) {
 	}
 	if len(asked) != 1 {
 		t.Fatalf("asked = %v after an undecided kind", asked)
+	}
+	if !strings.Contains(logged.String(), "work_caller_kind=ledger") || strings.Contains(logged.String(), "reader") {
+		t.Fatalf("undecided kind logged as %q, want the kind and no reader", logged.String())
 	}
 }
 
@@ -187,7 +194,7 @@ func TestWorkAccessAdmitsOwnerAndShareHoldersOnly(t *testing.T) {
 func TestMissingReaderOrTargetIsRefusedLocally(t *testing.T) {
 	server := respond(t, http.StatusOK, "", &traceprivatev1.DecideWorkCallerAccessResponse{}, func(*http.Request) { t.Error("authority asked") })
 	cfg := Config{WorkCallerAccessAddresses: map[string]string{"team": server.URL}, AgentAddress: server.URL, AgentControlToken: "token"}
-	callers, _ := NewWorkCallerAccess(server.Client(), cfg)
+	callers, _ := NewWorkCallerAccess(server.Client(), cfg, slog.New(slog.DiscardHandler))
 	works, _ := NewAgent(server.Client(), cfg)
 	if err := callers.AuthorizeWorkCallerReader(context.Background(), "", query.WorkCaller{Kind: "team", ID: "team-1"}); !errors.Is(err, query.ErrAuthorizationUnauthenticated) {
 		t.Fatalf("anonymous: %v", err)
@@ -206,7 +213,7 @@ func TestWorkCallerAccessConfiguration(t *testing.T) {
 	if err := base.Validate(); err != nil {
 		t.Fatalf("configuration without extensions refused: %v", err)
 	}
-	callers, err := NewWorkCallerAccess(http.DefaultClient, base)
+	callers, err := NewWorkCallerAccess(http.DefaultClient, base, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

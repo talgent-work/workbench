@@ -26,7 +26,7 @@ type fakeTraceMetricRepository struct {
 	// works are the Works a Work Caller has measurements of.
 	works []string
 	// callers are the Work Callers measured Works carry; a Work left out has
-	// no measurements.
+	// no measurements. nil stands for work-1 under teamCaller.
 	callers map[string]query.WorkCaller
 }
 
@@ -161,6 +161,10 @@ func newTestApplicationWithEvents(repo fakeSpanQueryRepository, metrics fakeTrac
 		authority = authorities[0]
 	}
 	evidence := fakeEvidence{repo, events}
+	if metrics.callers == nil {
+		// Unless a test says otherwise, work-1 is an Extension Work of teamCaller.
+		metrics.callers = map[string]query.WorkCaller{"work-1": teamCaller}
+	}
 	if authority == nil {
 		return NewHandler(application.NewApplication(query.NewQueries(evidence, metrics, nil, nil, nil)))
 	}

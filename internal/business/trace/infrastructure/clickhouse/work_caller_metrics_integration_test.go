@@ -123,3 +123,44 @@ func seedOwnerNeutralMetricBucket(t *testing.T, db *sql.DB) time.Time {
 
 	return base
 }
+
+// A Work's Work Caller is the one its measurements carry: measurements
+// without one say nothing, and two distinct Work Callers are an error rather
+// than a pick.
+func TestGetWorkCallerIgnoresUnattributedAndRefusesMixed(t *testing.T) {
+	dsn, cleanup := startClickHouse(t)
+	defer cleanup()
+	repo, err := openTestRepository(t, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("clickhouse", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	base := metricBucketBaseTime()
+	for index, row := range []struct{ work, caller string }{
+		{"stray-owned", ""}, {"stray-owned", "person:user-1"}, {"stray-owned", ""},
+		{"mixed", "team:team-1"}, {"mixed", "team:team-2"},
+		{"unattributed", ""},
+	} {
+		id := fmt.Sprintf("caller-fixture-%d", index)
+		if _, err := db.ExecContext(context.Background(), `INSERT INTO trace_work_measurements
+            (evidence_id, measurement_id, timestamp, work_caller, agent_work_id, dimension, measurements, source_priority, projection_version)
+            SELECT ?, ?, ?, ?, ?, 'Read', [('tool_call', CAST(1 AS Nullable(Float64)))], 2, 1`,
+			id, id, base.Add(time.Duration(index)*time.Minute), row.caller, row.work); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := context.Background()
+	if caller, observed, err := repo.GetWorkCaller(ctx, "stray-owned"); err != nil || !observed || caller != query.PersonCaller("user-1") {
+		t.Fatalf("stray-owned = %+v %v %v", caller, observed, err)
+	}
+	if _, observed, err := repo.GetWorkCaller(ctx, "unattributed"); err != nil || observed {
+		t.Fatalf("unattributed observed = %v, %v", observed, err)
+	}
+	if _, _, err := repo.GetWorkCaller(ctx, "mixed"); err == nil {
+		t.Fatal("mixed Work Callers resolved to one")
+	}
+}

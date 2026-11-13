@@ -87,30 +87,31 @@ func (r *Repository) ListWorkCallerWorks(ctx context.Context, caller query.WorkC
 	return works, nil
 }
 
-// GetWorkCaller reads the Work Caller a Work's retained measurements carry.
+// GetWorkCaller reads the one Work Caller a Work's retained measurements
+// carry. Measurements without one say nothing about it. Agent fixes a Work's
+// Work Caller at creation and no supplied attribute overrides it, so two
+// distinct Work Callers are a defect reported as an error, never resolved by
+// picking one.
 func (r *Repository) GetWorkCaller(ctx context.Context, workID string) (query.WorkCaller, bool, error) {
 	const q = `
-		SELECT work_caller
+		SELECT groupUniqArray(2)(work_caller)
 		FROM trace_work_measurements
 		WHERE agent_work_id = {agent_work_id:String} AND agent_work_id != ''
-		  AND timestamp >= now64(9) - INTERVAL 30 DAY
-		LIMIT 1`
-	rows, err := r.db.Query(clickhousego.Context(ctx, clickhousego.WithParameters(clickhousego.Parameters{"agent_work_id": strings.TrimSpace(workID)})), q)
-	if err != nil {
+		  AND work_caller != ''
+		  AND timestamp >= now64(9) - INTERVAL 30 DAY`
+	var callers []string
+	row := r.db.QueryRow(clickhousego.Context(ctx, clickhousego.WithParameters(clickhousego.Parameters{"agent_work_id": strings.TrimSpace(workID)})), q)
+	if err := row.Scan(&callers); err != nil {
 		return query.WorkCaller{}, false, oops.With("operation", "trace.query").Wrap(err)
 	}
-	defer rows.Close()
-	if !rows.Next() {
-		if err := rows.Err(); err != nil {
-			return query.WorkCaller{}, false, oops.With("operation", "trace.scan").Wrap(err)
-		}
+	switch len(callers) {
+	case 0:
 		return query.WorkCaller{}, false, nil
+	case 1:
+		return query.ParseWorkCaller(callers[0]), true, nil
+	default:
+		return query.WorkCaller{}, false, oops.With("operation", "trace.query").Errorf("measurements of one Work carry %d distinct Work Callers", len(callers))
 	}
-	var caller string
-	if err := rows.Scan(&caller); err != nil {
-		return query.WorkCaller{}, false, oops.With("operation", "trace.scan").Wrap(err)
-	}
-	return query.ParseWorkCaller(caller), true, nil
 }
 
 // queryMetricBuckets reads one scope; personID names the person of the

@@ -142,6 +142,44 @@ func TestWorkNamedOutsideItsWorkCallerIsNotFound(t *testing.T) {
 	}
 }
 
+// A Work named under a Work Caller it is not proven under answers NotFound
+// alike, whether it carries another Work Caller or has no measurements, so a
+// member of one Work Caller cannot probe which Works exist elsewhere.
+func TestUnobservedWorkUnderAWorkCallerIsNotFound(t *testing.T) {
+	app := newTestApplicationWithEvents(fakeSpanQueryRepository{}, fakeTraceMetricRepository{callers: map[string]query.WorkCaller{"elsewhere": {Kind: "team", ID: "team-2"}}}, fakeEventRepository{}, &fakeTraceAuthorizer{})
+	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "member"})
+	team := &agentpublicv1.WorkCaller{Kind: "team", Id: "team-1"}
+	for _, work := range []string{"elsewhere", "unmeasured"} {
+		for name, call := range workCalls(app, ctx, team, work) {
+			if err := call(); connect.CodeOf(err) != connect.CodeNotFound {
+				t.Errorf("%s of %s: code = %s, want NotFound (err=%v)", name, work, connect.CodeOf(err), err)
+			}
+		}
+	}
+}
+
+// A requested Work Caller or Work Key is taken exactly as supplied: an id
+// with surrounding whitespace or a control character is refused, never
+// trimmed, before any authority is asked.
+func TestRequestedWorkFactsAreNeverTrimmed(t *testing.T) {
+	authority := &fakeTraceAuthorizer{}
+	app := newTestApplication(fakeSpanQueryRepository{}, authority)
+	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "member"})
+	for _, id := range []string{" team-1", "team-1 ", "team\n1", "team\x001"} {
+		_, err := app.ListSpansBySession(ctx, &tracepublicv1.ListSpansBySessionRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "team", Id: id}, AgentWorkId: "work-1"})
+		if connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("work caller id %q: %v", id, err)
+		}
+		_, err = app.GetWorkCallerTraceMetrics(ctx, &tracepublicv1.GetWorkCallerTraceMetricsRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "team", Id: "team-1"}, WorkKey: &agentpublicv1.WorkKey{Kind: "board", Id: id}})
+		if connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("work key id %q: %v", id, err)
+		}
+	}
+	if authority.caller.Present() {
+		t.Fatalf("authority asked for %+v", authority.caller)
+	}
+}
+
 // An Extension Work is read under the access decision of the extension
 // defining its Work Caller's kind, and an Application reads none.
 func TestExtensionWorkIsReadUnderItsExtensionsDecision(t *testing.T) {
@@ -168,7 +206,7 @@ func TestExtensionWorkIsReadUnderItsExtensionsDecision(t *testing.T) {
 // A Standalone Work with no measurements has nothing to disclose: its reads
 // answer with nothing, and its span lookup is NotFound.
 func TestUnobservedStandaloneWorkDisclosesNothing(t *testing.T) {
-	app := newTestApplicationWithEvents(fakeSpanQueryRepository{}, fakeTraceMetricRepository{}, fakeEventRepository{}, &fakeTraceAuthorizer{})
+	app := newTestApplicationWithEvents(fakeSpanQueryRepository{}, fakeTraceMetricRepository{callers: map[string]query.WorkCaller{}}, fakeEventRepository{}, &fakeTraceAuthorizer{})
 	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "owner"})
 	spans, err := app.ListSpansBySession(ctx, &tracepublicv1.ListSpansBySessionRequest{AgentWorkId: "work-1"})
 	if err != nil || len(spans.GetSpans()) != 0 {

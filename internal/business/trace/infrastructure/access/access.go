@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -49,7 +50,7 @@ func (c Config) Validate() error {
 		return errors.New("account-address must be an absolute http(s) URL")
 	}
 	for kind, address := range c.WorkCallerAccessAddresses {
-		if !extensionKind(kind) {
+		if !query.ValidExtensionKind(kind) {
 			return fmt.Errorf("work-caller-access-addresses: %q is not a Work Caller kind an extension defines", kind)
 		}
 		if !absoluteHTTP(address) {
@@ -62,17 +63,6 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// extensionKind admits a Work Caller kind as Agent spells one, which is
-// neither of the kinds Agent defines and whose Works it decides access to.
-func extensionKind(kind string) bool {
-	if kind == "" || len(kind) > 32 || kind == "person" || kind == "application" {
-		return false
-	}
-	return strings.TrimFunc(kind, func(r rune) bool {
-		return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-'
-	}) == ""
-}
-
 func absoluteHTTP(address string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(address))
 	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
@@ -82,30 +72,36 @@ func absoluteHTTP(address string) bool {
 // Caller's kind on the reader's behalf, one client per configured kind.
 type WorkCallerAccess struct {
 	clients map[string]traceprivatev1connect.WorkCallerAccessServiceClient
+	logger  *slog.Logger
 }
 
 var _ query.WorkCallerAccessPort = (*WorkCallerAccess)(nil)
 
-// NewWorkCallerAccess reaches the access decision configured for each kind.
-func NewWorkCallerAccess(client *http.Client, cfg Config) (*WorkCallerAccess, error) {
+// NewWorkCallerAccess reaches the access decision configured for each kind of
+// a validated Config.
+func NewWorkCallerAccess(client *http.Client, cfg Config, logger *slog.Logger) (*WorkCallerAccess, error) {
+	if client == nil || logger == nil {
+		return nil, errors.New("trace: an HTTP client and a logger are required for Work Caller access")
+	}
 	clients := make(map[string]traceprivatev1connect.WorkCallerAccessServiceClient, len(cfg.WorkCallerAccessAddresses))
 	for kind, address := range cfg.WorkCallerAccessAddresses {
-		if client == nil || !extensionKind(kind) || !absoluteHTTP(address) {
-			return nil, fmt.Errorf("trace: the Work Caller access address of kind %q and an HTTP client are required", kind)
-		}
 		address = strings.TrimRight(strings.TrimSpace(address), "/")
 		clients[kind] = traceprivatev1connect.NewWorkCallerAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0))))
 	}
-	return &WorkCallerAccess{clients: clients}, nil
+	return &WorkCallerAccess{clients: clients, logger: logger}, nil
 }
 
-// AuthorizeWorkCallerReader refuses a kind no extension decides here.
+// AuthorizeWorkCallerReader refuses a kind no extension decides here, and
+// logs it as a misconfiguration: a request names a kind the deployment has no
+// access decision for.
 func (a *WorkCallerAccess) AuthorizeWorkCallerReader(ctx context.Context, readerID string, caller query.WorkCaller) error {
 	if err := check(readerID, caller.ID); err != nil {
 		return err
 	}
 	client, ok := a.clients[caller.Kind]
 	if !ok {
+		a.logger.WarnContext(ctx, "trace: no Work Caller access decision is configured for the kind; its Works are read by no one",
+			slog.String("work_caller_kind", caller.Kind))
 		return query.ErrAuthorizationPermissionDenied
 	}
 	req := &traceprivatev1.DecideWorkCallerAccessRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: caller.Kind, Id: caller.ID}}

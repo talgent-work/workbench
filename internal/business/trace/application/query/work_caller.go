@@ -3,6 +3,7 @@ package query
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // The Work Caller kinds the core defines: a person and an Application, each
@@ -67,6 +68,12 @@ func ParseWorkKey(value string) WorkKey {
 	return WorkKey{Kind: kind, ID: id}
 }
 
+// ValidExtensionKind tells whether kind is a Work Caller kind an extension
+// may define: one Agent admits, and neither of the core's kinds.
+func ValidExtensionKind(kind string) bool {
+	return validKind(kind) && kind != workCallerKindPerson && kind != workCallerKindApplication
+}
+
 // extensionCaller admits a requested Work Caller of an extension-defined
 // kind, the only kind a read names a Work Caller by: a Standalone Work is
 // named by itself, a person's and an Application's usage by their own reads.
@@ -88,17 +95,27 @@ func requestedWorkKey(key WorkKey) (WorkKey, error) {
 	return key, validateFact(key.Kind, key.ID, "work_key")
 }
 
-// validateFact admits the kinds and identities Agent admits: a kind of at
-// most 32 lowercase letters, digits, "_" or "-", which holds no colon, and an
-// identity of 1 to 255 bytes without NUL.
+// validateFact admits a requested fact exactly as supplied, never trimmed,
+// under the rules Agent and Account apply: a kind of at most 32 lowercase
+// letters, digits, "_" or "-", which holds no colon, and an identity of 1 to
+// 255 bytes with no surrounding whitespace or control character.
 func validateFact(kind, id, name string) error {
-	if kind == "" || len(kind) > maxFactKindLength || strings.TrimFunc(kind, kindCharacter) != "" {
+	if !validKind(kind) {
 		return fmt.Errorf("%w: %s kind %q", ErrInvalidQuery, name, kind)
 	}
-	if id == "" || len(id) > maxFactIdentityLength || strings.ContainsRune(id, 0) {
-		return fmt.Errorf("%w: %s id is required", ErrInvalidQuery, name)
+	switch {
+	case id == "" || len(id) > maxFactIdentityLength:
+		return fmt.Errorf("%w: %s id needs 1 to %d bytes", ErrInvalidQuery, name, maxFactIdentityLength)
+	case strings.TrimSpace(id) != id:
+		return fmt.Errorf("%w: %s id has surrounding whitespace", ErrInvalidQuery, name)
+	case strings.IndexFunc(id, unicode.IsControl) >= 0:
+		return fmt.Errorf("%w: %s id holds a control character", ErrInvalidQuery, name)
 	}
 	return nil
+}
+
+func validKind(kind string) bool {
+	return kind != "" && len(kind) <= maxFactKindLength && strings.TrimFunc(kind, kindCharacter) == ""
 }
 
 func kindCharacter(r rune) bool {
