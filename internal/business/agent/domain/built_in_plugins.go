@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 )
 
@@ -22,7 +23,9 @@ func NewBuiltInPlugins(platform []string, kinds map[string][]string) (BuiltInPlu
 		return BuiltInPlugins{}, err
 	}
 	declared := make(map[string][]string, len(kinds))
-	for kind, slugs := range kinds {
+	// Sorted, so an invalid declaration is reported the same way each time.
+	for _, kind := range slices.Sorted(maps.Keys(kinds)) {
+		slugs := kinds[kind]
 		if err := validateKind(kind, ErrInvalidWorkCaller); err != nil {
 			return BuiltInPlugins{}, err
 		}

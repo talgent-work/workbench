@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -49,9 +50,17 @@ func (s *AgentWork) validateWorkFacts() error {
 
 // AdmitDelegatedControl admits an extension acting on the owner's behalf
 // only on an Extension Work, whose Work Caller is of a kind an extension
-// defines (Delegated control); a Standalone Work only its owner acts on.
+// defines (Delegated control); a Standalone Work only its owner acts on. A
+// stored Work always holds a valid Work Caller, so an invalid one is a fault
+// of the store, never of the request.
 func (s *AgentWork) AdmitDelegatedControl() error {
-	return AdmitExtensionWorkCaller(s.WorkCaller)
+	if err := s.WorkCaller.Validate(); err != nil {
+		return fmt.Errorf("agent: Work %s holds an invalid Work Caller: %v", s.ID, err)
+	}
+	if !s.WorkCaller.ExtensionDefined() {
+		return ErrStandaloneWorkOwnerOnly
+	}
+	return nil
 }
 
 // DisplayTitleFrom is the display title a Standalone Work starts with: the

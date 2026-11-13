@@ -166,6 +166,12 @@ func TestBuiltInPluginsFollowTheWorkCallersKind(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{platformPlugin: true, personPlugin: true}, requiredOptions(options))
 	require.Equal(t, map[string]any{platformPlugin: "release-default", personPlugin: "release-default"}, f.startStandalone(t, "alice"))
+	options, err = f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{platformPlugin: true, personPlugin: true}, requiredOptions(options), "a person's new Work without a named Work Caller is theirs")
+	options, err = f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{platformPlugin: true, projectPlugin: true}, requiredOptions(options))
 
 	id, err := f.createProjectWork(f.projectDefinition(t, projectRole))
 	require.NoError(t, err)

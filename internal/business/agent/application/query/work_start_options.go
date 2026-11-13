@@ -49,8 +49,10 @@ type WorkStartOptionsQuery struct {
 	// definition it runs under.
 	EmployeeID    string
 	ApplicationID string
-	// WorkCaller is in whose name a new Work is started, whose kind's
-	// Built-in Plugins it loads; zero for the person's own Standalone Work.
+	// WorkCaller is in whose name a trusted service starts a new Work, whose
+	// kind's Built-in Plugins it loads; zero for the owner's own Standalone
+	// Work, whose Work Caller is the definition's owner, the person or the
+	// Application.
 	WorkCaller domain.WorkCaller
 	// RequiredPlugins are what the caller's new Work requires beside the
 	// definition's; they are offered as required.

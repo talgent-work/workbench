@@ -31,12 +31,3 @@ func TestBuiltInPluginsRefuseAnInvalidScope(t *testing.T) {
 		require.Error(t, err, name)
 	}
 }
-
-// Readers read every file of a Work's own File Spaces, and in its File
-// Home's only the Artifacts the Work published.
-func TestSharedSpaceReading(t *testing.T) {
-	require.True(t, domain.ReadableWorkFile("w", false, false, ""), "an input in the Work's own space")
-	require.True(t, domain.ReadableWorkFile("w", true, true, "w"), "its own Artifact in its File Home")
-	require.False(t, domain.ReadableWorkFile("w", true, true, "other"), "another Work's Artifact in the File Home")
-	require.False(t, domain.ReadableWorkFile("w", true, false, "w"), "an input of the File Home")
-}

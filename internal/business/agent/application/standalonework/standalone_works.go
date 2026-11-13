@@ -36,7 +36,7 @@ func (p *StandaloneWorks) StartOptions(ctx context.Context, caller Caller) (quer
 	if owner == "" {
 		return query.WorkStartOptions{}, access.ErrAccessDenied
 	}
-	return p.app.GetWorkStartOptions(ctx, query.WorkStartOptionsQuery{SubjectID: owner, EmployeeID: caller.self(), ApplicationID: caller.ApplicationID, WorkCaller: caller.ownerWorkCaller()})
+	return p.app.GetWorkStartOptions(ctx, query.WorkStartOptionsQuery{SubjectID: owner, EmployeeID: caller.self(), ApplicationID: caller.ApplicationID})
 }
 
 // StartRepositories lists the repositories the owner, a person or an

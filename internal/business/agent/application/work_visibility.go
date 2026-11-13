@@ -30,14 +30,22 @@ func (a *Application) ChangeWorkVisibility(ctx context.Context, input ChangeWork
 }
 
 // GrantWorkShare lets the requesting owner share a Work with a reader the
-// trusted caller admits within the Work's visibility scope.
+// trusted caller admits within the Work's visibility scope. Delegated marks a
+// trusted service granting for the owner, which it may only on an Extension
+// Work (Delegated control).
 type GrantWorkShare struct {
 	RequesterID, WorkID, ReaderID string
 	Admission                     domain.ReaderAdmission
+	Delegated                     bool
 }
 
 func (a *Application) GrantWorkShare(ctx context.Context, input GrantWorkShare) error {
 	return a.changeWork(ctx, input.WorkID, func(work *domain.AgentWork, definition *domain.AgentDefinition) (bool, error) {
+		if input.Delegated {
+			if err := work.AdmitDelegatedControl(); err != nil {
+				return false, err
+			}
+		}
 		return work.GrantWorkShare(definition, input.RequesterID, input.ReaderID, input.Admission)
 	})
 }

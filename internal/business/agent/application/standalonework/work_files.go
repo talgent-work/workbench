@@ -40,8 +40,8 @@ func (p *StandaloneWorks) loadWork(ctx context.Context, caller Caller, workID st
 }
 
 // ListFiles lists a Standalone Work's files to its owner and Work Share
-// holders, its Attachments then its Artifacts; only the owner sees Share
-// Links.
+// holders, its Attachments then its Artifacts, and to the Agent reading its
+// person's Library its Artifacts alone; only the owner sees Share Links.
 func (p *StandaloneWorks) ListFiles(ctx context.Context, caller Caller, workID string) ([]command.SpaceFile, error) {
 	owned, err := p.loadWork(ctx, caller, workID)
 	if err != nil {
@@ -58,8 +58,13 @@ func (p *StandaloneWorks) ListFiles(ctx context.Context, caller Caller, workID s
 	if err != nil {
 		return nil, err
 	}
+	// An Agent reads its person's Library, which holds Artifacts only.
+	read := []domain.LocatedDirectory{spaces.Inputs, spaces.Artifacts}
+	if caller.Agent != nil {
+		read = read[1:]
+	}
 	var files []command.SpaceFile
-	for _, space := range []domain.LocatedDirectory{spaces.Inputs, spaces.Artifacts} {
+	for _, space := range read {
 		listed, err := p.files.ListFiles(ctx, space.Directory)
 		if err != nil {
 			return nil, err
