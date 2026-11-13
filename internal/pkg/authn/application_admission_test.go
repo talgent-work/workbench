@@ -120,14 +120,14 @@ func TestApplicationWithoutAValidSubjectIsUnauthenticated(t *testing.T) {
 func TestAgentOfAnApplicationsWorkNamesItsApplicationOnly(t *testing.T) {
 	header := map[string]string{
 		HeaderAuthenticatedBy: "envoy", HeaderPrincipal: "agent", HeaderSubject: workID,
-		HeaderAgentID: "agent-definition", HeaderPurpose: "work", HeaderApplicationID: applicationID,
+		HeaderWorkCaller: "application:" + applicationID, HeaderAgentID: "agent-definition", HeaderPurpose: "work", HeaderApplicationID: applicationID,
 	}
 	principal, ran, err := call(t, NewPrincipalInterceptor(), userOrAgent, header)
 	require.NoError(t, err)
 	require.True(t, ran)
 	agent, ok := principal.Agent()
 	require.True(t, ok)
-	require.Equal(t, Agent{WorkID: workID, AgentID: "agent-definition", Purpose: "work", ApplicationID: applicationID}, agent)
+	require.Equal(t, Agent{WorkID: workID, WorkCaller: WorkFact{Kind: "application", ID: applicationID}, AgentID: "agent-definition", Purpose: "work", ApplicationID: applicationID}, agent)
 	_, isApplication := principal.Application()
 	require.False(t, isApplication, "the Agent never speaks for the Application")
 }

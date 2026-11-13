@@ -1758,16 +1758,16 @@ spec:
             header: x-talgent-avatar-url
           - claim: roles
             header: x-talgent-roles
-          - claim: project_id
-            header: x-talgent-project-id
+          - claim: work_caller
+            header: x-talgent-work-caller
+          - claim: work_key
+            header: x-talgent-work-key
+          - claim: file_home
+            header: x-talgent-file-home
           - claim: agent_id
             header: x-talgent-agent-id
           - claim: purpose
             header: x-talgent-purpose
-          - claim: work_subject_kind
-            header: x-talgent-work-subject-kind
-          - claim: work_subject_id
-            header: x-talgent-work-subject-id
           - claim: for
             header: x-talgent-represented-user-id
           - claim: application_id
@@ -1801,11 +1801,11 @@ spec:
         - x-talgent-display-name
         - x-talgent-avatar-url
         - x-talgent-roles
-        - x-talgent-project-id
+        - x-talgent-work-caller
+        - x-talgent-work-key
+        - x-talgent-file-home
         - x-talgent-agent-id
         - x-talgent-purpose
-        - x-talgent-work-subject-kind
-        - x-talgent-work-subject-id
         - x-talgent-represented-user-id
         - x-talgent-application-id
         - x-talgent-service-id

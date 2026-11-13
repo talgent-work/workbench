@@ -22,20 +22,27 @@ type AuthenticatedUser struct {
 // who acted.
 type Agent struct {
 	WorkID string
-	// ProjectID is empty for a Work without a Project.
-	ProjectID string
+	// WorkCaller is the party in whose name the Work was started; every
+	// agent has one.
+	WorkCaller WorkFact
+	// WorkKey and FileHome are zero for a Work without one.
+	WorkKey  WorkFact
+	FileHome WorkFact
 	// AgentID is the Work's AgentDefinition.
 	AgentID string
 	Purpose string
-	// SubjectKind and SubjectID name the Work's Subject; empty for none.
-	SubjectKind string
-	SubjectID   string
 	// RepresentedUserID is the Account the Agent represents; empty for an
 	// Agent that represents no one.
 	RepresentedUserID string
 	// ApplicationID is the Application that owns the Work; empty for a Work
 	// no Application owns. The Agent never speaks for that Application.
 	ApplicationID string
+}
+
+// WorkFact is a Work's Work Caller, Work Key or File Home as the entry
+// states it: a kind and an identity. The zero value means none.
+type WorkFact struct {
+	Kind, ID string
 }
 
 // Application is an application Principal: a third-party program that calls

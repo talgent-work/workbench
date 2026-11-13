@@ -2,6 +2,7 @@ package authn
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect/v2"
@@ -79,8 +80,8 @@ func userHeaders() map[string]string {
 func agentHeaders() map[string]string {
 	return map[string]string{
 		HeaderAuthenticatedBy: "envoy", HeaderPrincipal: "agent", HeaderSubject: workID,
-		HeaderProjectID: "project", HeaderAgentID: "agent-definition", HeaderPurpose: "review",
-		HeaderWorkSubjectKind: "case", HeaderWorkSubjectID: "case-1", HeaderRepresentedUserID: userID,
+		HeaderWorkCaller: " project : p1 ", HeaderWorkKey: "case:case:1", HeaderAgentID: "agent-definition", HeaderPurpose: "review",
+		HeaderRepresentedUserID: userID,
 	}
 }
 
@@ -106,7 +107,10 @@ func TestAgentRequestNeverResolvesAPerson(t *testing.T) {
 	require.True(t, ran)
 	agent, ok := principal.Agent()
 	require.True(t, ok)
-	require.Equal(t, Agent{WorkID: workID, ProjectID: "project", AgentID: "agent-definition", Purpose: "review", SubjectKind: "case", SubjectID: "case-1", RepresentedUserID: userID}, agent)
+	require.Equal(t, Agent{
+		WorkID: workID, WorkCaller: WorkFact{Kind: "project", ID: "p1"}, WorkKey: WorkFact{Kind: "case", ID: "case:1"},
+		AgentID: "agent-definition", Purpose: "review", RepresentedUserID: userID,
+	}, agent, "each Work fact splits at its first colon, and a Work without a File Home has none")
 	_, isUser := principal.User()
 	require.False(t, isUser)
 	ctx := WithPrincipal(context.Background(), principal)
@@ -173,6 +177,13 @@ func TestUnverifiedIdentityIsUnauthenticated(t *testing.T) {
 		"agent without its def":  with(agentHeaders(), HeaderAgentID, ""),
 		"invalid represented id": with(agentHeaders(), HeaderRepresentedUserID, "someone"),
 		"invalid application id": with(agentHeaders(), HeaderApplicationID, "someone"),
+		"agent without a caller": with(agentHeaders(), HeaderWorkCaller, ""),
+		"caller without a kind":  with(agentHeaders(), HeaderWorkCaller, ":p1"),
+		"caller without an id":   with(agentHeaders(), HeaderWorkCaller, "project: "),
+		"caller without a colon": with(agentHeaders(), HeaderWorkCaller, "project"),
+		"caller kind too long":   with(agentHeaders(), HeaderWorkCaller, strings.Repeat("k", 33)+":p1"),
+		"malformed work key":     with(agentHeaders(), HeaderWorkKey, "case"),
+		"malformed file home":    with(agentHeaders(), HeaderFileHome, "case:"),
 		"only a delegated user":  {HeaderDelegatedUserID: userID},
 		"only a service":         {HeaderServiceID: "work"},
 		"invalid delegated user": {HeaderServiceID: "work", HeaderDelegatedUserID: "issuer#sub-1"},
@@ -195,4 +206,32 @@ func TestDelegatedServiceCallSpeaksForItsUser(t *testing.T) {
 	user, ok := principal.User()
 	require.True(t, ok)
 	require.Equal(t, "sub-1", user.ID)
+}
+
+// A delegated call's reader admission names a Work Caller as "<kind>:<id>";
+// any other request, or any other form, admits nothing.
+func TestReaderAdmissionNamesAWorkCaller(t *testing.T) {
+	header := func(values map[string]string) *connect.Header {
+		h := new(connect.Header)
+		for key, value := range values {
+			h.Set(key, value)
+		}
+		return h
+	}
+	delegated := func(admission string) *connect.Header {
+		return header(map[string]string{HeaderServiceID: "work", HeaderDelegatedUserID: userID, HeaderReaderAdmission: admission})
+	}
+	kind, id, ok := ReaderAdmission(delegated(" project:p:1 "))
+	require.True(t, ok)
+	require.Equal(t, []string{"project", "p:1"}, []string{kind, id})
+	for name, h := range map[string]*connect.Header{
+		"not delegated":   header(map[string]string{HeaderReaderAdmission: "project:p1"}),
+		"reference=value": delegated("project=p1"),
+		"no kind":         delegated(":p1"),
+		"no id":           delegated("project:"),
+		"none":            delegated(""),
+	} {
+		_, _, ok := ReaderAdmission(h)
+		require.False(t, ok, name)
+	}
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/account/domain"
 )
 
-var agentAccountColumns = []string{"work_id", "project_id", "agent_id", "purpose", "work_subject_kind", "work_subject_id", "represented_user_id", "application_id", "work_labels", "version", "created_at"}
+var agentAccountColumns = []string{"work_id", "work_caller_kind", "work_caller_id", "work_key_kind", "work_key_id", "file_home_kind", "file_home_id", "agent_id", "purpose", "represented_user_id", "application_id", "work_labels", "version", "created_at"}
 
 // AgentAccountRepository persists Agent Accounts. An Agent Account's facts
 // never change, so it is only ever inserted.
@@ -66,11 +66,14 @@ func agentAccountToDO(account *domain.AgentAccount) *agentAccountDO {
 	facts := account.Facts
 	return &agentAccountDO{
 		WorkID:            string(account.WorkID),
-		ProjectID:         facts.ProjectID,
+		WorkCallerKind:    facts.WorkCaller.Kind,
+		WorkCallerID:      facts.WorkCaller.ID,
+		WorkKeyKind:       facts.WorkKey.Kind,
+		WorkKeyID:         facts.WorkKey.ID,
+		FileHomeKind:      facts.FileHome.Kind,
+		FileHomeID:        facts.FileHome.ID,
 		AgentID:           facts.AgentID,
 		Purpose:           facts.Purpose,
-		WorkSubjectKind:   facts.Subject.Kind,
-		WorkSubjectID:     facts.Subject.ID,
 		RepresentedUserID: string(facts.RepresentedPerson),
 		ApplicationID:     string(facts.OwningApplication),
 		WorkLabels:        encodeWorkLabels(facts.WorkLabels),
@@ -97,7 +100,11 @@ func agentAccountFromDO(row *agentAccountDO) (*domain.AgentAccount, error) {
 	if err := json.Unmarshal([]byte(row.WorkLabels), &labels); err != nil {
 		return nil, err
 	}
-	facts, err := domain.NewWorkFacts(row.ProjectID, row.AgentID, row.Purpose, row.WorkSubjectKind, row.WorkSubjectID, row.RepresentedUserID, row.ApplicationID, labels)
+	facts, err := domain.NewWorkFacts(
+		domain.WorkCaller{Kind: row.WorkCallerKind, ID: row.WorkCallerID},
+		domain.WorkKey{Kind: row.WorkKeyKind, ID: row.WorkKeyID},
+		domain.FileHome{Kind: row.FileHomeKind, ID: row.FileHomeID},
+		row.AgentID, row.Purpose, row.RepresentedUserID, row.ApplicationID, labels)
 	if err != nil {
 		return nil, err
 	}
