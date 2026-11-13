@@ -100,11 +100,16 @@ func agentAccountFromDO(row *agentAccountDO) (*domain.AgentAccount, error) {
 	if err := json.Unmarshal([]byte(row.WorkLabels), &labels); err != nil {
 		return nil, err
 	}
-	facts, err := domain.NewWorkFacts(
-		domain.WorkCaller{Kind: row.WorkCallerKind, ID: row.WorkCallerID},
-		domain.WorkKey{Kind: row.WorkKeyKind, ID: row.WorkKeyID},
-		domain.FileHome{Kind: row.FileHomeKind, ID: row.FileHomeID},
-		row.AgentID, row.Purpose, row.RepresentedUserID, row.ApplicationID, labels)
+	// A stored row is admitted again, so one that no longer holds whole facts
+	// is refused rather than signed.
+	facts, err := domain.NewWorkFacts(domain.SuppliedWorkFacts{
+		WorkCallerKind: row.WorkCallerKind, WorkCallerID: row.WorkCallerID,
+		WorkKeyKind: row.WorkKeyKind, WorkKeyID: row.WorkKeyID,
+		FileHomeKind: row.FileHomeKind, FileHomeID: row.FileHomeID,
+		AgentID: row.AgentID, Purpose: row.Purpose,
+		RepresentedPerson: row.RepresentedUserID, OwningApplication: row.ApplicationID,
+		WorkLabels: labels,
+	})
 	if err != nil {
 		return nil, err
 	}

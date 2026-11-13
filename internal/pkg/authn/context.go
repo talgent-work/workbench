@@ -45,6 +45,14 @@ type WorkFact struct {
 	Kind, ID string
 }
 
+// String is the fact as "<kind>:<id>"; empty for none.
+func (f WorkFact) String() string {
+	if f == (WorkFact{}) {
+		return ""
+	}
+	return f.Kind + ":" + f.ID
+}
+
 // Application is an application Principal: a third-party program that calls
 // as itself, by its Application id. It carries no person, not even its
 // Application Owner.

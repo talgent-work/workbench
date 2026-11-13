@@ -46,67 +46,66 @@ type WorkFacts struct {
 // keep them.
 const maxFactLength = 255
 
-// NewWorkFacts trims and validates the facts Agent supplies.
-func NewWorkFacts(caller WorkCaller, key WorkKey, home FileHome, agentID, purpose, representedPerson, owningApplication string, workLabels map[string]string) (WorkFacts, error) {
+// SuppliedWorkFacts are a Work's fixed facts as Agent states them, before
+// Account admits them.
+type SuppliedWorkFacts struct {
+	WorkCallerKind, WorkCallerID string
+	WorkKeyKind, WorkKeyID       string
+	FileHomeKind, FileHomeID     string
+	AgentID, Purpose             string
+	RepresentedPerson            string
+	OwningApplication            string
+	WorkLabels                   map[string]string
+}
+
+// NewWorkFacts admits the facts Agent supplies, once: the only way to build
+// WorkFacts. A stored Agent Account is rehydrated through it as well.
+func NewWorkFacts(supplied SuppliedWorkFacts) (WorkFacts, error) {
+	caller, err := NewWorkCaller(supplied.WorkCallerKind, supplied.WorkCallerID)
+	if err != nil {
+		return WorkFacts{}, err
+	}
+	key, err := NewWorkKey(supplied.WorkKeyKind, supplied.WorkKeyID)
+	if err != nil {
+		return WorkFacts{}, err
+	}
+	home, err := NewFileHome(supplied.FileHomeKind, supplied.FileHomeID)
+	if err != nil {
+		return WorkFacts{}, err
+	}
 	facts := WorkFacts{
 		WorkCaller: caller,
 		WorkKey:    key,
 		FileHome:   home,
-		AgentID:    strings.TrimSpace(agentID),
-		Purpose:    strings.TrimSpace(purpose),
+		AgentID:    strings.TrimSpace(supplied.AgentID),
+		Purpose:    strings.TrimSpace(supplied.Purpose),
 	}
-	if represented := strings.TrimSpace(representedPerson); represented != "" {
+	if facts.AgentID == "" || facts.Purpose == "" {
+		return WorkFacts{}, fmt.Errorf("%w: agent definition and purpose are required", ErrInvalidAgentAccount)
+	}
+	for _, fact := range []string{facts.AgentID, facts.Purpose} {
+		if utf8.RuneCountInString(fact) > maxFactLength {
+			return WorkFacts{}, fmt.Errorf("%w: a fact exceeds %d characters", ErrInvalidAgentAccount, maxFactLength)
+		}
+	}
+	if represented := strings.TrimSpace(supplied.RepresentedPerson); represented != "" {
 		id, err := ParseAccountID(represented)
 		if err != nil {
 			return WorkFacts{}, fmt.Errorf("%w: represented person must be an account id", ErrInvalidAgentAccount)
 		}
 		facts.RepresentedPerson = id
 	}
-	if owner := strings.TrimSpace(owningApplication); owner != "" {
+	if owner := strings.TrimSpace(supplied.OwningApplication); owner != "" {
 		id, err := ParseApplicationID(owner)
 		if err != nil {
 			return WorkFacts{}, fmt.Errorf("%w: owning application must be an application id", ErrInvalidAgentAccount)
 		}
 		facts.OwningApplication = id
 	}
-	labels, err := NewWorkLabels(workLabels)
-	if err != nil {
-		return WorkFacts{}, err
-	}
-	facts.WorkLabels = labels
-	if err := facts.Validate(); err != nil {
+	if facts.WorkLabels, err = NewWorkLabels(supplied.WorkLabels); err != nil {
 		return WorkFacts{}, err
 	}
 	return facts, nil
-}
-
-// Validate requires a Work Caller, an AgentDefinition and a purpose, and that
-// each Work Caller, Work Key and File Home is one its constructor admits.
-func (f WorkFacts) Validate() error {
-	if f.AgentID == "" || f.Purpose == "" {
-		return fmt.Errorf("%w: agent definition and purpose are required", ErrInvalidAgentAccount)
-	}
-	for _, fact := range []string{f.AgentID, f.Purpose} {
-		if utf8.RuneCountInString(fact) > maxFactLength {
-			return fmt.Errorf("%w: a fact exceeds %d characters", ErrInvalidAgentAccount, maxFactLength)
-		}
-	}
-	caller, err := NewWorkCaller(f.WorkCaller.Kind, f.WorkCaller.ID)
-	if err != nil {
-		return err
-	}
-	key, err := NewWorkKey(f.WorkKey.Kind, f.WorkKey.ID)
-	if err != nil {
-		return err
-	}
-	home, err := NewFileHome(f.FileHome.Kind, f.FileHome.ID)
-	if err != nil {
-		return err
-	}
-	if caller != f.WorkCaller || key != f.WorkKey || home != f.FileHome {
-		return fmt.Errorf("%w: work caller, work key and file home must be trimmed", ErrInvalidAgentAccount)
-	}
-	return nil
 }
 
 // AgentAccount is the identity of one Work's Agent, kept by Account as Agent
@@ -125,8 +124,9 @@ func OpenAgentAccount(work WorkID, facts WorkFacts, now time.Time) (*AgentAccoun
 	if _, err := ParseWorkID(string(work)); err != nil {
 		return nil, err
 	}
-	if err := facts.Validate(); err != nil {
-		return nil, err
+	if facts.WorkCaller == (WorkCaller{}) {
+		// WorkFacts come from NewWorkFacts; a zero value never opens one.
+		return nil, fmt.Errorf("%w: work facts must be admitted by NewWorkFacts", ErrInvalidAgentAccount)
 	}
 	return &AgentAccount{WorkID: work, Facts: facts, CreatedAt: now.UTC()}, nil
 }
