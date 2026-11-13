@@ -13,7 +13,12 @@ measurements are not converted. Before deploying, in this order:
 
 1. Bring each MySQL database to the schema in `deploy/middleware/init/`: `agent_work` and
    `agent_account` replace their Project and Work Subject columns with `work_caller_*`,
-   `work_key_*` and `file_home_*`. Recreate those tables; their rows are not migrated.
+   `work_key_*` and `file_home_*`. Recreate those tables; their rows are not migrated. Then
+   apply
+   [`20261113-work-caller-locators.sql`](../deploy/middleware/migrations/20261113-work-caller-locators.sql)
+   to the database named by `AGENT_MYSQL_DATABASE`: it renames the Locator conditions each
+   AgentDefinition's Work Layout stores, `subject` to `file_home` and `project` to
+   `work_caller`, without which no Work starts.
 2. Drop `talgent_trace.trace_work_measurements`; the ClickHouse schema step refuses to apply
    while the table still has `project_id`, then creates it afresh with `work_caller` and
    `work_key` in place of the Project and Application columns.
