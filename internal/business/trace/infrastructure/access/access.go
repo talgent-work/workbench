@@ -1,11 +1,13 @@
 // Package access reaches the authorities Observability asks before
-// disclosing observations: the Project access decision, Agent's Work access
-// and Work attribution, and Account's Application Ownership Query.
+// disclosing observations: the access decision of the extension defining a
+// Work Caller's kind, Agent's Work access and Work attribution, and Account's
+// Application Ownership Query.
 package access
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,9 +28,11 @@ import (
 )
 
 type Config struct {
-	// ProjectAccessAddress serves the Project access decision; empty when no
-	// deployed context decides Project access.
-	ProjectAccessAddress string `json:"project-access-address" toml:"project-access-address" yaml:"project-access-address"`
+	// WorkCallerAccessAddresses maps each Work Caller kind an extension
+	// defines to the address serving that extension's Work Caller access
+	// decision; a kind left out is decided by none, so its Works are read by
+	// no one. Empty in a deployment without extensions.
+	WorkCallerAccessAddresses map[string]string `json:"work-caller-access-addresses" toml:"work-caller-access-addresses" yaml:"work-caller-access-addresses"`
 	// AgentAddress serves Agent's Work access and Work attribution, called
 	// with AgentControlToken.
 	AgentAddress      string `json:"agent-address" toml:"agent-address" yaml:"agent-address"`
@@ -44,8 +48,13 @@ func (c Config) Validate() error {
 	if !absoluteHTTP(c.AccountAddress) {
 		return errors.New("account-address must be an absolute http(s) URL")
 	}
-	if strings.TrimSpace(c.ProjectAccessAddress) != "" && !absoluteHTTP(c.ProjectAccessAddress) {
-		return errors.New("project-access-address must be an absolute http(s) URL")
+	for kind, address := range c.WorkCallerAccessAddresses {
+		if !extensionKind(kind) {
+			return fmt.Errorf("work-caller-access-addresses: %q is not a Work Caller kind an extension defines", kind)
+		}
+		if !absoluteHTTP(address) {
+			return fmt.Errorf("work-caller-access-addresses.%s must be an absolute http(s) URL", kind)
+		}
 	}
 	if strings.TrimSpace(c.AgentControlToken) == "" {
 		return errors.New("agent-control-token is required")
@@ -53,41 +62,57 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// extensionKind admits a Work Caller kind as Agent spells one, which is
+// neither of the kinds Agent defines and whose Works it decides access to.
+func extensionKind(kind string) bool {
+	if kind == "" || len(kind) > 32 || kind == "person" || kind == "application" {
+		return false
+	}
+	return strings.TrimFunc(kind, func(r rune) bool {
+		return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-'
+	}) == ""
+}
+
 func absoluteHTTP(address string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(address))
 	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 
-// ProjectAccess asks the Work Caller access decision for a Project on the
-// reader's behalf.
-type ProjectAccess struct {
-	client traceprivatev1connect.WorkCallerAccessServiceClient
+// WorkCallerAccess asks the access decision of the extension defining a Work
+// Caller's kind on the reader's behalf, one client per configured kind.
+type WorkCallerAccess struct {
+	clients map[string]traceprivatev1connect.WorkCallerAccessServiceClient
 }
 
-var _ query.ProjectAccessPort = (*ProjectAccess)(nil)
+var _ query.WorkCallerAccessPort = (*WorkCallerAccess)(nil)
 
-// NewProjectAccess reaches the configured Project access decision, or returns
-// none when no address is configured.
-func NewProjectAccess(client *http.Client, cfg Config) (query.ProjectAccessPort, error) {
-	if strings.TrimSpace(cfg.ProjectAccessAddress) == "" {
-		return nil, nil
+// NewWorkCallerAccess reaches the access decision configured for each kind.
+func NewWorkCallerAccess(client *http.Client, cfg Config) (*WorkCallerAccess, error) {
+	clients := make(map[string]traceprivatev1connect.WorkCallerAccessServiceClient, len(cfg.WorkCallerAccessAddresses))
+	for kind, address := range cfg.WorkCallerAccessAddresses {
+		if client == nil || !extensionKind(kind) || !absoluteHTTP(address) {
+			return nil, fmt.Errorf("trace: the Work Caller access address of kind %q and an HTTP client are required", kind)
+		}
+		address = strings.TrimRight(strings.TrimSpace(address), "/")
+		clients[kind] = traceprivatev1connect.NewWorkCallerAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0))))
 	}
-	if client == nil || !absoluteHTTP(cfg.ProjectAccessAddress) {
-		return nil, errors.New("trace: Project access address and HTTP client are required")
-	}
-	address := strings.TrimRight(strings.TrimSpace(cfg.ProjectAccessAddress), "/")
-	return &ProjectAccess{client: traceprivatev1connect.NewWorkCallerAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0))))}, nil
+	return &WorkCallerAccess{clients: clients}, nil
 }
 
-func (a *ProjectAccess) AuthorizeProjectReader(ctx context.Context, readerID, projectID string) error {
-	if err := check(readerID, projectID); err != nil {
+// AuthorizeWorkCallerReader refuses a kind no extension decides here.
+func (a *WorkCallerAccess) AuthorizeWorkCallerReader(ctx context.Context, readerID string, caller query.WorkCaller) error {
+	if err := check(readerID, caller.ID); err != nil {
 		return err
 	}
-	req := &traceprivatev1.DecideWorkCallerAccessRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: projectID}}
+	client, ok := a.clients[caller.Kind]
+	if !ok {
+		return query.ErrAuthorizationPermissionDenied
+	}
+	req := &traceprivatev1.DecideWorkCallerAccessRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: caller.Kind, Id: caller.ID}}
 	ctx, info := connect.NewClientContext(ctx)
-	info.RequestHeader().Set(authn.HeaderServiceID, "trace")
+	info.RequestHeader().Set(authn.HeaderServiceID, serviceID)
 	info.RequestHeader().Set(authn.HeaderDelegatedUserID, readerID)
-	if _, err := a.client.DecideWorkCallerAccess(ctx, req); err != nil {
+	if _, err := client.DecideWorkCallerAccess(ctx, req); err != nil {
 		return authorityError(err)
 	}
 	return nil

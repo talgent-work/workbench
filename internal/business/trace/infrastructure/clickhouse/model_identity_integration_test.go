@@ -25,7 +25,7 @@ func TestCollectorNormalizesModelIdentity(t *testing.T) {
 	defer cancel()
 	work := fmt.Sprintf("work-model-identity-%d", time.Now().UnixNano())
 	now := time.Now().UnixNano()
-	resource := fmt.Sprintf(`{"attributes":[{"key":"talgent.project_id","value":{"stringValue":"project-model"}},{"key":"talgent.agent_work_id","value":{"stringValue":%q}}]}`, work)
+	resource := fmt.Sprintf(`{"attributes":[{"key":"talgent.work_caller","value":{"stringValue":"team:team-model"}},{"key":"talgent.agent_work_id","value":{"stringValue":%q}}]}`, work)
 	post := func(path, body string) {
 		t.Helper()
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+path, bytes.NewBufferString(body))
@@ -57,7 +57,7 @@ func TestCollectorNormalizesModelIdentity(t *testing.T) {
 	var span *query.Span
 	var logModel string
 	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline) && (span == nil || logModel == ""); time.Sleep(200 * time.Millisecond) {
-		page, err := repo.ListBySession(ctx, query.SpanListOptions{ProjectID: "project-model", AgentWorkID: work, Limit: 10})
+		page, err := repo.ListBySession(ctx, query.SpanListOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-model"}, AgentWorkID: work, Limit: 10})
 		if err != nil {
 			t.Fatal(err)
 		}

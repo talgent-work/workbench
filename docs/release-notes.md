@@ -5,6 +5,21 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that fixes a Work's Work Caller, Work Key and File Home
+
+Observability attributes every measurement to its Work's Work Caller and Work Key, which replace
+the Project and Application columns. Measurements are not converted. Before deploying:
+
+1. Drop `talgent_trace.trace_work_measurements`; the ClickHouse schema step refuses to apply
+   while the table still has `project_id`, then creates it afresh.
+2. Replace `trace-access.project-access-address` with
+   `trace-access.work-caller-access-addresses.<kind>`, one address per Work Caller kind an
+   extension defines ([configuration](configuration.md#trace)).
+
+A web app built on `@talgent/workbench-ui` names an Extension Work by its Work Caller:
+`useWorkTrace`, `WorkUsageReader` and the `trace` reading take `workCaller` (`{ kind, id }`,
+left out for a Standalone Work) where they took `projectId`.
+
 ## The release that removes the v1 PersonalWorkService
 
 Nothing to do beyond deploying it and re-applying the `web-api` HTTPRoute and the `web-auth`

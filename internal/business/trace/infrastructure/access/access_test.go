@@ -55,8 +55,8 @@ func TestAuthorityFailuresNeverAdmit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := respond(t, tc.status, tc.body, nil, func(*http.Request) {})
-			cfg := Config{ProjectAccessAddress: server.URL, AgentAddress: server.URL, AgentControlToken: "token"}
-			projects, err := NewProjectAccess(server.Client(), cfg)
+			cfg := Config{WorkCallerAccessAddresses: map[string]string{"team": server.URL}, AgentAddress: server.URL, AgentControlToken: "token"}
+			callers, err := NewWorkCallerAccess(server.Client(), cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -65,8 +65,8 @@ func TestAuthorityFailuresNeverAdmit(t *testing.T) {
 				t.Fatal(err)
 			}
 			for name, err := range map[string]error{
-				"project": projects.AuthorizeProjectReader(context.Background(), "reader", "project-1"),
-				"work":    works.AuthorizeWorkReader(context.Background(), "reader", "work-1"),
+				"work caller": callers.AuthorizeWorkCallerReader(context.Background(), "reader", query.WorkCaller{Kind: "team", ID: "team-1"}),
+				"work":        works.AuthorizeWorkReader(context.Background(), "reader", "work-1"),
 			} {
 				if !errors.Is(err, tc.want) {
 					t.Fatalf("%s: got %v, want %v", name, err, tc.want)
@@ -76,20 +76,35 @@ func TestAuthorityFailuresNeverAdmit(t *testing.T) {
 	}
 }
 
-// The Project access decision is asked on the reader's behalf through the
-// trusted delegation headers.
-func TestProjectAccessDelegatesTheReader(t *testing.T) {
-	server := respond(t, http.StatusOK, "", &traceprivatev1.DecideWorkCallerAccessResponse{}, func(r *http.Request) {
-		if r.Header.Get(authn.HeaderServiceID) != "trace" || r.Header.Get(authn.HeaderDelegatedUserID) != "reader" {
-			t.Error("missing trusted delegation")
-		}
-	})
-	projects, err := NewProjectAccess(server.Client(), Config{ProjectAccessAddress: server.URL})
+// The Work Caller's kind selects the extension asked, on the reader's behalf
+// through the trusted delegation headers; a kind no extension decides here
+// admits no one, and nothing is asked.
+func TestWorkCallerKindSelectsTheExtensionAsked(t *testing.T) {
+	asked := map[string]string{}
+	extension := func(name string) *httptest.Server {
+		return respond(t, http.StatusOK, "", &traceprivatev1.DecideWorkCallerAccessResponse{}, func(r *http.Request) {
+			if r.Header.Get(authn.HeaderServiceID) != "trace" || r.Header.Get(authn.HeaderDelegatedUserID) != "reader" {
+				t.Error("missing trusted delegation")
+			}
+			asked[name] = r.URL.Path
+		})
+	}
+	teams, boards := extension("teams"), extension("boards")
+	callers, err := NewWorkCallerAccess(teams.Client(), Config{WorkCallerAccessAddresses: map[string]string{"team": teams.URL, "board": boards.URL + "/"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := projects.AuthorizeProjectReader(context.Background(), "reader", "project-1"); err != nil {
+	if err := callers.AuthorizeWorkCallerReader(context.Background(), "reader", query.WorkCaller{Kind: "board", ID: "board-1"}); err != nil {
 		t.Fatalf("admitted member refused: %v", err)
+	}
+	if _, ok := asked["teams"]; ok || asked["boards"] != "/trace.private.v1.WorkCallerAccessService/DecideWorkCallerAccess" {
+		t.Fatalf("asked = %v, want only the board extension's decision", asked)
+	}
+	if err := callers.AuthorizeWorkCallerReader(context.Background(), "reader", query.WorkCaller{Kind: "ledger", ID: "ledger-1"}); !errors.Is(err, query.ErrAuthorizationPermissionDenied) {
+		t.Fatalf("undecided kind: %v", err)
+	}
+	if len(asked) != 1 {
+		t.Fatalf("asked = %v after an undecided kind", asked)
 	}
 }
 
@@ -139,14 +154,16 @@ func TestAccountAnswersApplicationOwnership(t *testing.T) {
 	}
 }
 
-// Agent's Work access admits only the owner and Work Share holders; a public
-// Work's other readers need a Project, which a Work without one never has.
+// Agent's Work access admits only the owner, Work Share holders and the
+// Application Owner; a public Work's other readers are a Work Caller's
+// members, whom only the extension admits.
 func TestWorkAccessAdmitsOwnerAndShareHoldersOnly(t *testing.T) {
 	for basis, admitted := range map[agentprivatev1.WorkReadBasis]bool{
-		agentprivatev1.WorkReadBasis_WORK_READ_BASIS_OWNER:       true,
-		agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE:       true,
-		agentprivatev1.WorkReadBasis_WORK_READ_BASIS_PUBLIC:      false,
-		agentprivatev1.WorkReadBasis_WORK_READ_BASIS_UNSPECIFIED: false,
+		agentprivatev1.WorkReadBasis_WORK_READ_BASIS_OWNER:             true,
+		agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE:             true,
+		agentprivatev1.WorkReadBasis_WORK_READ_BASIS_APPLICATION_OWNER: true,
+		agentprivatev1.WorkReadBasis_WORK_READ_BASIS_PUBLIC:            false,
+		agentprivatev1.WorkReadBasis_WORK_READ_BASIS_UNSPECIFIED:       false,
 	} {
 		t.Run(basis.String(), func(t *testing.T) {
 			server := respond(t, http.StatusOK, "", &agentprivatev1.AdmitWorkReaderResponse{Basis: basis}, func(r *http.Request) {
@@ -169,10 +186,10 @@ func TestWorkAccessAdmitsOwnerAndShareHoldersOnly(t *testing.T) {
 // Without a reader or a target nothing is asked and nothing is admitted.
 func TestMissingReaderOrTargetIsRefusedLocally(t *testing.T) {
 	server := respond(t, http.StatusOK, "", &traceprivatev1.DecideWorkCallerAccessResponse{}, func(*http.Request) { t.Error("authority asked") })
-	cfg := Config{ProjectAccessAddress: server.URL, AgentAddress: server.URL, AgentControlToken: "token"}
-	projects, _ := NewProjectAccess(server.Client(), cfg)
+	cfg := Config{WorkCallerAccessAddresses: map[string]string{"team": server.URL}, AgentAddress: server.URL, AgentControlToken: "token"}
+	callers, _ := NewWorkCallerAccess(server.Client(), cfg)
 	works, _ := NewAgent(server.Client(), cfg)
-	if err := projects.AuthorizeProjectReader(context.Background(), "", "project-1"); !errors.Is(err, query.ErrAuthorizationUnauthenticated) {
+	if err := callers.AuthorizeWorkCallerReader(context.Background(), "", query.WorkCaller{Kind: "team", ID: "team-1"}); !errors.Is(err, query.ErrAuthorizationUnauthenticated) {
 		t.Fatalf("anonymous: %v", err)
 	}
 	if err := works.AuthorizeWorkReader(context.Background(), "reader", " "); !errors.Is(err, query.ErrAuthorizationPermissionDenied) {
@@ -180,22 +197,33 @@ func TestMissingReaderOrTargetIsRefusedLocally(t *testing.T) {
 	}
 }
 
-// A deployment without the Project access decision configures none: Works
-// without a Project stay readable under Agent's Work access, and nothing
-// answers for a Project.
-func TestUnconfiguredProjectAccessProvidesNoDecision(t *testing.T) {
-	cfg := Config{AgentAddress: "http://controlplane:8080", AgentControlToken: "token", AccountAddress: "http://controlplane:8080"}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("configuration without the Project access decision refused: %v", err)
+// A deployment without extensions configures no Work Caller access
+// decision: Standalone Works stay readable under Agent's Work access, and no
+// extension kind is read. A configured kind must be one an extension defines,
+// at an absolute http(s) address.
+func TestWorkCallerAccessConfiguration(t *testing.T) {
+	base := Config{AgentAddress: "http://controlplane:8080", AgentControlToken: "token", AccountAddress: "http://controlplane:8080"}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("configuration without extensions refused: %v", err)
 	}
-	projects, err := NewProjectAccess(http.DefaultClient, cfg)
+	callers, err := NewWorkCallerAccess(http.DefaultClient, base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if projects != nil {
-		t.Fatalf("unconfigured Project access decision = %#v, want none", projects)
+	if err := callers.AuthorizeWorkCallerReader(context.Background(), "reader", query.WorkCaller{Kind: "team", ID: "team-1"}); !errors.Is(err, query.ErrAuthorizationPermissionDenied) {
+		t.Fatalf("no extension configured: %v", err)
 	}
-	if err := (Config{ProjectAccessAddress: "project-access:8080", AgentAddress: "http://controlplane:8080", AgentControlToken: "token", AccountAddress: "http://controlplane:8080"}).Validate(); err == nil {
-		t.Fatal("a configured Project access address must be an absolute http(s) URL")
+	for name, addresses := range map[string]map[string]string{
+		"relative address":  {"team": "extension:8080"},
+		"core person kind":  {"person": "http://extension:8080"},
+		"core application":  {"application": "http://extension:8080"},
+		"malformed kind":    {"Team": "http://extension:8080"},
+		"kind with a colon": {"team:x": "http://extension:8080"},
+	} {
+		cfg := base
+		cfg.WorkCallerAccessAddresses = addresses
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }

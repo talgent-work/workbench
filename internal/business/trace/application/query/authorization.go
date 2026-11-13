@@ -17,11 +17,14 @@ var (
 	ErrApplicationUnknown = errors.New("authorization: unknown application")
 )
 
-// ProjectAccessPort is the Project access decision Observability defines and
-// the context owning Project membership implements. It admits a person to a
-// Project's observations, or refuses with ErrAuthorizationPermissionDenied.
-type ProjectAccessPort interface {
-	AuthorizeProjectReader(ctx context.Context, readerID, projectID string) error
+// WorkCallerAccessPort is the access decision of the extension that defines
+// a Work Caller's kind, which Observability defines and each such extension
+// implements; the Work Caller's kind selects which one is asked. It admits a
+// person to the observations of a Work Caller's Works, or refuses with
+// ErrAuthorizationPermissionDenied, also for a kind no extension decides in
+// this deployment.
+type WorkCallerAccessPort interface {
+	AuthorizeWorkCallerReader(ctx context.Context, readerID string, caller WorkCaller) error
 }
 
 // WorkAttribution is one of an Application's Works with the Work Labels it
@@ -31,8 +34,8 @@ type WorkAttribution struct {
 	Labels map[string]string
 }
 
-// AgentPort is Agent's authority over Works without a Project: whether a
-// reader, a person or an Application, may read one (Work Access Query), and
+// AgentPort is Agent's authority over Standalone Works: whether a reader, a
+// person or an Application, may read one (Work Access Query), and
 // which named Works an Application owns with their Work Labels (AgentWork
 // Attribution Query).
 type AgentPort interface {
@@ -61,9 +64,17 @@ type AccountPort interface {
 	GetApplication(ctx context.Context, applicationID string) (OwnedApplication, error)
 }
 
-// WorkScope names one Work's observations. Evidence carries the Work's
-// Project, so the empty Project names exactly the Works without one.
-type WorkScope struct{ ProjectID, AgentWorkID string }
+// WorkScope names one Work's observations, or, with no Work, a Work
+// Caller's. A Work Caller of an extension-defined kind scopes an Extension
+// Work; a Standalone Work is named without one.
+type WorkScope struct {
+	WorkCaller  WorkCaller
+	AgentWorkID string
+}
+
+// errWorkNotObserved marks a Standalone Work with no measurements: there is
+// nothing to disclose, so a read answers with nothing.
+var errWorkNotObserved = errors.New("work has no observations")
 
 // reader is the authenticated person or Application a read is for, never
 // both; possessing an identifier grants nothing.
@@ -100,33 +111,38 @@ func person(ctx context.Context) (string, error) {
 	return r.userID, nil
 }
 
-// authorizeProject admits a person to a Project's observations under the
-// Project access decision. An Application's Works have no Project, so the
-// decision never admits one.
-func (q *Queries) authorizeProject(ctx context.Context, projectID string) error {
+// authorizeWorkCaller admits a person to the observations of an Extension
+// Work Caller's Works under the access decision of the extension defining its
+// kind. An Application reads no Extension Work.
+func (q *Queries) authorizeWorkCaller(ctx context.Context, caller WorkCaller) error {
 	reader, err := person(ctx)
 	if err != nil {
 		return err
 	}
-	if q.projects == nil {
+	if q.workCallers == nil {
 		return ErrAuthorizationUnavailable
 	}
-	return q.projects.AuthorizeProjectReader(ctx, reader, projectID)
+	return q.workCallers.AuthorizeWorkCallerReader(ctx, reader, caller)
 }
 
-// authorizeScope admits the reader to a Project's observations under the
-// Project access decision, or, without a Project, to one Work's under Agent's
-// Work access; a scope naming neither is invalid. workRequired also requires
-// the Work within a Project. It returns the normalized scope.
+// authorizeScope admits the reader to the scope and resolves it to the Work
+// Caller evidence carries. An Extension Work Caller is admitted by its
+// extension's access decision, and a Work named under it must be one of its
+// Works. Without a Work Caller the scope is one Standalone Work, admitted by
+// Agent's Work access. A Work outside the scope it is named in is
+// ErrWorkNotFound once the reader is admitted, so the refusal discloses
+// nothing about Works the reader cannot read; a Standalone Work without
+// measurements is errWorkNotObserved. workRequired also requires the Work
+// under a Work Caller.
 func (q *Queries) authorizeScope(ctx context.Context, scope WorkScope, workRequired bool) (WorkScope, error) {
-	scope.ProjectID, scope.AgentWorkID = strings.TrimSpace(scope.ProjectID), strings.TrimSpace(scope.AgentWorkID)
-	if workRequired || scope.ProjectID == "" {
+	scope.AgentWorkID = strings.TrimSpace(scope.AgentWorkID)
+	if workRequired || !scope.WorkCaller.Present() {
 		if _, err := required(scope.AgentWorkID, "agent_work_id"); err != nil {
 			return scope, err
 		}
 	}
-	if scope.ProjectID != "" {
-		return scope, q.authorizeProject(ctx, scope.ProjectID)
+	if scope.WorkCaller.Present() {
+		return q.authorizeExtensionScope(ctx, scope)
 	}
 	reader, err := readerOf(ctx)
 	if err != nil {
@@ -135,7 +151,42 @@ func (q *Queries) authorizeScope(ctx context.Context, scope WorkScope, workRequi
 	if q.agent == nil {
 		return scope, ErrAuthorizationUnavailable
 	}
-	return scope, q.agent.AuthorizeWorkReader(ctx, reader.id(), scope.AgentWorkID)
+	if err := q.agent.AuthorizeWorkReader(ctx, reader.id(), scope.AgentWorkID); err != nil {
+		return scope, err
+	}
+	caller, observed, err := q.measurements.GetWorkCaller(ctx, scope.AgentWorkID)
+	switch {
+	case err != nil:
+		return scope, err
+	case !observed:
+		return scope, errWorkNotObserved
+	case !caller.Standalone():
+		return scope, ErrWorkNotFound
+	}
+	scope.WorkCaller = caller
+	return scope, nil
+}
+
+func (q *Queries) authorizeExtensionScope(ctx context.Context, scope WorkScope) (WorkScope, error) {
+	caller, err := extensionCaller(scope.WorkCaller)
+	if err != nil {
+		return scope, err
+	}
+	if err := q.authorizeWorkCaller(ctx, caller); err != nil {
+		return scope, err
+	}
+	scope.WorkCaller = caller
+	if scope.AgentWorkID == "" {
+		return scope, nil
+	}
+	actual, observed, err := q.measurements.GetWorkCaller(ctx, scope.AgentWorkID)
+	if err != nil {
+		return scope, err
+	}
+	if observed && actual != caller {
+		return scope, ErrWorkNotFound
+	}
+	return scope, nil
 }
 
 // authorizeApplication resolves the Application a read names: the

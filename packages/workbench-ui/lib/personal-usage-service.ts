@@ -6,8 +6,7 @@ import type { DashboardWindow } from "./dashboard";
 import { useTokenAnalytics } from "./token-analytics";
 import { traceMetricKinds } from "./trace-view-model";
 
-/** The person's usage across all their Works, with or without a Project, as
- * Spend shows a Project's. */
+/** The person's usage across every Work they own, whatever its Work Caller. */
 export function usePersonalTokenAnalytics(window: DashboardWindow, period: DashboardReportPeriod) {
   const userId = useCurrentUser().data?.user?.id ?? "";
   return useTokenAnalytics(["personal-token", userId], bounds => traceClient.getPersonalTraceMetrics({

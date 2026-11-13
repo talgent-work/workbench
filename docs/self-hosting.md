@@ -269,11 +269,11 @@ Done when every check passes:
   current token expires.
 
   ```sql
-  SELECT application_id, uniqExact(agent_work_id) AS works, sum(value) AS tokens
+  SELECT work_caller, uniqExact(agent_work_id) AS works, sum(value) AS tokens
   FROM trace_metric_buckets
-  WHERE application_id != '' AND measurement_time >= now() - INTERVAL 1 DAY
+  WHERE startsWith(work_caller, 'application:') AND measurement_time >= now() - INTERVAL 1 DAY
     AND metric_kind IN ('input_tokens', 'cache_read_tokens', 'cache_creation_tokens', 'output_tokens')
-  GROUP BY application_id ORDER BY tokens DESC LIMIT 20
+  GROUP BY work_caller ORDER BY tokens DESC LIMIT 20
   ```
 
 - **Scale previews.** Add Gotenberg replicas together with

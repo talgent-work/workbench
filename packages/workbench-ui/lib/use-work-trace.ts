@@ -3,15 +3,17 @@ import { useQuery } from "@tanstack/react-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { traceClient } from "./client";
 import { buildTraceMetricsDiagnostics, traceMetricKinds } from "./trace-view-model";
+import type { WorkCaller } from "./work-caller";
 
 const terminalTraceGracePollCount = 3;
 const traceRefreshIntervalMs = 10000;
 const terminalTraceGracePollIntervalMs = traceRefreshIntervalMs;
-export function useWorkTrace({ projectId, agentWorkId, workCreatedAt = null, isWorkTerminal = false, isWorkLifecyclePending = false, workLifecycleGeneration = 0 }: {
-  projectId?: string | null; agentWorkId?: string | null; workCreatedAt?: Date | null;
+/** A Work's usage. `workCaller` names an Extension Work's Work Caller and is
+ * left out for a Standalone Work, which is read by its own identity. */
+export function useWorkTrace({ workCaller, agentWorkId, workCreatedAt = null, isWorkTerminal = false, isWorkLifecyclePending = false, workLifecycleGeneration = 0 }: {
+  workCaller?: WorkCaller | null; agentWorkId?: string | null; workCreatedAt?: Date | null;
   isWorkTerminal?: boolean; isWorkLifecyclePending?: boolean; workLifecycleGeneration?: number;
 }) {
-  // A Work without a Project is read by its own identity.
   const enabled = Boolean(agentWorkId);
   const terminalKey = useRef<string | null>(null);
   const currentKey = `${agentWorkId}:${workLifecycleGeneration}`;
@@ -28,7 +30,7 @@ export function useWorkTrace({ projectId, agentWorkId, workCreatedAt = null, isW
     dataUpdatedAt,
     refetch,
   } = useQuery({
-    queryKey: ["trace-metrics", projectId, agentWorkId, workCreatedAt?.getTime() ?? 0],
+    queryKey: ["trace-metrics", workCaller?.kind ?? "", workCaller?.id ?? "", agentWorkId, workCreatedAt?.getTime() ?? 0],
     queryFn: async () => {
       if (!agentWorkId) {
         return { buckets: [], totals: [] };
@@ -36,9 +38,7 @@ export function useWorkTrace({ projectId, agentWorkId, workCreatedAt = null, isW
 
       const metricWindow = workMetricsWindow(new Date(), workCreatedAt);
       return traceClient.getSessionTraceMetrics({
-        // The trace API names a Work by its Work Caller; a Project id stands
-        // for the Work Caller of that kind.
-        workCaller: projectId ? { kind: "project", id: projectId } : undefined, agentWorkId,
+        workCaller: workCaller ?? undefined, agentWorkId,
         startTime: timestampFromDate(metricWindow.start),
         endTime: timestampFromDate(metricWindow.end),
         stepSeconds: metricWindow.stepSeconds,

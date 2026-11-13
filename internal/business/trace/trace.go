@@ -35,8 +35,9 @@ func (c ClickHouseConfig) Validate() error {
 	return nil
 }
 
-// AccessConfig reaches the Project access decision, Agent's Work access and
-// Work attribution, and Account's Application Ownership Query.
+// AccessConfig reaches the Work Caller access decision of each extension,
+// Agent's Work access and Work attribution, and Account's Application
+// Ownership Query.
 type AccessConfig = access.Config
 
 // Module runs inside controlplane; its telemetry connection stays
@@ -51,7 +52,7 @@ var Module = fx.Module(
 		fx.As(new(query.MeasurementQueryRepository)),
 	)),
 	fx.Provide(
-		access.NewProjectAccess,
+		fx.Annotate(access.NewWorkCallerAccess, fx.As(new(query.WorkCallerAccessPort))),
 		fx.Annotate(access.NewAgent, fx.As(new(query.AgentPort))),
 		fx.Annotate(access.NewAccount, fx.As(new(query.AccountPort))),
 	),

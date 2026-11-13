@@ -1,6 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { WorkFile } from "@talgent/contracts/agent/public/v1/work_file_pb";
 import type { ToolPreview } from "../work/work-message-flow";
+import type { WorkCaller } from "../../lib/work-caller";
 
 /** What the reading area can show, by kind. `label` names what the reading
  * belongs to, the first crumb of its location. An extension adds its own
@@ -8,8 +9,9 @@ import type { ToolPreview } from "../work/work-message-flow";
  * ReadingRenderer. */
 export interface ReadingKinds {
   tool: { label: string; tool: ToolPreview };
-  /** The Work's Token Usage, its state read from the Work itself. */
-  trace: { label: string; projectId: string; workId: string; createdAt: Date | null };
+  /** The Work's Token Usage, its state read from the Work itself. `workCaller`
+   * names an Extension Work's Work Caller; a Standalone Work leaves it out. */
+  trace: { label: string; workCaller?: WorkCaller; workId: string; createdAt: Date | null };
   "work-file": { label: string; workId: string; file: WorkFile };
 }
 

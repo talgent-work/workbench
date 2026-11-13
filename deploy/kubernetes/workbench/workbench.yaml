@@ -533,9 +533,10 @@ data:
       worker-concurrency: 1
     clickhouse:
       dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}?database=default
-    # Trace runs in this process with its own telemetry database; a
-    # Work with a Project is admitted by the Project access decision, which a
-    # deployment configures with trace-access.project-access-address.
+    # Trace runs in this process with its own telemetry database; an
+    # Extension Work is admitted by the access decision of the extension
+    # defining its Work Caller's kind, which a deployment configures with
+    # trace-access.work-caller-access-addresses.<kind>.
     trace-clickhouse:
       dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}/talgent_trace
     trace-access:

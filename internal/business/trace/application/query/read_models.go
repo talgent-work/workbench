@@ -10,19 +10,19 @@ import (
 // return InvalidArgument instead of treating it as infrastructure failure.
 var ErrInvalidSpanCursor = errors.New("invalid span cursor")
 
+// SpanListOptions names one Work's spans within its Work Caller, or a Work
+// Caller's spans, narrowed by the trace attributes RuntimePurpose,
+// OwnerContext and OwnerID when set and to WorkIDs when not nil.
 type SpanListOptions struct {
-	ProjectID      string
+	WorkCaller     WorkCaller
 	AgentWorkID    string
 	RuntimePurpose string
 	OwnerContext   string
 	OwnerID        string
-	// ApplicationID names the Application whose Works' spans an application
-	// listing reads; WorkIDs, when not nil, narrows it to those Works.
-	ApplicationID string
-	WorkIDs       []string
-	Limit         int
-	AfterCursor   string
-	NewestFirst   bool
+	WorkIDs        []string
+	Limit          int
+	AfterCursor    string
+	NewestFirst    bool
 }
 
 type SpanListResult struct {
@@ -30,17 +30,19 @@ type SpanListResult struct {
 	NextCursor string
 }
 
-// SpanIdentity names a span within its Project, or, for a Work without a
-// Project, within its Work.
+// SpanIdentity names a span within its Work Caller, and within its Work when
+// AgentWorkID is set.
 type SpanIdentity struct {
-	ProjectID, AgentWorkID, TraceID, SpanID string
+	WorkCaller                   WorkCaller
+	AgentWorkID, TraceID, SpanID string
 }
 
 type Span struct {
 	SpanID              string
 	TraceID             string
 	ParentSpanID        string
-	ProjectID           string
+	WorkCaller          WorkCaller
+	WorkKey             WorkKey
 	AgentWorkID         string
 	AgentID             string
 	RuntimePurpose      string
@@ -62,33 +64,32 @@ type Span struct {
 	ParentNativeAgentID string
 }
 
+// TraceMetricOptions names a window of measurements. A Work's read names
+// its Work Caller and AgentWorkID; a Work Caller's read narrows to WorkKey
+// when set and to WorkIDs when not nil, where an empty, non-nil WorkIDs
+// matches nothing; a person's read narrows to AgentWorkID when set.
 type TraceMetricOptions struct {
-	ProjectID   string
+	WorkCaller  WorkCaller
+	WorkKey     WorkKey
 	AgentWorkID string
+	WorkIDs     []string
 	StartTime   time.Time
 	EndTime     time.Time
 	StepSeconds int
 	MetricKinds []string
 }
 
-// ApplicationMetricOptions narrows an Application's measurements to WorkIDs
-// when not nil; an empty, non-nil WorkIDs matches nothing.
-type ApplicationMetricOptions struct {
-	TraceMetricOptions
-	WorkIDs []string
-}
-
 type TraceMetricBucket struct {
 	BucketStart    time.Time
 	BucketSeconds  int
-	ProjectID      string
+	WorkCaller     WorkCaller
+	WorkKey        WorkKey
 	AgentWorkID    string
 	AgentID        string
 	RuntimePurpose string
 	OwnerContext   string
 	OwnerID        string
 	UserID         string
-	ApplicationID  string
 	MetricKind     string
 	Dimension      string
 	Value          float64
@@ -131,13 +132,13 @@ func Totals(buckets []TraceMetricBucket) []TraceMetricTotal {
 // NativeEvidenceQueryRepository reads retained native evidence: spans and
 // allowlisted log events with their Work attribution.
 type NativeEvidenceQueryRepository interface {
+	// ListBySession lists one Work's spans within its Work Caller.
 	ListBySession(ctx context.Context, opts SpanListOptions) (*SpanListResult, error)
-	ListByOwner(ctx context.Context, opts SpanListOptions) (*SpanListResult, error)
-	// ListByApplication lists the spans of an Application's Works, narrowed
-	// to opts.WorkIDs when not nil.
-	ListByApplication(ctx context.Context, opts SpanListOptions) (*SpanListResult, error)
+	// ListByWorkCaller lists a Work Caller's spans, narrowed by the trace
+	// attributes and Works opts names.
+	ListByWorkCaller(ctx context.Context, opts SpanListOptions) (*SpanListResult, error)
 
-	// GetByIdentity fetches one native span within its Trace and Project.
+	// GetByIdentity fetches one native span within its Trace and Work Caller.
 	// Returns (nil, nil) if not found — query flows surface "not found" via
 	// the Application/Interface layer, not as an error here.
 	GetByIdentity(ctx context.Context, identity SpanIdentity) (*Span, error)
@@ -148,14 +149,18 @@ type NativeEvidenceQueryRepository interface {
 // MeasurementQueryRepository reads derived measurements without rescanning
 // native evidence.
 type MeasurementQueryRepository interface {
+	// GetBySession reads one Work's measurements within its Work Caller.
 	GetBySession(ctx context.Context, opts TraceMetricOptions) (*TraceMetricResult, error)
-	GetByProject(ctx context.Context, opts TraceMetricOptions) (*TraceMetricResult, error)
-	// GetByPerson reads the measurements of a person's Works, ignoring the
-	// Project and narrowing to opts.AgentWorkID when set.
+	// GetByWorkCaller reads the measurements of a Work Caller's Works,
+	// narrowed to opts.WorkKey and opts.WorkIDs.
+	GetByWorkCaller(ctx context.Context, opts TraceMetricOptions) (*TraceMetricResult, error)
+	// GetByPerson reads the measurements of every Work a person owns,
+	// whatever its Work Caller, narrowed to opts.AgentWorkID when set.
 	GetByPerson(ctx context.Context, personID string, opts TraceMetricOptions) (*TraceMetricResult, error)
-	// GetByApplication reads the measurements of an Application's Works.
-	GetByApplication(ctx context.Context, applicationID string, opts ApplicationMetricOptions) (*TraceMetricResult, error)
-	// ListApplicationWorks lists the Works an Application has measurements
-	// of within the window, at most limit.
-	ListApplicationWorks(ctx context.Context, applicationID string, start, end time.Time, limit int) ([]string, error)
+	// ListWorkCallerWorks lists the Works a Work Caller has measurements of
+	// within the window, at most limit.
+	ListWorkCallerWorks(ctx context.Context, caller WorkCaller, start, end time.Time, limit int) ([]string, error)
+	// GetWorkCaller reads the Work Caller a Work's measurements carry, with
+	// false when the Work has none.
+	GetWorkCaller(ctx context.Context, workID string) (WorkCaller, bool, error)
 }
