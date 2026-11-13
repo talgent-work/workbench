@@ -31,32 +31,26 @@ var _ query.MeasurementQueryRepository = (*Repository)(nil)
 // one Repository serves native evidence and derived measurements.
 func NewRepository(db driver.Conn) *Repository { return &Repository{db: db} }
 
+// ListBySession lists one Work's spans within its Work Caller.
 func (r *Repository) ListBySession(ctx context.Context, opts query.SpanListOptions) (*query.SpanListResult, error) {
 	opts.AgentWorkID = strings.TrimSpace(opts.AgentWorkID)
 	return r.listSpans(ctx, spanScopeSession, opts)
 }
 
-func (r *Repository) ListByOwner(ctx context.Context, opts query.SpanListOptions) (*query.SpanListResult, error) {
-	opts.ProjectID = strings.TrimSpace(opts.ProjectID)
+// ListByWorkCaller lists a Work Caller's spans, narrowed by the trace
+// attributes opts names and to opts.WorkIDs when not nil.
+func (r *Repository) ListByWorkCaller(ctx context.Context, opts query.SpanListOptions) (*query.SpanListResult, error) {
 	opts.OwnerContext = strings.TrimSpace(opts.OwnerContext)
 	opts.OwnerID = strings.TrimSpace(opts.OwnerID)
 	opts.RuntimePurpose = strings.TrimSpace(opts.RuntimePurpose)
-	return r.listSpans(ctx, spanScopeOwner, opts)
-}
-
-// ListByApplication lists the spans of an Application's Works, narrowed to
-// opts.WorkIDs when not nil.
-func (r *Repository) ListByApplication(ctx context.Context, opts query.SpanListOptions) (*query.SpanListResult, error) {
-	opts.ApplicationID = strings.TrimSpace(opts.ApplicationID)
-	return r.listSpans(ctx, spanScopeApplication, opts)
+	return r.listSpans(ctx, spanScopeWorkCaller, opts)
 }
 
 type spanListScope string
 
 const (
-	spanScopeSession     spanListScope = "session"
-	spanScopeOwner       spanListScope = "owner"
-	spanScopeApplication spanListScope = "application"
+	spanScopeSession    spanListScope = "session"
+	spanScopeWorkCaller spanListScope = "work_caller"
 )
 
 func (r *Repository) listSpans(ctx context.Context, scope spanListScope, opts query.SpanListOptions) (*query.SpanListResult, error) {
@@ -98,37 +92,26 @@ func buildSpanListQuery(scope spanListScope, opts query.SpanListOptions) (string
 	if opts.NewestFirst {
 		direction, beyond = "DESC", "<"
 	}
-	params := clickhousego.Parameters{}
-	filters := []string{"Timestamp >= now64(9) - INTERVAL 7 DAY"}
+	// Every scope names its Work Caller; the empty one names no Work.
+	params := clickhousego.Parameters{"work_caller": opts.WorkCaller.String()}
+	filters := []string{"Timestamp >= now64(9) - INTERVAL 7 DAY", "ResourceAttributes['talgent.work_caller'] = {work_caller:String}", "ResourceAttributes['talgent.work_caller'] != ''"}
 	switch scope {
-	case spanScopeOwner:
-		params["project_id"] = strings.TrimSpace(opts.ProjectID)
-		params["owner_context"] = strings.TrimSpace(opts.OwnerContext)
-		params["owner_id"] = strings.TrimSpace(opts.OwnerID)
-		filters = append(filters,
-			"ResourceAttributes['talgent.project_id'] = {project_id:String}",
-			"ResourceAttributes['talgent.owner_context'] = {owner_context:String}",
-			"ResourceAttributes['talgent.owner_id'] = {owner_id:String}",
-		)
-		if runtimePurpose := strings.TrimSpace(opts.RuntimePurpose); runtimePurpose != "" {
-			params["runtime_purpose"] = runtimePurpose
-			filters = append(filters, "ResourceAttributes['talgent.runtime_purpose'] = {runtime_purpose:String}")
+	case spanScopeWorkCaller:
+		for _, attribute := range []struct{ name, value string }{
+			{"owner_context", opts.OwnerContext}, {"owner_id", opts.OwnerID}, {"runtime_purpose", opts.RuntimePurpose},
+		} {
+			if value := strings.TrimSpace(attribute.value); value != "" {
+				params[attribute.name] = value
+				filters = append(filters, fmt.Sprintf("ResourceAttributes['talgent.%[1]s'] = {%[1]s:String}", attribute.name))
+			}
 		}
-	case spanScopeApplication:
-		// An empty Application matches only Works no Application owns.
-		params["application_id"] = strings.TrimSpace(opts.ApplicationID)
-		filters = append(filters,
-			"ResourceAttributes['talgent.application_id'] = {application_id:String}",
-			"ResourceAttributes['talgent.application_id'] != ''",
-			"ResourceAttributes['talgent.project_id'] = ''")
 		if opts.WorkIDs != nil {
 			params["work_ids"] = stringArrayParam(opts.WorkIDs)
 			filters = append(filters, "has({work_ids:Array(String)}, ResourceAttributes['talgent.agent_work_id'])")
 		}
 	default:
 		params["agent_work_id"] = strings.TrimSpace(opts.AgentWorkID)
-		params["project_id"] = strings.TrimSpace(opts.ProjectID)
-		filters = append(filters, "ResourceAttributes['talgent.project_id'] = {project_id:String}", "ResourceAttributes['talgent.agent_work_id'] = {agent_work_id:String}")
+		filters = append(filters, "ResourceAttributes['talgent.agent_work_id'] = {agent_work_id:String}")
 	}
 	if opts.AfterCursor != "" {
 		start, evidenceID, err := decodeEvidenceCursor(opts.AfterCursor)
@@ -170,11 +153,12 @@ func (r *Repository) GetByIdentity(ctx context.Context, identity query.SpanIdent
 			mapSort(SpanAttributes), mapSort(ResourceAttributes),
             talgent_span_category(SpanName, SpanAttributes)
 		FROM otel_traces
-		WHERE ResourceAttributes['talgent.project_id'] = ? AND TraceId = ? AND SpanId = ?
+		WHERE ResourceAttributes['talgent.work_caller'] = ? AND ResourceAttributes['talgent.work_caller'] != ''
+		  AND TraceId = ? AND SpanId = ?
 		  AND (? = '' OR ResourceAttributes['talgent.agent_work_id'] = ?)
 		  AND Timestamp >= now64(9) - INTERVAL 7 DAY
 		LIMIT 1`
-	rows, err := r.db.Query(ctx, q, identity.ProjectID, identity.TraceID, identity.SpanID, identity.AgentWorkID, identity.AgentWorkID)
+	rows, err := r.db.Query(ctx, q, identity.WorkCaller.String(), identity.TraceID, identity.SpanID, identity.AgentWorkID, identity.AgentWorkID)
 	if err != nil {
 		return nil, oops.With("operation", "trace.query").Wrap(err)
 	}
@@ -219,7 +203,8 @@ func scanSpans(rows driver.Rows) ([]*query.Span, error) {
 		sp.NativeAgentID = attrs["agent_id"]
 		sp.ParentNativeAgentID = attrs["parent_agent_id"]
 		scope := spanScopeFromAttributes(resources)
-		sp.ProjectID = scope.ProjectID
+		sp.WorkCaller = scope.WorkCaller
+		sp.WorkKey = scope.WorkKey
 		sp.AgentWorkID = scope.AgentWorkID
 		sp.AgentID = scope.AgentID
 		sp.RuntimePurpose = scope.RuntimePurpose
@@ -273,7 +258,8 @@ func decodeEvidenceCursor(cursor string) (time.Time, string, error) {
 
 func spanScopeFromAttributes(attrs map[string]string) query.Span {
 	return query.Span{
-		ProjectID:      attrs["talgent.project_id"],
+		WorkCaller:     query.ParseWorkCaller(attrs["talgent.work_caller"]),
+		WorkKey:        query.ParseWorkKey(attrs["talgent.work_key"]),
 		AgentWorkID:    attrs["talgent.agent_work_id"],
 		AgentID:        attrs["talgent.agent_id"],
 		RuntimePurpose: attrs["talgent.runtime_purpose"],

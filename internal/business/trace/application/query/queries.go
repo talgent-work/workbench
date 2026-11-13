@@ -12,18 +12,23 @@ import (
 type Queries struct {
 	evidence     NativeEvidenceQueryRepository
 	measurements MeasurementQueryRepository
-	projects     ProjectAccessPort
+	workCallers  WorkCallerAccessPort
 	agent        AgentPort
 	accounts     AccountPort
 }
 
-// NewQueries takes no Project access where no context decides it.
-func NewQueries(evidence NativeEvidenceQueryRepository, measurements MeasurementQueryRepository, projects ProjectAccessPort, agent AgentPort, accounts AccountPort) *Queries {
-	return &Queries{evidence: evidence, measurements: measurements, projects: projects, agent: agent, accounts: accounts}
+func NewQueries(evidence NativeEvidenceQueryRepository, measurements MeasurementQueryRepository, workCallers WorkCallerAccessPort, agent AgentPort, accounts AccountPort) *Queries {
+	return &Queries{evidence: evidence, measurements: measurements, workCallers: workCallers, agent: agent, accounts: accounts}
 }
 
-var ErrInvalidQuery = errors.New("invalid trace query")
-var ErrSpanNotFound = errors.New("span not found")
+var (
+	ErrInvalidQuery = errors.New("invalid trace query")
+	ErrSpanNotFound = errors.New("span not found")
+	// ErrWorkNotFound is a Work named in a scope it is not in: under a Work
+	// Caller other than its own, or an Extension Work named as a Standalone
+	// one.
+	ErrWorkNotFound = errors.New("work not found in the named scope")
+)
 
 func required(value, name string) (string, error) {
 	value = strings.TrimSpace(value)
@@ -48,17 +53,22 @@ func validateMetricOptions(opts TraceMetricOptions) error {
 }
 
 func (h *Queries) ListSpansBySession(ctx context.Context, opts SpanListOptions) (*SpanListResult, error) {
-	scope, err := h.authorizeScope(ctx, WorkScope{ProjectID: opts.ProjectID, AgentWorkID: opts.AgentWorkID}, true)
+	scope, err := h.authorizeScope(ctx, WorkScope{WorkCaller: opts.WorkCaller, AgentWorkID: opts.AgentWorkID}, true)
+	if errors.Is(err, errWorkNotObserved) {
+		return &SpanListResult{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	opts.ProjectID, opts.AgentWorkID = scope.ProjectID, scope.AgentWorkID
+	opts.WorkCaller, opts.AgentWorkID = scope.WorkCaller, scope.AgentWorkID
 	return h.evidence.ListBySession(ctx, opts)
 }
 
+// ListSpansByOwner lists an Extension Work Caller's spans carrying the trace
+// attributes owner_context and owner_id.
 func (h *Queries) ListSpansByOwner(ctx context.Context, opts SpanListOptions) (*SpanListResult, error) {
 	var err error
-	if opts.ProjectID, err = required(opts.ProjectID, "project_id"); err != nil {
+	if opts.WorkCaller, err = extensionCaller(opts.WorkCaller); err != nil {
 		return nil, err
 	}
 	if opts.OwnerContext, err = required(opts.OwnerContext, "owner_context"); err != nil {
@@ -68,14 +78,15 @@ func (h *Queries) ListSpansByOwner(ctx context.Context, opts SpanListOptions) (*
 		return nil, err
 	}
 	opts.RuntimePurpose = strings.TrimSpace(opts.RuntimePurpose)
-	if err = h.authorizeProject(ctx, opts.ProjectID); err != nil {
+	if err = h.authorizeWorkCaller(ctx, opts.WorkCaller); err != nil {
 		return nil, err
 	}
-	return h.evidence.ListByOwner(ctx, opts)
+	opts.AgentWorkID, opts.WorkIDs = "", nil
+	return h.evidence.ListByWorkCaller(ctx, opts)
 }
 
-// GetSpan looks a span up within the authorized Project, or, without one,
-// within the authorized Work.
+// GetSpan looks a span up within the authorized Work Caller, and within the
+// authorized Work when one is named.
 func (h *Queries) GetSpan(ctx context.Context, identity SpanIdentity) (*Span, error) {
 	var err error
 	if identity.TraceID, err = required(identity.TraceID, "trace_id"); err != nil {
@@ -84,11 +95,14 @@ func (h *Queries) GetSpan(ctx context.Context, identity SpanIdentity) (*Span, er
 	if identity.SpanID, err = required(identity.SpanID, "span_id"); err != nil {
 		return nil, err
 	}
-	scope, err := h.authorizeScope(ctx, WorkScope{ProjectID: identity.ProjectID, AgentWorkID: identity.AgentWorkID}, false)
+	scope, err := h.authorizeScope(ctx, WorkScope{WorkCaller: identity.WorkCaller, AgentWorkID: identity.AgentWorkID}, false)
+	if errors.Is(err, errWorkNotObserved) {
+		return nil, ErrSpanNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
-	identity.ProjectID, identity.AgentWorkID = scope.ProjectID, scope.AgentWorkID
+	identity.WorkCaller, identity.AgentWorkID = scope.WorkCaller, scope.AgentWorkID
 	span, err := h.evidence.GetByIdentity(ctx, identity)
 	if err != nil {
 		return nil, err
@@ -96,7 +110,7 @@ func (h *Queries) GetSpan(ctx context.Context, identity SpanIdentity) (*Span, er
 	if span == nil {
 		return nil, ErrSpanNotFound
 	}
-	if span.ProjectID != identity.ProjectID || span.TraceID != identity.TraceID || span.SpanID != identity.SpanID ||
+	if span.WorkCaller != identity.WorkCaller || span.TraceID != identity.TraceID || span.SpanID != identity.SpanID ||
 		(identity.AgentWorkID != "" && span.AgentWorkID != identity.AgentWorkID) {
 		return nil, ErrAuthorizationPermissionDenied
 	}
@@ -107,30 +121,41 @@ func (h *Queries) GetSessionTraceMetrics(ctx context.Context, opts TraceMetricOp
 	if err := validateMetricOptions(opts); err != nil {
 		return nil, err
 	}
-	scope, err := h.authorizeScope(ctx, WorkScope{ProjectID: opts.ProjectID, AgentWorkID: opts.AgentWorkID}, true)
+	scope, err := h.authorizeScope(ctx, WorkScope{WorkCaller: opts.WorkCaller, AgentWorkID: opts.AgentWorkID}, true)
+	if errors.Is(err, errWorkNotObserved) {
+		return &TraceMetricResult{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	opts.ProjectID, opts.AgentWorkID = scope.ProjectID, scope.AgentWorkID
+	opts.WorkCaller, opts.AgentWorkID, opts.WorkKey, opts.WorkIDs = scope.WorkCaller, scope.AgentWorkID, WorkKey{}, nil
 	return h.measurements.GetBySession(ctx, opts)
 }
 
-func (h *Queries) GetProjectTraceMetrics(ctx context.Context, opts TraceMetricOptions) (*TraceMetricResult, error) {
+// GetWorkCallerTraceMetrics reads the usage of an Extension Work Caller's
+// Works, narrowed to one Work Key when named, under the access decision of
+// the extension defining its kind.
+func (h *Queries) GetWorkCallerTraceMetrics(ctx context.Context, opts TraceMetricOptions) (*TraceMetricResult, error) {
 	if err := validateMetricOptions(opts); err != nil {
 		return nil, err
 	}
 	var err error
-	if opts.ProjectID, err = required(opts.ProjectID, "project_id"); err != nil {
+	if opts.WorkCaller, err = extensionCaller(opts.WorkCaller); err != nil {
 		return nil, err
 	}
-	if err := h.authorizeProject(ctx, opts.ProjectID); err != nil {
+	if opts.WorkKey, err = requestedWorkKey(opts.WorkKey); err != nil {
 		return nil, err
 	}
-	return h.measurements.GetByProject(ctx, opts)
+	if err := h.authorizeWorkCaller(ctx, opts.WorkCaller); err != nil {
+		return nil, err
+	}
+	opts.AgentWorkID, opts.WorkIDs = "", nil
+	return h.measurements.GetByWorkCaller(ctx, opts)
 }
 
 // GetPersonalTraceMetrics reads the authenticated person's own usage across
-// all their Works, optionally narrowed to one; it is never another person's.
+// every Work they own, whatever its Work Caller, optionally narrowed to one;
+// it is never another person's.
 func (h *Queries) GetPersonalTraceMetrics(ctx context.Context, opts TraceMetricOptions) (*TraceMetricResult, error) {
 	if err := validateMetricOptions(opts); err != nil {
 		return nil, err
@@ -139,6 +164,6 @@ func (h *Queries) GetPersonalTraceMetrics(ctx context.Context, opts TraceMetricO
 	if err != nil {
 		return nil, err
 	}
-	opts.ProjectID, opts.AgentWorkID = "", strings.TrimSpace(opts.AgentWorkID)
+	opts.WorkCaller, opts.WorkKey, opts.WorkIDs, opts.AgentWorkID = WorkCaller{}, WorkKey{}, nil, strings.TrimSpace(opts.AgentWorkID)
 	return h.measurements.GetByPerson(ctx, reader, opts)
 }

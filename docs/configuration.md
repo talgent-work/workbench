@@ -215,9 +215,9 @@ How Agent reaches Computer and Managed Computers.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `trace-access.agent-address`, `agent-control-token` | `${WORK_AGENT_ADDR:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent's Work access, which admits readers of a Work's telemetry, and its Work attribution, which names an Application's Works with their Work Labels |
+| `trace-access.agent-address`, `agent-control-token` | `${WORK_AGENT_ADDR:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent's Work access, which admits readers of a Standalone Work's telemetry, and its Work attribution, which names an Application's Works with their Work Labels |
 | `trace-access.account-address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's Application Ownership Query, which admits an Application Owner to the Application's usage |
-| `trace-access.project-access-address` | `${TRACE_PROJECT_ACCESS_ADDRESS:}` | The Project access decision, served by a service built on the Workbench; empty in a Workbench deployment |
+| `trace-access.work-caller-access-addresses.<kind>` | none | For each Work Caller kind an extension defines, the address of that extension's `trace.private.v1.WorkCallerAccessService`, which admits readers of the telemetry of Works started under that kind; the Works of a kind left out are read by no one. Empty in a Workbench deployment |
 
 ## dispatcher
 

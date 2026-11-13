@@ -11,9 +11,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 )
 
-// A person's usage covers every Work of theirs, with or without a Project,
-// and equals the sum of those Works' own usage; a Work without a Project is
-// read by its Work with the empty Project.
+// A person's usage covers every Work they own, whatever its Work Caller, and
+// equals the sum of those Works' own usage, each read under its own Work
+// Caller, which its measurements carry.
 func TestGetByPersonMetrics_SumsThePersonsWorks(t *testing.T) {
 	dsn, cleanup := startClickHouse(t)
 	defer cleanup()
@@ -42,9 +42,10 @@ func TestGetByPersonMetrics_SumsThePersonsWorks(t *testing.T) {
 	for _, bucket := range personal.Buckets {
 		perWork[bucket.AgentWorkID] += bucket.Value
 	}
-	for work, project := range map[string]string{"work-1": "project-1", "personal-1": ""} {
+	team, owner := query.WorkCaller{Kind: "team", ID: "team-1"}, query.PersonCaller("user-1")
+	for work, caller := range map[string]query.WorkCaller{"work-1": team, "personal-1": owner} {
 		scoped := window
-		scoped.ProjectID, scoped.AgentWorkID = project, work
+		scoped.WorkCaller, scoped.AgentWorkID = caller, work
 		single, err := repo.GetBySession(ctx, scoped)
 		if err != nil {
 			t.Fatalf("GetBySession %s: %v", work, err)
@@ -63,8 +64,16 @@ func TestGetByPersonMetrics_SumsThePersonsWorks(t *testing.T) {
 	if err != nil || len(none.Buckets) != 0 {
 		t.Fatalf("an empty person read %+v, %v", none, err)
 	}
-	leaked, err := repo.GetBySession(ctx, query.TraceMetricOptions{ProjectID: "project-1", AgentWorkID: "personal-1"})
+	leaked, err := repo.GetBySession(ctx, query.TraceMetricOptions{WorkCaller: team, AgentWorkID: "personal-1"})
 	if err != nil || len(leaked.Buckets) != 0 {
-		t.Fatalf("a Work without a Project read under a Project: %+v, %v", leaked, err)
+		t.Fatalf("a Standalone Work read under another Work Caller: %+v, %v", leaked, err)
+	}
+	for work, want := range map[string]query.WorkCaller{"work-1": team, "personal-1": owner} {
+		if caller, observed, err := repo.GetWorkCaller(ctx, work); err != nil || !observed || caller != want {
+			t.Fatalf("Work Caller of %s = %+v %v %v, want %+v", work, caller, observed, err, want)
+		}
+	}
+	if _, observed, err := repo.GetWorkCaller(ctx, "unmeasured"); err != nil || observed {
+		t.Fatalf("an unmeasured Work has a Work Caller: %v %v", observed, err)
 	}
 }

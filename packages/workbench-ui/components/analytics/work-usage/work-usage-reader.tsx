@@ -9,6 +9,7 @@ import { traceClient } from "../../../lib/client";
 import { formatCompactTokenCount, traceMetricKinds } from "../../../lib/trace-view-model";
 import { cacheHitRate, formatHitRate, tokenCategories, tokenTotal, tokenUsageFromMeasurements } from "../../../lib/token-usage";
 import { workMetricsWindow } from "../../../lib/use-work-trace";
+import type { WorkCaller } from "../../../lib/work-caller";
 import { workPresentation } from "../../../lib/work-state-presentation";
 import { buildTurns, spanRange, toolName, type Turn } from "./turns";
 import { TurnTimeline } from "./turn-timeline";
@@ -20,24 +21,22 @@ const pageSize = 500;
 
 /** A Work's Token Usage: its totals, whether it is working, and its Turns
  * newest first. Native evidence stays out of view; the download keeps it.
- * `status` is the Work's state as the caller may read it; `projectId` is
- * empty for a Work without a Project. */
-export function WorkUsageReader({ projectId, agentWorkId, createdAt = null, status, toolbar }: {
-  projectId: string; agentWorkId: string; createdAt?: Date | null; status: WorkUsageStatus | null; toolbar?: HTMLElement | null;
+ * `status` is the Work's state as the caller may read it; `workCaller` names
+ * an Extension Work's Work Caller and is left out for a Standalone Work. */
+export function WorkUsageReader({ workCaller, agentWorkId, createdAt = null, status, toolbar }: {
+  workCaller?: WorkCaller; agentWorkId: string; createdAt?: Date | null; status: WorkUsageStatus | null; toolbar?: HTMLElement | null;
 }) {
   const live = status?.state === "working" || status?.state === "starting";
-  // The trace API names a Work by its Work Caller; this reader still takes a
-  // Project id, which stands for the Work Caller of that kind.
-  const workCaller = projectId ? { kind: "project", id: projectId } : undefined;
+  const callerKey = [workCaller?.kind ?? "", workCaller?.id ?? ""];
   const now = useNow(refreshMillis);
   const spans = useInfiniteQuery({
-    queryKey: ["work-usage-spans", projectId, agentWorkId], initialPageParam: "",
+    queryKey: ["work-usage-spans", ...callerKey, agentWorkId], initialPageParam: "",
     queryFn: ({ pageParam, signal }) => traceClient.listSpansBySession({ workCaller, agentWorkId, limit: pageSize, afterCursor: pageParam, newestFirst: true }, { signal }),
     getNextPageParam: page => page.nextCursor || undefined,
     refetchInterval: live ? refreshMillis : false, retry: false, refetchOnWindowFocus: false,
   });
   const metrics = useQuery({
-    queryKey: ["trace-metrics", projectId, agentWorkId, createdAt?.getTime() ?? 0],
+    queryKey: ["trace-metrics", ...callerKey, agentWorkId, createdAt?.getTime() ?? 0],
     queryFn: ({ signal }) => {
       const range = workMetricsWindow(new Date(), createdAt);
       return traceClient.getSessionTraceMetrics({ workCaller, agentWorkId, startTime: timestampFromDate(range.start), endTime: timestampFromDate(range.end), stepSeconds: range.stepSeconds, metricKinds: [...traceMetricKinds] }, { signal });

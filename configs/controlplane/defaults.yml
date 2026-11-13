@@ -166,15 +166,14 @@ account-maintenance-taskqueue:
 clickhouse:
   dsn: "${CLICKHOUSE_DSN:clickhouse://127.0.0.1:9000?database=default}"
 # Trace runs in this process; native telemetry has its own database.
-# A Work with a Project is admitted by the Project access decision at
-# project-access-address, which is empty where no context decides Project
-# access; one without a Project by Agent's Work access. Agent also names an
-# Application's Works with their Work Labels, and Account answers who owns an
-# Application.
+# A Standalone Work is admitted by Agent's Work access; an Extension Work by
+# the access decision of the extension defining its Work Caller's kind, at
+# work-caller-access-addresses.<kind>, which a deployment with extensions
+# adds. Agent also names an Application's Works with their Work Labels, and
+# Account answers who owns an Application.
 trace-clickhouse:
   dsn: "${TRACE_CLICKHOUSE_DSN:clickhouse://default:@127.0.0.1:9000/talgent_trace}"
 trace-access:
-  project-access-address: "${TRACE_PROJECT_ACCESS_ADDRESS:}"
   agent-address: "${WORK_AGENT_ADDR:http://127.0.0.1:8080}"
   agent-control-token: "${AGENT_CONTROL_TOKEN:}"
   account-address: "${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}"

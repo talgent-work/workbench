@@ -9,7 +9,7 @@ import type { ReadingContent, ReadingSlots } from "./reading-context";
 /** The Work's Token Usage as its owner reads it. */
 export function OwnWorkUsage({ content, slots }: { content: Extract<ReadingContent, { kind: "trace" }>; slots: ReadingSlots }) {
   const status = useOwnWorkUsageStatus(content.workId);
-  return <WorkUsageReader key={content.workId} projectId={content.projectId} agentWorkId={content.workId} createdAt={content.createdAt} status={status} toolbar={slots.toolbar} />;
+  return <WorkUsageReader key={content.workId} workCaller={content.workCaller} agentWorkId={content.workId} createdAt={content.createdAt} status={status} toolbar={slots.toolbar} />;
 }
 
 /** A Work's file, previewed through Agent. */

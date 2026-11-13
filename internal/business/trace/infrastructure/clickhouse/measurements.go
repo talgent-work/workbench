@@ -22,46 +22,38 @@ const defaultMetricStepSeconds = 60
 type metricScope string
 
 const (
-	metricScopeSession     metricScope = "session"
-	metricScopeProject     metricScope = "project"
-	metricScopePerson      metricScope = "person"
-	metricScopeApplication metricScope = "application"
+	metricScopeSession    metricScope = "session"
+	metricScopeWorkCaller metricScope = "work_caller"
+	metricScopePerson     metricScope = "person"
 )
 
+// GetBySession reads one Work's measurements within its Work Caller.
 func (r *Repository) GetBySession(ctx context.Context, opts query.TraceMetricOptions) (*query.TraceMetricResult, error) {
 	opts.AgentWorkID = strings.TrimSpace(opts.AgentWorkID)
-	opts.ProjectID = strings.TrimSpace(opts.ProjectID)
-	return r.queryMetricBuckets(ctx, metricScopeSession, opts, metricSubject{})
+	return r.queryMetricBuckets(ctx, metricScopeSession, opts, "")
 }
 
-func (r *Repository) GetByProject(ctx context.Context, opts query.TraceMetricOptions) (*query.TraceMetricResult, error) {
-	opts.ProjectID = strings.TrimSpace(opts.ProjectID)
-	opts.AgentWorkID = ""
-	return r.queryMetricBuckets(ctx, metricScopeProject, opts, metricSubject{})
-}
-
-// GetByPerson reads a person's Works whatever their Project.
-func (r *Repository) GetByPerson(ctx context.Context, personID string, opts query.TraceMetricOptions) (*query.TraceMetricResult, error) {
-	opts.ProjectID = ""
-	opts.AgentWorkID = strings.TrimSpace(opts.AgentWorkID)
-	return r.queryMetricBuckets(ctx, metricScopePerson, opts, metricSubject{personID: strings.TrimSpace(personID)})
-}
-
-// GetByApplication reads the Works of an Application, which never have a
-// Project, narrowed to opts.WorkIDs when not nil.
-func (r *Repository) GetByApplication(ctx context.Context, applicationID string, opts query.ApplicationMetricOptions) (*query.TraceMetricResult, error) {
+// GetByWorkCaller reads a Work Caller's Works, narrowed to opts.WorkKey when
+// set and to opts.WorkIDs when not nil.
+func (r *Repository) GetByWorkCaller(ctx context.Context, opts query.TraceMetricOptions) (*query.TraceMetricResult, error) {
 	if opts.WorkIDs != nil && len(opts.WorkIDs) == 0 {
 		return &query.TraceMetricResult{}, nil
 	}
-	opts.ProjectID, opts.AgentWorkID = "", ""
-	return r.queryMetricBuckets(ctx, metricScopeApplication, opts.TraceMetricOptions, metricSubject{applicationID: strings.TrimSpace(applicationID), workIDs: opts.WorkIDs})
+	opts.AgentWorkID = ""
+	return r.queryMetricBuckets(ctx, metricScopeWorkCaller, opts, "")
 }
 
-// ListApplicationWorks reads the Works an Application has measurements of
+// GetByPerson reads every Work a person owns, whatever its Work Caller.
+func (r *Repository) GetByPerson(ctx context.Context, personID string, opts query.TraceMetricOptions) (*query.TraceMetricResult, error) {
+	opts.AgentWorkID = strings.TrimSpace(opts.AgentWorkID)
+	return r.queryMetricBuckets(ctx, metricScopePerson, opts, strings.TrimSpace(personID))
+}
+
+// ListWorkCallerWorks reads the Works a Work Caller has measurements of
 // within the window and measurement retention, at most limit.
-func (r *Repository) ListApplicationWorks(ctx context.Context, applicationID string, start, end time.Time, limit int) ([]string, error) {
-	params := clickhousego.Parameters{"application_id": strings.TrimSpace(applicationID)}
-	filters := []string{"timestamp >= now64(9) - INTERVAL 30 DAY", "application_id = {application_id:String}", "application_id != ''", "project_id = ''"}
+func (r *Repository) ListWorkCallerWorks(ctx context.Context, caller query.WorkCaller, start, end time.Time, limit int) ([]string, error) {
+	params := clickhousego.Parameters{"work_caller": caller.String()}
+	filters := []string{"timestamp >= now64(9) - INTERVAL 30 DAY", "work_caller = {work_caller:String}", "work_caller != ''"}
 	if !start.IsZero() {
 		params["start_time"] = start.UTC().Format("2006-01-02 15:04:05.999999999")
 		filters = append(filters, "timestamp >= {start_time:DateTime64(9, 'UTC')}")
@@ -95,15 +87,37 @@ func (r *Repository) ListApplicationWorks(ctx context.Context, applicationID str
 	return works, nil
 }
 
-// metricSubject is the person or the Application a scoped measurement read
-// names; other scopes ignore it.
-type metricSubject struct {
-	personID, applicationID string
-	workIDs                 []string
+// GetWorkCaller reads the one Work Caller a Work's retained measurements
+// carry. Measurements without one say nothing about it. Agent fixes a Work's
+// Work Caller at creation and no supplied attribute overrides it, so two
+// distinct Work Callers are a defect reported as an error, never resolved by
+// picking one.
+func (r *Repository) GetWorkCaller(ctx context.Context, workID string) (query.WorkCaller, bool, error) {
+	const q = `
+		SELECT groupUniqArray(2)(work_caller)
+		FROM trace_work_measurements
+		WHERE agent_work_id = {agent_work_id:String} AND agent_work_id != ''
+		  AND work_caller != ''
+		  AND timestamp >= now64(9) - INTERVAL 30 DAY`
+	var callers []string
+	row := r.db.QueryRow(clickhousego.Context(ctx, clickhousego.WithParameters(clickhousego.Parameters{"agent_work_id": strings.TrimSpace(workID)})), q)
+	if err := row.Scan(&callers); err != nil {
+		return query.WorkCaller{}, false, oops.With("operation", "trace.query").Wrap(err)
+	}
+	switch len(callers) {
+	case 0:
+		return query.WorkCaller{}, false, nil
+	case 1:
+		return query.ParseWorkCaller(callers[0]), true, nil
+	default:
+		return query.WorkCaller{}, false, oops.With("operation", "trace.query").Errorf("measurements of one Work carry %d distinct Work Callers", len(callers))
+	}
 }
 
-func (r *Repository) queryMetricBuckets(ctx context.Context, scope metricScope, opts query.TraceMetricOptions, subject metricSubject) (*query.TraceMetricResult, error) {
-	q, params := buildMetricBucketsQuery(scope, opts, subject)
+// queryMetricBuckets reads one scope; personID names the person of the
+// person scope, which other scopes ignore.
+func (r *Repository) queryMetricBuckets(ctx context.Context, scope metricScope, opts query.TraceMetricOptions, personID string) (*query.TraceMetricResult, error) {
+	q, params := buildMetricBucketsQuery(scope, opts, personID)
 	rows, err := r.db.Query(clickhousego.Context(ctx, clickhousego.WithParameters(params)), q)
 	if err != nil {
 		return nil, oops.With("operation", "trace.query").Wrap(err)
@@ -120,7 +134,7 @@ func (r *Repository) queryMetricBuckets(ctx context.Context, scope metricScope, 
 	}, nil
 }
 
-func buildMetricBucketsQuery(scope metricScope, opts query.TraceMetricOptions, subject metricSubject) (string, clickhousego.Parameters) {
+func buildMetricBucketsQuery(scope metricScope, opts query.TraceMetricOptions, personID string) (string, clickhousego.Parameters) {
 	stepSeconds := opts.StepSeconds
 	if stepSeconds <= 0 {
 		stepSeconds = defaultMetricStepSeconds
@@ -128,29 +142,30 @@ func buildMetricBucketsQuery(scope metricScope, opts query.TraceMetricOptions, s
 	params := clickhousego.Parameters{"step_seconds": strconv.Itoa(stepSeconds)}
 	filters := []string{"measurement_time >= now64(9) - INTERVAL 30 DAY"}
 	switch scope {
-	case metricScopeProject:
-		params["project_id"] = strings.TrimSpace(opts.ProjectID)
-		filters = append(filters, "project_id = {project_id:String}")
+	case metricScopeWorkCaller:
+		// The empty Work Caller names no Work; never read Works without one.
+		params["work_caller"] = opts.WorkCaller.String()
+		filters = append(filters, "work_caller = {work_caller:String}", "work_caller != ''")
+		if opts.WorkKey.Present() {
+			params["work_key"] = opts.WorkKey.String()
+			filters = append(filters, "work_key = {work_key:String}")
+		}
+		if opts.WorkIDs != nil {
+			params["work_ids"] = stringArrayParam(opts.WorkIDs)
+			filters = append(filters, "has({work_ids:Array(String)}, agent_work_id)")
+		}
 	case metricScopePerson:
 		// An empty person matches only Works of no person; never read them.
-		params["user_id"] = subject.personID
+		params["user_id"] = personID
 		filters = append(filters, "user_id = {user_id:String}", "user_id != ''")
 		if workID := strings.TrimSpace(opts.AgentWorkID); workID != "" {
 			params["agent_work_id"] = workID
 			filters = append(filters, "agent_work_id = {agent_work_id:String}")
 		}
-	case metricScopeApplication:
-		// An empty Application matches only Works no Application owns.
-		params["application_id"] = subject.applicationID
-		filters = append(filters, "application_id = {application_id:String}", "application_id != ''", "project_id = ''")
-		if subject.workIDs != nil {
-			params["work_ids"] = stringArrayParam(subject.workIDs)
-			filters = append(filters, "has({work_ids:Array(String)}, agent_work_id)")
-		}
 	default:
 		params["agent_work_id"] = strings.TrimSpace(opts.AgentWorkID)
-		params["project_id"] = strings.TrimSpace(opts.ProjectID)
-		filters = append(filters, "project_id = {project_id:String}", "agent_work_id = {agent_work_id:String}")
+		params["work_caller"] = opts.WorkCaller.String()
+		filters = append(filters, "work_caller = {work_caller:String}", "work_caller != ''", "agent_work_id = {agent_work_id:String}")
 	}
 	if !opts.StartTime.IsZero() {
 		params["start_time"] = opts.StartTime.UTC().Format("2006-01-02 15:04:05.999999999")
@@ -183,14 +198,14 @@ func buildMetricBucketsQuery(scope metricScope, opts query.TraceMetricOptions, s
 		SELECT
 			%s AS grouped_bucket_start,
 			toUInt32({step_seconds:UInt32}) AS grouped_bucket_seconds,
-			project_id,
+			work_caller,
+			work_key,
 			agent_work_id,
 			agent_id,
 			runtime_purpose,
 			owner_context,
 			owner_id,
 			user_id,
-			application_id,
 			metric_kind,
 			dimension,
 			sum(value) AS metric_value,
@@ -198,7 +213,7 @@ func buildMetricBucketsQuery(scope metricScope, opts query.TraceMetricOptions, s
 			arrayDistinct(flatten(groupArray(gaps))) AS metric_gaps
 		FROM trace_metric_buckets
 		WHERE %s
-		GROUP BY grouped_bucket_start, project_id, agent_work_id, agent_id, runtime_purpose, owner_context, owner_id, user_id, application_id, metric_kind, dimension
+		GROUP BY grouped_bucket_start, work_caller, work_key, agent_work_id, agent_id, runtime_purpose, owner_context, owner_id, user_id, metric_kind, dimension
 		ORDER BY grouped_bucket_start ASC, metric_kind ASC, dimension ASC, owner_context ASC, owner_id ASC, runtime_purpose ASC, agent_work_id ASC, user_id ASC`,
 		groupedBucketExpr,
 		strings.Join(filters, "\n\t\tAND "))
@@ -210,17 +225,18 @@ func scanMetricBuckets(rows driver.Rows) ([]query.TraceMetricBucket, error) {
 	for rows.Next() {
 		var bucket query.TraceMetricBucket
 		var bucketSeconds uint32
+		var workCaller, workKey string
 		if err := rows.Scan(
 			&bucket.BucketStart,
 			&bucketSeconds,
-			&bucket.ProjectID,
+			&workCaller,
+			&workKey,
 			&bucket.AgentWorkID,
 			&bucket.AgentID,
 			&bucket.RuntimePurpose,
 			&bucket.OwnerContext,
 			&bucket.OwnerID,
 			&bucket.UserID,
-			&bucket.ApplicationID,
 			&bucket.MetricKind,
 			&bucket.Dimension,
 			&bucket.Value,
@@ -230,6 +246,7 @@ func scanMetricBuckets(rows driver.Rows) ([]query.TraceMetricBucket, error) {
 			return nil, err
 		}
 		bucket.BucketSeconds = int(bucketSeconds)
+		bucket.WorkCaller, bucket.WorkKey = query.ParseWorkCaller(workCaller), query.ParseWorkKey(workKey)
 		out = append(out, bucket)
 	}
 	if err := rows.Err(); err != nil {

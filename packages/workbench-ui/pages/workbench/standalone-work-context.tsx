@@ -32,7 +32,7 @@ export function StandaloneWorkContext({ workId, title, owner, withFiles, workLif
   const subAgentsSection = useSubAgentsSection({ agents: subAgents, scope: workId, visible });
   const files = useWorkFiles(withFiles ? workId : undefined);
   const closed = workLifecycle === "closed";
-  const trace = useWorkTrace({ projectId: "", agentWorkId: owner ? workId : null, workCreatedAt, isWorkTerminal: isTerminalWorkLifecycle(workLifecycle) });
+  const trace = useWorkTrace({ agentWorkId: owner ? workId : null, workCreatedAt, isWorkTerminal: isTerminalWorkLifecycle(workLifecycle) });
   const hasTokens = owner && Boolean(trace.data?.totals.length || trace.data?.buckets.length || trace.isError);
   const listed = files.data ?? [];
   const artifacts = listed.filter(file => file.kind === WorkFileKind.ARTIFACT);
@@ -60,7 +60,7 @@ export function StandaloneWorkContext({ workId, title, owner, withFiles, workLif
     <AttachmentConflictDialog conflict={conflict} onClose={() => setConflict(null)} onReplace={file => uploadFile(file, true)} />
     <input ref={fileInput} type="file" hidden aria-label="Upload attachment file" onChange={event => { const file = event.target.files?.[0]; if (file) uploadFile(file); event.target.value = ""; }} />
     {files.isError && <Alert status="danger" role="alert"><Alert.Indicator /><Alert.Content><Alert.Description>Files couldn’t be loaded.</Alert.Description></Alert.Content><Button size="sm" variant="ghost" onPress={() => void files.refetch()}>Retry</Button></Alert>}
-    {hasTokens && <WorkTokenSection totals={trace.data?.totals ?? []} onOpenTimeline={() => reader.open({ kind: "trace", label: title, projectId: "", workId, createdAt: workCreatedAt })} />}
+    {hasTokens && <WorkTokenSection totals={trace.data?.totals ?? []} onOpenTimeline={() => reader.open({ kind: "trace", label: title, workId, createdAt: workCreatedAt })} />}
     {upload.error && !(upload.error instanceof NameTakenError) && <Alert status="danger" role="alert"><Alert.Indicator /><Alert.Content><Alert.Description>{upload.error.message}</Alert.Description></Alert.Content></Alert>}
   </WorkContextRail>;
 }
