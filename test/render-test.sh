@@ -157,7 +157,7 @@ def rules(rendered, route):
 # its own. Capabilities pass through.
 identity_headers = {"x-talgent-" + h for h in (
     "authenticated-by", "issuer", "principal", "subject", "username", "email", "display-name", "avatar-url", "roles",
-    "project-id", "agent-id", "purpose", "work-subject-kind", "work-subject-id", "represented-user-id", "application-id",
+    "work-caller", "work-key", "file-home", "agent-id", "purpose", "represented-user-id", "application-id",
     "service-id", "delegated-user-id", "delegated-actor-id", "reader-admission",
     "runtime-instance-id", "runtime-purpose", "runtime-owner-ref")}
 entry = find(docs, "ClientTrafficPolicy", "identity-headers")
@@ -178,9 +178,9 @@ check(len(providers) == 1, "web-auth validates every Principal with one provider
 claims = {c["claim"]: c["header"] for c in providers[0]["claimToHeaders"]}
 want_claims = {"principal": "x-talgent-principal", "iss": "x-talgent-issuer", "sub": "x-talgent-subject",
                "preferred_username": "x-talgent-username", "email": "x-talgent-email", "name": "x-talgent-display-name",
-               "picture": "x-talgent-avatar-url", "roles": "x-talgent-roles", "project_id": "x-talgent-project-id",
-               "agent_id": "x-talgent-agent-id", "purpose": "x-talgent-purpose", "work_subject_kind": "x-talgent-work-subject-kind",
-               "work_subject_id": "x-talgent-work-subject-id", "for": "x-talgent-represented-user-id",
+               "picture": "x-talgent-avatar-url", "roles": "x-talgent-roles", "work_caller": "x-talgent-work-caller",
+               "work_key": "x-talgent-work-key", "file_home": "x-talgent-file-home", "agent_id": "x-talgent-agent-id",
+               "purpose": "x-talgent-purpose", "for": "x-talgent-represented-user-id",
                "application_id": "x-talgent-application-id"}
 check(claims == want_claims, f"web-auth writes every claim as its header, got {claims}")
 targets = {t["sectionName"] for t in auth["spec"]["targetRefs"]}

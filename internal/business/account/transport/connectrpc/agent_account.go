@@ -30,20 +30,16 @@ func (h *AgentAccounts) IssueWorkIdentityToken(ctx context.Context, req *account
 	if err := requireService(info.RequestHeader()); err != nil {
 		return nil, err
 	}
-	// The Account still holds a Project and a Subject: a Work Caller of kind
-	// "project" maps to its Project and the Work Key to its Subject until the
-	// Agent Account records the Work Caller, Work Key and File Home.
-	projectID := ""
-	if req.GetWorkCallerKind() == "project" {
-		projectID = req.GetWorkCallerId()
-	}
 	issued, err := h.app.IssueWorkIdentityToken(ctx, application.IssueWorkIdentityToken{
 		WorkID:            req.GetWorkId(),
-		ProjectID:         projectID,
+		WorkCallerKind:    req.GetWorkCallerKind(),
+		WorkCallerID:      req.GetWorkCallerId(),
+		WorkKeyKind:       req.GetWorkKeyKind(),
+		WorkKeyID:         req.GetWorkKeyId(),
+		FileHomeKind:      req.GetFileHomeKind(),
+		FileHomeID:        req.GetFileHomeId(),
 		AgentID:           req.GetAgentId(),
 		Purpose:           req.GetPurpose(),
-		SubjectKind:       req.GetWorkKeyKind(),
-		SubjectID:         req.GetWorkKeyId(),
 		RepresentedPerson: req.GetRepresentedUserId(),
 		OwningApplication: req.GetApplicationId(),
 		WorkLabels:        req.GetWorkLabels(),

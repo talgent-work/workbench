@@ -39,7 +39,13 @@ func NewStandaloneWorkHandler(works *standalonework.StandaloneWorks) *Standalone
 func currentCaller(ctx context.Context) standalonework.Caller {
 	principal, _ := authn.PrincipalFrom(ctx)
 	if agent, ok := principal.Agent(); ok {
-		return standalonework.Caller{UserID: agent.RepresentedUserID, Agent: &standalonework.ActingAgent{ProjectID: agent.ProjectID, Purpose: agent.Purpose}}
+		// Any Work Caller but a person stands where the Work's Project stood,
+		// so such a Work's Agent reads no Personal Library.
+		scope := ""
+		if agent.WorkCaller.Kind != domain.CallerKindPerson {
+			scope = agent.WorkCaller.String()
+		}
+		return standalonework.Caller{UserID: agent.RepresentedUserID, Agent: &standalonework.ActingAgent{ProjectID: scope, Purpose: agent.Purpose}}
 	}
 	if application, ok := principal.Application(); ok {
 		return standalonework.Caller{ApplicationID: application.ID}

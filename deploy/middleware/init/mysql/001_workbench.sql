@@ -25,11 +25,14 @@ CREATE TABLE IF NOT EXISTS `account` (
 
 CREATE TABLE IF NOT EXISTS `agent_account` (
   `work_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'The Work whose Agent this is; the subject of every agent Identity Token for it',
-  `project_id` varchar(255) NOT NULL DEFAULT '' COMMENT 'The Work''s Project; empty for a Work without one',
+  `work_caller_kind` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Kind of the Work Caller in whose name the Work was started',
+  `work_caller_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Identity of the Work Caller within its kind',
+  `work_key_kind` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Kind of the Work''s Work Key; empty for a Work without one',
+  `work_key_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Identity of the Work''s Work Key; empty for a Work without one',
+  `file_home_kind` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Kind of the Work''s File Home; empty for a Work without one',
+  `file_home_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Identity of the Work''s File Home; empty for a Work without one',
   `agent_id` varchar(255) NOT NULL DEFAULT '' COMMENT 'The Work''s AgentDefinition',
   `purpose` varchar(255) NOT NULL DEFAULT '' COMMENT 'The purpose of the Work''s AgentDefinition',
-  `work_subject_kind` varchar(255) NOT NULL DEFAULT '' COMMENT 'The kind of the Work''s Subject; empty for a Work without one',
-  `work_subject_id` varchar(255) NOT NULL DEFAULT '' COMMENT 'The identity of the Work''s Subject',
   `represented_user_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'Account id of the person the Agent represents; empty for an Agent representing no one',
   `application_id` varchar(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT 'The Application that owns the Work; empty for a Work no Application owns',
   `work_labels` json NOT NULL DEFAULT (json_object()) COMMENT 'The Work''s Work Labels as a key to value object; empty for a Work without labels',

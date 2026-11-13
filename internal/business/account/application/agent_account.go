@@ -12,11 +12,14 @@ import (
 // it.
 type IssueWorkIdentityToken struct {
 	WorkID            string
-	ProjectID         string
+	WorkCallerKind    string
+	WorkCallerID      string
+	WorkKeyKind       string
+	WorkKeyID         string
+	FileHomeKind      string
+	FileHomeID        string
 	AgentID           string
 	Purpose           string
-	SubjectKind       string
-	SubjectID         string
 	RepresentedPerson string
 	OwningApplication string
 	WorkLabels        map[string]string
@@ -38,7 +41,14 @@ func (a *Application) IssueWorkIdentityToken(ctx context.Context, cmd IssueWorkI
 	if err != nil {
 		return IssuedToken{}, err
 	}
-	facts, err := domain.NewWorkFacts(cmd.ProjectID, cmd.AgentID, cmd.Purpose, cmd.SubjectKind, cmd.SubjectID, cmd.RepresentedPerson, cmd.OwningApplication, cmd.WorkLabels)
+	facts, err := domain.NewWorkFacts(domain.SuppliedWorkFacts{
+		WorkCallerKind: cmd.WorkCallerKind, WorkCallerID: cmd.WorkCallerID,
+		WorkKeyKind: cmd.WorkKeyKind, WorkKeyID: cmd.WorkKeyID,
+		FileHomeKind: cmd.FileHomeKind, FileHomeID: cmd.FileHomeID,
+		AgentID: cmd.AgentID, Purpose: cmd.Purpose,
+		RepresentedPerson: cmd.RepresentedPerson, OwningApplication: cmd.OwningApplication,
+		WorkLabels: cmd.WorkLabels,
+	})
 	if err != nil {
 		return IssuedToken{}, err
 	}
