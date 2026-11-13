@@ -3,7 +3,9 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -19,6 +21,14 @@ const (
 	CallerKindPerson      = "person"
 	CallerKindApplication = "application"
 )
+
+// agentCallerKinds are the Work Caller kinds Agent defines, the one list
+// every reader of a kind's owner consults.
+var agentCallerKinds = []string{CallerKindPerson, CallerKindApplication}
+
+// AgentCallerKinds are the Work Caller kinds Agent defines; a Work under
+// one is a Standalone Work, and every other kind is an extension's.
+func AgentCallerKinds() []string { return slices.Clone(agentCallerKinds) }
 
 const (
 	maxFactKindLength     = 32
@@ -47,14 +57,14 @@ func (c WorkCaller) Validate() error {
 // Work started under it is an Extension Work. A caller without a kind is of
 // none.
 func (c WorkCaller) ExtensionDefined() bool {
-	return c.Kind != "" && c.Kind != CallerKindPerson && c.Kind != CallerKindApplication
+	return c.Kind != "" && !slices.Contains(agentCallerKinds, c.Kind)
 }
 
 // StartsStandaloneWork tells whether a Work under this caller is a Standalone
 // Work: its caller is a person or an Application, the owner starting it for
 // itself.
 func (c WorkCaller) StartsStandaloneWork() bool {
-	return c.Kind == CallerKindPerson || c.Kind == CallerKindApplication
+	return slices.Contains(agentCallerKinds, c.Kind)
 }
 
 // String is the caller as "<kind>:<id>", the value a Directory Locator and
@@ -131,14 +141,23 @@ func (h FileHome) String() string {
 // validateKindIdentity admits a kind of at most 32 lowercase letters, digits,
 // "_" or "-", so it holds no ":", which splits "<kind>:<id>" at its first
 // colon, and no case variant of a kind Agent defines; and an opaque identity
-// of 1 to 255 bytes without NUL. How a fact travels, such as in telemetry, is
-// for whatever carries it to encode.
+// of 1 to 255 bytes without surrounding whitespace or any control character,
+// never trimmed, so Account and the entry's headers carry it as Agent holds
+// it. How a fact travels, such as in telemetry, is for whatever carries it to
+// encode.
 func validateKindIdentity(kind, id string, invalid error) error {
+	if err := validateKind(kind, invalid); err != nil {
+		return err
+	}
+	if id == "" || len(id) > maxFactIdentityLength || strings.TrimSpace(id) != id || strings.ContainsFunc(id, unicode.IsControl) {
+		return fmt.Errorf("%w: identity", invalid)
+	}
+	return nil
+}
+
+func validateKind(kind string, invalid error) error {
 	if kind == "" || len(kind) > maxFactKindLength || strings.TrimFunc(kind, kindCharacter) != "" {
 		return fmt.Errorf("%w: kind %q", invalid, kind)
-	}
-	if id == "" || len(id) > maxFactIdentityLength || strings.ContainsRune(id, 0) {
-		return fmt.Errorf("%w: identity", invalid)
 	}
 	return nil
 }

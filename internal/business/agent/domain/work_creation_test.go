@@ -128,6 +128,11 @@ func TestWorkFactsNameAKindAndAnIdentity(t *testing.T) {
 		"a File Home without kind":       func(r *domain.WorkCreationRequest) { r.FileHome = domain.FileHome{ID: "1"} },
 		"a Work Caller kind in capitals": func(r *domain.WorkCreationRequest) { r.WorkCaller = domain.WorkCaller{Kind: "Person", ID: "owner"} },
 		"a Work Key kind with a space":   func(r *domain.WorkCreationRequest) { r.WorkKey = domain.WorkKey{Kind: "a case", ID: "1"} },
+		"an identity with surrounding whitespace": func(r *domain.WorkCreationRequest) {
+			r.WorkCaller = domain.WorkCaller{Kind: "project", ID: " project-a"}
+		},
+		"an identity with a control character": func(r *domain.WorkCreationRequest) { r.WorkKey = domain.WorkKey{Kind: "case", ID: "1\n2"} },
+		"a File Home identity with a tab":      func(r *domain.WorkCreationRequest) { r.FileHome = domain.FileHome{Kind: "case", ID: "1\t"} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := creationRequest(definition, projectA)
@@ -240,12 +245,12 @@ func errorsAnyOf(err error, targets ...error) bool {
 	return false
 }
 
-// An extension's identity is opaque: any characters within its length are
-// kept as given.
+// An extension's identity is opaque: any printable characters within its
+// length, without surrounding whitespace, are kept as given.
 func TestAnIdentityIsOpaque(t *testing.T) {
 	definition := personDefinition(t, "owner", false)
 	request := creationRequest(definition, domain.WorkCaller{Kind: "project", ID: "Project A, 一"})
-	request.WorkKey = domain.WorkKey{Kind: "case", ID: " case;\"1\" "}
+	request.WorkKey = domain.WorkKey{Kind: "case", ID: "case;\"1\" two"}
 	work, _, err := createWork(definition, request, &definitionSessionLookup{})
 	require.NoError(t, err)
 	require.Equal(t, request.WorkCaller, work.WorkCaller)

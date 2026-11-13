@@ -5,6 +5,13 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release where a Work fixes its Work Caller
+
+Before deploying, move a profile's `agent-built-in-plugins.project` list to
+`agent-built-in-plugins.work-caller-kinds.<kind>`, under the Work Caller kind whose Works load it,
+such as `project`. The `project` key is gone; a Work now loads the Built-in Plugins of its Work
+Caller's kind only.
+
 ## The release that removes the v1 PersonalWorkService
 
 Nothing to do beyond deploying it and re-applying the `web-api` HTTPRoute and the `web-auth`

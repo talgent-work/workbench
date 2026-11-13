@@ -42,6 +42,9 @@ func (r *WorkQueryRepository) ListWorkViews(ctx context.Context, filter query.Wo
 		// An Agent Owner's Works are those of the definitions it owns.
 		q = q.And("JSON_CONTAINS((SELECT o.owners FROM agent_definition o WHERE o.id = s.agent_id), JSON_QUOTE(?))", filter.AgentOwner)
 	}
+	if filter.ExtensionWorks {
+		q = q.And(builder.NotIn("s.work_caller_kind", domain.AgentCallerKinds()))
+	}
 	if filter.ShareReader != "" {
 		q = q.And("s.id IN (SELECT w.work_id FROM agent_work_share w WHERE w.reader_id=?)", filter.ShareReader)
 	}

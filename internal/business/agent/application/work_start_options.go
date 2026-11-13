@@ -53,7 +53,14 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 		}
 		base, defaults = definition.ProvideCapabilities(), definition.WorkDefaults
 	}
-	base.RequiredPlugins = a.BuiltInPlugins.ComposeRequiredPlugins(input.WorkCaller, base.RequiredPlugins, input.RequiredPlugins)
+	// A new Work in the name of the definition's owner is its Standalone
+	// Work, whose Work Caller the definition names; only a trusted service
+	// names another.
+	caller := input.WorkCaller
+	if caller == (domain.WorkCaller{}) {
+		caller, _ = owner.OwnerWorkCaller()
+	}
+	base.RequiredPlugins = a.BuiltInPlugins.ComposeRequiredPlugins(caller, base.RequiredPlugins, input.RequiredPlugins)
 	personal, err := a.Catalog.ListPersonalPlugins(ctx, input.SubjectID)
 	if err != nil {
 		return query.WorkStartOptions{}, err

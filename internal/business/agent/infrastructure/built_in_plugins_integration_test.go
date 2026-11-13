@@ -30,6 +30,7 @@ import (
 const (
 	platformPlugin = "talgent"
 	projectPlugin  = "project-plugin"
+	personPlugin   = "person-plugin"
 	personalRole   = "talgent:work-executor"
 	projectRole    = "project-plugin:coordinator"
 )
@@ -46,7 +47,7 @@ func (c *builtInCatalog) ListPersonalPlugins(_ context.Context, subject string) 
 }
 
 func (*builtInCatalog) ResolvePlugin(_ context.Context, _ string, slug string) (domain.PluginRelease, error) {
-	roles := map[string]string{platformPlugin: personalRole, projectPlugin: projectRole, "caller-plugin": "caller-plugin:reviewer", "chosen": "chosen:helper"}
+	roles := map[string]string{platformPlugin: personalRole, projectPlugin: projectRole, "caller-plugin": "caller-plugin:reviewer", "chosen": "chosen:helper", personPlugin: "person-plugin:helper"}
 	role, ok := roles[slug]
 	if !ok {
 		return domain.PluginRelease{}, fmt.Errorf("fixture: no release of %s", slug)
@@ -133,9 +134,13 @@ func requiredOptions(options agentquery.WorkStartOptions) map[string]bool {
 	return required
 }
 
-func configuredBuiltIns(t *testing.T, platform, project []string) domain.BuiltInPlugins {
+// projectScope declares the project-plugin for every Work started in the name
+// of a Project.
+var projectScope = map[string][]string{"project": {projectPlugin}}
+
+func configuredBuiltIns(t *testing.T, platform []string, kinds map[string][]string) domain.BuiltInPlugins {
 	t.Helper()
-	builtIns, err := domain.NewBuiltInPlugins(platform, project)
+	builtIns, err := domain.NewBuiltInPlugins(platform, kinds)
 	require.NoError(t, err)
 	return builtIns
 }
@@ -143,13 +148,34 @@ func configuredBuiltIns(t *testing.T, platform, project []string) domain.BuiltIn
 // A Standalone Work loads the platform scope's Built-in Plugins although its
 // person's definition names none, and Start Work offers them as required.
 func TestAStandaloneWorkLoadsThePlatformScopeAlone(t *testing.T) {
-	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, []string{projectPlugin}), &builtInCatalog{})
+	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, projectScope), &builtInCatalog{})
 	options, err := f.works.StartOptions(context.Background(), standalonework.Caller{UserID: "alice"})
 	require.NoError(t, err)
 	require.Equal(t, personalRole, options.DefaultStartupAgent)
 	require.Equal(t, map[string]bool{platformPlugin: true}, requiredOptions(options))
 
 	require.Equal(t, map[string]any{platformPlugin: "release-default"}, f.startStandalone(t, "alice"))
+}
+
+// Built-in Plugins follow the Work Caller's kind: the person kind's reach
+// every person's Standalone Work and no Work in the name of a Project, and the
+// project kind's the reverse.
+func TestBuiltInPluginsFollowTheWorkCallersKind(t *testing.T) {
+	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, map[string][]string{"project": {projectPlugin}, domain.CallerKindPerson: {personPlugin}}), &builtInCatalog{})
+	options, err := f.works.StartOptions(context.Background(), standalonework.Caller{UserID: "alice"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{platformPlugin: true, personPlugin: true}, requiredOptions(options))
+	require.Equal(t, map[string]any{platformPlugin: "release-default", personPlugin: "release-default"}, f.startStandalone(t, "alice"))
+	options, err = f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{platformPlugin: true, personPlugin: true}, requiredOptions(options), "a person's new Work without a named Work Caller is theirs")
+	options, err = f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{platformPlugin: true, projectPlugin: true}, requiredOptions(options))
+
+	id, err := f.createProjectWork(f.projectDefinition(t, projectRole))
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{platformPlugin: "release-default", projectPlugin: "release-default"}, f.retained(t, id))
 }
 
 // A personal disable or uninstall of a Built-in Plugin leaves every Work
@@ -171,7 +197,7 @@ func TestAPersonalDisableOrUninstallKeepsABuiltInPlugin(t *testing.T) {
 // definition that requires nothing starts with a role the Project scope
 // supplies; Start Work for a new Work of the Project offers both as required.
 func TestAWorkOfAProjectLoadsTheProjectScope(t *testing.T) {
-	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, []string{projectPlugin}), &builtInCatalog{})
+	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, projectScope), &builtInCatalog{})
 	id, err := f.createProjectWork(f.projectDefinition(t, projectRole))
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{platformPlugin: "release-default", projectPlugin: "release-default"}, f.retained(t, id))
@@ -201,7 +227,7 @@ func TestAnEmptyProjectScopeAddsNothing(t *testing.T) {
 // A slug that a scope, the definition and the caller all require is loaded
 // once.
 func TestASlugFromSeveralLayersIsLoadedOnce(t *testing.T) {
-	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, []string{projectPlugin}), &builtInCatalog{})
+	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, projectScope), &builtInCatalog{})
 	id, err := f.createProjectWork(f.projectDefinition(t, projectRole, platformPlugin, "caller-plugin"), projectPlugin, "caller-plugin")
 	require.NoError(t, err)
 	work, err := f.app.Works.Get(context.Background(), id)
@@ -224,7 +250,7 @@ func TestASlugFromSeveralLayersIsLoadedOnce(t *testing.T) {
 // Project and the Work retains the Project scope's slug as a personal choice.
 func TestStartOptionsOfAnExistingWorkReportItsBuiltInPluginsAsRequired(t *testing.T) {
 	catalog := &builtInCatalog{personal: map[string][]domain.PersonalPlugin{"alice": {{Slug: projectPlugin, Enabled: true}}}}
-	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, []string{projectPlugin}), catalog)
+	f := newBuiltInFixture(t, configuredBuiltIns(t, []string{platformPlugin}, projectScope), catalog)
 	projectWork, err := f.createProjectWork(f.projectDefinition(t, projectRole), "caller-plugin")
 	require.NoError(t, err)
 	options, err := f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "owner", WorkID: projectWork})

@@ -146,6 +146,10 @@ func (stubStorage) ListFiles(context.Context, domain.Directory) ([]command.Space
 	return nil, nil
 }
 
+func (stubStorage) ListDirectoryFiles(context.Context, []domain.Directory) ([]command.SpaceFile, error) {
+	return nil, nil
+}
+
 func (stubStorage) RequestWorkReclamation(context.Context, string) error { return nil }
 
 // IssueUpload names, in its link, the owner the upload is attributed to.

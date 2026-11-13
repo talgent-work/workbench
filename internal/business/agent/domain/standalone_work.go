@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -47,10 +48,16 @@ func (s *AgentWork) validateWorkFacts() error {
 	return nil
 }
 
-// AdmitDelegatedControl refuses an extension acting on the owner's behalf on
-// a Standalone Work, which only its owner acts on.
+// AdmitDelegatedControl admits an extension acting on the owner's behalf
+// only on an Extension Work, whose Work Caller is of a kind an extension
+// defines (Delegated control); a Standalone Work only its owner acts on. A
+// stored Work always holds a valid Work Caller, so an invalid one is a fault
+// of the store, never of the request.
 func (s *AgentWork) AdmitDelegatedControl() error {
-	if s.Standalone() {
+	if err := s.WorkCaller.Validate(); err != nil {
+		return fmt.Errorf("agent: Work %s holds an invalid Work Caller: %v", s.ID, err)
+	}
+	if !s.WorkCaller.ExtensionDefined() {
 		return ErrStandaloneWorkOwnerOnly
 	}
 	return nil
@@ -150,12 +157,13 @@ func (s *AgentWork) StandaloneFileSpaces() (StandaloneFiles, error) {
 }
 
 // ReadableWorkFile tells whether a reader admitted to a Work reads one file of
-// its File Spaces. A Standalone Work's spaces are its own, so every file is
-// readable; an Extension Work may publish into its File Home's File Space,
-// which holds that File Home's other Works' files, so only the Artifacts the
-// Work published itself are readable here.
-func ReadableWorkFile(workID string, standalone, artifact bool, publishedBy string) bool {
-	return standalone || (artifact && publishedBy == workID)
+// its File Spaces (Shared space reading). A Work without a File Home keeps
+// its files in its own File Spaces, so every file is readable; a Work with
+// one reads its inputs from and publishes into its File Home's File Spaces,
+// which hold that File Home's other Works' files, so only the Artifacts the
+// Work published itself are readable there.
+func ReadableWorkFile(workID string, inFileHome, artifact bool, publishedBy string) bool {
+	return !inFileHome || (artifact && publishedBy == workID)
 }
 
 // AdmitFileReader admits a reader of the Work's files: an owner of its

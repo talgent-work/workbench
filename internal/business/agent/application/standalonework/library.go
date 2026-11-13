@@ -36,11 +36,15 @@ type Library struct {
 }
 
 // Library lists the Artifacts of the person's Standalone Works and of each Work
-// they hold a Work Share in, most recently added first. A shared Extension
-// Work contributes only the Artifacts it published itself: its publication
-// target may be its File Home's, holding that File Home's other Works' files.
+// they hold a Work Share in, most recently added first. A shared Work with a
+// File Home contributes only the Artifacts it published itself: its
+// publication target is its File Home's, holding that File Home's other
+// Works' files.
 func (p *StandaloneWorks) Library(ctx context.Context, caller Caller, filter LibraryFilter) (Library, error) {
-	reader := caller.libraryReader()
+	reader, err := p.libraryReader(ctx, caller)
+	if err != nil {
+		return Library{}, err
+	}
 	if reader == "" {
 		return Library{}, access.ErrAccessDenied
 	}
@@ -77,7 +81,7 @@ func (p *StandaloneWorks) Library(ctx context.Context, caller Caller, filter Lib
 			continue
 		}
 		for _, work := range read {
-			if work.PublicationTarget.Equal(file.Directory) && domain.ReadableWorkFile(work.WorkID, work.Standalone, true, file.WorkID) && filter.admits(file) {
+			if work.PublicationTarget.Equal(file.Directory) && domain.ReadableWorkFile(work.WorkID, work.InFileHome, true, file.WorkID) && filter.admits(file) {
 				library.Files = append(library.Files, LibraryFile{Work: work, File: file})
 			}
 		}

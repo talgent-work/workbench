@@ -40,9 +40,12 @@ type WorkListFilter struct {
 	Purpose, AgentOwner, AfterID string
 	// ShareReader selects Works sharing their message stream with that reader.
 	ShareReader string
-	Limit       int
-	Recent      bool
-	Archived    *bool
+	// ExtensionWorks selects only Extension Works, those whose Work Caller is
+	// of a kind an extension defines.
+	ExtensionWorks bool
+	Limit          int
+	Recent         bool
+	Archived       *bool
 }
 
 type ListWorks struct{ Filter WorkListFilter }
@@ -56,10 +59,13 @@ func NewListWorksHandler(reader WorkQueryRepository) *ListWorksHandler {
 // MaxListedWorks is the largest page one list returns.
 const MaxListedWorks = 500
 
-// Handle lists Works for a trusted caller, which authorizes its own scope.
-// An unbounded list of every Work is never served.
+// Handle lists Extension Works for a trusted caller, which authorizes its own
+// scope: an extension lists the Works it started, never a person's or an
+// Application's Standalone Works (Extension Works listing). An unbounded list
+// of every Work is never served.
 func (h *ListWorksHandler) Handle(ctx context.Context, input ListWorks) ([]WorkSummary, error) {
 	filter := input.Filter
+	filter.ExtensionWorks = true
 	if filter.WorkCaller != nil {
 		if err := domain.AdmitExtensionWorkCaller(*filter.WorkCaller); err != nil {
 			return nil, err
