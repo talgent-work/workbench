@@ -61,13 +61,13 @@ func TestAnAgentAsksWhoItIs(t *testing.T) {
 	}
 
 	me, err := client.WhoAmI(as("agent", map[string]string{
-		authn.HeaderSubject: work, authn.HeaderProjectID: "stale", authn.HeaderAgentID: "definition", authn.HeaderPurpose: "work",
-		authn.HeaderWorkSubjectKind: "stale", authn.HeaderWorkSubjectID: "stale",
+		authn.HeaderSubject: work, authn.HeaderWorkCaller: "project:stale", authn.HeaderAgentID: "definition", authn.HeaderPurpose: "work",
+		authn.HeaderWorkKey: "stale:stale",
 	}), &agentpublicv1.WhoAmIRequest{})
 	require.NoError(t, err)
 	require.True(t, proto.Equal(&agentpublicv1.WhoAmIResponse{WorkId: work, WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "p1"}, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: "case 1"}, FileHome: &agentpublicv1.FileHome{Kind: "case", Id: "case 1"}, Purpose: "work", AgentId: "definition"}, me), me.String())
 
-	own, err := client.WhoAmI(as("agent", map[string]string{authn.HeaderSubject: standalone, authn.HeaderAgentID: "definition", authn.HeaderPurpose: "work"}), &agentpublicv1.WhoAmIRequest{})
+	own, err := client.WhoAmI(as("agent", map[string]string{authn.HeaderSubject: standalone, authn.HeaderWorkCaller: "person:stale", authn.HeaderAgentID: "definition", authn.HeaderPurpose: "work"}), &agentpublicv1.WhoAmIRequest{})
 	require.NoError(t, err)
 	require.True(t, proto.Equal(&agentpublicv1.WhoAmIResponse{WorkId: standalone, WorkCaller: &agentpublicv1.WorkCaller{Kind: "person", Id: "jack"}, Purpose: "work", AgentId: "definition"}, own), "a Standalone Work names its owner as Work Caller: %s", own.String())
 

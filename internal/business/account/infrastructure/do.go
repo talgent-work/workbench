@@ -64,11 +64,14 @@ func (signingKeyDO) TableName() string { return "signing_key" }
 
 type agentAccountDO struct {
 	WorkID            string `xorm:"work_id pk"`
-	ProjectID         string `xorm:"project_id"`
+	WorkCallerKind    string `xorm:"work_caller_kind"`
+	WorkCallerID      string `xorm:"work_caller_id"`
+	WorkKeyKind       string `xorm:"work_key_kind"`
+	WorkKeyID         string `xorm:"work_key_id"`
+	FileHomeKind      string `xorm:"file_home_kind"`
+	FileHomeID        string `xorm:"file_home_id"`
 	AgentID           string `xorm:"agent_id"`
 	Purpose           string `xorm:"purpose"`
-	WorkSubjectKind   string `xorm:"work_subject_kind"`
-	WorkSubjectID     string `xorm:"work_subject_id"`
 	RepresentedUserID string `xorm:"represented_user_id"`
 	ApplicationID     string `xorm:"application_id"`
 	WorkLabels        string `xorm:"work_labels JSON"`

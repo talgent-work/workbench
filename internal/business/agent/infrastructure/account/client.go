@@ -1,5 +1,5 @@
 // Package account reaches Account's private API for Agent: the User Directory,
-// the people a Work without a Project may be shared with, the Agent Account
+// the people a Standalone Work may be shared with, the Agent Account
 // Command that issues a Work's Identity Token, and the Application Ownership
 // Query.
 package account
