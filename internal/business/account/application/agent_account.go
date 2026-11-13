@@ -41,19 +41,14 @@ func (a *Application) IssueWorkIdentityToken(ctx context.Context, cmd IssueWorkI
 	if err != nil {
 		return IssuedToken{}, err
 	}
-	caller, err := domain.NewWorkCaller(cmd.WorkCallerKind, cmd.WorkCallerID)
-	if err != nil {
-		return IssuedToken{}, err
-	}
-	key, err := domain.NewWorkKey(cmd.WorkKeyKind, cmd.WorkKeyID)
-	if err != nil {
-		return IssuedToken{}, err
-	}
-	home, err := domain.NewFileHome(cmd.FileHomeKind, cmd.FileHomeID)
-	if err != nil {
-		return IssuedToken{}, err
-	}
-	facts, err := domain.NewWorkFacts(caller, key, home, cmd.AgentID, cmd.Purpose, cmd.RepresentedPerson, cmd.OwningApplication, cmd.WorkLabels)
+	facts, err := domain.NewWorkFacts(domain.SuppliedWorkFacts{
+		WorkCallerKind: cmd.WorkCallerKind, WorkCallerID: cmd.WorkCallerID,
+		WorkKeyKind: cmd.WorkKeyKind, WorkKeyID: cmd.WorkKeyID,
+		FileHomeKind: cmd.FileHomeKind, FileHomeID: cmd.FileHomeID,
+		AgentID: cmd.AgentID, Purpose: cmd.Purpose,
+		RepresentedPerson: cmd.RepresentedPerson, OwningApplication: cmd.OwningApplication,
+		WorkLabels: cmd.WorkLabels,
+	})
 	if err != nil {
 		return IssuedToken{}, err
 	}

@@ -134,8 +134,8 @@ func TestAgentAccountRefusesDriftingFacts(t *testing.T) {
 	}
 }
 
-// A Work's Work Caller is required, and a Work Key or File Home is a kind
-// with an identity or nothing.
+// A Work's Work Caller is required, a Work Key or File Home is a kind with an
+// identity or nothing, and Account carries each exactly or refuses it.
 func TestAgentAccountRefusesIncompleteWorkFacts(t *testing.T) {
 	h := newHarness(t)
 	client := h.agentAccounts()
@@ -144,6 +144,7 @@ func TestAgentAccountRefusesIncompleteWorkFacts(t *testing.T) {
 		"a Work Caller's kind":   func(r *accountprivatev1.IssueWorkIdentityTokenRequest) { r.WorkCallerId = "" },
 		"a kind with a colon":    func(r *accountprivatev1.IssueWorkIdentityTokenRequest) { r.WorkKeyKind = "case:x" },
 		"a File Home's identity": func(r *accountprivatev1.IssueWorkIdentityTokenRequest) { r.FileHomeKind = "" },
+		"a padded Work Caller":   func(r *accountprivatev1.IssueWorkIdentityTokenRequest) { r.WorkCallerId = " project-1" },
 	} {
 		work := newWorkID()
 		request := issueRequest(work, "project-1", "")

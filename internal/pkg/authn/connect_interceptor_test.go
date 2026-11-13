@@ -111,6 +111,8 @@ func TestAgentRequestNeverResolvesAPerson(t *testing.T) {
 		WorkID: workID, WorkCaller: WorkFact{Kind: "project", ID: "p1"}, WorkKey: WorkFact{Kind: "case", ID: "case:1"},
 		AgentID: "agent-definition", Purpose: "review", RepresentedUserID: userID,
 	}, agent, "each Work fact splits at its first colon, and a Work without a File Home has none")
+	require.Equal(t, "case:case:1", agent.WorkKey.String())
+	require.Empty(t, agent.FileHome.String(), "no File Home, no value")
 	_, isUser := principal.User()
 	require.False(t, isUser)
 	ctx := WithPrincipal(context.Background(), principal)

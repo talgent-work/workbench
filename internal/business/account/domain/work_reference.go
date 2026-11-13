@@ -9,6 +9,10 @@ import (
 
 // Bounds of a Work Caller, Work Key or File Home as Account keeps and signs
 // it: its kind never holds ":", so "<kind>:<id>" splits at its first colon.
+//
+// Agent applies the same "<kind>:<id>" shape to the facts it supplies.
+// Account keeps its own copy of the rule because it is upstream of Agent and
+// must not import Agent's model; both follow the contract's shape.
 const (
 	maxReferenceKindLength = 32
 	maxReferenceIDLength   = 255
@@ -20,11 +24,10 @@ type WorkCaller struct {
 	Kind, ID string
 }
 
-// NewWorkCaller trims and bounds a Work Caller; both its kind and its identity
-// are required.
+// NewWorkCaller admits a Work Caller exactly as supplied; both its kind and
+// its identity are required.
 func NewWorkCaller(kind, id string) (WorkCaller, error) {
-	kind, id, err := newReference("work caller", kind, id, true)
-	return WorkCaller{Kind: kind, ID: id}, err
+	return WorkCaller{Kind: kind, ID: id}, checkReference("work caller", kind, id, true)
 }
 
 // String is the Work Caller as "<kind>:<id>", the claim every token states.
@@ -36,10 +39,10 @@ type WorkKey struct {
 	Kind, ID string
 }
 
-// NewWorkKey trims and bounds a Work Key; an empty kind and identity mean none.
+// NewWorkKey admits a Work Key exactly as supplied; an empty kind and
+// identity mean none.
 func NewWorkKey(kind, id string) (WorkKey, error) {
-	kind, id, err := newReference("work key", kind, id, false)
-	return WorkKey{Kind: kind, ID: id}, err
+	return WorkKey{Kind: kind, ID: id}, checkReference("work key", kind, id, false)
 }
 
 // String is the Work Key as "<kind>:<id>"; empty for none.
@@ -52,38 +55,44 @@ type FileHome struct {
 	Kind, ID string
 }
 
-// NewFileHome trims and bounds a File Home; an empty kind and identity mean
-// none.
+// NewFileHome admits a File Home exactly as supplied; an empty kind and
+// identity mean none.
 func NewFileHome(kind, id string) (FileHome, error) {
-	kind, id, err := newReference("file home", kind, id, false)
-	return FileHome{Kind: kind, ID: id}, err
+	return FileHome{Kind: kind, ID: id}, checkReference("file home", kind, id, false)
 }
 
 // String is the File Home as "<kind>:<id>"; empty for none.
 func (h FileHome) String() string { return referenceString(h.Kind, h.ID) }
 
-// newReference trims a kind and an identity and bounds what Account stores
-// and signs; it never interprets either (Facts carried, not read). Neither
-// may hold a control character, since the entry writes each as a header.
-func newReference(name, kind, id string, required bool) (string, string, error) {
-	kind, id = strings.TrimSpace(kind), strings.TrimSpace(id)
+// checkReference bounds what Account stores and signs, and never rewrites or
+// interprets it (Facts carried, not read): a fact is carried exactly or
+// refused. The entry writes each fact as a header, so neither part may hold
+// surrounding whitespace or a control character.
+func checkReference(name, kind, id string, required bool) error {
 	if kind == "" && id == "" && !required {
-		return "", "", nil
+		return nil
 	}
 	if kind == "" || id == "" {
-		return "", "", fmt.Errorf("%w: a %s needs both its kind and its id", ErrInvalidAgentAccount, name)
+		return fmt.Errorf("%w: a %s needs both its kind and its id", ErrInvalidAgentAccount, name)
 	}
-	if utf8.RuneCountInString(kind) > maxReferenceKindLength || strings.Contains(kind, ":") || hasControl(kind) {
-		return "", "", fmt.Errorf("%w: a %s kind is at most %d characters without ':'", ErrInvalidAgentAccount, name, maxReferenceKindLength)
+	for _, part := range [...]struct{ name, value string }{{"kind", kind}, {"id", id}} {
+		if strings.TrimSpace(part.value) != part.value {
+			return fmt.Errorf("%w: a %s %s has surrounding whitespace", ErrInvalidAgentAccount, name, part.name)
+		}
+		if strings.IndexFunc(part.value, unicode.IsControl) >= 0 {
+			return fmt.Errorf("%w: a %s %s holds a control character", ErrInvalidAgentAccount, name, part.name)
+		}
 	}
-	if utf8.RuneCountInString(id) > maxReferenceIDLength || hasControl(id) {
-		return "", "", fmt.Errorf("%w: a %s id is at most %d characters", ErrInvalidAgentAccount, name, maxReferenceIDLength)
+	if strings.Contains(kind, ":") {
+		return fmt.Errorf("%w: a %s kind holds ':'", ErrInvalidAgentAccount, name)
 	}
-	return kind, id, nil
-}
-
-func hasControl(value string) bool {
-	return strings.IndexFunc(value, unicode.IsControl) >= 0
+	if utf8.RuneCountInString(kind) > maxReferenceKindLength {
+		return fmt.Errorf("%w: a %s kind exceeds %d characters", ErrInvalidAgentAccount, name, maxReferenceKindLength)
+	}
+	if utf8.RuneCountInString(id) > maxReferenceIDLength {
+		return fmt.Errorf("%w: a %s id exceeds %d characters", ErrInvalidAgentAccount, name, maxReferenceIDLength)
+	}
+	return nil
 }
 
 func referenceString(kind, id string) string {

@@ -42,8 +42,8 @@ func currentCaller(ctx context.Context) standalonework.Caller {
 		// Any Work Caller but a person stands where the Work's Project stood,
 		// so such a Work's Agent reads no Personal Library.
 		scope := ""
-		if agent.WorkCaller.Kind != "person" {
-			scope = agent.WorkCaller.Kind + ":" + agent.WorkCaller.ID
+		if agent.WorkCaller.Kind != domain.CallerKindPerson {
+			scope = agent.WorkCaller.String()
 		}
 		return standalonework.Caller{UserID: agent.RepresentedUserID, Agent: &standalonework.ActingAgent{ProjectID: scope, Purpose: agent.Purpose}}
 	}
