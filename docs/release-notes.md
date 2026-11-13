@@ -5,6 +5,38 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that fixes a Work's Work Caller, Work Key and File Home
+
+A Work now fixes three facts at creation in place of its Project and Work Subject: its Work
+Caller (in whose name it runs), its Work Key and its File Home. Existing Works, Agent Accounts and
+measurements are not converted. Before deploying, in this order:
+
+1. Bring each MySQL database to the schema in `deploy/middleware/init/`: `agent_work` and
+   `agent_account` replace their Project and Work Subject columns with `work_caller_*`,
+   `work_key_*` and `file_home_*`. Recreate those tables; their rows are not migrated. Then
+   apply
+   [`20261113-work-caller-locators.sql`](../deploy/middleware/migrations/20261113-work-caller-locators.sql)
+   to the database named by `AGENT_MYSQL_DATABASE`: it renames the Locator conditions each
+   AgentDefinition's Work Layout stores, `subject` to `file_home` and `project` to
+   `work_caller`, without which no Work starts.
+2. Drop `talgent_trace.trace_work_measurements`; the ClickHouse schema step refuses to apply
+   while the table still has `project_id`, then creates it afresh with `work_caller` and
+   `work_key` in place of the Project and Application columns.
+3. Move a profile's `agent-built-in-plugins.project` list to
+   `agent-built-in-plugins.work-caller-kinds.<kind>`, under the Work Caller kind whose Works load
+   it, such as `project`. A Work loads the Built-in Plugins of its Work Caller's kind only.
+4. Replace `trace-access.project-access-address` with
+   `trace-access.work-caller-access-addresses.<kind>`, one address per Work Caller kind an
+   extension defines ([configuration](configuration.md#trace)).
+5. Deploy the entry together with the services: an agent token's `work_caller`, `work_key` and
+   `file_home` claims become `x-talgent-work-caller`, `x-talgent-work-key` and
+   `x-talgent-file-home`, and an agent request without a Work Caller is refused. Running Works
+   get new tokens when they start again.
+
+Contracts v0.7.0 carries the three facts. A web app built on `@talgent/workbench-ui` names an
+Extension Work by its Work Caller: `useWorkTrace`, `WorkUsageReader` and the `trace` reading take
+`workCaller` (`{ kind, id }`, left out for a Standalone Work) where they took `projectId`.
+
 ## The release that removes the v1 PersonalWorkService
 
 Nothing to do beyond deploying it and re-applying the `web-api` HTTPRoute and the `web-auth`

@@ -24,7 +24,7 @@ func (r *reportSource) ReadWorkHistory(_ context.Context, scope WorkReportScope,
 	return r.works, r.err
 }
 
-var projectScope = WorkReportScope{ProjectID: "project", Purpose: "work"}
+var projectScope = WorkReportScope{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, Purpose: "work"}
 
 func TestWorkReportUsesHistoricalEligibilityAndPermanentClosure(t *testing.T) {
 	end := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
@@ -97,7 +97,7 @@ func TestWorkReportWaitingUnknownFailureAndAuthorization(t *testing.T) {
 	require.ErrorIs(t, err, source.err, "query failure is not an empty population")
 	source.called = false
 	_, err = handler.Handle(context.Background(), GetWorkReport{Window: "24h"})
-	require.ErrorIs(t, err, domain.ErrInvalidWork, "an unscoped report of every Work is never served")
+	require.ErrorIs(t, err, domain.ErrInvalidWorkCaller, "an unscoped report of every Work is never served")
 	require.False(t, source.called)
 }
 

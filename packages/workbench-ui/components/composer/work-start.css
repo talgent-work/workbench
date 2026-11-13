@@ -76,6 +76,8 @@
 .wpb-model-trigger > :not(.wpb-model-name) { flex-shrink: 0; }
 .wpb-feedback { margin: 12px 20px 0; font-size: 13px; color: var(--muted); }
 .wpb-feedback-error { color: var(--danger); }
+/* In a dialog the form floats over the dimmed page, so feedback sits on its own surface. */
+.wpb-dialog .wpb-feedback { display: flex; align-items: center; gap: 8px; margin-inline: 20px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--surface); box-shadow: 0 2px 8px oklch(0 0 0 / 0.08); }
 
 /* The same input and bottom toolbar expand upward as the conversation draft grows. */
 .wpb-conversation { flex-shrink: 0; width: min(var(--wpb-panel-width), 100%); margin-inline: auto; padding-block: 8px 16px; }

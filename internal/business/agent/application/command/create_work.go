@@ -26,10 +26,12 @@ type CreateWork struct {
 	// StartingUserID is the trusted represented human. Empty means an
 	// automated start without personal defaults.
 	StartingUserID string
-	// Subject is the optional business object the Work is about; ProjectID
-	// is its optional Project.
-	Subject               domain.WorkSubject
-	ProjectID             string
+	// WorkCaller is in whose name the Work is started: the owner of a
+	// Standalone Work, or the extension's object for an Extension Work, which
+	// may also supply a Work Key and a File Home.
+	WorkCaller            domain.WorkCaller
+	WorkKey               domain.WorkKey
+	FileHome              domain.FileHome
 	TraceAttributes       map[string]string
 	CapabilityDifferences domain.CapabilityDifferences
 	// StartingContext, when supplied, starts a new Work from another Work of
@@ -108,7 +110,8 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 
 // requestedWork is the Work the request identity names, nil before it exists.
 // An identity naming a Work of another definition belongs to another
-// operation.
+// operation, and a repeat supplying other Work facts than the Work fixed is
+// refused as a Mismatched reuse.
 func (h *CreateWorkHandler) requestedWork(ctx context.Context, request CreateWork) (*domain.AgentWork, error) {
 	work, err := h.sessions.Get(ctx, request.workID())
 	if errors.Is(err, domain.ErrWorkNotFound) {
@@ -119,6 +122,9 @@ func (h *CreateWorkHandler) requestedWork(ctx context.Context, request CreateWor
 	}
 	if work.AgentID != request.AgentID {
 		return nil, ErrStartRequestConflict
+	}
+	if err := work.AdmitReuse(request.WorkCaller, request.WorkKey, request.FileHome); err != nil {
+		return nil, err
 	}
 	return work, nil
 }

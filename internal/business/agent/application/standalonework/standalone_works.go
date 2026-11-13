@@ -74,10 +74,10 @@ type StartWork struct {
 var standaloneWorkSpace = uuid.MustParse("6f5c1c8e-9a0b-4c7e-8a51-3d2f0b9e4a17")
 
 // Start creates the Work under the identity Agent allocates for it and admits
-// its first input. The Work has no Subject and no Project, so its layout
-// locates its own inputs and publication target; only its creation request
-// identity deduplicates it. A person starts it for themselves; an
-// Application starts it as itself, with no person starting it.
+// its first input. Its owner is its Work Caller, and it has no Work Key and no
+// File Home, so its layout locates its own inputs and publication target;
+// only its creation request identity deduplicates it. A person starts it for
+// themselves; an Application starts it as itself, with no person starting it.
 func (p *StandaloneWorks) Start(ctx context.Context, input StartWork) (string, error) {
 	owner := input.Caller.Owner()
 	if owner == "" {
@@ -101,7 +101,7 @@ func (p *StandaloneWorks) Start(ctx context.Context, input StartWork) (string, e
 	}
 	return p.app.Commands.CreateWork.Handle(ctx, command.CreateWork{
 		StartingUserID: input.Caller.self(), SubjectID: owner, RequestID: input.RequestID, AgentID: definition.AgentID,
-		WorkID: workID, DisplayTitle: domain.DisplayTitleFrom(input.InitialMessage),
+		WorkID: workID, WorkCaller: definition.OwnerWorkCaller, DisplayTitle: domain.DisplayTitleFrom(input.InitialMessage),
 		WorkModel: input.WorkModel, CapabilityDifferences: input.Capabilities, InitialExecution: &initial, ComputerID: input.ComputerID, Harness: input.Harness, WorkLabels: labels,
 	})
 }
@@ -146,7 +146,7 @@ func (p *StandaloneWorks) List(ctx context.Context, input ListWorks) ([]query.St
 	if err != nil {
 		return nil, err
 	}
-	agentID, found, err := p.listedDefinition(ctx, input.Caller, strings.TrimSpace(input.Application))
+	definition, found, err := p.listedDefinition(ctx, input.Caller, strings.TrimSpace(input.Application))
 	if err != nil || !found {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (p *StandaloneWorks) List(ctx context.Context, input ListWorks) ([]query.St
 	if limit <= 0 {
 		limit = defaultListedWorks
 	}
-	return p.works.ListStandaloneWorks(ctx, query.StandaloneWorksFilter{AgentID: agentID, Labels: labels.Pairs(), States: states, Limit: min(limit, maxListedWorks)})
+	return p.works.ListStandaloneWorks(ctx, query.StandaloneWorksFilter{Definition: definition, Labels: labels.Pairs(), States: states, Limit: min(limit, maxListedWorks)})
 }
 
 // listedStates are the Work States a listing asks for, as Works show them.
@@ -172,24 +172,24 @@ func listedStates(requested []string) ([]domain.WorkState, error) {
 // listedDefinition locates the definition whose Works a listing reads: the
 // caller's own, or, named, an Application's, which only the Application itself
 // or a person who owns it reads.
-func (p *StandaloneWorks) listedDefinition(ctx context.Context, caller Caller, application string) (string, bool, error) {
+func (p *StandaloneWorks) listedDefinition(ctx context.Context, caller Caller, application string) (query.OwnedDefinition, bool, error) {
 	switch {
 	case application == "" || application == caller.ApplicationID:
 		return p.ownDefinition(ctx, caller)
 	case caller.self() == "":
-		return "", false, access.ErrAccessDenied
+		return query.OwnedDefinition{}, false, access.ErrAccessDenied
 	}
 	if err := p.app.AdmitApplicationOwner(ctx, caller.self(), application); err != nil {
-		return "", false, err
+		return query.OwnedDefinition{}, false, err
 	}
 	return p.app.FindApplicationAgent(ctx, application)
 }
 
 // ownDefinition locates the owner's definition without establishing it.
-func (p *StandaloneWorks) ownDefinition(ctx context.Context, caller Caller) (string, bool, error) {
+func (p *StandaloneWorks) ownDefinition(ctx context.Context, caller Caller) (query.OwnedDefinition, bool, error) {
 	switch {
 	case caller.Owner() == "":
-		return "", false, access.ErrAccessDenied
+		return query.OwnedDefinition{}, false, access.ErrAccessDenied
 	case caller.ApplicationID != "":
 		return p.app.FindApplicationAgent(ctx, caller.ApplicationID)
 	default:

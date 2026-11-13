@@ -10,6 +10,7 @@ import { untitledWorkLabel, useStandaloneWorks } from "../../lib/standalone-work
 import { dashboardWindows, parseDashboardWindow } from "../../lib/dashboard";
 import type { TokenAnalytics } from "../../lib/token-analytics";
 import { tokenTotals } from "../../lib/trace-view-model";
+import { isExtensionWorkCaller } from "../../lib/work-caller";
 
 const topWorkCount = 10;
 
@@ -41,12 +42,12 @@ function UsageReport({ analytics, hover, onHover }: { analytics: TokenAnalytics;
   return <TokenReport analytics={analytics} rankings={rankings} hover={hover} onHover={onHover} />;
 }
 
-// A person's usage splits by Work; a Work of a Project shows as one.
+// A person's usage splits by Work; an Extension Work shows as one.
 function topWorks(analytics: TokenAnalytics, titles: Map<string, string>): TokenRanking["rows"] {
-  const projectWorks = new Set(analytics.metrics.buckets.filter(bucket => bucket.projectId).map(bucket => bucket.agentWorkId ?? ""));
+  const extensionWorks = new Set(analytics.metrics.buckets.filter(bucket => isExtensionWorkCaller(bucket.workCaller)).map(bucket => bucket.agentWorkId ?? ""));
   return [...tokenTotals(analytics.metrics.buckets, "work")].sort((left, right) => right[1] - left[1]).slice(0, topWorkCount).map(([workId, totalTokens]) => {
-    const project = projectWorks.has(workId) && !titles.has(workId);
+    const extension = extensionWorks.has(workId) && !titles.has(workId);
     return { key: workId, totalTokens, label: titles.get(workId) ?? untitledWorkLabel, detail: workId,
-      icon: project ? <FolderKanban size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" /> };
+      icon: extension ? <FolderKanban size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" /> };
   });
 }

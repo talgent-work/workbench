@@ -26,10 +26,11 @@ type LaunchSpecification struct {
 	// telemetry names its Computer by it. It is not part of the admitted
 	// start, so a later rename changes no repeated registration.
 	ComputerName string
-	// ProjectID is the Work's Project; empty for a Work without one.
-	ProjectID string
-	// Subject is the Work's Subject; empty for a Work without one.
-	Subject WorkSubject
+	// WorkCaller, WorkKey and FileHome are the Work's facts fixed at
+	// creation, which its Identity Token states.
+	WorkCaller WorkCaller
+	WorkKey    WorkKey
+	FileHome   FileHome
 	// Purpose is the purpose of the Work's AgentDefinition, which beginning
 	// the execution fills in; with the Work's other fixed facts it goes into
 	// the Work's Identity Token.

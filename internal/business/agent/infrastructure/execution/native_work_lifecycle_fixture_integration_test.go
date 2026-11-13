@@ -146,7 +146,7 @@ func (f *nativeWorkLifecycleFixture) createWithAuthorization(t *testing.T, ctx c
 	}
 	definition, err := f.definitions.Get(ctx, f.agentID)
 	require.NoError(t, err)
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: definition.RepresentedPerson(), WorkLayout: domain.DefaultWorkLayout(), Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-" + uuid.NewString()}, ModelConfigurationProvided: true})
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "lifecycle-owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: definition.RepresentedPerson(), WorkLayout: domain.DefaultWorkLayout(), Capabilities: snapshot, AuthorizationInput: authorization}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-" + uuid.NewString()}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	startID := uuid.NewString()
 	work.DefinitionVersion = definition.Version

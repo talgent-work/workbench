@@ -9,8 +9,8 @@ import (
 )
 
 // platformNamespace prefixes every resource attribute the platform
-// attributes telemetry by: the Work, its Agent, Project, person, owner and
-// Computer. The machine's own attributes there are dropped whatever they
+// attributes telemetry by: the Work, its Agent, Work Caller, Work Key,
+// person, owner and Computer. The machine's own attributes there are dropped whatever they
 // say; the run's attribution alone takes their place. Attributes outside it,
 // such as service.name and the host's, describe the process and stay.
 const platformNamespace = "talgent."

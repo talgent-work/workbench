@@ -94,7 +94,7 @@ func TestRepositoryAccessPlansAWorkStartedForAnotherHome(t *testing.T) {
 	f := newRepositoryAccessFixture(t)
 	agentID := uuid.NewString()
 	home := "project/project/project_coordination"
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "review", ID: "review"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "review", ID: "review"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, RepresentedPerson: home, WorkLayout: domain.DefaultWorkLayout(),
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ func newRepositoryAccessFixture(t *testing.T, withoutAuthorization ...bool) *rep
 	agentID := uuid.NewString()
 	f := &repositoryAccessFixture{token: "current-token", username: "x-access-token", expiresAt: time.Now().Add(time.Hour)}
 	var err error
-	f.work, err = domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
+	f.work, err = domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
 		WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
 		RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(),
 		RepositoryInput: domain.WorkRepositoryInput{OwnerID: "owner", WorkBranch: "talgent/TAL-382", Choices: []domain.WorkRepositoryChoice{{RepositoryID: "123"}},

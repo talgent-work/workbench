@@ -179,7 +179,7 @@ How Agent reaches Computer and Managed Computers.
 | `agent-rpc.control-token`, `agent-rpc.feedback-token` | `${AGENT_CONTROL_TOKEN:}`, `${AGENT_FEEDBACK_TOKEN:}` | Admit the services that control Works and Dispatcher's reports |
 | `agent-storage.address`, `token` | `${STORAGE_ADDRESS:http://127.0.0.1:8080}`, `${STORAGE_AGENT_TOKEN:}` | Storage |
 | `agent-marketplace.address`, `credential-token` | `${MARKETPLACE_INTERNAL_ADDRESS:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Marketplace |
-| `agent-built-in-plugins.platform`, `agent-built-in-plugins.project` | `[talgent, "${AGENT_API_PLUGIN:talgent-api}"]`, `[]` | Built-in Plugins by slug: every new Work loads the platform list, and a new Work of a Project loads the project list too. They are required like a Plugin a definition requires: a person's selection cannot drop them, and a person's saved values or the release defaults configure them. A Work keeps what it was created with. A profile sets a list whole, since lists replace. `talgent-api` teaches Agents the core's public API; an empty `AGENT_API_PLUGIN`, as `AGENT_CORE_API_ACCESS=disabled` sets, leaves it out, and a blank entry names no Plugin |
+| `agent-built-in-plugins.platform`, `agent-built-in-plugins.work-caller-kinds.<kind>` | `[talgent, "${AGENT_API_PLUGIN:talgent-api}"]`, `{}` | Built-in Plugins by slug: every new Work loads the platform list, and a new Work started in the name of a Work Caller of a kind also loads that kind's list, such as `work-caller-kinds.project` for an extension's `project` kind or `work-caller-kinds.person` for every person's Standalone Work. They are required like a Plugin a definition requires: a person's selection cannot drop them, and a person's saved values or the release defaults configure them. A Work keeps what it was created with. A profile sets a list whole, since lists replace. `talgent-api` teaches Agents the core's public API; an empty `AGENT_API_PLUGIN`, as `AGENT_CORE_API_ACCESS=disabled` sets, leaves it out, and a blank entry names no Plugin |
 | `agent-account.address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's private API: the directory of people a Work is shared with, and each Work's Identity Token |
 | `agent-recovery.sweep-interval` | `60s` | How often obligations no event woke are checked; at most one minute |
 | `agent-recovery.inputs-refresh-interval` | `10m` | How often a Managed Work's inputs are synced again; inside `storage.link-ttl` |
@@ -215,9 +215,9 @@ How Agent reaches Computer and Managed Computers.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `trace-access.agent-address`, `agent-control-token` | `${WORK_AGENT_ADDR:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent's Work access, which admits readers of a Work's telemetry, and its Work attribution, which names an Application's Works with their Work Labels |
+| `trace-access.agent-address`, `agent-control-token` | `${WORK_AGENT_ADDR:http://127.0.0.1:8080}`, `${AGENT_CONTROL_TOKEN:}` | Agent's Work access, which admits readers of a Standalone Work's telemetry, and its Work attribution, which names an Application's Works with their Work Labels |
 | `trace-access.account-address` | `${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}` | Account's Application Ownership Query, which admits an Application Owner to the Application's usage |
-| `trace-access.project-access-address` | `${TRACE_PROJECT_ACCESS_ADDRESS:}` | The Project access decision, served by a service built on the Workbench; empty in a Workbench deployment |
+| `trace-access.work-caller-access-addresses.<kind>` | none | For each Work Caller kind an extension defines, the address of that extension's `trace.private.v1.WorkCallerAccessService`, which admits readers of the telemetry of Works started under that kind; the Works of a kind left out are read by no one. Empty in a Workbench deployment |
 
 ## dispatcher
 

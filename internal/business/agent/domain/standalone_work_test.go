@@ -12,12 +12,13 @@ import (
 	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
 
-// standaloneWork is a Work without a Subject or a Project, with its own File
+// standaloneWork is a Work whose Work Caller is its owner, with its own File
 // Space, under an employee definition owned by "owner".
 func standaloneWork(t *testing.T) visibleWork {
 	t.Helper()
 	definition := newDefinition(t, "employee", domain.VisibilityRule{})
 	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID,
+		WorkCaller:   domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "owner"},
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, DisplayTitle: "Draft the plan",
 		RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(), Visibility: definition.Visibility,
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
@@ -67,13 +68,13 @@ func TestOnlyTheOwnerChangesAStandaloneWorksFilesUntilItCloses(t *testing.T) {
 	require.ErrorIs(t, work.AdmitFileSharing(work.definition, "reader"), domain.ErrWorkFileNotAdmitted)
 
 	other := humanWork(t)
-	require.ErrorIs(t, other.AdmitFileChange(other.definition, "owner"), domain.ErrWorkFilesUnavailable, "a Work with a Subject or a Project has its caller's files")
+	require.ErrorIs(t, other.AdmitFileChange(other.definition, "owner"), domain.ErrWorkFilesUnavailable, "an Extension Work's files are its extension's")
 }
 
 func TestOwnerAndWorkShareHoldersReadAWorksFiles(t *testing.T) {
 	work := standaloneWork(t)
 	_, err := work.GrantWorkShare(work.definition, "owner", "reader", member)
-	require.ErrorIs(t, err, domain.ErrWorkShareOutOfScope, "a Work without a Project is shared within the User Directory only")
+	require.ErrorIs(t, err, domain.ErrWorkShareOutOfScope, "a Standalone Work is shared within the User Directory only")
 	_, err = work.GrantWorkShare(work.definition, "owner", "reader", domain.ReaderAdmission{Directory: true})
 	require.NoError(t, err)
 
@@ -88,7 +89,7 @@ func TestOwnerAndWorkShareHoldersReadAWorksFiles(t *testing.T) {
 
 	withProject := humanWork(t)
 	_, err = withProject.GrantWorkShare(withProject.definition, "owner", "reader", domain.ReaderAdmission{Directory: true})
-	require.ErrorIs(t, err, domain.ErrWorkShareOutOfScope, "a Work with a Project is shared within its Project only")
+	require.ErrorIs(t, err, domain.ErrWorkShareOutOfScope, "an Extension Work is shared among its Work Caller's members only")
 }
 
 func TestAnEmployeeDefinitionRepresentsItsPersonPrivately(t *testing.T) {
@@ -104,32 +105,44 @@ func TestAnEmployeeDefinitionRepresentsItsPersonPrivately(t *testing.T) {
 	require.Empty(t, definition.ProvideCapabilities().RequiredPlugins, "the deployment's Built-in Plugins supply the core plugin")
 }
 
-// A Standalone Work starts from another Standalone Work of its definition, never
-// from one of its definition's Works with a Project.
+// A Work starts only from another Work of its definition and Work Caller: a
+// Standalone Work never from one of its definition's Extension Works.
 func TestAStandaloneWorkStartsOnlyFromAnotherStandaloneWork(t *testing.T) {
 	definition := newDefinition(t, "employee", domain.VisibilityRule{})
-	request := func(subject domain.WorkSubject, project string, source *domain.StartingContextSource) domain.WorkCreationRequest {
+	owner := domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "owner"}
+	request := func(caller domain.WorkCaller, key domain.WorkKey, source *domain.StartingContextSource) domain.WorkCreationRequest {
 		return domain.WorkCreationRequest{StartedBy: "owner", Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
-			WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, Subject: subject, ProjectID: project, StartingContext: source,
+			WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, WorkCaller: caller, WorkKey: key, StartingContext: source,
 			Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}}
 	}
-	intentWork, _, err := definition.CreateWork(request(domain.WorkSubject{Kind: "case", ID: "case-1"}, "project-a", nil), domain.WorkCreationFacts{})
+	extensionWork, _, err := definition.CreateWork(request(projectA, domain.WorkKey{Kind: "case", ID: "case-1"}, nil), domain.WorkCreationFacts{})
 	require.NoError(t, err)
-	earlier, _, err := definition.CreateWork(request(domain.WorkSubject{}, "", nil), domain.WorkCreationFacts{})
+	earlier, _, err := definition.CreateWork(request(owner, domain.WorkKey{}, nil), domain.WorkCreationFacts{})
 	require.NoError(t, err)
-	lookup := &definitionSessionLookup{works: []*domain.AgentWork{intentWork, earlier}}
+	lookup := &definitionSessionLookup{works: []*domain.AgentWork{extensionWork, earlier}}
 
-	_, _, err = createWork(definition, request(domain.WorkSubject{}, "", &domain.StartingContextSource{WorkID: intentWork.ID, Position: "message"}), lookup)
+	_, _, err = createWork(definition, request(owner, domain.WorkKey{}, &domain.StartingContextSource{WorkID: extensionWork.ID, Position: "message"}), lookup)
 	require.ErrorIs(t, err, domain.ErrStartingContextNotAdmitted)
-	continued, _, err := createWork(definition, request(domain.WorkSubject{}, "", &domain.StartingContextSource{WorkID: earlier.ID, Position: "message"}), lookup)
+	_, _, err = createWork(definition, request(domain.WorkCaller{Kind: "project", ID: "project-b"}, domain.WorkKey{}, &domain.StartingContextSource{WorkID: extensionWork.ID, Position: "message"}), lookup)
+	require.ErrorIs(t, err, domain.ErrStartingContextNotAdmitted, "nor from a Work of another extension Work Caller")
+	continued, _, err := createWork(definition, request(owner, domain.WorkKey{}, &domain.StartingContextSource{WorkID: earlier.ID, Position: "message"}), lookup)
 	require.NoError(t, err)
 	require.Equal(t, earlier.ID, continued.StartingContext.SourceWorkID)
+	sibling, _, err := createWork(definition, request(projectA, domain.WorkKey{}, &domain.StartingContextSource{WorkID: extensionWork.ID, Position: "message"}), lookup)
+	require.NoError(t, err)
+	require.Equal(t, extensionWork.ID, sibling.StartingContext.SourceWorkID)
 }
 
-func TestNoCallerCreatesOrActsOnAStandaloneWork(t *testing.T) {
-	require.ErrorIs(t, domain.AdmitCallerCreation(domain.WorkSubject{}, ""), domain.ErrStandaloneWorkOwnerOnly)
-	require.NoError(t, domain.AdmitCallerCreation(domain.WorkSubject{}, "project-a"))
-	require.NoError(t, domain.AdmitCallerCreation(domain.WorkSubject{Kind: "case", ID: "case-1"}, ""))
+func TestNoExtensionActsOnAStandaloneWork(t *testing.T) {
 	require.ErrorIs(t, standaloneWork(t).AdmitDelegatedControl(), domain.ErrStandaloneWorkOwnerOnly)
 	require.NoError(t, humanWork(t).AdmitDelegatedControl())
+}
+
+// Readers read every file of a Work's own File Spaces, and in its File
+// Home's only the Artifacts the Work published.
+func TestSharedSpaceReading(t *testing.T) {
+	require.True(t, domain.ReadableWorkFile("w", false, false, ""), "an input in the Work's own space")
+	require.True(t, domain.ReadableWorkFile("w", true, true, "w"), "its own Artifact in its File Home")
+	require.False(t, domain.ReadableWorkFile("w", true, true, "other"), "another Work's Artifact in the File Home")
+	require.False(t, domain.ReadableWorkFile("w", true, false, "w"), "an input of the File Home")
 }

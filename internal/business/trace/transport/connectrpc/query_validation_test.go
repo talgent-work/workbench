@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	tracepublicv1 "github.com/talgent-work/contracts/gen/go/trace/public/v1"
 
 	"connectrpc.com/connect/v2"
@@ -30,10 +31,10 @@ func TestQueryRejectsInvalidIntervals(t *testing.T) {
 			// No authority or storage is needed: input rejection precedes either.
 			h := newTestApplication(fakeSpanQueryRepository{})
 			ctx := context.Background()
-			_, sessionErr := h.GetSessionTraceMetrics(ctx, &tracepublicv1.GetSessionTraceMetricsRequest{ProjectId: "p", AgentWorkId: "s", StartTime: test.start, EndTime: test.end})
-			_, projectErr := h.GetProjectTraceMetrics(ctx, &tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "p", StartTime: test.start, EndTime: test.end})
-			_, eventErr := h.ListEvents(ctx, &tracepublicv1.ListEventsRequest{ProjectId: "p", StartTime: test.start, EndTime: test.end})
-			for name, err := range map[string]error{"session": sessionErr, "project": projectErr, "events": eventErr} {
+			_, sessionErr := h.GetSessionTraceMetrics(ctx, &tracepublicv1.GetSessionTraceMetricsRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "team", Id: "t"}, AgentWorkId: "s", StartTime: test.start, EndTime: test.end})
+			_, callerErr := h.GetWorkCallerTraceMetrics(ctx, &tracepublicv1.GetWorkCallerTraceMetricsRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "team", Id: "t"}, StartTime: test.start, EndTime: test.end})
+			_, eventErr := h.ListEvents(ctx, &tracepublicv1.ListEventsRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "team", Id: "t"}, StartTime: test.start, EndTime: test.end})
+			for name, err := range map[string]error{"session": sessionErr, "work caller": callerErr, "events": eventErr} {
 				if connect.CodeOf(err) != connect.CodeInvalidArgument {
 					t.Errorf("%s code = %s, error = %v", name, connect.CodeOf(err), err)
 				}
@@ -41,13 +42,13 @@ func TestQueryRejectsInvalidIntervals(t *testing.T) {
 		})
 	}
 	h := newTestApplication(fakeSpanQueryRepository{})
-	_, err := h.GetProjectTraceMetrics(context.Background(), &tracepublicv1.GetProjectTraceMetricsRequest{ProjectId: "p", StepSeconds: -1})
+	_, err := h.GetWorkCallerTraceMetrics(context.Background(), &tracepublicv1.GetWorkCallerTraceMetricsRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "team", Id: "t"}, StepSeconds: -1})
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("negative step code = %s", connect.CodeOf(err))
 	}
 }
 
-func TestSpanLookupRequiresCompleteIdentityAndProjectAdmission(t *testing.T) {
+func TestSpanLookupRequiresCompleteIdentityAndWorkCallerAdmission(t *testing.T) {
 	ctx := authn.WithAuthenticatedUser(context.Background(), authn.AuthenticatedUser{ID: "reader"})
 	repo := fakeSpanQueryRepository{getFn: func(context.Context, query.SpanIdentity) (*query.Span, error) {
 		t.Fatal("invalid or denied lookup reached storage")
@@ -55,15 +56,15 @@ func TestSpanLookupRequiresCompleteIdentityAndProjectAdmission(t *testing.T) {
 	}}
 	h := newTestApplication(repo)
 	for _, req := range []*tracepublicv1.GetSpanRequest{
-		{SpanId: "span"}, {ProjectId: "project", SpanId: "span"}, {TraceId: "trace", SpanId: "span"},
+		{SpanId: "span"}, {WorkCaller: &agentpublicv1.WorkCaller{Kind: "team", Id: "team"}, SpanId: "span"}, {TraceId: "trace", SpanId: "span"},
 	} {
 		if _, err := h.GetSpan(ctx, req); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatalf("incomplete identity admitted: %v", err)
 		}
 	}
-	h = newTestApplication(repo, &fakeTraceAuthorizer{projectErr: query.ErrAuthorizationPermissionDenied})
-	_, err := h.GetSpan(ctx, &tracepublicv1.GetSpanRequest{ProjectId: "project", TraceId: "trace", SpanId: "span"})
+	h = newTestApplication(repo, &fakeTraceAuthorizer{callerErr: query.ErrAuthorizationPermissionDenied})
+	_, err := h.GetSpan(ctx, &tracepublicv1.GetSpanRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "team", Id: "team"}, TraceId: "trace", SpanId: "span"})
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("denied Project admitted: %v", err)
+		t.Fatalf("denied Work Caller admitted: %v", err)
 	}
 }

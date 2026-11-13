@@ -6,10 +6,11 @@ import (
 )
 
 // ErrStartingContextNotAdmitted refuses starting a Work from the context
-// of a Work of another AgentDefinition or Project, or without a position.
-var ErrStartingContextNotAdmitted = errors.New("agent: a Work starts only from the context of another Work of its own definition and Project")
+// of a Work of another AgentDefinition or Work Caller, or without a position
+// (Invalid starting context).
+var ErrStartingContextNotAdmitted = errors.New("agent: a Work starts only from the context of another Work of its own definition and Work Caller")
 
-// StartingContextSource is a caller's request that a new Work start from an
+// StartingContextSource is a starter's request that a new Work start from an
 // existing Work's context up to a position Agent named for one of its calls.
 type StartingContextSource struct {
 	WorkID   string
@@ -27,13 +28,14 @@ type StartingContext struct {
 	Position               string
 }
 
-// startingContext admits a source Work of this definition and Project only.
-func (a *AgentDefinition) startingContext(source *StartingContextSource, projectID string, work *AgentWork) (*StartingContext, error) {
+// startingContext admits a source Work of this definition and Work Caller
+// only (Derived starting context).
+func (a *AgentDefinition) startingContext(source *StartingContextSource, caller WorkCaller, work *AgentWork) (*StartingContext, error) {
 	if source == nil {
 		return nil, nil
 	}
 	position := strings.TrimSpace(source.Position)
-	if work == nil || work.ID != strings.TrimSpace(source.WorkID) || work.AgentID != a.ID || work.ProjectID != strings.TrimSpace(projectID) || position == "" || work.HarnessSessionReference == "" {
+	if work == nil || work.ID != strings.TrimSpace(source.WorkID) || work.AgentID != a.ID || work.WorkCaller != caller || position == "" || work.HarnessSessionReference == "" {
 		return nil, ErrStartingContextNotAdmitted
 	}
 	return &StartingContext{SourceWorkID: work.ID, SourceSessionReference: work.HarnessSessionReference, Position: position}, nil

@@ -120,7 +120,7 @@ func TestAgentAppearancesReadEmployeeWorkAgentsAndWorkAgents(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, views)
 
-	_, err = db.Exec("INSERT INTO agent_session (id, agent_id, started_by, subject_kind, subject_id, project_ref, state, capabilities, context_ref, agent_harness, located_layout, trace_attributes, harness_process, failure_reason, represented_person, version, created_at, updated_at, deleted_at) VALUES (?, ?, 'bob', 'case', 'bob-work', 'project', 1, '{}', '', 'claude-code', '{\"mounts\":[]}', '{}', '{}', '', 'bob', 1, 0, 0, 0)", "work-bob", definitions["bob"].ID)
+	_, err = db.Exec("INSERT INTO agent_session (id, agent_id, started_by, work_key_kind, work_key_id, work_caller_kind, work_caller_id, state, capabilities, context_ref, agent_harness, located_layout, trace_attributes, harness_process, failure_reason, represented_person, version, created_at, updated_at, deleted_at) VALUES (?, ?, 'bob', 'case', 'bob-work', 'project', 'project', 1, '{}', '', 'claude-code', '{\"mounts\":[]}', '{}', '{}', '', 'bob', 1, 0, 0, 0)", "work-bob", definitions["bob"].ID)
 	require.NoError(t, err)
 	views, err = lookup.ListWorkAgents(ctx, []string{"work-bob", "work-missing"})
 	require.NoError(t, err)

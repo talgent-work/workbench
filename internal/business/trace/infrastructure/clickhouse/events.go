@@ -15,8 +15,9 @@ import (
 const logEvidenceID = `talgent_log_evidence_id(TraceId, Timestamp, Body, LogAttributes)`
 
 func (r *Repository) ListEvents(ctx context.Context, opts query.EventOptions) (*query.EventResult, error) {
-	params := clickhousego.Parameters{"project_id": opts.ProjectID}
-	filters := []string{"ResourceAttributes['talgent.project_id'] = {project_id:String}", "Timestamp >= now64(9) - INTERVAL 7 DAY"}
+	// Every scope names its Work Caller; the empty one names no Work.
+	params := clickhousego.Parameters{"work_caller": opts.WorkCaller.String()}
+	filters := []string{"ResourceAttributes['talgent.work_caller'] = {work_caller:String}", "ResourceAttributes['talgent.work_caller'] != ''", "Timestamp >= now64(9) - INTERVAL 7 DAY"}
 	for _, f := range []struct{ value, name, column string }{
 		{opts.AgentWorkID, "session_id", "ResourceAttributes['talgent.agent_work_id']"},
 		{opts.TraceID, "trace_id", "TraceId"}, {opts.CallID, "call_id", "LogAttributes['tool_use_id']"},
@@ -61,7 +62,8 @@ func (r *Repository) ListEvents(ctx context.Context, opts query.EventOptions) (*
 			return nil, oops.With("operation", "trace.events").Wrap(err)
 		}
 		e.Name = e.Attributes["event.name"]
-		e.ProjectID = e.ResourceAttributes["talgent.project_id"]
+		e.WorkCaller = query.ParseWorkCaller(e.ResourceAttributes["talgent.work_caller"])
+		e.WorkKey = query.ParseWorkKey(e.ResourceAttributes["talgent.work_key"])
 		e.AgentWorkID = e.ResourceAttributes["talgent.agent_work_id"]
 		result.Events = append(result.Events, e)
 	}

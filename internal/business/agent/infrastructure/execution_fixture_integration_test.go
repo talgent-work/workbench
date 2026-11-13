@@ -214,12 +214,12 @@ func reportReleased(t testing.TB, work *domain.AgentWork) {
 	report(t, work, domain.ExecutionReleasedEvent{WorkID: work.ID, StartAdmittedAt: work.HarnessProcess.StartingSince})
 }
 
-// subjectWork is the definition's Work of the Subject, as creation reads it.
-func subjectWork(t testing.TB, works domain.AgentWorkRepository, agentID string, subject domain.WorkSubject) domain.WorkCreationFacts {
+// subjectWork is the definition's Work of the Work Key, as creation reads it.
+func subjectWork(t testing.TB, works domain.AgentWorkRepository, agentID string, key domain.WorkKey) domain.WorkCreationFacts {
 	t.Helper()
-	work, err := works.FindBySubject(t.Context(), agentID, subject)
+	work, err := works.FindByWorkKey(t.Context(), agentID, key)
 	require.NoError(t, err)
-	return domain.WorkCreationFacts{SubjectWork: work}
+	return domain.WorkCreationFacts{KeyWork: work}
 }
 
 // requireStartRequested asserts that the Work holds the request to begin its

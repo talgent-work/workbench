@@ -1,11 +1,14 @@
 // Package access reaches the authorities Observability asks before
-// disclosing observations: the Project access decision, Agent's Work access
-// and Work attribution, and Account's Application Ownership Query.
+// disclosing observations: the access decision of the extension defining a
+// Work Caller's kind, Agent's Work access and Work attribution, and Account's
+// Application Ownership Query.
 package access
 
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,14 +23,17 @@ import (
 	"github.com/talgent-work/contracts/gen/go/account/private/v1/accountprivatev1connect"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 type Config struct {
-	// ProjectAccessAddress serves the Project access decision; empty when no
-	// deployed context decides Project access.
-	ProjectAccessAddress string `json:"project-access-address" toml:"project-access-address" yaml:"project-access-address"`
+	// WorkCallerAccessAddresses maps each Work Caller kind an extension
+	// defines to the address serving that extension's Work Caller access
+	// decision; a kind left out is decided by none, so its Works are read by
+	// no one. Empty in a deployment without extensions.
+	WorkCallerAccessAddresses map[string]string `json:"work-caller-access-addresses" toml:"work-caller-access-addresses" yaml:"work-caller-access-addresses"`
 	// AgentAddress serves Agent's Work access and Work attribution, called
 	// with AgentControlToken.
 	AgentAddress      string `json:"agent-address" toml:"agent-address" yaml:"agent-address"`
@@ -43,8 +49,13 @@ func (c Config) Validate() error {
 	if !absoluteHTTP(c.AccountAddress) {
 		return errors.New("account-address must be an absolute http(s) URL")
 	}
-	if strings.TrimSpace(c.ProjectAccessAddress) != "" && !absoluteHTTP(c.ProjectAccessAddress) {
-		return errors.New("project-access-address must be an absolute http(s) URL")
+	for kind, address := range c.WorkCallerAccessAddresses {
+		if !query.ValidExtensionKind(kind) {
+			return fmt.Errorf("work-caller-access-addresses: %q is not a Work Caller kind an extension defines", kind)
+		}
+		if !absoluteHTTP(address) {
+			return fmt.Errorf("work-caller-access-addresses.%s must be an absolute http(s) URL", kind)
+		}
 	}
 	if strings.TrimSpace(c.AgentControlToken) == "" {
 		return errors.New("agent-control-token is required")
@@ -57,35 +68,47 @@ func absoluteHTTP(address string) bool {
 	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 
-// ProjectAccess asks the Project access decision on the reader's behalf.
-type ProjectAccess struct {
-	client traceprivatev1connect.ProjectAccessServiceClient
+// WorkCallerAccess asks the access decision of the extension defining a Work
+// Caller's kind on the reader's behalf, one client per configured kind.
+type WorkCallerAccess struct {
+	clients map[string]traceprivatev1connect.WorkCallerAccessServiceClient
+	logger  *slog.Logger
 }
 
-var _ query.ProjectAccessPort = (*ProjectAccess)(nil)
+var _ query.WorkCallerAccessPort = (*WorkCallerAccess)(nil)
 
-// NewProjectAccess reaches the configured Project access decision, or returns
-// none when no address is configured.
-func NewProjectAccess(client *http.Client, cfg Config) (query.ProjectAccessPort, error) {
-	if strings.TrimSpace(cfg.ProjectAccessAddress) == "" {
-		return nil, nil
+// NewWorkCallerAccess reaches the access decision configured for each kind of
+// a validated Config.
+func NewWorkCallerAccess(client *http.Client, cfg Config, logger *slog.Logger) (*WorkCallerAccess, error) {
+	if client == nil || logger == nil {
+		return nil, errors.New("trace: an HTTP client and a logger are required for Work Caller access")
 	}
-	if client == nil || !absoluteHTTP(cfg.ProjectAccessAddress) {
-		return nil, errors.New("trace: Project access address and HTTP client are required")
+	clients := make(map[string]traceprivatev1connect.WorkCallerAccessServiceClient, len(cfg.WorkCallerAccessAddresses))
+	for kind, address := range cfg.WorkCallerAccessAddresses {
+		address = strings.TrimRight(strings.TrimSpace(address), "/")
+		clients[kind] = traceprivatev1connect.NewWorkCallerAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0))))
 	}
-	address := strings.TrimRight(strings.TrimSpace(cfg.ProjectAccessAddress), "/")
-	return &ProjectAccess{client: traceprivatev1connect.NewProjectAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0))))}, nil
+	return &WorkCallerAccess{clients: clients, logger: logger}, nil
 }
 
-func (a *ProjectAccess) AuthorizeProjectReader(ctx context.Context, readerID, projectID string) error {
-	if err := check(readerID, projectID); err != nil {
+// AuthorizeWorkCallerReader refuses a kind no extension decides here, and
+// logs it as a misconfiguration: a request names a kind the deployment has no
+// access decision for.
+func (a *WorkCallerAccess) AuthorizeWorkCallerReader(ctx context.Context, readerID string, caller query.WorkCaller) error {
+	if err := check(readerID, caller.ID); err != nil {
 		return err
 	}
-	req := &traceprivatev1.DecideProjectAccessRequest{ProjectId: projectID}
+	client, ok := a.clients[caller.Kind]
+	if !ok {
+		a.logger.WarnContext(ctx, "trace: no Work Caller access decision is configured for the kind; its Works are read by no one",
+			slog.String("work_caller_kind", caller.Kind))
+		return query.ErrAuthorizationPermissionDenied
+	}
+	req := &traceprivatev1.DecideWorkCallerAccessRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: caller.Kind, Id: caller.ID}}
 	ctx, info := connect.NewClientContext(ctx)
-	info.RequestHeader().Set(authn.HeaderServiceID, "trace")
+	info.RequestHeader().Set(authn.HeaderServiceID, serviceID)
 	info.RequestHeader().Set(authn.HeaderDelegatedUserID, readerID)
-	if _, err := a.client.DecideProjectAccess(ctx, req); err != nil {
+	if _, err := client.DecideWorkCallerAccess(ctx, req); err != nil {
 		return authorityError(err)
 	}
 	return nil

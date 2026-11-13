@@ -25,16 +25,17 @@ type WorkQueryRepository interface {
 	// ListRecentRepositoryIDs reads repository identities from the owner's
 	// own Works, most recently created first and without duplicates.
 	ListRecentRepositoryIDs(ctx context.Context, owner string) ([]string, error)
-	// ListStandaloneWorks lists a definition's Works without a Subject or a
-	// Project, most recently updated first, narrowed as the filter states.
+	// ListStandaloneWorks lists a definition's Standalone Works, those whose
+	// Work Caller is its owner, most recently updated first, narrowed as the
+	// filter states.
 	ListStandaloneWorks(ctx context.Context, filter StandaloneWorksFilter) ([]StandaloneWorkSummary, error)
 	// ListWorkAttributions reads those of the named Works that are the
 	// definition's Standalone Works, with their Work Labels.
-	ListWorkAttributions(ctx context.Context, agentID string, workIDs []string) ([]WorkAttribution, error)
+	ListWorkAttributions(ctx context.Context, definition OwnedDefinition, workIDs []string) ([]WorkAttribution, error)
 	// ListLibraryWorks lists the person's Standalone Works under their
 	// definition and the Works with an input source they hold a Work Share
 	// in, closed ones included, at most limit.
-	ListLibraryWorks(ctx context.Context, person, agentID string, limit int) ([]LibraryWork, error)
+	ListLibraryWorks(ctx context.Context, person string, definition OwnedDefinition, limit int) ([]LibraryWork, error)
 	// ReadWorkHistory reads the Works in scope created before the instant,
 	// each with its state history observed before it and its current state.
 	ReadWorkHistory(ctx context.Context, scope WorkReportScope, before time.Time) ([]WorkHistory, error)

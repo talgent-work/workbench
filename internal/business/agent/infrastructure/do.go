@@ -60,11 +60,14 @@ type agentWorkDO struct {
 	InitialTaskInput     string `xorm:"initial_task_input mediumtext"`
 	ModelConfigurationID string `xorm:"model_configuration_id varchar(128)"`
 	ModelMachineLogin    bool   `xorm:"model_machine_login"`
-	// SubjectKind and SubjectID are NULL for a Work without a Subject, so the
-	// unique index binds only Works with one.
-	SubjectKind     *string `xorm:"subject_kind varchar(32)"`
-	SubjectID       *string `xorm:"subject_id varchar(255)"`
-	ProjectRef      string  `xorm:"project_ref varchar(255)"`
+	WorkCallerKind       string `xorm:"work_caller_kind varchar(32)"`
+	WorkCallerID         string `xorm:"work_caller_id varchar(255)"`
+	// WorkKeyKind and WorkKeyID are NULL for a Work without a Work Key, so
+	// the unique index binds only Works with one.
+	WorkKeyKind     *string `xorm:"work_key_kind varchar(32)"`
+	WorkKeyID       *string `xorm:"work_key_id varchar(255)"`
+	FileHomeKind    string  `xorm:"file_home_kind varchar(32)"`
+	FileHomeID      string  `xorm:"file_home_id varchar(255)"`
 	StartedBy       string  `xorm:"started_by varchar(255)"`
 	ComputerID      string  `xorm:"computer_id varchar(36)"`
 	ComputerKind    string  `xorm:"computer_kind varchar(16)"`

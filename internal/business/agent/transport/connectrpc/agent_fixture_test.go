@@ -85,9 +85,9 @@ func (p *rpcExecution) AcceptResponse(_ context.Context, _ string, response comm
 	return nil
 }
 
-func (r *rpcSessions) FindBySubject(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
+func (r *rpcSessions) FindByWorkKey(_ context.Context, agentID string, key domain.WorkKey) (*domain.AgentWork, error) {
 	for _, session := range r.items {
-		if session.AgentID == agentID && session.Subject == subject {
+		if session.AgentID == agentID && session.WorkKey == key {
 			return r.Get(context.Background(), session.ID)
 		}
 	}

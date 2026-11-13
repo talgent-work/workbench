@@ -30,7 +30,7 @@ func modelHandler(t *testing.T, store *sessionStore) (*domain.AgentDefinition, *
 }
 
 func modelCreation(agentID, computerID string, model domain.WorkModelSelection, thinking string) command.CreateWork {
-	return command.CreateWork{AgentID: agentID, SubjectID: "caller", ComputerID: computerID, WorkModel: model,
+	return command.CreateWork{AgentID: agentID, SubjectID: "caller", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "employee"}, ComputerID: computerID, WorkModel: model,
 		InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/work", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Do the work"}, ThinkingLevel: thinking}}
 }
 
@@ -57,18 +57,18 @@ func TestAWorkOnAManagedComputerUsesTheMachineLogin(t *testing.T) {
 }
 
 // A Work on a Managed Computer mounts no Directory: its Agent there reads
-// its Project's knowledge through the platform Connector. A Cloud Work mounts
-// its located layout, its Project's knowledge included.
+// its Work Caller's knowledge through the platform Connector. A Cloud Work
+// mounts its located layout, its Work Caller's knowledge included.
 func TestOnlyACloudWorkMountsItsLocatedLayout(t *testing.T) {
 	for computer, mounts := range map[string]int{managedComputer: 0, "": 5} {
 		store := &sessionStore{}
 		agent, handler := modelHandler(t, store)
 		creation := modelCreation(agent.ID, computer, deploymentModel, "")
-		creation.Subject, creation.ProjectID = domain.WorkSubject{Kind: "case", ID: "case"}, "project"
+		creation.WorkCaller, creation.WorkKey, creation.FileHome = domain.WorkCaller{Kind: "project", ID: "project"}, domain.WorkKey{Kind: "case", ID: "case"}, domain.FileHome{Kind: "case", ID: "case"}
 		_, err := handler.Handle(t.Context(), creation)
 		require.NoError(t, err)
 		require.Len(t, store.session.LocatedLayout.Mounts, mounts)
-		require.NotNil(t, store.session.LocatedLayout.Inputs, "both copy or mount their Subject's inputs")
+		require.NotNil(t, store.session.LocatedLayout.Inputs, "both copy or mount their File Home's inputs")
 	}
 }
 
@@ -81,7 +81,9 @@ func TestThePMCoordinatorRunsOnlyOnACloud(t *testing.T) {
 	for computer, refused := range map[string]bool{managedComputer: true, "": false} {
 		store, seats := &sessionStore{}, &seatCount{capacityCheck: capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}}
 		handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{coordinator}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), seats, store.preparation(models))
-		_, err := handler.Handle(t.Context(), modelCreation(coordinator.ID, computer, deploymentModel, ""))
+		creation := modelCreation(coordinator.ID, computer, deploymentModel, "")
+		creation.WorkCaller = domain.WorkCaller{Kind: "project", ID: "project"}
+		_, err := handler.Handle(t.Context(), creation)
 		if !refused {
 			require.NoError(t, err)
 			continue
@@ -138,7 +140,7 @@ func TestAMachineLoginWorkResumesAndRestartsWithNoModelConfiguration(t *testing.
 	for _, restart := range []bool{false, true} {
 		t.Run(map[bool]string{false: "resume", true: "restart"}[restart], func(t *testing.T) {
 			agents, sessions := startupStores(t)
-			session, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: true, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agents.agent.ID, RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout()},
+			session, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: true, StartedBy: "owner", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "owner"}, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agents.agent.ID, RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout()},
 				domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agents.agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureComputer, Kind: domain.ComputerManaged, DeskID: "desk-test"}})
 			require.NoError(t, err)
 			report(t, session, readyReport)

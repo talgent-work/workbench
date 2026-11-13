@@ -25,7 +25,7 @@ func (a *Application) ListWorkAttributions(ctx context.Context, applicationID st
 	if len(workIDs) > MaxAttributedWorks {
 		return nil, fmt.Errorf("%w: at most %d Works are attributed at once", domain.ErrInvalidWork, MaxAttributedWorks)
 	}
-	agentID, found, err := a.FindApplicationAgent(ctx, applicationID)
+	definition, found, err := a.FindApplicationAgent(ctx, applicationID)
 	if err != nil || !found {
 		return nil, err
 	}
@@ -35,5 +35,5 @@ func (a *Application) ListWorkAttributions(ctx context.Context, applicationID st
 			named = append(named, id)
 		}
 	}
-	return a.WorkQueries.ListWorkAttributions(ctx, agentID, named)
+	return a.WorkQueries.ListWorkAttributions(ctx, definition, named)
 }

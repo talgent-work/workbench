@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -60,7 +61,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	db, err := xorm.NewEngine("mysql", f.dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	project := f.request.ProjectID
+	project := f.request.WorkCaller.ID
 	observed = end
 	report := query.NewGetWorkReportHandler(infrastructure.NewWorkQueryRepository(db), clock)
 	app := &application.Application{Queries: application.Queries{GetWorkReport: report}}
@@ -70,7 +71,7 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client := agentprivatev1connect.NewWorkFactsServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
-	request := &agentprivatev1.GetWorkReportRequest{ProjectId: project, Purpose: "work", Window: "24h", End: timestamppb.New(end)}
+	request := &agentprivatev1.GetWorkReportRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: project}, Purpose: "work", Window: "24h", End: timestamppb.New(end)}
 	response, err := client.GetWorkReport(controlRequest(ctx), request)
 	require.NoError(t, err)
 	require.True(t, response.Current.HistoryComplete)
@@ -83,10 +84,10 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	require.Equal(t, "owner", response.Current.Owners[0].Key, "archived Work is reported")
 	_, err = client.GetWorkReport(ctx, request)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err), "only a trusted caller, which authorizes its scope, reads the report")
-	rows, err := db.QueryString("EXPLAIN SELECT id FROM agent_session WHERE project_ref=? AND deleted_at=0 AND created_at<?", project, end.UnixMilli())
+	rows, err := db.QueryString("EXPLAIN SELECT id FROM agent_session WHERE work_caller_kind='project' AND work_caller_id=? AND deleted_at=0 AND created_at<?", project, end.UnixMilli())
 	require.NoError(t, err)
-	require.Contains(t, rows[0]["possible_keys"], "idx_project_ref_deleted_at_created_at_id")
-	histories, err := infrastructure.NewWorkQueryRepository(db).ReadWorkHistory(ctx, query.WorkReportScope{ProjectID: project, Purpose: "work"}, end)
+	require.Contains(t, rows[0]["possible_keys"], "idx_work_caller_deleted_at_created_at_id")
+	histories, err := infrastructure.NewWorkQueryRepository(db).ReadWorkHistory(ctx, query.WorkReportScope{WorkCaller: domain.WorkCaller{Kind: "project", ID: project}, Purpose: "work"}, end)
 	require.NoError(t, err)
 	require.Len(t, histories, 1)
 	require.Len(t, histories[0].Facts, 5, "Starting, Working, Stopping, Stopped, Closed only; duplicates and failed saves add no facts")
@@ -94,13 +95,13 @@ func TestWorkReportRetainsAtomicHistoryAndSelectsByGenericScope(t *testing.T) {
 	observed = end.Add(-time.Hour)
 	create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, sessions, authorization, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels()))
 	insertStartingWorks(t, f.db, f.request.AgentID, "owner", 104, observed.UnixMilli(), func() string { return project })
-	// Another project's Work and same-project coordinator must not enter totals.
-	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: f.request.AgentID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString()})
+	// Another Project's Work and a same-Project coordinator must not enter totals.
+	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: f.request.AgentID, SubjectID: "owner", WorkCaller: domain.WorkCaller{Kind: "project", ID: uuid.NewString()}, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}})
 	require.NoError(t, err)
 	coordinator, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Coordinator", Purpose: "case_coordinator", UsageScope: domain.UsageScope{Kind: "project", Reference: project}})
 	require.NoError(t, err)
 	require.NoError(t, f.agents.Save(ctx, coordinator))
-	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: coordinator.ID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: project})
+	_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: coordinator.ID, SubjectID: "owner", WorkCaller: domain.WorkCaller{Kind: "project", ID: project}, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}})
 	require.NoError(t, err)
 	observed = end
 	response, err = client.GetWorkReport(controlRequest(ctx), request)

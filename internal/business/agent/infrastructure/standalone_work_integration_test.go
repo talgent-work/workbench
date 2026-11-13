@@ -79,7 +79,7 @@ func workFiles(workID, name string) domain.Directory {
 }
 
 func caseFiles(caseID, name string) domain.Directory {
-	return domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:" + caseID}}, Name: name}
+	return domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionFileHome, Value: "case:" + caseID}}, Name: name}
 }
 
 type knownPeople map[string]command.DirectoryUser
@@ -173,18 +173,18 @@ func TestStandaloneWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.ErrorIs(t, works.GrantShare(ctx, owner, first, "ghost"), standalonework.ErrReaderUnknown)
 	require.NoError(t, works.GrantShare(ctx, owner, first, "reader"))
 
-	// A Work with a Subject and a Project, which publishes into its Subject's
-	// Artifacts with the Subject's other Works, shared with the reader within
-	// its Project.
+	// An Extension Work in the name of a Project, which publishes into its
+	// File Home's Artifacts with that File Home's other Works, shared with the
+	// reader within its Work Caller.
 	definition, err := app.EnsureEmployeeAgent(ctx, "owner", "Owner")
 	require.NoError(t, err)
 	project := uuid.NewString()
 	initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/TAL-1", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Build it"}}
 	subjectWork, err := app.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: "owner", SubjectID: "owner", RequestID: initial.RequestID, AgentID: definition.AgentID,
-		Subject: domain.WorkSubject{Kind: "case", ID: "case-x"}, ProjectID: project,
+		WorkCaller: domain.WorkCaller{Kind: "project", ID: project}, WorkKey: domain.WorkKey{Kind: "case", ID: "case-x"}, FileHome: domain.FileHome{Kind: "case", ID: "case-x"},
 		InitialExecution: &initial})
 	require.NoError(t, err)
-	require.NoError(t, app.GrantWorkShare(ctx, application.GrantWorkShare{RequesterID: "owner", WorkID: subjectWork, ReaderID: "reader", Admission: domain.ReaderAdmission{ProjectID: project}}))
+	require.NoError(t, app.GrantWorkShare(ctx, application.GrantWorkShare{RequesterID: "owner", WorkID: subjectWork, ReaderID: "reader", Admission: domain.ReaderAdmission{WorkCaller: domain.WorkCaller{Kind: "project", ID: project}}}))
 
 	now := time.Now().UTC()
 	spaces.files = []command.SpaceFile{
@@ -226,7 +226,7 @@ func TestStandaloneWorksStartListShareAndFillTheLibrary(t *testing.T) {
 	require.NoError(t, err, "a Work Share holder reads a Standalone Work's Attachments")
 	_, err = works.IssueAccessLink(ctx, reader, standalonework.WorkFile{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "design.md"}, false)
 	require.NoError(t, err)
-	require.Equal(t, []string{"work:" + first + "/inputs/brief.md", "subject:case:case-x/artifacts/design.md"}, spaces.issued)
+	require.Equal(t, []string{"work:" + first + "/inputs/brief.md", "file_home:case:case-x/artifacts/design.md"}, spaces.issued)
 	for _, refused := range []standalonework.WorkFile{
 		{WorkID: subjectWork, Kind: command.FileKindAttachment, Name: "spec.md"},
 		{WorkID: subjectWork, Kind: command.FileKindArtifact, Name: "other.md"},

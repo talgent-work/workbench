@@ -113,20 +113,45 @@ func sessionToDO(session *domain.AgentWork) (*agentWorkDO, error) {
 	if err != nil {
 		return nil, err
 	}
-	row := &agentWorkDO{LocatedLayout: layout, AgentHarness: session.AgentHarnessReference, DisplayTitle: session.DisplayTitle, ProjectRef: session.ProjectID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, ComputerKind: string(session.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, StartingContext: starting, RepresentedPerson: session.RepresentedPerson, OwningApplication: session.OwningApplication, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, ReachResumeFailures: session.ReachResumeFailures, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
-	if session.Subject.Present() {
-		kind, id := string(session.Subject.Kind), session.Subject.ID
-		row.SubjectKind, row.SubjectID = &kind, &id
+	row := &agentWorkDO{LocatedLayout: layout, AgentHarness: session.AgentHarnessReference, DisplayTitle: session.DisplayTitle, WorkCallerKind: session.WorkCaller.Kind, WorkCallerID: session.WorkCaller.ID, FileHomeKind: session.FileHome.Kind, FileHomeID: session.FileHome.ID, VisibilityPublic: session.Visibility.Public, StartedBy: session.StartedBy, ComputerID: session.ComputerID, ComputerKind: string(session.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: session.ThinkingLevel, PermissionMode: string(session.PermissionMode), WorkProgress: progress, ModelConfigurationID: session.WorkModel.ConfigurationID, ModelMachineLogin: session.WorkModel.MachineLogin, ID: session.ID, AgentID: session.AgentID, State: state, Capabilities: capabilities, ContextRef: session.HarnessSessionReference, StartingContext: starting, RepresentedPerson: session.RepresentedPerson, OwningApplication: session.OwningApplication, TraceAttributes: attributes, HarnessProcess: current, HoldsProcess: session.HoldsProcess(), StopRequest: session.StopRequestReference, CloseRequest: session.CloseRequestReference, StopReason: string(session.StopReason), DisconnectedSince: unixMillis(session.DisconnectedSince), ReachResumeDue: session.ReachResumeDue, ReachResumeFailures: session.ReachResumeFailures, EndRequest: session.EndRequestReference, FailureReason: session.FailureReason, Version: session.Version}
+	if session.WorkKey.Present() {
+		kind, id := session.WorkKey.Kind, session.WorkKey.ID
+		row.WorkKeyKind, row.WorkKeyID = &kind, &id
 	}
 	return row, nil
 }
 
-// subjectFromColumns reads a Work Subject whose columns are NULL when absent.
-func subjectFromColumns(kind, id *string) domain.WorkSubject {
+// workKeyFromColumns reads a Work Key whose columns are NULL when absent.
+func workKeyFromColumns(kind, id *string) domain.WorkKey {
 	if kind == nil || id == nil {
-		return domain.WorkSubject{}
+		return domain.WorkKey{}
 	}
-	return domain.WorkSubject{Kind: domain.SubjectKind(*kind), ID: *id}
+	return domain.WorkKey{Kind: *kind, ID: *id}
+}
+
+// workFactSelect selects a Work's Work Caller, Work Key and File Home into
+// workFactColumns.
+const workFactSelect = "s.work_caller_kind,s.work_caller_id,s.work_key_kind,s.work_key_id,s.file_home_kind,s.file_home_id"
+
+// workFactColumns are the columns of the facts a Work fixed at creation, as
+// read models select them.
+type workFactColumns struct {
+	WorkCallerKind string  `xorm:"work_caller_kind"`
+	WorkCallerID   string  `xorm:"work_caller_id"`
+	WorkKeyKind    *string `xorm:"work_key_kind"`
+	WorkKeyID      *string `xorm:"work_key_id"`
+	FileHomeKind   string  `xorm:"file_home_kind"`
+	FileHomeID     string  `xorm:"file_home_id"`
+}
+
+func (c workFactColumns) caller() domain.WorkCaller {
+	return domain.WorkCaller{Kind: c.WorkCallerKind, ID: c.WorkCallerID}
+}
+
+func (c workFactColumns) key() domain.WorkKey { return workKeyFromColumns(c.WorkKeyKind, c.WorkKeyID) }
+
+func (c workFactColumns) home() domain.FileHome {
+	return domain.FileHome{Kind: c.FileHomeKind, ID: c.FileHomeID}
 }
 
 func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
@@ -161,7 +186,7 @@ func sessionFromDO(row *agentWorkDO) (*domain.AgentWork, error) {
 	if err := json.Unmarshal([]byte(row.HarnessProcess), &current); err != nil {
 		return nil, oops.Wrap(err)
 	}
-	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, ComputerKind: domain.ComputerKind(row.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, AgentHarnessReference: row.AgentHarness, RepresentedPerson: row.RepresentedPerson, OwningApplication: row.OwningApplication, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, ReachResumeFailures: row.ReachResumeFailures, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
+	session := &domain.AgentWork{DisplayTitle: row.DisplayTitle, StartedBy: row.StartedBy, ComputerID: row.ComputerID, ComputerKind: domain.ComputerKind(row.ComputerKind), RepositorySelection: repositories, RepositoryCheckouts: checkouts, InitialTaskInput: initial, AuthorizationSelection: authorizations, ThinkingLevel: row.ThinkingLevel, PermissionMode: domain.PermissionMode(row.PermissionMode), WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, WorkCaller: domain.WorkCaller{Kind: row.WorkCallerKind, ID: row.WorkCallerID}, WorkKey: workKeyFromColumns(row.WorkKeyKind, row.WorkKeyID), FileHome: domain.FileHome{Kind: row.FileHomeKind, ID: row.FileHomeID}, ID: row.ID, AgentID: row.AgentID, State: sessionStates[row.State], CapabilitySnapshot: capabilities, HarnessSessionReference: row.ContextRef, AgentHarnessReference: row.AgentHarness, RepresentedPerson: row.RepresentedPerson, OwningApplication: row.OwningApplication, StartingContext: starting, StopRequestReference: row.StopRequest, CloseRequestReference: row.CloseRequest, StopReason: domain.StopReason(row.StopReason), DisconnectedSince: fromUnixMillis(row.DisconnectedSince), ReachResumeDue: row.ReachResumeDue, ReachResumeFailures: row.ReachResumeFailures, EndRequestReference: row.EndRequest, FailureReason: row.FailureReason, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic}, Events: domain.NewEventCollection(), Version: row.Version}
 	if err := json.Unmarshal([]byte(row.TraceAttributes), &session.TraceAttributes); err != nil {
 		return nil, err
 	}

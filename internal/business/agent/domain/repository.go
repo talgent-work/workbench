@@ -18,9 +18,9 @@ type AgentDefinitionRepository interface {
 
 type AgentWorkRepository interface {
 	Get(context.Context, string) (*AgentWork, error)
-	// FindBySubject returns the definition's Work of the Subject, a closed one
-	// included, or nil when there is none.
-	FindBySubject(ctx context.Context, agentID string, subject WorkSubject) (*AgentWork, error)
+	// FindByWorkKey returns the definition's Work of the Work Key, a closed
+	// one included, or nil when there is none.
+	FindByWorkKey(ctx context.Context, agentID string, key WorkKey) (*AgentWork, error)
 	Save(context.Context, *AgentWork) error
 }
 

@@ -149,11 +149,11 @@ func (s *SigningKeys) Sign(ctx context.Context, claims domain.IdentityClaims) (s
 // out, so the gateway writes no header for it.
 func withAgentClaims(builder *jwt.Builder, work domain.WorkFacts) *jwt.Builder {
 	for _, claim := range []struct{ name, value string }{
-		{"project_id", work.ProjectID},
+		{"work_caller", work.WorkCaller.String()},
+		{"work_key", work.WorkKey.String()},
+		{"file_home", work.FileHome.String()},
 		{"agent_id", work.AgentID},
 		{"purpose", work.Purpose},
-		{"work_subject_kind", work.Subject.Kind},
-		{"work_subject_id", work.Subject.ID},
 		{"for", string(work.RepresentedPerson)},
 		{"application_id", string(work.OwningApplication)},
 	} {

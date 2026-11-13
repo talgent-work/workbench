@@ -28,7 +28,7 @@ func (s *recoveredWorks) Get(context.Context, string) (*domain.AgentWork, error)
 	return s.copy(s.work), nil
 }
 
-func (s *recoveredWorks) FindBySubject(context.Context, string, domain.WorkSubject) (*domain.AgentWork, error) {
+func (s *recoveredWorks) FindByWorkKey(context.Context, string, domain.WorkKey) (*domain.AgentWork, error) {
 	return nil, nil
 }
 
@@ -65,7 +65,7 @@ func abandonedStart(t *testing.T) *recoveryWorld {
 	t.Helper()
 	agent := uuid.NewString()
 	seated := time.Now().Add(-domain.StartupDeadline - 2*time.Minute)
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent},
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent},
 		domain.StartAdmission{AdmittedAt: seated, AgentID: agent, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	var admitted domain.WorkStartAdmitted

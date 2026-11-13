@@ -23,7 +23,7 @@ func (a *Application) EnsureEmployeeAgent(ctx context.Context, employeeID, displ
 
 // FindEmployeeAgent locates a person's employee definition without
 // establishing it.
-func (a *Application) FindEmployeeAgent(ctx context.Context, employeeID string) (string, bool, error) {
+func (a *Application) FindEmployeeAgent(ctx context.Context, employeeID string) (query.OwnedDefinition, bool, error) {
 	return a.findDefinition(ctx, domain.EmployeeDefinitionInput(strings.TrimSpace(employeeID)))
 }
 
@@ -41,16 +41,20 @@ func (a *Application) EnsureApplicationAgent(ctx context.Context, applicationID,
 
 // FindApplicationAgent locates an Application's definition without
 // establishing it.
-func (a *Application) FindApplicationAgent(ctx context.Context, applicationID string) (string, bool, error) {
+func (a *Application) FindApplicationAgent(ctx context.Context, applicationID string) (query.OwnedDefinition, bool, error) {
 	return a.findDefinition(ctx, domain.ApplicationDefinitionInput(strings.TrimSpace(applicationID), ""))
 }
 
-func (a *Application) findDefinition(ctx context.Context, owner domain.AgentDefinitionInput) (string, bool, error) {
+func (a *Application) findDefinition(ctx context.Context, owner domain.AgentDefinitionInput) (query.OwnedDefinition, bool, error) {
 	id, err := a.DefinitionQueries.FindForPurpose(ctx, query.GetAgentDefinitionForPurpose{ScopeKind: owner.UsageScope.Kind, ScopeReference: owner.UsageScope.Reference, Purpose: owner.Purpose})
 	if errors.Is(err, domain.ErrAgentDefinitionNotFound) {
-		return "", false, nil
+		return query.OwnedDefinition{}, false, nil
 	}
-	return id, err == nil, err
+	if err != nil {
+		return query.OwnedDefinition{}, false, err
+	}
+	caller, _ := owner.OwnerWorkCaller()
+	return query.OwnedDefinition{AgentID: id, OwnerWorkCaller: caller}, true, nil
 }
 
 // WorkWithDefinition loads a Work and the definition it runs under, for a

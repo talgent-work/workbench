@@ -22,9 +22,9 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 			return query.WorkStartOptions{}, err
 		}
 		value.DefaultStartupAgent = work.Capabilities.StartupAgent
-		// The Work's own scopes decide its Built-in Plugins, not the request's
-		// Project.
-		builtIns := a.BuiltInPlugins.Required(work.ProjectID)
+		// The Work's own scopes decide its Built-in Plugins, not the
+		// request's Work Caller.
+		builtIns := a.BuiltInPlugins.Required(work.WorkCaller)
 		for _, plugin := range work.Capabilities.Plugins {
 			value.Plugins = append(value.Plugins, AssembleWorkPluginOption(plugin.Release, slices.Contains(builtIns, plugin.Release.Slug)))
 		}
@@ -53,7 +53,14 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 		}
 		base, defaults = definition.ProvideCapabilities(), definition.WorkDefaults
 	}
-	base.RequiredPlugins = a.BuiltInPlugins.ComposeRequiredPlugins(input.ProjectID, base.RequiredPlugins, input.RequiredPlugins)
+	// A new Work in the name of the definition's owner is its Standalone
+	// Work, whose Work Caller the definition names; only a trusted service
+	// names another.
+	caller := input.WorkCaller
+	if caller == (domain.WorkCaller{}) {
+		caller, _ = owner.OwnerWorkCaller()
+	}
+	base.RequiredPlugins = a.BuiltInPlugins.ComposeRequiredPlugins(caller, base.RequiredPlugins, input.RequiredPlugins)
 	personal, err := a.Catalog.ListPersonalPlugins(ctx, input.SubjectID)
 	if err != nil {
 		return query.WorkStartOptions{}, err

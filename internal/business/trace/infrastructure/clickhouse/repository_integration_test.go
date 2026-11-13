@@ -56,12 +56,12 @@ func seedOtelTracesSchema(t *testing.T, db *sql.DB) {
 	values := make([]string, 0, len(rows))
 	args := make([]any, 0, len(rows)*5)
 	for _, r := range rows {
-		attrs := map[string]string{"talgent.project_id": "project-1", "talgent.agent_work_id": r.agentSession}
+		attrs := map[string]string{"talgent.work_caller": "team:team-1", "talgent.agent_work_id": r.agentSession}
 		if r.agentSession == "maintainer-session" {
 			attrs["talgent.agent_id"] = "runtime-maintainer-1"
 			attrs["talgent.runtime_purpose"] = "maintainer"
 			attrs["talgent.owner_context"] = "caller"
-			attrs["talgent.owner_id"] = "project-1"
+			attrs["talgent.owner_id"] = "board-1"
 		}
 		values = append(values, fmt.Sprintf("(?, ?, ?, '0000000000000000', '', ?, 'Internal', 'claude-code', %s, %s, ?, 'Ok', '')",
 			clickhouseStringMapLiteral(attrs), clickhouseStringMapLiteral(map[string]string{"tool_name": "Read", "tool_use_id": r.spanID})))
@@ -131,7 +131,7 @@ func TestListBySession_ReturnsInsertedSpans(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	page, err := repo.ListBySession(ctx, query.SpanListOptions{ProjectID: "project-1", AgentWorkID: "session-42"})
+	page, err := repo.ListBySession(ctx, query.SpanListOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-1"}, AgentWorkID: "session-42"})
 	spans := page.Spans
 	if err != nil {
 		t.Fatalf("ListBySession: %v", err)
@@ -178,7 +178,7 @@ func TestListBySession_PaginatesWithinSession(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	firstPage, err := repo.ListBySession(ctx, query.SpanListOptions{ProjectID: "project-1", AgentWorkID: "session-42", Limit: 1})
+	firstPage, err := repo.ListBySession(ctx, query.SpanListOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-1"}, AgentWorkID: "session-42", Limit: 1})
 	if err != nil {
 		t.Fatalf("ListBySession first page: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestListBySession_PaginatesWithinSession(t *testing.T) {
 		t.Fatal("first page next cursor is empty, want cursor for remaining rows")
 	}
 
-	secondPage, err := repo.ListBySession(ctx, query.SpanListOptions{ProjectID: "project-1",
+	secondPage, err := repo.ListBySession(ctx, query.SpanListOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-1"},
 		AgentWorkID: "session-42",
 		Limit:       10,
 		AfterCursor: firstPage.NextCursor,
@@ -238,7 +238,7 @@ func TestListBySession_PaginatesNewestFirst(t *testing.T) {
 	var got []string
 	cursor := ""
 	for page := 0; page < 4; page++ {
-		result, err := repo.ListBySession(ctx, query.SpanListOptions{ProjectID: "project-1", AgentWorkID: "session-42",
+		result, err := repo.ListBySession(ctx, query.SpanListOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-1"}, AgentWorkID: "session-42",
 			Limit: 2, AfterCursor: cursor, NewestFirst: true})
 		if err != nil {
 			t.Fatalf("ListBySession page %d: %v", page, err)
@@ -256,7 +256,7 @@ func TestListBySession_PaginatesNewestFirst(t *testing.T) {
 	}
 }
 
-// Intent: owner scoped span queries must filter by project + owner identity and
+// Intent: owner scoped span queries must filter by Work Caller + owner identity and
 // optional runtime purpose without requiring agent_work_id.
 func TestListByOwner_ReturnsNonWorkOwnerNeutralSpan(t *testing.T) {
 	dsn, cleanup := startClickHouse(t)
@@ -276,14 +276,14 @@ func TestListByOwner_ReturnsNonWorkOwnerNeutralSpan(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := repo.ListByOwner(ctx, query.SpanListOptions{
-		ProjectID:      "project-1",
+	result, err := repo.ListByWorkCaller(ctx, query.SpanListOptions{
+		WorkCaller:     query.WorkCaller{Kind: "team", ID: "team-1"},
 		OwnerContext:   "caller",
-		OwnerID:        "project-1",
+		OwnerID:        "board-1",
 		RuntimePurpose: "maintainer",
 	})
 	if err != nil {
-		t.Fatalf("ListByOwner: %v", err)
+		t.Fatalf("ListByWorkCaller: %v", err)
 	}
 	if len(result.Spans) != 1 {
 		t.Fatalf("spans len = %d, want 1", len(result.Spans))
@@ -313,7 +313,7 @@ func TestGetBySessionMetrics_AggregatesMetricBuckets(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := repo.GetBySession(ctx, query.TraceMetricOptions{ProjectID: "project-1",
+	result, err := repo.GetBySession(ctx, query.TraceMetricOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-1"},
 		AgentWorkID: "work-1",
 		StartTime:   base,
 		EndTime:     base.Add(10 * time.Minute),
@@ -343,96 +343,19 @@ func TestGetBySessionMetrics_AggregatesMetricBuckets(t *testing.T) {
 	}
 }
 
-// Intent: project metrics must remain project-scoped and include rows from
-// multiple works without enumerating those works through another service.
-func TestGetByProjectMetrics_AggregatesProjectScope(t *testing.T) {
-	dsn, cleanup := startClickHouse(t)
-	defer cleanup()
-
-	repo, err := openTestRepository(t, dsn)
-	if err != nil {
-		t.Fatalf("NewTraceMetricRepository: %v", err)
-	}
-	seedDB, err := sql.Open("clickhouse", dsn)
-	if err != nil {
-		t.Fatalf("seed open: %v", err)
-	}
-	defer seedDB.Close()
-	seedMetricBuckets(t, seedDB)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	result, err := repo.GetByProject(ctx, query.TraceMetricOptions{
-		ProjectID:   "project-1",
-		StepSeconds: 300,
-		MetricKinds: []string{"tool_call"},
-	})
-	if err != nil {
-		t.Fatalf("GetByProject: %v", err)
-	}
-	if len(result.Totals) != 1 {
-		t.Fatalf("totals len = %d, want 1 (%+v)", len(result.Totals), result.Totals)
-	}
-	if result.Totals[0].MetricKind != "tool_call" || result.Totals[0].Dimension != "Read" || result.Totals[0].Value != 7 {
-		t.Fatalf("project tool total = %+v, want tool_call/Read/7", result.Totals[0])
-	}
-	if len(result.Buckets) != 2 {
-		t.Fatalf("project buckets len = %d, want 2 attributed buckets (%+v)", len(result.Buckets), result.Buckets)
-	}
-	if result.Buckets[0].OwnerID != "case-alpha" || result.Buckets[0].UserID != "user-1" || result.Buckets[0].Value != 3 {
-		t.Fatalf("first project bucket = %+v, want case-alpha/user-1 value 3", result.Buckets[0])
-	}
-	if result.Buckets[1].OwnerID != "case-beta" || result.Buckets[1].UserID != "user-2" || result.Buckets[1].Value != 4 {
-		t.Fatalf("second project bucket = %+v, want case-beta/user-2 value 4", result.Buckets[1])
-	}
-}
-
-// Intent: project metrics must include non-Work owner-neutral rows rather than
-// requiring a Work-owned Session.
-func TestGetByProjectMetrics_IncludesOwnerNeutralRows(t *testing.T) {
-	dsn, cleanup := startClickHouse(t)
-	defer cleanup()
-
-	repo, err := openTestRepository(t, dsn)
-	if err != nil {
-		t.Fatalf("NewTraceMetricRepository: %v", err)
-	}
-	seedDB, err := sql.Open("clickhouse", dsn)
-	if err != nil {
-		t.Fatalf("seed open: %v", err)
-	}
-	defer seedDB.Close()
-	base := seedOwnerNeutralMetricBucket(t, seedDB)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	result, err := repo.GetByProject(ctx, query.TraceMetricOptions{
-		ProjectID:   "project-1",
-		StartTime:   base,
-		EndTime:     base.Add(5 * time.Minute),
-		StepSeconds: 60,
-	})
-	if err != nil {
-		t.Fatalf("GetByProject: %v", err)
-	}
-	if len(result.Buckets) != 1 {
-		t.Fatalf("buckets len = %d, want 1 (%+v)", len(result.Buckets), result.Buckets)
-	}
-	got := result.Buckets[0]
-	if got.AgentWorkID != "maintainer-session" || got.RuntimePurpose != "maintainer" || got.OwnerContext != "caller" || got.OwnerID != "project-1" || got.Value != 5 {
-		t.Fatalf("owner-neutral project bucket = %+v", got)
-	}
-}
-
+// Intent: Work Caller metrics must remain scoped to the Work Caller and include
+// rows from multiple works without enumerating those works through another
+// service; a Work Key narrows them to that key's Works.
+// Intent: Work Caller metrics must include non-Work owner-neutral rows rather
+// than requiring a Work-owned Session.
 func seedMetricBuckets(t *testing.T, db *sql.DB) time.Time {
 	t.Helper()
 	ctx := context.Background()
 	base := metricBucketBaseTime()
 	rows := []struct {
 		ts             time.Time
-		projectID      string
+		workCaller     string
+		workKey        string
 		sessionID      string
 		agentID        string
 		runtimePurpose string
@@ -443,13 +366,13 @@ func seedMetricBuckets(t *testing.T, db *sql.DB) time.Time {
 		dimension      string
 		value          float64
 	}{
-		{ts: base, projectID: "project-1", sessionID: "work-1", runtimePurpose: "work", ownerContext: "case", ownerID: "case-alpha", userID: "user-1", metricKind: "tool_call", dimension: "Read", value: 1},
-		{ts: base.Add(time.Minute), projectID: "project-1", sessionID: "work-1", runtimePurpose: "work", ownerContext: "case", ownerID: "case-alpha", userID: "user-1", metricKind: "tool_call", dimension: "Read", value: 2},
-		{ts: base.Add(2 * time.Minute), projectID: "project-1", sessionID: "work-1", runtimePurpose: "work", ownerContext: "case", ownerID: "case-alpha", userID: "user-1", metricKind: "skill_call", dimension: "designing-tests", value: 1},
-		{ts: base.Add(3 * time.Minute), projectID: "project-1", sessionID: "work-2", runtimePurpose: "normal", ownerContext: "case", ownerID: "case-beta", userID: "user-2", metricKind: "tool_call", dimension: "Read", value: 4},
-		{ts: base.Add(4 * time.Minute), projectID: "project-2", sessionID: "work-3", runtimePurpose: "work", ownerContext: "case", ownerID: "case-other", userID: "user-3", metricKind: "tool_call", dimension: "Read", value: 8},
-		// A Standalone Work: no Project, the same person as work-1.
-		{ts: base.Add(5 * time.Minute), sessionID: "personal-1", runtimePurpose: "work", userID: "user-1", metricKind: "tool_call", dimension: "Read", value: 5},
+		{ts: base, workCaller: "team:team-1", workKey: "board:board-1", sessionID: "work-1", runtimePurpose: "work", ownerContext: "case", ownerID: "case-alpha", userID: "user-1", metricKind: "tool_call", dimension: "Read", value: 1},
+		{ts: base.Add(time.Minute), workCaller: "team:team-1", workKey: "board:board-1", sessionID: "work-1", runtimePurpose: "work", ownerContext: "case", ownerID: "case-alpha", userID: "user-1", metricKind: "tool_call", dimension: "Read", value: 2},
+		{ts: base.Add(2 * time.Minute), workCaller: "team:team-1", workKey: "board:board-1", sessionID: "work-1", runtimePurpose: "work", ownerContext: "case", ownerID: "case-alpha", userID: "user-1", metricKind: "skill_call", dimension: "designing-tests", value: 1},
+		{ts: base.Add(3 * time.Minute), workCaller: "team:team-1", workKey: "board:board-2", sessionID: "work-2", runtimePurpose: "normal", ownerContext: "case", ownerID: "case-beta", userID: "user-2", metricKind: "tool_call", dimension: "Read", value: 4},
+		{ts: base.Add(4 * time.Minute), workCaller: "team:team-2", workKey: "board:board-1", sessionID: "work-3", runtimePurpose: "work", ownerContext: "case", ownerID: "case-other", userID: "user-3", metricKind: "tool_call", dimension: "Read", value: 8},
+		// A Standalone Work of the same person as work-1.
+		{ts: base.Add(5 * time.Minute), workCaller: "person:user-1", sessionID: "personal-1", runtimePurpose: "work", userID: "user-1", metricKind: "tool_call", dimension: "Read", value: 5},
 	}
 	for index, row := range rows {
 		// Query-only fixtures: one already-interpreted fact per call. Native
@@ -457,34 +380,15 @@ func seedMetricBuckets(t *testing.T, db *sql.DB) time.Time {
 		for call := 0; call < int(row.value); call++ {
 			id := fmt.Sprintf("fixture-%d-%d", index, call)
 			_, err := db.ExecContext(ctx, `INSERT INTO trace_work_measurements
-                (evidence_id, measurement_id, timestamp, project_id, agent_work_id,
+                (evidence_id, measurement_id, timestamp, work_caller, work_key, agent_work_id,
                  agent_id, runtime_purpose, owner_context, owner_id, user_id,
                  dimension, measurements, source_priority, projection_version)
-                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, [(?, CAST(1 AS Nullable(Float64)))], 2, 1`,
-				id, id, row.ts, row.projectID, row.sessionID, row.agentID,
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, [(?, CAST(1 AS Nullable(Float64)))], 2, 1`,
+				id, id, row.ts, row.workCaller, row.workKey, row.sessionID, row.agentID,
 				row.runtimePurpose, row.ownerContext, row.ownerID, row.userID, row.dimension, row.metricKind)
 			if err != nil {
 				t.Fatalf("insert measurement: %v", err)
 			}
-		}
-	}
-
-	return base
-}
-
-func seedOwnerNeutralMetricBucket(t *testing.T, db *sql.DB) time.Time {
-	t.Helper()
-	ctx := context.Background()
-	base := metricBucketBaseTime()
-	for call := 0; call < 5; call++ {
-		id := fmt.Sprintf("owner-fixture-%d", call)
-		_, err := db.ExecContext(ctx, `INSERT INTO trace_work_measurements
-            (evidence_id, measurement_id, timestamp, project_id, agent_work_id,
-             agent_id, runtime_purpose, owner_context, owner_id, dimension, measurements, source_priority, projection_version)
-            SELECT ?, ?, ?, 'project-1', 'maintainer-session', 'runtime-maintainer-1',
-                'maintainer', 'caller', 'project-1', 'Read', [('tool_call', CAST(1 AS Nullable(Float64)))], 2, 1`, id, id, base)
-		if err != nil {
-			t.Fatalf("insert owner measurement: %v", err)
 		}
 	}
 

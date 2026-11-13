@@ -9,10 +9,12 @@ import (
 )
 
 // WorkSummary is one Work's collaboration facts for a caller's list. The caller
-// composes it with its own facts; Agent does not interpret the Subject.
+// composes it with its own facts; Agent interprets neither an extension-defined
+// Work Caller kind nor a Work Key.
 type WorkSummary struct {
-	Subject       domain.WorkSubject
-	ProjectID     string
+	WorkCaller    domain.WorkCaller
+	WorkKey       domain.WorkKey
+	FileHome      domain.FileHome
 	WorkID, State string
 	// AgentOwner is the Work's definition's Owner; StartedBy who started it.
 	AgentOwner, StartedBy string
@@ -27,17 +29,23 @@ type WorkSummary struct {
 	CreatedAt, UpdatedAt time.Time
 }
 
-// WorkListFilter selects Works by Project, the definition's opaque purpose,
+// WorkListFilter selects Works by Work Caller and Work Key, the definition's opaque purpose,
 // the Agent Owner (an Owner of the Work's definition) or identities. Every supplied condition applies.
 type WorkListFilter struct {
-	ProjectID                    string
+	// WorkCaller, when present, selects that Work Caller's Works; WorkKey
+	// narrows them to that key, across definitions.
+	WorkCaller                   *domain.WorkCaller
+	WorkKey                      domain.WorkKey
 	WorkIDs                      []string
 	Purpose, AgentOwner, AfterID string
 	// ShareReader selects Works sharing their message stream with that reader.
 	ShareReader string
-	Limit       int
-	Recent      bool
-	Archived    *bool
+	// ExtensionWorks selects only Extension Works, those whose Work Caller is
+	// of a kind an extension defines.
+	ExtensionWorks bool
+	Limit          int
+	Recent         bool
+	Archived       *bool
 }
 
 type ListWorks struct{ Filter WorkListFilter }
@@ -51,12 +59,22 @@ func NewListWorksHandler(reader WorkQueryRepository) *ListWorksHandler {
 // MaxListedWorks is the largest page one list returns.
 const MaxListedWorks = 500
 
-// Handle lists Works for a trusted caller, which authorizes its own scope.
-// An unbounded list of every Work is never served.
+// Handle lists Extension Works for a trusted caller, which authorizes its own
+// scope: an extension lists the Works it started, never a person's or an
+// Application's Standalone Works (Extension Works listing). An unbounded list
+// of every Work is never served.
 func (h *ListWorksHandler) Handle(ctx context.Context, input ListWorks) ([]WorkSummary, error) {
 	filter := input.Filter
-	filter.ProjectID = strings.TrimSpace(filter.ProjectID)
-	if filter.ProjectID == "" && len(filter.WorkIDs) == 0 && strings.TrimSpace(filter.AgentOwner) == "" {
+	filter.ExtensionWorks = true
+	if filter.WorkCaller != nil {
+		if err := domain.AdmitExtensionWorkCaller(*filter.WorkCaller); err != nil {
+			return nil, err
+		}
+	}
+	if filter.WorkKey.Present() && (filter.WorkCaller == nil || filter.WorkKey.Validate() != nil) {
+		return nil, domain.ErrInvalidWork
+	}
+	if filter.WorkCaller == nil && len(filter.WorkIDs) == 0 && strings.TrimSpace(filter.AgentOwner) == "" {
 		return nil, domain.ErrInvalidWork
 	}
 	if len(filter.WorkIDs) > MaxListedWorks {

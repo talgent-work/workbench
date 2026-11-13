@@ -23,7 +23,7 @@ func queuedWork(t *testing.T, admittedAt time.Time) (*domain.AgentWork, *executi
 	snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: []string{"review"}, DefaultStartupAgent: "review:worker", BasePrompt: "retained instructions"}, []domain.PluginRelease{pluginRelease("review", "1")})
 	require.NoError(t, err)
 	agent := uuid.NewString()
-	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: true, StartedBy: "owner", ID: uuid.NewString(), AgentID: agent, RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(), Capabilities: snapshot},
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: true, StartedBy: "owner", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "owner"}, ID: uuid.NewString(), AgentID: agent, RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(), Capabilities: snapshot},
 		domain.StartAdmission{AdmittedAt: admittedAt, AgentID: agent, DefinitionAdmitted: true, Seat: waitingSeat("desk-1")})
 	port := follow(work)
 	require.NoError(t, err)

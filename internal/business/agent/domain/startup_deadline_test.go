@@ -14,7 +14,7 @@ func TestEveryProcessRecordsWhenItsStartEnteredStarting(t *testing.T) {
 	require.NoError(t, session.Validate())
 	session.HarnessProcess.StartingSince = time.Time{}
 	require.ErrorIs(t, session.Validate(), domain.ErrInvalidWork)
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: session.ID, AgentID: session.AgentID, Capabilities: session.CapabilitySnapshot, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout()},
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: session.ID, AgentID: session.AgentID, Capabilities: session.CapabilitySnapshot, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout()},
 		domain.StartAdmission{AgentID: session.AgentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.ErrorIs(t, err, domain.ErrInvalidWork, "an admission without its time cannot start a Work")
 	require.Nil(t, work, "nothing starts")

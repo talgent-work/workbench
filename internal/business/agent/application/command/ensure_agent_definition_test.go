@@ -225,3 +225,18 @@ func TestEnsureNamesANewEmployeeDefinitionAfterItsHuman(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.AgentAppearance{Name: "Jack's Agent", Icon: domain.DefaultAgentIcon}, result.Appearance)
 }
+
+// An ensured definition names the Work Caller of its Standalone Works, its
+// owner, so a Standalone start takes it from the definition alone.
+func TestEnsuredDefinitionNamesItsOwnerAsWorkCaller(t *testing.T) {
+	store := &definitionFaultStore{value: employeeDefinition(t)}
+	person, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: domain.EmployeeDefinitionInput("jack"), EmployeeDisplayName: "Jack"})
+	require.NoError(t, err)
+	require.Equal(t, domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "jack"}, person.OwnerWorkCaller)
+
+	const application = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4e"
+	store = &definitionFaultStore{}
+	own, err := command.NewEnsureAgentDefinitionHandler(store, store).Handle(t.Context(), command.EnsureAgentDefinition{AgentDefinitionInput: domain.ApplicationDefinitionInput(application, "Desk")})
+	require.NoError(t, err)
+	require.Equal(t, domain.WorkCaller{Kind: domain.CallerKindApplication, ID: application}, own.OwnerWorkCaller)
+}

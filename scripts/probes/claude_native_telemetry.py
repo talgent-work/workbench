@@ -176,7 +176,8 @@ injected = {
     "talgent.owner_context": "case",
     "talgent.owner_id": "case-probe",
     "talgent.runtime_purpose": "work",
-    "talgent.project_id": "project-probe",
+    # "<kind>:<id>", percent-encoded as Agent writes it.
+    "talgent.work_caller": "person%3Auser-probe",
     "talgent.agent_work_id": "session-probe",
 }
 if os.environ.get("NATIVE_TRACE_SCOPE") == "employee":

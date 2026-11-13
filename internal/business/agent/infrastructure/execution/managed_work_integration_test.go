@@ -270,8 +270,8 @@ func (w *workSource) Get(ctx context.Context, id string) (*domain.AgentWork, err
 	return w.current().Get(ctx, id)
 }
 
-func (w *workSource) FindBySubject(ctx context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
-	return w.current().FindBySubject(ctx, agentID, subject)
+func (w *workSource) FindByWorkKey(ctx context.Context, agentID string, subject domain.WorkKey) (*domain.AgentWork, error) {
+	return w.current().FindByWorkKey(ctx, agentID, subject)
 }
 
 func (w *workSource) Save(ctx context.Context, work *domain.AgentWork) error {

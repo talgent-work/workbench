@@ -106,7 +106,7 @@ func newCloudStartWith(t *testing.T, capabilities domain.CapabilitySnapshot) *cl
 	f.admission = domain.StartAdmission{AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}
 	admission := f.admission
 	admission.AdmittedAt = f.now()
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(), Capabilities: capabilities}, admission)
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(), Capabilities: capabilities}, admission)
 	require.NoError(t, err)
 	work.DefinitionVersion = definition.Version
 	require.NoError(t, works.Save(ctx, work))

@@ -1,41 +1,51 @@
 package domain
 
 import (
+	"fmt"
+	"maps"
 	"slices"
-	"strings"
 )
 
 // BuiltInPlugins are the Required Plugins the deployment declares by scope:
-// the platform scope's for every Work, the Project scope's for every Work of
-// a Project. A Work composes them at creation and never reapplies a later
-// change of them.
+// the platform scope's for every Work, and each Work Caller kind's scope for
+// every Work with a Work Caller of that kind. A Work composes them at creation
+// and never reapplies a later change of them.
 type BuiltInPlugins struct {
-	platform, project []string
+	platform []string
+	kinds    map[string][]string
 }
 
-// NewBuiltInPlugins admits each scope's slugs, each a valid Plugin name named
-// once within its scope.
-func NewBuiltInPlugins(platform, project []string) (BuiltInPlugins, error) {
-	for _, scope := range [][]string{platform, project} {
-		if err := validateRequiredPlugins(scope); err != nil {
+// NewBuiltInPlugins admits the platform scope's slugs and each Work Caller
+// kind's slugs, each a valid Plugin name named once within its scope, under a
+// valid kind.
+func NewBuiltInPlugins(platform []string, kinds map[string][]string) (BuiltInPlugins, error) {
+	if err := validateRequiredPlugins(platform); err != nil {
+		return BuiltInPlugins{}, err
+	}
+	declared := make(map[string][]string, len(kinds))
+	// Sorted, so an invalid declaration is reported the same way each time.
+	for _, kind := range slices.Sorted(maps.Keys(kinds)) {
+		slugs := kinds[kind]
+		if err := validateKind(kind, ErrInvalidWorkCaller); err != nil {
 			return BuiltInPlugins{}, err
 		}
+		if err := validateRequiredPlugins(slugs); err != nil {
+			return BuiltInPlugins{}, fmt.Errorf("work caller kind %q: %w", kind, err)
+		}
+		declared[kind] = slices.Clone(slugs)
 	}
-	return BuiltInPlugins{platform: slices.Clone(platform), project: slices.Clone(project)}, nil
+	return BuiltInPlugins{platform: slices.Clone(platform), kinds: declared}, nil
 }
 
-// Required are a new Work's Built-in Plugins: the platform scope's, and the
-// Project scope's when the Work has a Project, each once.
-func (b BuiltInPlugins) Required(projectID string) []string {
-	if strings.TrimSpace(projectID) == "" {
-		return slices.Clone(b.platform)
-	}
-	return WithRequiredPlugins(b.platform, b.project)
+// Required are a new Work's Built-in Plugins: the platform scope's, then
+// those declared for its Work Caller's kind, each once.
+func (b BuiltInPlugins) Required(caller WorkCaller) []string {
+	return WithRequiredPlugins(b.platform, b.kinds[caller.Kind])
 }
 
 // ComposeRequiredPlugins are a new Work's Required Plugins: the Built-in
 // Plugins of its scopes, then its definition's, then its creating caller's,
 // each once.
-func (b BuiltInPlugins) ComposeRequiredPlugins(projectID string, definition, caller []string) []string {
-	return WithRequiredPlugins(WithRequiredPlugins(b.Required(projectID), definition), caller)
+func (b BuiltInPlugins) ComposeRequiredPlugins(workCaller WorkCaller, definition, extension []string) []string {
+	return WithRequiredPlugins(WithRequiredPlugins(b.Required(workCaller), definition), extension)
 }

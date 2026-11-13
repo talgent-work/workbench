@@ -125,28 +125,71 @@ func (s *AgentWork) LaunchSpecification() LaunchSpecification {
 		RepositorySelection:    s.RepositorySelection.Clone(),
 		RemainingRepositories:  s.RemainingRepositories(),
 		AuthorizationSelection: s.AuthorizationSelection.Clone(),
-		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, ProjectID: s.ProjectID, Subject: s.Subject, Capabilities: s.CapabilitySnapshot.Clone(),
+		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, WorkCaller: s.WorkCaller, WorkKey: s.WorkKey, FileHome: s.FileHome, Capabilities: s.CapabilitySnapshot.Clone(),
 		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, LocatedLayout: s.LocatedLayout.Clone(),
 		AgentHarness: s.AgentHarnessReference, RepresentedPerson: s.RepresentedPerson, OwningApplication: s.OwningApplication, WorkLabels: s.WorkLabels.Map(), TraceAttributes: s.executionTraceAttributes(), StartingContext: s.StartingContext.clone(),
 	}
 }
 
-// executionTraceAttributes carries the attributes the creating caller
+// executionTraceAttributes carries the attributes the creating extension
 // supplied, unchanged on every start, including Resume and Restart, beside
-// Agent's own facts of the Work, its definition and its Project, which a
-// caller attribute cannot replace. The Subject, the caller's to interpret, is
-// not among them. A Work's starter or Agent Owner does not establish a
-// telemetry user identity.
+// Agent's own facts of the Work, its definition, its Work Caller and its Work
+// Key, which a supplied attribute cannot replace (Agent attribution, Attribution
+// precedence). Each fact is "<kind>:<id>"; a Work without a Work Key carries
+// none. A Work's starter or Agent Owner does not establish a telemetry user
+// identity.
 func (s *AgentWork) executionTraceAttributes() map[string]string {
 	attributes := maps.Clone(s.TraceAttributes)
 	if attributes == nil {
 		attributes = make(map[string]string)
 	}
-	attributes["talgent.agent_work_id"] = s.ID
-	attributes["talgent.agent_id"] = s.AgentID
-	delete(attributes, "talgent.project_id")
-	if s.ProjectID != "" {
-		attributes["talgent.project_id"] = s.ProjectID
+	attributes[TraceAttributeWork] = s.ID
+	attributes[TraceAttributeAgent] = s.AgentID
+	attributes[TraceAttributeWorkCaller] = s.WorkCaller.String()
+	delete(attributes, retiredTraceAttributeProject)
+	delete(attributes, TraceAttributeWorkKey)
+	if s.WorkKey.Present() {
+		attributes[TraceAttributeWorkKey] = s.WorkKey.String()
+	}
+	return attributes
+}
+
+// The telemetry attributes the platform attributes a Work's telemetry by
+// (Agent attribution). The Work Caller and the Work Key are "<kind>:<id>"
+// values, the identity as its extension gave it; a reader splits one at its
+// first ":", since a kind holds none. A run's telemetry carries every value
+// percent-encoded in OTEL_RESOURCE_ATTRIBUTES, which the OpenTelemetry SDK
+// decodes, so a reader of the exported resource sees the value itself.
+const (
+	TraceAttributeWork           = "talgent.agent_work_id"
+	TraceAttributeAgent          = "talgent.agent_id"
+	TraceAttributeWorkCaller     = "talgent.work_caller"
+	TraceAttributeWorkKey        = "talgent.work_key"
+	TraceAttributePurpose        = "talgent.runtime_purpose"
+	TraceAttributePerson         = "talgent.user_id"
+	TraceAttributeApplication    = "talgent.application_id"
+	TraceAttributeComputerID     = "talgent.computer_id"
+	TraceAttributeComputerName   = "talgent.computer_name"
+	retiredTraceAttributeProject = "talgent.project_id"
+)
+
+// platformTraceAttributes are the attributes only the platform states; a
+// creating extension's attribute of one of these names is dropped, so none
+// forges the Work's attribution (Attribution precedence).
+var platformTraceAttributes = []string{
+	TraceAttributeWork, TraceAttributeAgent, TraceAttributeWorkCaller, TraceAttributeWorkKey, TraceAttributePurpose,
+	TraceAttributePerson, TraceAttributeApplication, TraceAttributeComputerID, TraceAttributeComputerName, retiredTraceAttributeProject,
+}
+
+// withoutPlatformAttributes is a copy of supplied attributes without those
+// only the platform states.
+func withoutPlatformAttributes(supplied map[string]string) map[string]string {
+	attributes := maps.Clone(supplied)
+	if attributes == nil {
+		attributes = make(map[string]string)
+	}
+	for _, key := range platformTraceAttributes {
+		delete(attributes, key)
 	}
 	return attributes
 }

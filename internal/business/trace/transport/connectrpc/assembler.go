@@ -3,10 +3,37 @@ package connectrpc
 import (
 	"time"
 
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	tracepublicv1 "github.com/talgent-work/contracts/gen/go/trace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// workCallerFromProto is the Work Caller a request names; nil names none.
+func workCallerFromProto(caller *agentpublicv1.WorkCaller) query.WorkCaller {
+	return query.WorkCaller{Kind: caller.GetKind(), ID: caller.GetId()}
+}
+
+// workKeyFromProto is the Work Key a request names; nil names none.
+func workKeyFromProto(key *agentpublicv1.WorkKey) query.WorkKey {
+	return query.WorkKey{Kind: key.GetKind(), ID: key.GetId()}
+}
+
+// workCallerToProto is a Work's Work Caller; nil for none.
+func workCallerToProto(caller query.WorkCaller) *agentpublicv1.WorkCaller {
+	if !caller.Present() {
+		return nil
+	}
+	return &agentpublicv1.WorkCaller{Kind: caller.Kind, Id: caller.ID}
+}
+
+// workKeyToProto is a Work's Work Key; nil for a Work without one.
+func workKeyToProto(key query.WorkKey) *agentpublicv1.WorkKey {
+	if !key.Present() {
+		return nil
+	}
+	return &agentpublicv1.WorkKey{Kind: key.Kind, Id: key.ID}
+}
 
 func spanToProto(sp *query.Span) *tracepublicv1.Span {
 	if sp == nil {
@@ -27,7 +54,8 @@ func spanToProto(sp *query.Span) *tracepublicv1.Span {
 		ResourceAttributes: publicSpanAttributes(sp.ResourceAttributes),
 		Category:           sp.Category, CallId: sp.CallID, NativeAgentId: sp.NativeAgentID, ParentNativeAgentId: sp.ParentNativeAgentID,
 		AgentWorkId:    sp.AgentWorkID,
-		ProjectId:      sp.ProjectID,
+		WorkCaller:     workCallerToProto(sp.WorkCaller),
+		WorkKey:        workKeyToProto(sp.WorkKey),
 		RuntimePurpose: sp.RuntimePurpose,
 		OwnerContext:   sp.OwnerContext,
 		OwnerId:        sp.OwnerID,
@@ -45,9 +73,9 @@ func spansToProto(spans []*query.Span) []*tracepublicv1.Span {
 	return out
 }
 
-func traceMetricOptionsFromSessionRequest(projectID, sessionID string, req *tracepublicv1.GetSessionTraceMetricsRequest) query.TraceMetricOptions {
+func traceMetricOptionsFromSessionRequest(req *tracepublicv1.GetSessionTraceMetricsRequest) query.TraceMetricOptions {
 	return query.TraceMetricOptions{
-		ProjectID: projectID, AgentWorkID: sessionID,
+		WorkCaller: workCallerFromProto(req.GetWorkCaller()), AgentWorkID: req.GetAgentWorkId(),
 		StartTime:   protoTime(req.GetStartTime()),
 		EndTime:     protoTime(req.GetEndTime()),
 		StepSeconds: int(req.GetStepSeconds()),
@@ -65,9 +93,10 @@ func traceMetricOptionsFromPersonalRequest(req *tracepublicv1.GetPersonalTraceMe
 	}
 }
 
-func traceMetricOptionsFromProjectRequest(projectID string, req *tracepublicv1.GetProjectTraceMetricsRequest) query.TraceMetricOptions {
+func traceMetricOptionsFromWorkCallerRequest(req *tracepublicv1.GetWorkCallerTraceMetricsRequest) query.TraceMetricOptions {
 	return query.TraceMetricOptions{
-		ProjectID:   projectID,
+		WorkCaller:  workCallerFromProto(req.GetWorkCaller()),
+		WorkKey:     workKeyFromProto(req.GetWorkKey()),
 		StartTime:   protoTime(req.GetStartTime()),
 		EndTime:     protoTime(req.GetEndTime()),
 		StepSeconds: int(req.GetStepSeconds()),
@@ -86,13 +115,13 @@ func traceMetricsToProto(result *query.TraceMetricResult) ([]*tracepublicv1.Trac
 		buckets = append(buckets, &tracepublicv1.TraceMetricBucket{
 			BucketStart:    timestampOrNil(bucket.BucketStart),
 			BucketSeconds:  int32(bucket.BucketSeconds),
-			ProjectId:      bucket.ProjectID,
+			WorkCaller:     workCallerToProto(bucket.WorkCaller),
+			WorkKey:        workKeyToProto(bucket.WorkKey),
 			AgentWorkId:    bucket.AgentWorkID,
 			RuntimePurpose: bucket.RuntimePurpose,
 			OwnerContext:   bucket.OwnerContext,
 			OwnerId:        bucket.OwnerID,
 			UserId:         bucket.UserID,
-			ApplicationId:  bucket.ApplicationID,
 			MetricKind:     bucket.MetricKind,
 			Dimension:      bucket.Dimension,
 			Value:          bucket.Value,
@@ -130,9 +159,9 @@ func sessionTraceMetricsToProto(result *query.TraceMetricResult) *tracepublicv1.
 	return &tracepublicv1.GetSessionTraceMetricsResponse{Buckets: buckets, Totals: totals}
 }
 
-func projectTraceMetricsToProto(result *query.TraceMetricResult) *tracepublicv1.GetProjectTraceMetricsResponse {
+func workCallerTraceMetricsToProto(result *query.TraceMetricResult) *tracepublicv1.GetWorkCallerTraceMetricsResponse {
 	buckets, totals := traceMetricsToProto(result)
-	return &tracepublicv1.GetProjectTraceMetricsResponse{Buckets: buckets, Totals: totals}
+	return &tracepublicv1.GetWorkCallerTraceMetricsResponse{Buckets: buckets, Totals: totals}
 }
 
 func personalTraceMetricsToProto(result *query.TraceMetricResult) *tracepublicv1.GetPersonalTraceMetricsResponse {

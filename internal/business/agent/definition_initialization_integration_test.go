@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/testsupport/computertest"
@@ -47,7 +48,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
 	// Every Work loads the core plugin; every Work of a Project also loads
 	// the caller's plugin.
-	builtIns := agent.BuiltInPluginsConfig{Platform: []string{"talgent"}, Project: []string{"caller-plugin"}}
+	builtIns := agent.BuiltInPluginsConfig{Platform: []string{"talgent"}, WorkCallerKinds: map[string][]string{"project": {"caller-plugin"}}}
 	startModule := func() (agentprivatev1connect.AgentServiceClient, func()) {
 		t.Helper()
 		db, err := xorm.NewEngine("mysql", dsn)
@@ -102,8 +103,8 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 	require.Len(t, options.Plugins, 1)
 	require.Equal(t, "talgent", options.Plugins[0].Name)
 	require.True(t, options.Plugins[0].Required, "the platform scope's Built-in Plugin is required")
-	// A new Work of a Project is offered the Project scope's plugin as well.
-	projectOptions, err := client.GetWorkStartOptions(sessionControlRequest(ctx), &agentprivatev1.GetWorkStartOptionsRequest{SubjectId: "caller", EmployeeId: "caller", ProjectId: "project-a"})
+	// A new Work in the name of a Project is offered the extension scope's plugin as well.
+	projectOptions, err := client.GetWorkStartOptions(sessionControlRequest(ctx), &agentprivatev1.GetWorkStartOptionsRequest{SubjectId: "caller", EmployeeId: "caller", WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-a"}})
 	require.NoError(t, err)
 	require.Len(t, projectOptions.Plugins, 2)
 	for _, plugin := range projectOptions.Plugins {
@@ -165,7 +166,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 			require.Equal(t, "张三 Jack's Agent", names[i])
 		}
 	}
-	createSession := &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), AgentId: ids[0], SubjectId: "alice", Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case-a"}, ProjectId: "project-a"}
+	createSession := &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), AgentId: ids[0], SubjectId: "alice", WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-a"}, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: "case-a"}}
 	createSessionCtx, createSessionInfo := connect.NewClientContext(ctx)
 	createSessionInfo.RequestHeader().Set("Authorization", "Bearer control")
 	createdSession, err := client.CreateWork(createSessionCtx, createSession)
@@ -240,7 +241,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 	locateProjectWork := func(startedBy string) (*agentprivatev1.CreateWorkResponse, error) {
 		t.Helper()
 		id := fresh["project_coordination"].AgentId
-		return client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: startedBy, AgentId: id, Subject: &agentprivatev1.WorkSubject{Kind: "project", Id: "fresh-project"}, ProjectId: "fresh-project"})
+		return client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: startedBy, AgentId: id, WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "fresh-project"}, WorkKey: &agentpublicv1.WorkKey{Kind: "project", Id: "fresh-project"}})
 	}
 	located, err := locateProjectWork(projectOwner)
 	require.NoError(t, err)

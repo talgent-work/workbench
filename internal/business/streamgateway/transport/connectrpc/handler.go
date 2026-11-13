@@ -108,11 +108,11 @@ func (h *Handler) GetToolDetail(ctx context.Context, req *streamgatewaypublicv1.
 // readerAdmission reads a trusted delegated caller's admission of the reader;
 // a client's own request never carries one.
 func readerAdmission(header *connect.Header) query.ReaderAdmission {
-	reference, value, ok := authn.ReaderAdmission(header)
+	kind, id, ok := authn.ReaderAdmission(header)
 	if !ok {
 		return query.ReaderAdmission{}
 	}
-	return query.ReaderAdmission{Reference: reference, Value: value}
+	return query.ReaderAdmission{WorkCallerKind: kind, WorkCallerID: id}
 }
 
 func detailResponse(detail *query.MessageDetail) *streamgatewaypublicv1.GetMessageDetailResponse {

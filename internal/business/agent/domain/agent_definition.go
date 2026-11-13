@@ -3,7 +3,6 @@ package domain
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -98,57 +97,6 @@ type AgentDefinitionInput struct {
 	WorkDefaults WorkDefaults
 }
 
-// WorkCreationFacts are the Works a creation supplies, loaded through the
-// AgentWork repository: the definition's Work of the requested Subject, a
-// closed one included, and the source Work of a requested starting context;
-// nil for none.
-type WorkCreationFacts struct {
-	SubjectWork *AgentWork
-	SourceWork  *AgentWork
-}
-
-type WorkCreationRequest struct {
-	// StartedBy is the participant starting the Work: one of the definition's
-	// Owners, or a caller acting on their behalf, who names that Owner.
-	StartedBy          string
-	RepositoryInput    WorkRepositoryInput
-	AuthorizationInput WorkAuthorizationInput
-	Admission          StartAdmission
-	ThinkingLevel      string
-	WorkModel          WorkModelSelection
-	// ComputerManaged reports that the Work starts on a Managed Computer.
-	ComputerManaged bool
-	// HarnessChoice is how its starter runs the Harness, its permission mode
-	// and sandbox, admitted only on a Managed Computer; it does not select
-	// which Agent Harness runs, which AgentHarnessID names.
-	HarnessChoice HarnessChoice
-	// StartingUser is the person starting the Work; empty for an automated
-	// start.
-	StartingUser string
-	// AgentHarnessID names which Agent Harness, the native agent program,
-	// the new Work runs; empty chooses the default (Harness choice).
-	AgentHarnessID  string
-	Subject         WorkSubject
-	ProjectID       string
-	Capabilities    CapabilitySnapshot
-	TraceAttributes map[string]string
-	// WorkLabels are the starter's Work Labels for a new Work; a reused Work
-	// keeps its own.
-	WorkLabels WorkLabels
-	// WorkID, when supplied, is the identity application coordination
-	// allocated beforehand, such as the owner of a Standalone Work's File
-	// Space; otherwise the Work gets a new one.
-	WorkID string
-	// DisplayTitle is a Standalone Work's initial display title.
-	DisplayTitle string
-	// StartingContext, when supplied, starts a new Work from another Work's
-	// context; reuse neither compares nor replaces it.
-	StartingContext *StartingContextSource
-	// InitialTaskInput, when supplied, is the new Work's first task input;
-	// a reused Work keeps its own.
-	InitialTaskInput *InitialTaskInput
-}
-
 // RepresentsHuman reports whether this definition's Works belong to a human:
 // an employee scope. A project scope's Works belong to the definition's own
 // Agent, which represents no human.
@@ -182,25 +130,20 @@ func (a *AgentDefinition) RepresentedPerson() string {
 }
 
 // WorkTraceAttributes is what a new Work's telemetry carries from its
-// creation: the attributes its caller supplied, beside the definition's own
-// facts no caller attribute replaces, its runtime purpose, the person its
-// Agent represents and the Application that owns it, which Observability
-// rolls the Work's usage up to. A definition that represents no person, or
-// that no Application owns, gives none of that one. Work Labels never travel
-// with telemetry.
+// creation: the attributes its extension supplied, without any the platform
+// alone states, beside the definition's own facts, its runtime purpose, the
+// person its Agent represents and the Application that owns it, which
+// Observability rolls the Work's usage up to. A definition that represents no
+// person, or that no Application owns, gives none of that one. Work Labels
+// never travel with telemetry.
 func (a *AgentDefinition) WorkTraceAttributes(supplied map[string]string) map[string]string {
-	attributes := maps.Clone(supplied)
-	if attributes == nil {
-		attributes = make(map[string]string)
-	}
-	attributes["talgent.runtime_purpose"] = a.Purpose
-	delete(attributes, "talgent.user_id")
+	attributes := withoutPlatformAttributes(supplied)
+	attributes[TraceAttributePurpose] = a.Purpose
 	if person := a.RepresentedPerson(); person != "" {
-		attributes["talgent.user_id"] = person
+		attributes[TraceAttributePerson] = person
 	}
-	delete(attributes, "talgent.application_id")
 	if application := a.OwningApplication(); application != "" {
-		attributes["talgent.application_id"] = application
+		attributes[TraceAttributeApplication] = application
 	}
 	return attributes
 }
@@ -382,75 +325,4 @@ func (a *AgentDefinition) ChangeCapabilities(capabilities CapabilityConfiguratio
 
 func (a *AgentDefinition) ProvideCapabilities() CapabilityConfiguration {
 	return a.Capabilities.Clone()
-}
-
-// ReuseWork locates this definition's Work for the Subject before new-work
-// facts are gathered: Prompt, Plugins and their configuration never decide
-// reuse, and a closed Work keeps its Subject. A Work without a Subject is
-// never reused; only its creation request identity deduplicates it.
-func (a *AgentDefinition) ReuseWork(subject WorkSubject, subjectWork *AgentWork) (*AgentWork, error) {
-	if err := subject.Validate(); err != nil {
-		return nil, err
-	}
-	if !subject.Present() || subjectWork == nil || subjectWork.AgentID != a.ID || subjectWork.Subject != subject {
-		return nil, nil
-	}
-	return subjectWork, nil
-}
-
-// CreateWork returns the retained or newly created Work; created is true only for a new Work.
-func (a *AgentDefinition) CreateWork(request WorkCreationRequest, facts WorkCreationFacts) (work *AgentWork, created bool, err error) {
-	existing, err := a.ReuseWork(request.Subject, facts.SubjectWork)
-	if err != nil {
-		return nil, false, err
-	}
-	if existing != nil {
-		return existing, false, nil
-	}
-	if err := request.Capabilities.Validate(); err != nil {
-		return nil, false, err
-	}
-	if len(request.Capabilities.ApplicationEndpoints) > 0 && a.OwningApplication() == "" {
-		return nil, false, fmt.Errorf("%w: only an Application's Work takes Application MCP endpoints", ErrInvalidCapabilities)
-	}
-	for _, slug := range a.Capabilities.RequiredPlugins {
-		if !slices.ContainsFunc(request.Capabilities.Plugins, func(p SelectedPlugin) bool { return p.Release.Slug == slug }) {
-			return nil, false, fmt.Errorf("%w: missing required plugin %s", ErrInvalidCapabilities, slug)
-		}
-	}
-	if owner := request.AuthorizationInput.OwnerID; owner != "" && owner != a.AuthorizationOwner() {
-		return nil, false, fmt.Errorf("%w: Provider Authorizations require a represented human or an owning Application", ErrInvalidWork)
-	}
-	if owner := request.RepositoryInput.OwnerID; owner != "" && owner != a.AuthorizationOwner() {
-		return nil, false, fmt.Errorf("%w: repositories require a represented human or an owning Application", ErrInvalidWork)
-	}
-	if err := AdmitAgentOwner(a.AdmittedOwners(), request.StartedBy); err != nil {
-		return nil, false, err
-	}
-	if err := a.AdmitComputer(request.ComputerManaged); err != nil {
-		return nil, false, err
-	}
-	starting, err := a.startingContext(request.StartingContext, request.ProjectID, facts.SourceWork)
-	if err != nil {
-		return nil, false, err
-	}
-	workID := request.WorkID
-	if workID == "" {
-		workID = uuid.Must(uuid.NewV7()).String()
-	}
-	session, err := NewAgentWork(WorkInput{
-		StartedBy:          request.StartedBy,
-		RepositoryInput:    request.RepositoryInput,
-		AuthorizationInput: request.AuthorizationInput,
-		ThinkingLevel:      request.ThinkingLevel,
-		ID:                 workID, AgentID: a.ID, Subject: request.Subject, ProjectID: request.ProjectID, DisplayTitle: request.DisplayTitle,
-		WorkModel: request.WorkModel, Capabilities: request.Capabilities, RepresentedPerson: a.RepresentedPerson(), OwningApplication: a.OwningApplication(), StartingUser: request.StartingUser,
-		WorkLayout: a.WorkLayout, AgentHarnessID: request.AgentHarnessID, TraceAttributes: request.TraceAttributes, WorkLabels: request.WorkLabels,
-		Visibility: a.Visibility, StartingContext: starting, ComputerManaged: request.ComputerManaged, HarnessChoice: request.HarnessChoice, InitialTaskInput: request.InitialTaskInput,
-	}, request.Admission)
-	if err != nil {
-		return nil, false, err
-	}
-	session.DefinitionVersion = a.Version
-	return session, true, nil
 }

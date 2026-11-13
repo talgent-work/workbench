@@ -234,7 +234,7 @@ func TestASeatedManagedStartRecordsItsDisconnection(t *testing.T) {
 	agent := definitionFixture(t)
 	admission := fixtureAdmission(agent.ID)
 	admission.Seat.Waiting, admission.Seat.Kind = true, domain.ComputerManaged
-	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: true, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID}, admission)
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.MachineLoginModel(), ComputerManaged: true, StartedBy: "owner", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "owner"}, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID}, admission)
 	require.NoError(t, err)
 	w := newWorld(t, settled(work))
 	require.True(t, w.begin(t).Queued())

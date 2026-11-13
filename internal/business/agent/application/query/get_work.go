@@ -18,8 +18,8 @@ type AgentWork struct {
 	AgentID       string
 	State         domain.WorkState
 	Capabilities  domain.CapabilitySnapshot
-	// ProjectID is the Work's Project; empty for a Work without one.
-	ProjectID               string
+	// WorkCaller is in whose name the Work was started.
+	WorkCaller              domain.WorkCaller
 	HarnessSessionReference string
 	RequiredResponse        bool
 	FailureReason           string

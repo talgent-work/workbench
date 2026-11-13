@@ -58,11 +58,14 @@ type WorkInput struct {
 	AuthorizationInput WorkAuthorizationInput
 	ThinkingLevel      string
 	WorkModel          WorkModelSelection
-	Subject            WorkSubject
-	ProjectID          string
-	ID                 string
-	AgentID            string
-	Capabilities       CapabilitySnapshot
+	// WorkCaller, WorkKey and FileHome are the facts the Work fixes at
+	// creation.
+	WorkCaller   WorkCaller
+	WorkKey      WorkKey
+	FileHome     FileHome
+	ID           string
+	AgentID      string
+	Capabilities CapabilitySnapshot
 	// RepresentedPerson is the person the definition's Agent represents;
 	// empty for one that represents no person.
 	RepresentedPerson string
@@ -234,11 +237,13 @@ type AgentWork struct {
 	PermissionMode PermissionMode
 	Progress       *WorkProgress
 	WorkModel      WorkModelSelection
-	// Subject is the optional business object this Work is about; ProjectID
-	// is the Work's optional Project, held beside it for visibility and
-	// authorization.
-	Subject            WorkSubject
-	ProjectID          string    `validate:"max=255"`
+	// WorkCaller is in whose name the Work was started; WorkKey, the
+	// optional name its extension finds it by again; FileHome, the optional
+	// owner of the shared File Spaces it reads inputs from and publishes
+	// into. All three are fixed at creation.
+	WorkCaller         WorkCaller
+	WorkKey            WorkKey
+	FileHome           FileHome
 	ID                 string    `validate:"required,uuid"`
 	AgentID            string    `validate:"required,uuid"`
 	State              WorkState `validate:"oneof=starting working stopping stopped failed closing closed"`
@@ -317,10 +322,10 @@ func NewAgentWork(input WorkInput, admission StartAdmission) (*AgentWork, error)
 	capabilities.Sandbox = harness.Sandbox
 	session := &AgentWork{
 		StartedBy: input.StartedBy, PermissionMode: harness.PermissionMode,
-		WorkModel: input.WorkModel, ID: input.ID, AgentID: input.AgentID, ThinkingLevel: input.ThinkingLevel, State: WorkStarting, ComputerID: admission.Seat.ComputerID, ComputerKind: admission.Seat.Kind, HarnessProcess: admission.process(ContextFresh, time.Time{}), Subject: input.Subject, ProjectID: strings.TrimSpace(input.ProjectID),
+		WorkModel: input.WorkModel, ID: input.ID, AgentID: input.AgentID, ThinkingLevel: input.ThinkingLevel, State: WorkStarting, ComputerID: admission.Seat.ComputerID, ComputerKind: admission.Seat.Kind, HarnessProcess: admission.process(ContextFresh, time.Time{}), WorkCaller: input.WorkCaller, WorkKey: input.WorkKey, FileHome: input.FileHome,
 		CapabilitySnapshot: capabilities, HarnessSessionReference: uuid.Must(uuid.NewV7()).String(),
 		RepresentedPerson: input.RepresentedPerson, OwningApplication: input.OwningApplication, DisplayTitle: strings.TrimSpace(input.DisplayTitle), TraceAttributes: maps.Clone(input.TraceAttributes), WorkLabels: input.WorkLabels,
-		Visibility: WorkVisibility{Public: input.Visibility.Public && strings.TrimSpace(input.ProjectID) != ""}, StartingContext: input.StartingContext.clone(), Events: NewEventCollection(),
+		Visibility: WorkVisibility{Public: input.Visibility.Public && input.WorkCaller.ExtensionDefined()}, StartingContext: input.StartingContext.clone(), Events: NewEventCollection(),
 	}
 	if initial := input.InitialTaskInput; initial != nil {
 		established, err := NewInitialTaskInput(initial.ID, initial.Text)
@@ -378,7 +383,7 @@ func (s *AgentWork) Validate() error {
 	if s.ThinkingLevel != "" && !slices.Contains(ThinkingLevels, s.ThinkingLevel) {
 		return fmt.Errorf("%w: unknown thinking level", ErrInvalidWork)
 	}
-	if err := s.Subject.Validate(); err != nil {
+	if err := s.validateWorkFacts(); err != nil {
 		return err
 	}
 	if err := validation.Struct(s); err != nil {

@@ -58,10 +58,11 @@ type ApplicationSpanOptions struct {
 	AfterCursor   string
 }
 
-// GetApplicationTraceMetrics reads an Application's usage for the
-// Application or its Application Owner (Application usage access), narrowed
-// and broken down by Work Labels that Agent resolves to Works; Observability
-// keeps no label (Usage by Work Label).
+// GetApplicationTraceMetrics reads an Application's usage, that of the Works
+// whose Work Caller it is, for the Application or its Application Owner
+// (Application usage access), narrowed and broken down by Work Labels that
+// Agent resolves to Works; Observability keeps no label (Usage by Work
+// Label).
 func (q *Queries) GetApplicationTraceMetrics(ctx context.Context, opts ApplicationUsageOptions) (*ApplicationUsage, error) {
 	if err := validateMetricOptions(opts.TraceMetricOptions); err != nil {
 		return nil, err
@@ -75,8 +76,8 @@ func (q *Queries) GetApplicationTraceMetrics(ctx context.Context, opts Applicati
 	if err != nil {
 		return nil, err
 	}
-	metricOptions := ApplicationMetricOptions{TraceMetricOptions: opts.TraceMetricOptions}
-	metricOptions.ProjectID, metricOptions.AgentWorkID = "", ""
+	metricOptions := opts.TraceMetricOptions
+	metricOptions.WorkCaller, metricOptions.WorkKey, metricOptions.AgentWorkID, metricOptions.WorkIDs = ApplicationCaller(application), WorkKey{}, "", nil
 	var attributed map[string]map[string]string
 	usage := &ApplicationUsage{}
 	if len(labels) > 0 || breakdownKey != "" || opts.ListLabelKeys {
@@ -91,7 +92,7 @@ func (q *Queries) GetApplicationTraceMetrics(ctx context.Context, opts Applicati
 			return usage, nil
 		}
 	}
-	result, err := q.measurements.GetByApplication(ctx, application, metricOptions)
+	result, err := q.measurements.GetByWorkCaller(ctx, metricOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func (q *Queries) ListSpansByApplication(ctx context.Context, opts ApplicationSp
 	if err != nil {
 		return nil, err
 	}
-	list := SpanListOptions{ApplicationID: application, Limit: opts.Limit, AfterCursor: opts.AfterCursor, NewestFirst: true}
+	list := SpanListOptions{WorkCaller: ApplicationCaller(application), Limit: opts.Limit, AfterCursor: opts.AfterCursor, NewestFirst: true}
 	if len(labels) > 0 {
 		attributed, err := q.attributedWorks(ctx, application, time.Now().Add(-nativeEvidenceWindow), time.Time{})
 		if err != nil {
@@ -124,15 +125,15 @@ func (q *Queries) ListSpansByApplication(ctx context.Context, opts ApplicationSp
 			return &SpanListResult{}, nil
 		}
 	}
-	return q.evidence.ListByApplication(ctx, list)
+	return q.evidence.ListByWorkCaller(ctx, list)
 }
 
-// attributedWorks resolves the Application's Works measured in the window to
-// their Work Labels through Agent, which answers only for the Works the
-// Application owns; a measured Work Agent does not attribute to it is left
-// out.
+// attributedWorks resolves the Works measured in the window whose Work Caller
+// is the Application to their Work Labels through Agent, which answers only
+// for the Works the Application owns; a measured Work Agent does not
+// attribute to it is left out.
 func (q *Queries) attributedWorks(ctx context.Context, application string, start, end time.Time) (map[string]map[string]string, error) {
-	works, err := q.measurements.ListApplicationWorks(ctx, application, start, end, maxApplicationWorks+1)
+	works, err := q.measurements.ListWorkCallerWorks(ctx, ApplicationCaller(application), start, end, maxApplicationWorks+1)
 	if err != nil {
 		return nil, err
 	}

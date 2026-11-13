@@ -71,7 +71,7 @@ func TestWorkspaceReadersAreTheWorkReaders(t *testing.T) {
 	require.NoError(t, err)
 	listing, _ = f.browse(t, f.humanWork, "member", memberOfProjectA, "inputs")
 	require.Equal(t, "brief.md", listing.GetEntries()[0].GetAttachmentName(), "inputs/ entries are the caller's Attachments")
-	_, code = f.browse(t, f.humanWork, "member", &agentprivatev1.ReaderAdmission{Reference: "project", Value: "project-b"}, "")
+	_, code = f.browse(t, f.humanWork, "member", &agentprivatev1.ReaderAdmission{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-b"}}, "")
 	require.Equal(t, connect.CodePermissionDenied, code)
 
 	preview, err := f.workspaces.PreviewWorkspaceFile(authenticated(ctx, "control"), &agentprivatev1.PreviewWorkspaceFileRequest{WorkId: f.humanWork, ReaderId: "member", Admission: memberOfProjectA, Path: "notes.md"})

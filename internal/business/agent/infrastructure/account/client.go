@@ -1,5 +1,5 @@
 // Package account reaches Account's private API for Agent: the User Directory,
-// the people a Work without a Project may be shared with, the Agent Account
+// the people a Standalone Work may be shared with, the Agent Account
 // Command that issues a Work's Identity Token, and the Application Ownership
 // Query.
 package account
@@ -77,8 +77,10 @@ func (c *Client) GetUsers(ctx context.Context, userIDs []string) ([]command.Dire
 // IssueWorkIdentityToken asks Account for the Work's agent Identity Token.
 func (c *Client) IssueWorkIdentityToken(ctx context.Context, facts command.WorkIdentityFacts) (command.IdentityToken, error) {
 	resp, err := c.agentAccounts.IssueWorkIdentityToken(asAgent(ctx), &accountprivatev1.IssueWorkIdentityTokenRequest{
-		WorkId: facts.WorkID, ProjectId: facts.ProjectID, AgentId: facts.AgentID, Purpose: facts.Purpose,
-		WorkSubjectKind: facts.SubjectKind, WorkSubjectId: facts.SubjectID, RepresentedUserId: facts.RepresentedPerson,
+		WorkId: facts.WorkID, AgentId: facts.AgentID, Purpose: facts.Purpose,
+		WorkCallerKind: facts.WorkCaller.Kind, WorkCallerId: facts.WorkCaller.ID,
+		WorkKeyKind: facts.WorkKey.Kind, WorkKeyId: facts.WorkKey.ID,
+		FileHomeKind: facts.FileHome.Kind, FileHomeId: facts.FileHome.ID, RepresentedUserId: facts.RepresentedPerson,
 		ApplicationId: facts.OwningApplication, WorkLabels: facts.WorkLabels,
 	})
 	if err != nil {

@@ -45,7 +45,7 @@ func TestCapacityRejectedCreationLeavesNoWork(t *testing.T) {
 	require.Empty(t, launches(t, m.db), "restoring quota cannot revive a rejected creation")
 }
 
-// Concurrent private creations for one Subject resolve one Work, which takes
+// Concurrent private creations for one Work Key resolve one Work, which takes
 // the requested capability differences and begins one execution.
 func TestConcurrentCreationResolvesOneWork(t *testing.T) {
 	m := newLifecycleModule(t)
@@ -76,9 +76,9 @@ func TestConcurrentCreationResolvesOneWork(t *testing.T) {
 		if workID == "" {
 			workID = created.id
 		}
-		require.Equal(t, workID, created.id, "concurrent private creation must resolve one Work for the Subject")
+		require.Equal(t, workID, created.id, "concurrent private creation must resolve one Work for the Work Key")
 	}
-	requests := awaitLaunches(t, m.db, 1, "one Subject begins one execution")
+	requests := awaitLaunches(t, m.db, 1, "one Work Key begins one execution")
 	work := m.get(workID)
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STARTING, work.State)
 	require.Equal(t, workPrompt, work.Capabilities.Prompt)
@@ -91,7 +91,7 @@ func TestConcurrentCreationResolvesOneWork(t *testing.T) {
 }
 
 // A definition's capability change never reaches its existing Works: the
-// Subject still locates its Work. A new Work of another Subject takes the
+// Work Key still locates its Work. A new Work of another Work Key takes the
 // change, whether the existing Work runs or was closed, with its own HOME and
 // Harness Session in the definition's shared Harness state.
 func TestDefinitionChangeAppliesOnlyToNewWorks(t *testing.T) {
@@ -106,13 +106,13 @@ func TestDefinitionChangeAppliesOnlyToNewWorks(t *testing.T) {
 	require.NoError(t, err)
 	for state, work := range existing {
 		t.Run(string(state), func(t *testing.T) {
-			located, err := m.client.CreateWork(m.control(), subjectCreation(definition.ID, work.Subject.ID))
+			located, err := m.client.CreateWork(m.control(), subjectCreation(definition.ID, work.WorkKey.ID))
 			require.NoError(t, err)
-			require.Equal(t, work.ID, located.WorkId, "the Subject locates its Work whatever the definition's changes")
+			require.Equal(t, work.ID, located.WorkId, "the Work Key locates its Work whatever the definition's changes")
 			require.Equal(t, workPrompt, m.get(work.ID).Capabilities.Prompt)
 			subject := "new-" + string(state)
 			absent := m.locate(definition.ID, subject)
-			require.False(t, absent.Found, "a Subject without a Work locates none")
+			require.False(t, absent.Found, "a Work Key without a Work locates none")
 			require.Empty(t, absent.WorkId)
 			request := subjectCreation(definition.ID, subject)
 			request.CapabilityDifferences = nil

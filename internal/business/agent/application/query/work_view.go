@@ -23,11 +23,12 @@ type WorkView struct {
 	AllowedActions  []string
 	StartupProgress *StartupProgress
 	StartupRequest  *WorkStartupRequest
-	// Subject is the one business object the Work is about; Agent does not
-	// interpret it. ProjectID is the Work's Project.
-	Subject   domain.WorkSubject
-	ProjectID string
-	WorkID    string
+	// WorkCaller, WorkKey and FileHome are the facts the Work fixed at
+	// creation.
+	WorkCaller domain.WorkCaller
+	WorkKey    domain.WorkKey
+	FileHome   domain.FileHome
+	WorkID     string
 	// AgentOwner is the Work's Agent Owner, its definition's Owner; StartedBy
 	// is who started it, a fact.
 	AgentOwner, StartedBy                string

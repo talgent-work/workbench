@@ -27,7 +27,13 @@ func layoutCreation(definition *domain.AgentDefinition, startedBy string, manage
 	if managed {
 		kind, model = domain.ComputerManaged, domain.MachineLoginModel()
 	}
-	return domain.WorkCreationRequest{StartedBy: startedBy, ComputerManaged: managed, WorkModel: model,
+	// A person's definition starts its owner's Standalone Work; any other
+	// starts its Project's Extension Work.
+	caller, ok := definition.OwnerWorkCaller()
+	if !ok {
+		caller = domain.WorkCaller{Kind: "project", ID: definition.UsageScope.Reference}
+	}
+	return domain.WorkCreationRequest{StartedBy: startedBy, WorkCaller: caller, ComputerManaged: managed, WorkModel: model,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 		Admission:    domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: kind, DeskID: "desk-test"}, ModelConfigurationProvided: true}}
 }
@@ -71,9 +77,9 @@ func TestEmployeeAndProjectDefinitionsGetTheDefaultLayout(t *testing.T) {
 
 // A Work Layout is checked when its definition is saved: one mount per path,
 // both roots as read-write NAS Work Directories following the Work, paths
-// beneath them, and a mount following the Subject read-only.
+// beneath them, and a mount following the File Home read-only.
 func TestAWorkLayoutIsCheckedAtSave(t *testing.T) {
-	knowledge := domain.DirectoryLocator{Conditions: []domain.LocatorCondition{domain.ConditionProject}, Name: "knowledge", Backend: domain.BackendJuiceFS, Lifetime: domain.LifetimePermanent}
+	knowledge := domain.DirectoryLocator{Conditions: []domain.LocatorCondition{domain.ConditionWorkCaller}, Name: "knowledge", Backend: domain.BackendJuiceFS, Lifetime: domain.LifetimePermanent}
 	cases := map[string]func(*domain.WorkLayout){
 		"two mounts at one path": func(l *domain.WorkLayout) {
 			l.Mounts = append(l.Mounts, domain.LayoutMount{Path: "/workspace/knowledge", ReadOnly: true, Locators: []domain.DirectoryLocator{knowledge}})
@@ -82,7 +88,7 @@ func TestAWorkLayoutIsCheckedAtSave(t *testing.T) {
 		"read-only root":     func(l *domain.WorkLayout) { l.Mounts[1].ReadOnly = true },
 		"outside the roots":  func(l *domain.WorkLayout) { l.Mounts[4].Path = "/etc/knowledge" },
 		"escaping a root":    func(l *domain.WorkLayout) { l.Mounts[4].Path = "/workspace/../etc" },
-		"writable Subject":   func(l *domain.WorkLayout) { l.Mounts[3].ReadOnly = false },
+		"writable File Home": func(l *domain.WorkLayout) { l.Mounts[3].ReadOnly = false },
 		"unknown fact":       func(l *domain.WorkLayout) { l.Mounts[4].Locators[0].Conditions = []domain.LocatorCondition{"team"} },
 		"Work lifetime":      func(l *domain.WorkLayout) { l.Mounts[4].Locators[0].Lifetime = domain.LifetimeWork },
 		"two Harness states": func(l *domain.WorkLayout) { l.Mounts = append(l.Mounts, l.Mounts[2]) },
@@ -99,14 +105,23 @@ func TestAWorkLayoutIsCheckedAtSave(t *testing.T) {
 	}
 }
 
-// A Work with a Subject and a Project, started by the person its Agent
+// extensionWork makes the request an Extension Work of Project p1 with a Work
+// Key and, when home is set, a File Home.
+func extensionWork(request *domain.WorkCreationRequest, startingUser string, home bool) {
+	request.StartingUser, request.WorkCaller, request.WorkKey = startingUser, domain.WorkCaller{Kind: "project", ID: "p1"}, domain.WorkKey{Kind: "case", ID: "1"}
+	if home {
+		request.FileHome = domain.FileHome{Kind: "case", ID: "1"}
+	}
+}
+
+// An Extension Work with a File Home, started by the person its Agent
 // represents, locates its own HOME and Session Workspace, its definition's
-// Harness state, its Subject's inputs and its Project's knowledge, and
-// publishes into its Subject's Artifacts.
-func TestAWorkWithASubjectAndProjectLocatesItsDirectories(t *testing.T) {
+// Harness state, its File Home's inputs, read-only, and its Work Caller's
+// knowledge, and publishes into its File Home's Artifacts.
+func TestAnExtensionWorkWithAFileHomeLocatesItsDirectories(t *testing.T) {
 	definition := employeeDefinition(t, "jack")
 	request := layoutCreation(definition, "jack", false)
-	request.StartingUser, request.Subject, request.ProjectID = "jack", domain.WorkSubject{Kind: "case", ID: "1"}, "p1"
+	extensionWork(&request, "jack", true)
 	work, _, err := definition.CreateWork(request, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 
@@ -115,17 +130,39 @@ func TestAWorkWithASubjectAndProjectLocatesItsDirectories(t *testing.T) {
 		{Path: "$HOME", Directory: located("home", domain.BackendNAS, domain.LifetimeWork, "work", work.ID)},
 		{Path: "/workspace", Directory: located("workspace", domain.BackendNAS, domain.LifetimeWork, "work", work.ID)},
 		{Path: "$HOME/.claude", Directory: located("claude-code", domain.BackendNAS, domain.LifetimePermanent, "agent_definition", definition.ID)},
-		{Path: "/workspace/inputs", ReadOnly: true, Directory: located("inputs", domain.BackendJuiceFS, domain.LifetimePermanent, "subject", "case:1")},
-		{Path: "/workspace/knowledge", ReadOnly: true, Directory: located("knowledge", domain.BackendJuiceFS, domain.LifetimePermanent, "project", "p1")},
+		{Path: "/workspace/inputs", ReadOnly: true, Directory: located("inputs", domain.BackendJuiceFS, domain.LifetimePermanent, "file_home", "case:1")},
+		{Path: "/workspace/knowledge", ReadOnly: true, Directory: located("knowledge", domain.BackendJuiceFS, domain.LifetimePermanent, "work_caller", "project:p1")},
 	}, work.LocatedLayout.Mounts)
-	inputs := located("inputs", domain.BackendJuiceFS, domain.LifetimePermanent, "subject", "case:1")
+	inputs := located("inputs", domain.BackendJuiceFS, domain.LifetimePermanent, "file_home", "case:1")
 	require.Equal(t, &inputs, work.LocatedLayout.Inputs)
-	require.Equal(t, located("artifacts", domain.BackendJuiceFS, domain.LifetimePermanent, "subject", "case:1"), work.LocatedLayout.PublicationTarget)
+	require.Equal(t, located("artifacts", domain.BackendJuiceFS, domain.LifetimePermanent, "file_home", "case:1"), work.LocatedLayout.PublicationTarget)
+	_, err = work.StandaloneFileSpaces()
+	require.ErrorIs(t, err, domain.ErrWorkFilesUnavailable, "an Extension Work's files are its extension's")
 }
 
-// A Work without a Subject or a Project reads its own inputs, mounts no
-// knowledge, and publishes into its own Artifacts, which outlive it.
-func TestAWorkWithoutSubjectOrProjectLocatesItsOwnFiles(t *testing.T) {
+// An Extension Work without a File Home keeps its inputs and Artifacts in its
+// own File Spaces, still read-only for inputs, and mounts its Work Caller's
+// knowledge.
+func TestAnExtensionWorkWithoutAFileHomeKeepsItsOwnFiles(t *testing.T) {
+	definition := employeeDefinition(t, "jack")
+	request := layoutCreation(definition, "jack", false)
+	extensionWork(&request, "jack", false)
+	work, _, err := definition.CreateWork(request, domain.WorkCreationFacts{})
+	require.NoError(t, err)
+
+	inputs, ok := mountAt(work.LocatedLayout, "/workspace/inputs")
+	require.True(t, ok)
+	require.True(t, inputs.ReadOnly)
+	require.Equal(t, located("inputs", domain.BackendJuiceFS, domain.LifetimePermanent, "work", work.ID), inputs.Directory)
+	knowledge, ok := mountAt(work.LocatedLayout, "/workspace/knowledge")
+	require.True(t, ok)
+	require.Equal(t, located("knowledge", domain.BackendJuiceFS, domain.LifetimePermanent, "work_caller", "project:p1"), knowledge.Directory)
+	require.Equal(t, located("artifacts", domain.BackendJuiceFS, domain.LifetimePermanent, "work", work.ID), work.LocatedLayout.PublicationTarget)
+}
+
+// A Standalone Work reads its own inputs, mounts no knowledge, and publishes
+// into its own Artifacts, which outlive it.
+func TestAStandaloneWorkLocatesItsOwnFiles(t *testing.T) {
 	definition := employeeDefinition(t, "jack")
 	request := layoutCreation(definition, "jack", false)
 	request.StartingUser = "jack"
@@ -157,12 +194,12 @@ func TestTheRepresentedPersonAndTheStarterAreDistinctFacts(t *testing.T) {
 	layout.Mounts = append(layout.Mounts,
 		follow("$HOME/.config/person", "person-config", domain.ConditionPerson),
 		follow("$HOME/.config/starter", "starter-config", domain.ConditionStarter),
-		follow("$HOME/.config/per-project", "project-config", domain.ConditionPerson, domain.ConditionProject))
+		follow("$HOME/.config/per-project", "project-config", domain.ConditionPerson, domain.ConditionWorkCaller))
 
 	definition := employeeDefinition(t, "jack")
 	definition.WorkLayout = layout
 	request := layoutCreation(definition, "jack", false)
-	request.StartingUser, request.Subject, request.ProjectID = "jill", domain.WorkSubject{Kind: "case", ID: "1"}, "p1"
+	extensionWork(&request, "jill", true)
 	work, _, err := definition.CreateWork(request, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	person, _ := mountAt(work.LocatedLayout, "$HOME/.config/person")
@@ -170,13 +207,13 @@ func TestTheRepresentedPersonAndTheStarterAreDistinctFacts(t *testing.T) {
 	starter, _ := mountAt(work.LocatedLayout, "$HOME/.config/starter")
 	require.Equal(t, owner("starter", "jill"), starter.Directory.Directory.Owner)
 	perProject, _ := mountAt(work.LocatedLayout, "$HOME/.config/per-project")
-	require.Equal(t, owner("person", "jack", "project", "p1"), perProject.Directory.Directory.Owner, "facts are ordered by condition name")
+	require.Equal(t, owner("person", "jack", "work_caller", "project:p1"), perProject.Directory.Directory.Owner, "facts are ordered by condition name")
 	require.Equal(t, []domain.DirectoryMount{
 		{Directory: located("home", domain.BackendNAS, domain.LifetimeWork, "work", work.ID), MountPoints: []string{".claude", ".config/person", ".config/starter", ".config/per-project"}},
 		{Directory: located("workspace", domain.BackendNAS, domain.LifetimeWork, "work", work.ID), MountPoints: []string{"inputs", "knowledge"}},
 		{Directory: located("claude-code", domain.BackendNAS, domain.LifetimePermanent, "agent_definition", definition.ID)},
-		{Directory: located("inputs", domain.BackendJuiceFS, domain.LifetimePermanent, "subject", "case:1"), ReadOnly: true},
-		{Directory: located("knowledge", domain.BackendJuiceFS, domain.LifetimePermanent, "project", "p1"), ReadOnly: true},
+		{Directory: located("inputs", domain.BackendJuiceFS, domain.LifetimePermanent, "file_home", "case:1"), ReadOnly: true},
+		{Directory: located("knowledge", domain.BackendJuiceFS, domain.LifetimePermanent, "work_caller", "project:p1"), ReadOnly: true},
 		{Directory: person.Directory}, {Directory: starter.Directory}, {Directory: perProject.Directory},
 	}, work.LocatedLayout.MountRequests(), "a start requests exactly the located Directories, each with the mount points nested in it")
 
@@ -189,7 +226,7 @@ func TestTheRepresentedPersonAndTheStarterAreDistinctFacts(t *testing.T) {
 	project := projectDefinition(t, "p1")
 	project.WorkLayout = layout
 	request = layoutCreation(project, "pm", false)
-	request.StartingUser, request.Subject, request.ProjectID = "pm", domain.WorkSubject{Kind: "project", ID: "p1"}, "p1"
+	request.StartingUser, request.WorkKey = "pm", domain.WorkKey{Kind: "project", ID: "p1"}
 	coordination, _, err := project.CreateWork(request, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	_, ok = mountAt(coordination.LocatedLayout, "$HOME/.config/person")
@@ -230,7 +267,7 @@ func TestAHarnessStatePathTakenByAnotherMountRefusesCreation(t *testing.T) {
 func TestAWorkKeepsItsLocatedLayoutWhenItsDefinitionChanges(t *testing.T) {
 	definition := employeeDefinition(t, "jack")
 	request := layoutCreation(definition, "jack", false)
-	request.StartingUser, request.Subject, request.ProjectID = "jack", domain.WorkSubject{Kind: "case", ID: "1"}, "p1"
+	extensionWork(&request, "jack", true)
 	work, _, err := definition.CreateWork(request, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	fixed := work.LocatedLayout.Clone()
@@ -241,7 +278,7 @@ func TestAWorkKeepsItsLocatedLayoutWhenItsDefinitionChanges(t *testing.T) {
 	definition.WorkLayout = changed
 	require.NoError(t, definition.Validate())
 
-	reused, created, err := definition.CreateWork(request, domain.WorkCreationFacts{SubjectWork: work})
+	reused, created, err := definition.CreateWork(request, domain.WorkCreationFacts{KeyWork: work})
 	require.NoError(t, err)
 	require.False(t, created)
 	require.Equal(t, fixed, reused.LocatedLayout)

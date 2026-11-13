@@ -45,7 +45,8 @@ export interface TraceMetricBucketLike {
   runtimePurpose?: string;
   userId?: string;
   agentWorkId?: string;
-  projectId?: string;
+  workCaller?: { kind: string; id: string };
+  workKey?: { kind: string; id: string };
   metricKind: string;
   dimension: string;
   value: number;

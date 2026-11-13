@@ -40,7 +40,7 @@ func TestInitialSessionRegistrationSurvivesLostAcknowledgement(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
 	input := command.PrepareWorkExecution{SubjectID: "owner", RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-338", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Original input\n保留初始请求"}, Selections: []command.RepositorySelection{{RepositoryID: "123", BaseBranch: "release"}}}
-	creation := command.CreateWork{AgentID: definition.ID, Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project"}
+	creation := command.CreateWork{AgentID: definition.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}}
 	lost := errors.New("registration committed; acknowledgement lost")
 	registrar := registrationLostAcknowledgement{AgentWorkRepository: sessions, err: lost}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})

@@ -12,8 +12,8 @@ func TestNativeLaunchTelemetryExportsWorkAttribution(t *testing.T) {
 	provider, _, _ := sandboxClient(t)
 	input := request()
 	input.TraceAttributes = map[string]string{
-		"talgent.project_id": "project-1", "talgent.agent_work_id": input.WorkID,
-		"talgent.subject_kind": "review", "talgent.subject_id": "review-1", "domain.case_id": "case-1",
+		"talgent.work_caller": "project:project-1", "talgent.agent_work_id": input.WorkID,
+		"talgent.work_key": "review:review-1", "domain.case_id": "case-1",
 	}
 	traceID, err := trace.TraceIDFromHex("12345678901234567890123456789012")
 	require.NoError(t, err)
@@ -25,15 +25,20 @@ func TestNativeLaunchTelemetryExportsWorkAttribution(t *testing.T) {
 	require.Equal(t, "00-12345678901234567890123456789012-1234567890123456-01", spec.Env["TRACEPARENT"])
 	require.NotContains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.execution_id", "telemetry is attributed per Work, never per process run")
 	require.Contains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.agent_work_id="+input.WorkID)
-	require.Contains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.subject_kind=review")
-	require.Contains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.subject_id=review-1")
+	require.Contains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.work_caller=project:project-1")
+	require.Contains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.work_key=review:review-1")
 	require.Contains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "domain.case_id=case-1")
 	require.Equal(t, "http/protobuf", spec.Env["OTEL_EXPORTER_OTLP_PROTOCOL"])
 	require.Equal(t, "1", spec.Env["CLAUDE_CODE_ENHANCED_TELEMETRY_BETA"])
 	require.NotContains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.computer_", "a start without a Computer names none")
-	input.TraceAttributes["talgent.project_id"] = "project-1,talgent.user_id=another-user"
+	input.TraceAttributes["talgent.work_key"] = "review:a b,talgent.user_id=another-user;一"
+	spec, err = provider.specification(ctx, input, testMounts, owner(input), "test-token")
+	require.NoError(t, err, "an opaque identity is carried, encoded")
+	require.Contains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.work_key=review:a%20b%2Ctalgent.user_id%3Danother-user%3B%E4%B8%80")
+	require.NotContains(t, spec.Env["OTEL_RESOURCE_ATTRIBUTES"], "talgent.user_id=another-user", "a delimiter in a value never injects an attribute")
+	input.TraceAttributes = map[string]string{"bad,key": "x"}
 	_, err = provider.specification(ctx, input, testMounts, owner(input), "test-token")
-	require.Error(t, err, "resource delimiter injection must reject launch")
+	require.Error(t, err, "a key that cannot be carried unchanged rejects the launch")
 }
 
 // A Cloud run's telemetry names its Computer as a Managed run's does: its id

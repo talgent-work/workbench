@@ -16,17 +16,17 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
-// A Work of a Project on a Managed Computer mounts no Directory: its
-// environment names its Project and no TALGENT_KNOWLEDGE_ROOT, and it reaches
-// its Project's tools through the Talgent Connector, declared at the
+// An Extension Work on a Managed Computer mounts no Directory: its
+// environment names its Work Caller and no TALGENT_KNOWLEDGE_ROOT, and it
+// reaches its extension's tools through the Talgent Connector, declared at the
 // machine's local proxy.
-func TestAManagedWorkOfAProjectReadsReferencesThroughTheConnector(t *testing.T) {
+func TestAManagedExtensionWorkReadsReferencesThroughTheConnector(t *testing.T) {
 	f := newManagedWork(t)
 	input := managedRequest()
-	input.ContextMode, input.ProjectID = domain.ContextFresh, "project"
+	input.ContextMode, input.WorkCaller = domain.ContextFresh, domain.WorkCaller{Kind: "project", ID: "project"}
 	record := f.launch(t, f.begin(t, input).ID)
 	require.Zero(t, f.storage.mounts, "no Directory is mounted")
-	require.Equal(t, "project", f.relay.environment["TALGENT_PROJECT_ID"])
+	require.Equal(t, "project:project", f.relay.environment["TALGENT_WORK_CALLER"])
 	require.NotContains(t, f.relay.environment, "TALGENT_KNOWLEDGE_ROOT")
 	require.Contains(t, record.LaunchCommand, `"talgent":{"headers":{"Authorization":"Bearer ${TALGENT_PROXY_TOKEN}"},"type":"http","url":"${TALGENT_PROXY_URL}/mcp"}`)
 }
@@ -102,9 +102,9 @@ func (s *managedStorage) place(directory domain.Directory, files ...managedFile)
 	s.files[infrastructure.DirectoryKey(directory)] = files
 }
 
-// caseInputs is the inputs Directory of a fresh case.
+// caseInputs is the inputs Directory of a fresh case's File Home.
 func caseInputs() domain.Directory {
-	return domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:" + uuid.NewString()}}, Name: "inputs"}
+	return domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionFileHome, Value: "case:" + uuid.NewString()}}, Name: "inputs"}
 }
 
 // readingInputs is input reading its inputs from directory.

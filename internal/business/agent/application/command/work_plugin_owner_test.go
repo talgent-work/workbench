@@ -25,7 +25,7 @@ func TestWorkUsesOneHumanForPluginsHomeAndAuthorization(t *testing.T) {
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store,
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
 		commandtest.StartCatalog(personalCatalog{}, ownerAuthorizationCatalog{}), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
-	input := command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), AgentID: agent.ID,
+	input := command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), AgentID: agent.ID,
 		SubjectID: "owner", StartingUserID: "starter"}
 	_, err = handler.Handle(t.Context(), input)
 	require.ErrorIs(t, err, access.ErrAccessDenied)
@@ -73,7 +73,7 @@ func TestAutomatedWorkUsesRequiredPluginsWithoutPersonalDefaults(t *testing.T) {
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store,
 		query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
 		commandtest.StartCatalog(personalCatalog{}, ownerAuthorizationCatalog{}), capacityCheck{}, store.preparation(query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
-	id, err := handler.Handle(t.Context(), command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(),
+	id, err := handler.Handle(t.Context(), command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(),
 		AgentID: agent.ID, SubjectID: "triggering-human"})
 	require.NoError(t, err)
 	work, err := store.Get(t.Context(), id)

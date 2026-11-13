@@ -32,11 +32,14 @@ func (h *AgentAccounts) IssueWorkIdentityToken(ctx context.Context, req *account
 	}
 	issued, err := h.app.IssueWorkIdentityToken(ctx, application.IssueWorkIdentityToken{
 		WorkID:            req.GetWorkId(),
-		ProjectID:         req.GetProjectId(),
+		WorkCallerKind:    req.GetWorkCallerKind(),
+		WorkCallerID:      req.GetWorkCallerId(),
+		WorkKeyKind:       req.GetWorkKeyKind(),
+		WorkKeyID:         req.GetWorkKeyId(),
+		FileHomeKind:      req.GetFileHomeKind(),
+		FileHomeID:        req.GetFileHomeId(),
 		AgentID:           req.GetAgentId(),
 		Purpose:           req.GetPurpose(),
-		SubjectKind:       req.GetWorkSubjectKind(),
-		SubjectID:         req.GetWorkSubjectId(),
 		RepresentedPerson: req.GetRepresentedUserId(),
 		OwningApplication: req.GetApplicationId(),
 		WorkLabels:        req.GetWorkLabels(),

@@ -53,28 +53,28 @@ func (o applicationOwners) GetApplication(_ context.Context, applicationID strin
 	return query.OwnedApplication{ID: applicationID, OwnerUserID: owner, Removed: true}, nil
 }
 
-// seedApplicationUsage measures three Works of Application A, one of
-// Application B and one of a person, with output tokens only.
+// seedApplicationUsage measures three Works whose Work Caller is Application
+// A, one of Application B and one of a person, with output tokens only.
 func seedApplicationUsage(t *testing.T, db *sql.DB) time.Time {
 	t.Helper()
 	base := metricBucketBaseTime()
 	rows := []struct {
-		work, application, user string
-		tokens                  int
+		work, caller, user string
+		tokens             int
 	}{
-		{"app-a-work-1", applicationA, "", 100},
-		{"app-a-work-2", applicationA, "", 30},
-		{"app-a-work-3", applicationA, "", 7},
-		{"app-b-work-1", applicationB, "", 1000},
-		{"personal-1", "", "user-1", 5000},
+		{"app-a-work-1", "application:" + applicationA, "", 100},
+		{"app-a-work-2", "application:" + applicationA, "", 30},
+		{"app-a-work-3", "application:" + applicationA, "", 7},
+		{"app-b-work-1", "application:" + applicationB, "", 1000},
+		{"personal-1", "person:user-1", "user-1", 5000},
 	}
 	for index, row := range rows {
 		id := fmt.Sprintf("application-fixture-%d", index)
 		_, err := db.ExecContext(context.Background(), `INSERT INTO trace_work_measurements
-            (evidence_id, measurement_id, timestamp, project_id, agent_work_id, runtime_purpose,
-             user_id, application_id, dimension, measurements, source_priority, projection_version)
-            SELECT ?, ?, ?, '', ?, 'work', ?, ?, 'claude-opus', [('output_tokens', CAST(? AS Nullable(Float64)))], 2, 1`,
-			id, id, base.Add(time.Duration(index)*time.Minute), row.work, row.user, row.application, row.tokens)
+            (evidence_id, measurement_id, timestamp, work_caller, agent_work_id, runtime_purpose,
+             user_id, dimension, measurements, source_priority, projection_version)
+            SELECT ?, ?, ?, ?, ?, 'work', ?, 'claude-opus', [('output_tokens', CAST(? AS Nullable(Float64)))], 2, 1`,
+			id, id, base.Add(time.Duration(index)*time.Minute), row.caller, row.work, row.user, row.tokens)
 		if err != nil {
 			t.Fatalf("insert measurement: %v", err)
 		}
@@ -135,7 +135,7 @@ func TestApplicationUsageIsolatesApplications(t *testing.T) {
 		t.Fatalf("Application A output tokens = %v, want 137 (%+v)", got, own.Totals)
 	}
 	for _, bucket := range own.Buckets {
-		if bucket.ApplicationID != applicationA {
+		if bucket.WorkCaller != query.ApplicationCaller(applicationA) {
 			t.Fatalf("bucket of another owner: %+v", bucket)
 		}
 	}
@@ -206,9 +206,9 @@ func TestApplicationUsageNarrowsAndBreaksDownByWorkLabels(t *testing.T) {
 	}
 }
 
-// The Works an Application has measurements of are listed by its attribution
+// The Works a Work Caller has measurements of are listed by its attribution
 // alone, within the window.
-func TestListApplicationWorksReadsItsMeasuredWorks(t *testing.T) {
+func TestListWorkCallerWorksReadsItsMeasuredWorks(t *testing.T) {
 	dsn, cleanup := startClickHouse(t)
 	defer cleanup()
 	repo, err := openTestRepository(t, dsn)
@@ -221,16 +221,16 @@ func TestListApplicationWorksReadsItsMeasuredWorks(t *testing.T) {
 	}
 	defer db.Close()
 	base := seedApplicationUsage(t, db)
-	works, err := repo.ListApplicationWorks(context.Background(), applicationA, base, base.Add(time.Hour), 10)
+	works, err := repo.ListWorkCallerWorks(context.Background(), query.ApplicationCaller(applicationA), base, base.Add(time.Hour), 10)
 	if err != nil || fmt.Sprint(works) != "[app-a-work-1 app-a-work-2 app-a-work-3]" {
 		t.Fatalf("works = %v, %v", works, err)
 	}
-	later, err := repo.ListApplicationWorks(context.Background(), applicationA, base.Add(90*time.Second), time.Time{}, 10)
+	later, err := repo.ListWorkCallerWorks(context.Background(), query.ApplicationCaller(applicationA), base.Add(90*time.Second), time.Time{}, 10)
 	if err != nil || fmt.Sprint(later) != "[app-a-work-3]" {
 		t.Fatalf("works after the window start = %v, %v", later, err)
 	}
-	if empty, err := repo.ListApplicationWorks(context.Background(), "", base, time.Time{}, 10); err != nil || len(empty) != 0 {
-		t.Fatalf("an empty Application reads nothing: %v, %v", empty, err)
+	if empty, err := repo.ListWorkCallerWorks(context.Background(), query.WorkCaller{}, base, time.Time{}, 10); err != nil || len(empty) != 0 {
+		t.Fatalf("an empty Work Caller reads nothing: %v, %v", empty, err)
 	}
 }
 
@@ -246,7 +246,7 @@ func TestListSpansByApplicationReadsItsWorks(t *testing.T) {
 		{"app-b-work-1", applicationB, "b100000000000001"},
 	}
 	for index, row := range spans {
-		attrs := clickhouseStringMapLiteral(map[string]string{"talgent.agent_work_id": row.work, "talgent.application_id": row.application})
+		attrs := clickhouseStringMapLiteral(map[string]string{"talgent.agent_work_id": row.work, "talgent.work_caller": "application:" + row.application, "talgent.application_id": row.application})
 		_, err := db.ExecContext(context.Background(), `INSERT INTO otel_traces
 			(Timestamp, TraceId, SpanId, ParentSpanId, TraceState, SpanName, SpanKind, ServiceName,
 			 ResourceAttributes, SpanAttributes, Duration, StatusCode, StatusMessage)

@@ -50,8 +50,8 @@ func (l LocatedLayout) Clone() LocatedLayout {
 // locates, a mount that locates nothing is left out, and the Harness state
 // mount takes its path and Directory name from the Agent Harness (Harness
 // state placement), refused when another mount holds that path or one inside it
-// (Located layout validity). The publication target follows the Subject, else the
-// Work.
+// (Located layout validity). The publication target follows the File Home,
+// else the Work.
 func locateLayout(layout WorkLayout, harness AgentHarness, facts LocatorFacts, managed bool) (LocatedLayout, error) {
 	if err := layout.Validate(); err != nil {
 		return LocatedLayout{}, err
@@ -102,10 +102,11 @@ func collides(statePath, path string) bool {
 	return path == statePath || nested
 }
 
-// publicationTarget is `{Subject}, artifacts`, or `{Work}, artifacts` for a
-// Work without a Subject: a permanent File Space on JuiceFS.
+// publicationTarget is `{File Home}, artifacts`, or `{Work}, artifacts` for a
+// Work without a File Home: a permanent File Space on JuiceFS (Publication
+// target).
 func publicationTarget(facts LocatorFacts) (LocatedDirectory, bool) {
-	for _, condition := range []LocatorCondition{ConditionSubject, ConditionWork} {
+	for _, condition := range []LocatorCondition{ConditionFileHome, ConditionWork} {
 		locator := DirectoryLocator{Conditions: []LocatorCondition{condition}, Name: "artifacts", Backend: BackendJuiceFS, Lifetime: LifetimePermanent}
 		if directory, ok := locator.Apply(facts); ok {
 			return directory, true

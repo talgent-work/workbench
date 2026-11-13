@@ -38,8 +38,8 @@ func TestDeliveryCarriesTheWorksIdentityTokenAndFallsDueADayEarly(t *testing.T) 
 	require.NoError(t, err)
 
 	require.Equal(t, []command.WorkIdentityFacts{{
-		WorkID: work.ID, ProjectID: work.ProjectID, AgentID: work.AgentID, Purpose: "test-purpose",
-		SubjectKind: string(work.Subject.Kind), SubjectID: work.Subject.ID, RepresentedPerson: work.RepresentedPerson,
+		WorkID: work.ID, WorkCaller: work.WorkCaller, WorkKey: work.WorkKey, FileHome: work.FileHome, AgentID: work.AgentID, Purpose: "test-purpose",
+		RepresentedPerson: work.RepresentedPerson,
 	}}, w.accounts.Issued())
 	require.Len(t, w.environment.Supplies, 1)
 	token := w.environment.Supplies[0].IdentityToken

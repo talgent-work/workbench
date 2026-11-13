@@ -44,7 +44,7 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 		}{{"recent", 0}, {"retained-metrics", 8}, {"expired-metrics", 31}} {
 			_, err := db.ExecContext(ctx, `INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, ResourceAttributes, SpanAttributes)
                 SELECT now64(9) - toIntervalDay(?), 'injected-trace', ?, 'claude_code.llm_request',
-                    map('talgent.project_id', 'project-edge', 'talgent.agent_work_id', ?),
+                    map('talgent.work_caller', 'team:team-edge', 'talgent.agent_work_id', ?),
                     map('model', 'fixture-model', 'input_tokens', 'invalid', 'output_tokens', '0', 'cache_read_tokens', '-1')`, item.age, item.id, item.id)
 			if err != nil {
 				t.Fatal(err)
@@ -56,7 +56,7 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 		}
 		metrics := repo
 		for _, id := range []string{"recent", "retained-metrics"} {
-			result, err := metrics.GetBySession(ctx, query.TraceMetricOptions{ProjectID: "project-edge", AgentWorkID: id})
+			result, err := metrics.GetBySession(ctx, query.TraceMetricOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-edge"}, AgentWorkID: id})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -74,15 +74,15 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 				}
 			}
 		}
-		recentSpans, err := repo.ListBySession(ctx, query.SpanListOptions{ProjectID: "project-edge", AgentWorkID: "recent"})
+		recentSpans, err := repo.ListBySession(ctx, query.SpanListOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-edge"}, AgentWorkID: "recent"})
 		if err != nil || len(recentSpans.Spans) != 1 {
 			t.Fatalf("raw expiry boundary: %+v, %v", recentSpans, err)
 		}
-		oldSpans, err := repo.ListBySession(ctx, query.SpanListOptions{ProjectID: "project-edge", AgentWorkID: "retained-metrics"})
+		oldSpans, err := repo.ListBySession(ctx, query.SpanListOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-edge"}, AgentWorkID: "retained-metrics"})
 		if err != nil || len(oldSpans.Spans) != 0 {
 			t.Fatalf("raw expiry boundary: %+v, %v", oldSpans, err)
 		}
-		expired, err := metrics.GetBySession(ctx, query.TraceMetricOptions{ProjectID: "project-edge", AgentWorkID: "expired-metrics"})
+		expired, err := metrics.GetBySession(ctx, query.TraceMetricOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-edge"}, AgentWorkID: "expired-metrics"})
 		if err != nil || len(expired.Totals) != 0 {
 			t.Fatalf("expired measurements still readable: %+v, %v", expired, err)
 		}
@@ -93,20 +93,20 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 		if _, err := db.ExecContext(ctx, `INSERT INTO otel_logs (Timestamp, TraceId, Body, LogAttributes, ResourceAttributes)
             SELECT now64(9) - INTERVAL 8 DAY, 'ttl-trace', 'claude_code.skill_activated',
                 map('event.name', 'skill_activated', 'event.sequence', '1', 'skill.name', 'retained-skill'),
-                map('talgent.project_id', 'project-ttl', 'talgent.agent_work_id', 'session-ttl')`); err != nil {
+                map('talgent.work_caller', 'team:team-ttl', 'talgent.agent_work_id', 'session-ttl')`); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := db.ExecContext(ctx, `INSERT INTO otel_traces (Timestamp, TraceId, SpanId, SpanName, SpanAttributes, ResourceAttributes)
             SELECT now64(9) - INTERVAL 8 DAY, 'ttl-trace', 'ttl-span', 'claude_code.llm_request',
                 map('model', 'ttl-model', 'input_tokens', '10', 'output_tokens', '5', 'cache_read_tokens', '0', 'cache_creation_tokens', '0'),
-                map('talgent.project_id', 'project-ttl', 'talgent.agent_work_id', 'session-ttl')`); err != nil {
+                map('talgent.work_caller', 'team:team-ttl', 'talgent.agent_work_id', 'session-ttl')`); err != nil {
 			t.Fatal(err)
 		}
 		repo, err := openTestRepository(t, dsn)
 		if err != nil {
 			t.Fatal(err)
 		}
-		opts := query.TraceMetricOptions{ProjectID: "project-ttl", AgentWorkID: "session-ttl"}
+		opts := query.TraceMetricOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-ttl"}, AgentWorkID: "session-ttl"}
 		before, err := repo.GetBySession(ctx, opts)
 		if err != nil {
 			t.Fatal(err)
@@ -150,7 +150,7 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 		t.Cleanup(func() { applyNativeSchema(t, ctx, db, string(ddl)) })
 
 		now := time.Now()
-		resource := `{"attributes":[{"key":"talgent.project_id","value":{"stringValue":"project-fault"}},{"key":"talgent.agent_work_id","value":{"stringValue":"session-fault"}}]}`
+		resource := `{"attributes":[{"key":"talgent.work_caller","value":{"stringValue":"team:team-fault"}},{"key":"talgent.work_key","value":{"stringValue":"board:board-fault"}},{"key":"talgent.agent_work_id","value":{"stringValue":"session-fault"}}]}`
 		spanBody := fmt.Sprintf(`{"resourceSpans":[{"resource":%s,"scopeSpans":[{"spans":[{"traceId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","spanId":"bbbbbbbbbbbbbbbb","name":"claude_code.llm_request","startTimeUnixNano":"%d","endTimeUnixNano":"%d","attributes":[{"key":"model","value":{"stringValue":"fixture-model"}},{"key":"input_tokens","value":{"stringValue":"5"}},{"key":"output_tokens","value":{"stringValue":"0"}},{"key":"cache_read_tokens","value":{"stringValue":"0"}},{"key":"cache_creation_tokens","value":{"stringValue":"0"}}]}]}]}]}`, resource, now.UnixNano(), now.Add(time.Millisecond).UnixNano())
 		logBody := fmt.Sprintf(`{"resourceLogs":[{"resource":%s,"scopeLogs":[{"logRecords":[{"timeUnixNano":"%d","body":{"stringValue":"claude_code.skill_activated"},"attributes":[{"key":"event.name","value":{"stringValue":"skill_activated"}},{"key":"event.sequence","value":{"stringValue":"1"}},{"key":"skill.name","value":{"stringValue":"probe"}}]}]}]}]}`, resource, now.UnixNano())
 		client := &http.Client{Timeout: 5 * time.Second}
@@ -169,7 +169,9 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer repo.db.Close()
-		options := query.TraceMetricOptions{ProjectID: "project-fault", AgentWorkID: "session-fault", MetricKinds: []string{"model_call", "input_tokens", "skill_activation"}}
+		// Measurements, spans and events carry the Work Key the resource names.
+		faultKey := query.WorkKey{Kind: "board", ID: "board-fault"}
+		options := query.TraceMetricOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-fault"}, AgentWorkID: "session-fault", MetricKinds: []string{"model_call", "input_tokens", "skill_activation"}}
 		var result *query.TraceMetricResult
 		for deadline := time.Now().Add(10 * time.Second); ; {
 			result, err = repo.GetBySession(ctx, options)
@@ -178,7 +180,7 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 			}
 			var activation, gap bool
 			for _, bucket := range result.Buckets {
-				activation = activation || (bucket.MetricKind == "skill_activation" && bucket.Value == 1)
+				activation = activation || (bucket.MetricKind == "skill_activation" && bucket.Value == 1 && bucket.WorkKey == faultKey)
 				gap = gap || slices.Contains(bucket.Gaps, "projection_incomplete")
 			}
 			if activation && gap {
@@ -189,12 +191,12 @@ func TestInjectedEvidenceRetentionAndFaults(t *testing.T) {
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-		spans, err := repo.ListBySession(ctx, query.SpanListOptions{ProjectID: "project-fault", AgentWorkID: "session-fault"})
-		if err != nil || len(spans.Spans) != 1 || spans.Spans[0].Attributes["input_tokens"] != "5" {
+		spans, err := repo.ListBySession(ctx, query.SpanListOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-fault"}, AgentWorkID: "session-fault"})
+		if err != nil || len(spans.Spans) != 1 || spans.Spans[0].Attributes["input_tokens"] != "5" || spans.Spans[0].WorkKey != faultKey {
 			t.Fatalf("native evidence lost after interpretation failure: %+v, %v", spans, err)
 		}
-		events, err := repo.ListEvents(ctx, query.EventOptions{ProjectID: "project-fault", AgentWorkID: "session-fault"})
-		if err != nil || len(events.Events) != 1 {
+		events, err := repo.ListEvents(ctx, query.EventOptions{WorkCaller: query.WorkCaller{Kind: "team", ID: "team-fault"}, AgentWorkID: "session-fault"})
+		if err != nil || len(events.Events) != 1 || events.Events[0].WorkKey != faultKey {
 			t.Fatalf("independent native event lost: %+v, %v", events, err)
 		}
 

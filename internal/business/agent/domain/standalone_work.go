@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -13,8 +14,8 @@ var (
 	ErrWorkFileNotAdmitted  = errors.New("agent: the person may not change this Work's files")
 	ErrWorkFilesUnavailable = errors.New("agent: the Work has no File Space")
 	ErrWorkFilesClosed      = errors.New("agent: a Closed Work's files no longer change")
-	// ErrStandaloneWorkOwnerOnly refuses a caller creating or acting on a
-	// Standalone Work: Agent alone creates one, and only its owner acts on it.
+	// ErrStandaloneWorkOwnerOnly refuses an extension creating or acting on a
+	// Standalone Work: only its owner starts one and acts on it.
 	ErrStandaloneWorkOwnerOnly = errors.New("agent: only its owner acts on a Standalone Work")
 )
 
@@ -24,24 +25,39 @@ const maxDisplayTitleLength = 200
 // first line is often the whole instruction, too long to name the Work by.
 const startingTitleLength = 80
 
-// Standalone tells whether this is a Standalone Work: a Work with neither a
-// Subject nor a Project. No separate kind is recorded.
-func (s *AgentWork) Standalone() bool { return !s.Subject.Present() && s.ProjectID == "" }
+// Standalone tells whether this is a Standalone Work: a Work whose Work
+// Caller is a person or an Application, which starts it for itself.
+func (s *AgentWork) Standalone() bool { return s.WorkCaller.StartsStandaloneWork() }
 
-// AdmitCallerCreation refuses a caller's creation of a Work with neither a
-// Subject nor a Project: such a Work is a Standalone Work, which Agent itself
-// starts for its owner.
-func AdmitCallerCreation(subject WorkSubject, projectID string) error {
-	if !subject.Present() && projectID == "" {
-		return ErrStandaloneWorkOwnerOnly
+// validateWorkFacts keeps the facts fixed at creation valid: a Work Caller,
+// and a Work Key and a File Home only beside a Work Caller of an
+// extension-defined kind (Standalone Work facts).
+func (s *AgentWork) validateWorkFacts() error {
+	if err := s.WorkCaller.Validate(); err != nil {
+		return errors.Join(ErrInvalidWork, err)
+	}
+	if err := s.WorkKey.Validate(); err != nil {
+		return errors.Join(ErrInvalidWork, err)
+	}
+	if err := s.FileHome.Validate(); err != nil {
+		return errors.Join(ErrInvalidWork, err)
+	}
+	if s.Standalone() && (s.WorkKey.Present() || s.FileHome.Present()) {
+		return errors.Join(ErrInvalidWork, ErrStandaloneWorkFacts)
 	}
 	return nil
 }
 
-// AdmitDelegatedControl refuses a caller acting on the owner's behalf on a
-// Standalone Work, which only its owner acts on.
+// AdmitDelegatedControl admits an extension acting on the owner's behalf
+// only on an Extension Work, whose Work Caller is of a kind an extension
+// defines (Delegated control); a Standalone Work only its owner acts on. A
+// stored Work always holds a valid Work Caller, so an invalid one is a fault
+// of the store, never of the request.
 func (s *AgentWork) AdmitDelegatedControl() error {
-	if s.Standalone() {
+	if err := s.WorkCaller.Validate(); err != nil {
+		return fmt.Errorf("agent: Work %s holds an invalid Work Caller: %v", s.ID, err)
+	}
+	if !s.WorkCaller.ExtensionDefined() {
 		return ErrStandaloneWorkOwnerOnly
 	}
 	return nil
@@ -131,8 +147,8 @@ type StandaloneFiles struct {
 	Inputs, Artifacts LocatedDirectory
 }
 
-// StandaloneFileSpaces names a Standalone Work's File Spaces; another Work's
-// files are its caller's.
+// StandaloneFileSpaces names a Standalone Work's File Spaces; an Extension
+// Work's files are its extension's.
 func (s *AgentWork) StandaloneFileSpaces() (StandaloneFiles, error) {
 	if !s.Standalone() || s.LocatedLayout.Inputs == nil {
 		return StandaloneFiles{}, ErrWorkFilesUnavailable
@@ -141,12 +157,13 @@ func (s *AgentWork) StandaloneFileSpaces() (StandaloneFiles, error) {
 }
 
 // ReadableWorkFile tells whether a reader admitted to a Work reads one file of
-// its File Spaces. A Standalone Work's spaces are its own, so every file is
-// readable; another Work publishes into its Subject's File Space, which may
-// hold that Subject's other Works' files, so only the Artifacts the Work
-// published itself are readable here.
-func ReadableWorkFile(workID string, standalone, artifact bool, publishedBy string) bool {
-	return standalone || (artifact && publishedBy == workID)
+// its File Spaces (Shared space reading). A Work without a File Home keeps
+// its files in its own File Spaces, so every file is readable; a Work with
+// one reads its inputs from and publishes into its File Home's File Spaces,
+// which hold that File Home's other Works' files, so only the Artifacts the
+// Work published itself are readable there.
+func ReadableWorkFile(workID string, inFileHome, artifact bool, publishedBy string) bool {
+	return !inFileHome || (artifact && publishedBy == workID)
 }
 
 // AdmitFileReader admits a reader of the Work's files: an owner of its

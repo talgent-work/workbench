@@ -7,13 +7,13 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// FindBySubject returns the definition's Work for the Subject, a closed Work
-// included; storage keeps one row per definition and Subject.
-func (r *AgentWorkRepository) FindBySubject(ctx context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
+// FindByWorkKey returns the definition's Work for the Work Key, a closed Work
+// included; storage keeps one row per definition and Work Key.
+func (r *AgentWorkRepository) FindByWorkKey(ctx context.Context, agentID string, key domain.WorkKey) (*domain.AgentWork, error) {
 	var row agentWorkDO
-	found, err := r.db.Context(ctx).Cols("id").Where("agent_id = ? AND subject_kind = ? AND subject_id = ? AND deleted_at = 0", agentID, string(subject.Kind), subject.ID).Get(&row)
+	found, err := r.db.Context(ctx).Cols("id").Where("agent_id = ? AND work_key_kind = ? AND work_key_id = ? AND deleted_at = 0", agentID, key.Kind, key.ID).Get(&row)
 	if err != nil {
-		return nil, oops.With("operation", "agent_work.find_subject", "agent_id", agentID).Wrap(err)
+		return nil, oops.With("operation", "agent_work.find_work_key", "agent_id", agentID).Wrap(err)
 	}
 	if !found {
 		return nil, nil

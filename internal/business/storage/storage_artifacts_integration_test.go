@@ -33,6 +33,7 @@ func (f *fixture) entry() func(workID, spaceToken, procedure, body string) (int,
 		request.Header.Set(authn.HeaderAuthenticatedBy, "envoy")
 		request.Header.Set(authn.HeaderPrincipal, "agent")
 		request.Header.Set(authn.HeaderSubject, workID)
+		request.Header.Set(authn.HeaderWorkCaller, "person:owner")
 		request.Header.Set(authn.HeaderAgentID, "agent")
 		request.Header.Set(authn.HeaderPurpose, "work")
 		request.Header.Set(authn.HeaderSpaceToken, spaceToken)

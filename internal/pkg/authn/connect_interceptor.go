@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"connectrpc.com/connect/v2"
 	"github.com/google/uuid"
@@ -28,11 +29,13 @@ const (
 	HeaderAvatarURL   = "x-talgent-avatar-url"
 	HeaderRoles       = "x-talgent-roles"
 	// An agent's claims: its Work's fixed facts.
-	HeaderProjectID         = "x-talgent-project-id"
+	// HeaderWorkCaller, HeaderWorkKey and HeaderFileHome each carry
+	// "<kind>:<id>".
+	HeaderWorkCaller        = "x-talgent-work-caller"
+	HeaderWorkKey           = "x-talgent-work-key"
+	HeaderFileHome          = "x-talgent-file-home"
 	HeaderAgentID           = "x-talgent-agent-id"
 	HeaderPurpose           = "x-talgent-purpose"
-	HeaderWorkSubjectKind   = "x-talgent-work-subject-kind"
-	HeaderWorkSubjectID     = "x-talgent-work-subject-id"
 	HeaderRepresentedUserID = "x-talgent-represented-user-id"
 	HeaderApplicationID     = "x-talgent-application-id"
 	// A trusted service's call on a person's behalf.
@@ -142,12 +145,19 @@ func establish(header headerReader) (Principal, error) {
 		}), nil
 	case principalAgent:
 		agent := Agent{
-			WorkID:      subject,
-			ProjectID:   strings.TrimSpace(header.Get(HeaderProjectID)),
-			AgentID:     strings.TrimSpace(header.Get(HeaderAgentID)),
-			Purpose:     strings.TrimSpace(header.Get(HeaderPurpose)),
-			SubjectKind: strings.TrimSpace(header.Get(HeaderWorkSubjectKind)),
-			SubjectID:   strings.TrimSpace(header.Get(HeaderWorkSubjectID)),
+			WorkID:  subject,
+			AgentID: strings.TrimSpace(header.Get(HeaderAgentID)),
+			Purpose: strings.TrimSpace(header.Get(HeaderPurpose)),
+		}
+		var valid bool
+		if agent.WorkCaller, valid = parseWorkFact(header.Get(HeaderWorkCaller)); !valid || agent.WorkCaller == (WorkFact{}) {
+			return Principal{}, connect.NewError(connect.CodeUnauthenticated, "the agent's Work Caller is required")
+		}
+		if agent.WorkKey, valid = parseWorkFact(header.Get(HeaderWorkKey)); !valid {
+			return Principal{}, connect.NewError(connect.CodeUnauthenticated, "the agent's Work Key is invalid")
+		}
+		if agent.FileHome, valid = parseWorkFact(header.Get(HeaderFileHome)); !valid {
+			return Principal{}, connect.NewError(connect.CodeUnauthenticated, "the agent's File Home is invalid")
 		}
 		if represented := strings.TrimSpace(header.Get(HeaderRepresentedUserID)); represented != "" {
 			if agent.RepresentedUserID, ok = canonicalUUID(represented); !ok {
@@ -194,6 +204,25 @@ func delegatedUser(header headerReader) (string, bool, error) {
 		return "", false, connect.NewError(connect.CodeUnauthenticated, "delegated user id is invalid")
 	}
 	return userID, true, nil
+}
+
+// maxWorkFactKindLength bounds a Work fact's kind, which never holds ":".
+const maxWorkFactKindLength = 32
+
+// parseWorkFact reads "<kind>:<id>", split at its first ":" and each part
+// trimmed; an empty value is none. A value without a kind or an identity, or
+// with a kind beyond its bound, is invalid.
+func parseWorkFact(raw string) (WorkFact, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return WorkFact{}, true
+	}
+	kind, id, found := strings.Cut(value, ":")
+	fact := WorkFact{Kind: strings.TrimSpace(kind), ID: strings.TrimSpace(id)}
+	if !found || fact.Kind == "" || fact.ID == "" || utf8.RuneCountInString(fact.Kind) > maxWorkFactKindLength {
+		return WorkFact{}, false
+	}
+	return fact, true
 }
 
 // canonicalUUID admits an Account, Work or Application id: a canonical

@@ -89,19 +89,19 @@ func TestAWorksApplicationEndpointsAreItsOwn(t *testing.T) {
 
 // Only an Application's Work takes Application MCP endpoints.
 func TestOnlyAnApplicationsWorkTakesApplicationEndpoints(t *testing.T) {
-	request := func(startedBy, agentID string) domain.WorkCreationRequest {
-		return domain.WorkCreationRequest{StartedBy: startedBy, WorkModel: domain.WorkModelSelection{ConfigurationID: "model"},
+	request := func(caller domain.WorkCaller, agentID string) domain.WorkCreationRequest {
+		return domain.WorkCreationRequest{StartedBy: caller.ID, WorkCaller: caller, WorkModel: domain.WorkModelSelection{ConfigurationID: "model"},
 			Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, ApplicationEndpoints: []domain.ApplicationMCPEndpoint{deskTools()}},
 			Admission:    domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true}}
 	}
 	person, err := domain.NewAgentDefinition(domain.EmployeeDefinitionInput("employee-1"))
 	require.NoError(t, err)
-	_, _, err = person.CreateWork(request("employee-1", person.ID), domain.WorkCreationFacts{})
+	_, _, err = person.CreateWork(request(domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "employee-1"}, person.ID), domain.WorkCreationFacts{})
 	require.ErrorIs(t, err, domain.ErrInvalidCapabilities)
 
 	application, err := domain.NewAgentDefinition(domain.ApplicationDefinitionInput(applicationID, "Support Desk"))
 	require.NoError(t, err)
-	work, created, err := application.CreateWork(request(applicationID, application.ID), domain.WorkCreationFacts{})
+	work, created, err := application.CreateWork(request(domain.WorkCaller{Kind: domain.CallerKindApplication, ID: applicationID}, application.ID), domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	require.True(t, created)
 	require.Equal(t, []domain.ApplicationMCPEndpoint{deskTools()}, work.CapabilitySnapshot.ApplicationEndpoints)

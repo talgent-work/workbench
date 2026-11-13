@@ -61,7 +61,7 @@ func creationFixture(t *testing.T, computer command.ComputerPort) (*sessionStore
 	store := &sessionStore{}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computer, store.preparation(models))
-	request := command.CreateWork{AgentID: agent.ID, SubjectID: "caller",
+	request := command.CreateWork{AgentID: agent.ID, SubjectID: "caller", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "employee"},
 		InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/work", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Do the work"}}}
 	return store, handler, request
 }
@@ -84,6 +84,27 @@ func TestARepeatedCreationReturnsItsOriginalWork(t *testing.T) {
 	require.Equal(t, 1, store.registrations, "one request identity creates one Work")
 	require.Len(t, computer.asked, 1, "a repeat finds its Work and asks its Computer nothing")
 	require.Empty(t, computer.released)
+}
+
+// A repeat of a request identity that supplies other Work facts than its
+// Work fixed is refused as a Mismatched reuse, as a Work Key repeat is.
+func TestARepeatWithOtherWorkFactsIsAMismatchedReuse(t *testing.T) {
+	cases := map[string]func(*command.CreateWork){
+		"another Work Caller": func(r *command.CreateWork) { r.WorkCaller = domain.WorkCaller{Kind: "case", ID: "case-1"} },
+		"a Work Key":          func(r *command.CreateWork) { r.WorkKey = domain.WorkKey{Kind: "review", ID: "review-1"} },
+		"a File Home":         func(r *command.CreateWork) { r.FileHome = domain.FileHome{Kind: "project", ID: "project-1"} },
+	}
+	for name, change := range cases {
+		t.Run(name, func(t *testing.T) {
+			store, handler, request := creationFixture(t, &deskLedger{})
+			_, err := handler.Handle(t.Context(), request)
+			require.NoError(t, err)
+			change(&request)
+			_, err = handler.Handle(t.Context(), request)
+			require.ErrorIs(t, err, domain.ErrMismatchedReuse)
+			require.Equal(t, 1, store.registrations)
+		})
+	}
 }
 
 // A commit that never lands leaves its Desk to the repeat, which asks for
@@ -235,12 +256,12 @@ func TestAResumeWhoseAnswerWasLostConvergesOnItsRepeat(t *testing.T) {
 	require.Len(t, sessions.admittedStarts(), 1)
 }
 
-// A request answered with its Subject's existing Work returns that Work on
+// A request answered with its Work Key's existing Work returns that Work on
 // every repeat, and never asks its Computer.
 func TestAReusedWorkAnswersEveryRepeatOfItsRequest(t *testing.T) {
 	computer := &deskLedger{}
 	_, handler, request := creationFixture(t, computer)
-	request.Subject = domain.WorkSubject{Kind: "case", ID: "case-1"}
+	request.WorkCaller, request.WorkKey = domain.WorkCaller{Kind: "project", ID: "project-a"}, domain.WorkKey{Kind: "case", ID: "case-1"}
 	id, err := handler.Handle(t.Context(), request)
 	require.NoError(t, err)
 

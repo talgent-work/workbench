@@ -187,14 +187,14 @@ func (a *Application) OwnApplicationAgent(ctx context.Context, applicationID str
 	if err != nil {
 		return query.AgentAppearanceView{}, err
 	}
-	id, exists, err := a.FindApplicationAgent(ctx, found.ID)
+	located, exists, err := a.FindApplicationAgent(ctx, found.ID)
 	if err != nil {
 		return query.AgentAppearanceView{}, err
 	}
 	if !exists {
 		return query.AgentAppearanceView{Appearance: domain.AgentAppearance{Name: strings.TrimSpace(found.Name), Icon: domain.DefaultAgentIcon}}, nil
 	}
-	definition, err := a.Definitions.Get(ctx, id)
+	definition, err := a.Definitions.Get(ctx, located.AgentID)
 	if err != nil {
 		return query.AgentAppearanceView{}, err
 	}

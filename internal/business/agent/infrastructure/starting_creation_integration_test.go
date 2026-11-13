@@ -58,9 +58,8 @@ func TestCreationCommitsStartingAndAdmissionBeforeExecution(t *testing.T) {
 	require.Equal(t, before, catalog.reads.Load())
 	other := creationInput(agent.ID, "other")
 	other.RequestID = request.RequestID
-	repeated, err := handler.Handle(t.Context(), other)
-	require.NoError(t, err)
-	require.Equal(t, workID, repeated, "a repeated request identity names the Work it created, whatever else it carries")
+	_, err = handler.Handle(t.Context(), other)
+	require.ErrorIs(t, err, domain.ErrMismatchedReuse, "a repeated request identity never answers with a Work of other facts")
 	assertCreatedWorks(t, db, 1)
 }
 
@@ -117,7 +116,7 @@ func startingCreationDatabase(t *testing.T) (*xorm.Engine, *infrastructure.Agent
 }
 
 func creationInput(agentID, reference string) command.CreateWork {
-	return command.CreateWork{StartingUserID: "owner", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agentID, Subject: domain.WorkSubject{Kind: "case", ID: reference}, ProjectID: "project"}
+	return command.CreateWork{StartingUserID: "owner", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agentID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: reference}}
 }
 func creationModels() query.ModelConfigurations {
 	return query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "fixture"}})

@@ -53,9 +53,9 @@ func TestWorkMessageAccessAsksAgentFromItsOwnFacts(t *testing.T) {
 	require.ErrorIs(t, access.AuthorizeRead(ctx, "", query.ReaderAdmission{}, "work"), query.ErrWorkAccessDenied)
 	require.Zero(t, api.calls)
 	require.NoError(t, access.AuthorizeRead(ctx, "viewer", query.ReaderAdmission{}, "shared"))
-	require.Empty(t, api.admitted.GetReference(), "a direct reader carries no admission")
-	require.NoError(t, access.AuthorizeRead(ctx, "viewer", query.ReaderAdmission{Reference: "project", Value: "project-a"}, "public"))
-	require.Equal(t, "project-a", api.admitted.GetValue(), "a trusted caller's admission reaches Agent")
+	require.Empty(t, api.admitted.GetWorkCaller().GetKind(), "a direct reader carries no admission")
+	require.NoError(t, access.AuthorizeRead(ctx, "viewer", query.ReaderAdmission{WorkCallerKind: "project", WorkCallerID: "project-a"}, "public"))
+	require.Equal(t, "project-a", api.admitted.GetWorkCaller().GetId(), "a trusted caller's admission reaches Agent")
 	require.ErrorIs(t, access.AuthorizeRead(ctx, "viewer", query.ReaderAdmission{}, "denied"), query.ErrWorkAccessDenied)
 	require.ErrorIs(t, access.AuthorizeRead(ctx, "viewer", query.ReaderAdmission{}, "offline"), query.ErrWorkAccessUnavailable)
 

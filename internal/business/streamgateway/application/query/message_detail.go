@@ -13,9 +13,10 @@ var (
 )
 
 // ReaderAdmission is a trusted internal caller's statement that the reader is
-// within the value of a named binding reference, such as a member of a
-// Project. Its zero value admits nothing; a client can never supply it.
-type ReaderAdmission struct{ Reference, Value string }
+// a member of a Work Caller, by its kind and identity, such as a Project.
+// Agent decides whether that Work Caller is the Work's. Its zero value admits
+// nothing; a client can never supply it.
+type ReaderAdmission struct{ WorkCallerKind, WorkCallerID string }
 
 // WorkAccessPort admits a reader of a Work's message stream from Agent's own
 // facts: the owner, a Work Share holder, or a reader admitted within the scope

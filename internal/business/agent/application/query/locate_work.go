@@ -7,10 +7,13 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
+// LocateWork finds the definition's Work of a Work Key within one Work
+// Caller.
 type LocateWork struct {
-	AgentID   string
-	SubjectID string
-	Subject   domain.WorkSubject
+	AgentID    string
+	SubjectID  string
+	WorkKey    domain.WorkKey
+	WorkCaller domain.WorkCaller
 }
 
 type LocateWorkHandler struct {
@@ -28,20 +31,22 @@ func (h *LocateWorkHandler) Handle(ctx context.Context, request LocateWork) (str
 	if err != nil {
 		return "", false, err
 	}
-	// Only a Subject locates a Work; one without a Subject is found by its
-	// identity.
-	if !request.Subject.Present() {
-		return "", false, domain.ErrInvalidWorkSubject
+	// Only a Work Key locates a Work (Work Key lookup); one without a key is
+	// found by its identity. A Work of another Work Caller is not found.
+	if !request.WorkKey.Present() {
+		return "", false, domain.ErrInvalidWorkKey
 	}
-	subjectWork, err := h.works.FindBySubject(ctx, agent.ID, request.Subject)
+	if err := request.WorkKey.Validate(); err != nil {
+		return "", false, err
+	}
+	if err := request.WorkCaller.Validate(); err != nil {
+		return "", false, err
+	}
+	session, err := h.works.FindByWorkKey(ctx, agent.ID, request.WorkKey)
 	if err != nil {
 		return "", false, err
 	}
-	session, err := agent.ReuseWork(request.Subject, subjectWork)
-	if err != nil {
-		return "", false, err
-	}
-	if session == nil {
+	if session == nil || session.WorkCaller != request.WorkCaller {
 		return "", false, nil
 	}
 	if err := h.authorization.AuthorizeWork(ctx, request.SubjectID, session.ID); err != nil {

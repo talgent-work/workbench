@@ -432,15 +432,15 @@ data:
     agent-marketplace:
       credential-token: "${AGENT_CONTROL_TOKEN:}"
       address: http://127.0.0.1:8080
-    # The Plugins every Work of a scope requires, by slug; a profile adds the
-    # Project scope's.
+    # The Plugins every Work of a scope requires, by slug; a profile adds a
+    # Work Caller kind's under work-caller-kinds.<kind>.
     agent-built-in-plugins:
       platform:
         - talgent
         # The core API plugin teaches Agents the core's public API; a deployment
         # whose Agents have no direct access to it empties AGENT_API_PLUGIN.
         - "${AGENT_API_PLUGIN:talgent-api}"
-      project: []
+      work-caller-kinds: {}
     http:
       addr: :8080
     agent-account:
@@ -533,9 +533,10 @@ data:
       worker-concurrency: 1
     clickhouse:
       dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}?database=default
-    # Trace runs in this process with its own telemetry database; a
-    # Work with a Project is admitted by the Project access decision, which a
-    # deployment configures with trace-access.project-access-address.
+    # Trace runs in this process with its own telemetry database; an
+    # Extension Work is admitted by the access decision of the extension
+    # defining its Work Caller's kind, which a deployment configures with
+    # trace-access.work-caller-access-addresses.<kind>.
     trace-clickhouse:
       dsn: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_ADDR}/talgent_trace
     trace-access:
@@ -1758,16 +1759,16 @@ spec:
             header: x-talgent-avatar-url
           - claim: roles
             header: x-talgent-roles
-          - claim: project_id
-            header: x-talgent-project-id
+          - claim: work_caller
+            header: x-talgent-work-caller
+          - claim: work_key
+            header: x-talgent-work-key
+          - claim: file_home
+            header: x-talgent-file-home
           - claim: agent_id
             header: x-talgent-agent-id
           - claim: purpose
             header: x-talgent-purpose
-          - claim: work_subject_kind
-            header: x-talgent-work-subject-kind
-          - claim: work_subject_id
-            header: x-talgent-work-subject-id
           - claim: for
             header: x-talgent-represented-user-id
           - claim: application_id
@@ -1801,11 +1802,11 @@ spec:
         - x-talgent-display-name
         - x-talgent-avatar-url
         - x-talgent-roles
-        - x-talgent-project-id
+        - x-talgent-work-caller
+        - x-talgent-work-key
+        - x-talgent-file-home
         - x-talgent-agent-id
         - x-talgent-purpose
-        - x-talgent-work-subject-kind
-        - x-talgent-work-subject-id
         - x-talgent-represented-user-id
         - x-talgent-application-id
         - x-talgent-service-id

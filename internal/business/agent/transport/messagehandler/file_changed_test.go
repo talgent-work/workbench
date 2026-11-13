@@ -31,8 +31,8 @@ func TestFileChangesWakeTheirDirectorysReaders(t *testing.T) {
 	handler := messagehandler.NewFileChangedHandler(changed)
 	require.Equal(t, []integrationmessage.Kind{"storage.integration.v1.FileChangedV1"}, handler.Listening())
 	for _, fact := range []*storageintegrationv1.FileChangedV1{
-		{Directory: directoryOf("subject", "case:1", "inputs"), Name: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
-		{Directory: directoryOf("subject", "case:1", "inputs"), Name: "b.pdf", PreviousName: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED},
+		{Directory: directoryOf("file_home", "case:1", "inputs"), Name: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
+		{Directory: directoryOf("file_home", "case:1", "inputs"), Name: "b.pdf", PreviousName: "a.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED},
 		{Directory: directoryOf("work", "work-2", "inputs"), Name: "b.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_DELETED},
 		{Name: "report.md", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
 	} {
@@ -40,7 +40,7 @@ func TestFileChangesWakeTheirDirectorysReaders(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, handler.Handle(context.Background(), msg))
 	}
-	caseInputs := domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:1"}}, Name: "inputs"}
+	caseInputs := domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionFileHome, Value: "case:1"}}, Name: "inputs"}
 	workInputs := domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "work-2"}}, Name: "inputs"}
 	require.Equal(t, changedDirectories{caseInputs, caseInputs, workInputs}, *changed)
 

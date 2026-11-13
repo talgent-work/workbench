@@ -20,14 +20,17 @@ const agentOwnerColumn = "(SELECT JSON_UNQUOTE(JSON_EXTRACT(d.owners, '$[0]')) F
 // its first input was refused, so lists show what callers associate. A
 // rejected creation establishes no Work to list.
 func (r *WorkQueryRepository) ListWorkViews(ctx context.Context, filter query.WorkListFilter) ([]query.WorkSummary, error) {
-	if filter.ProjectID == "" && len(filter.WorkIDs) == 0 && filter.AgentOwner == "" {
+	if filter.WorkCaller == nil && len(filter.WorkIDs) == 0 && filter.AgentOwner == "" {
 		return nil, domain.ErrInvalidWork
 	}
 	q := r.db.Context(ctx).Table("agent_session").Alias("s").
-		Select("s.id,s.subject_kind,s.subject_id,s.project_ref," + agentOwnerColumn + " AS agent_owner,s.started_by,s.state,s.harness_process,s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at").
+		Select("s.id," + workFactSelect + "," + agentOwnerColumn + " AS agent_owner,s.started_by,s.state,s.harness_process,s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at").
 		Where("s.deleted_at=0")
-	if filter.ProjectID != "" {
-		q = q.And("s.project_ref=?", filter.ProjectID)
+	if caller := filter.WorkCaller; caller != nil {
+		q = q.And("s.work_caller_kind=? AND s.work_caller_id=?", caller.Kind, caller.ID)
+	}
+	if key := filter.WorkKey; key.Present() {
+		q = q.And("s.work_key_kind=? AND s.work_key_id=?", key.Kind, key.ID)
 	}
 	if filter.Purpose != "" {
 		q = q.Join("INNER", []string{"agent_definition", "a"}, "a.id=s.agent_id AND a.deleted_at=0").And("a.purpose=?", filter.Purpose)
@@ -38,6 +41,9 @@ func (r *WorkQueryRepository) ListWorkViews(ctx context.Context, filter query.Wo
 	if filter.AgentOwner != "" {
 		// An Agent Owner's Works are those of the definitions it owns.
 		q = q.And("JSON_CONTAINS((SELECT o.owners FROM agent_definition o WHERE o.id = s.agent_id), JSON_QUOTE(?))", filter.AgentOwner)
+	}
+	if filter.ExtensionWorks {
+		q = q.And(builder.NotIn("s.work_caller_kind", domain.AgentCallerKinds()))
 	}
 	if filter.ShareReader != "" {
 		q = q.And("s.id IN (SELECT w.work_id FROM agent_work_share w WHERE w.reader_id=?)", filter.ShareReader)
@@ -68,7 +74,7 @@ func (r *WorkQueryRepository) ListWorkViews(ctx context.Context, filter query.Wo
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, query.WorkSummary{WorkID: work.WorkID, Subject: work.Subject, ProjectID: work.ProjectID, AgentOwner: work.AgentOwner, StartedBy: work.StartedBy, State: work.State, StateReason: work.StateReason, ArchivePending: work.ArchivePending, Waiting: work.Waiting, DisconnectedSince: work.DisconnectedSince, CreatedAt: work.CreatedAt, UpdatedAt: work.UpdatedAt})
+		result = append(result, query.WorkSummary{WorkID: work.WorkID, WorkCaller: work.WorkCaller, WorkKey: work.WorkKey, FileHome: work.FileHome, AgentOwner: work.AgentOwner, StartedBy: work.StartedBy, State: work.State, StateReason: work.StateReason, ArchivePending: work.ArchivePending, Waiting: work.Waiting, DisconnectedSince: work.DisconnectedSince, CreatedAt: work.CreatedAt, UpdatedAt: work.UpdatedAt})
 	}
 	return result, nil
 }

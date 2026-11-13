@@ -16,18 +16,40 @@ import (
 	"github.com/talgent-work/contracts/gen/go/agent/public/v1/agentpublicv1connect"
 	agentmodule "github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
+	"github.com/talgent-work/workbench/internal/business/agent/application/query"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
-// An Agent asks who it is through the entry and learns its Work's fixed
-// facts from its own identity; a person is refused.
+// originRepository answers the origins of known Works; nothing else is read.
+type originRepository struct {
+	query.WorkQueryRepository
+	origins map[string]query.WorkOrigin
+}
+
+func (r originRepository) GetWorkOrigin(_ context.Context, workID string) (query.WorkOrigin, error) {
+	origin, ok := r.origins[workID]
+	if !ok {
+		return query.WorkOrigin{}, domain.ErrWorkNotFound
+	}
+	return origin, nil
+}
+
+// An Agent asks who it is through the entry and learns the facts its Work
+// fixed at creation from Agent, whatever else its identity headers carry;
+// every Work has a Work Caller, and a person is refused.
 func TestAnAgentAsksWhoItIs(t *testing.T) {
+	const work, standalone = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4d", "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4e"
+	app := &application.Application{}
+	app.Queries.GetWorkOrigin = query.NewGetWorkOriginHandler(originRepository{origins: map[string]query.WorkOrigin{
+		work:       {WorkID: work, AgentID: "definition", Purpose: "work", WorkCaller: domain.WorkCaller{Kind: "project", ID: "p1"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case 1"}, FileHome: domain.FileHome{Kind: "case", ID: "case 1"}},
+		standalone: {WorkID: standalone, AgentID: "definition", Purpose: "work", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "jack"}},
+	}})
 	mux := http.NewServeMux()
-	agentmodule.RegisterRPCHandlers(mux, &application.Application{}, agentmodule.RPCConfig{ControlToken: "integration", FeedbackToken: "feedback"}, slog.Default(), nil)
+	agentmodule.RegisterRPCHandlers(mux, app, agentmodule.RPCConfig{ControlToken: "integration", FeedbackToken: "feedback"}, slog.Default(), nil)
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	client := agentpublicv1connect.NewIdentityServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
-	const work = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4d"
 	as := func(principal string, claims map[string]string) context.Context {
 		ctx, info := connect.NewClientContext(context.Background())
 		info.RequestHeader().Set(authn.HeaderAuthenticatedBy, "envoy")
@@ -39,11 +61,15 @@ func TestAnAgentAsksWhoItIs(t *testing.T) {
 	}
 
 	me, err := client.WhoAmI(as("agent", map[string]string{
-		authn.HeaderSubject: work, authn.HeaderProjectID: "project", authn.HeaderAgentID: "definition", authn.HeaderPurpose: "work",
-		authn.HeaderWorkSubjectKind: "case", authn.HeaderWorkSubjectID: "case-1",
+		authn.HeaderSubject: work, authn.HeaderWorkCaller: "project:stale", authn.HeaderAgentID: "definition", authn.HeaderPurpose: "work",
+		authn.HeaderWorkKey: "stale:stale",
 	}), &agentpublicv1.WhoAmIRequest{})
 	require.NoError(t, err)
-	require.True(t, proto.Equal(&agentpublicv1.WhoAmIResponse{WorkId: work, ProjectId: "project", SubjectKind: "case", SubjectId: "case-1", Purpose: "work", AgentId: "definition"}, me), me.String())
+	require.True(t, proto.Equal(&agentpublicv1.WhoAmIResponse{WorkId: work, WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "p1"}, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: "case 1"}, FileHome: &agentpublicv1.FileHome{Kind: "case", Id: "case 1"}, Purpose: "work", AgentId: "definition"}, me), me.String())
+
+	own, err := client.WhoAmI(as("agent", map[string]string{authn.HeaderSubject: standalone, authn.HeaderWorkCaller: "person:stale", authn.HeaderAgentID: "definition", authn.HeaderPurpose: "work"}), &agentpublicv1.WhoAmIRequest{})
+	require.NoError(t, err)
+	require.True(t, proto.Equal(&agentpublicv1.WhoAmIResponse{WorkId: standalone, WorkCaller: &agentpublicv1.WorkCaller{Kind: "person", Id: "jack"}, Purpose: "work", AgentId: "definition"}, own), "a Standalone Work names its owner as Work Caller: %s", own.String())
 
 	person := "2c857667-a533-5efc-b6da-fc9cce51d31b"
 	_, err = client.WhoAmI(as("user", map[string]string{authn.HeaderSubject: person}), &agentpublicv1.WhoAmIRequest{})

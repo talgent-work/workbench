@@ -49,7 +49,7 @@ func TestALostCreationAcknowledgementIsAnsweredByItsRepeat(t *testing.T) {
 	handler := creationCoordinator(f.db, startupAuthority{}, registrar, deploymentModels(), &creationCatalog{})
 	_, err := handler.Handle(ctx, f.request)
 	require.ErrorIs(t, err, lost)
-	held, err := f.sessions.FindBySubject(ctx, f.request.AgentID, f.request.Subject)
+	held, err := f.sessions.FindByWorkKey(ctx, f.request.AgentID, f.request.WorkKey)
 	require.NoError(t, err)
 	require.NotNil(t, held, "the creation committed")
 	_, pending := held.PendingInitialTaskInput()
@@ -103,7 +103,7 @@ func TestADefinitiveCreationRefusalKeepsNothingOfItsRequest(t *testing.T) {
 	handler := creationCoordinator(f.db, capacity, nil, deploymentModels(), &creationCatalog{})
 	_, err := handler.Handle(ctx, f.request)
 	require.ErrorIs(t, err, domain.ErrCapacityUnavailable)
-	actual, err := f.sessions.FindBySubject(ctx, f.request.AgentID, f.request.Subject)
+	actual, err := f.sessions.FindByWorkKey(ctx, f.request.AgentID, f.request.WorkKey)
 	require.NoError(t, err)
 	require.Nil(t, actual)
 

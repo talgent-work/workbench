@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -40,9 +41,10 @@ func controlRequest(ctx context.Context) context.Context {
 	return ctx
 }
 
-// Agent-only schema, real private HTTP and list SQL. Selection is by generic
-// the Project; the caller composes its own facts and authorizes them.
-func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
+// Agent-only schema, real private HTTP and list SQL. Selection is by Work
+// Caller and Work Key; the trusted service composes its own facts and
+// authorizes them.
+func TestWorkListsSelectAdmittedWorksByWorkCaller(t *testing.T) {
 	const owner = "123456789012345680"
 	f := newWorkDefinitionFixture(t, owner)
 	ctx := context.Background()
@@ -57,6 +59,8 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	client := agentprivatev1connect.NewWorkFactsServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	feedback := newRuns(t, f.db, f.sessions)
 	project := uuid.NewString()
+	caller := domain.WorkCaller{Kind: "project", ID: project}
+	byCaller := &agentpublicv1.WorkCaller{Kind: "project", Id: project}
 	makeSession := func(projectID, key string, stopped bool) string {
 		creation := f.request
 		preparation := *creation.InitialExecution
@@ -64,7 +68,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 		preparation.WorkBranch = "talgent/" + key
 		creation.InitialExecution = &preparation
 		creation.RequestID = preparation.RequestID
-		creation.Subject, creation.ProjectID = domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, projectID
+		creation.WorkKey, creation.WorkCaller = domain.WorkKey{Kind: "case", ID: uuid.NewString()}, domain.WorkCaller{Kind: "project", ID: projectID}
 		id, e := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, f.agents, f.sessions, principal, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(f.db, creationModels())).Handle(ctx, creation)
 		require.NoError(t, e)
 		if stopped {
@@ -97,7 +101,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	_, err = client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{})
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "an unbounded list of every Work is never served")
 
-	inProject, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{ProjectId: project, Purpose: "work"})
+	inProject, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{WorkCaller: byCaller, Purpose: "work"})
 	require.NoError(t, err)
 	expected := []string{first, second, starting}
 	sort.Strings(expected)
@@ -111,46 +115,53 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 		}
 		require.Equal(t, expectedState, work.State)
 		require.Equal(t, owner, work.AgentOwner)
-		require.Equal(t, project, work.ProjectId)
-		require.Equal(t, "case", work.Subject.GetKind(), "the caller's Subject comes back uninterpreted")
+		require.Equal(t, "project", work.WorkCaller.GetKind())
+		require.Equal(t, project, work.WorkCaller.GetId())
+		require.Equal(t, "case", work.WorkKey.GetKind(), "the extension's Work Key comes back uninterpreted")
+		require.Nil(t, work.FileHome, "a Work without a File Home lists none")
 		require.Empty(t, work.WorkProgress, "lists carry no detail beyond collaboration facts")
 	}
 	// A Working Work whose Turn awaits its owner's answer is listed as Waiting
 	// beside its state.
 	_, err = f.db.Exec("UPDATE agent_session SET harness_process=JSON_SET(harness_process, '$.waiting_since', ?) WHERE id=?", "2026-10-15T00:00:00Z", second)
 	require.NoError(t, err)
-	inProject, err = client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{ProjectId: project, Purpose: "work"})
+	inProject, err = client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{WorkCaller: byCaller, Purpose: "work"})
 	require.NoError(t, err)
 	for _, work := range inProject.Works {
 		require.Equal(t, work.WorkId == second, work.Waiting, work.WorkId)
 	}
-	foreignPurpose, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{ProjectId: project, Purpose: "project_coordination"})
+	foreignPurpose, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{WorkCaller: byCaller, Purpose: "project_coordination"})
 	require.NoError(t, err)
 	require.Empty(t, foreignPurpose.Works, "purpose selects the definition, opaquely")
-	page, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{ProjectId: project, After: expected[0], Limit: 1})
+	page, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{WorkCaller: byCaller, After: expected[0], Limit: 1})
 	require.NoError(t, err)
 	require.Equal(t, expected[1:2], workFactIDs(page.Works))
 	session, err := f.sessions.Get(ctx, first)
 	require.NoError(t, err)
-	require.Equal(t, project, session.ProjectID)
+	require.Equal(t, caller, session.WorkCaller)
+	byKey, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{WorkCaller: byCaller, WorkKey: &agentpublicv1.WorkKey{Kind: session.WorkKey.Kind, Id: session.WorkKey.ID}})
+	require.NoError(t, err)
+	require.Equal(t, []string{first}, workFactIDs(byKey.Works), "a Work Key narrows the Work Caller's Works to its Work")
+	_, err = client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{WorkKey: &agentpublicv1.WorkKey{Kind: session.WorkKey.Kind, Id: session.WorkKey.ID}})
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a Work Key selects only within a Work Caller")
 	byID, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{WorkIds: []string{starting, other}})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{starting, other}, workFactIDs(byID.Works))
-	recent, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{AgentOwner: owner, ProjectId: project, Recent: true, Limit: 1})
+	recent, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{AgentOwner: owner, WorkCaller: byCaller, Recent: true, Limit: 1})
 	require.NoError(t, err)
 	require.Equal(t, []string{starting}, workFactIDs(recent.Works))
 
-	// A Work Share holder's Works are found within one Project, for departure.
+	// A Work Share holder's Works are found within one Work Caller, for departure.
 	shared, err := f.sessions.Get(ctx, second)
 	require.NoError(t, err)
 	definition, err := f.agents.Get(ctx, shared.AgentID)
 	require.NoError(t, err)
-	_, err = shared.GrantWorkShare(definition, owner, "reader", domain.ReaderAdmission{ProjectID: project})
+	_, err = shared.GrantWorkShare(definition, owner, "reader", domain.ReaderAdmission{WorkCaller: caller})
 	require.NoError(t, err)
 	require.NoError(t, f.sessions.Save(ctx, shared))
 	_, err = f.db.Exec("UPDATE agent_session SET updated_at=3000 WHERE id=?", second)
 	require.NoError(t, err)
-	readers, err := reader.ListWorkViews(ctx, query.WorkListFilter{ProjectID: project, ShareReader: "reader", Limit: 10})
+	readers, err := reader.ListWorkViews(ctx, query.WorkListFilter{WorkCaller: &caller, ShareReader: "reader", Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, readers, 1)
 	require.Equal(t, second, readers[0].WorkID)
@@ -160,11 +171,11 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	require.NoError(t, command.NewCloseWorkHandler(f.sessions, principal, executionsOf(f.db), &commandtest.InputBuffer{}).Handle(ctx, command.WorkControl{SubjectID: owner, WorkID: first, RequestID: uuid.NewString()}))
 	_, err = f.db.Exec("UPDATE agent_session SET updated_at=500 WHERE id=?", first)
 	require.NoError(t, err)
-	archived, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{AgentOwner: owner, ProjectId: project, Recent: true, Limit: 1, Archived: proto.Bool(true)})
+	archived, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{AgentOwner: owner, WorkCaller: byCaller, Recent: true, Limit: 1, Archived: proto.Bool(true)})
 	require.NoError(t, err)
 	require.Equal(t, []string{first}, workFactIDs(archived.Works))
 	require.Equal(t, "closed", archived.Works[0].State)
-	live, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{AgentOwner: owner, ProjectId: project, Recent: true, Archived: proto.Bool(false)})
+	live, err := client.ListWorks(controlRequest(ctx), &agentprivatev1.ListWorksRequest{AgentOwner: owner, WorkCaller: byCaller, Recent: true, Archived: proto.Bool(false)})
 	require.NoError(t, err)
 	require.Equal(t, []string{starting, second}, workFactIDs(live.Works))
 	_, err = f.db.Exec("UPDATE agent_session SET deleted_at=1 WHERE id=?", other)
@@ -173,7 +184,7 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{first, second, starting}, workFactIDs(mine.Works), "lists exclude logically deleted Works")
 
-	// Populate Works outside this Project to distinguish indexed access from a
+	// Populate Works outside this Work Caller to distinguish indexed access from a
 	// coincidentally cheap scan of the initial few rows.
 	insertStartingWorks(t, f.db, f.request.AgentID, owner, 128, 1000, uuid.NewString)
 	_, err = f.db.Exec("ANALYZE TABLE agent_session,agent_definition")
@@ -181,9 +192,9 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 	capture := &workListSQLCapture{}
 	f.db.AddHook(capture)
 	for _, filter := range []query.WorkListFilter{
-		{AgentOwner: owner, ProjectID: project, Purpose: "work", Recent: true, Limit: 20, Archived: proto.Bool(true)},
+		{AgentOwner: owner, WorkCaller: &caller, Purpose: "work", Recent: true, Limit: 20, Archived: proto.Bool(true)},
 		{AgentOwner: owner, Purpose: "work", Recent: true, Limit: 20},
-		{ProjectID: project, Purpose: "work", Limit: 500},
+		{WorkCaller: &caller, Purpose: "work", Limit: 500},
 		{WorkIDs: []string{first}, Limit: 100},
 	} {
 		_, err = reader.ListWorkViews(ctx, filter)
@@ -203,16 +214,17 @@ func TestWorkListsSelectAdmittedWorksByProject(t *testing.T) {
 }
 
 // insertStartingWorks writes n Starting Works of one definition as rows, for
-// tests that need volume rather than the creation path.
+// tests that need volume rather than the creation path, each in the name of
+// the Project project names.
 func insertStartingWorks(t *testing.T, db *xorm.Engine, agentID, startedBy string, n int, createdAt int64, project func() string) {
 	t.Helper()
 	values := make([]string, n)
 	args := make([]any, 0, 8*n)
 	for i := range values {
-		values[i] = "(?, ?, ?, 'case', ?, ?, 1, '{}', '', 'claude-code', '{\"mounts\":[]}', '{}', '{}', '', ?, 1, ?, ?, 0)"
+		values[i] = "(?, ?, ?, 'case', ?, 'project', ?, 1, '{}', '', 'claude-code', '{\"mounts\":[]}', '{}', '{}', '', ?, 1, ?, ?, 0)"
 		args = append(args, uuid.NewString(), agentID, startedBy, uuid.NewString(), project(), startedBy, createdAt, createdAt)
 	}
-	_, err := db.Exec(append([]any{"INSERT INTO agent_session (id, agent_id, started_by, subject_kind, subject_id, project_ref, state, capabilities, context_ref, agent_harness, located_layout, trace_attributes, harness_process, failure_reason, represented_person, version, created_at, updated_at, deleted_at) VALUES " + strings.Join(values, ",")}, args...)...)
+	_, err := db.Exec(append([]any{"INSERT INTO agent_session (id, agent_id, started_by, work_key_kind, work_key_id, work_caller_kind, work_caller_id, state, capabilities, context_ref, agent_harness, located_layout, trace_attributes, harness_process, failure_reason, represented_person, version, created_at, updated_at, deleted_at) VALUES " + strings.Join(values, ",")}, args...)...)
 	require.NoError(t, err)
 }
 

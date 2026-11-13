@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	agentmodule "github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -67,20 +68,27 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	_, err = client.CreateWork(authenticated(ctx, "untrusted-caller"), &agentprivatev1.CreateWorkRequest{StartingUserId: "owner", RequestId: uuid.NewString(), SubjectId: "intruder", AgentId: created.GetAgentId()})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 	require.Empty(t, sessions.items)
-	createSession := &agentprivatev1.CreateWorkRequest{StartingUserId: "owner", RequestId: uuid.NewString(), SubjectId: "owner", AgentId: created.GetAgentId(), Subject: &agentprivatev1.WorkSubject{Kind: "case"}}
+	createSession := &agentprivatev1.CreateWorkRequest{StartingUserId: "owner", RequestId: uuid.NewString(), SubjectId: "owner", AgentId: created.GetAgentId()}
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
-	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a Subject names its object")
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a Work is started in the name of a Work Caller")
+	createSession.WorkCaller = &agentpublicv1.WorkCaller{Kind: "project", Id: "project-a"}
+	createSession.WorkKey = &agentpublicv1.WorkKey{Kind: "case"}
+	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a Work Key names its object")
 	require.Empty(t, sessions.items)
-	createSession.Subject = nil
-	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "a Work with neither a Subject nor a Project is a Standalone Work, which no caller creates")
+	createSession.WorkKey = nil
+	for _, kind := range []string{"person", "application"} {
+		createSession.WorkCaller = &agentpublicv1.WorkCaller{Kind: kind, Id: "owner"}
+		_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
+		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "a %s's Work is a Standalone Work, which no extension creates", kind)
+	}
 	createSession.RequestId = uuid.NewString()
-	createSession.ProjectId, createSession.AgentHarness = "project-a", "unknown-harness"
+	createSession.WorkCaller, createSession.AgentHarness = &agentpublicv1.WorkCaller{Kind: "project", Id: "project-a"}, "unknown-harness"
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a Work runs only a known Agent Harness")
 	require.Empty(t, sessions.items)
 	createSession.RequestId, createSession.AgentHarness = uuid.NewString(), ""
-	createSession.Subject, createSession.ProjectId = &agentprivatev1.WorkSubject{Kind: "case", Id: "work-a"}, "project-a"
+	createSession.WorkKey = &agentpublicv1.WorkKey{Kind: "case", Id: "work-a"}
 	capacity.SetFull(true)
 	_, err = client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
@@ -93,15 +101,15 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	session, err := client.CreateWork(authenticated(ctx, "control"), createSession)
 	require.NoError(t, err)
 	require.NotEmpty(t, session.GetWorkId())
-	located, err := client.LocateWork(authenticated(ctx, "control"), &agentprivatev1.LocateWorkRequest{SubjectId: "owner", AgentId: created.GetAgentId(), Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "work-a"}})
+	located, err := client.LocateWork(authenticated(ctx, "control"), &agentprivatev1.LocateWorkRequest{SubjectId: "owner", AgentId: created.GetAgentId(), WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: "work-a"}, WorkCaller: createSession.WorkCaller})
 	require.NoError(t, err)
 	require.True(t, located.GetFound())
 	require.Equal(t, session.GetWorkId(), located.GetWorkId())
-	absent, err := client.LocateWork(authenticated(ctx, "control"), &agentprivatev1.LocateWorkRequest{SubjectId: "owner", AgentId: created.GetAgentId(), Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "missing"}})
+	absent, err := client.LocateWork(authenticated(ctx, "control"), &agentprivatev1.LocateWorkRequest{SubjectId: "owner", AgentId: created.GetAgentId(), WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: "missing"}, WorkCaller: createSession.WorkCaller})
 	require.NoError(t, err)
 	require.False(t, absent.GetFound())
 	require.Empty(t, absent.GetWorkId())
-	_, err = client.LocateWork(authenticated(ctx, "control"), &agentprivatev1.LocateWorkRequest{SubjectId: "intruder", AgentId: created.GetAgentId(), Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "work-a"}})
+	_, err = client.LocateWork(authenticated(ctx, "control"), &agentprivatev1.LocateWorkRequest{SubjectId: "intruder", AgentId: created.GetAgentId(), WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: "work-a"}, WorkCaller: createSession.WorkCaller})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	require.Len(t, sessions.items, 1, "lookup must not create another conversation")
 	require.Equal(t, domain.WorkStarting, sessions.items[session.GetWorkId()].State)
@@ -117,7 +125,7 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	require.Equal(t, "new review instructions", definition.GetCapabilities().GetPrompt())
 	require.Equal(t, "code-review:reviewer", definition.GetCapabilities().GetStartupAgent())
 	require.Equal(t, []string{"code-review"}, definition.GetCapabilities().GetRequiredPlugins())
-	newer, err := client.CreateWork(authenticated(ctx, "control"), &agentprivatev1.CreateWorkRequest{StartingUserId: "owner", RequestId: uuid.NewString(), SubjectId: "owner", AgentId: created.GetAgentId(), Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "work-b"}, ProjectId: "project-a"})
+	newer, err := client.CreateWork(authenticated(ctx, "control"), &agentprivatev1.CreateWorkRequest{StartingUserId: "owner", RequestId: uuid.NewString(), SubjectId: "owner", AgentId: created.GetAgentId(), WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-a"}, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: "work-b"}})
 	require.NoError(t, err)
 	newerSnapshot, err := client.GetWork(authenticated(ctx, "control"), &agentprivatev1.GetWorkRequest{SubjectId: "owner", WorkId: newer.GetWorkId()})
 	require.NoError(t, err)
@@ -134,7 +142,7 @@ func TestAgentRPCControlsPreserveLifecycleAuthority(t *testing.T) {
 	emptyPrompt, startup := "", "extra:reviewer"
 	override, err := client.CreateWork(authenticated(ctx, "control"), &agentprivatev1.CreateWorkRequest{StartingUserId: "owner", RequestId: uuid.NewString(),
 		SubjectId: "owner", AgentId: created.GetAgentId(),
-		Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "work-override"}, ProjectId: "project-a",
+		WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-a"}, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: "work-override"},
 		CapabilityDifferences: &agentprivatev1.CapabilityDifferences{Prompt: &emptyPrompt, StartupAgent: &startup, Plugins: []*agentprivatev1.PluginConfiguration{{Name: "code-review", Configuration: &structpb.Struct{}}, {Name: "extra", Configuration: &structpb.Struct{Fields: map[string]*structpb.Value{"language": structpb.NewStringValue("zh")}}}}},
 	})
 	require.NoError(t, err)

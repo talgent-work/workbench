@@ -20,13 +20,18 @@ func (s *AgentWork) locateLayout(layout WorkLayout, harnessID, startingUser stri
 
 // locatorFacts are the Work's values of the Locator conditions (Locator
 // facts); a fact the Work lacks is left out, so the mounts following it
-// locate nothing.
+// locate nothing. The Work Caller is a fact only of an extension-defined
+// kind: what follows it, such as its knowledge, belongs to that extension,
+// so a Standalone Work mounts none of it.
 func (s *AgentWork) locatorFacts(startingUser string) LocatorFacts {
 	facts := LocatorFacts{ConditionWork: s.ID, ConditionAgentDefinition: s.AgentID}
-	if s.Subject.Present() {
-		facts[ConditionSubject] = string(s.Subject.Kind) + ":" + s.Subject.ID
+	if s.FileHome.Present() {
+		facts[ConditionFileHome] = s.FileHome.String()
 	}
-	for condition, value := range map[LocatorCondition]string{ConditionPerson: s.RepresentedPerson, ConditionStarter: startingUser, ConditionProject: s.ProjectID} {
+	if s.WorkCaller.ExtensionDefined() {
+		facts[ConditionWorkCaller] = s.WorkCaller.String()
+	}
+	for condition, value := range map[LocatorCondition]string{ConditionPerson: s.RepresentedPerson, ConditionStarter: startingUser} {
 		if value != "" {
 			facts[condition] = value
 		}

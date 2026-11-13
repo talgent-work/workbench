@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/access"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -49,7 +50,7 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 		definition, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: purpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: purpose}})
 		require.NoError(t, err)
 		require.NoError(t, agents.Save(ctx, definition))
-		id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project"})
+		id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), AgentID: definition.ID, SubjectID: "owner", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}})
 		require.NoError(t, err)
 		ids[purpose], definitions[purpose] = id, definition.ID
 	}
@@ -75,8 +76,10 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 		require.Equal(t, id, response.GetWorkId())
 		require.Equal(t, definitions[purpose], response.GetAgentId())
 		require.Equal(t, purpose, response.GetPurpose())
-		require.Equal(t, "project", response.GetProjectId())
-		require.Equal(t, "case", response.GetSubject().GetId())
+		require.Equal(t, "project", response.GetWorkCaller().GetKind())
+		require.Equal(t, "project", response.GetWorkCaller().GetId())
+		require.Equal(t, "case", response.GetWorkKey().GetId())
+		require.Nil(t, response.GetFileHome(), "a Work without a File Home answers none")
 	}
 	request := &agentprivatev1.GetWorkOriginRequest{WorkId: ids["work"]}
 	_, err := client.GetWorkOrigin(ctx, request)
@@ -85,10 +88,10 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 	_, err = client.GetWorkOrigin(authorized, request)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
-	// Work starts resolve in one read for the Project's Works; a missing Work
-	// and every Work asked about under another Project are unknown.
+	// Work starts resolve in one read for the Work Caller's Works; a missing
+	// Work and every Work asked about under another Work Caller are unknown.
 	starts := func(project string) []*agentprivatev1.ResolvedWorkStart {
-		request := &agentprivatev1.ResolveWorkStartsRequest{ProjectId: project, WorkIds: []string{ids["work"], ids["case_coordinator"], "missing"}}
+		request := &agentprivatev1.ResolveWorkStartsRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: project}, WorkIds: []string{ids["work"], ids["case_coordinator"], "missing"}}
 		ctx, info := connect.NewClientContext(ctx)
 		info.RequestHeader().Set("Authorization", "Bearer control")
 		response, err := client.ResolveWorkStarts(ctx, request)
@@ -108,7 +111,7 @@ func TestSessionOriginRPCPreservesAttributionAfterCloseAndReconnect(t *testing.T
 		require.False(t, work.GetKnown())
 		require.Empty(t, work.GetStartedBy())
 	}
-	unauthenticated := &agentprivatev1.ResolveWorkStartsRequest{ProjectId: "project", WorkIds: []string{ids["work"]}}
+	unauthenticated := &agentprivatev1.ResolveWorkStartsRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project"}, WorkIds: []string{ids["work"]}}
 	_, err = client.ResolveWorkStarts(ctx, unauthenticated)
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 	retained, err := infrastructure.NewAgentWorkRepository(open(), time.Now).Get(ctx, ids["work"])

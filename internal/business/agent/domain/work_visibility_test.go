@@ -25,7 +25,7 @@ func newDefinition(t *testing.T, scope string, rule domain.VisibilityRule) *doma
 
 func newVisibleWork(t *testing.T, definition *domain.AgentDefinition) visibleWork {
 	t.Helper()
-	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID, Subject: domain.WorkSubject{Kind: "case", ID: "case-a"}, ProjectID: "project-a", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), AgentID: definition.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project-a"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case-a"}, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 		RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(), Visibility: definition.Visibility,
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
@@ -37,7 +37,7 @@ func humanWork(t *testing.T) visibleWork {
 	return newVisibleWork(t, newDefinition(t, "employee", domain.VisibilityRule{}))
 }
 
-var member = domain.ReaderAdmission{ProjectID: "project-a"}
+var member = domain.ReaderAdmission{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project-a"}}
 
 func drained(work visibleWork) []domain.Event { return work.Events.Drain() }
 
@@ -46,7 +46,7 @@ func TestDefinitionDeclaresTheVisibilityItsWorksCapture(t *testing.T) {
 	definition, err := domain.NewAgentDefinition(input)
 	require.NoError(t, err)
 	require.False(t, definition.RepresentsHuman())
-	require.True(t, newVisibleWork(t, definition).Visibility.Public, "a Work captures its definition's visibility within its Project")
+	require.True(t, newVisibleWork(t, definition).Visibility.Public, "a Work captures its definition's visibility within its Work Caller")
 }
 
 func TestOwnerSwitchesAHumansWorkBetweenPrivateAndPublic(t *testing.T) {
@@ -103,7 +103,7 @@ func TestPMCoordinatorsWorkKeepsItsDeclaredVisibility(t *testing.T) {
 
 func TestWorkShareGrantIsIdempotentAndRevocationIsRecorded(t *testing.T) {
 	work := humanWork(t)
-	_, err := work.GrantWorkShare(work.definition, "owner", "outsider", domain.ReaderAdmission{ProjectID: "project-b"})
+	_, err := work.GrantWorkShare(work.definition, "owner", "outsider", domain.ReaderAdmission{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project-b"}})
 	require.ErrorIs(t, err, domain.ErrWorkShareOutOfScope)
 	_, err = work.GrantWorkShare(work.definition, "reader", "other", member)
 	require.ErrorIs(t, err, domain.ErrControlRequesterNotOwner)
@@ -140,8 +140,8 @@ func TestDepartedReaderLosesItsWorkShare(t *testing.T) {
 	work := humanWork(t)
 	_, err := work.GrantWorkShare(work.definition, "owner", "reader", member)
 	require.NoError(t, err)
-	require.False(t, work.RevokeDepartedReader("reader", domain.ReaderAdmission{ProjectID: "other-project"}, time.Now()), "leaving another Project keeps the share")
-	departed := domain.ReaderAdmission{ProjectID: work.ProjectID}
+	require.False(t, work.RevokeDepartedReader("reader", domain.ReaderAdmission{WorkCaller: domain.WorkCaller{Kind: "project", ID: "other-project"}}, time.Now()), "leaving another Work Caller keeps the share")
+	departed := domain.ReaderAdmission{WorkCaller: work.WorkCaller}
 	require.True(t, work.RevokeDepartedReader("reader", departed, time.Now()))
 	require.False(t, work.RevokeDepartedReader("reader", departed, time.Now()))
 	require.Len(t, drained(work), 1)
@@ -167,7 +167,7 @@ func TestStreamReaderAdmission(t *testing.T) {
 		{"member of a private Work", private, "member", member, ""},
 		{"public Work member", public(), "member", member, domain.ReadAsPublic},
 		{"public Work without admission", public(), "member", domain.ReaderAdmission{}, ""},
-		{"public Work admitted for another Project", public(), "member", domain.ReaderAdmission{ProjectID: "project-b"}, ""},
+		{"public Work admitted for another Work Caller", public(), "member", domain.ReaderAdmission{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project-b"}}, ""},
 		{"anonymous", private, "", domain.ReaderAdmission{}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
