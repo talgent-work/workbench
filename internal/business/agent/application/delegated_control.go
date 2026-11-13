@@ -15,8 +15,10 @@ func (a *Application) AdmitExtensionWorkCaller(caller domain.WorkCaller) error {
 	return domain.AdmitExtensionWorkCaller(caller)
 }
 
-// AdmitDelegatedControl refuses a trusted service acting on its owner's behalf
-// on a Standalone Work. An unknown Work is left to the command, which reports it.
+// AdmitDelegatedControl admits a trusted service acting on its owner's behalf
+// only on an Extension Work: the private API's one trusted credential is the
+// extension's, which defines every kind Agent does not. An unknown Work is
+// left to the command, which reports it.
 func (a *Application) AdmitDelegatedControl(ctx context.Context, workID string) error {
 	if strings.TrimSpace(workID) == "" {
 		return nil

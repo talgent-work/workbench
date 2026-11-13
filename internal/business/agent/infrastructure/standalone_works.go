@@ -108,6 +108,7 @@ type libraryWorkRow struct {
 	AgentID      string `xorm:"agent_id"`
 	CallerKind   string `xorm:"work_caller_kind"`
 	CallerID     string `xorm:"work_caller_id"`
+	FileHomeKind string `xorm:"file_home_kind"`
 	DisplayTitle string `xorm:"display_title"`
 	Layout       string `xorm:"located_layout"`
 	UpdatedAt    int64  `xorm:"updated_at"`
@@ -121,7 +122,7 @@ func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person strin
 	read := func(condition builder.Cond) ([]libraryWorkRow, error) {
 		var rows []libraryWorkRow
 		err := r.db.Context(ctx).Table("agent_session").Alias("s").
-			Select("s.id,s.agent_id,s.work_caller_kind,s.work_caller_id,s.display_title,s.located_layout,s.updated_at,"+agentOwnerColumn+" AS agent_owner").
+			Select("s.id,s.agent_id,s.work_caller_kind,s.work_caller_id,s.file_home_kind,s.display_title,s.located_layout,s.updated_at,"+agentOwnerColumn+" AS agent_owner").
 			Where("s.deleted_at=0").And(condition).Desc("s.updated_at", "s.id").Limit(limit).Find(&rows)
 		return rows, oops.With("operation", "agent.list_library_works").Wrap(err)
 	}
@@ -141,7 +142,7 @@ func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person strin
 		if err != nil {
 			return nil, err
 		}
-		work := query.LibraryWork{WorkID: row.ID, Title: row.DisplayTitle, PublicationTarget: layout.PublicationTarget.Directory, Standalone: domain.WorkCaller{Kind: row.CallerKind, ID: row.CallerID}.StartsStandaloneWork()}
+		work := query.LibraryWork{WorkID: row.ID, Title: row.DisplayTitle, PublicationTarget: layout.PublicationTarget.Directory, Standalone: domain.WorkCaller{Kind: row.CallerKind, ID: row.CallerID}.StartsStandaloneWork(), InFileHome: row.FileHomeKind != ""}
 		if row.AgentID != definition.AgentID {
 			work.SharedBy = row.Owner
 		}

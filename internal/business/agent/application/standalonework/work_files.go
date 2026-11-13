@@ -20,17 +20,23 @@ type WorkFile struct {
 type ownedWork struct {
 	work       *domain.AgentWork
 	definition *domain.AgentDefinition
+	// reader is whom a read of its files is for.
+	reader string
 }
 
 // loadWork loads a Work for a reader of its files: the owner asking for
 // itself, a person or an Application, or the Agent reading its owner's
 // Library.
 func (p *StandaloneWorks) loadWork(ctx context.Context, caller Caller, workID string) (ownedWork, error) {
-	if caller.fileReader() == "" {
+	reader, err := p.fileReader(ctx, caller)
+	if err != nil {
+		return ownedWork{}, err
+	}
+	if reader == "" {
 		return ownedWork{}, access.ErrAccessDenied
 	}
 	work, definition, err := p.app.WorkWithDefinition(ctx, workID)
-	return ownedWork{work: work, definition: definition}, err
+	return ownedWork{work: work, definition: definition, reader: reader}, err
 }
 
 // ListFiles lists a Standalone Work's files to its owner and Work Share
@@ -198,7 +204,7 @@ func (p *StandaloneWorks) FilePreview(ctx context.Context, caller Caller, file W
 // definition or a Work Share holder, or, for an Application's Work, the person
 // Account says owns the Application, who only reads.
 func (p *StandaloneWorks) admitFileReader(ctx context.Context, caller Caller, owned ownedWork) (domain.ReadBasis, error) {
-	basis, err := owned.work.AdmitFileReader(owned.definition, caller.fileReader())
+	basis, err := owned.work.AdmitFileReader(owned.definition, owned.reader)
 	if !errors.Is(err, domain.ErrWorkReaderNotAdmitted) || caller.self() == "" || owned.definition.OwningApplication() == "" {
 		return basis, err
 	}
@@ -236,7 +242,7 @@ func (p *StandaloneWorks) readablePosition(ctx context.Context, caller Caller, f
 		return command.FilePosition{}, err
 	}
 	for _, listed := range files {
-		if listed.Kind == file.Kind && listed.Name == file.Name && domain.ReadableWorkFile(owned.work.ID, false, true, listed.WorkID) {
+		if listed.Kind == file.Kind && listed.Name == file.Name && domain.ReadableWorkFile(owned.work.ID, owned.work.FileHome.Present(), true, listed.WorkID) {
 			return command.FilePosition{Directory: target, Name: file.Name}, nil
 		}
 	}

@@ -54,8 +54,11 @@ type LibraryWork struct {
 	WorkID, Title string
 	// PublicationTarget is the File Space the Work publishes Artifacts into.
 	PublicationTarget domain.Directory
-	// Standalone tells the Work is a Standalone Work, whose File Spaces it owns.
+	// Standalone tells the Work is a Standalone Work.
 	Standalone bool
+	// InFileHome tells the Work publishes into its File Home's File Space,
+	// beside that File Home's other Works, rather than into its own.
+	InFileHome bool
 	// SharedBy is the owner who shared it; empty for the person's own Work.
 	SharedBy string
 }

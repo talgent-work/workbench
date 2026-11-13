@@ -135,7 +135,7 @@ func TestMakingAWorkPrivateEndsStreamsOfReadersItNoLongerAdmits(t *testing.T) {
 	receiveReplay(t, member)
 	receiveReplay(t, share)
 	access.mu.Lock()
-	require.Equal(t, query.ReaderAdmission{Reference: "project", Value: "project-a"}, access.admissions["member"], "a trusted caller's admission reaches the access decision")
+	require.Equal(t, query.ReaderAdmission{WorkCallerKind: "project", WorkCallerID: "project-a"}, access.admissions["member"], "a trusted caller's admission reaches the access decision")
 	access.mu.Unlock()
 
 	live.publishAccess("w1", &query.WorkAccessPayload{MadePrivate: true, RetainedReaderIDs: []string{"owner", "reader"}})

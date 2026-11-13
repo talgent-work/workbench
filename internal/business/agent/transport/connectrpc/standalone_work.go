@@ -32,20 +32,13 @@ func NewStandaloneWorkHandler(works *standalonework.StandaloneWorks) *Standalone
 }
 
 // currentCaller maps the request's Principal to whom Standalone Works act
-// for: a user or an Application asks for itself; an agent asks on behalf of
-// the person its Work represents, from its Work's Project and purpose, and
-// the application decides what that Agent may read. An absent owner is
-// refused by the application.
+// for: a user or an Application asks for itself; an agent asks from its Work,
+// whose own facts the application reads to decide what that Agent may read.
+// An absent owner is refused by the application.
 func currentCaller(ctx context.Context) standalonework.Caller {
 	principal, _ := authn.PrincipalFrom(ctx)
 	if agent, ok := principal.Agent(); ok {
-		// Any Work Caller but a person stands where the Work's Project stood,
-		// so such a Work's Agent reads no Personal Library.
-		scope := ""
-		if agent.WorkCaller.Kind != "person" {
-			scope = agent.WorkCaller.Kind + ":" + agent.WorkCaller.ID
-		}
-		return standalonework.Caller{UserID: agent.RepresentedUserID, Agent: &standalonework.ActingAgent{ProjectID: scope, Purpose: agent.Purpose}}
+		return standalonework.Caller{Agent: &standalonework.ActingAgent{WorkID: agent.WorkID}}
 	}
 	if application, ok := principal.Application(); ok {
 		return standalonework.Caller{ApplicationID: application.ID}

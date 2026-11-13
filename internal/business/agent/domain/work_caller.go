@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -131,14 +132,23 @@ func (h FileHome) String() string {
 // validateKindIdentity admits a kind of at most 32 lowercase letters, digits,
 // "_" or "-", so it holds no ":", which splits "<kind>:<id>" at its first
 // colon, and no case variant of a kind Agent defines; and an opaque identity
-// of 1 to 255 bytes without NUL. How a fact travels, such as in telemetry, is
-// for whatever carries it to encode.
+// of 1 to 255 bytes without surrounding whitespace or any control character,
+// never trimmed, so Account and the entry's headers carry it as Agent holds
+// it. How a fact travels, such as in telemetry, is for whatever carries it to
+// encode.
 func validateKindIdentity(kind, id string, invalid error) error {
+	if err := validateKind(kind, invalid); err != nil {
+		return err
+	}
+	if id == "" || len(id) > maxFactIdentityLength || strings.TrimSpace(id) != id || strings.ContainsFunc(id, unicode.IsControl) {
+		return fmt.Errorf("%w: identity", invalid)
+	}
+	return nil
+}
+
+func validateKind(kind string, invalid error) error {
 	if kind == "" || len(kind) > maxFactKindLength || strings.TrimFunc(kind, kindCharacter) != "" {
 		return fmt.Errorf("%w: kind %q", invalid, kind)
-	}
-	if id == "" || len(id) > maxFactIdentityLength || strings.ContainsRune(id, 0) {
-		return fmt.Errorf("%w: identity", invalid)
 	}
 	return nil
 }

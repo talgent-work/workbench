@@ -48,6 +48,12 @@ func (h *WorkAccessHandler) GrantWorkShare(ctx context.Context, request *agentpr
 	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
+	// The extension grants for the owner, which it may do only on an
+	// Extension Work; a Standalone Work's owner shares it through the public
+	// API, with anyone in the User Directory.
+	if err := h.application.AdmitDelegatedControl(ctx, request.GetWorkId()); err != nil {
+		return nil, mapAgentError(err)
+	}
 	err := h.application.GrantWorkShare(ctx, application.GrantWorkShare{RequesterID: strings.TrimSpace(request.GetRequesterId()), WorkID: strings.TrimSpace(request.GetWorkId()), ReaderID: strings.TrimSpace(request.GetReaderId()), Admission: readerAdmissionFromProto(request.GetAdmission())})
 	if err != nil {
 		return nil, mapAgentError(err)

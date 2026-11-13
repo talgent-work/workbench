@@ -46,7 +46,10 @@ func (a *WorkAccess) admit(ctx context.Context, reader string, admission query.R
 	if strings.TrimSpace(reader) == "" || strings.TrimSpace(workID) == "" {
 		return nil, query.ErrWorkAccessDenied
 	}
-	request := &agentprivatev1.AdmitWorkReaderRequest{WorkId: workID, ReaderId: reader, Admission: &agentprivatev1.ReaderAdmission{WorkCaller: &agentpublicv1.WorkCaller{Kind: admission.Reference, Id: admission.Value}}, IncludeWorkState: withState}
+	request := &agentprivatev1.AdmitWorkReaderRequest{WorkId: workID, ReaderId: reader, IncludeWorkState: withState}
+	if admission != (query.ReaderAdmission{}) {
+		request.Admission = &agentprivatev1.ReaderAdmission{WorkCaller: &agentpublicv1.WorkCaller{Kind: admission.WorkCallerKind, Id: admission.WorkCallerID}}
+	}
 	ctx, info := connect.NewClientContext(ctx)
 	info.RequestHeader().Set("Authorization", "Bearer "+a.token)
 	response, err := a.client.AdmitWorkReader(ctx, request)

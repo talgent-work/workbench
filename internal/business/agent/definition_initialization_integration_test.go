@@ -48,7 +48,7 @@ func TestDefinitionInitializationThroughPrivateAPIAndModuleRestart(t *testing.T)
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "executions", Namespace: "sandboxes"}, Spec: corev1.ResourceQuotaSpec{Hard: hard}, Status: corev1.ResourceQuotaStatus{Hard: hard.DeepCopy(), Used: corev1.ResourceList{corev1.ResourceRequestsCPU: resource.MustParse("0"), corev1.ResourceRequestsMemory: resource.MustParse("0")}}}
 	// Every Work loads the core plugin; every Work of a Project also loads
 	// the caller's plugin.
-	builtIns := agent.BuiltInPluginsConfig{Platform: []string{"talgent"}, Project: []string{"caller-plugin"}}
+	builtIns := agent.BuiltInPluginsConfig{Platform: []string{"talgent"}, WorkCallerKinds: map[string][]string{"project": {"caller-plugin"}}}
 	startModule := func() (agentprivatev1connect.AgentServiceClient, func()) {
 		t.Helper()
 		db, err := xorm.NewEngine("mysql", dsn)
