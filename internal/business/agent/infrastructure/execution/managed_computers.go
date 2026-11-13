@@ -155,9 +155,10 @@ func decodeManagedSpecification(record executionRecord) (managedSpecification, e
 // machine supplies HOME, the bundled Claude Code on PATH and
 // TALGENT_WORK_ROOT, and the Harness uses the machine's own git credentials:
 // no mounts, no egress Vault, no CA bundle and no credential placeholders.
-// Without read-only mounts, TALGENT_PROJECT_ID tells the core plugin a
-// Work of a Project, which reads its Project's reference files through the
-// platform Connector; TALGENT_KNOWLEDGE_ROOT is never set. On
+// Without read-only mounts, TALGENT_WORK_CALLER names an Extension Work's
+// Work Caller as "<kind>:<id>", the fact its knowledge mount would follow, so
+// the extension's plugin reads that knowledge through the platform Connector;
+// a Standalone Work gets none, and TALGENT_KNOWLEDGE_ROOT is never set. On
 // the machine's own Claude login nothing model-related is set. With a Model
 // Configuration it holds the Model Template's environment except its
 // endpoint: Talgent Computer's local proxy sets ANTHROPIC_BASE_URL to itself,
@@ -172,8 +173,8 @@ func managedSpecificationFor(request domain.LaunchSpecification, models command.
 		// The bundled Claude Code follows the platform's release.
 		"DISABLE_AUTOUPDATER": "1",
 	}}
-	if request.ProjectID != "" {
-		spec.Environment["TALGENT_PROJECT_ID"] = request.ProjectID
+	if request.WorkCaller.ExtensionDefined() {
+		spec.Environment["TALGENT_WORK_CALLER"] = request.WorkCaller.String()
 	}
 	if request.WorkModel.MachineLogin {
 		return spec, nil

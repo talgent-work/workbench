@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // A person reads their own Library; the Agent of their Work without a
@@ -32,4 +33,11 @@ func TestAnApplicationAsksOnlyAsAnOwner(t *testing.T) {
 	require.Equal(t, "a1", application.Owner())
 	require.Empty(t, application.self())
 	require.Empty(t, application.libraryReader())
+}
+
+// A Standalone Work's Work Caller is its owner: the person, or the
+// Application, starting it for itself.
+func TestAStandaloneWorksCallerIsItsOwner(t *testing.T) {
+	require.Equal(t, domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "u1"}, Caller{UserID: "u1"}.workCaller())
+	require.Equal(t, domain.WorkCaller{Kind: domain.CallerKindApplication, ID: "a1"}, Caller{ApplicationID: "a1"}.workCaller())
 }

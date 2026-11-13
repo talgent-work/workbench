@@ -24,7 +24,7 @@ func (r *reportSource) ReadWorkHistory(_ context.Context, scope WorkReportScope,
 	return r.works, r.err
 }
 
-var projectScope = WorkReportScope{ProjectID: "project", Purpose: "work"}
+var projectScope = WorkReportScope{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, Purpose: "work"}
 
 func TestWorkReportUsesHistoricalEligibilityAndPermanentClosure(t *testing.T) {
 	end := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)

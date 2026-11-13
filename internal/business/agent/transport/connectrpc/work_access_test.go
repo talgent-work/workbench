@@ -88,7 +88,7 @@ func accessDefinition(t *testing.T, agents *rpcAgents, scope domain.UsageScope, 
 
 func accessWork(t *testing.T, sessions *rpcSessions, definition *domain.AgentDefinition, owner string) string {
 	t.Helper()
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project-a", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: owner, ID: uuid.NewString(), AgentID: definition.ID, Visibility: definition.Visibility,
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project-a"}, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: owner, ID: uuid.NewString(), AgentID: definition.ID, Visibility: definition.Visibility,
 		Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, RepresentedPerson: "", WorkLayout: domain.DefaultWorkLayout(),
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
@@ -113,7 +113,7 @@ func (f *accessFixture) admit(t *testing.T, work, reader string, admission *agen
 	return response.GetBasis(), 0
 }
 
-var memberOfProjectA = &agentprivatev1.ReaderAdmission{Reference: "project", Value: "project-a"}
+var memberOfProjectA = &agentprivatev1.ReaderAdmission{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-a"}}
 
 func TestWorkReadersFollowOwnerVisibilityAndWorkShares(t *testing.T) {
 	ctx := context.Background()
@@ -129,7 +129,7 @@ func TestWorkReadersFollowOwnerVisibilityAndWorkShares(t *testing.T) {
 	basis, _ = f.admit(t, f.humanWork, "reader", nil)
 	require.Equal(t, agentprivatev1.WorkReadBasis_WORK_READ_BASIS_SHARE, basis)
 
-	_, err = f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "outsider", Admission: &agentprivatev1.ReaderAdmission{Reference: "project", Value: "project-b"}})
+	_, err = f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "owner", ReaderId: "outsider", Admission: &agentprivatev1.ReaderAdmission{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-b"}}})
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a Work Share never crosses the Work's Project")
 	_, err = f.access.GrantWorkShare(authenticated(ctx, "control"), &agentprivatev1.GrantWorkShareRequest{WorkId: f.humanWork, RequesterId: "reader", ReaderId: "member", Admission: memberOfProjectA})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "only the owner shares")
@@ -144,7 +144,7 @@ func TestWorkReadersFollowOwnerVisibilityAndWorkShares(t *testing.T) {
 	require.Equal(t, agentprivatev1.WorkReadBasis_WORK_READ_BASIS_PUBLIC, basis)
 	_, code = f.admit(t, f.humanWork, "member", nil)
 	require.Equal(t, connect.CodePermissionDenied, code, "public reading needs the trusted caller's admission")
-	_, code = f.admit(t, f.humanWork, "member", &agentprivatev1.ReaderAdmission{Reference: "project", Value: "project-b"})
+	_, code = f.admit(t, f.humanWork, "member", &agentprivatev1.ReaderAdmission{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-b"}})
 	require.Equal(t, connect.CodePermissionDenied, code, "visibility never crosses a Project")
 	_, code = f.admit(t, uuid.NewString(), "owner", nil)
 	require.Equal(t, connect.CodePermissionDenied, code, "an unknown Work admits no one")
@@ -268,7 +268,7 @@ func (v sessionViews) GetWorkView(_ context.Context, id string) (query.WorkView,
 	if !ok {
 		return query.WorkView{}, domain.ErrWorkNotFound
 	}
-	view := query.WorkView{WorkID: work.ID, AgentOwner: work.StartedBy, Subject: work.Subject, ProjectID: work.ProjectID, State: string(work.State), Visibility: work.Visibility, WorkShares: slices.Clone(work.WorkShares), Version: work.Version}
+	view := query.WorkView{WorkID: work.ID, AgentOwner: work.StartedBy, WorkCaller: work.WorkCaller, WorkKey: work.WorkKey, FileHome: work.FileHome, State: string(work.State), Visibility: work.Visibility, WorkShares: slices.Clone(work.WorkShares), Version: work.Version}
 	for _, agent := range work.SubAgents() {
 		view.SubAgents = append(view.SubAgents, query.SubAgent{ID: agent.ID, Type: agent.Type, Task: agent.Task, Status: string(agent.Status)})
 	}

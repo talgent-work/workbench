@@ -79,7 +79,7 @@ func TestAuthorityFailuresNeverAdmit(t *testing.T) {
 // The Project access decision is asked on the reader's behalf through the
 // trusted delegation headers.
 func TestProjectAccessDelegatesTheReader(t *testing.T) {
-	server := respond(t, http.StatusOK, "", &traceprivatev1.DecideProjectAccessResponse{}, func(r *http.Request) {
+	server := respond(t, http.StatusOK, "", &traceprivatev1.DecideWorkCallerAccessResponse{}, func(r *http.Request) {
 		if r.Header.Get(authn.HeaderServiceID) != "trace" || r.Header.Get(authn.HeaderDelegatedUserID) != "reader" {
 			t.Error("missing trusted delegation")
 		}
@@ -168,7 +168,7 @@ func TestWorkAccessAdmitsOwnerAndShareHoldersOnly(t *testing.T) {
 
 // Without a reader or a target nothing is asked and nothing is admitted.
 func TestMissingReaderOrTargetIsRefusedLocally(t *testing.T) {
-	server := respond(t, http.StatusOK, "", &traceprivatev1.DecideProjectAccessResponse{}, func(*http.Request) { t.Error("authority asked") })
+	server := respond(t, http.StatusOK, "", &traceprivatev1.DecideWorkCallerAccessResponse{}, func(*http.Request) { t.Error("authority asked") })
 	cfg := Config{ProjectAccessAddress: server.URL, AgentAddress: server.URL, AgentControlToken: "token"}
 	projects, _ := NewProjectAccess(server.Client(), cfg)
 	works, _ := NewAgent(server.Client(), cfg)

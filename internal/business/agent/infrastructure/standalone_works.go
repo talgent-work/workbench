@@ -12,10 +12,10 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// standaloneWorkCondition selects a definition's Works without a Subject or a
-// Project: its Standalone Works.
+// standaloneWorkCondition selects a definition's Standalone Works: those
+// whose Work Caller is a person or an Application.
 func standaloneWorkCondition(agentID string) builder.Cond {
-	return builder.Eq{"s.agent_id": agentID, "s.project_ref": ""}.And(builder.IsNull{"s.subject_kind"})
+	return builder.Eq{"s.agent_id": agentID}.And(builder.In("s.work_caller_kind", domain.CallerKindPerson, domain.CallerKindApplication))
 }
 
 type standaloneWorkRow struct {
@@ -102,14 +102,13 @@ func stateCodes(states []domain.WorkState) ([]uint8, error) {
 }
 
 type libraryWorkRow struct {
-	ID           string  `xorm:"id"`
-	AgentID      string  `xorm:"agent_id"`
-	SubjectKind  *string `xorm:"subject_kind"`
-	ProjectRef   string  `xorm:"project_ref"`
-	DisplayTitle string  `xorm:"display_title"`
-	Layout       string  `xorm:"located_layout"`
-	UpdatedAt    int64   `xorm:"updated_at"`
-	Owner        string  `xorm:"agent_owner"`
+	ID           string `xorm:"id"`
+	AgentID      string `xorm:"agent_id"`
+	CallerKind   string `xorm:"work_caller_kind"`
+	DisplayTitle string `xorm:"display_title"`
+	Layout       string `xorm:"located_layout"`
+	UpdatedAt    int64  `xorm:"updated_at"`
+	Owner        string `xorm:"agent_owner"`
 }
 
 // ListLibraryWorks reads the person's Standalone Works and the Works shared
@@ -119,7 +118,7 @@ func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person, agen
 	read := func(condition builder.Cond) ([]libraryWorkRow, error) {
 		var rows []libraryWorkRow
 		err := r.db.Context(ctx).Table("agent_session").Alias("s").
-			Select("s.id,s.agent_id,s.subject_kind,s.project_ref,s.display_title,s.located_layout,s.updated_at,"+agentOwnerColumn+" AS agent_owner").
+			Select("s.id,s.agent_id,s.work_caller_kind,s.display_title,s.located_layout,s.updated_at,"+agentOwnerColumn+" AS agent_owner").
 			Where("s.deleted_at=0").And(condition).Desc("s.updated_at", "s.id").Limit(limit).Find(&rows)
 		return rows, oops.With("operation", "agent.list_library_works").Wrap(err)
 	}
@@ -139,7 +138,7 @@ func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person, agen
 		if err != nil {
 			return nil, err
 		}
-		work := query.LibraryWork{WorkID: row.ID, Title: row.DisplayTitle, PublicationTarget: layout.PublicationTarget.Directory, Standalone: row.ProjectRef == "" && row.SubjectKind == nil}
+		work := query.LibraryWork{WorkID: row.ID, Title: row.DisplayTitle, PublicationTarget: layout.PublicationTarget.Directory, Standalone: !(domain.WorkCaller{Kind: row.CallerKind}).ExtensionDefined()}
 		if row.AgentID != agentID {
 			work.SharedBy = row.Owner
 		}

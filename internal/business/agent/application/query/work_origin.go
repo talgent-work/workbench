@@ -11,8 +11,9 @@ import (
 // WorkOrigin exposes retained attribution without imposing execution admission.
 type WorkOrigin struct {
 	WorkID, AgentID, Purpose string
-	Subject                  domain.WorkSubject
-	ProjectID                string
+	WorkCaller               domain.WorkCaller
+	WorkKey                  domain.WorkKey
+	FileHome                 domain.FileHome
 	// StartedBy is who started the Work, a fact; its Agent Owners are its
 	// definition's Owners. StartedAt is when the Work was created.
 	StartedBy string

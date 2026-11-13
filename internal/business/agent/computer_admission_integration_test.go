@@ -25,6 +25,7 @@ import (
 
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -108,7 +109,7 @@ func (c *oneRoomCloud) definition(t *testing.T, ctx context.Context) string {
 }
 
 func (c *oneRoomCloud) create(ctx context.Context, definition, subject string) (string, error) {
-	response, err := c.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a"})
+	response, err := c.client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: "employee-a", AgentId: definition, WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-a"}, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: subject}})
 	if err != nil {
 		return "", err
 	}

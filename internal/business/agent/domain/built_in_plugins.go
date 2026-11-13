@@ -2,13 +2,12 @@ package domain
 
 import (
 	"slices"
-	"strings"
 )
 
 // BuiltInPlugins are the Required Plugins the deployment declares by scope:
-// the platform scope's for every Work, the Project scope's for every Work of
-// a Project. A Work composes them at creation and never reapplies a later
-// change of them.
+// the platform scope's for every Work, the extension scope's for every
+// Extension Work. A Work composes them at creation and never reapplies a
+// later change of them.
 type BuiltInPlugins struct {
 	platform, project []string
 }
@@ -25,9 +24,10 @@ func NewBuiltInPlugins(platform, project []string) (BuiltInPlugins, error) {
 }
 
 // Required are a new Work's Built-in Plugins: the platform scope's, and the
-// Project scope's when the Work has a Project, each once.
-func (b BuiltInPlugins) Required(projectID string) []string {
-	if strings.TrimSpace(projectID) == "" {
+// extension scope's when its Work Caller is of an extension-defined kind,
+// each once.
+func (b BuiltInPlugins) Required(caller WorkCaller) []string {
+	if !caller.ExtensionDefined() {
 		return slices.Clone(b.platform)
 	}
 	return WithRequiredPlugins(b.platform, b.project)
@@ -36,6 +36,6 @@ func (b BuiltInPlugins) Required(projectID string) []string {
 // ComposeRequiredPlugins are a new Work's Required Plugins: the Built-in
 // Plugins of its scopes, then its definition's, then its creating caller's,
 // each once.
-func (b BuiltInPlugins) ComposeRequiredPlugins(projectID string, definition, caller []string) []string {
-	return WithRequiredPlugins(WithRequiredPlugins(b.Required(projectID), definition), caller)
+func (b BuiltInPlugins) ComposeRequiredPlugins(workCaller WorkCaller, definition, extension []string) []string {
+	return WithRequiredPlugins(WithRequiredPlugins(b.Required(workCaller), definition), extension)
 }

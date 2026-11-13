@@ -10,33 +10,33 @@ import (
 var (
 	ErrInvalidVisibility     = errors.New("agent: invalid Work visibility")
 	ErrWorkVisibilityFixed   = errors.New("agent: Works of a definition that represents no person keep their declared visibility")
-	ErrWorkWithoutProject    = errors.New("agent: a Work without a Project stays private")
+	ErrStandaloneWorkPrivate = errors.New("agent: a Standalone Work stays private")
 	ErrWorkShareOutOfScope   = errors.New("agent: a Work Share reader must be within the Work's visibility scope")
 	ErrWorkReaderNotAdmitted = errors.New("agent: reader is not admitted to the Work's message stream")
 )
 
 // VisibilityRule declares the visibility of a definition's new Works:
-// private, or public within the Work's Project. Existing Works keep the rule
+// private, or public to the members of the Work's Work Caller. Existing Works keep the rule
 // they captured.
 type VisibilityRule struct {
 	Public bool
 }
 
 // WorkVisibility is a Work's current visibility, captured from its
-// definition's VisibilityRule: private, or public within the Work's Project.
-// Visibility never crosses that Project.
+// definition's VisibilityRule: private, or public to the members of its Work
+// Caller. Visibility never crosses that Work Caller.
 type WorkVisibility struct {
 	Public bool
 }
 
-// ReaderAdmission states the scope a reader is within: a trusted caller's
-// statement that the reader is a member of a Project, or Agent's own finding
-// that the reader is in the User Directory, the scope of a Work without a
-// Project, since a deployment is one enterprise. Its zero value admits
-// nothing.
+// ReaderAdmission states the scope a reader is within: a trusted service's
+// statement that the reader is a member of a Work Caller of an
+// extension-defined kind, or Agent's own finding that the reader is in the
+// User Directory, the scope of a Standalone Work, since a deployment is one
+// enterprise. Its zero value admits nothing.
 type ReaderAdmission struct {
-	ProjectID string
-	Directory bool
+	WorkCaller WorkCaller
+	Directory  bool
 }
 
 // ReadBasis is why Agent admits a reader to a Work's message stream.
@@ -51,9 +51,9 @@ const (
 	ReadAsApplicationOwner ReadBasis = "application_owner"
 )
 
-// ChangeVisibility switches the Work between private and public within its
-// Project. Only an Owner of a person's Agent changes it; a Work without a
-// Project has no scope to be public in.
+// ChangeVisibility switches the Work between private and public to the
+// members of its Work Caller. Only an Owner of a person's Agent changes it; a
+// Standalone Work stays private (Standalone Work visibility).
 func (s *AgentWork) ChangeVisibility(definition *AgentDefinition, requester string, public bool, now time.Time) (bool, error) {
 	if err := s.AdmitControlRequester(definition, requester); err != nil {
 		return false, err
@@ -64,8 +64,8 @@ func (s *AgentWork) ChangeVisibility(definition *AgentDefinition, requester stri
 	if s.Visibility.Public == public {
 		return false, nil
 	}
-	if public && s.ProjectID == "" {
-		return false, ErrWorkWithoutProject
+	if public && s.Standalone() {
+		return false, ErrStandaloneWorkPrivate
 	}
 	s.Visibility.Public = public
 	if !public {
@@ -75,8 +75,8 @@ func (s *AgentWork) ChangeVisibility(definition *AgentDefinition, requester stri
 }
 
 // GrantWorkShare lets one reader read this human's Work while it is private.
-// The trusted caller's admission states the reader is within the value of the
-// Work's visibility scope, such as a member of its Project; granting an
+// The trusted service's admission states the reader is within the Work's
+// visibility scope, a member of its Work Caller; granting an
 // existing reader leaves WorkShares unchanged.
 func (s *AgentWork) GrantWorkShare(definition *AgentDefinition, requester, reader string, admission ReaderAdmission) (bool, error) {
 	if err := s.AdmitControlRequester(definition, requester); err != nil {
@@ -106,8 +106,8 @@ func (s *AgentWork) RevokeWorkShare(definition *AgentDefinition, requester, read
 	return s.revokeShare(reader, now), nil
 }
 
-// RevokeDepartedReader removes a reader the trusted caller reports has left
-// the Work's visibility scope, such as a member who left its Project. A
+// RevokeDepartedReader removes a reader the trusted service reports has left
+// the Work's visibility scope, a member who left its Work Caller. A
 // departure from another scope leaves the Work Share in place.
 func (s *AgentWork) RevokeDepartedReader(reader string, departed ReaderAdmission, now time.Time) bool {
 	if !s.withinScope(departed) {
@@ -127,8 +127,8 @@ func (s *AgentWork) revokeShare(reader string, now time.Time) bool {
 }
 
 // AdmitStreamReader admits an Owner of the Work's definition; a Work Share
-// holder while private; or, while public, a reader the trusted caller admits
-// as a member of the Work's Project.
+// holder while private; or, while public, a reader the trusted service admits
+// as a member of the Work's Work Caller.
 func (s *AgentWork) AdmitStreamReader(definition *AgentDefinition, reader string, admission ReaderAdmission) (ReadBasis, error) {
 	if reader == "" {
 		return "", ErrWorkReaderNotAdmitted
@@ -160,12 +160,12 @@ func (s *AgentWork) AdmitApplicationOwnerReader(definition *AgentDefinition, req
 }
 
 // withinScope reports whether an admission names the Work's visibility
-// scope: its Project, or the User Directory for a Work without one.
+// scope: its Work Caller, or the User Directory for a Standalone Work.
 func (s *AgentWork) withinScope(admission ReaderAdmission) bool {
-	if s.ProjectID == "" {
+	if s.Standalone() {
 		return admission.Directory
 	}
-	return admission.ProjectID != "" && admission.ProjectID == s.ProjectID
+	return admission.WorkCaller == s.WorkCaller
 }
 
 func (s *AgentWork) record(event Event) {

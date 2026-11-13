@@ -11,7 +11,7 @@ import (
 // WorkContextPosition is where one of a Work's calls returned in its
 // context: an opaque position a new Work of the same definition may start
 // from. Returned is false while the call has not returned, or when the Work
-// made no such call or is outside the Project.
+// made no such call or is of another Work Caller.
 type WorkContextPosition struct {
 	Returned bool
 	Position string
@@ -28,9 +28,9 @@ func NewResolveWorkContextPositionHandler(origins WorkQueryRepository, positions
 	return &ResolveWorkContextPositionHandler{origins: origins, positions: positions}
 }
 
-func (h *ResolveWorkContextPositionHandler) Handle(ctx context.Context, projectID, workID, callID string) (WorkContextPosition, error) {
-	projectID, workID, callID = strings.TrimSpace(projectID), strings.TrimSpace(workID), strings.TrimSpace(callID)
-	if projectID == "" || workID == "" || callID == "" {
+func (h *ResolveWorkContextPositionHandler) Handle(ctx context.Context, caller domain.WorkCaller, workID, callID string) (WorkContextPosition, error) {
+	workID, callID = strings.TrimSpace(workID), strings.TrimSpace(callID)
+	if caller.Validate() != nil || workID == "" || callID == "" {
 		return WorkContextPosition{}, domain.ErrInvalidWork
 	}
 	origin, err := h.origins.GetWorkOrigin(ctx, workID)
@@ -40,7 +40,7 @@ func (h *ResolveWorkContextPositionHandler) Handle(ctx context.Context, projectI
 	if err != nil {
 		return WorkContextPosition{}, err
 	}
-	if origin.ProjectID != projectID {
+	if origin.WorkCaller != caller {
 		return WorkContextPosition{}, nil
 	}
 	position, found, err := h.positions.FindCallPosition(ctx, workID, callID)

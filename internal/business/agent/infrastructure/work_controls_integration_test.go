@@ -262,7 +262,8 @@ func TestOwnerWorkViewAndControlsUseOnlyAgentFacts(t *testing.T) {
 	require.Equal(t, before.HarnessSessionReference, current.HarnessSessionReference)
 	require.Equal(t, before.LocatedLayout, current.LocatedLayout)
 	require.Equal(t, before.CapabilitySnapshot, current.CapabilitySnapshot)
-	require.Equal(t, before.Subject, current.Subject)
+	require.Equal(t, before.WorkKey, current.WorkKey)
+	require.Equal(t, before.WorkCaller, current.WorkCaller)
 	// Failed startup requires explicit Restart with native context recovery. Neither Resume nor
 	// reading recovery facts can select it, and no one but the owner can request it.
 	require.NoError(t, feedback.Handle(ctx, command.ExecutionFeedback{Kind: command.ExecutionExited, WorkID: ref, ProcessID: "process", ExitCode: 1, ExitReason: "native_initialization_failed"}))

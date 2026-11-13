@@ -38,7 +38,7 @@ func AssembleAgentDefinition(agent *domain.AgentDefinition) query.AgentDefinitio
 
 func AssembleAgentWorkEntity(session *domain.AgentWork, definition *domain.AgentDefinition) query.AgentWork {
 	result := query.AgentWork{AgentName: definition.AgentName, Version: session.Version, StopRequestID: session.StopRequestReference, StopReason: session.StopReason, ID: session.ID, AgentID: session.AgentID, State: session.State,
-		Capabilities: session.CapabilitySnapshot.Clone(), ProjectID: session.ProjectID, HarnessSessionReference: session.HarnessSessionReference, FailureReason: session.FailureReason}
+		Capabilities: session.CapabilitySnapshot.Clone(), WorkCaller: session.WorkCaller, HarnessSessionReference: session.HarnessSessionReference, FailureReason: session.FailureReason}
 	if progress := session.Progress; progress != nil {
 		result.Progress = &query.WorkProgress{UpdatedAt: progress.UpdatedAt, Items: make([]query.WorkProgressItem, len(progress.Items))}
 		for i, item := range progress.Items {

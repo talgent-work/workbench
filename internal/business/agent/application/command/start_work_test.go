@@ -184,7 +184,7 @@ func TestResumeAndRestartRejectAWithdrawnModelConfiguration(t *testing.T) {
 // admitted.
 func stoppingSessionFor(t *testing.T, agent *domain.AgentDefinition) *domain.AgentWork {
 	t.Helper()
-	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID}, fixtureAdmission(agent.ID))
+	session, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID}, fixtureAdmission(agent.ID))
 	require.NoError(t, err)
 	report(t, session, readyReport)
 	require.NoError(t, session.Stop("stop", false))
@@ -213,7 +213,7 @@ func startupStoresForPurpose(t *testing.T, purpose string) (*startupAgentStore, 
 	t.Helper()
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: purpose, UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{}})
 	require.NoError(t, err)
-	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID}, fixtureAdmission(agent.ID))
+	session, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID}, fixtureAdmission(agent.ID))
 	require.NoError(t, err)
 	return &startupAgentStore{agent: agent}, &feedbackSessionStore{session: settled(session)}
 }

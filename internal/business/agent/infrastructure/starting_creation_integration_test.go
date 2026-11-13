@@ -117,7 +117,7 @@ func startingCreationDatabase(t *testing.T) (*xorm.Engine, *infrastructure.Agent
 }
 
 func creationInput(agentID, reference string) command.CreateWork {
-	return command.CreateWork{StartingUserID: "owner", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agentID, Subject: domain.WorkSubject{Kind: "case", ID: reference}, ProjectID: "project"}
+	return command.CreateWork{StartingUserID: "owner", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agentID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: reference}}
 }
 func creationModels() query.ModelConfigurations {
 	return query.NewModelConfigurations(query.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "fixture"}})

@@ -188,7 +188,7 @@ func TestNextStartChecksOutOnlyWhatTheFirstStartLeft(t *testing.T) {
 	definition, err = definitions.Get(ctx, definition.ID)
 	require.NoError(t, err)
 	works := infrastructure.NewAgentWorkRepository(db, time.Now)
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: definition.RepresentedPerson(), WorkLayout: domain.DefaultWorkLayout(), Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.NewString(), AgentID: definition.ID, RepresentedPerson: definition.RepresentedPerson(), WorkLayout: domain.DefaultWorkLayout(), Capabilities: domain.CapabilitySnapshot{Connectors: request().Capabilities.Connectors}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: fixtureCloudID, Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	work.RepositorySelection = checkoutSelection()
 	work.DefinitionVersion = definition.Version

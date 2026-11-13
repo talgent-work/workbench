@@ -25,8 +25,8 @@ type WorkQueryRepository interface {
 	// ListRecentRepositoryIDs reads repository identities from the owner's
 	// own Works, most recently created first and without duplicates.
 	ListRecentRepositoryIDs(ctx context.Context, owner string) ([]string, error)
-	// ListStandaloneWorks lists a definition's Works without a Subject or a
-	// Project, most recently updated first, narrowed as the filter states.
+	// ListStandaloneWorks lists a definition's Standalone Works, most
+	// recently updated first, narrowed as the filter states.
 	ListStandaloneWorks(ctx context.Context, filter StandaloneWorksFilter) ([]StandaloneWorkSummary, error)
 	// ListWorkAttributions reads those of the named Works that are the
 	// definition's Standalone Works, with their Work Labels.

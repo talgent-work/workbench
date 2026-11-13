@@ -48,14 +48,15 @@ func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *agentp
 	var workID string
 	var err error
 	if creation := request.GetCreation(); creation != nil {
-		if err := h.application.AdmitCallerCreation(subjectFromProto(creation.GetSubject()), creation.GetProjectId()); err != nil {
+		if err := h.application.AdmitExtensionCreation(workCallerFromProto(creation.GetWorkCaller())); err != nil {
 			return nil, mapAgentError(err)
 		}
 		workID, err = h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{
 			StartingUserID: creation.GetStartingUserId(),
 			SubjectID:      input.SubjectID, InitialExecution: &input, WorkModel: workModelFromProto(creation.GetModel()),
 			AgentID: creation.GetAgentId(), AgentHarness: strings.TrimSpace(creation.GetAgentHarness()),
-			Subject: subjectFromProto(creation.GetSubject()), ProjectID: creation.GetProjectId(), TraceAttributes: maps.Clone(creation.GetTraceAttributes()),
+			WorkCaller: workCallerFromProto(creation.GetWorkCaller()), WorkKey: workKeyFromProto(creation.GetWorkKey()), FileHome: fileHomeFromProto(creation.GetFileHome()),
+			TraceAttributes:       maps.Clone(creation.GetTraceAttributes()),
 			CapabilityDifferences: capabilityDifferencesFromProto(creation.GetCapabilityDifferences()),
 			StartingContext:       startingContextFromProto(creation.GetStartingContext()),
 			ComputerID:            strings.TrimSpace(creation.GetComputerId()),
@@ -84,10 +85,10 @@ func (h *AgentHandler) CreateWork(ctx context.Context, req *agentprivatev1.Creat
 	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	if err := h.application.AdmitCallerCreation(subjectFromProto(req.GetSubject()), req.GetProjectId()); err != nil {
+	if err := h.application.AdmitExtensionCreation(workCallerFromProto(req.GetWorkCaller())); err != nil {
 		return nil, mapAgentError(err)
 	}
-	id, err := h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: req.GetStartingUserId(), RequestID: req.GetRequestId(), WorkModel: workModelFromProto(req.GetModel()), Subject: subjectFromProto(req.GetSubject()), ProjectID: req.GetProjectId(), CapabilityDifferences: capabilityDifferencesFromProto(req.GetCapabilityDifferences()), StartingContext: startingContextFromProto(req.GetStartingContext()), SubjectID: req.GetSubjectId(), AgentID: req.GetAgentId(), AgentHarness: strings.TrimSpace(req.GetAgentHarness()), TraceAttributes: maps.Clone(req.GetTraceAttributes()), ComputerID: strings.TrimSpace(req.GetComputerId()), Harness: harnessChoiceFromProto(req.GetHarness())})
+	id, err := h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: req.GetStartingUserId(), RequestID: req.GetRequestId(), WorkModel: workModelFromProto(req.GetModel()), WorkCaller: workCallerFromProto(req.GetWorkCaller()), WorkKey: workKeyFromProto(req.GetWorkKey()), FileHome: fileHomeFromProto(req.GetFileHome()), CapabilityDifferences: capabilityDifferencesFromProto(req.GetCapabilityDifferences()), StartingContext: startingContextFromProto(req.GetStartingContext()), SubjectID: req.GetSubjectId(), AgentID: req.GetAgentId(), AgentHarness: strings.TrimSpace(req.GetAgentHarness()), TraceAttributes: maps.Clone(req.GetTraceAttributes()), ComputerID: strings.TrimSpace(req.GetComputerId()), Harness: harnessChoiceFromProto(req.GetHarness())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -258,13 +259,13 @@ func mapAgentError(err error) error {
 		code = connect.CodePermissionDenied
 	case errors.Is(err, domain.ErrAgentDefinitionNotFound), errors.Is(err, domain.ErrWorkNotFound):
 		code = connect.CodeNotFound
-	case errors.Is(err, pluginconfig.ErrInvalidConfiguration), errors.Is(err, query.ErrInvalidWorkReport), errors.Is(err, command.ErrInputAdmissionConflict), errors.Is(err, query.ErrInvalidDefinitionSelection), errors.Is(err, domain.ErrInvalidWorkSubject), errors.Is(err, domain.ErrInvalidAgentDefinition), errors.Is(err, domain.ErrInvalidCapabilities), errors.Is(err, domain.ErrInvalidWork), errors.Is(err, command.ErrInvalidStartRequest), errors.Is(err, domain.ErrInvalidVisibility), errors.Is(err, domain.ErrWorkShareOutOfScope), errors.Is(err, domain.ErrInvalidAgentAppearance), errors.Is(err, domain.ErrInvalidSoul), errors.Is(err, domain.ErrInvalidWorkDefaults), errors.Is(err, domain.ErrStartingContextNotAdmitted), errors.Is(err, domain.ErrInvalidDisplayTitle), errors.Is(err, domain.ErrInvalidWorkLabels):
+	case errors.Is(err, pluginconfig.ErrInvalidConfiguration), errors.Is(err, query.ErrInvalidWorkReport), errors.Is(err, command.ErrInputAdmissionConflict), errors.Is(err, query.ErrInvalidDefinitionSelection), errors.Is(err, domain.ErrInvalidWorkCaller), errors.Is(err, domain.ErrInvalidWorkKey), errors.Is(err, domain.ErrInvalidFileHome), errors.Is(err, domain.ErrStandaloneWorkFacts), errors.Is(err, domain.ErrWorkCallerNotOwner), errors.Is(err, domain.ErrInvalidAgentDefinition), errors.Is(err, domain.ErrInvalidCapabilities), errors.Is(err, domain.ErrInvalidWork), errors.Is(err, command.ErrInvalidStartRequest), errors.Is(err, domain.ErrInvalidVisibility), errors.Is(err, domain.ErrWorkShareOutOfScope), errors.Is(err, domain.ErrInvalidAgentAppearance), errors.Is(err, domain.ErrInvalidSoul), errors.Is(err, domain.ErrInvalidWorkDefaults), errors.Is(err, domain.ErrStartingContextNotAdmitted), errors.Is(err, domain.ErrInvalidDisplayTitle), errors.Is(err, domain.ErrInvalidWorkLabels):
 		code = connect.CodeInvalidArgument
 	case errors.Is(err, domain.ErrCapacityUnavailable), errors.Is(err, command.ErrInputBacklog):
 		code = connect.CodeResourceExhausted
 	case errors.Is(err, domain.ErrConcurrentModification):
 		code = connect.CodeAborted
-	case errors.Is(err, application.ErrWorkCapabilitiesUnavailable), errors.Is(err, domain.ErrTurnActive), errors.Is(err, domain.ErrWorkVisibilityFixed), errors.Is(err, domain.ErrWorkWithoutProject), errors.Is(err, command.ErrDeskUnavailable), errors.Is(err, domain.ErrStartRequestSpent), errors.Is(err, command.ErrStartRequestConflict), errors.Is(err, domain.ErrWorkTransition), errors.Is(err, domain.ErrExecutionNotPermitted), errors.Is(err, domain.ErrComputeReclamationPending), errors.Is(err, domain.ErrModelConfigurationWithdrawn), domain.RefusedByComputer(err), errors.Is(err, domain.ErrNotStandaloneWork), errors.Is(err, domain.ErrWorkNotActing), errors.Is(err, domain.ErrWorkFilesUnavailable), errors.Is(err, domain.ErrWorkFilesClosed), errors.Is(err, domain.ErrRepositoryAuthorizationMissing):
+	case errors.Is(err, application.ErrWorkCapabilitiesUnavailable), errors.Is(err, domain.ErrTurnActive), errors.Is(err, domain.ErrWorkVisibilityFixed), errors.Is(err, domain.ErrStandaloneWorkPrivate), errors.Is(err, domain.ErrMismatchedReuse), errors.Is(err, command.ErrDeskUnavailable), errors.Is(err, domain.ErrStartRequestSpent), errors.Is(err, command.ErrStartRequestConflict), errors.Is(err, domain.ErrWorkTransition), errors.Is(err, domain.ErrExecutionNotPermitted), errors.Is(err, domain.ErrComputeReclamationPending), errors.Is(err, domain.ErrModelConfigurationWithdrawn), domain.RefusedByComputer(err), errors.Is(err, domain.ErrNotStandaloneWork), errors.Is(err, domain.ErrWorkNotActing), errors.Is(err, domain.ErrWorkFilesUnavailable), errors.Is(err, domain.ErrWorkFilesClosed), errors.Is(err, domain.ErrRepositoryAuthorizationMissing):
 		code = connect.CodeFailedPrecondition
 	case errors.Is(err, domain.ErrExecutionUnobserved):
 		code = connect.CodeUnavailable
@@ -324,7 +325,7 @@ func (h *AgentHandler) LocateWork(ctx context.Context, request *agentprivatev1.L
 	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), request.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	id, found, err := h.application.Queries.LocateWork.Handle(ctx, query.LocateWork{SubjectID: request.GetSubjectId(), AgentID: request.GetAgentId(), Subject: subjectFromProto(request.GetSubject())})
+	id, found, err := h.application.Queries.LocateWork.Handle(ctx, query.LocateWork{SubjectID: request.GetSubjectId(), AgentID: request.GetAgentId(), WorkKey: workKeyFromProto(request.GetWorkKey()), WorkCaller: workCallerFromProto(request.GetWorkCaller())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -365,7 +366,7 @@ func (h *AgentHandler) GetWorkOrigin(ctx context.Context, request *agentprivatev
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
-	return &agentprivatev1.GetWorkOriginResponse{WorkId: origin.WorkID, AgentId: origin.AgentID, Purpose: origin.Purpose, Subject: subjectToProto(origin.Subject), ProjectId: origin.ProjectID}, nil
+	return &agentprivatev1.GetWorkOriginResponse{WorkId: origin.WorkID, AgentId: origin.AgentID, Purpose: origin.Purpose, WorkCaller: workCallerToProto(origin.WorkCaller), WorkKey: workKeyToProto(origin.WorkKey), FileHome: fileHomeToProto(origin.FileHome)}, nil
 }
 
 // ResolveWorkContextPosition is the Work Context Position Query.
@@ -373,7 +374,7 @@ func (h *AgentHandler) ResolveWorkContextPosition(ctx context.Context, request *
 	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	position, err := h.application.Queries.ResolveWorkContextPosition.Handle(ctx, request.GetProjectId(), request.GetWorkId(), request.GetCallId())
+	position, err := h.application.Queries.ResolveWorkContextPosition.Handle(ctx, workCallerFromProto(request.GetWorkCaller()), request.GetWorkId(), request.GetCallId())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -384,7 +385,7 @@ func (h *AgentHandler) ResolveWorkStarts(ctx context.Context, request *agentpriv
 	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	results, err := h.application.Queries.ResolveWorkStarts.Handle(ctx, request.GetProjectId(), request.GetWorkIds())
+	results, err := h.application.Queries.ResolveWorkStarts.Handle(ctx, workCallerFromProto(request.GetWorkCaller()), request.GetWorkIds())
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -432,7 +433,7 @@ func (h *AgentHandler) GetWorkStartOptions(ctx context.Context, request *agentpr
 		return nil, err
 	}
 	value, err := h.application.GetWorkStartOptions(ctx, query.WorkStartOptionsQuery{
-		SubjectID: request.GetSubjectId(), WorkID: request.GetWorkId(), EmployeeID: request.GetEmployeeId(), ProjectID: request.GetProjectId(), RequiredPlugins: slices.Clone(request.GetRequiredPlugins()),
+		SubjectID: request.GetSubjectId(), WorkID: request.GetWorkId(), EmployeeID: request.GetEmployeeId(), WorkCaller: workCallerFromProto(request.GetWorkCaller()), RequiredPlugins: slices.Clone(request.GetRequiredPlugins()),
 	})
 	if err != nil {
 		return nil, mapAgentError(err)

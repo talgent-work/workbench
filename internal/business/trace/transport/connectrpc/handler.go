@@ -21,7 +21,7 @@ var _ tracepublicv1connect.TraceQueryServiceHandler = (*Handler)(nil)
 
 func (h *Handler) ListSpansBySession(ctx context.Context, req *tracepublicv1.ListSpansBySessionRequest) (*tracepublicv1.ListSpansBySessionResponse, error) {
 	result, err := h.app.Queries.ListSpansBySession(ctx, query.SpanListOptions{
-		ProjectID: req.GetProjectId(), AgentWorkID: req.GetAgentWorkId(),
+		ProjectID: projectScope(req.GetWorkCaller()), AgentWorkID: req.GetAgentWorkId(),
 		Limit: int(req.GetLimit()), AfterCursor: req.GetAfterCursor(), NewestFirst: req.GetNewestFirst(),
 	})
 	if err != nil {
@@ -35,7 +35,7 @@ func (h *Handler) ListSpansBySession(ctx context.Context, req *tracepublicv1.Lis
 
 func (h *Handler) ListSpansByOwner(ctx context.Context, req *tracepublicv1.ListSpansByOwnerRequest) (*tracepublicv1.ListSpansByOwnerResponse, error) {
 	result, err := h.app.Queries.ListSpansByOwner(ctx, query.SpanListOptions{
-		ProjectID: req.GetProjectId(), OwnerContext: req.GetOwnerContext(), OwnerID: req.GetOwnerId(), RuntimePurpose: req.GetRuntimePurpose(),
+		ProjectID: projectScope(req.GetWorkCaller()), OwnerContext: req.GetOwnerContext(), OwnerID: req.GetOwnerId(), RuntimePurpose: req.GetRuntimePurpose(),
 		Limit: int(req.GetLimit()), AfterCursor: req.GetAfterCursor(),
 	})
 	if err != nil {
@@ -48,7 +48,7 @@ func (h *Handler) ListSpansByOwner(ctx context.Context, req *tracepublicv1.ListS
 }
 
 func (h *Handler) GetSpan(ctx context.Context, req *tracepublicv1.GetSpanRequest) (*tracepublicv1.GetSpanResponse, error) {
-	span, err := h.app.Queries.GetSpan(ctx, query.SpanIdentity{ProjectID: req.GetProjectId(), AgentWorkID: req.GetAgentWorkId(), TraceID: req.GetTraceId(), SpanID: req.GetSpanId()})
+	span, err := h.app.Queries.GetSpan(ctx, query.SpanIdentity{ProjectID: projectScope(req.GetWorkCaller()), AgentWorkID: req.GetAgentWorkId(), TraceID: req.GetTraceId(), SpanID: req.GetSpanId()})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -59,18 +59,18 @@ func (h *Handler) GetSessionTraceMetrics(ctx context.Context, req *tracepublicv1
 	if err := validateProtoTimes(req.GetStartTime(), req.GetEndTime()); err != nil {
 		return nil, mapError(err)
 	}
-	result, err := h.app.Queries.GetSessionTraceMetrics(ctx, traceMetricOptionsFromSessionRequest(req.GetProjectId(), req.GetAgentWorkId(), req))
+	result, err := h.app.Queries.GetSessionTraceMetrics(ctx, traceMetricOptionsFromSessionRequest(projectScope(req.GetWorkCaller()), req.GetAgentWorkId(), req))
 	if err != nil {
 		return nil, mapError(err)
 	}
 	return sessionTraceMetricsToProto(result), nil
 }
 
-func (h *Handler) GetProjectTraceMetrics(ctx context.Context, req *tracepublicv1.GetProjectTraceMetricsRequest) (*tracepublicv1.GetProjectTraceMetricsResponse, error) {
+func (h *Handler) GetWorkCallerTraceMetrics(ctx context.Context, req *tracepublicv1.GetWorkCallerTraceMetricsRequest) (*tracepublicv1.GetWorkCallerTraceMetricsResponse, error) {
 	if err := validateProtoTimes(req.GetStartTime(), req.GetEndTime()); err != nil {
 		return nil, mapError(err)
 	}
-	result, err := h.app.Queries.GetProjectTraceMetrics(ctx, traceMetricOptionsFromProjectRequest(req.GetProjectId(), req))
+	result, err := h.app.Queries.GetProjectTraceMetrics(ctx, traceMetricOptionsFromProjectRequest(projectScope(req.GetWorkCaller()), req))
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -141,13 +141,13 @@ func (h *Handler) ListEvents(ctx context.Context, req *tracepublicv1.ListEventsR
 	if err := validateProtoTimes(req.GetStartTime(), req.GetEndTime()); err != nil {
 		return nil, mapError(err)
 	}
-	result, err := h.app.Queries.ListEvents(ctx, query.EventOptions{ProjectID: req.GetProjectId(), AgentWorkID: req.GetAgentWorkId(), TraceID: req.GetTraceId(), CallID: req.GetCallId(), StartTime: protoTime(req.GetStartTime()), EndTime: protoTime(req.GetEndTime()), Limit: int(req.GetLimit()), AfterCursor: req.GetAfterCursor()})
+	result, err := h.app.Queries.ListEvents(ctx, query.EventOptions{ProjectID: projectScope(req.GetWorkCaller()), AgentWorkID: req.GetAgentWorkId(), TraceID: req.GetTraceId(), CallID: req.GetCallId(), StartTime: protoTime(req.GetStartTime()), EndTime: protoTime(req.GetEndTime()), Limit: int(req.GetLimit()), AfterCursor: req.GetAfterCursor()})
 	if err != nil {
 		return nil, mapError(err)
 	}
 	response := &tracepublicv1.ListEventsResponse{NextCursor: result.NextCursor}
 	for _, e := range result.Events {
-		response.Events = append(response.Events, &tracepublicv1.NativeEvent{Id: e.ID, Timestamp: timestampOrNil(e.Timestamp), TraceId: e.TraceID, SpanId: e.SpanID, Name: e.Name, Body: e.Body, Attributes: publicSpanAttributes(e.Attributes), ResourceAttributes: publicSpanAttributes(e.ResourceAttributes), ProjectId: e.ProjectID, AgentWorkId: e.AgentWorkID})
+		response.Events = append(response.Events, &tracepublicv1.NativeEvent{Id: e.ID, Timestamp: timestampOrNil(e.Timestamp), TraceId: e.TraceID, SpanId: e.SpanID, Name: e.Name, Body: e.Body, Attributes: publicSpanAttributes(e.Attributes), ResourceAttributes: publicSpanAttributes(e.ResourceAttributes), WorkCaller: projectWorkCaller(e.ProjectID), AgentWorkId: e.AgentWorkID})
 	}
 	return response, nil
 }

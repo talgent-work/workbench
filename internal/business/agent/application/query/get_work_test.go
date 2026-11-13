@@ -28,7 +28,7 @@ func TestSessionReadRequiresAuthorizationBeforeLoadingContext(t *testing.T) {
 func TestSessionReadReturnsIndependentCapabilitySnapshot(t *testing.T) {
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}, Capabilities: domain.CapabilityConfiguration{RequiredPlugins: []string{"review"}}})
 	require.NoError(t, err)
-	session, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "review", Source: "owned", Version: "1", RetrievalRef: "archive:review", NativeEntry: []byte(`{"name":"review","version":"1"}`), Parameters: pluginconfig.ParameterDeclarations{"mode": {Type: "string", Title: "Mode", Description: "Mode"}}}, Configuration: pluginconfig.Configuration{"mode": "strict"}}}}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	session, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(), RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), AgentID: agent.ID, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}, Plugins: []domain.SelectedPlugin{{Release: domain.PluginRelease{CatalogName: "talgent", Slug: "review", Source: "owned", Version: "1", RetrievalRef: "archive:review", NativeEntry: []byte(`{"name":"review","version":"1"}`), Parameters: pluginconfig.ParameterDeclarations{"mode": {Type: "string", Title: "Mode", Description: "Mode"}}}, Configuration: pluginconfig.Configuration{"mode": "strict"}}}}}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	handler := query.NewGetWorkHandler(definitionRepository{agent}, repository{session}, authorizer{}, application.AssembleAgentWorkEntity, noPendingSessionInput)
 	view, err := handler.Handle(context.Background(), query.GetWork{SubjectID: "owner", WorkID: session.ID})
@@ -45,7 +45,7 @@ type repository struct{ session *domain.AgentWork }
 
 func (r repository) Get(context.Context, string) (*domain.AgentWork, error) { return r.session, nil }
 func (repository) Save(context.Context, *domain.AgentWork) error            { return nil }
-func (repository) FindBySubject(context.Context, string, domain.WorkSubject) (*domain.AgentWork, error) {
+func (repository) FindByWorkKey(context.Context, string, domain.WorkKey) (*domain.AgentWork, error) {
 	return nil, nil
 }
 

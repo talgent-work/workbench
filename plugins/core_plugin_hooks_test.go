@@ -14,16 +14,17 @@ const corePlugin = "talgent"
 const productContextHook = corePlugin + "/hooks/product-context.mjs"
 
 // Every Work starts with the core product, and only with it: the core plugin
-// knows no Project, so neither a knowledge mount nor a Project changes it.
+// knows no extension's Work Caller, so neither a knowledge mount nor a Work
+// Caller changes it.
 func TestEveryWorkStartsWithTheCoreProduct(t *testing.T) {
 	work := t.TempDir()
 	core := runHook(t, corePlugin, productContextHook, "TALGENT_WORK_ROOT="+work)
 	if !strings.HasPrefix(core, "# Talgent\n") {
 		t.Fatalf("a Work gets no core product:\n%s", core)
 	}
-	withProject := runHook(t, corePlugin, productContextHook, "TALGENT_WORK_ROOT="+work, "TALGENT_KNOWLEDGE_ROOT="+work, "TALGENT_PROJECT_ID=project")
+	withProject := runHook(t, corePlugin, productContextHook, "TALGENT_WORK_ROOT="+work, "TALGENT_KNOWLEDGE_ROOT="+work, "TALGENT_WORK_CALLER=project:p1")
 	if withProject != core {
-		t.Fatalf("a knowledge mount and a Project change the core product:\n%s", withProject)
+		t.Fatalf("a knowledge mount and a Work Caller change the core product:\n%s", withProject)
 	}
 }
 

@@ -40,8 +40,8 @@ func (h *harness) agentAccounts() accountprivatev1connect.AgentAccountServiceCli
 
 func issueRequest(work, project, represented string) *accountprivatev1.IssueWorkIdentityTokenRequest {
 	return &accountprivatev1.IssueWorkIdentityTokenRequest{
-		WorkId: work, ProjectId: project, AgentId: "agent-1", Purpose: "case-work",
-		WorkSubjectKind: "case", WorkSubjectId: "case-1", RepresentedUserId: represented,
+		WorkId: work, WorkCallerKind: "project", WorkCallerId: project, AgentId: "agent-1", Purpose: "case-work",
+		WorkKeyKind: "case", WorkKeyId: "case-1", RepresentedUserId: represented,
 	}
 }
 

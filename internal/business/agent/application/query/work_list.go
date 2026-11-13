@@ -9,10 +9,12 @@ import (
 )
 
 // WorkSummary is one Work's collaboration facts for a caller's list. The caller
-// composes it with its own facts; Agent does not interpret the Subject.
+// composes it with its own facts; Agent interprets neither an extension-defined
+// Work Caller kind nor a Work Key.
 type WorkSummary struct {
-	Subject       domain.WorkSubject
-	ProjectID     string
+	WorkCaller    domain.WorkCaller
+	WorkKey       domain.WorkKey
+	FileHome      domain.FileHome
 	WorkID, State string
 	// AgentOwner is the Work's definition's Owner; StartedBy who started it.
 	AgentOwner, StartedBy string
@@ -27,10 +29,13 @@ type WorkSummary struct {
 	CreatedAt, UpdatedAt time.Time
 }
 
-// WorkListFilter selects Works by Project, the definition's opaque purpose,
+// WorkListFilter selects Works by Work Caller and Work Key, the definition's opaque purpose,
 // the Agent Owner (an Owner of the Work's definition) or identities. Every supplied condition applies.
 type WorkListFilter struct {
-	ProjectID                    string
+	// WorkCaller, when present, selects that Work Caller's Works; WorkKey
+	// narrows them to that key, across definitions.
+	WorkCaller                   *domain.WorkCaller
+	WorkKey                      domain.WorkKey
 	WorkIDs                      []string
 	Purpose, AgentOwner, AfterID string
 	// ShareReader selects Works sharing their message stream with that reader.
@@ -55,8 +60,13 @@ const MaxListedWorks = 500
 // An unbounded list of every Work is never served.
 func (h *ListWorksHandler) Handle(ctx context.Context, input ListWorks) ([]WorkSummary, error) {
 	filter := input.Filter
-	filter.ProjectID = strings.TrimSpace(filter.ProjectID)
-	if filter.ProjectID == "" && len(filter.WorkIDs) == 0 && strings.TrimSpace(filter.AgentOwner) == "" {
+	if filter.WorkCaller != nil && filter.WorkCaller.Validate() != nil {
+		return nil, domain.ErrInvalidWork
+	}
+	if filter.WorkKey.Present() && (filter.WorkCaller == nil || filter.WorkKey.Validate() != nil) {
+		return nil, domain.ErrInvalidWork
+	}
+	if filter.WorkCaller == nil && len(filter.WorkIDs) == 0 && strings.TrimSpace(filter.AgentOwner) == "" {
 		return nil, domain.ErrInvalidWork
 	}
 	if len(filter.WorkIDs) > MaxListedWorks {

@@ -26,10 +26,12 @@ type CreateWork struct {
 	// StartingUserID is the trusted represented human. Empty means an
 	// automated start without personal defaults.
 	StartingUserID string
-	// Subject is the optional business object the Work is about; ProjectID
-	// is its optional Project.
-	Subject               domain.WorkSubject
-	ProjectID             string
+	// WorkCaller is in whose name the Work is started: the owner of a
+	// Standalone Work, or the extension's object for an Extension Work, which
+	// may also supply a Work Key and a File Home.
+	WorkCaller            domain.WorkCaller
+	WorkKey               domain.WorkKey
+	FileHome              domain.FileHome
 	TraceAttributes       map[string]string
 	CapabilityDifferences domain.CapabilityDifferences
 	// StartingContext, when supplied, starts a new Work from another Work of

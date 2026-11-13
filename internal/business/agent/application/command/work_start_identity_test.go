@@ -61,7 +61,7 @@ func creationFixture(t *testing.T, computer command.ComputerPort) (*sessionStore
 	store := &sessionStore{}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, models, commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computer, store.preparation(models))
-	request := command.CreateWork{AgentID: agent.ID, SubjectID: "caller",
+	request := command.CreateWork{AgentID: agent.ID, SubjectID: "caller", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "employee"},
 		InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/work", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Do the work"}}}
 	return store, handler, request
 }
@@ -235,12 +235,12 @@ func TestAResumeWhoseAnswerWasLostConvergesOnItsRepeat(t *testing.T) {
 	require.Len(t, sessions.admittedStarts(), 1)
 }
 
-// A request answered with its Subject's existing Work returns that Work on
+// A request answered with its Work Key's existing Work returns that Work on
 // every repeat, and never asks its Computer.
 func TestAReusedWorkAnswersEveryRepeatOfItsRequest(t *testing.T) {
 	computer := &deskLedger{}
 	_, handler, request := creationFixture(t, computer)
-	request.Subject = domain.WorkSubject{Kind: "case", ID: "case-1"}
+	request.WorkCaller, request.WorkKey = domain.WorkCaller{Kind: "project", ID: "project-a"}, domain.WorkKey{Kind: "case", ID: "case-1"}
 	id, err := handler.Handle(t.Context(), request)
 	require.NoError(t, err)
 

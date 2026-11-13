@@ -8,13 +8,14 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// AdmitCallerCreation refuses a trusted caller's creation of a Standalone Work,
-// which Agent alone starts.
-func (a *Application) AdmitCallerCreation(subject domain.WorkSubject, projectID string) error {
-	return domain.AdmitCallerCreation(subject, strings.TrimSpace(projectID))
+// AdmitExtensionCreation refuses a trusted service's creation of a Work under a
+// Work Caller of a kind Agent defines: such a Work is a Standalone Work, which
+// only its owner starts through the public Work API.
+func (a *Application) AdmitExtensionCreation(caller domain.WorkCaller) error {
+	return domain.AdmitExtensionCreation(caller)
 }
 
-// AdmitDelegatedControl refuses a trusted caller acting on its owner's behalf
+// AdmitDelegatedControl refuses a trusted service acting on its owner's behalf
 // on a Standalone Work. An unknown Work is left to the command, which reports it.
 func (a *Application) AdmitDelegatedControl(ctx context.Context, workID string) error {
 	if strings.TrimSpace(workID) == "" {

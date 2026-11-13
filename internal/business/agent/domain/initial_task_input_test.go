@@ -14,7 +14,7 @@ func workWithInitialTaskInput(t *testing.T, input *domain.InitialTaskInput) *dom
 	t.Helper()
 	agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "employee"}})
 	require.NoError(t, err)
-	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", ID: uuid.Must(uuid.NewV7()).String(),
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "owner"}, ID: uuid.Must(uuid.NewV7()).String(),
 		AgentID: agent.ID, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 		RepresentedPerson: "user-home", WorkLayout: domain.DefaultWorkLayout(), InitialTaskInput: input,
 	}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})

@@ -106,15 +106,20 @@ func TestManagedEnvironmentHoldsNoMountsVaultHomeOrPlatformCredentials(t *testin
 	require.ErrorIs(t, err, domain.ErrExecutionRequest, "a Managed start names its Computer")
 }
 
-// A Work of a Project on a Managed Computer mounts no Directory: its
-// environment names its Project, from which the core plugin points it to
-// the platform Connector's tools, and sets no TALGENT_KNOWLEDGE_ROOT.
-func TestAManagedWorkOfAProjectNamesItsProjectAndNoKnowledgeRoot(t *testing.T) {
+// An Extension Work on a Managed Computer mounts no Directory: its
+// environment names its Work Caller, from which its extension's plugin points
+// it to the platform Connector's tools, and sets no TALGENT_KNOWLEDGE_ROOT. A
+// Standalone Work names none.
+func TestAManagedExtensionWorkNamesItsWorkCallerAndNoKnowledgeRoot(t *testing.T) {
 	input := managedRequest()
-	input.ProjectID = "project"
+	input.WorkCaller = domain.WorkCaller{Kind: "project", ID: "p1"}
 	spec, err := managedSpecificationFor(input, fixtureModels(), "execd-token")
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"TALGENT_WORK_ID": "session", "DISABLE_AUTOUPDATER": "1", "TALGENT_PROJECT_ID": "project"}, spec.Environment)
+	require.Equal(t, map[string]string{"TALGENT_WORK_ID": "session", "DISABLE_AUTOUPDATER": "1", "TALGENT_WORK_CALLER": "project:p1"}, spec.Environment)
+	input.WorkCaller = domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "owner"}
+	spec, err = managedSpecificationFor(input, fixtureModels(), "execd-token")
+	require.NoError(t, err)
+	require.NotContains(t, spec.Environment, "TALGENT_WORK_CALLER")
 }
 
 func TestManagedLaunchKeepsEverythingInsideTheWorkRoot(t *testing.T) {

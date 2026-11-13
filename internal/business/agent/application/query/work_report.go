@@ -30,11 +30,11 @@ type WorkHistory struct {
 	Current            *WorkStateFact // Live persisted state; never used for a past period.
 }
 
-// WorkReportScope selects the reported Works by Project and the definition's
-// opaque purpose; the caller authorizes that scope.
+// WorkReportScope selects the reported Works by Work Caller and the
+// definition's opaque purpose; the trusted service authorizes that scope.
 type WorkReportScope struct {
-	ProjectID string
-	Purpose   string
+	WorkCaller domain.WorkCaller
+	Purpose    string
 }
 type GetWorkReport struct {
 	Scope  WorkReportScope
@@ -56,7 +56,7 @@ type WorkPeriodReport struct {
 	Buckets                          []WorkReportBucket
 	States, Owners                   []WorkDistribution
 	// EligibleWorkIDs are the current period's Works a caller may classify by
-	// its own facts, such as the status of their Subjects.
+	// its own facts, such as the status of what their Work Keys name.
 	EligibleWorkIDs []string
 }
 type WorkReport struct {
@@ -75,7 +75,7 @@ func NewGetWorkReportHandler(reader WorkQueryRepository, now func() time.Time) *
 
 // Handle reports Works for a trusted caller, which authorizes its own scope.
 func (h *GetWorkReportHandler) Handle(ctx context.Context, input GetWorkReport) (WorkReport, error) {
-	if strings.TrimSpace(input.Scope.ProjectID) == "" {
+	if input.Scope.WorkCaller.Validate() != nil {
 		return WorkReport{}, domain.ErrInvalidWork
 	}
 	var step time.Duration

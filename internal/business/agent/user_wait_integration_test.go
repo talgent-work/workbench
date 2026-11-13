@@ -92,7 +92,7 @@ func testModuleProcessRecovery(t *testing.T, loseReadiness bool) {
 	registry, _, stop := start(false)
 	definitionID, err := registry.CreateAgentDefinition(ctx, application.CreateAgentDefinition{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: "owner"}})
 	require.NoError(t, err)
-	id, err := registry.Commands.CreateWork.Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definitionID})
+	id, err := registry.Commands.CreateWork.Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: definitionID})
 	require.NoError(t, err)
 	ref := id
 	runs.realize(t, ctx, id)

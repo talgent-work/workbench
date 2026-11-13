@@ -3,6 +3,7 @@
 package agent_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -65,7 +66,7 @@ type seededWork struct {
 	execution *domain.AgentExecution
 }
 
-// seedWork stores the definition's Work of the seed's Subject in the seed's
+// seedWork stores the definition's Work of the seed's Work Key in the seed's
 // state, with the AgentExecution of its current start, through the Agent
 // repositories: the Work is inserted as its creation commits it, Starting on a
 // seated Desk of the test Cloud, and its row then updated to the state's facts.
@@ -79,7 +80,7 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	builtIns, err := domain.NewBuiltInPlugins(defaultBuiltIns.Platform, nil)
 	require.NoError(t, err)
 	capabilities, err := command.ResolveStartupCapabilities(ctx, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), workOwner, domain.StartupCapabilityInput{
-		BasePrompt: definition.Capabilities.Prompt, RequiredPlugins: builtIns.ComposeRequiredPlugins(workProject, definition.Capabilities.RequiredPlugins, nil), DefaultStartupAgent: definition.WorkDefaults.StartupAgent,
+		BasePrompt: definition.Capabilities.Prompt, RequiredPlugins: builtIns.ComposeRequiredPlugins(domain.WorkCaller{Kind: "project", ID: workProject}, definition.Capabilities.RequiredPlugins, nil), DefaultStartupAgent: definition.WorkDefaults.StartupAgent,
 		Prompt: &workPrompt, StartupAgent: &workStartupAgent,
 	})
 	require.NoError(t, err)
@@ -87,7 +88,7 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	admission := domain.StartAdmission{AdmittedAt: now, AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Soul: definition.Soul,
 		Seat: domain.ComputerSeat{ComputerID: cloud.ID, Kind: domain.ComputerCloud, DeskID: uuid.NewString()}}
 	work, created, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: workOwner, AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: definition.RepresentedPerson()},
-		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, Subject: domain.WorkSubject{Kind: "case", ID: seed.subject}, ProjectID: workProject,
+		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, WorkCaller: domain.WorkCaller{Kind: "project", ID: workProject}, WorkKey: domain.WorkKey{Kind: "case", ID: strings.ReplaceAll(seed.subject, " ", "-")},
 		Capabilities: capabilities, TraceAttributes: definition.WorkTraceAttributes(nil), Admission: admission}, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	require.True(t, created)

@@ -10,7 +10,7 @@ import (
 
 // ErrInvalidWorkLayout means a Work Layout lacks a root, has two mounts at
 // one path, a mount outside its roots, a writable mount following the
-// Subject, or an invalid Locator.
+// File Home, or an invalid Locator.
 var ErrInvalidWorkLayout = fmt.Errorf("%w: invalid Work Layout", ErrInvalidAgentDefinition)
 
 // The roots of every Work Layout (Layout roots): the Work's HOME and its
@@ -43,7 +43,8 @@ type WorkLayout struct {
 // DefaultWorkLayout is the product default every new AgentDefinition starts
 // with (Default layout): its roots as NAS Work Directories following the
 // Work, the Harness state following the AgentDefinition, and read-only inputs,
-// following the Subject else the Work, and Project knowledge on JuiceFS.
+// following the File Home else the Work, and the Work Caller's knowledge on
+// JuiceFS.
 func DefaultWorkLayout() WorkLayout {
 	permanent := func(condition LocatorCondition, name string) DirectoryLocator {
 		return DirectoryLocator{Conditions: []LocatorCondition{condition}, Name: name, Backend: BackendJuiceFS, Lifetime: LifetimePermanent}
@@ -52,8 +53,8 @@ func DefaultWorkLayout() WorkLayout {
 		{Path: HomePath, Locators: []DirectoryLocator{workDirectory("home")}},
 		{Path: WorkspacePath, Locators: []DirectoryLocator{workDirectory("workspace")}},
 		{HarnessState: true, Locators: []DirectoryLocator{{Conditions: []LocatorCondition{ConditionAgentDefinition}, Backend: BackendNAS, Lifetime: LifetimePermanent}}},
-		{Path: inputsPath, ReadOnly: true, Locators: []DirectoryLocator{permanent(ConditionSubject, "inputs"), permanent(ConditionWork, "inputs")}},
-		{Path: WorkspacePath + "/knowledge", ReadOnly: true, Locators: []DirectoryLocator{permanent(ConditionProject, "knowledge")}},
+		{Path: inputsPath, ReadOnly: true, Locators: []DirectoryLocator{permanent(ConditionFileHome, "inputs"), permanent(ConditionWork, "inputs")}},
+		{Path: WorkspacePath + "/knowledge", ReadOnly: true, Locators: []DirectoryLocator{permanent(ConditionWorkCaller, "knowledge")}},
 	}}
 }
 
@@ -78,8 +79,8 @@ func (l WorkLayout) Clone() WorkLayout {
 // Validate is checked whenever its AgentDefinition is saved: both roots
 // read-write as NAS Work Directories following the Work, every other path
 // beneath a root, one mount per path (One mount per path), at most one
-// Harness state mount, valid Locators, and every mount following the Subject
-// read-only (Subject mounts read-only).
+// Harness state mount, valid Locators, and every mount following the File
+// Home read-only (File Home mounts read-only).
 func (l WorkLayout) Validate() error {
 	paths := make([]string, 0, len(l.Mounts))
 	harnessStates := 0
@@ -141,8 +142,8 @@ func (m LayoutMount) validate() error {
 }
 
 func (m LayoutMount) validateAccess() error {
-	if !m.ReadOnly && slices.ContainsFunc(m.Locators, func(l DirectoryLocator) bool { return l.follows(ConditionSubject) }) {
-		return fmt.Errorf("%w: a mount following the Subject is read-only", ErrInvalidWorkLayout)
+	if !m.ReadOnly && slices.ContainsFunc(m.Locators, func(l DirectoryLocator) bool { return l.follows(ConditionFileHome) }) {
+		return fmt.Errorf("%w: a mount following the File Home is read-only", ErrInvalidWorkLayout)
 	}
 	return nil
 }

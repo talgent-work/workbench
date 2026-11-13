@@ -15,7 +15,7 @@ func TestWorkRetainsRepositoryIdentityAndBranchAcrossExecution(t *testing.T) {
 	for _, restart := range []bool{false, true} {
 		t.Run(map[bool]string{false: "resume", true: "restart"}[restart], func(t *testing.T) {
 			fact := repositoryFact()
-			input := domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(),
+			input := domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(),
 				WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
 				RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(),
 				RepositoryInput: domain.WorkRepositoryInput{OwnerID: "owner", WorkBranch: "talgent/work", Available: []domain.AccessibleRepository{fact},
@@ -71,7 +71,7 @@ func TestWorkRejectsInvalidRepositorySelectionBeforeExecution(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			id := uuid.NewString()
-			work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: id,
+			work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: id,
 				WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
 				RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(), RepositoryInput: selection,
 			}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: id, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})

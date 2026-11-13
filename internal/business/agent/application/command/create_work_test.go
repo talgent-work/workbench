@@ -23,7 +23,7 @@ func TestSessionUsesAuthorizedReferencesAndCapturedCapabilities(t *testing.T) {
 	require.NoError(t, err)
 	store := &sessionStore{}
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, store.preparation(agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
-	id, err := handler.Handle(context.Background(), command.CreateWork{RequestID: uuid.NewString(), SubjectID: "caller", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "case-a"}, ProjectID: "project"})
+	id, err := handler.Handle(context.Background(), command.CreateWork{RequestID: uuid.NewString(), SubjectID: "caller", AgentID: agent.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case-a"}})
 	require.NoError(t, err)
 	require.Equal(t, id, store.session.ID)
 	require.Equal(t, "caller", store.subject)
@@ -44,7 +44,7 @@ func TestWorkModelDefaultAndSelectionApplyToEveryPurpose(t *testing.T) {
 				})
 				require.NoError(t, err)
 				store := &sessionStore{}
-				input := command.CreateWork{RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkModel: selected, Subject: domain.WorkSubject{Kind: "project", ID: "project"}, ProjectID: "project"}
+				input := command.CreateWork{RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkModel: selected, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "project", ID: "project"}}
 				handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, DefaultThinkingLevel: "high"}, agentquery.WorkModelOption{Selection: explicit, DefaultThinkingLevel: "low"}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, store.preparation(agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, DefaultThinkingLevel: "high"}, agentquery.WorkModelOption{Selection: explicit, DefaultThinkingLevel: "low"})))
 				id, err := handler.Handle(t.Context(), input)
 				require.NoError(t, err)
@@ -121,8 +121,8 @@ func (s *sessionStore) LocateWork(_ context.Context, workID string) (*domain.Age
 	return nil, domain.ErrWorkNotFound
 }
 
-func (s *sessionStore) FindBySubject(_ context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
-	if s.session != nil && s.session.AgentID == agentID && s.session.Subject == subject {
+func (s *sessionStore) FindByWorkKey(_ context.Context, agentID string, key domain.WorkKey) (*domain.AgentWork, error) {
+	if s.session != nil && s.session.AgentID == agentID && s.session.WorkKey == key {
 		return s.session, nil
 	}
 	return nil, nil
@@ -141,13 +141,13 @@ func TestWorkCreationRejectsUnavailableModelBeforeRegistration(t *testing.T) {
 			require.NoError(t, err)
 			store := &sessionStore{}
 			handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, store.preparation(agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
-			_, err = handler.Handle(t.Context(), command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkModel: domain.WorkModelSelection{ConfigurationID: "unavailable"}})
+			_, err = handler.Handle(t.Context(), command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkModel: domain.WorkModelSelection{ConfigurationID: "unavailable"}})
 			require.ErrorIs(t, err, domain.ErrModelConfigurationWithdrawn)
-			_, err = handler.Handle(t.Context(), command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", AgentID: agent.ID, SubjectID: "caller", WorkModel: domain.WorkModelSelection{ConfigurationID: "unavailable"}, InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/TAL-1", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Do the work"}, ThinkingLevel: "high"}})
+			_, err = handler.Handle(t.Context(), command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, AgentID: agent.ID, SubjectID: "caller", WorkModel: domain.WorkModelSelection{ConfigurationID: "unavailable"}, InitialExecution: &command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/TAL-1", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Do the work"}, ThinkingLevel: "high"}})
 			require.ErrorIs(t, err, domain.ErrModelConfigurationWithdrawn, "the withdrawal is the reason even when a thinking level is requested")
 			require.Nil(t, store.session, "a Model Configuration that is not provided establishes no Work")
 			down := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), computersDown{}, store.preparation(agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
-			_, err = down.Handle(t.Context(), command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkModel: domain.WorkModelSelection{ConfigurationID: "unavailable"}})
+			_, err = down.Handle(t.Context(), command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller", WorkModel: domain.WorkModelSelection{ConfigurationID: "unavailable"}})
 			require.ErrorIs(t, err, domain.ErrModelConfigurationWithdrawn, "the withdrawal is the reason even while Computer is unavailable")
 		})
 	}
@@ -167,7 +167,7 @@ func TestInitialThinkingLevelUsesRetainedWorkModel(t *testing.T) {
 	require.NoError(t, err)
 	store := &sessionStore{}
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, ThinkingLevels: []string{"low"}}, agentquery.WorkModelOption{Selection: other, ThinkingLevels: []string{"high"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, store.preparation(agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, ThinkingLevels: []string{"low"}}, agentquery.WorkModelOption{Selection: other, ThinkingLevels: []string{"high"}})))
-	input := command.CreateWork{AgentID: agent.ID, SubjectID: "caller", Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", InitialExecution: &command.PrepareWorkExecution{RequestID: "01940000-0000-7000-8000-000000000370", WorkBranch: "talgent/" + "TAL-370", Input: command.ExecutionInput{ID: "01940000-0000-7000-8000-000000000371", Text: "Do the work"}, ThinkingLevel: "high"}}
+	input := command.CreateWork{AgentID: agent.ID, SubjectID: "caller", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, InitialExecution: &command.PrepareWorkExecution{RequestID: "01940000-0000-7000-8000-000000000370", WorkBranch: "talgent/" + "TAL-370", Input: command.ExecutionInput{ID: "01940000-0000-7000-8000-000000000371", Text: "Do the work"}, ThinkingLevel: "high"}}
 	_, err = handler.Handle(t.Context(), input)
 	require.ErrorIs(t, err, domain.ErrInvalidWork)
 	require.Nil(t, store.session)
@@ -213,7 +213,7 @@ func TestReusedWorkKeepsItsLocatedLayoutAndHarness(t *testing.T) {
 	store := &sessionStore{}
 	configured := domain.WorkModelSelection{ConfigurationID: "deployment-default"}
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, DefaultThinkingLevel: "high"}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, store.preparation(agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: configured, DefaultThinkingLevel: "high"})))
-	input := command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller"}
+	input := command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), AgentID: agent.ID, SubjectID: "caller"}
 	id, err := handler.Handle(t.Context(), input)
 	require.NoError(t, err)
 	first := store.session.LocatedLayout.Clone()
@@ -231,8 +231,8 @@ func TestReusedWorkKeepsItsLocatedLayoutAndHarness(t *testing.T) {
 
 // Exercise the application entry through the real Work to the execution port,
 // so this contract does not depend on which internal step supplies attribution.
-func TestWorkDerivesCommonTraceAttributionForEverySubject(t *testing.T) {
-	for _, kind := range []domain.SubjectKind{"case", "project", "review"} {
+func TestWorkDerivesCommonTraceAttributionForEveryWorkKey(t *testing.T) {
+	for _, kind := range []string{"case", "project", "review"} {
 		for _, extensions := range []bool{false, true} {
 			name := string(kind) + "/without-extensions"
 			if extensions {
@@ -243,10 +243,10 @@ func TestWorkDerivesCommonTraceAttributionForEverySubject(t *testing.T) {
 					UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"}})
 				require.NoError(t, err)
 				request := command.CreateWork{RequestID: uuid.NewString(), SubjectID: "caller", AgentID: agent.ID,
-					Subject: domain.WorkSubject{Kind: kind, ID: "subject-1"}, ProjectID: "project-a"}
+					WorkCaller: domain.WorkCaller{Kind: "project", ID: "project-a"}, WorkKey: domain.WorkKey{Kind: kind, ID: "subject-1"}}
 				if extensions {
 					request.TraceAttributes = map[string]string{
-						"talgent.project_id": "wrong-project", "talgent.agent_id": "wrong-agent",
+						"talgent.work_caller": "project:wrong", "talgent.work_key": "case:wrong", "talgent.agent_id": "wrong-agent",
 						"talgent.agent_work_id": "wrong-work", "talgent.runtime_purpose": "wrong-purpose",
 						"talgent.subject_kind": "wrong-kind", "talgent.subject_id": "wrong-subject",
 						"talgent.case_id": "wrong-case", "domain.case_id": "case-1", "talgent.user_id": "explicit-domain-user",
@@ -262,11 +262,12 @@ func TestWorkDerivesCommonTraceAttributionForEverySubject(t *testing.T) {
 				attributes := store.session.LaunchSpecification().TraceAttributes
 				require.Equal(t, id, attributes["talgent.agent_work_id"])
 				require.Equal(t, agent.ID, attributes["talgent.agent_id"])
-				require.Equal(t, "project-a", attributes["talgent.project_id"])
-				require.Equal(t, request.TraceAttributes["talgent.subject_kind"], attributes["talgent.subject_kind"], "the Subject is not Agent's attribute")
+				require.Equal(t, "project:project-a", attributes["talgent.work_caller"])
+				require.Equal(t, kind+":subject-1", attributes["talgent.work_key"])
+				require.NotContains(t, attributes, "talgent.project_id", "the Work Caller replaced the Project attribute")
 				require.Equal(t, "project_coordination", attributes["talgent.runtime_purpose"])
-				// Agent derives no caller attribute from the Subject; the caller
-				// supplies its own, such as talgent.case_id.
+				// Agent derives no extension attribute from the Work Key; the
+				// extension supplies its own, such as talgent.case_id.
 				if extensions {
 					require.Equal(t, "wrong-case", attributes["talgent.case_id"])
 				} else {
@@ -314,7 +315,7 @@ func TestPersonsAgentAttributesItsWorksToThePerson(t *testing.T) {
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store,
 		agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}}),
 		commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{}, store.preparation(agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "default"}})))
-	_, err = handler.Handle(t.Context(), command.CreateWork{RequestID: uuid.NewString(), StartingUserID: "employee", SubjectID: "employee", AgentID: agent.ID,
+	_, err = handler.Handle(t.Context(), command.CreateWork{RequestID: uuid.NewString(), StartingUserID: "employee", SubjectID: "employee", AgentID: agent.ID, WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "employee"},
 		TraceAttributes: map[string]string{"talgent.user_id": "someone-else"}})
 	require.NoError(t, err)
 	require.Equal(t, "employee", store.session.LaunchSpecification().TraceAttributes["talgent.user_id"])
@@ -327,7 +328,7 @@ func TestAChosenComputerSeatsTheWork(t *testing.T) {
 	store := &sessionStore{}
 	chosen := "01950000-0000-7000-8000-00000000c0de"
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}}), commandtest.StartCatalog(emptyPluginCatalog{}, authorizationcatalogtest.Empty{}), capacityCheck{others: []command.UsableComputer{{ID: chosen, Cloud: true}}}, store.preparation(agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})))
-	_, err = handler.Handle(t.Context(), command.CreateWork{RequestID: uuid.NewString(), SubjectID: "caller", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "case-a"}, ProjectID: "project", ComputerID: chosen})
+	_, err = handler.Handle(t.Context(), command.CreateWork{RequestID: uuid.NewString(), SubjectID: "caller", AgentID: agent.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case-a"}, ComputerID: chosen})
 	require.NoError(t, err)
 	require.Equal(t, chosen, store.session.ComputerID)
 }

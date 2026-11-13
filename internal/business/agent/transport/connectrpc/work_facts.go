@@ -32,7 +32,7 @@ func (h *WorkFactsHandler) ListWorks(ctx context.Context, request *agentprivatev
 	}
 	msg := request
 	works, err := h.application.Queries.ListWorks.Handle(ctx, query.ListWorks{Filter: query.WorkListFilter{
-		ProjectID: strings.TrimSpace(msg.GetProjectId()), WorkIDs: msg.GetWorkIds(), Purpose: strings.TrimSpace(msg.GetPurpose()), AgentOwner: strings.TrimSpace(msg.GetAgentOwner()),
+		WorkCaller: optionalWorkCaller(msg.GetWorkCaller()), WorkKey: workKeyFromProto(msg.GetWorkKey()), WorkIDs: msg.GetWorkIds(), Purpose: strings.TrimSpace(msg.GetPurpose()), AgentOwner: strings.TrimSpace(msg.GetAgentOwner()),
 		AfterID: strings.TrimSpace(msg.GetAfter()), Limit: int(msg.GetLimit()), Recent: msg.GetRecent(), Archived: msg.Archived,
 	}})
 	if err != nil {
@@ -40,7 +40,7 @@ func (h *WorkFactsHandler) ListWorks(ctx context.Context, request *agentprivatev
 	}
 	response := &agentprivatev1.ListWorksResponse{}
 	for _, work := range works {
-		response.Works = append(response.Works, &agentprivatev1.WorkFacts{WorkId: work.WorkID, Subject: subjectToProto(work.Subject), ProjectId: work.ProjectID, AgentOwner: work.AgentOwner, StartedBy: work.StartedBy, State: work.State, StateReason: work.StateReason, ArchivePending: work.ArchivePending, Waiting: work.Waiting, DisconnectedSince: optionalTimestamp(work.DisconnectedSince), CreatedAt: timestamppb.New(work.CreatedAt), UpdatedAt: timestamppb.New(work.UpdatedAt)})
+		response.Works = append(response.Works, &agentprivatev1.WorkFacts{WorkId: work.WorkID, WorkCaller: workCallerToProto(work.WorkCaller), WorkKey: workKeyToProto(work.WorkKey), FileHome: fileHomeToProto(work.FileHome), AgentOwner: work.AgentOwner, StartedBy: work.StartedBy, State: work.State, StateReason: work.StateReason, ArchivePending: work.ArchivePending, Waiting: work.Waiting, DisconnectedSince: optionalTimestamp(work.DisconnectedSince), CreatedAt: timestamppb.New(work.CreatedAt), UpdatedAt: timestamppb.New(work.UpdatedAt)})
 	}
 	return response, nil
 }
@@ -55,7 +55,7 @@ func (h *WorkFactsHandler) GetWorkFacts(ctx context.Context, request *agentpriva
 		return nil, mapAgentError(err)
 	}
 	info := workViewToProto(value)
-	facts := &agentprivatev1.WorkFacts{WorkId: value.WorkID, Subject: subjectToProto(value.Subject), ProjectId: value.ProjectID, AgentOwner: value.AgentOwner, StartedBy: value.StartedBy, State: value.State, StateReason: value.StateReason, DiagnosticReason: value.DiagnosticReason,
+	facts := &agentprivatev1.WorkFacts{WorkId: value.WorkID, WorkCaller: workCallerToProto(value.WorkCaller), WorkKey: workKeyToProto(value.WorkKey), FileHome: fileHomeToProto(value.FileHome), AgentOwner: value.AgentOwner, StartedBy: value.StartedBy, State: value.State, StateReason: value.StateReason, DiagnosticReason: value.DiagnosticReason,
 		WorkProgress: info.WorkProgress, StartupProgress: info.StartupProgress, CreatedAt: info.CreatedAt, UpdatedAt: info.UpdatedAt, Waiting: info.Waiting, ArchivePending: value.ArchivePending, VisibilityPublic: value.Visibility.Public, DeskWaiting: value.DeskWaiting, DisconnectedSince: info.DisconnectedSince}
 	return &agentprivatev1.GetWorkFactsResponse{Work: facts}, nil
 }
@@ -71,7 +71,7 @@ func (h *WorkFactsHandler) GetWorkReport(ctx context.Context, request *agentpriv
 		}
 		end = value.AsTime()
 	}
-	report, err := h.application.Queries.GetWorkReport.Handle(ctx, query.GetWorkReport{Scope: query.WorkReportScope{ProjectID: strings.TrimSpace(request.GetProjectId()), Purpose: strings.TrimSpace(request.GetPurpose())}, Window: request.GetWindow(), End: end})
+	report, err := h.application.Queries.GetWorkReport.Handle(ctx, query.GetWorkReport{Scope: query.WorkReportScope{WorkCaller: workCallerFromProto(request.GetWorkCaller()), Purpose: strings.TrimSpace(request.GetPurpose())}, Window: request.GetWindow(), End: end})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}

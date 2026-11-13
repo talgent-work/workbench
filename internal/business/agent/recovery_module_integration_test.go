@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -92,7 +93,7 @@ func TestModuleRestartAdmitsNoResumeWithoutCaller(t *testing.T) {
 	client, stop := start(false)
 	created, err := client.CreateAgentDefinition(sessionControlRequest(ctx), &agentprivatev1.CreateAgentDefinitionRequest{Owners: []string{"employee"}, AgentName: "Fixture Agent", UsageScope: &agentprivatev1.UsageScope{Kind: "employee", Reference: "employee"}, Purpose: "work"})
 	require.NoError(t, err)
-	conversation, err := client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{SubjectId: "employee", AgentId: created.AgentId, RequestId: uuid.NewString(), Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: "case"}, ProjectId: "project"})
+	conversation, err := client.CreateWork(sessionControlRequest(ctx), &agentprivatev1.CreateWorkRequest{SubjectId: "employee", AgentId: created.AgentId, RequestId: uuid.NewString(), WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project"}, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: "case"}})
 	require.NoError(t, err)
 	// Complete the initial process before restarting the module.
 	workID := conversation.WorkId
@@ -170,14 +171,14 @@ func TestModuleRestartContinuesACommittedCreation(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, agents.Save(ctx, definition))
 	initial := command.PrepareWorkExecution{RequestID: uuid.NewString(), WorkBranch: "talgent/" + "TAL-342", Input: command.ExecutionInput{ID: uuid.NewString(), Text: "Recover retained explicit creation"}}
-	request := command.CreateWork{RequestID: initial.RequestID, SubjectID: "employee", AgentID: definition.ID, Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: uuid.NewString(), InitialExecution: &initial}
+	request := command.CreateWork{RequestID: initial.RequestID, SubjectID: "employee", AgentID: definition.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: uuid.NewString()}, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}, InitialExecution: &initial}
 	port := &sessionCommandRecorder{}
 	models := agentquery.NewModelConfigurations(agentquery.WorkModelOption{Selection: domain.WorkModelSelection{ConfigurationID: "deployment-default"}})
 	auth := access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners)
 	prepare := command.NewPrepareWorkExecutionHandler(sessions, auth, models)
 	_, err = command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, lostCreationAnswer{sessions}, auth, models, commandtest.StartCatalog(modulePluginCatalog{}, authorizationcatalogtest.Empty{}), computertest.Checked(moduleAvailableCapacity{}), prepare).Handle(ctx, request)
 	require.ErrorIs(t, err, errCreationAnswerLost)
-	committed, err := sessions.FindBySubject(ctx, definition.ID, request.Subject)
+	committed, err := sessions.FindByWorkKey(ctx, definition.ID, request.WorkKey)
 	require.NoError(t, err)
 	require.NotNil(t, committed, "the creation committed")
 	id := committed.ID

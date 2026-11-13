@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"go.uber.org/fx"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -175,17 +176,18 @@ func (m *lifecycleModule) restartWork(subject, workID string) error {
 	return err
 }
 
-// locate finds the definition's Work of the case Subject.
+// locate finds the definition's Work of the case Work Key within the
+// fixture's Work Caller.
 func (m *lifecycleModule) locate(agentID, subject string) *agentprivatev1.LocateWorkResponse {
 	m.t.Helper()
-	located, err := m.client.LocateWork(m.control(), &agentprivatev1.LocateWorkRequest{SubjectId: workOwner, AgentId: agentID, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}})
+	located, err := m.client.LocateWork(m.control(), &agentprivatev1.LocateWorkRequest{SubjectId: workOwner, AgentId: agentID, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: subject}, WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: workProject}})
 	require.NoError(m.t, err)
 	return located
 }
 
-// subjectCreation asks to create the definition's Work of the case Subject with the
+// subjectCreation asks to create the definition's Work of the case Work Key with the
 // fixture's capability differences.
 func subjectCreation(agentID, subject string) *agentprivatev1.CreateWorkRequest {
-	return &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: workOwner, AgentId: agentID, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: workProject,
+	return &agentprivatev1.CreateWorkRequest{RequestId: uuid.NewString(), SubjectId: workOwner, AgentId: agentID, WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: workProject}, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: subject},
 		CapabilityDifferences: &agentprivatev1.CapabilityDifferences{Prompt: &workPrompt, StartupAgent: &workStartupAgent}}
 }

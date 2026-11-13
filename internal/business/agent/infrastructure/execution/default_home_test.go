@@ -20,8 +20,8 @@ import (
 // serialization are real. Only definition lookup, Storage's grants and the
 // external OpenSandbox service are controlled; this verifies that each start
 // mounts the Directories its Work located by business identity: its own HOME
-// and Session Workspace, its definition's Harness state, its Subject's inputs
-// and its Project's knowledge.
+// and Session Workspace, its definition's Harness state, its File Home's
+// inputs, else its own, and its Work Caller's knowledge.
 func TestLocatedLayoutsReachTheNativeSandbox(t *testing.T) {
 	ctx := context.Background()
 	provider, _, fixture := sandboxClient(t)
@@ -33,16 +33,17 @@ func TestLocatedLayoutsReachTheNativeSandbox(t *testing.T) {
 		return definitions.value
 	}
 	type mounts map[string]string
-	submit := func(definition *domain.AgentDefinition, project, subject string) mounts {
+	// submit starts a Work in the name of a Project, with a File Home when
+	// home is not empty.
+	submit := func(definition *domain.AgentDefinition, project, home string) mounts {
 		t.Helper()
 		forward := &defaultHomeSubmission{provider: provider, root: t.TempDir()}
 		snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required()}, RequiredPlugins: definition.Capabilities.RequiredPlugins}, []domain.PluginRelease{{CatalogName: "talgent", Slug: "talgent", Source: "fixture", Version: "1", RetrievalRef: "fixture:runtime", NativeEntry: []byte(`{"name":"talgent","version":"1"}`)}})
 		require.NoError(t, err)
 		created, isNew, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: "owner", StartingUser: "owner",
 			Capabilities: snapshot, Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: definition.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
-			WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"},
-			Subject:   domain.WorkSubject{Kind: "case", ID: subject},
-			ProjectID: project,
+			WorkModel:  domain.WorkModelSelection{ConfigurationID: "deployment-default"},
+			WorkCaller: domain.WorkCaller{Kind: "project", ID: project}, FileHome: fileHome(home),
 		}, domain.WorkCreationFacts{})
 		require.NoError(t, err)
 		require.True(t, isNew)
@@ -60,8 +61,12 @@ func TestLocatedLayoutsReachTheNativeSandbox(t *testing.T) {
 		require.Equal(t, directorySubPath(workDirectory(created.ID, "home")), result["/home/talgent"])
 		require.Equal(t, directorySubPath(workDirectory(created.ID, "workspace")), result["/workspace"])
 		require.Equal(t, directorySubPath(domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionAgentDefinition, Value: definition.ID}}, Name: "claude-code"}), result["/home/talgent/.claude"])
-		require.Equal(t, directorySubPath(domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:" + subject}}, Name: "inputs"}), result["/workspace/inputs"])
-		require.Equal(t, directorySubPath(domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionProject, Value: project}}, Name: "knowledge"}), result["/workspace/knowledge"])
+		inputsOwner := domain.OwnerFact{Condition: domain.ConditionWork, Value: created.ID}
+		if home != "" {
+			inputsOwner = domain.OwnerFact{Condition: domain.ConditionFileHome, Value: "case:" + home}
+		}
+		require.Equal(t, directorySubPath(domain.Directory{Owner: []domain.OwnerFact{inputsOwner}, Name: "inputs"}), result["/workspace/inputs"])
+		require.Equal(t, directorySubPath(domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWorkCaller, Value: "project:" + project}}, Name: "knowledge"}), result["/workspace/knowledge"])
 		return result
 	}
 
@@ -73,9 +78,18 @@ func TestLocatedLayoutsReachTheNativeSandbox(t *testing.T) {
 	require.Equal(t, first["/home/talgent/.claude"], second["/home/talgent/.claude"], "a definition's Works share its Harness state")
 	other := submit(ensure("employee", uuid.NewString(), "work"), "project-a", "case-a")
 	require.NotEqual(t, first["/home/talgent/.claude"], other["/home/talgent/.claude"])
-	require.Equal(t, first["/workspace/inputs"], other["/workspace/inputs"], "Works of one Subject read its inputs")
+	require.Equal(t, first["/workspace/inputs"], other["/workspace/inputs"], "Works of one File Home read its inputs")
+	homeless := submit(employee, "project-a", "")
+	require.NotEqual(t, first["/workspace/inputs"], homeless["/workspace/inputs"], "a Work without a File Home reads its own inputs")
 	coordination := submit(ensure("project", "project-a", "project_coordination"), "project-a", "case-c")
 	require.Equal(t, first["/workspace/knowledge"], coordination["/workspace/knowledge"], "Works of one Project read its knowledge")
+}
+
+func fileHome(id string) domain.FileHome {
+	if id == "" {
+		return domain.FileHome{}
+	}
+	return domain.FileHome{Kind: "case", ID: id}
 }
 
 func workDirectory(workID, name string) domain.Directory {

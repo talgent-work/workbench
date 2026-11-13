@@ -20,6 +20,7 @@ import (
 	"github.com/talgent-work/contracts/gen/go/account/private/v1/accountprivatev1connect"
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
 	"github.com/talgent-work/contracts/gen/go/agent/private/v1/agentprivatev1connect"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
@@ -57,9 +58,10 @@ func absoluteHTTP(address string) bool {
 	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 
-// ProjectAccess asks the Project access decision on the reader's behalf.
+// ProjectAccess asks the Work Caller access decision for a Project on the
+// reader's behalf.
 type ProjectAccess struct {
-	client traceprivatev1connect.ProjectAccessServiceClient
+	client traceprivatev1connect.WorkCallerAccessServiceClient
 }
 
 var _ query.ProjectAccessPort = (*ProjectAccess)(nil)
@@ -74,18 +76,18 @@ func NewProjectAccess(client *http.Client, cfg Config) (query.ProjectAccessPort,
 		return nil, errors.New("trace: Project access address and HTTP client are required")
 	}
 	address := strings.TrimRight(strings.TrimSpace(cfg.ProjectAccessAddress), "/")
-	return &ProjectAccess{client: traceprivatev1connect.NewProjectAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0))))}, nil
+	return &ProjectAccess{client: traceprivatev1connect.NewWorkCallerAccessServiceClient(connect.NewClient(connecthttp.NewTransport(client, address, connecthttp.WithReadMaxBytes(0))))}, nil
 }
 
 func (a *ProjectAccess) AuthorizeProjectReader(ctx context.Context, readerID, projectID string) error {
 	if err := check(readerID, projectID); err != nil {
 		return err
 	}
-	req := &traceprivatev1.DecideProjectAccessRequest{ProjectId: projectID}
+	req := &traceprivatev1.DecideWorkCallerAccessRequest{WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: projectID}}
 	ctx, info := connect.NewClientContext(ctx)
 	info.RequestHeader().Set(authn.HeaderServiceID, "trace")
 	info.RequestHeader().Set(authn.HeaderDelegatedUserID, readerID)
-	if _, err := a.client.DecideProjectAccess(ctx, req); err != nil {
+	if _, err := a.client.DecideWorkCallerAccess(ctx, req); err != nil {
 		return authorityError(err)
 	}
 	return nil

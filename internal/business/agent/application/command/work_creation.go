@@ -10,7 +10,7 @@ import (
 )
 
 // create makes one attempt to establish the request's Work: it reuses the
-// definition's Work for the request's Subject, or derives a new Work and its
+// definition's Work for the request's Work Key, or derives a new Work and its
 // Desk from the request identity, asks the Computer for admission and
 // commits the Work in Starting. A failed commit leaves the Desk to a repeat,
 // which asks for the same Desk, and otherwise to the open-Desk
@@ -25,7 +25,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	}
 	// Reuse precedes all personal and catalog reads: reusing an existing Work
 	// cannot absorb new defaults, releases or capability choices.
-	if existing, err := h.subjectWork(ctx, agent, request.Subject); err != nil || existing != nil {
+	if existing, err := h.keyWork(ctx, agent, request); err != nil || existing != nil {
 		if err != nil {
 			return "", err
 		}
@@ -43,7 +43,7 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 		defaultsOwner = application
 	}
 	capabilities, err := resolveStartupCapabilities(ctx, h.catalog, catalogUser, defaultsOwner, domain.StartupCapabilityInput{
-		BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: h.builtIns.ComposeRequiredPlugins(request.ProjectID, agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.WorkDefaults.StartupAgent,
+		BasePrompt: agent.Capabilities.Prompt, RequiredPlugins: h.builtIns.ComposeRequiredPlugins(request.WorkCaller, agent.Capabilities.RequiredPlugins, request.CapabilityDifferences.RequiredPlugins), DefaultStartupAgent: agent.WorkDefaults.StartupAgent,
 		Prompt: request.CapabilityDifferences.Prompt, StartupAgent: request.CapabilityDifferences.StartupAgent, Plugins: request.CapabilityDifferences.Plugins,
 		ConnectorChoices: request.CapabilityDifferences.Connectors, ApplicationEndpoints: request.CapabilityDifferences.ApplicationEndpoints,
 	})
@@ -129,13 +129,13 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return "", err
 	}
-	work, established, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, HarnessChoice: harness, Subject: request.Subject, ProjectID: request.ProjectID, StartingUser: request.StartingUserID, AgentHarnessID: request.AgentHarness, Capabilities: capabilities, TraceAttributes: agent.WorkTraceAttributes(request.TraceAttributes), ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle, WorkLabels: request.WorkLabels, InitialTaskInput: initialInput}, facts)
+	work, established, err := agent.CreateWork(domain.WorkCreationRequest{StartedBy: request.SubjectID, RepositoryInput: repositories, AuthorizationInput: authorizationInput, WorkModel: model, ComputerManaged: managed, HarnessChoice: harness, WorkCaller: request.WorkCaller, WorkKey: request.WorkKey, FileHome: request.FileHome, StartingUser: request.StartingUserID, AgentHarnessID: request.AgentHarness, Capabilities: capabilities, TraceAttributes: agent.WorkTraceAttributes(request.TraceAttributes), ThinkingLevel: thinking, Admission: admission, StartingContext: request.StartingContext, WorkID: workID, DisplayTitle: request.DisplayTitle, WorkLabels: request.WorkLabels, InitialTaskInput: initialInput}, facts)
 	if err != nil {
 		h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
 		return "", err
 	}
 	if !established {
-		// Another creation established the Work for this Subject; its run
+		// Another creation established the Work for this Work Key; its run
 		// holds its own Desk, unless a repeat of this very request did.
 		if work.ID != workID {
 			h.computers.ReleaseUnusedDesk(ctx, admission.Seat.DeskID)
@@ -154,14 +154,14 @@ func (h *CreateWorkHandler) create(ctx context.Context, request CreateWork) (str
 	return work.ID, nil
 }
 
-// A competing creation may establish this Subject's Work after the first
+// A competing creation may establish this Work Key's Work after the first
 // lookup but before admission is refused. Reusing that Work needs no new
 // capacity.
 func (h *CreateWorkHandler) reuseAfterRejection(ctx context.Context, agent *domain.AgentDefinition, request CreateWork, rejection error) (string, error) {
 	if errors.Is(rejection, ErrDeskUnavailable) || errors.Is(rejection, ErrStartRequestConflict) {
 		return "", rejection
 	}
-	work, err := h.subjectWork(ctx, agent, request.Subject)
+	work, err := h.keyWork(ctx, agent, request)
 	if err != nil {
 		return "", err
 	}
@@ -171,29 +171,30 @@ func (h *CreateWorkHandler) reuseAfterRejection(ctx context.Context, agent *doma
 	return h.created(ctx, request, work.ID)
 }
 
-// subjectWork is the definition's Work of the Subject, nil when it has none
-// or the request names no Subject.
-func (h *CreateWorkHandler) subjectWork(ctx context.Context, agent *domain.AgentDefinition, subject domain.WorkSubject) (*domain.AgentWork, error) {
-	if !subject.Present() {
-		return agent.ReuseWork(subject, nil)
+// keyWork is the definition's Work of the request's Work Key, nil when it has
+// none or the request names no Work Key; a Work of another Work Caller or
+// File Home is refused (Mismatched reuse).
+func (h *CreateWorkHandler) keyWork(ctx context.Context, agent *domain.AgentDefinition, request CreateWork) (*domain.AgentWork, error) {
+	var found *domain.AgentWork
+	if request.WorkKey.Present() {
+		var err error
+		if found, err = h.sessions.FindByWorkKey(ctx, agent.ID, request.WorkKey); err != nil {
+			return nil, err
+		}
 	}
-	found, err := h.sessions.FindBySubject(ctx, agent.ID, subject)
-	if err != nil {
-		return nil, err
-	}
-	return agent.ReuseWork(subject, found)
+	return agent.ReuseWork(request.WorkCaller, request.WorkKey, request.FileHome, found)
 }
 
 // creationFacts loads the Works a creation supplies to its definition: the
-// Subject's Work and the source Work of a requested starting context.
+// Work Key's Work and the source Work of a requested starting context.
 func (h *CreateWorkHandler) creationFacts(ctx context.Context, agent *domain.AgentDefinition, request CreateWork) (domain.WorkCreationFacts, error) {
 	var facts domain.WorkCreationFacts
-	if request.Subject.Present() {
-		found, err := h.sessions.FindBySubject(ctx, agent.ID, request.Subject)
+	if request.WorkKey.Present() {
+		found, err := h.sessions.FindByWorkKey(ctx, agent.ID, request.WorkKey)
 		if err != nil {
 			return facts, err
 		}
-		facts.SubjectWork = found
+		facts.KeyWork = found
 	}
 	if source := request.StartingContext; source != nil && strings.TrimSpace(source.WorkID) != "" {
 		found, err := h.sessions.Get(ctx, strings.TrimSpace(source.WorkID))

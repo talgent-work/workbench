@@ -67,7 +67,7 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.Equal(t, "Answer with the conclusion first.", agent.Soul)
 
 	traceAttributes := map[string]string{"talgent.project_id": "project-1", "talgent.owner_id": "case"}
-	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, TraceAttributes: traceAttributes})
+	id, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, TraceAttributes: traceAttributes})
 	require.NoError(t, err)
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
@@ -154,8 +154,8 @@ type creationRaceLookup struct {
 	workers int32
 }
 
-func (p *creationRaceLookup) FindBySubject(ctx context.Context, agentID string, subject domain.WorkSubject) (*domain.AgentWork, error) {
-	session, err := p.AgentWorkRepository.FindBySubject(ctx, agentID, subject)
+func (p *creationRaceLookup) FindByWorkKey(ctx context.Context, agentID string, subject domain.WorkKey) (*domain.AgentWork, error) {
+	session, err := p.AgentWorkRepository.FindByWorkKey(ctx, agentID, subject)
 	if p.calls.Add(1) <= p.workers {
 		select {
 		case p.arrived <- struct{}{}:
@@ -187,7 +187,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	const workers = 8
 	lookup := &creationRaceLookup{AgentWorkRepository: sessions, workers: workers, arrived: make(chan struct{}, workers), release: make(chan struct{})}
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, lookup, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
-	request := command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "Work-A"}, ProjectID: "project-a", TraceAttributes: map[string]string{"talgent.project_id": "project-a"}}
+	request := command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: agent.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project-a"}, WorkKey: domain.WorkKey{Kind: "case", ID: "Work-A"}, TraceAttributes: map[string]string{"talgent.project_id": "project-a"}}
 	type result struct {
 		id  string
 		err error
@@ -270,7 +270,7 @@ func TestConcurrentSubjectCreationReturnsOneRetainedWork(t *testing.T) {
 	verifyConcurrentAdmission(t, db, originalID)
 	stopRetainedWork()
 	request.RequestID = uuid.NewString()
-	request.Subject, request.ProjectID = domain.WorkSubject{Kind: "case", ID: "Work-B"}, "project-b"
+	request.WorkKey, request.WorkCaller = domain.WorkKey{Kind: "case", ID: "Work-B"}, domain.WorkCaller{Kind: "project", ID: "project-b"}
 	request.CapabilityDifferences = domain.CapabilityDifferences{}
 	otherID, err := handler.Handle(ctx, request)
 	require.NoError(t, err)

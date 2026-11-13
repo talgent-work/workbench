@@ -36,7 +36,7 @@ func (r *WorkQueryRepository) ReadWorkHistory(ctx context.Context, scope query.W
 	q = q.Join("LEFT", []string{"agent_session_state_history", "h"}, "h.session_id=s.id AND h.deleted_at=0 AND h.observed_at < ?", before.UnixMilli()).
 		Select("s.id AS session_id,"+agentOwnerColumn+" AS agent_owner,s.created_at AS session_created_at,COALESCE(h.source_version,0) AS source_version,COALESCE(h.state,0) AS state,COALESCE(h.started,0) AS started,COALESCE(h.failed,0) AS failed,COALESCE(h.waiting,0) AS waiting,COALESCE(h.observed_at,0) AS observed_at,s.state AS current_state,s.version AS current_revision,s.harness_process AS current_process,s.failure_reason AS current_failure_reason").
 		Where("s.deleted_at=0 AND s.created_at<?", before.UnixMilli())
-	err := q.And("s.project_ref=?", scope.ProjectID).Asc("s.id", "h.source_version").Find(&rows)
+	err := q.And("s.work_caller_kind=? AND s.work_caller_id=?", scope.WorkCaller.Kind, scope.WorkCaller.ID).Asc("s.id", "h.source_version").Find(&rows)
 	if err != nil {
 		return nil, oops.With("operation", "agent.read_work_history").Wrap(err)
 	}

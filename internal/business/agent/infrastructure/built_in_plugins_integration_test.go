@@ -122,7 +122,7 @@ func (f builtInFixture) projectDefinition(t *testing.T, startupAgent string, req
 
 func (f builtInFixture) createProjectWork(definitionID string, callerRequired ...string) (string, error) {
 	return f.app.Commands.CreateWork.Handle(context.Background(), command.CreateWork{RequestID: uuid.NewString(), AgentID: definitionID, SubjectID: "owner",
-		Subject: domain.WorkSubject{Kind: "case", ID: uuid.NewString()}, ProjectID: "project", CapabilityDifferences: domain.CapabilityDifferences{RequiredPlugins: callerRequired}})
+		WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: uuid.NewString()}, CapabilityDifferences: domain.CapabilityDifferences{RequiredPlugins: callerRequired}})
 }
 
 func requiredOptions(options agentquery.WorkStartOptions) map[string]bool {
@@ -176,7 +176,7 @@ func TestAWorkOfAProjectLoadsTheProjectScope(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{platformPlugin: "release-default", projectPlugin: "release-default"}, f.retained(t, id))
 
-	options, err := f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob", ProjectID: "project"})
+	options, err := f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}})
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{platformPlugin: true, projectPlugin: true}, requiredOptions(options))
 }
@@ -190,7 +190,7 @@ func TestAnEmptyProjectScopeAddsNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{platformPlugin: "release-default"}, f.retained(t, id))
 
-	options, err := f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob", ProjectID: "project"})
+	options, err := f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}})
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{platformPlugin: true}, requiredOptions(options))
 
@@ -213,7 +213,7 @@ func TestASlugFromSeveralLayersIsLoadedOnce(t *testing.T) {
 	slices.Sort(slugs)
 	require.Equal(t, []string{"caller-plugin", projectPlugin, platformPlugin}, slugs)
 
-	options, err := f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob", ProjectID: "project", RequiredPlugins: []string{platformPlugin, projectPlugin}})
+	options, err := f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "bob", EmployeeID: "bob", WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, RequiredPlugins: []string{platformPlugin, projectPlugin}})
 	require.NoError(t, err)
 	require.Len(t, options.Plugins, 2)
 }
@@ -233,7 +233,7 @@ func TestStartOptionsOfAnExistingWorkReportItsBuiltInPluginsAsRequired(t *testin
 
 	id, err := f.works.Start(context.Background(), standalonework.StartWork{Caller: standalonework.Caller{UserID: "alice", DisplayName: "alice"}, RequestID: uuid.NewString(), InitialMessage: "Draft the plan"})
 	require.NoError(t, err)
-	options, err = f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "alice", WorkID: id, ProjectID: "project"})
+	options, err = f.app.GetWorkStartOptions(context.Background(), agentquery.WorkStartOptionsQuery{SubjectID: "alice", WorkID: id, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}})
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{platformPlugin: true, projectPlugin: false}, requiredOptions(options))
 }

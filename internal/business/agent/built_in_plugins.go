@@ -9,9 +9,10 @@ import (
 )
 
 // BuiltInPluginsConfig declares, by slug, the Plugins every Work of a scope
-// requires: the platform scope's every Work, the Project scope's every Work
-// of a Project. Neither a definition, a creating caller nor a person removes
-// them.
+// requires: the platform scope's every Work, and the scope configured as
+// `project` every Extension Work, whatever its Work Caller's kind, until the
+// deployment declares Built-in Plugins per Work Caller kind. Neither a
+// definition, a creating extension nor a person removes them.
 //
 // A blank entry names no Plugin and is left out, so that an entry a
 // deployment switch fills from its environment, such as

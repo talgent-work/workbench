@@ -33,7 +33,7 @@ type PrepareWorkExecution struct {
 }
 
 // PrepareWorkExecutionHandler answers a first-start request for a Work that
-// already exists: the repeat of its creation, or a reuse of its Subject's
+// already exists: the repeat of its creation, or a reuse of its Work Key's
 // Work. Initial execution is part of accepted creation, never a later
 // transition, so it starts nothing and returns the original Work: the
 // request's input and repository choices are creation-specific and apply

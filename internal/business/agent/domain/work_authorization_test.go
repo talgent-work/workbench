@@ -15,7 +15,7 @@ func TestWorkRetainsSelectedAuthorizationAcrossResumeAndRestart(t *testing.T) {
 	for _, restart := range []bool{false, true} {
 		t.Run(map[bool]string{false: "resume", true: "restart"}[restart], func(t *testing.T) {
 			githubID, otherID := uuid.NewString(), uuid.NewString()
-			input := domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(),
+			input := domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: uuid.NewString(),
 				WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
 				RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(),
 				AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: "owner",
@@ -62,7 +62,7 @@ func TestWorkRejectsAuthorizationFactsForAnotherHuman(t *testing.T) {
 		{Available: []domain.PersonalAuthorization{{OwnerID: "owner", AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}},
 	} {
 		id := uuid.NewString()
-		work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
+		work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 			ID: uuid.NewString(), AgentID: id,
 			WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
 			RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(), AuthorizationInput: input,
@@ -81,7 +81,7 @@ func TestWorkRejectsAuthorizationFactsForAnotherHuman(t *testing.T) {
 func TestApplicationWorkUsesTheApplicationsAuthorizations(t *testing.T) {
 	const application = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4e"
 	githubID, id := uuid.NewString(), uuid.NewString()
-	work, err := domain.NewAgentWork(domain.WorkInput{StartedBy: application, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
+	work, err := domain.NewAgentWork(domain.WorkInput{StartedBy: application, WorkCaller: domain.WorkCaller{Kind: domain.CallerKindApplication, ID: application}, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 		ID: uuid.NewString(), AgentID: id, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
 		OwningApplication: application, WorkLayout: domain.DefaultWorkLayout(),
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: application, Available: []domain.PersonalAuthorization{{OwnerID: application, AuthorizationID: githubID, Provider: "github", Service: "github"}}},
@@ -105,7 +105,7 @@ func TestApplicationWorkUsesTheApplicationsAuthorizations(t *testing.T) {
 func TestApplicationWorkRejectsAPersonsAuthorizations(t *testing.T) {
 	const application, owner = "0193a7c2-6f1e-7c2a-9b3d-5e8f1a2b3c4e", "0193a7c2-0000-7000-8000-00000000beef"
 	id := uuid.NewString()
-	_, err := domain.NewAgentWork(domain.WorkInput{StartedBy: application, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
+	_, err := domain.NewAgentWork(domain.WorkInput{StartedBy: application, WorkCaller: domain.WorkCaller{Kind: domain.CallerKindApplication, ID: application}, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 		ID: uuid.NewString(), AgentID: id, WorkModel: domain.WorkModelSelection{ConfigurationID: "default"},
 		OwningApplication: application, WorkLayout: domain.DefaultWorkLayout(),
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: owner, Available: []domain.PersonalAuthorization{{OwnerID: owner, AuthorizationID: uuid.NewString(), Provider: "github", Service: "github"}}},

@@ -3,10 +3,32 @@ package connectrpc
 import (
 	"time"
 
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	tracepublicv1 "github.com/talgent-work/contracts/gen/go/trace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/trace/application/query"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// projectWorkCallerKind is the Work Caller kind Observability's Project scope
+// still stands for until it reads Work Callers of every extension kind.
+const projectWorkCallerKind = "project"
+
+// projectScope is the Project scope a Work Caller names: its identity when it
+// is a Project, else none.
+func projectScope(caller *agentpublicv1.WorkCaller) string {
+	if caller.GetKind() != projectWorkCallerKind {
+		return ""
+	}
+	return caller.GetId()
+}
+
+// projectWorkCaller is the Work Caller of a Project scope; nil for none.
+func projectWorkCaller(projectID string) *agentpublicv1.WorkCaller {
+	if projectID == "" {
+		return nil
+	}
+	return &agentpublicv1.WorkCaller{Kind: projectWorkCallerKind, Id: projectID}
+}
 
 func spanToProto(sp *query.Span) *tracepublicv1.Span {
 	if sp == nil {
@@ -27,7 +49,7 @@ func spanToProto(sp *query.Span) *tracepublicv1.Span {
 		ResourceAttributes: publicSpanAttributes(sp.ResourceAttributes),
 		Category:           sp.Category, CallId: sp.CallID, NativeAgentId: sp.NativeAgentID, ParentNativeAgentId: sp.ParentNativeAgentID,
 		AgentWorkId:    sp.AgentWorkID,
-		ProjectId:      sp.ProjectID,
+		WorkCaller:     projectWorkCaller(sp.ProjectID),
 		RuntimePurpose: sp.RuntimePurpose,
 		OwnerContext:   sp.OwnerContext,
 		OwnerId:        sp.OwnerID,
@@ -65,7 +87,7 @@ func traceMetricOptionsFromPersonalRequest(req *tracepublicv1.GetPersonalTraceMe
 	}
 }
 
-func traceMetricOptionsFromProjectRequest(projectID string, req *tracepublicv1.GetProjectTraceMetricsRequest) query.TraceMetricOptions {
+func traceMetricOptionsFromProjectRequest(projectID string, req *tracepublicv1.GetWorkCallerTraceMetricsRequest) query.TraceMetricOptions {
 	return query.TraceMetricOptions{
 		ProjectID:   projectID,
 		StartTime:   protoTime(req.GetStartTime()),
@@ -86,13 +108,12 @@ func traceMetricsToProto(result *query.TraceMetricResult) ([]*tracepublicv1.Trac
 		buckets = append(buckets, &tracepublicv1.TraceMetricBucket{
 			BucketStart:    timestampOrNil(bucket.BucketStart),
 			BucketSeconds:  int32(bucket.BucketSeconds),
-			ProjectId:      bucket.ProjectID,
+			WorkCaller:     projectWorkCaller(bucket.ProjectID),
 			AgentWorkId:    bucket.AgentWorkID,
 			RuntimePurpose: bucket.RuntimePurpose,
 			OwnerContext:   bucket.OwnerContext,
 			OwnerId:        bucket.OwnerID,
 			UserId:         bucket.UserID,
-			ApplicationId:  bucket.ApplicationID,
 			MetricKind:     bucket.MetricKind,
 			Dimension:      bucket.Dimension,
 			Value:          bucket.Value,
@@ -130,9 +151,9 @@ func sessionTraceMetricsToProto(result *query.TraceMetricResult) *tracepublicv1.
 	return &tracepublicv1.GetSessionTraceMetricsResponse{Buckets: buckets, Totals: totals}
 }
 
-func projectTraceMetricsToProto(result *query.TraceMetricResult) *tracepublicv1.GetProjectTraceMetricsResponse {
+func projectTraceMetricsToProto(result *query.TraceMetricResult) *tracepublicv1.GetWorkCallerTraceMetricsResponse {
 	buckets, totals := traceMetricsToProto(result)
-	return &tracepublicv1.GetProjectTraceMetricsResponse{Buckets: buckets, Totals: totals}
+	return &tracepublicv1.GetWorkCallerTraceMetricsResponse{Buckets: buckets, Totals: totals}
 }
 
 func personalTraceMetricsToProto(result *query.TraceMetricResult) *tracepublicv1.GetPersonalTraceMetricsResponse {

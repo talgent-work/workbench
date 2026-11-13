@@ -113,7 +113,7 @@ func TestInterruptedResumeLeavesNothingHeld(t *testing.T) {
 				require.Equal(t, before.HarnessProcess, saved.HarnessProcess, "failed admission must preserve the completed process")
 			}
 			create := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, counted(sessions), auth, creationModels(), commandtest.StartCatalog(&creationCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels()))
-			_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID, Subject: domain.WorkSubject{Kind: "case", ID: "next-case"}, ProjectID: "project"})
+			_, err = create.Handle(ctx, command.CreateWork{RequestID: uuid.NewString(), SubjectID: "owner", AgentID: before.AgentID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "next-case"}})
 			require.NoError(t, err, "an uncommitted admission holds no concurrency")
 			require.Equal(t, expectedStarts+1, starts.Load())
 		})
@@ -133,7 +133,7 @@ func TestRecoveryReloadsStartupStopAndRemovalObligations(t *testing.T) {
 	require.NoError(t, agents.Save(ctx, agent))
 	run := newRuns(t, db, sessions)
 	originalRequest := uuid.Must(uuid.NewV7()).String()
-	sessionID, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: originalRequest, SubjectID: "owner", AgentID: agent.ID, Subject: domain.WorkSubject{Kind: "case", ID: "work"}, ProjectID: "project"})
+	sessionID, err := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agents, sessions, access.NewWorkAuthorizer(infrastructure.NewWorkQueryRepository(db).WorkOwners), creationModels(), commandtest.StartCatalog(&repositoryCatalog{}, creationConnections{}), computertest.Checked(startupAuthority{}), creationPreparation(db, creationModels())).Handle(ctx, command.CreateWork{RequestID: originalRequest, SubjectID: "owner", AgentID: agent.ID, WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "work"}})
 	require.NoError(t, err)
 	original := requireStartRequested(t, sessions, sessionID)
 	require.Equal(t, domain.ContextFresh, original.ContextMode)

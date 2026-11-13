@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // DirectoryUser is one person in Account's User Directory.
@@ -12,16 +14,16 @@ type DirectoryUser struct {
 }
 
 // WorkIdentityFacts are a Work's fixed facts, which Account copies into the
-// Work's agent Identity Token: its Project, AgentDefinition, purpose,
-// Subject, the person its Agent represents, the Application that owns it and
-// its Work Labels, each empty when the Work has none.
+// Work's agent Identity Token: its Work Caller, Work Key, File Home,
+// AgentDefinition, purpose, the person its Agent represents, the Application
+// that owns it and its Work Labels, each empty when the Work has none.
 type WorkIdentityFacts struct {
 	WorkID            string
-	ProjectID         string
+	WorkCaller        domain.WorkCaller
+	WorkKey           domain.WorkKey
+	FileHome          domain.FileHome
 	AgentID           string
 	Purpose           string
-	SubjectKind       string
-	SubjectID         string
 	RepresentedPerson string
 	OwningApplication string
 	// WorkLabels are the Work's Work Labels; nil for none.
@@ -46,8 +48,7 @@ type OwnedApplication struct {
 var ErrApplicationUnknown = errors.New("agent: account knows no such application")
 
 // AccountPort reaches Account: the User Directory, everyone in the
-// deployment's one enterprise, which a Work without a Project is shared
-// within; the Agent Account Command, which issues a Work's Identity Token;
+// deployment's one enterprise, which a Standalone Work is shared within; the Agent Account Command, which issues a Work's Identity Token;
 // and the Application Ownership Query.
 type AccountPort interface {
 	SearchUsers(ctx context.Context, query string, limit int) ([]DirectoryUser, error)

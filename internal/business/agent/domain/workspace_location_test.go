@@ -22,8 +22,8 @@ func TestACloudWorkIsLocatedInItsSessionWorkspace(t *testing.T) {
 	require.Equal(t, domain.WorkspaceLayout{
 		Workspace: domain.Directory{Owner: byWork, Name: "workspace"},
 		Mounts: []domain.MountedDirectory{
-			{Path: "inputs", Directory: domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionSubject, Value: "case:case"}}, Name: "inputs"}},
-			{Path: "knowledge", Directory: domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionProject, Value: "project"}}, Name: "knowledge"}},
+			{Path: "inputs", Directory: domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionFileHome, Value: "case:case"}}, Name: "inputs"}},
+			{Path: "knowledge", Directory: domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWorkCaller, Value: "project:project"}}, Name: "knowledge"}},
 		},
 	}, location.SessionWorkspace)
 }

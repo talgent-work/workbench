@@ -32,6 +32,15 @@ func (c Caller) Owner() string {
 	return c.UserID
 }
 
+// workCaller is the Work Caller of the owner's Standalone Works: the owner
+// itself, a person or an Application.
+func (c Caller) workCaller() domain.WorkCaller {
+	if c.ApplicationID != "" {
+		return domain.WorkCaller{Kind: domain.CallerKindApplication, ID: c.ApplicationID}
+	}
+	return domain.WorkCaller{Kind: domain.CallerKindPerson, ID: c.UserID}
+}
+
 // self is the person asking for themselves, for what only a person has: Work
 // Shares, repository choices and Share Links. An Application and an Agent are
 // no one here.

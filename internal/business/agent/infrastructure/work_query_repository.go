@@ -34,26 +34,24 @@ type workViewRow struct {
 	Version              int    `xorm:"version"`
 	EndRequest           string `xorm:"end_request"`
 	// InitialTaskInput is the Work's initial task input not handed off yet.
-	InitialTaskInput    string  `xorm:"initial_task_input"`
-	ThinkingLevel       string  `xorm:"thinking_level"`
-	RepositorySelection string  `xorm:"repository_selection"`
-	RepositoryCheckouts string  `xorm:"repository_checkouts"`
-	ID                  string  `xorm:"id"`
-	SubjectKind         *string `xorm:"subject_kind"`
-	SubjectID           *string `xorm:"subject_id"`
-	ProjectRef          string  `xorm:"project_ref"`
-	AgentOwner          string  `xorm:"agent_owner"`
-	StartedBy           string  `xorm:"started_by"`
-	State               uint8   `xorm:"state"`
-	HarnessProcess      string  `xorm:"harness_process"`
-	StopReason          string  `xorm:"stop_reason"`
-	DisconnectedSince   int64   `xorm:"disconnected_since"`
-	StopRequest         string  `xorm:"stop_request"`
-	Failure             string  `xorm:"failure_reason"`
-	CreatedAt           int64   `xorm:"created_at"`
-	UpdatedAt           int64   `xorm:"updated_at"`
-	VisibilityPublic    bool    `xorm:"visibility_public"`
-	ReachResumeDue      bool    `xorm:"reach_resume_due"`
+	InitialTaskInput    string          `xorm:"initial_task_input"`
+	ThinkingLevel       string          `xorm:"thinking_level"`
+	RepositorySelection string          `xorm:"repository_selection"`
+	RepositoryCheckouts string          `xorm:"repository_checkouts"`
+	ID                  string          `xorm:"id"`
+	WorkFacts           workFactColumns `xorm:"extends"`
+	AgentOwner          string          `xorm:"agent_owner"`
+	StartedBy           string          `xorm:"started_by"`
+	State               uint8           `xorm:"state"`
+	HarnessProcess      string          `xorm:"harness_process"`
+	StopReason          string          `xorm:"stop_reason"`
+	DisconnectedSince   int64           `xorm:"disconnected_since"`
+	StopRequest         string          `xorm:"stop_request"`
+	Failure             string          `xorm:"failure_reason"`
+	CreatedAt           int64           `xorm:"created_at"`
+	UpdatedAt           int64           `xorm:"updated_at"`
+	VisibilityPublic    bool            `xorm:"visibility_public"`
+	ReachResumeDue      bool            `xorm:"reach_resume_due"`
 	// ExecutionState is the lifecycle state of the Work's latest
 	// AgentExecution; empty before its start's execution begins.
 	ExecutionState string `xorm:"execution_state"`
@@ -71,7 +69,7 @@ func (r *WorkQueryRepository) GetWorkView(ctx context.Context, id string) (query
 		return query.WorkView{}, oops.Wrap(err)
 	}
 	defer tx.Rollback()
-	found, err := tx.SQL(`SELECT s.id,s.model_configuration_id,s.model_machine_login,s.permission_mode,s.computer_id,s.capabilities,s.subject_kind,s.subject_id,s.project_ref,
+	found, err := tx.SQL(`SELECT s.id,s.model_configuration_id,s.model_machine_login,s.permission_mode,s.computer_id,s.capabilities,`+workFactSelect+`,
  `+agentOwnerColumn+` AS agent_owner,s.started_by,s.state,s.harness_process,s.work_progress,
  s.stop_reason,s.disconnected_since,s.stop_request,s.failure_reason,s.created_at,s.updated_at,s.version,s.end_request,
  s.visibility_public,s.reach_resume_due,s.initial_task_input,s.thinking_level,s.repository_selection,s.repository_checkouts,
@@ -125,7 +123,7 @@ func workViewFromRow(row workViewRow) (query.WorkView, error) {
 	if err := json.Unmarshal([]byte(row.HarnessProcess), &process); err != nil {
 		return query.WorkView{}, oops.Wrap(err)
 	}
-	result := query.WorkView{Version: row.Version, WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, WorkID: row.ID, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, AgentOwner: row.AgentOwner, StartedBy: row.StartedBy, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic},
+	result := query.WorkView{Version: row.Version, WorkModel: domain.WorkModelSelection{ConfigurationID: row.ModelConfigurationID, MachineLogin: row.ModelMachineLogin}, WorkID: row.ID, WorkCaller: row.WorkFacts.caller(), WorkKey: row.WorkFacts.key(), FileHome: row.WorkFacts.home(), AgentOwner: row.AgentOwner, StartedBy: row.StartedBy, Visibility: domain.WorkVisibility{Public: row.VisibilityPublic},
 		PermissionMode: domain.PermissionMode(row.PermissionMode), ComputerID: row.ComputerID,
 		StateReason: row.StopReason, StopRequestID: row.StopRequest, DiagnosticReason: row.Failure, DisconnectedSince: fromUnixMillis(row.DisconnectedSince),
 		CreatedAt: time.UnixMilli(row.CreatedAt).UTC(), UpdatedAt: time.UnixMilli(row.UpdatedAt).UTC(), ResumeOnReconnection: row.ReachResumeDue}
@@ -252,16 +250,14 @@ func startupFromRows(row workViewRow, sandboxReady, recovering bool, executionUp
 
 func (r *WorkQueryRepository) GetWorkOrigin(ctx context.Context, sessionID string) (query.WorkOrigin, error) {
 	var row struct {
-		SessionID   string  `xorm:"session_id"`
-		AgentID     string  `xorm:"agent_id"`
-		Purpose     string  `xorm:"purpose"`
-		SubjectKind *string `xorm:"subject_kind"`
-		SubjectID   *string `xorm:"subject_id"`
-		ProjectRef  string  `xorm:"project_ref"`
-		StartedBy   string  `xorm:"started_by"`
-		CreatedAt   int64   `xorm:"created_at"`
+		SessionID string          `xorm:"session_id"`
+		AgentID   string          `xorm:"agent_id"`
+		Purpose   string          `xorm:"purpose"`
+		WorkFacts workFactColumns `xorm:"extends"`
+		StartedBy string          `xorm:"started_by"`
+		CreatedAt int64           `xorm:"created_at"`
 	}
-	found, err := r.db.Context(ctx).SQL(`SELECT s.id AS session_id, s.agent_id, a.purpose, s.subject_kind, s.subject_id, s.project_ref, s.started_by, s.created_at
+	found, err := r.db.Context(ctx).SQL(`SELECT s.id AS session_id, s.agent_id, a.purpose, `+workFactSelect+`, s.started_by, s.created_at
 FROM agent_session s JOIN agent_definition a ON a.id = s.agent_id AND a.deleted_at = 0
 WHERE s.id = ? AND s.deleted_at = 0`, sessionID).Get(&row)
 	if err != nil {
@@ -270,7 +266,7 @@ WHERE s.id = ? AND s.deleted_at = 0`, sessionID).Get(&row)
 	if !found {
 		return query.WorkOrigin{}, domain.ErrWorkNotFound
 	}
-	return query.WorkOrigin{WorkID: row.SessionID, AgentID: row.AgentID, Purpose: row.Purpose, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, StartedBy: row.StartedBy, StartedAt: time.UnixMilli(row.CreatedAt).UTC()}, nil
+	return query.WorkOrigin{WorkID: row.SessionID, AgentID: row.AgentID, Purpose: row.Purpose, WorkCaller: row.WorkFacts.caller(), WorkKey: row.WorkFacts.key(), FileHome: row.WorkFacts.home(), StartedBy: row.StartedBy, StartedAt: time.UnixMilli(row.CreatedAt).UTC()}, nil
 }
 
 // ListWorkOrigins reads the origins of the Works in one query; a Work that
@@ -281,28 +277,26 @@ func (r *WorkQueryRepository) ListWorkOrigins(ctx context.Context, sessionIDs []
 		return out, nil
 	}
 	var rows []struct {
-		SessionID   string  `xorm:"session_id"`
-		AgentID     string  `xorm:"agent_id"`
-		Purpose     string  `xorm:"purpose"`
-		SubjectKind *string `xorm:"subject_kind"`
-		SubjectID   *string `xorm:"subject_id"`
-		ProjectRef  string  `xorm:"project_ref"`
-		StartedBy   string  `xorm:"started_by"`
-		CreatedAt   int64   `xorm:"created_at"`
+		SessionID string          `xorm:"session_id"`
+		AgentID   string          `xorm:"agent_id"`
+		Purpose   string          `xorm:"purpose"`
+		WorkFacts workFactColumns `xorm:"extends"`
+		StartedBy string          `xorm:"started_by"`
+		CreatedAt int64           `xorm:"created_at"`
 	}
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(sessionIDs)), ",")
 	args := make([]any, len(sessionIDs))
 	for index, id := range sessionIDs {
 		args[index] = id
 	}
-	statement := `SELECT s.id AS session_id, s.agent_id, a.purpose, s.subject_kind, s.subject_id, s.project_ref, s.started_by, s.created_at
+	statement := `SELECT s.id AS session_id, s.agent_id, a.purpose, ` + workFactSelect + `, s.started_by, s.created_at
 FROM agent_session s JOIN agent_definition a ON a.id = s.agent_id AND a.deleted_at = 0
 WHERE s.deleted_at = 0 AND s.id IN (` + placeholders + `)`
 	if err := r.db.Context(ctx).SQL(statement, args...).Find(&rows); err != nil {
 		return nil, oops.With("operation", "agent.list_session_origins").Wrap(err)
 	}
 	for _, row := range rows {
-		out[row.SessionID] = query.WorkOrigin{WorkID: row.SessionID, AgentID: row.AgentID, Purpose: row.Purpose, Subject: subjectFromColumns(row.SubjectKind, row.SubjectID), ProjectID: row.ProjectRef, StartedBy: row.StartedBy, StartedAt: time.UnixMilli(row.CreatedAt).UTC()}
+		out[row.SessionID] = query.WorkOrigin{WorkID: row.SessionID, AgentID: row.AgentID, Purpose: row.Purpose, WorkCaller: row.WorkFacts.caller(), WorkKey: row.WorkFacts.key(), FileHome: row.WorkFacts.home(), StartedBy: row.StartedBy, StartedAt: time.UnixMilli(row.CreatedAt).UTC()}
 	}
 	return out, nil
 }

@@ -59,7 +59,7 @@ func (h *WorkAccessHandler) RevokeDepartedReader(ctx context.Context, request *a
 	if err := authenticateIntegration(h.token, requestHeader(ctx).Get("Authorization")); err != nil {
 		return nil, err
 	}
-	err := h.application.RevokeDepartedReader(ctx, application.RevokeDepartedReader{ReaderID: strings.TrimSpace(request.GetReaderId()), Scope: readerAdmissionFromProto(request.GetScope())})
+	err := h.application.RevokeDepartedReader(ctx, application.RevokeDepartedReader{ReaderID: strings.TrimSpace(request.GetReaderId()), Scope: readerAdmissionFromProto(request.GetDeparted())})
 	if err != nil {
 		return nil, mapAgentError(err)
 	}
@@ -67,9 +67,11 @@ func (h *WorkAccessHandler) RevokeDepartedReader(ctx context.Context, request *a
 }
 
 func readerAdmissionFromProto(value *agentprivatev1.ReaderAdmission) domain.ReaderAdmission {
-	// Only a Project admits readers; any other reference admits nothing.
-	if strings.TrimSpace(value.GetReference()) != "project" {
+	// Only a Work Caller of an extension-defined kind admits readers; any
+	// other admits nothing.
+	caller, err := domain.NewWorkCaller(value.GetWorkCaller().GetKind(), value.GetWorkCaller().GetId())
+	if err != nil || !caller.ExtensionDefined() {
 		return domain.ReaderAdmission{}
 	}
-	return domain.ReaderAdmission{ProjectID: strings.TrimSpace(value.GetValue())}
+	return domain.ReaderAdmission{WorkCaller: caller}
 }

@@ -28,7 +28,7 @@ import (
 func TestActingWorkAdmitsAnAgentActionOnlyWhileItsWorkActs(t *testing.T) {
 	ctx := context.Background()
 	agentID := uuid.NewString()
-	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agentID, RepresentedPerson: "home", WorkLayout: domain.DefaultWorkLayout()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkModel: domain.WorkModelSelection{ConfigurationID: "default"}, StartedBy: "owner", WorkCaller: domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "owner"}, Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.Must(uuid.NewV7()).String(), AgentID: agentID, RepresentedPerson: "home", WorkLayout: domain.DefaultWorkLayout()}, domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agentID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true})
 	require.NoError(t, err)
 	works := &rpcSessions{items: map[string]*domain.AgentWork{}}
 	require.NoError(t, works.Save(ctx, work))

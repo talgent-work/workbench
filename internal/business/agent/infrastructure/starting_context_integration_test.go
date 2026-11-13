@@ -26,7 +26,7 @@ func TestStartingContextSurvivesReload(t *testing.T) {
 	base.InitialExecution = nil
 	create := func(subject string, starting *domain.StartingContextSource) (string, error) {
 		creation := base
-		creation.RequestID, creation.Subject, creation.StartingContext = uuid.NewString(), domain.WorkSubject{Kind: "case", ID: subject}, starting
+		creation.RequestID, creation.WorkKey, creation.StartingContext = uuid.NewString(), domain.WorkKey{Kind: "case", ID: subject}, starting
 		return handler.Handle(t.Context(), creation)
 	}
 	sourceID, err := create(uuid.NewString(), nil)

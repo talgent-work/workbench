@@ -125,31 +125,41 @@ func (s *AgentWork) LaunchSpecification() LaunchSpecification {
 		RepositorySelection:    s.RepositorySelection.Clone(),
 		RemainingRepositories:  s.RemainingRepositories(),
 		AuthorizationSelection: s.AuthorizationSelection.Clone(),
-		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, ProjectID: s.ProjectID, Subject: s.Subject, Capabilities: s.CapabilitySnapshot.Clone(),
+		ThinkingLevel:          s.ThinkingLevel, PermissionMode: s.PermissionMode, WorkModel: s.WorkModel, AgentID: s.AgentID, WorkID: s.ID, ComputerID: s.ComputerID, WorkCaller: s.WorkCaller, WorkKey: s.WorkKey, FileHome: s.FileHome, Capabilities: s.CapabilitySnapshot.Clone(),
 		HarnessSessionReference: s.HarnessSessionReference, ContextMode: s.HarnessProcess.ContextMode, Soul: s.HarnessProcess.Soul, LocatedLayout: s.LocatedLayout.Clone(),
 		AgentHarness: s.AgentHarnessReference, RepresentedPerson: s.RepresentedPerson, OwningApplication: s.OwningApplication, WorkLabels: s.WorkLabels.Map(), TraceAttributes: s.executionTraceAttributes(), StartingContext: s.StartingContext.clone(),
 	}
 }
 
-// executionTraceAttributes carries the attributes the creating caller
+// executionTraceAttributes carries the attributes the creating extension
 // supplied, unchanged on every start, including Resume and Restart, beside
-// Agent's own facts of the Work, its definition and its Project, which a
-// caller attribute cannot replace. The Subject, the caller's to interpret, is
-// not among them. A Work's starter or Agent Owner does not establish a
-// telemetry user identity.
+// Agent's own facts of the Work, its definition, its Work Caller and its Work
+// Key, which a supplied attribute cannot replace (Agent attribution, Attribution
+// precedence). Each fact is "<kind>:<id>"; a Work without a Work Key carries
+// none. A Work's starter or Agent Owner does not establish a telemetry user
+// identity.
 func (s *AgentWork) executionTraceAttributes() map[string]string {
 	attributes := maps.Clone(s.TraceAttributes)
 	if attributes == nil {
 		attributes = make(map[string]string)
 	}
-	attributes["talgent.agent_work_id"] = s.ID
-	attributes["talgent.agent_id"] = s.AgentID
-	delete(attributes, "talgent.project_id")
-	if s.ProjectID != "" {
-		attributes["talgent.project_id"] = s.ProjectID
+	attributes[TraceAttributeWork] = s.ID
+	attributes[TraceAttributeAgent] = s.AgentID
+	attributes[TraceAttributeWorkCaller] = s.WorkCaller.String()
+	delete(attributes, TraceAttributeWorkKey)
+	if s.WorkKey.Present() {
+		attributes[TraceAttributeWorkKey] = s.WorkKey.String()
 	}
 	return attributes
 }
+
+// The telemetry attributes of a Work's own facts.
+const (
+	TraceAttributeWork       = "talgent.agent_work_id"
+	TraceAttributeAgent      = "talgent.agent_id"
+	TraceAttributeWorkCaller = "talgent.work_caller"
+	TraceAttributeWorkKey    = "talgent.work_key"
+)
 
 // RecoverExecution advances a retained end without new admission or context
 // selection: an end that waited for its Turn stops the process once the Turn

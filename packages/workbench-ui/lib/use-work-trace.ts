@@ -36,7 +36,9 @@ export function useWorkTrace({ projectId, agentWorkId, workCreatedAt = null, isW
 
       const metricWindow = workMetricsWindow(new Date(), workCreatedAt);
       return traceClient.getSessionTraceMetrics({
-        projectId: projectId ?? "", agentWorkId,
+        // The trace API names a Work by its Work Caller; a Project id stands
+        // for the Work Caller of that kind.
+        workCaller: projectId ? { kind: "project", id: projectId } : undefined, agentWorkId,
         startTime: timestampFromDate(metricWindow.start),
         endTime: timestampFromDate(metricWindow.end),
         stepSeconds: metricWindow.stepSeconds,

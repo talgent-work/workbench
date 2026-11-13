@@ -55,20 +55,21 @@ func (a *Application) RevokeWorkShare(ctx context.Context, input RevokeWorkShare
 }
 
 // RevokeDepartedReader removes a reader's Work Shares on every Work within the
-// scope the trusted caller reports the reader has left.
+// Work Caller the trusted service reports the reader has left.
 type RevokeDepartedReader struct {
 	ReaderID string
 	Scope    domain.ReaderAdmission
 }
 
 func (a *Application) RevokeDepartedReader(ctx context.Context, input RevokeDepartedReader) error {
-	if strings.TrimSpace(input.ReaderID) == "" || input.Scope.ProjectID == "" {
+	if strings.TrimSpace(input.ReaderID) == "" || !input.Scope.WorkCaller.ExtensionDefined() {
 		return domain.ErrInvalidVisibility
 	}
 	// Every page is visited and one Work's failure does not stop the others;
 	// the caller retries with the same report until no error remains.
 	var failures []error
-	filter := query.WorkListFilter{ProjectID: input.Scope.ProjectID, ShareReader: input.ReaderID}
+	caller := input.Scope.WorkCaller
+	filter := query.WorkListFilter{WorkCaller: &caller, ShareReader: input.ReaderID}
 	for {
 		works, err := a.Queries.ListWorks.Handle(ctx, query.ListWorks{Filter: filter})
 		if err != nil {

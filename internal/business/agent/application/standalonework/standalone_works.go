@@ -74,10 +74,10 @@ type StartWork struct {
 var standaloneWorkSpace = uuid.MustParse("6f5c1c8e-9a0b-4c7e-8a51-3d2f0b9e4a17")
 
 // Start creates the Work under the identity Agent allocates for it and admits
-// its first input. The Work has no Subject and no Project, so its layout
-// locates its own inputs and publication target; only its creation request
-// identity deduplicates it. A person starts it for themselves; an
-// Application starts it as itself, with no person starting it.
+// its first input. Its owner is its Work Caller, and it has no Work Key and no
+// File Home, so its layout locates its own inputs and publication target;
+// only its creation request identity deduplicates it. A person starts it for
+// themselves; an Application starts it as itself, with no person starting it.
 func (p *StandaloneWorks) Start(ctx context.Context, input StartWork) (string, error) {
 	owner := input.Caller.Owner()
 	if owner == "" {
@@ -101,7 +101,7 @@ func (p *StandaloneWorks) Start(ctx context.Context, input StartWork) (string, e
 	}
 	return p.app.Commands.CreateWork.Handle(ctx, command.CreateWork{
 		StartingUserID: input.Caller.self(), SubjectID: owner, RequestID: input.RequestID, AgentID: definition.AgentID,
-		WorkID: workID, DisplayTitle: domain.DisplayTitleFrom(input.InitialMessage),
+		WorkID: workID, WorkCaller: input.Caller.workCaller(), DisplayTitle: domain.DisplayTitleFrom(input.InitialMessage),
 		WorkModel: input.WorkModel, CapabilityDifferences: input.Capabilities, InitialExecution: &initial, ComputerID: input.ComputerID, Harness: input.Harness, WorkLabels: labels,
 	})
 }

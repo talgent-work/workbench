@@ -36,9 +36,9 @@ type Library struct {
 }
 
 // Library lists the Artifacts of the person's Standalone Works and of each Work
-// they hold a Work Share in, most recently added first. A shared Work with a
-// Subject or a Project contributes only the Artifacts it published itself:
-// its publication target may hold its Subject's other Works' files.
+// they hold a Work Share in, most recently added first. A shared Extension
+// Work contributes only the Artifacts it published itself: its publication
+// target may be its File Home's, holding that File Home's other Works' files.
 func (p *StandaloneWorks) Library(ctx context.Context, caller Caller, filter LibraryFilter) (Library, error) {
 	reader := caller.libraryReader()
 	if reader == "" {

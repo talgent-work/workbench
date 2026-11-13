@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-jimu/components/config/loader"
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // Sandboxes and the Cloud's execution quota share one namespace, apart from
@@ -41,14 +42,14 @@ func loadDefaults(t *testing.T) Option {
 	return option
 }
 
-// Every Work loads the core plugin and the core API plugin, and a Work of a
-// Project loads nothing more unless a deployment's profile adds the Project
+// Every Work loads the core plugin and the core API plugin, and an Extension
+// Work loads nothing more unless a deployment's profile adds the extension
 // scope's plugins.
 func TestEveryWorkLoadsTheCorePluginsByDefault(t *testing.T) {
 	builtIns, err := loadDefaults(t).AgentBuiltInPlugins.Plugins()
 	require.NoError(t, err)
-	require.Equal(t, []string{"talgent", "talgent-api"}, builtIns.Required(""))
-	require.Equal(t, []string{"talgent", "talgent-api"}, builtIns.Required("project"))
+	require.Equal(t, []string{"talgent", "talgent-api"}, builtIns.Required(domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "p"}))
+	require.Equal(t, []string{"talgent", "talgent-api"}, builtIns.Required(domain.WorkCaller{Kind: "project", ID: "p"}))
 }
 
 // A deployment whose Agents have no direct access to the core's API empties
@@ -57,5 +58,5 @@ func TestWithoutDirectAPIAccessWorksLoadNoAPIPlugin(t *testing.T) {
 	t.Setenv("AGENT_API_PLUGIN", "")
 	builtIns, err := loadDefaults(t).AgentBuiltInPlugins.Plugins()
 	require.NoError(t, err)
-	require.Equal(t, []string{"talgent"}, builtIns.Required(""))
+	require.Equal(t, []string{"talgent"}, builtIns.Required(domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "p"}))
 }

@@ -26,10 +26,13 @@ export function WorkUsageReader({ projectId, agentWorkId, createdAt = null, stat
   projectId: string; agentWorkId: string; createdAt?: Date | null; status: WorkUsageStatus | null; toolbar?: HTMLElement | null;
 }) {
   const live = status?.state === "working" || status?.state === "starting";
+  // The trace API names a Work by its Work Caller; this reader still takes a
+  // Project id, which stands for the Work Caller of that kind.
+  const workCaller = projectId ? { kind: "project", id: projectId } : undefined;
   const now = useNow(refreshMillis);
   const spans = useInfiniteQuery({
     queryKey: ["work-usage-spans", projectId, agentWorkId], initialPageParam: "",
-    queryFn: ({ pageParam, signal }) => traceClient.listSpansBySession({ projectId, agentWorkId, limit: pageSize, afterCursor: pageParam, newestFirst: true }, { signal }),
+    queryFn: ({ pageParam, signal }) => traceClient.listSpansBySession({ workCaller, agentWorkId, limit: pageSize, afterCursor: pageParam, newestFirst: true }, { signal }),
     getNextPageParam: page => page.nextCursor || undefined,
     refetchInterval: live ? refreshMillis : false, retry: false, refetchOnWindowFocus: false,
   });
@@ -37,7 +40,7 @@ export function WorkUsageReader({ projectId, agentWorkId, createdAt = null, stat
     queryKey: ["trace-metrics", projectId, agentWorkId, createdAt?.getTime() ?? 0],
     queryFn: ({ signal }) => {
       const range = workMetricsWindow(new Date(), createdAt);
-      return traceClient.getSessionTraceMetrics({ projectId, agentWorkId, startTime: timestampFromDate(range.start), endTime: timestampFromDate(range.end), stepSeconds: range.stepSeconds, metricKinds: [...traceMetricKinds] }, { signal });
+      return traceClient.getSessionTraceMetrics({ workCaller, agentWorkId, startTime: timestampFromDate(range.start), endTime: timestampFromDate(range.end), stepSeconds: range.stepSeconds, metricKinds: [...traceMetricKinds] }, { signal });
     },
     refetchInterval: live ? refreshMillis : false, retry: false, refetchOnWindowFocus: false,
   });

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	agentprivatev1 "github.com/talgent-work/contracts/gen/go/agent/private/v1"
+	agentpublicv1 "github.com/talgent-work/contracts/gen/go/agent/public/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
@@ -21,7 +22,7 @@ import (
 
 // creation is a CreateWork request of the employee's Work about the subject.
 func creation(definition, requestID, subject string) *agentprivatev1.CreateWorkRequest {
-	return &agentprivatev1.CreateWorkRequest{RequestId: requestID, SubjectId: "employee-a", AgentId: definition, Subject: &agentprivatev1.WorkSubject{Kind: "case", Id: subject}, ProjectId: "project-a"}
+	return &agentprivatev1.CreateWorkRequest{RequestId: requestID, SubjectId: "employee-a", AgentId: definition, WorkCaller: &agentpublicv1.WorkCaller{Kind: "project", Id: "project-a"}, WorkKey: &agentpublicv1.WorkKey{Kind: "case", Id: subject}}
 }
 
 // desksOf counts the Desks the Work's runs ever took on its Computer.

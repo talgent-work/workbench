@@ -55,13 +55,13 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 	input := domain.WorkCreationRequest{StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}},
 		Admission: domain.StartAdmission{AdmittedAt: time.Now(), AgentID: agent.ID, DefinitionAdmitted: true, Seat: domain.ComputerSeat{ComputerID: "01a19bc3-075a-7c57-b42b-7fdf73b611ed", Kind: domain.ComputerCloud, DeskID: "desk-test"}, ModelConfigurationProvided: true},
 		WorkModel: domain.WorkModelSelection{ConfigurationID: "fixture"},
-		Subject:   f.request.Subject, ProjectID: f.request.ProjectID,
+		WorkKey:   f.request.WorkKey, WorkCaller: f.request.WorkCaller,
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: "owner", Available: []domain.PersonalAuthorization{
 			{OwnerID: "owner", AuthorizationID: selectedID, Provider: "github", Service: "github"},
 			{OwnerID: "owner", AuthorizationID: otherID, Provider: "other", Service: "other"},
 		}},
 	}
-	work, created, err := agent.CreateWork(input, subjectWork(t, f.sessions, agent.ID, input.Subject))
+	work, created, err := agent.CreateWork(input, subjectWork(t, f.sessions, agent.ID, input.WorkKey))
 	require.NoError(t, err)
 	require.True(t, created)
 	require.NoError(t, f.sessions.Save(t.Context(), work))
@@ -72,7 +72,7 @@ func TestWorkAuthorizationSelectionSurvivesPersistenceAndBindingReuse(t *testing
 	// A reused binding keeps the original selection even when available facts change.
 	input.AuthorizationInput.Available = input.AuthorizationInput.Available[:1]
 	input.AuthorizationInput.Available[0].AuthorizationID = uuid.NewString()
-	reused, created, err := agent.CreateWork(input, subjectWork(t, f.sessions, agent.ID, input.Subject))
+	reused, created, err := agent.CreateWork(input, subjectWork(t, f.sessions, agent.ID, input.WorkKey))
 	require.NoError(t, err)
 	require.False(t, created)
 	require.Equal(t, work.ID, reused.ID)

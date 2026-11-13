@@ -21,19 +21,19 @@ type LocatorCondition string
 const (
 	// ConditionWork is the Work's identity.
 	ConditionWork LocatorCondition = "work"
-	// ConditionSubject is the Work's Subject as "<kind>:<id>".
-	ConditionSubject LocatorCondition = "subject"
+	// ConditionFileHome is the Work's File Home as "<kind>:<id>".
+	ConditionFileHome LocatorCondition = "file_home"
 	// ConditionPerson is the person the Work's Agent represents.
 	ConditionPerson LocatorCondition = "person"
 	// ConditionStarter is the person who started the Work.
 	ConditionStarter LocatorCondition = "starter"
-	// ConditionProject is the Work's Project.
-	ConditionProject LocatorCondition = "project"
+	// ConditionWorkCaller is the Work's Work Caller as "<kind>:<id>".
+	ConditionWorkCaller LocatorCondition = "work_caller"
 	// ConditionAgentDefinition is the Work's AgentDefinition.
 	ConditionAgentDefinition LocatorCondition = "agent_definition"
 )
 
-var locatorConditions = []LocatorCondition{ConditionWork, ConditionSubject, ConditionPerson, ConditionStarter, ConditionProject, ConditionAgentDefinition}
+var locatorConditions = []LocatorCondition{ConditionWork, ConditionFileHome, ConditionPerson, ConditionStarter, ConditionWorkCaller, ConditionAgentDefinition}
 
 // DirectoryBackend is where a Directory's files live, fixed by Storage at
 // its first allocation.

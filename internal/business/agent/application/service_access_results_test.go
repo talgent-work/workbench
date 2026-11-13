@@ -69,7 +69,7 @@ type serviceAccessFixture struct{ work *domain.AgentWork }
 func newServiceAccessFixture(t *testing.T) *serviceAccessFixture {
 	t.Helper()
 	agentID := uuid.NewString()
-	work, err := domain.NewAgentWork(domain.WorkInput{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
+	work, err := domain.NewAgentWork(domain.WorkInput{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, StartedBy: "owner", Capabilities: domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{connectorcatalogtest.Required().SelectedConnector}}, ID: uuid.NewString(), AgentID: agentID,
 		WorkModel:         domain.WorkModelSelection{ConfigurationID: "default"},
 		RepresentedPerson: "owner", WorkLayout: domain.DefaultWorkLayout(),
 		AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: "owner", Available: []domain.PersonalAuthorization{{OwnerID: "owner", AuthorizationID: "b5f00000-0000-4000-8000-000000000382", Provider: "github", Service: "github"}}},

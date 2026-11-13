@@ -64,7 +64,7 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 		agent, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"owner"}, AgentName: "Fixture Agent", Purpose: "work", UsageScope: domain.UsageScope{Kind: "employee", Reference: uuid.Must(uuid.NewV7()).String()}, Capabilities: domain.CapabilityConfiguration{Prompt: "Run"}})
 		require.NoError(t, err)
 		require.NoError(t, agents.Save(ctx, agent))
-		return command.CreateWork{Subject: domain.WorkSubject{Kind: "case", ID: "case"}, ProjectID: "project", RequestID: requestID, SubjectID: "owner", AgentID: agent.ID}
+		return command.CreateWork{WorkCaller: domain.WorkCaller{Kind: "project", ID: "project"}, WorkKey: domain.WorkKey{Kind: "case", ID: "case"}, RequestID: requestID, SubjectID: "owner", AgentID: agent.ID}
 	}
 	requestID := uuid.Must(uuid.NewV7()).String()
 	creations := []command.CreateWork{newCreation(requestID), newCreation(requestID)}
@@ -107,7 +107,7 @@ func TestConcurrentStartRequestOwnershipPreservesWinnerAndRollsBackLoser(t *test
 	if winner.AgentID == loserCreation.AgentID {
 		loserCreation = creations[1]
 	}
-	loser, err := sessions.FindBySubject(ctx, loserCreation.AgentID, loserCreation.Subject)
+	loser, err := sessions.FindByWorkKey(ctx, loserCreation.AgentID, loserCreation.WorkKey)
 	require.NoError(t, err)
 	require.Nil(t, loser, "losing initial admission must roll back the entire Work")
 }
