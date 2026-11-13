@@ -71,9 +71,8 @@ func TestAggregatePersistencePreservesAdmissionAndConversationAcrossReconnect(t 
 	require.NoError(t, err)
 	session, err := sessions.Get(ctx, id)
 	require.NoError(t, err)
-	for key, value := range traceAttributes {
-		require.Equal(t, value, session.TraceAttributes[key])
-	}
+	require.Equal(t, "case", session.TraceAttributes["talgent.owner_id"])
+	require.NotContains(t, session.TraceAttributes, "talgent.project_id", "a supplied attribute never states platform attribution")
 	require.Equal(t, "Answer with the conclusion first.", session.HarnessProcess.Soul, "the first start took up the Soul, retained with its process")
 	originalCapabilities := session.CapabilitySnapshot.Clone()
 	located := session.LocatedLayout

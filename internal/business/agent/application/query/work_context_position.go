@@ -30,7 +30,10 @@ func NewResolveWorkContextPositionHandler(origins WorkQueryRepository, positions
 
 func (h *ResolveWorkContextPositionHandler) Handle(ctx context.Context, caller domain.WorkCaller, workID, callID string) (WorkContextPosition, error) {
 	workID, callID = strings.TrimSpace(workID), strings.TrimSpace(callID)
-	if caller.Validate() != nil || workID == "" || callID == "" {
+	if err := domain.AdmitExtensionWorkCaller(caller); err != nil {
+		return WorkContextPosition{}, err
+	}
+	if workID == "" || callID == "" {
 		return WorkContextPosition{}, domain.ErrInvalidWork
 	}
 	origin, err := h.origins.GetWorkOrigin(ctx, workID)

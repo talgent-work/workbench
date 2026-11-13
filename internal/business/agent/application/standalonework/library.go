@@ -44,11 +44,11 @@ func (p *StandaloneWorks) Library(ctx context.Context, caller Caller, filter Lib
 	if reader == "" {
 		return Library{}, access.ErrAccessDenied
 	}
-	agentID, _, err := p.app.FindEmployeeAgent(ctx, reader)
+	definition, _, err := p.app.FindEmployeeAgent(ctx, reader)
 	if err != nil {
 		return Library{}, err
 	}
-	works, err := p.works.ListLibraryWorks(ctx, reader, agentID, maxLibraryWorks)
+	works, err := p.works.ListLibraryWorks(ctx, reader, definition, maxLibraryWorks)
 	if err != nil || len(works) == 0 {
 		return Library{}, err
 	}

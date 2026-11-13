@@ -160,7 +160,7 @@ func RegisterRPCHandlers(mux *http.ServeMux, app *application.Application, confi
 	// A public service admits the Principals its procedures declare.
 	public := connectserver.New(logger, authn.NewPrincipalInterceptor())
 	agentpublicv1connect.RegisterAgentWorkServiceHandler(public, transport.NewWorkHandler(app))
-	agentpublicv1connect.RegisterIdentityServiceHandler(public, transport.IdentityHandler{})
+	agentpublicv1connect.RegisterIdentityServiceHandler(public, transport.NewIdentityHandler(app))
 	connectserver.Mount(mux, public)
 	private := connectserver.New(logger)
 	agentprivatev1connect.RegisterAgentServiceHandler(private, transport.NewAgentHandler(app, config.ControlToken))

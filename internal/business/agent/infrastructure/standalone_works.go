@@ -13,9 +13,11 @@ import (
 )
 
 // standaloneWorkCondition selects a definition's Standalone Works: those
-// whose Work Caller is a person or an Application.
-func standaloneWorkCondition(agentID string) builder.Cond {
-	return builder.Eq{"s.agent_id": agentID}.And(builder.In("s.work_caller_kind", domain.CallerKindPerson, domain.CallerKindApplication))
+// whose Work Caller is its owner. Equality on the agent and the whole Work
+// Caller reads them by idx_agent_id_work_caller_deleted_at_updated_at_created_at_id
+// in their listed order.
+func standaloneWorkCondition(definition query.OwnedDefinition) builder.Cond {
+	return builder.Eq{"s.agent_id": definition.AgentID, "s.work_caller_kind": definition.OwnerWorkCaller.Kind, "s.work_caller_id": definition.OwnerWorkCaller.ID}
 }
 
 type standaloneWorkRow struct {
@@ -31,7 +33,7 @@ type standaloneWorkRow struct {
 }
 
 func (r *WorkQueryRepository) ListStandaloneWorks(ctx context.Context, filter query.StandaloneWorksFilter) ([]query.StandaloneWorkSummary, error) {
-	condition := standaloneWorkCondition(filter.AgentID).And(carryingWorkLabels(filter.Labels))
+	condition := standaloneWorkCondition(filter.Definition).And(carryingWorkLabels(filter.Labels))
 	if len(filter.States) > 0 {
 		codes, err := stateCodes(filter.States)
 		if err != nil {
@@ -67,13 +69,13 @@ func (r *WorkQueryRepository) ListStandaloneWorks(ctx context.Context, filter qu
 	return works, nil
 }
 
-func (r *WorkQueryRepository) ListWorkAttributions(ctx context.Context, agentID string, workIDs []string) ([]query.WorkAttribution, error) {
+func (r *WorkQueryRepository) ListWorkAttributions(ctx context.Context, definition query.OwnedDefinition, workIDs []string) ([]query.WorkAttribution, error) {
 	if len(workIDs) == 0 {
 		return nil, nil
 	}
 	var ids []string
 	err := r.db.Context(ctx).Table("agent_session").Alias("s").Cols("s.id").
-		Where("s.deleted_at=0").And(standaloneWorkCondition(agentID)).And(builder.In("s.id", workIDs)).Find(&ids)
+		Where("s.deleted_at=0").And(standaloneWorkCondition(definition)).And(builder.In("s.id", workIDs)).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "agent.list_work_attributions").Wrap(err)
 	}
@@ -105,6 +107,7 @@ type libraryWorkRow struct {
 	ID           string `xorm:"id"`
 	AgentID      string `xorm:"agent_id"`
 	CallerKind   string `xorm:"work_caller_kind"`
+	CallerID     string `xorm:"work_caller_id"`
 	DisplayTitle string `xorm:"display_title"`
 	Layout       string `xorm:"located_layout"`
 	UpdatedAt    int64  `xorm:"updated_at"`
@@ -114,15 +117,15 @@ type libraryWorkRow struct {
 // ListLibraryWorks reads the person's Standalone Works and the Works shared
 // with them, each by its own index, most recently updated first, each with
 // the publication target its located layout fixed.
-func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person, agentID string, limit int) ([]query.LibraryWork, error) {
+func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person string, definition query.OwnedDefinition, limit int) ([]query.LibraryWork, error) {
 	read := func(condition builder.Cond) ([]libraryWorkRow, error) {
 		var rows []libraryWorkRow
 		err := r.db.Context(ctx).Table("agent_session").Alias("s").
-			Select("s.id,s.agent_id,s.work_caller_kind,s.display_title,s.located_layout,s.updated_at,"+agentOwnerColumn+" AS agent_owner").
+			Select("s.id,s.agent_id,s.work_caller_kind,s.work_caller_id,s.display_title,s.located_layout,s.updated_at,"+agentOwnerColumn+" AS agent_owner").
 			Where("s.deleted_at=0").And(condition).Desc("s.updated_at", "s.id").Limit(limit).Find(&rows)
 		return rows, oops.With("operation", "agent.list_library_works").Wrap(err)
 	}
-	own, err := read(standaloneWorkCondition(agentID))
+	own, err := read(standaloneWorkCondition(definition))
 	if err != nil {
 		return nil, err
 	}
@@ -138,8 +141,8 @@ func (r *WorkQueryRepository) ListLibraryWorks(ctx context.Context, person, agen
 		if err != nil {
 			return nil, err
 		}
-		work := query.LibraryWork{WorkID: row.ID, Title: row.DisplayTitle, PublicationTarget: layout.PublicationTarget.Directory, Standalone: !(domain.WorkCaller{Kind: row.CallerKind}).ExtensionDefined()}
-		if row.AgentID != agentID {
+		work := query.LibraryWork{WorkID: row.ID, Title: row.DisplayTitle, PublicationTarget: layout.PublicationTarget.Directory, Standalone: domain.WorkCaller{Kind: row.CallerKind, ID: row.CallerID}.StartsStandaloneWork()}
+		if row.AgentID != definition.AgentID {
 			work.SharedBy = row.Owner
 		}
 		works = append(works, work)

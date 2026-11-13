@@ -97,7 +97,7 @@ func TestWorkReportWaitingUnknownFailureAndAuthorization(t *testing.T) {
 	require.ErrorIs(t, err, source.err, "query failure is not an empty population")
 	source.called = false
 	_, err = handler.Handle(context.Background(), GetWorkReport{Window: "24h"})
-	require.ErrorIs(t, err, domain.ErrInvalidWork, "an unscoped report of every Work is never served")
+	require.ErrorIs(t, err, domain.ErrInvalidWorkCaller, "an unscoped report of every Work is never served")
 	require.False(t, source.called)
 }
 

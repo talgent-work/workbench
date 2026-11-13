@@ -14,28 +14,27 @@ import (
 // Resource attributes that name the Computer a run's telemetry came from, on
 // a Cloud and a Managed Computer alike.
 const (
-	computerIDAttribute   = "talgent.computer_id"
-	computerNameAttribute = "talgent.computer_name"
+	computerIDAttribute   = domain.TraceAttributeComputerID
+	computerNameAttribute = domain.TraceAttributeComputerName
 )
 
 // telemetryAttribution is the resource attribution of a run's Harness
 // telemetry: the attributes AgentWork supplies, its common attribution and
 // caller extensions, beside the Computer the run is on, which no caller
 // attribute replaces. Telemetry is attributed per Work and Computer, never
-// per process run. A caller attribute that could not be carried unchanged in
-// OTEL_RESOURCE_ATTRIBUTES rejects the start; the Computer's name, a person's
-// choice, is percent-encoded instead (resourceAttributes).
+// per process run. An attribute key that could not be carried unchanged in
+// OTEL_RESOURCE_ATTRIBUTES rejects the start; every value, such as the Work
+// Caller's opaque identity or the Computer's name, is percent-encoded instead
+// (resourceAttributes), and the OpenTelemetry SDK decodes it.
 func telemetryAttribution(request domain.LaunchSpecification) (map[string]string, error) {
 	attributes := make(map[string]string, len(request.TraceAttributes)+2)
 	for key, value := range request.TraceAttributes {
 		if value == "" {
 			continue
 		}
-		for _, part := range []string{key, value} {
-			for _, char := range part {
-				if char <= 32 || char > 126 || strings.ContainsRune(",;\\\"", char) {
-					return nil, fmt.Errorf("%w: invalid telemetry attribution", domain.ErrExecutionRequest)
-				}
+		for _, char := range key {
+			if char <= 32 || char > 126 || strings.ContainsRune(",;\\\"", char) {
+				return nil, fmt.Errorf("%w: invalid telemetry attribution", domain.ErrExecutionRequest)
 			}
 		}
 		if strings.Contains(key, "=") {

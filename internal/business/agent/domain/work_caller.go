@@ -34,7 +34,7 @@ type WorkCaller struct {
 
 // NewWorkCaller admits a kind with an identity.
 func NewWorkCaller(kind, id string) (WorkCaller, error) {
-	caller := WorkCaller{Kind: strings.TrimSpace(kind), ID: strings.TrimSpace(id)}
+	caller := WorkCaller{Kind: kind, ID: id}
 	return caller, caller.Validate()
 }
 
@@ -48,6 +48,13 @@ func (c WorkCaller) Validate() error {
 // none.
 func (c WorkCaller) ExtensionDefined() bool {
 	return c.Kind != "" && c.Kind != CallerKindPerson && c.Kind != CallerKindApplication
+}
+
+// StartsStandaloneWork tells whether a Work under this caller is a Standalone
+// Work: its caller is a person or an Application, the owner starting it for
+// itself.
+func (c WorkCaller) StartsStandaloneWork() bool {
+	return c.Kind == CallerKindPerson || c.Kind == CallerKindApplication
 }
 
 // String is the caller as "<kind>:<id>", the value a Directory Locator and
@@ -65,7 +72,7 @@ type WorkKey struct {
 
 // NewWorkKey admits no Work Key, or a kind with an identity.
 func NewWorkKey(kind, id string) (WorkKey, error) {
-	key := WorkKey{Kind: strings.TrimSpace(kind), ID: strings.TrimSpace(id)}
+	key := WorkKey{Kind: kind, ID: id}
 	return key, key.Validate()
 }
 
@@ -98,7 +105,7 @@ type FileHome struct {
 
 // NewFileHome admits no File Home, or a kind with an identity.
 func NewFileHome(kind, id string) (FileHome, error) {
-	home := FileHome{Kind: strings.TrimSpace(kind), ID: strings.TrimSpace(id)}
+	home := FileHome{Kind: kind, ID: id}
 	return home, home.Validate()
 }
 
@@ -121,27 +128,21 @@ func (h FileHome) String() string {
 	return h.Kind + ":" + h.ID
 }
 
-// validateKindIdentity admits a kind of at most 32 characters without ":",
-// which splits "<kind>:<id>" at its first colon, and an identity of at most
-// 255 characters. Both are printable ASCII without a space, a comma, a
-// semicolon, a backslash or a double quote, since the Work Caller and the
-// Work Key travel in every run's telemetry resource attributes, which carry
-// none of those.
+// validateKindIdentity admits a kind of at most 32 lowercase letters, digits,
+// "_" or "-", so it holds no ":", which splits "<kind>:<id>" at its first
+// colon, and no case variant of a kind Agent defines; and an opaque identity
+// of 1 to 255 bytes without NUL. How a fact travels, such as in telemetry, is
+// for whatever carries it to encode.
 func validateKindIdentity(kind, id string, invalid error) error {
-	if kind == "" || len(kind) > maxFactKindLength || strings.Contains(kind, ":") || !attributeSafe(kind) {
+	if kind == "" || len(kind) > maxFactKindLength || strings.TrimFunc(kind, kindCharacter) != "" {
 		return fmt.Errorf("%w: kind %q", invalid, kind)
 	}
-	if id == "" || len(id) > maxFactIdentityLength || !attributeSafe(id) {
+	if id == "" || len(id) > maxFactIdentityLength || strings.ContainsRune(id, 0) {
 		return fmt.Errorf("%w: identity", invalid)
 	}
 	return nil
 }
 
-func attributeSafe(value string) bool {
-	for _, char := range value {
-		if char <= ' ' || char > '~' || strings.ContainsRune(",;\\\"", char) {
-			return false
-		}
-	}
-	return true
+func kindCharacter(char rune) bool {
+	return char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '_' || char == '-'
 }

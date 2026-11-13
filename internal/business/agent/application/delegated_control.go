@@ -8,11 +8,11 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// AdmitExtensionCreation refuses a trusted service's creation of a Work under a
-// Work Caller of a kind Agent defines: such a Work is a Standalone Work, which
-// only its owner starts through the public Work API.
-func (a *Application) AdmitExtensionCreation(caller domain.WorkCaller) error {
-	return domain.AdmitExtensionCreation(caller)
+// AdmitExtensionWorkCaller refuses a trusted service's creation of a Work under
+// a Work Caller of a kind Agent defines: such a Work is a Standalone Work,
+// which only its owner starts through the public Work API.
+func (a *Application) AdmitExtensionWorkCaller(caller domain.WorkCaller) error {
+	return domain.AdmitExtensionWorkCaller(caller)
 }
 
 // AdmitDelegatedControl refuses a trusted service acting on its owner's behalf

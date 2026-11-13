@@ -21,6 +21,9 @@ type InitializedAgentDefinition struct {
 	AgentID    string
 	Appearance domain.AgentAppearance
 	Owners     []string
+	// OwnerWorkCaller is the Work Caller of the definition's Standalone
+	// Works, its owner; zero for a definition that starts none.
+	OwnerWorkCaller domain.WorkCaller
 }
 
 type EnsureAgentDefinitionHandler struct {
@@ -71,7 +74,8 @@ func (h *EnsureAgentDefinitionHandler) Handle(ctx context.Context, input EnsureA
 				return InitializedAgentDefinition{}, err
 			}
 		}
-		return InitializedAgentDefinition{AgentID: agent.ID, Appearance: agent.Appearance(), Owners: slices.Clone(agent.Owners)}, nil
+		owner, _ := agent.OwnerWorkCaller()
+		return InitializedAgentDefinition{AgentID: agent.ID, Appearance: agent.Appearance(), Owners: slices.Clone(agent.Owners), OwnerWorkCaller: owner}, nil
 	}
 	return InitializedAgentDefinition{}, domain.ErrConcurrentModification
 }

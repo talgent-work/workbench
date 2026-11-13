@@ -75,8 +75,8 @@ func NewGetWorkReportHandler(reader WorkQueryRepository, now func() time.Time) *
 
 // Handle reports Works for a trusted caller, which authorizes its own scope.
 func (h *GetWorkReportHandler) Handle(ctx context.Context, input GetWorkReport) (WorkReport, error) {
-	if input.Scope.WorkCaller.Validate() != nil {
-		return WorkReport{}, domain.ErrInvalidWork
+	if err := domain.AdmitExtensionWorkCaller(input.Scope.WorkCaller); err != nil {
+		return WorkReport{}, err
 	}
 	var step time.Duration
 	var count int

@@ -26,7 +26,7 @@ const startingTitleLength = 80
 
 // Standalone tells whether this is a Standalone Work: a Work whose Work
 // Caller is a person or an Application, which starts it for itself.
-func (s *AgentWork) Standalone() bool { return !s.WorkCaller.ExtensionDefined() }
+func (s *AgentWork) Standalone() bool { return s.WorkCaller.StartsStandaloneWork() }
 
 // validateWorkFacts keeps the facts fixed at creation valid: a Work Caller,
 // and a Work Key and a File Home only beside a Work Caller of an

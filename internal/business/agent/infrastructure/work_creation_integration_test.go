@@ -71,17 +71,21 @@ func (f workCreationFixture) creation(registrar domain.AgentWorkRepository, comp
 }
 
 // A repeated creation returns the Work its request identity derives,
-// whatever else the repeat carries; an identity whose Work belongs to another
-// definition names another operation.
+// whatever input the repeat carries, and refuses other Work facts as a
+// Mismatched reuse; an identity whose Work belongs to another definition
+// names another operation.
 func TestARepeatedCreationReturnsTheWorkItsIdentityDerives(t *testing.T) {
 	f := newWorkCreationFixture(t)
 	ctx := context.Background()
 	create := f.creation(nil, computertest.Checked(startupAuthority{}))
 	id, err := create.Handle(ctx, f.request)
 	require.NoError(t, err)
+	mismatched := f.request
+	mismatched.WorkKey.ID = uuid.NewString()
+	_, err = create.Handle(ctx, mismatched)
+	require.ErrorIs(t, err, domain.ErrMismatchedReuse, "work key")
 	for name, mutate := range map[string]func(*command.CreateWork){
-		"work key": func(r *command.CreateWork) { r.WorkKey.ID = uuid.NewString() },
-		"input":    func(r *command.CreateWork) { r.InitialExecution.Input.Text = "changed after return" },
+		"input": func(r *command.CreateWork) { r.InitialExecution.Input.Text = "changed after return" },
 	} {
 		changed := f.request
 		initial := *f.request.InitialExecution

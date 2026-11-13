@@ -110,7 +110,8 @@ func (h *CreateWorkHandler) Handle(ctx context.Context, request CreateWork) (str
 
 // requestedWork is the Work the request identity names, nil before it exists.
 // An identity naming a Work of another definition belongs to another
-// operation.
+// operation, and a repeat supplying other Work facts than the Work fixed is
+// refused as a Mismatched reuse.
 func (h *CreateWorkHandler) requestedWork(ctx context.Context, request CreateWork) (*domain.AgentWork, error) {
 	work, err := h.sessions.Get(ctx, request.workID())
 	if errors.Is(err, domain.ErrWorkNotFound) {
@@ -121,6 +122,9 @@ func (h *CreateWorkHandler) requestedWork(ctx context.Context, request CreateWor
 	}
 	if work.AgentID != request.AgentID {
 		return nil, ErrStartRequestConflict
+	}
+	if err := work.AdmitReuse(request.WorkCaller, request.WorkKey, request.FileHome); err != nil {
+		return nil, err
 	}
 	return work, nil
 }

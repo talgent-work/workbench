@@ -33,7 +33,10 @@ func NewResolveWorkStartsHandler(origins WorkQueryRepository) *ResolveWorkStarts
 }
 
 func (h *ResolveWorkStartsHandler) Handle(ctx context.Context, caller domain.WorkCaller, workIDs []string) ([]ResolvedWorkStart, error) {
-	if caller.Validate() != nil || len(workIDs) > MaxResolvedWorkStarts {
+	if err := domain.AdmitExtensionWorkCaller(caller); err != nil {
+		return nil, err
+	}
+	if len(workIDs) > MaxResolvedWorkStarts {
 		return nil, domain.ErrInvalidWork
 	}
 	ids := make([]string, 0, len(workIDs))

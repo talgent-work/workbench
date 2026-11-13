@@ -6,14 +6,22 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// StandaloneWorksFilter narrows a definition's Standalone Works: to those
-// carrying every one of Labels and, when States is not empty, to those in one
-// of these Work States. At most Limit are listed.
+// OwnedDefinition is an owner's definition located without loading it: its
+// identity and the Work Caller of its Standalone Works, its owner.
+type OwnedDefinition struct {
+	AgentID         string
+	OwnerWorkCaller domain.WorkCaller
+}
+
+// StandaloneWorksFilter narrows a definition's Standalone Works, the Works
+// whose Work Caller is its owner: to those carrying every one of Labels and,
+// when States is not empty, to those in one of these Work States. At most
+// Limit are listed.
 type StandaloneWorksFilter struct {
-	AgentID string
-	Labels  []domain.WorkLabel
-	States  []domain.WorkState
-	Limit   int
+	Definition OwnedDefinition
+	Labels     []domain.WorkLabel
+	States     []domain.WorkState
+	Limit      int
 }
 
 // StandaloneWorkSummary is one Standalone Work as its owner's list shows it.

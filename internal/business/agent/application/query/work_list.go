@@ -60,8 +60,10 @@ const MaxListedWorks = 500
 // An unbounded list of every Work is never served.
 func (h *ListWorksHandler) Handle(ctx context.Context, input ListWorks) ([]WorkSummary, error) {
 	filter := input.Filter
-	if filter.WorkCaller != nil && filter.WorkCaller.Validate() != nil {
-		return nil, domain.ErrInvalidWork
+	if filter.WorkCaller != nil {
+		if err := domain.AdmitExtensionWorkCaller(*filter.WorkCaller); err != nil {
+			return nil, err
+		}
 	}
 	if filter.WorkKey.Present() && (filter.WorkCaller == nil || filter.WorkKey.Validate() != nil) {
 		return nil, domain.ErrInvalidWork

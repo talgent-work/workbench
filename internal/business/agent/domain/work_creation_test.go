@@ -116,18 +116,18 @@ func TestKeylessCreationEstablishesANewWork(t *testing.T) {
 	require.False(t, first.WorkKey.Present())
 }
 
-// Each fact names a kind and an identity; a kind never holds the colon that
-// separates the two.
+// Each fact names a kind and an identity; a kind is lowercase and never holds
+// the colon that separates the two, so no kind passes for one Agent defines.
 func TestWorkFactsNameAKindAndAnIdentity(t *testing.T) {
 	definition := personDefinition(t, "owner", false)
 	for name, change := range map[string]func(*domain.WorkCreationRequest){
-		"no Work Caller":                      func(r *domain.WorkCreationRequest) { r.WorkCaller = domain.WorkCaller{} },
-		"a Work Caller without identity":      func(r *domain.WorkCreationRequest) { r.WorkCaller = domain.WorkCaller{Kind: "project"} },
-		"a Work Key without identity":         func(r *domain.WorkCreationRequest) { r.WorkKey = domain.WorkKey{Kind: "case"} },
-		"a Work Key kind with a colon":        func(r *domain.WorkCreationRequest) { r.WorkKey = domain.WorkKey{Kind: "case:a", ID: "1"} },
-		"a File Home without kind":            func(r *domain.WorkCreationRequest) { r.FileHome = domain.FileHome{ID: "1"} },
-		"a Work Key identity with a space":    func(r *domain.WorkCreationRequest) { r.WorkKey = domain.WorkKey{Kind: "case", ID: "a b"} },
-		"a Work Caller identity with a comma": func(r *domain.WorkCreationRequest) { r.WorkCaller = domain.WorkCaller{Kind: "project", ID: "a,b"} },
+		"no Work Caller":                 func(r *domain.WorkCreationRequest) { r.WorkCaller = domain.WorkCaller{} },
+		"a Work Caller without identity": func(r *domain.WorkCreationRequest) { r.WorkCaller = domain.WorkCaller{Kind: "project"} },
+		"a Work Key without identity":    func(r *domain.WorkCreationRequest) { r.WorkKey = domain.WorkKey{Kind: "case"} },
+		"a Work Key kind with a colon":   func(r *domain.WorkCreationRequest) { r.WorkKey = domain.WorkKey{Kind: "case:a", ID: "1"} },
+		"a File Home without kind":       func(r *domain.WorkCreationRequest) { r.FileHome = domain.FileHome{ID: "1"} },
+		"a Work Caller kind in capitals": func(r *domain.WorkCreationRequest) { r.WorkCaller = domain.WorkCaller{Kind: "Person", ID: "owner"} },
+		"a Work Key kind with a space":   func(r *domain.WorkCreationRequest) { r.WorkKey = domain.WorkKey{Kind: "a case", ID: "1"} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := creationRequest(definition, projectA)
@@ -185,12 +185,12 @@ func TestApplicationWorkCallerIsTheApplication(t *testing.T) {
 // An extension starts Works only under a Work Caller of a kind it defines; a
 // person's or an Application's Work is the owner's own to start.
 func TestExtensionStartsWorksOnlyUnderItsOwnKinds(t *testing.T) {
-	require.NoError(t, domain.AdmitExtensionCreation(projectA))
-	require.NoError(t, domain.AdmitExtensionCreation(domain.WorkCaller{Kind: "review", ID: "r1"}))
+	require.NoError(t, domain.AdmitExtensionWorkCaller(projectA))
+	require.NoError(t, domain.AdmitExtensionWorkCaller(domain.WorkCaller{Kind: "review", ID: "r1"}))
 	for _, kind := range []string{domain.CallerKindPerson, domain.CallerKindApplication} {
-		require.ErrorIs(t, domain.AdmitExtensionCreation(domain.WorkCaller{Kind: kind, ID: "x"}), domain.ErrStandaloneWorkOwnerOnly)
+		require.ErrorIs(t, domain.AdmitExtensionWorkCaller(domain.WorkCaller{Kind: kind, ID: "x"}), domain.ErrStandaloneWorkOwnerOnly)
 	}
-	require.ErrorIs(t, domain.AdmitExtensionCreation(domain.WorkCaller{}), domain.ErrInvalidWorkCaller)
+	require.ErrorIs(t, domain.AdmitExtensionWorkCaller(domain.WorkCaller{}), domain.ErrInvalidWorkCaller)
 
 	pm, err := domain.NewAgentDefinition(domain.AgentDefinitionInput{Owners: []string{"alice"}, Purpose: "project_coordination", UsageScope: domain.UsageScope{Kind: "project", Reference: "project-a"}, Visibility: domain.VisibilityRule{Public: true}})
 	require.NoError(t, err)
@@ -238,4 +238,37 @@ func errorsAnyOf(err error, targets ...error) bool {
 		}
 	}
 	return false
+}
+
+// An extension's identity is opaque: any characters within its length are
+// kept as given.
+func TestAnIdentityIsOpaque(t *testing.T) {
+	definition := personDefinition(t, "owner", false)
+	request := creationRequest(definition, domain.WorkCaller{Kind: "project", ID: "Project A, 一"})
+	request.WorkKey = domain.WorkKey{Kind: "case", ID: " case;\"1\" "}
+	work, _, err := createWork(definition, request, &definitionSessionLookup{})
+	require.NoError(t, err)
+	require.Equal(t, request.WorkCaller, work.WorkCaller)
+	require.Equal(t, request.WorkKey, work.WorkKey)
+}
+
+// A creating extension never states the platform's own attribution: every
+// attribute only the platform states is dropped, the Project attribute
+// included, and the extension's own attributes are kept.
+func TestSuppliedAttributesNeverForgePlatformAttribution(t *testing.T) {
+	definition := personDefinition(t, "owner", false)
+	forged := map[string]string{"talgent.case_id": "kept"}
+	for _, key := range []string{"talgent.project_id", "talgent.work_caller", "talgent.work_key", "talgent.agent_work_id", "talgent.agent_id",
+		"talgent.runtime_purpose", "talgent.user_id", "talgent.application_id", "talgent.computer_id", "talgent.computer_name"} {
+		forged[key] = "forged"
+	}
+	request := creationRequest(definition, domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "owner"})
+	request.TraceAttributes = definition.WorkTraceAttributes(forged)
+	work, _, err := createWork(definition, request, &definitionSessionLookup{})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"talgent.case_id": "kept", "talgent.runtime_purpose": "work", "talgent.user_id": "owner",
+		"talgent.agent_work_id": work.ID, "talgent.agent_id": definition.ID, "talgent.work_caller": "person:owner",
+	}, follow(work).launch().TraceAttributes)
+	require.Equal(t, "forged", forged["talgent.user_id"], "the supplied attributes are left as they were")
 }

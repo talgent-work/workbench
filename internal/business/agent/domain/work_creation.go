@@ -17,7 +17,7 @@ var (
 	ErrWorkCallerNotOwner = errors.New("agent: a Standalone Work's Work Caller is its owner")
 	// ErrMismatchedReuse refuses a creation whose Work Key names a Work of
 	// another Work Caller or File Home (Mismatched reuse).
-	ErrMismatchedReuse = errors.New("agent: the Work Key's Work has another Work Caller or File Home")
+	ErrMismatchedReuse = errors.New("agent: the reused Work has another Work Caller, Work Key or File Home")
 )
 
 // WorkCreationFacts are the Works a creation supplies, loaded through the
@@ -74,11 +74,12 @@ type WorkCreationRequest struct {
 	InitialTaskInput *InitialTaskInput
 }
 
-// AdmitExtensionCreation refuses a trusted service's creation of a Work under
-// a Work Caller of a kind Agent defines: such a Work is a Standalone Work,
-// which only its owner starts, so an extension starts Works only under a
-// kind it defines (Extension Work facts).
-func AdmitExtensionCreation(caller WorkCaller) error {
+// AdmitExtensionWorkCaller refuses a trusted service's creation of, or
+// selection by, a Work Caller of a kind Agent defines: such a Work is a
+// Standalone Work, which only its owner starts and reads, so an extension
+// starts and selects Works only under a kind it defines (Extension Work
+// facts).
+func AdmitExtensionWorkCaller(caller WorkCaller) error {
 	if err := caller.Validate(); err != nil {
 		return err
 	}
@@ -100,6 +101,13 @@ func (a *AgentDefinition) OwnerWorkCaller() (WorkCaller, bool) {
 		return WorkCaller{Kind: CallerKindPerson, ID: person}, true
 	}
 	return WorkCaller{}, false
+}
+
+// OwnerWorkCaller is the Work Caller of the Standalone Works of the
+// definition this input locates or establishes, as that definition names it.
+func (i AgentDefinitionInput) OwnerWorkCaller() (WorkCaller, bool) {
+	definition := AgentDefinition{UsageScope: i.UsageScope, Purpose: i.Purpose}
+	return definition.OwnerWorkCaller()
 }
 
 // admitWorkFacts admits the facts a new Work fixes at creation: a valid Work
@@ -139,10 +147,21 @@ func (a *AgentDefinition) ReuseWork(caller WorkCaller, key WorkKey, home FileHom
 	if !key.Present() || keyWork == nil || keyWork.AgentID != a.ID || keyWork.WorkKey != key {
 		return nil, nil
 	}
-	if keyWork.WorkCaller != caller || keyWork.FileHome != home {
-		return nil, ErrMismatchedReuse
+	if err := keyWork.AdmitReuse(caller, key, home); err != nil {
+		return nil, err
 	}
 	return keyWork, nil
+}
+
+// AdmitReuse refuses answering a creation with this Work when the creation
+// supplies another Work Caller, Work Key or File Home than the Work fixed,
+// whether its Work Key or its repeated request identity found it (Mismatched
+// reuse).
+func (s *AgentWork) AdmitReuse(caller WorkCaller, key WorkKey, home FileHome) error {
+	if s.WorkCaller != caller || s.WorkKey != key || s.FileHome != home {
+		return ErrMismatchedReuse
+	}
+	return nil
 }
 
 // CreateWork returns the retained or newly created Work; created is true only for a new Work.

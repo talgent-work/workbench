@@ -48,7 +48,7 @@ func (h *AgentHandler) PrepareWorkExecution(ctx context.Context, request *agentp
 	var workID string
 	var err error
 	if creation := request.GetCreation(); creation != nil {
-		if err := h.application.AdmitExtensionCreation(workCallerFromProto(creation.GetWorkCaller())); err != nil {
+		if err := h.application.AdmitExtensionWorkCaller(workCallerFromProto(creation.GetWorkCaller())); err != nil {
 			return nil, mapAgentError(err)
 		}
 		workID, err = h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{
@@ -85,7 +85,7 @@ func (h *AgentHandler) CreateWork(ctx context.Context, req *agentprivatev1.Creat
 	if err := authenticateCaller(h.token, requestHeader(ctx).Get("Authorization"), req.GetSubjectId()); err != nil {
 		return nil, err
 	}
-	if err := h.application.AdmitExtensionCreation(workCallerFromProto(req.GetWorkCaller())); err != nil {
+	if err := h.application.AdmitExtensionWorkCaller(workCallerFromProto(req.GetWorkCaller())); err != nil {
 		return nil, mapAgentError(err)
 	}
 	id, err := h.application.Commands.CreateWork.Handle(ctx, command.CreateWork{StartingUserID: req.GetStartingUserId(), RequestID: req.GetRequestId(), WorkModel: workModelFromProto(req.GetModel()), WorkCaller: workCallerFromProto(req.GetWorkCaller()), WorkKey: workKeyFromProto(req.GetWorkKey()), FileHome: fileHomeFromProto(req.GetFileHome()), CapabilityDifferences: capabilityDifferencesFromProto(req.GetCapabilityDifferences()), StartingContext: startingContextFromProto(req.GetStartingContext()), SubjectID: req.GetSubjectId(), AgentID: req.GetAgentId(), AgentHarness: strings.TrimSpace(req.GetAgentHarness()), TraceAttributes: maps.Clone(req.GetTraceAttributes()), ComputerID: strings.TrimSpace(req.GetComputerId()), Harness: harnessChoiceFromProto(req.GetHarness())})

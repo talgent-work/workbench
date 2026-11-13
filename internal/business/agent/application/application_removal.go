@@ -50,8 +50,8 @@ func (r *Recovery) ApplicationRemoved(ctx context.Context, applicationID string)
 // (Removed Application admits nothing), reporting whether the Application has
 // one; an Application that never needed its Agent has no Work either.
 func (r *Recovery) recordApplicationRemoved(ctx context.Context, applicationID string) (bool, error) {
-	agentID, found, err := r.app.FindApplicationAgent(ctx, applicationID)
-	if err != nil || !found {
+	found, exists, err := r.app.FindApplicationAgent(ctx, applicationID)
+	if err != nil || !exists {
 		return false, err
 	}
 	// A concurrent change of the definition commits first; a bounded number
@@ -60,7 +60,7 @@ func (r *Recovery) recordApplicationRemoved(ctx context.Context, applicationID s
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		definition, err := r.app.Definitions.Get(ctx, agentID)
+		definition, err := r.app.Definitions.Get(ctx, found.AgentID)
 		if err != nil {
 			return false, err
 		}
