@@ -3,12 +3,17 @@ package application
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/credential"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
 var ErrProviderUnavailable = errors.New("marketplace: provider unavailable")
+
+// ErrCredentialRejected is a Provider refusing the credential it was shown,
+// such as a token it revoked before its stated expiry.
+var ErrCredentialRejected = errors.New("marketplace: provider rejected the credential")
 
 type ProviderErrorCode string
 
@@ -92,20 +97,18 @@ type CompleteProviderAuthorizationInput struct {
 
 // GitHubPort reaches GitHub through the platform's GitHub App: it begins and
 // completes an owner's authorization, observes the access scope the
-// authorization reaches, renews its credentials, and materializes repository
-// and service credentials for supply. Only Provider fact maintenance observes
-// live; reads use the retained scope.
+// authorization reaches and materializes repository credentials for supply.
+// Only Provider fact maintenance observes live; reads use the retained scope.
 type GitHubPort interface {
-	BeginProviderAuthorization(ctx context.Context, input BeginProviderAuthorizationInput) (BeginProviderAuthorizationResult, error)
-	CompleteProviderAuthorization(ctx context.Context, input CompleteProviderAuthorizationInput) (*domain.ProviderAuthorization, error)
-	// ObserveAccess asks GitHub, live, what it currently grants an owner.
-	ObserveAccess(ctx context.Context, ownerID string, provider domain.Provider) (domain.AccessScope, error)
+	OAuthProviderPort
+	// ObserveAccess asks GitHub, live, what it currently grants the holder of
+	// the user token; ErrCredentialRejected when GitHub refuses the token.
+	ObserveAccess(ctx context.Context, token string) (domain.AccessScope, error)
 	// RequestedPermissions reports what connecting requests; empty when unknown.
 	RequestedPermissions(ctx context.Context, provider domain.Provider) ([]ProviderPermission, error)
 	// ManageURL is the Provider page where the owner changes reachable accounts.
 	ManageURL(ctx context.Context, provider domain.Provider) (string, error)
-	// RefreshProviderAuthorization renews one authorization's credentials.
-	RefreshProviderAuthorization(ctx context.Context, authorizationID string, reason string) error
-	SupplyRepositoryCredential(ctx context.Context, ownerID, authorizationID, cloneURL string) (credential.MaterializedCredential, error)
-	SupplyServiceCredential(ctx context.Context, ownerID, authorizationID, target string) (credential.ServiceMaterial, error)
+	// SupplyRepositoryCredential materializes the user token as the
+	// credential for one GitHub repository.
+	SupplyRepositoryCredential(ctx context.Context, cloneURL, token string, expiresAt time.Time) (credential.MaterializedCredential, error)
 }

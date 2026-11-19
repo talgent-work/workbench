@@ -171,6 +171,7 @@ func (a *Application) ReadConnectorSelection(ctx context.Context, owner string) 
 		}
 		selection.Catalog = append(selection.Catalog, entry)
 	}
+	a.annotateProviderExpiry(selection.Catalog)
 	for _, installation := range installed {
 		if installation.Enabled {
 			selection.EnabledConnectorIDs = append(selection.EnabledConnectorIDs, installation.ConnectorID)

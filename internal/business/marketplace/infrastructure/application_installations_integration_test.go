@@ -53,7 +53,7 @@ func setupApplications(t *testing.T) (*application.Application, marketplacepubli
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	repository := infrastructure.NewInstalledPluginRepository(db)
-	app := application.NewApplication(repository, repository, catalogFixture{}, persistence.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), CatalogQueries: infrastructure.NewConnectorRepository(db), InstalledQueries: infrastructure.NewInstalledConnectorRepository(db)})
+	app := application.NewApplication(repository, repository, catalogFixture{}, persistence.NewProviderAuthorizationQueries(db), declaredConnections(db), application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), CatalogQueries: infrastructure.NewConnectorRepository(db), InstalledQueries: infrastructure.NewInstalledConnectorRepository(db)})
 	owners := application.NewOwners(accountAnswers{
 		ownedApplication:   {ID: ownedApplication, OwnerID: applicationOwner},
 		removedApplication: {ID: removedApplication, OwnerID: applicationOwner, Removed: true},

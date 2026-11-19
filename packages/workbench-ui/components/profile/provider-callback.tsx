@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { marketplaceQueryKey } from "../../lib/marketplace-catalog";
-import { completeProviderAuthorization, providerName, takeProviderReturn } from "../../lib/marketplace-connections";
+import { completeProviderAuthorization, pendingProvider, takeProviderReturn, useProviderNames } from "../../lib/marketplace-connections";
 import { notify } from "../../lib/notifications";
 
 // Completes a Provider authorization returning on the registered callback URL,
@@ -11,6 +11,7 @@ export function useProviderAuthorizationCallback() {
   const handled = useRef(false);
   const navigate = useNavigate();
   const cache = useQueryClient();
+  const providerName = useProviderNames();
   const params = new URLSearchParams(useLocation().search);
   const code = params.get("code") ?? "", state = params.get("state") ?? "";
   // The Provider returns `error` instead of a code when the user declines.
@@ -19,8 +20,10 @@ export function useProviderAuthorizationCallback() {
   useEffect(() => {
     if (!pending || handled.current) return;
     handled.current = true;
-    const provider = "github";
-    const name = providerName(provider);
+    // The callback URL is shared by every Provider; the one that began is
+    // remembered, and a return no connection began is refused by the state.
+    const provider = pendingProvider();
+    const name = providerName(provider) || "The Provider";
     if (declined) {
       notify(`provider:${provider}`, "warning", `${name} wasn’t connected`, "Authorization was cancelled. You can connect again at any time.");
       navigate(takeProviderReturn(provider), { replace: true });
@@ -38,6 +41,6 @@ export function useProviderAuthorizationCallback() {
       notify(`provider:${provider}`, "danger", `${name} couldn’t be connected`, "Try connecting again.");
       navigate(takeProviderReturn(provider), { replace: true });
     });
-  }, [pending, declined, code, state, navigate, cache]);
+  }, [pending, declined, code, state, navigate, cache, providerName]);
   return pending;
 }

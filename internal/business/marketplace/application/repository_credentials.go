@@ -49,7 +49,14 @@ func (a *PersonalConnections) SupplyRepositoryCredential(ctx context.Context, re
 	if repository.CloneURL != request.CloneURL {
 		return RepositoryCredential{}, domain.ErrCredentialTargetInapplicable
 	}
-	material, err := a.github.SupplyRepositoryCredential(ctx, request.OwnerID, request.AuthorizationID, request.CloneURL)
+	if a.credentials == nil {
+		return RepositoryCredential{}, ErrProviderUnavailable
+	}
+	current, token, err := a.credentials.Fresh(ctx, request.AuthorizationID, request.OwnerID, false)
+	if err != nil {
+		return RepositoryCredential{}, err
+	}
+	material, err := a.github.SupplyRepositoryCredential(ctx, request.CloneURL, token, current.ExpiresAt)
 	if err != nil {
 		return RepositoryCredential{}, err
 	}

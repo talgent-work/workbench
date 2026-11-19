@@ -107,6 +107,7 @@ func (a *Application) relateConnectors(ctx context.Context, releases []PluginRel
 	if err != nil {
 		return err
 	}
+	a.annotateProviderExpiry(catalog)
 	index := indexConnectorEndpoints(catalog)
 	for i := range releases {
 		for j := range releases[i].MCPServers {

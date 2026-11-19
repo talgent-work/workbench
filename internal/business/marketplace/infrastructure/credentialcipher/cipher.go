@@ -1,4 +1,6 @@
-package github
+// Package credentialcipher encrypts the credentials Talgent holds for an
+// owner at rest, for every Provider.
+package credentialcipher
 
 import (
 	"crypto/aes"
@@ -9,32 +11,24 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 )
 
 const tokenCipherVersion = "v1:"
-
-type TokenCipher interface {
-	Encrypt(plaintext string) (string, error)
-	Decrypt(ciphertext string) (string, error)
-}
 
 type aesGCMTokenCipher struct {
 	aead cipher.AEAD
 }
 
-func NewTokenCipher(cfg Config) (TokenCipher, error) {
-	enabled, err := cfg.enabled()
-	if err != nil {
-		return nil, err
-	}
-	keyText := strings.TrimSpace(cfg.TokenCipherKey)
+// New is the cipher of the configured key. Without a key it is disabled and
+// refuses every operation; a deployment declaring a Provider needs a key.
+func New(keyText string) (application.CredentialCipher, error) {
+	keyText = strings.TrimSpace(keyText)
 	if keyText == "" {
-		if !enabled {
-			return disabledTokenCipher{}, nil
-		}
-		return nil, fmt.Errorf("github token cipher key is required")
+		return disabledTokenCipher{}, nil
 	}
-	key := deriveCipherKey(keyText)
+	key := DeriveKey(keyText)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -57,7 +51,7 @@ func (disabledTokenCipher) Decrypt(string) (string, error) {
 }
 
 func applicationDisabledError() error {
-	return fmt.Errorf("github token cipher is disabled")
+	return fmt.Errorf("credential cipher has no key")
 }
 
 func (c *aesGCMTokenCipher) Encrypt(plaintext string) (string, error) {
@@ -93,7 +87,9 @@ func (c *aesGCMTokenCipher) Decrypt(ciphertext string) (string, error) {
 	return string(plaintext), nil
 }
 
-func deriveCipherKey(keyText string) []byte {
+// DeriveKey is the 32-byte key of the configured text: its base64 decoding
+// when that is 32 bytes, otherwise its SHA-256.
+func DeriveKey(keyText string) []byte {
 	if decoded, err := base64.StdEncoding.DecodeString(keyText); err == nil && len(decoded) == 32 {
 		return decoded
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/providertest"
 	"google.golang.org/protobuf/types/known/structpb"
 	"xorm.io/xorm"
 )
@@ -65,7 +66,7 @@ func setupWithCatalog(t *testing.T, catalog application.PluginCatalogQueryReposi
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	repository := infrastructure.NewInstalledPluginRepository(db)
-	app := application.NewApplication(repository, repository, catalog, persistence.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), CatalogQueries: infrastructure.NewConnectorRepository(db), InstalledQueries: infrastructure.NewInstalledConnectorRepository(db)})
+	app := application.NewApplication(repository, repository, catalog, persistence.NewProviderAuthorizationQueries(db), declaredConnections(db), application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), CatalogQueries: infrastructure.NewConnectorRepository(db), InstalledQueries: infrastructure.NewInstalledConnectorRepository(db)})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())
@@ -193,4 +194,11 @@ func TestPersonalInstallationConcurrencyAndPagination(t *testing.T) {
 	other, err := app.ListInstallations(ctx, "other", "", 2)
 	require.NoError(t, err)
 	require.Empty(t, other.Plugins)
+}
+
+// declaredConnections declares github and an enterprise identity provider
+// whose target credentials never expire, as a deployment does.
+func declaredConnections(db *xorm.Engine) *application.PersonalConnections {
+	return application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: persistence.NewProviderAuthorizations(db),
+		Queries: persistence.NewProviderAuthorizationQueries(db), Providers: providertest.Declarations{providertest.GitHub(), providertest.Enterprise()}})
 }

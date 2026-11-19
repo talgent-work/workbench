@@ -11,10 +11,12 @@ func githubConnector(t *testing.T) *domain.Connector {
 	t.Helper()
 	configuration := domain.MCPConfiguration{Command: "github-mcp-server", Arguments: []string{"stdio"}, Environment: map[string]string{"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"}}
 	binding := domain.ProviderAccessBinding{Provider: "github", Target: "github-api", Authentication: "credential_proxy"}
-	connector, err := domain.RegisterProviderConnector("github", configuration, binding, domain.CatalogPresentation{Description: "GitHub", Category: "development"}, domain.ProviderCompatibility{Configuration: configuration, Binding: binding})
+	connector, err := domain.RegisterProviderConnector("github", configuration, binding, domain.CatalogPresentation{Description: "GitHub", Category: "development"}, domain.ProviderCompatibility{Configuration: configuration, Binding: binding, Target: githubAPI})
 	require.NoError(t, err)
 	return connector
 }
+
+var githubAPI = domain.ProviderTarget{Name: "github-api", Hosts: []domain.HostPattern{"api.github.com"}}
 
 func gatewayConfiguration(url string) domain.MCPConfiguration {
 	return domain.MCPConfiguration{Type: "http", URL: url}
@@ -76,12 +78,12 @@ func TestProviderConnectorRequiresEvidenceForExactlyItsConfiguration(t *testing.
 	require.NoError(t, connector.AdmitInstallation(), "Provider authorization is not an installation condition")
 	binding := *connector.ProviderAccessBinding
 	changed := domain.MCPConfiguration{Command: "github-mcp-server", Arguments: []string{"stdio", "--read-only"}}
-	stale := domain.ProviderCompatibility{Configuration: connector.Configuration, Binding: binding}
+	stale := domain.ProviderCompatibility{Configuration: connector.Configuration, Binding: binding, Target: githubAPI}
 	_, err := connector.Reconfigure(changed, &binding, connector.Presentation, &stale)
 	require.ErrorIs(t, err, domain.ErrInvalidConnector)
 	_, err = connector.Reconfigure(changed, &binding, connector.Presentation, nil)
 	require.ErrorIs(t, err, domain.ErrInvalidConnector)
-	evidence := domain.ProviderCompatibility{Configuration: changed, Binding: binding}
+	evidence := domain.ProviderCompatibility{Configuration: changed, Binding: binding, Target: githubAPI}
 	updated, err := connector.Reconfigure(changed, &binding, domain.CatalogPresentation{Category: "code"}, &evidence)
 	require.NoError(t, err)
 	require.True(t, updated)
@@ -109,4 +111,30 @@ func TestInstalledConnectorLifecycle(t *testing.T) {
 	require.Equal(t, domain.Enabled, installation.State)
 	_, err = domain.InstallConnector("", connector)
 	require.ErrorIs(t, err, domain.ErrInvalidInstallation)
+}
+
+// A remote Provider Connector reaches only an address within its declared
+// target, so the credential the proxy adds goes nowhere else.
+func TestRemoteProviderConnectorLiesWithinItsTarget(t *testing.T) {
+	mcp := domain.ProviderTarget{Name: "github-remote-mcp", Hosts: []domain.HostPattern{"api.githubcopilot.com"}}
+	binding := domain.ProviderAccessBinding{Provider: "github", Target: mcp.Name, Authentication: "credential_proxy"}
+	inside := domain.MCPConfiguration{Type: "http", URL: "https://api.githubcopilot.com/mcp/"}
+	_, err := domain.RegisterProviderConnector("github-remote", inside, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: inside, Binding: binding, Target: mcp})
+	require.NoError(t, err)
+	outside := domain.MCPConfiguration{Type: "http", URL: "https://mcp.example.com/mcp"}
+	_, err = domain.RegisterProviderConnector("github-remote", outside, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: outside, Binding: binding, Target: mcp})
+	require.ErrorIs(t, err, domain.ErrCredentialTargetInapplicable)
+	other := domain.ProviderCompatibility{Configuration: inside, Binding: binding, Target: githubAPI}
+	_, err = domain.RegisterProviderConnector("github-remote", inside, binding, domain.CatalogPresentation{}, other)
+	require.ErrorIs(t, err, domain.ErrInvalidConnector, "evidence names the binding's target")
+	for name, configuration := range map[string]domain.MCPConfiguration{
+		"header":      {Type: "http", URL: "https://api.githubcopilot.com/mcp/", Headers: map[string]string{"Authorization": "Bearer literal-token"}},
+		"environment": {Command: "github-mcp-server", Arguments: []string{"stdio"}, Environment: map[string]string{"GITHUB_PERSONAL_ACCESS_TOKEN": "literal-token"}},
+	} {
+		_, err = domain.RegisterProviderConnector("github-remote", configuration, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: configuration, Binding: binding, Target: mcp})
+		require.ErrorIs(t, err, domain.ErrCredentialTargetInapplicable, "a %s carries the credential placeholder, never a secret", name)
+	}
+	proxied := domain.MCPConfiguration{Type: "http", URL: "https://api.githubcopilot.com/mcp/", Headers: map[string]string{"Authorization": "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"}}
+	_, err = domain.RegisterProviderConnector("github-remote", proxied, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: proxied, Binding: binding, Target: mcp})
+	require.NoError(t, err)
 }

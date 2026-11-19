@@ -80,6 +80,7 @@ func (h *SelectionHandler) ReadConnectorSelection(ctx context.Context, request *
 			Environment: c.Configuration.Environment, Headers: c.Configuration.Headers}
 		if provider := c.Provider; provider != nil {
 			message.Provider, message.Target, message.ProviderAuthentication = provider.Provider, provider.Target, provider.Authentication
+			message.ProviderTargetCredentialsExpire = provider.TargetCredentialsExpire
 		}
 		result.Connectors = append(result.Connectors, message)
 	}

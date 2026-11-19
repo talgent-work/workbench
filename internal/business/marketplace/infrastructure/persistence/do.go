@@ -3,7 +3,7 @@ package persistence
 type ProviderAuthorizationDO struct {
 	ID                     string `xorm:"id pk varchar(36)"`
 	OwnerID                string `xorm:"owner_id varchar(64) notnull default('')"`
-	Provider               string `xorm:"provider varchar(16) notnull default('')"`
+	Provider               string `xorm:"provider varchar(64) notnull default('')"`
 	ProviderAccountID      string `xorm:"provider_account_id varchar(128) notnull default('')"`
 	ProviderLogin          string `xorm:"provider_login varchar(128) notnull default('')"`
 	AccessTokenCiphertext  string `xorm:"access_token_ciphertext text notnull"`
@@ -19,10 +19,14 @@ type ProviderAuthorizationDO struct {
 	LastFailureDetail      string `xorm:"last_failure_detail varchar(512) notnull default('')"`
 	AccessScopeJSON        string `xorm:"access_scope_json json"`
 	AccessScopeObservedAt  int64  `xorm:"access_scope_observed_at bigint notnull default(0)"`
-	Version                int    `xorm:"version notnull default(0)"`
-	CreatedAt              int64  `xorm:"created_at bigint notnull default(0)"`
-	UpdatedAt              int64  `xorm:"updated_at bigint notnull default(0)"`
-	DeletedAt              int64  `xorm:"deleted_at bigint notnull default(0)"`
+	TargetCredentialsJSON  string `xorm:"target_credentials_json json"`
+	// CredentialsExpireAt is the earliest expiry over the authorization's own
+	// and target credentials, kept for the renewal sweep.
+	CredentialsExpireAt int64 `xorm:"credentials_expire_at bigint notnull default(0)"`
+	Version             int   `xorm:"version notnull default(0)"`
+	CreatedAt           int64 `xorm:"created_at bigint notnull default(0)"`
+	UpdatedAt           int64 `xorm:"updated_at bigint notnull default(0)"`
+	DeletedAt           int64 `xorm:"deleted_at bigint notnull default(0)"`
 }
 
 func (ProviderAuthorizationDO) TableName() string { return "scm_provider_authorization" }

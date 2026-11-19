@@ -160,10 +160,11 @@ for ns in talgent talgent-sandbox; do
 done
 ```
 
+- **`provider-credentials`** (required once a Provider is enabled): key
+  `PROVIDER_CREDENTIAL_CIPHER_KEY` (≥32 random bytes), which encrypts every Provider credential.
 - **`github-scm`** (optional; without it GitHub repositories are unavailable): keys
   `GITHUB_SCM_ENABLED`, `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY_PEM`,
-  `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `GITHUB_SCM_TOKEN_CIPHER_KEY` (≥32
-  random bytes), `GITHUB_WEBHOOK_SECRET`; optional `GITHUB_WEB_BASE_URL`, `GITHUB_API_BASE_URL`,
+  `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`; optional `GITHUB_WEB_BASE_URL`, `GITHUB_API_BASE_URL`,
   `GITHUB_API_VERSION`. The GitHub App's callback URL is `<origin>/profile`; its webhook URL is
   `<origin>/api/scm/github/webhook` with events `github_app_authorization`, `installation` and
   `installation_repositories`.

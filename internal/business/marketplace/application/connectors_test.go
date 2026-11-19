@@ -130,12 +130,12 @@ func (mcpCatalog) OpenArchive(context.Context, string) (io.ReadSeekCloser, error
 func connectorApplication(t *testing.T, plugins ...PluginRelease) (*Application, *connectorStore) {
 	t.Helper()
 	store := newConnectorStore()
-	app := NewApplication(nil, nil, mcpCatalog(plugins), store, nil, ConnectorRepositories{Catalog: store, Installed: installedConnectors{store}, CatalogQueries: store, InstalledQueries: store})
+	connections := NewPersonalConnections(ConnectionDependencies{Providers: staticProviders{gitHubDeclaration()}})
+	app := NewApplication(nil, nil, mcpCatalog(plugins), store, connections, ConnectorRepositories{Catalog: store, Installed: installedConnectors{store}, CatalogQueries: store, InstalledQueries: store})
 	require.NoError(t, app.PublishConnector(t.Context(), ConnectorPublication{Name: "talgent", Configuration: domain.MCPConfiguration{Type: "http", URL: "http://connector.talgent.svc.cluster.local/mcp"}}))
 	configuration := domain.MCPConfiguration{Command: "github-mcp-server", Arguments: []string{"stdio"}}
 	binding := domain.ProviderAccessBinding{Provider: "github", Target: "github-api", Authentication: "credential_proxy"}
-	evidence := domain.ProviderCompatibility{Configuration: configuration, Binding: binding}
-	require.NoError(t, app.PublishConnector(t.Context(), ConnectorPublication{Name: "github", Configuration: configuration, Provider: &binding, Evidence: &evidence,
+	require.NoError(t, app.PublishConnector(t.Context(), ConnectorPublication{Name: "github", Configuration: configuration, Provider: &binding,
 		Presentation: domain.CatalogPresentation{Description: "GitHub repositories and pull requests", Category: "development"}}))
 	return app, store
 }

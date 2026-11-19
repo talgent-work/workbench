@@ -14,13 +14,25 @@ const returnKey = "talgent.providerAuthorization.return";
 // The Application a connection is for, when its Application Owner connects
 // it; the callback completes it for the same owner.
 const applicationKey = "talgent.providerAuthorization.application";
-
-export const providerNames: Record<string, string> = { github: "GitHub" };
-export const providerName = (provider: string) => providerNames[provider] ?? provider;
-// Providers supported by the platform. Only GitHub exists today.
-export const supportedProviders = ["github"] as const;
+// The Provider being connected; the callback URL is shared by every Provider.
+const providerKey = "talgent.providerAuthorization.provider";
 
 const callbackURI = () => `${window.location.origin}${providerCallbackPath}`;
+
+/** The Providers the deployment declares, each with the connection's stored
+ * status: the person's own, or, given its id, an Application's they own. */
+export function useProviders(applicationId = "") {
+  const userId = useCurrentUser().data?.user?.id ?? "";
+  return useQuery({ queryKey: [...marketplaceQueryKey, "providers", userId, applicationId], enabled: Boolean(userId), retry: false, staleTime: 60_000,
+    queryFn: async ({ signal }) => (await marketplaceClient.listProviders({ applicationId }, { signal })).providers });
+}
+
+/** Names a Provider as the deployment declares it, by its identifier until
+ * the declarations are read. */
+export function useProviderNames() {
+  const declared = useProviders().data;
+  return (provider: string) => declared?.find(item => item.name === provider)?.displayName || provider;
+}
 
 /** The connection's stored status only, without asking the Provider what it
  * reaches: the person's own, or, given its id, an Application's they own. */
@@ -43,6 +55,7 @@ export function useProviderAccess(provider: string) {
 export function useRefreshProviderAccess(provider: string) {
   const userId = useCurrentUser().data?.user?.id ?? "";
   const cache = useQueryClient();
+  const providerName = useProviderNames();
   return useMutation({
     mutationFn: async () => {
       const response = await marketplaceClient.refreshProviderAccess({ provider });
@@ -60,11 +73,13 @@ export function useRefreshProviderAccess(provider: string) {
 // Starts connecting, for the person or an Application they own; the browser
 // leaves for the Provider on success.
 export function useConnectProvider() {
+  const providerName = useProviderNames();
   return useMutation({
     mutationFn: async ({ provider, returnTo, applicationId = "" }: { provider: string; returnTo: string; applicationId?: string }) => {
       const response = await marketplaceClient.beginProviderAuthorization({ provider, redirectUri: callbackURI(), applicationId });
       if (!response.authorizationUrl) throw new Error("The authorization address is missing");
       window.sessionStorage.setItem(returnKey, returnTo);
+      window.sessionStorage.setItem(providerKey, provider);
       if (applicationId) window.sessionStorage.setItem(applicationKey, applicationId);
       else window.sessionStorage.removeItem(applicationKey);
       return response.authorizationUrl;
@@ -74,11 +89,13 @@ export function useConnectProvider() {
   });
 }
 
+// The Provider being connected, as the connection began; empty when none did.
+export const pendingProvider = () => window.sessionStorage.getItem(providerKey) ?? "";
+
 // The page that started connecting, read once.
 export function takeProviderReturn(provider: string) {
   const returnTo = window.sessionStorage.getItem(returnKey) || `/marketplace/providers/${provider}`;
-  window.sessionStorage.removeItem(returnKey);
-  window.sessionStorage.removeItem(applicationKey);
+  for (const key of [returnKey, applicationKey, providerKey]) window.sessionStorage.removeItem(key);
   return returnTo;
 }
 

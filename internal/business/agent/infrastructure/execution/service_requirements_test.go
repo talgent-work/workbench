@@ -12,28 +12,39 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
 )
 
-func TestCredentialPlanConfinesServicesAndKeepsModelWhenUnavailable(t *testing.T) {
+// The Credential Proxy adds a Provider credential only to requests for its
+// target's declared hosts: every binding names those hosts and nothing else.
+func TestCredentialPlanConfinesServicesToTheirTargetHosts(t *testing.T) {
 	model := modelCredential{Endpoint: "https://model.example/anthropic", Key: "model-token"}
 	now := time.Now()
 	base, err := credentialPlan(model, nil, nil, now)
 	require.NoError(t, err)
 	require.Len(t, base.Credentials, 1)
+	material := func(target string, hosts ...string) command.ServiceCredentialMaterial {
+		return command.ServiceCredentialMaterial{Token: "token-for-" + target, ExpiresAt: now.Add(time.Hour), Hosts: hosts}
+	}
 	services := []command.ServiceAccessMaterial{
-		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-api"}, AuthorizationID: "auth", ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
-		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-remote-mcp"}, AuthorizationID: "auth", ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "provider-token", ExpiresAt: now.Add(time.Hour)}},
+		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-api"}, AuthorizationID: "auth", ServiceCredentialMaterial: material("github-api", "api.github.com")},
+		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-remote-mcp"}, AuthorizationID: "auth", ServiceCredentialMaterial: material("github-remote-mcp", "api.githubcopilot.com")},
+		{ServiceRequirement: command.ServiceRequirement{Provider: "example-sso", Service: "example-sso", Target: "example-docs"}, AuthorizationID: "sso", ServiceCredentialMaterial: material("example-docs", "docs.example.com", "*.svc.example.com")},
 	}
 	plan, err := credentialPlan(model, nil, services, now)
 	require.NoError(t, err)
-	require.Len(t, plan.Credentials, 3)
-	require.Len(t, plan.Bindings, 5)
-	require.Equal(t, []string{"api.github.com"}, plan.Bindings[1].Match.Hosts)
-	for _, binding := range plan.Bindings[2:] {
-		require.Equal(t, []string{"api.githubcopilot.com"}, binding.Match.Hosts)
-		require.Equal(t, []string{"/mcp", "/mcp/"}, binding.Match.Paths)
+	require.Len(t, plan.Credentials, 4)
+	require.Len(t, plan.Bindings, 4)
+	hosts := map[string][]string{}
+	for _, binding := range plan.Bindings[1:] {
+		hosts[binding.Auth.Credential] = binding.Match.Hosts
+		require.Equal(t, []sdk.CredentialScheme{sdk.CredentialSchemeHTTPS}, binding.Match.Schemes)
 	}
-	services[0].Target = "https://other.example"
-	_, err = credentialPlan(model, nil, services, now)
-	require.Error(t, err)
+	require.Equal(t, map[string][]string{"github-api": {"api.github.com"}, "github-remote-mcp": {"api.githubcopilot.com"}, "example-docs": {"docs.example.com", "*.svc.example.com"}}, hosts)
+
+	for name, declared := range map[string][]string{"no hosts": nil, "bare wildcard": {"*"}, "top-level wildcard": {"*.com"}, "address": {"https://api.github.com"}} {
+		changed := append([]command.ServiceAccessMaterial(nil), services...)
+		changed[0].Hosts = declared
+		_, err = credentialPlan(model, nil, changed, now)
+		require.Error(t, err, name)
+	}
 }
 
 func TestNativeServiceEnvironmentContainsOnlyPublicPlaceholders(t *testing.T) {

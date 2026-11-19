@@ -13,6 +13,37 @@ ranges, `CLUSTER_NETWORKS`, in the environment, then deploy ([Enterprise network
 NetworkPolicy `sandbox-enterprise-networks` in `talgent-sandbox`, empty unless networks are
 declared.
 
+## The release that makes Providers deployment declarations
+
+Every Provider owners authorize is now declared in configuration with the targets its credentials
+reach ([configuration](configuration.md#marketplace)); the old keys are not read. Before
+deploying:
+
+1. Apply
+   [`20261119-provider-target-credentials.sql`](../deploy/middleware/migrations/20261119-provider-target-credentials.sql)
+   to the database named by `WORKBENCH_MYSQL_DATABASE`: it widens
+   `scm_provider_authorization.provider`, adds `target_credentials_json`, and adds
+   `credentials_expire_at`, which the renewal sweep now selects by.
+2. Create the Secret `provider-credentials` with `PROVIDER_CREDENTIAL_CIPHER_KEY` set to the
+   value of `github-scm`'s `GITHUB_SCM_TOKEN_CIPHER_KEY`, which then leaves `github-scm`.
+   Existing authorizations stay readable only under the same key.
+3. Move a profile's configuration:
+
+   | Old key | New key |
+   |---|---|
+   | `marketplace.provider-connectors[]` entry `name: x` | `marketplace.connectors.x`, without `name` and `authentication` |
+   | `marketplace.connections.github.enabled` | `marketplace.providers.github.enabled` |
+   | `marketplace.connections.github.oauth-client-id`, `oauth-client-secret` | `marketplace.providers.github.client-id`, `client-secret` |
+   | `marketplace.connections.github.token-cipher-key` | `marketplace.connections.credential-cipher-key` |
+   | the `github` Provider's fixed targets `github-api`, `github-remote-mcp` | `marketplace.providers.github.targets`, declared by the base |
+
+   A Connector authenticated by a Provider names a target that Provider declares, and a remote
+   one lies within that target's hosts.
+
+A Work's Credential Proxy now binds each Provider credential to its target's declared hosts,
+for every path and method. The `github-remote-mcp` credential, earlier bound to `/mcp` on
+`api.githubcopilot.com`, now reaches any path of that host.
+
 ## The release that upgrades OpenSandbox to 1.2.1
 
 `apply-opensandbox.sh` upgrades the OpenSandbox Controller, Server, CRDs, execd and egress to

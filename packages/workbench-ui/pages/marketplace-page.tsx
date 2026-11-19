@@ -6,7 +6,7 @@ import { PluginList } from "../components/marketplace/plugin-list";
 import { PluginPage } from "../components/marketplace/plugin-page";
 import { ProviderPage } from "../components/marketplace/provider-pages";
 import { usePlugin } from "../lib/marketplace-catalog";
-import { providerName, serviceLabel } from "../lib/marketplace-connections";
+import { serviceLabel, useProviderNames } from "../lib/marketplace-connections";
 import { pluginDisplayName, pluginPresentation } from "../lib/marketplace-plugins";
 import { marketplacePaths } from "../lib/marketplace-routes";
 
@@ -55,5 +55,6 @@ function ConnectorRoute() {
 
 function ProviderRoute() {
   const provider = useParams().provider ?? "";
+  const providerName = useProviderNames();
   return <MarketplaceShell title={providerName(provider)} root={profile}><ProviderPage key={provider} provider={provider} /></MarketplaceShell>;
 }

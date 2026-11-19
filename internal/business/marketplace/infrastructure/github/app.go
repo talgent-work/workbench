@@ -14,9 +14,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/oauthtoken"
 )
 
 const (
@@ -24,30 +25,50 @@ const (
 	defaultAPIVersion = "2026-03-10"
 )
 
+// Config is the GitHub App adapter beside the github Provider declaration.
+// The App settings are its own; the OAuth client, its endpoints and the
+// credential cipher key come from the declaration and the connection
+// settings, and the adapter is enabled exactly when github is declared.
 type Config struct {
-	Enabled           string `json:"enabled" toml:"enabled" yaml:"enabled"`
-	AppID             string `json:"app-id" toml:"app-id" yaml:"app-id"`
-	AppSlug           string `json:"app-slug" toml:"app-slug" yaml:"app-slug"`
-	PrivateKeyPEM     string `json:"private-key-pem" toml:"private-key-pem" yaml:"private-key-pem"`
-	OAuthClientID     string `json:"oauth-client-id" toml:"oauth-client-id" yaml:"oauth-client-id"`
-	OAuthClientSecret string `json:"oauth-client-secret" toml:"oauth-client-secret" yaml:"oauth-client-secret"`
-	WebBaseURL        string `json:"web-base-url" toml:"web-base-url" yaml:"web-base-url"`
-	APIBaseURL        string `json:"api-base-url" toml:"api-base-url" yaml:"api-base-url"`
-	APIVersion        string `json:"api-version" toml:"api-version" yaml:"api-version"`
-	TokenCipherKey    string `json:"token-cipher-key" toml:"token-cipher-key" yaml:"token-cipher-key"`
-	WebhookSecret     string `json:"webhook-secret" toml:"webhook-secret" yaml:"webhook-secret"`
+	AppID         string `json:"app-id" toml:"app-id" yaml:"app-id"`
+	AppSlug       string `json:"app-slug" toml:"app-slug" yaml:"app-slug"`
+	PrivateKeyPEM string `json:"private-key-pem" toml:"private-key-pem" yaml:"private-key-pem"`
+	WebBaseURL    string `json:"web-base-url" toml:"web-base-url" yaml:"web-base-url"`
+	APIBaseURL    string `json:"api-base-url" toml:"api-base-url" yaml:"api-base-url"`
+	APIVersion    string `json:"api-version" toml:"api-version" yaml:"api-version"`
+	WebhookSecret string `json:"webhook-secret" toml:"webhook-secret" yaml:"webhook-secret"`
+
+	Enabled               bool   `json:"-" toml:"-" yaml:"-"`
+	OAuthClientID         string `json:"-" toml:"-" yaml:"-"`
+	OAuthClientSecret     string `json:"-" toml:"-" yaml:"-"`
+	AuthorizationEndpoint string `json:"-" toml:"-" yaml:"-"`
+	TokenEndpoint         string `json:"-" toml:"-" yaml:"-"`
+	TokenCipherKey        string `json:"-" toml:"-" yaml:"-"`
 }
 
 func (c Config) enabled() (bool, error) {
-	enabled := strings.TrimSpace(c.Enabled)
-	if enabled == "" {
-		return false, nil
+	return c.Enabled, nil
+}
+
+func (c Config) authorizationEndpoint() string {
+	if endpoint := strings.TrimSpace(c.AuthorizationEndpoint); endpoint != "" {
+		return endpoint
 	}
-	parsed, err := strconv.ParseBool(enabled)
-	if err != nil {
-		return false, fmt.Errorf("scm github enabled must be boolean: %w", err)
+	return c.webBaseURL() + "/login/oauth/authorize"
+}
+
+// tokenClient is the OAuth App at GitHub's token endpoint, which takes the
+// client's credentials in the form.
+func (c Config) tokenClient() oauthtoken.Endpoint {
+	return oauthtoken.Endpoint{URL: c.tokenEndpoint(), ClientID: strings.TrimSpace(c.OAuthClientID), ClientSecret: strings.TrimSpace(c.OAuthClientSecret),
+		Authentication: oauthtoken.ClientSecretPost}
+}
+
+func (c Config) tokenEndpoint() string {
+	if endpoint := strings.TrimSpace(c.TokenEndpoint); endpoint != "" {
+		return endpoint
 	}
-	return parsed, nil
+	return c.webBaseURL() + "/login/oauth/access_token"
 }
 
 func (c Config) validate() error {
@@ -66,16 +87,16 @@ func (c Config) validate() error {
 		missing = append(missing, "private-key-pem")
 	}
 	if strings.TrimSpace(c.OAuthClientID) == "" {
-		missing = append(missing, "oauth-client-id")
+		missing = append(missing, "client-id")
 	}
 	if strings.TrimSpace(c.OAuthClientSecret) == "" {
-		missing = append(missing, "oauth-client-secret")
+		missing = append(missing, "client-secret")
 	}
 	if strings.TrimSpace(c.TokenCipherKey) == "" {
-		missing = append(missing, "token-cipher-key")
+		missing = append(missing, "connections.credential-cipher-key")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("scm github enabled but missing required config: %s", strings.Join(missing, ", "))
+		return fmt.Errorf("the github Provider is declared but its App lacks: %s", strings.Join(missing, ", "))
 	}
 	return nil
 }

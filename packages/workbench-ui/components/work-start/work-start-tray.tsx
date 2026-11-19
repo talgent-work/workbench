@@ -5,7 +5,7 @@ import { AlertTriangle, Bot, Cloud, GitBranch, Server, Shield } from "lucide-rea
 import type { UsableComputer } from "../../lib/computer-service";
 import { permissionModeOption } from "../../lib/permission-modes";
 import type { WorkStartInput } from "../../lib/start-work-request";
-import { providerName, useConnectProvider, useProviderConnection } from "../../lib/marketplace-connections";
+import { useConnectProvider, useProviderConnection, useProviderNames } from "../../lib/marketplace-connections";
 import type { Capability } from "../../lib/work-start-loadout";
 import { PermissionModeList } from "../composer/permission-mode-list";
 import { PopoverFootnote } from "../composer/prompt-bar-controls";
@@ -70,6 +70,7 @@ export function RepositoryPicker({ repositories, recent, unavailable, loading, s
   const [query, setQuery] = useState("");
   const github = useProviderConnection("github");
   const connect = useConnectProvider();
+  const gitHub = useProviderNames()("github");
   const status = github.data?.state?.status;
   const byId = new Map(repositories.map(repository => [repository.id, repository]));
   const value = selected.length === 0 ? "Repository" : selected.length === 1 ? byId.get(selected[0])?.repoName ?? "1 repository" : `${selected.length} repositories`;
@@ -83,7 +84,7 @@ export function RepositoryPicker({ repositories, recent, unavailable, loading, s
     {loading ? <p className="wpb-empty" role="status">Loading repositories…</p>
       : needsConnection && !repositories.length ? <div className="wst-picker-empty">
         <p>{status === "reconnect_required" ? "Your GitHub authorization expired. Reconnect to check out repositories." : "Connect GitHub to check out repositories in this Work. You can start without one."}</p>
-        <Button size="sm" variant="secondary" isPending={connect.isPending} onPress={() => connect.mutate({ provider: "github", returnTo })}>{status === "reconnect_required" ? "Reconnect GitHub" : `Connect ${providerName("github")}`}</Button>
+        <Button size="sm" variant="secondary" isPending={connect.isPending} onPress={() => connect.mutate({ provider: "github", returnTo })}>{status === "reconnect_required" ? `Reconnect ${gitHub}` : `Connect ${gitHub}`}</Button>
       </div>
       : unavailable ? <p className="wpb-empty" role="alert">Repositories couldn’t be loaded. You can start without one. <Button size="sm" variant="ghost" onPress={onRetry}>Retry</Button></p>
       : <>

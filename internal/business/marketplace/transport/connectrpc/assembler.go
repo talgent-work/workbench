@@ -98,5 +98,5 @@ func relationshipMessage(value *application.ConnectorRelationship) *marketplacep
 	if value == nil {
 		return &marketplacepublicv1.ConnectorProviderRelationship{Status: "unavailable", Reason: "relationship_not_registered"}
 	}
-	return &marketplacepublicv1.ConnectorProviderRelationship{ConnectorId: value.ConnectorID, ConnectorName: value.ConnectorName, Provider: value.Provider, Target: value.Target, Authentication: value.Authentication, Status: value.Status, Reason: value.Reason}
+	return &marketplacepublicv1.ConnectorProviderRelationship{ConnectorId: value.ConnectorID, ConnectorName: value.ConnectorName, Provider: value.Provider, Target: value.Target, Authentication: value.Authentication, Status: value.Status, Reason: value.Reason, TargetCredentialsExpire: value.TargetCredentialsExpire}
 }

@@ -143,3 +143,23 @@ func TestAuthorizationObservesItsScopeOnTheSpot(t *testing.T) {
 	require.NoError(t, err, "a failed observation does not fail the authorization")
 	require.Equal(t, []string{info.ID}, app.observations.scheduled)
 }
+
+// GitHub rejecting a credential before its stated expiry gets one renewed
+// credential; a second rejection is final and asks nothing more of GitHub.
+func TestObservationRenewsARejectedCredentialOnce(t *testing.T) {
+	app := newTestApplication(t)
+	authorization := mustAuthorization(t, "owner", "login")
+	app.authorizations.save(authorization)
+	app.observer.rejected = map[string]bool{"access-token-ciphertext": true}
+	require.NoError(t, app.ObserveAccessScope(t.Context(), authorization.ID))
+	require.Equal(t, []string{"access-token-ciphertext", "renewed-access"}, app.observer.tokens)
+	require.Len(t, app.provider.renewals, 1)
+
+	app.observer.tokens, app.observer.rejected = nil, map[string]bool{"renewed-access": true}
+	err := app.ObserveAccessScope(t.Context(), authorization.ID)
+	var providerErr *ProviderError
+	require.ErrorAs(t, err, &providerErr)
+	require.False(t, providerErr.Retryable)
+	require.Equal(t, []string{"renewed-access", "renewed-access"}, app.observer.tokens)
+	require.Len(t, app.provider.renewals, 2)
+}

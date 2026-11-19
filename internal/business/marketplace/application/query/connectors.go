@@ -20,7 +20,11 @@ type ConnectorConfiguration struct {
 	Environment, Headers map[string]string
 }
 
-type ConnectorProvider struct{ Provider, Target, Authentication string }
+type ConnectorProvider struct {
+	Provider, Target, Authentication string
+	// TargetCredentialsExpire reports the declared Provider's expiry.
+	TargetCredentialsExpire bool
+}
 
 // InstalledConnector is one personal installation of a catalog entry.
 type InstalledConnector struct {

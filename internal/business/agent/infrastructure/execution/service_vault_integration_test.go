@@ -125,7 +125,8 @@ func (s *currentServiceSupply) SupplyServiceCredential(_ context.Context, reques
 	if s.reason != "" {
 		return command.ServiceCredentialMaterial{}, &command.ServiceCredentialUnavailable{Reason: s.reason, Temporary: s.reason == "unavailable"}
 	}
-	return command.ServiceCredentialMaterial{Token: s.token, ExpiresAt: time.Now().Add(time.Hour)}, nil
+	hosts := map[string][]string{"github-api": {"api.github.com"}, "github-remote-mcp": {"api.githubcopilot.com"}}[request.Target]
+	return command.ServiceCredentialMaterial{Token: s.token, ExpiresAt: time.Now().Add(time.Hour), Hosts: hosts}, nil
 }
 
 // Marketplace reports revoked and reconnect-required authorizations as inactive.
