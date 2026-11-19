@@ -71,14 +71,18 @@ func AddConnector(owner ConnectorOwner, addition ConnectorAddition, platformName
 }
 
 // Change replaces an owner-added Connector's MCPConfiguration and
-// CatalogPresentation on its owner's command, keeping its name and declared
-// Provider, whose supplied declaration rechecks target containment.
+// CatalogPresentation on its owner's command, keeping its name, its declared
+// Provider, whose supplied declaration rechecks target containment, and how
+// Works reach it: a remote server stays remote and a local command local.
 func (c *Connector) Change(caller string, configuration MCPConfiguration, presentation CatalogPresentation, provider *ProviderDeclaration) error {
 	if err := c.ownerCommand(caller); err != nil {
 		return err
 	}
 	if c.State == ConnectorWithdrawn {
 		return ErrInvalidTransition
+	}
+	if configuration.Remote() != c.Configuration.Remote() {
+		return ErrInvalidConnector
 	}
 	candidate := *c
 	candidate.Configuration, candidate.Presentation = configuration.Clone(), presentation

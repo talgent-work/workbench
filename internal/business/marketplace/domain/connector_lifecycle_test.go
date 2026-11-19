@@ -85,6 +85,8 @@ func TestOnlyTheOwnerChangesPublishesAndDeletes(t *testing.T) {
 	require.NoError(t, connector.Change(alice, remote("https://crm2.corp.acme.example/mcp"), domain.CatalogPresentation{Description: "CRM", Category: "Sales"}, &acmeSSO))
 	require.Equal(t, "acme-crm", connector.Name)
 	require.Equal(t, "acme-sso", connector.ProviderAccessBinding.Provider, "the declared Provider stays")
+	require.ErrorIs(t, connector.Change(alice, domain.MCPConfiguration{Type: "stdio", Command: "npx", Arguments: []string{"acme-crm@1.0.0"}}, connector.Presentation, &acmeSSO),
+		domain.ErrInvalidConnector, "a remote server stays remote")
 }
 
 // Private → Published → Withdrawn, and Withdrawn is final; only a Private

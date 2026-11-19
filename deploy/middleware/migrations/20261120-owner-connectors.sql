@@ -18,4 +18,6 @@ ALTER TABLE `marketplace_connector`
     ADD UNIQUE KEY `uniq_owner_name` (`owner_id`, `name`),
     ADD KEY `idx_state` (`state`),
     COMMENT = 'Platform and owner-added Connectors';
+-- Run this file once, as a whole: the ALTER above fails on a second run and
+-- stops the client before this renumbering, which must not repeat.
 UPDATE `marketplace_connector` SET `state` = `state` + 1;

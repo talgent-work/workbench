@@ -46,24 +46,21 @@ func (a *Application) ReadConnectorSelection(ctx context.Context, owner string) 
 			selection.EnabledConnectorIDs = append(selection.EnabledConnectorIDs, installation.ConnectorID)
 		}
 	}
-	var publishers []Connector
+	var publishers []query.ConnectorOwner
 	for _, connector := range connectors {
 		switch {
 		case connector.InCatalogOf(owner):
 			// Provide connection: a Connector in the owner's catalog.
 			selection.Catalog = append(selection.Catalog, SelectableConnector{CatalogConnector: connector, Offered: true})
-			publishers = append(publishers, connectorView(owner, connector))
+			publishers = append(publishers, connector.Owner)
 		case installedIDs[connector.ID]:
 			// Only its identity, so Agent refuses a choice of it.
 			selection.Catalog = append(selection.Catalog, SelectableConnector{CatalogConnector: query.CatalogConnector{ID: connector.ID, Name: connector.Name, Required: connector.Required}})
-			publishers = append(publishers, Connector{})
 		}
 	}
-	if err := a.namePublishers(ctx, publishers); err != nil {
-		return ConnectorSelection{}, err
-	}
+	names := a.publisherNames(ctx, publishers)
 	for i := range selection.Catalog {
-		selection.Catalog[i].Publisher = publishers[i].Publisher.DisplayName
+		selection.Catalog[i].Publisher = publisherName(names, selection.Catalog[i].Owner)
 		if provider := selection.Catalog[i].Provider; provider != nil {
 			provider.TargetCredentialsExpire = a.targetCredentialsExpire(provider.Provider)
 		}

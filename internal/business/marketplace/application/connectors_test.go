@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"io"
 	"slices"
 	"strings"
@@ -74,7 +75,7 @@ func (s *connectorStore) ListForOwner(context.Context, string) ([]query.CatalogC
 	var result []query.CatalogConnector
 	for _, c := range s.catalog {
 		item := query.CatalogConnector{ID: c.ID, Name: c.Name, Description: c.Presentation.Description, Category: c.Presentation.Category, Required: c.Required,
-			Owner: query.ConnectorOwner{Kind: query.OwnerPlatform}, State: states[c.State], Authentication: c.Authentication, Version: c.Version,
+			Owner: ownerOf(c.Owner), State: states[c.State], Authentication: c.Authentication, Version: c.Version,
 			Configuration: query.ConnectorConfiguration{Type: c.Configuration.Type, URL: c.Configuration.URL, Command: c.Configuration.Command, Arguments: c.Configuration.Arguments}}
 		if b := c.ProviderAccessBinding; b != nil {
 			item.Provider = &query.ConnectorProvider{Provider: b.Provider, Target: b.Target, Authentication: b.Authentication}
@@ -83,6 +84,11 @@ func (s *connectorStore) ListForOwner(context.Context, string) ([]query.CatalogC
 	}
 	slices.SortFunc(result, func(a, b query.CatalogConnector) int { return strings.Compare(a.Name, b.Name) })
 	return result, nil
+}
+
+func ownerOf(owner domain.ConnectorOwner) query.ConnectorOwner {
+	kinds := map[domain.OwnerKind]string{domain.OwnerPlatform: query.OwnerPlatform, domain.OwnerPerson: query.OwnerPerson, domain.OwnerApplication: query.OwnerApplication}
+	return query.ConnectorOwner{Kind: kinds[owner.Kind], ID: owner.ID}
 }
 
 func (s *connectorStore) ListInstalled(_ context.Context, user string) ([]query.InstalledConnector, error) {
@@ -257,4 +263,35 @@ func TestPluginsRelateToConnectorsOnlyByEndpointEquivalence(t *testing.T) {
 	require.Equal(t, "supported", releases[0].MCPServers[0].Relationship.Status)
 	require.Equal(t, "github-api", releases[0].MCPServers[0].Relationship.Target)
 	require.Equal(t, "relationship_not_registered", releases[1].MCPServers[0].Relationship.Reason, "a declaration without a catalog Connector is reported, not rejected")
+}
+
+type unreachableDirectory struct{}
+
+func (unreachableDirectory) PersonNames(context.Context, []string) (map[string]string, error) {
+	return nil, errors.New("account unavailable")
+}
+
+func (unreachableDirectory) ApplicationName(context.Context, string) (string, error) {
+	return "", errors.New("account unavailable")
+}
+
+// A publisher's name only presents a Connector: when Account cannot name it,
+// the catalog and a Work's selection still read, naming it unknown.
+func TestUnnamedPublishersNeverBlockTheCatalogOrSelection(t *testing.T) {
+	app, _ := connectorApplication(t)
+	app.publishers = unreachableDirectory{}
+	added, err := app.AddConnector(t.Context(), ConnectorAuthoring{Owner: domain.ConnectorOwner{Kind: domain.OwnerPerson, ID: "alice"}, Name: "docs",
+		Configuration: domain.MCPConfiguration{Type: "http", URL: "https://docs.example.com/mcp"}})
+	require.NoError(t, err)
+	_, err = app.PublishConnector(t.Context(), ConnectorCommand{OwnerID: "alice", ConnectorID: added.Connector.ID, Version: added.Connector.Version})
+	require.NoError(t, err)
+
+	listed, err := app.ListConnectors(t.Context(), "bob")
+	require.NoError(t, err)
+	require.Equal(t, "Unknown", connectorNamed(t, listed, "docs").Publisher.DisplayName)
+	require.Empty(t, connectorNamed(t, listed, "github").Publisher.DisplayName, "the platform needs no name")
+	selection, err := app.ReadConnectorSelection(t.Context(), "bob")
+	require.NoError(t, err)
+	index := slices.IndexFunc(selection.Catalog, func(c SelectableConnector) bool { return c.Name == "docs" })
+	require.Equal(t, "Unknown", selection.Catalog[index].Publisher)
 }

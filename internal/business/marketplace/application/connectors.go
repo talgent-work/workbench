@@ -53,7 +53,8 @@ type Publisher struct {
 	// Kind is platform, person or application.
 	Kind, DisplayName string
 	// Own reports whether the reading owner made the Connector.
-	Own bool
+	Own   bool
+	owner query.ConnectorOwner
 }
 
 // ConnectorSettings is an owner's Connector connection without credentials.
@@ -249,19 +250,17 @@ func (a *Application) connectorViews(ctx context.Context, owner string, keep fun
 			views = append(views, view)
 		}
 	}
-	return views, a.namePublishers(ctx, views)
+	a.namePublishers(ctx, views)
+	return views, nil
 }
 
 func connectorView(owner string, entry query.CatalogConnector) Connector {
 	view := Connector{ID: entry.ID, Name: entry.Name, Description: entry.Description, Category: entry.Category, Required: entry.Required,
-		Offered: entry.InCatalogOf(owner), State: entry.State, Publisher: Publisher{Kind: entry.Owner.Kind, Own: entry.OwnedBy(owner)},
+		Offered: entry.InCatalogOf(owner), State: entry.State, Publisher: Publisher{Kind: entry.Owner.Kind, Own: entry.OwnedBy(owner), owner: entry.Owner},
 		Transport: transport(entry.Configuration.Type), IconDigest: entry.IconDigest, Version: entry.Version, PublishedAtMillis: entry.PublishedAtMillis,
 		Status: ConnectorNotInstalled}
 	if view.Publisher.Own {
 		view.Settings = &ConnectorSettings{URL: entry.Configuration.URL, Command: entry.Configuration.Command, Arguments: entry.Configuration.Arguments}
-	}
-	if entry.Owner.Kind != query.OwnerPlatform {
-		view.Publisher.DisplayName = entry.Owner.ID
 	}
 	return view
 }

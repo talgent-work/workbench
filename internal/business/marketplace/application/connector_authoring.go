@@ -71,13 +71,12 @@ func (a *Application) AddConnector(ctx context.Context, authoring ConnectorAutho
 // ChangeConnector replaces an owned Connector's connection, description and
 // category; changes reach Works started afterwards.
 func (a *Application) ChangeConnector(ctx context.Context, change ConnectorChange) (ConnectorDetail, error) {
-	return a.changeConnector(ctx, ConnectorCommand{OwnerID: change.OwnerID, ConnectorID: change.ConnectorID, Version: change.Version}, func(connector *domain.Connector, provider *domain.ProviderDeclaration) error {
+	return a.changeConnector(ctx, ConnectorCommand{OwnerID: change.OwnerID, ConnectorID: change.ConnectorID, Version: change.Version}, true, func(connector *domain.Connector, provider *domain.ProviderDeclaration) error {
 		presentation := connector.Presentation
 		presentation.Description, presentation.Category = change.Description, change.Category
-		// The transport stays as added.
-		configuration := domain.MCPConfiguration{Type: connector.Configuration.Type, URL: change.URL}
-		if !configuration.Remote() {
-			configuration = domain.MCPConfiguration{Type: connector.Configuration.Type, Command: change.Command, Arguments: change.Arguments}
+		configuration := domain.MCPConfiguration{Type: "http", URL: change.URL}
+		if change.URL == "" {
+			configuration = domain.MCPConfiguration{Type: "stdio", Command: change.Command, Arguments: change.Arguments}
 		}
 		return connector.Change(change.OwnerID, configuration, presentation, provider)
 	})
@@ -85,7 +84,7 @@ func (a *Application) ChangeConnector(ctx context.Context, change ConnectorChang
 
 // ChangeConnectorIcon replaces or removes an owned Connector's icon.
 func (a *Application) ChangeConnectorIcon(ctx context.Context, change ConnectorIconChange) (ConnectorDetail, error) {
-	return a.changeConnector(ctx, ConnectorCommand{OwnerID: change.OwnerID, ConnectorID: change.ConnectorID, Version: change.Version}, func(connector *domain.Connector, provider *domain.ProviderDeclaration) error {
+	return a.changeConnector(ctx, ConnectorCommand{OwnerID: change.OwnerID, ConnectorID: change.ConnectorID, Version: change.Version}, true, func(connector *domain.Connector, provider *domain.ProviderDeclaration) error {
 		presentation := connector.Presentation
 		presentation.Icon = change.Icon
 		return connector.Change(change.OwnerID, connector.Configuration, presentation, provider)
@@ -94,14 +93,14 @@ func (a *Application) ChangeConnectorIcon(ctx context.Context, change ConnectorI
 
 // PublishConnector offers an owned Private Connector to every owner.
 func (a *Application) PublishConnector(ctx context.Context, command ConnectorCommand) (ConnectorDetail, error) {
-	return a.changeConnector(ctx, command, func(connector *domain.Connector, _ *domain.ProviderDeclaration) error {
+	return a.changeConnector(ctx, command, false, func(connector *domain.Connector, _ *domain.ProviderDeclaration) error {
 		return connector.Publish(command.OwnerID, time.Now())
 	})
 }
 
 // WithdrawConnector ends the offer of a Connector its publisher published.
 func (a *Application) WithdrawConnector(ctx context.Context, command ConnectorCommand) (ConnectorDetail, error) {
-	return a.changeConnector(ctx, command, func(connector *domain.Connector, _ *domain.ProviderDeclaration) error {
+	return a.changeConnector(ctx, command, false, func(connector *domain.Connector, _ *domain.ProviderDeclaration) error {
 		_, err := connector.Withdraw(domain.WithdrawingAuthority{Owner: command.OwnerID})
 		return err
 	})
@@ -179,14 +178,16 @@ func (a *Application) GetConnectorIcon(ctx context.Context, owner, id string) (*
 }
 
 // changeConnector applies one owner command to the Connector at the version
-// the owner read, with its declared Provider's current declaration.
-func (a *Application) changeConnector(ctx context.Context, command ConnectorCommand, change func(*domain.Connector, *domain.ProviderDeclaration) error) (ConnectorDetail, error) {
+// the owner read. A command that changes the connection or presentation gets
+// its declared Provider's current declaration; publishing and withdrawing
+// need none, so a Provider the deployment dropped never blocks them.
+func (a *Application) changeConnector(ctx context.Context, command ConnectorCommand, withProvider bool, change func(*domain.Connector, *domain.ProviderDeclaration) error) (ConnectorDetail, error) {
 	connector, err := a.ownedConnector(ctx, command)
 	if err != nil {
 		return ConnectorDetail{}, err
 	}
 	var provider *domain.ProviderDeclaration
-	if binding := connector.ProviderAccessBinding; binding != nil {
+	if binding := connector.ProviderAccessBinding; withProvider && binding != nil {
 		declaration, err := a.declaredProvider(binding.Provider)
 		if err != nil {
 			return ConnectorDetail{}, err
