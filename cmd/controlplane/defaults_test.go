@@ -82,13 +82,12 @@ func TestWithoutDirectAPIAccessWorksLoadNoAPIPlugin(t *testing.T) {
 	require.Equal(t, []string{"talgent"}, builtIns.Required(domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "p"}))
 }
 
-// By default a sandbox reaches no enterprise network and the k3s pod and
-// Service networks are the cluster's own ranges; the deployment's environment
-// declares both.
+// By default a sandbox reaches no enterprise network; the deployment's
+// environment declares them with the cluster's own ranges.
 func TestTheEnvironmentDeclaresTheSandboxNetworks(t *testing.T) {
 	execution := loadDefaults(t).AgentExecution
 	require.Empty(t, execution.EnterpriseNetworks)
-	require.Equal(t, "10.42.0.0/16 10.43.0.0/16", execution.ClusterNetworks)
+	require.Empty(t, execution.ClusterNetworks)
 
 	t.Setenv("ENTERPRISE_NETWORKS", "172.16.0.0/12:443")
 	t.Setenv("CLUSTER_NETWORKS", "10.42.0.0/16")

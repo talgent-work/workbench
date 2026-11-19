@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -30,8 +31,10 @@ var reservedRanges = []netip.Prefix{
 
 // EnterpriseNetwork is a private network the deployment declares reachable
 // from Cloud Works, with the TCP ports its services listen on. The sandbox's
-// egress sidecar opens the whole network; the sandbox NetworkPolicy, rendered
-// from the same declaration, limits it to the ports.
+// egress sidecar opens the whole network: under its default-allow policy a
+// deny rule's ports name what it denies, and it rejects deny before any
+// allow, so it cannot open only some ports. The sandbox NetworkPolicy,
+// rendered from the same declaration, limits the network to its ports.
 type EnterpriseNetwork struct {
 	Prefix netip.Prefix
 	Ports  []uint16
@@ -96,6 +99,11 @@ func parseNetwork(raw string) (netip.Prefix, error) {
 // sandbox already reaches every address, and one inside a cluster range,
 // which stays unreachable.
 func (n SandboxNetworks) Validate() error {
+	// Without its cluster ranges, a declared network could contain the
+	// cluster's own addresses unnoticed.
+	if len(n.Enterprise) > 0 && len(n.Cluster) == 0 {
+		return errors.New("agent: declaring enterprise networks needs the cluster's own ranges")
+	}
 	for _, network := range n.Enterprise {
 		if len(network.Ports) == 0 {
 			return fmt.Errorf("agent: enterprise network %s declares no port", network.Prefix)

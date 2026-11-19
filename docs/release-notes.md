@@ -8,9 +8,8 @@ GitHub release page.
 ## The release that lets Cloud Works reach declared enterprise networks
 
 Nothing is required: without `ENTERPRISE_NETWORKS` sandboxes reach no private network, as
-before. To let Cloud Works reach internal services, declare `ENTERPRISE_NETWORKS` and, when the
-cluster's own ranges are not only the k3s defaults, `CLUSTER_NETWORKS` in the environment, then
-deploy ([Enterprise networks](self-hosting.md#enterprise-networks)). The base now renders the
+before. To let Cloud Works reach internal services, declare `ENTERPRISE_NETWORKS` and the cluster's own
+ranges, `CLUSTER_NETWORKS`, in the environment, then deploy ([Enterprise networks](self-hosting.md#enterprise-networks)). The base now renders the
 NetworkPolicy `sandbox-enterprise-networks` in `talgent-sandbox`, empty unless networks are
 declared.
 

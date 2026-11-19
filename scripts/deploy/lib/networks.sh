@@ -1,13 +1,11 @@
 # Sourced by render.sh after lib/environment.sh. The deployment's environment
 # declares the enterprise networks a sandbox reaches, ENTERPRISE_NETWORKS
 # (whitespace-separated CIDR:PORT[,PORT...]), and the cluster's own ranges,
-# CLUSTER_NETWORKS (whitespace-separated CIDRs, the k3s pod and Service
-# networks unless set). controlplane reads the same two values into the
+# CLUSTER_NETWORKS (whitespace-separated CIDRs), required with them. controlplane reads the same two values into the
 # sandbox's egress policy (configs/controlplane/defaults.yml); the render
 # mirrors them into NetworkPolicy sandbox-enterprise-networks and refuses what
 # controlplane refuses (execution.ParseSandboxNetworks).
 
-DEFAULT_CLUSTER_NETWORKS="10.42.0.0/16 10.43.0.0/16"
 PRIVATE_NETWORKS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10"
 
 # optional_environment_value KEY DEFAULT FILE... prints KEY's value in the
@@ -26,7 +24,9 @@ optional_environment_value() {
 # integers, failing unless CIDR is IPv4 with its host bits clear.
 ipv4_network() {
   local cidr="$1" a b c d bits address
-  if [[ ! "${cidr}" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/([0-9]{1,2})$ ]]; then
+  # Without leading zeros, as Go's netip reads it.
+  local octet='(0|[1-9][0-9]{0,2})'
+  if [[ ! "${cidr}" =~ ^${octet}\.${octet}\.${octet}\.${octet}/(0|[1-9][0-9]?)$ ]]; then
     return 1
   fi
   a=$((10#${BASH_REMATCH[1]})) b=$((10#${BASH_REMATCH[2]})) c=$((10#${BASH_REMATCH[3]})) d=$((10#${BASH_REMATCH[4]}))
@@ -58,18 +58,25 @@ network_contains() {
 # each but the cluster's own ranges inside it, and prints its name.
 enterprise_network_component() {
   local dir="$1" enterprise cluster entry cidr ports port range private egress="" except
-  local -a port_list
+  local -a port_list enterprise_list cluster_list private_list
   shift
   enterprise="$(optional_environment_value ENTERPRISE_NETWORKS "" "$@")" || return 1
-  cluster="$(optional_environment_value CLUSTER_NETWORKS "${DEFAULT_CLUSTER_NETWORKS}" "$@")" || return 1
-  for range in ${cluster}; do
+  cluster="$(optional_environment_value CLUSTER_NETWORKS "" "$@")" || return 1
+  read -r -a cluster_list <<< "${cluster}"
+  read -r -a enterprise_list <<< "${enterprise}"
+  read -r -a private_list <<< "${PRIVATE_NETWORKS}"
+  for range in "${cluster_list[@]}"; do
     if ! ipv4_network "${range}" > /dev/null; then
       echo "CLUSTER_NETWORKS: ${range} is not an IPv4 network in CIDR notation with its host bits clear" >&2
       return 1
     fi
   done
-  [[ -n "${enterprise//[[:space:]]/}" ]] || return 0
-  for entry in ${enterprise}; do
+  ((${#enterprise_list[@]} > 0)) || return 0
+  if ((${#cluster_list[@]} == 0)); then
+    echo "ENTERPRISE_NETWORKS needs CLUSTER_NETWORKS, the cluster's own ranges that stay unreachable" >&2
+    return 1
+  fi
+  for entry in "${enterprise_list[@]}"; do
     cidr="${entry%%:*}"
     ports="${entry#*:}"
     if [[ "${entry}" != *:* ]] || ! ipv4_network "${cidr}" > /dev/null; then
@@ -77,7 +84,7 @@ enterprise_network_component() {
       return 1
     fi
     private=0
-    for range in ${PRIVATE_NETWORKS}; do
+    for range in "${private_list[@]}"; do
       network_contains "${range}" "${cidr}" && private=1
     done
     if [[ "${private}" == "0" ]]; then
@@ -85,7 +92,7 @@ enterprise_network_component() {
       return 1
     fi
     except=""
-    for range in ${cluster}; do
+    for range in "${cluster_list[@]}"; do
       if network_contains "${range}" "${cidr}"; then
         echo "ENTERPRISE_NETWORKS: ${cidr} lies within the cluster's own range ${range}" >&2
         return 1
@@ -111,7 +118,7 @@ enterprise_network_component() {
       egress+="              - protocol: TCP"$'\n'"                port: $((10#${port}))"$'\n'
     done
   done
-  mkdir -p "${dir}/enterprise-networks"
+  mkdir -p "${dir}/enterprise-networks" || return 1
   {
     echo "apiVersion: kustomize.config.k8s.io/v1alpha1"
     echo "kind: Component"
@@ -124,6 +131,6 @@ enterprise_network_component() {
     echo "        path: /spec/egress"
     echo "        value:"
     printf '%s' "${egress}"
-  } > "${dir}/enterprise-networks/kustomization.yaml"
+  } > "${dir}/enterprise-networks/kustomization.yaml" || return 1
   printf '%s\n' enterprise-networks
 }

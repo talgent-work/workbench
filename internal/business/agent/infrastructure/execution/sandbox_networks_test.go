@@ -79,6 +79,8 @@ func TestSandboxNetworksRefuseInvalidDeclarations(t *testing.T) {
 		"wider than private":     {"8.0.0.0/7:443", ""},
 		"inside a cluster range": {"10.42.0.0/24:443", "10.42.0.0/16"},
 		"cluster range invalid":  {"", "10.42.0.0"},
+		"no cluster ranges":      {"172.16.0.0/12:443", ""},
+		"leading zero":           {"010.0.0.0/8:443", "10.42.0.0/16"},
 	} {
 		_, err := ParseSandboxNetworks(declaration[0], declaration[1])
 		require.Error(t, err, name)

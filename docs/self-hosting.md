@@ -117,7 +117,7 @@ by the deploy):
 | Key | Default | Meaning |
 |---|---|---|
 | `ENTERPRISE_NETWORKS` | empty | Whitespace-separated `CIDR:PORT[,PORT...]`: each private IPv4 network a sandbox reaches, on those TCP ports |
-| `CLUSTER_NETWORKS` | `10.42.0.0/16 10.43.0.0/16` | Whitespace-separated CIDRs: the cluster's own ranges, which stay unreachable even inside a declared network |
+| `CLUSTER_NETWORKS` | empty; required with `ENTERPRISE_NETWORKS` | Whitespace-separated CIDRs: the cluster's own ranges, which stay unreachable even inside a declared network |
 
 ```bash
 ENTERPRISE_NETWORKS=172.16.0.0/12:443,8443 <another network>:80
@@ -125,7 +125,7 @@ CLUSTER_NETWORKS=10.42.0.0/16 10.43.0.0/16 <node network> <storage network>
 ```
 
 - `CLUSTER_NETWORKS` lists every range of the cluster's own a declared network may contain: the
-  pod and Service networks, the nodes, and the storage and middleware backends. Cluster DNS and
+  pod and Service networks (k3s: `10.42.0.0/16 10.43.0.0/16`), the nodes, and the storage and middleware backends. Cluster DNS and
   the Collector stay reachable through their own rules.
 - A declared network lies within `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or
   `100.64.0.0/10`, is written with its host bits clear, and does not lie within a cluster range;
