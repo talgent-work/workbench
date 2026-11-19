@@ -47,7 +47,12 @@ const (
 
 // enterpriseIdP declares the realm as an enterprise identity provider: one
 // authorization serves the docs and the ticket services, whose credentials
-// expire.
+// expire. It is shared, not per-target: Keycloak (26.8.2, its resource-indicators
+// feature) binds an authorization code and its refresh token to at most one
+// resource, refusing a repeated resource as a duplicated parameter on the
+// authorization, PAR and token endpoints and any other resource on refresh
+// (ResourceIndicatorsPostProcessor), so one authorization cannot yield a
+// credential per resource there.
 func enterpriseIdP() domain.ProviderDeclaration {
 	return domain.ProviderDeclaration{Name: "example-sso", DisplayName: "Example SSO", Derivation: domain.SharedTargetCredential, CredentialsExpire: true,
 		Targets: []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"}, Paths: []domain.PathPattern{"/api/*"}, Methods: []string{"GET", "POST"}}}}
