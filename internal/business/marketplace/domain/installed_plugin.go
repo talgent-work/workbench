@@ -9,10 +9,9 @@ import (
 )
 
 var (
-	ErrInvalidInstallation    = errors.New("invalid personal plugin installation")
-	ErrInstallationNotFound   = errors.New("personal plugin installation not found")
-	ErrConcurrentModification = errors.New("personal plugin installation changed concurrently")
-	pluginSlug                = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	ErrInvalidInstallation  = errors.New("invalid personal plugin installation")
+	ErrInstallationNotFound = errors.New("personal plugin installation not found")
+	pluginSlug              = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 )
 
 type InstallationState uint8
