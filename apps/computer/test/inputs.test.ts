@@ -13,7 +13,7 @@ import { ExecdService } from '../src/execd/service.ts'
 import { SHIM_ARG } from '../src/execd/shim.ts'
 import { Works } from '../src/execd/works.ts'
 import type { WorkCredentials } from '../src/proxy/credentials.ts'
-import { posixModes } from './support/platform.ts'
+import { posixModes, removeScratch } from './support/platform.ts'
 
 const IDENTITY_TOKEN = 'agent-identity-token'
 
@@ -88,7 +88,7 @@ afterEach(async () => {
   await storage.close()
   // The read-only inputs directory keeps its files from a plain removal.
   await chmod(inputsDir(), 0o755).catch(() => {})
-  await rm(dir, { recursive: true, force: true })
+  await removeScratch(dir)
 })
 
 function entry(name: string, updatedAt = '2026-11-02T10:00:00Z', origin = storage.origin): Record<string, unknown> {

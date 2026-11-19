@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,7 @@ import { openPipe, type PipeInput, type PipeSink } from '../src/execd/pipe.ts'
 import { ProcessTable } from '../src/execd/processes.ts'
 import { findGitBash, namedPipe } from '../src/execd/windows-host.ts'
 import { windowsLikeHost } from './support/windows-like-host.ts'
+import { removeScratch } from './support/platform.ts'
 
 const SHIM = fileURLToPath(new URL('./support/windows-like-shim.ts', import.meta.url))
 
@@ -45,7 +46,7 @@ describe('Windows processes', { skip: process.platform === 'win32' ? 'the real r
     dir = await mkdtemp(join(tmpdir(), 'windows-host-'))
     table = processTable()
   })
-  afterEach(() => rm(dir, { recursive: true, force: true }))
+  afterEach(() => removeScratch(dir))
 
   const processTable = () => new ProcessTable({ stateRoot: join(dir, 'state'), shim: [process.execPath, SHIM], host: windowsLikeHost() })
 

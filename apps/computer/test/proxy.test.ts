@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readdir, readFile, mkdtemp, rm, stat } from 'node:fs/promises'
+import { readdir, readFile, mkdtemp, stat } from 'node:fs/promises'
 import { request as httpRequest, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -15,7 +15,7 @@ import { Works } from '../src/execd/works.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
 import { LocalProxy } from '../src/proxy/server.ts'
 import { send, Upstream } from './support/upstream.ts'
-import { posixModes } from './support/platform.ts'
+import { posixModes, removeScratch } from './support/platform.ts'
 
 const IDENTITY_TOKEN = 'agent-identity-token'
 
@@ -80,7 +80,7 @@ afterEach(async () => {
   for (const { workId, id } of created.splice(0)) await processes.delete(workId, id)
   await proxy.close()
   await upstream.close()
-  await rm(dir, { recursive: true, force: true })
+  await removeScratch(dir)
 })
 
 const credentialsBody = (model = true) => ({
