@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,11 +19,15 @@ import (
 	marketstore "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	markettransport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/providertest"
 )
 
-// SecretCanary is the access token every Marketplace authorization holds: no
-// response and no Work may carry it.
+// SecretCanary is in the access token every Marketplace authorization holds:
+// no response and no Work may carry it.
 const SecretCanary = "reference-query-secret-canary"
+
+// tokenOf is a user's access token: the canary, naming its holder.
+func tokenOf(user string) string { return SecretCanary + ":" + user }
 
 // Authorization is a user's GitHub authorization in the Marketplace.
 type Authorization struct {
@@ -47,7 +52,7 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 		authorization, err := marketdomain.NewProviderAuthorization(marketdomain.ProviderAuthorizationInput{
 			OwnerID: granted.User, Provider: marketdomain.ProviderGitHub,
 			ProviderAccountID: "101", ProviderLogin: "fixture",
-			AccessTokenCiphertext: SecretCanary,
+			AccessTokenCiphertext: tokenOf(granted.User),
 		})
 		require.NoError(t, err)
 		if granted.Stale {
@@ -56,11 +61,14 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 		require.NoError(t, store.Save(ctx, authorization))
 		ids[granted.User] = authorization.ID
 	}
-	personal := marketapp.NewPersonalConnections(store, marketstore.NewProviderAuthorizationQueries(db), ownRepository{}, nil, nil)
+	providers := providertest.Declarations{providertest.GitHub()}
+	credentials := marketapp.NewProviderCredentials(store, providers, nil, plainText{}, marketapp.CredentialTiming{RequestSkew: 5 * time.Minute})
+	personal := marketapp.NewPersonalConnections(marketapp.ConnectionDependencies{Authorizations: store, Queries: marketstore.NewProviderAuthorizationQueries(db),
+		Providers: providers, GitHub: ownRepository{}, Credentials: credentials})
 	for _, id := range ids {
 		require.NoError(t, personal.ObserveAccessScope(ctx, id))
 	}
-	market := marketapp.NewApplication(nil, nil, nil, marketstore.NewProviderAuthorizationQueries(db), personal, marketapp.ConnectorRepositories{})
+	market := marketapp.NewApplication(nil, nil, nil, marketstore.NewProviderAuthorizationQueries(db), personal, marketapp.ConnectorDependencies{})
 	marketplace := connect.NewServer(authn.NewPrincipalInterceptor())
 	marketplacepublicv1connect.RegisterMarketplaceServiceHandler(marketplace, markettransport.NewHandler(market, marketapp.NewOwners(noApplications{})))
 	mux := http.NewServeMux()
@@ -82,7 +90,8 @@ func (noApplications) GetApplication(context.Context, string) (marketapp.OwnedAp
 // one repository of their own.
 type ownRepository struct{ marketapp.GitHubPort }
 
-func (ownRepository) ObserveAccess(_ context.Context, owner string, _ marketdomain.Provider) (marketdomain.AccessScope, error) {
+func (ownRepository) ObserveAccess(_ context.Context, token string) (marketdomain.AccessScope, error) {
+	owner, _ := strings.CutPrefix(token, SecretCanary+":")
 	return marketdomain.AccessScope{ObservedAt: time.Now(), Accounts: []marketdomain.ScopeAccount{{InstallationID: "1", Login: owner, Repositories: []marketdomain.ScopeRepository{{
 		RepoID: "github:" + owner, RepoName: owner + "/project", CloneURL: "https://github.com/example/project.git", WebURL: "https://github.com/example/project", DefaultBranch: "main"}}}}}, nil
 }
@@ -94,3 +103,9 @@ func (ownRepository) RequestedPermissions(context.Context, marketdomain.Provider
 func (ownRepository) ManageURL(context.Context, marketdomain.Provider) (string, error) {
 	return "", nil
 }
+
+// plainText holds the fixture's tokens as they are; none is ever renewed.
+type plainText struct{}
+
+func (plainText) Encrypt(plaintext string) (string, error)  { return plaintext, nil }
+func (plainText) Decrypt(ciphertext string) (string, error) { return ciphertext, nil }

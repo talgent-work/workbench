@@ -3,12 +3,14 @@ package application
 import (
 	"context"
 	"errors"
+	"time"
+
+	"sort"
+	"testing"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/credential"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
-	"sort"
-	"testing"
 )
 
 type testApplication struct {
@@ -18,6 +20,7 @@ type testApplication struct {
 	observations   *recordingObservations
 	authorizer     *fakeProviderAuthorizer
 	gitHub         *fakeGitHub
+	provider       *fakeProviderPort
 }
 
 // fakeGitHub is GitHub as the tests see it: a live access decision, an
@@ -36,8 +39,8 @@ func (g *fakeGitHub) CompleteProviderAuthorization(ctx context.Context, input Co
 	return g.authorizer.CompleteProviderAuthorization(ctx, input)
 }
 
-func (g *fakeGitHub) ObserveAccess(ctx context.Context, ownerID string, provider domain.Provider) (domain.AccessScope, error) {
-	return g.observer.ObserveAccess(ctx, ownerID, provider)
+func (g *fakeGitHub) ObserveAccess(ctx context.Context, token string) (domain.AccessScope, error) {
+	return g.observer.ObserveAccess(ctx, token)
 }
 
 func (g *fakeGitHub) RequestedPermissions(ctx context.Context, provider domain.Provider) ([]ProviderPermission, error) {
@@ -48,19 +51,11 @@ func (g *fakeGitHub) ManageURL(ctx context.Context, provider domain.Provider) (s
 	return g.observer.ManageURL(ctx, provider)
 }
 
-func (g *fakeGitHub) RefreshProviderAuthorization(context.Context, string, string) error {
-	return errors.New("fake GitHub: refresh not expected")
-}
-
-func (g *fakeGitHub) SupplyRepositoryCredential(ctx context.Context, ownerID, authorizationID, cloneURL string) (credential.MaterializedCredential, error) {
+func (g *fakeGitHub) SupplyRepositoryCredential(ctx context.Context, cloneURL, token string, expiresAt time.Time) (credential.MaterializedCredential, error) {
 	if g.supplier == nil {
 		return credential.MaterializedCredential{}, errors.New("fake GitHub: repository credential not expected")
 	}
-	return g.supplier.SupplyRepositoryCredential(ctx, ownerID, authorizationID, cloneURL)
-}
-
-func (g *fakeGitHub) SupplyServiceCredential(context.Context, string, string, string) (credential.ServiceMaterial, error) {
-	return credential.ServiceMaterial{}, errors.New("fake GitHub: service credential not expected")
+	return g.supplier.SupplyRepositoryCredential(ctx, cloneURL, token, expiresAt)
 }
 
 func newTestApplication(t *testing.T) *testApplication {
@@ -70,8 +65,12 @@ func newTestApplication(t *testing.T) *testApplication {
 	observations := &recordingObservations{}
 	authorizer := &fakeProviderAuthorizer{}
 	gitHub := &fakeGitHub{observer: observer, authorizer: authorizer}
-	app := NewPersonalConnections(authorizations, authorizations, gitHub, observations, nil)
-	return &testApplication{PersonalConnections: app, authorizations: authorizations, observer: observer, observations: observations, authorizer: authorizer, gitHub: gitHub}
+	provider := &fakeProviderPort{now: time.Now()}
+	providers := staticProviders{gitHubDeclaration()}
+	credentials := NewProviderCredentials(authorizations, providers, onePort{provider}, plainCipher{}, CredentialTiming{RequestSkew: 5 * time.Minute, LeaseDuration: 30 * time.Second})
+	app := NewPersonalConnections(ConnectionDependencies{Authorizations: authorizations, Queries: authorizations, Providers: providers,
+		GitHub: gitHub, Tasks: observations, Credentials: credentials})
+	return &testApplication{PersonalConnections: app, authorizations: authorizations, observer: observer, observations: observations, authorizer: authorizer, gitHub: gitHub, provider: provider}
 }
 
 func testMaintenancePage(ids []string, after string) query.MaintenanceIdentities {
@@ -87,4 +86,27 @@ func testMaintenancePage(ids []string, after string) query.MaintenanceIdentities
 		page.NextCursor = page.IDs[99]
 	}
 	return page
+}
+
+// staticProviders are the deployment's Provider declarations as a test
+// declares them.
+type staticProviders []domain.ProviderDeclaration
+
+func (p staticProviders) Providers() []domain.ProviderDeclaration { return p }
+
+func (p staticProviders) Provider(name domain.Provider) (domain.ProviderDeclaration, bool) {
+	for _, declaration := range p {
+		if declaration.Name == name {
+			return declaration, true
+		}
+	}
+	return domain.ProviderDeclaration{}, false
+}
+
+func gitHubDeclaration() domain.ProviderDeclaration {
+	return domain.ProviderDeclaration{Name: domain.ProviderGitHub, DisplayName: "GitHub", Derivation: domain.SharedTargetCredential,
+		CredentialsExpire: true, ObservesAccessScope: true, Targets: []domain.ProviderTarget{
+			{Name: "github-api", Hosts: []domain.HostPattern{"api.github.com"}},
+			{Name: "github-remote-mcp", Hosts: []domain.HostPattern{"api.githubcopilot.com"}},
+		}}
 }

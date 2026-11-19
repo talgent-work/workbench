@@ -53,7 +53,7 @@ func setupApplications(t *testing.T) (*application.Application, marketplacepubli
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	repository := infrastructure.NewInstalledPluginRepository(db)
-	app := application.NewApplication(repository, repository, catalogFixture{}, persistence.NewProviderAuthorizationQueries(db), nil, application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), CatalogQueries: infrastructure.NewConnectorRepository(db), InstalledQueries: infrastructure.NewInstalledConnectorRepository(db)})
+	app := application.NewApplication(repository, repository, catalogFixture{}, persistence.NewProviderAuthorizationQueries(db), declaredConnections(db), connectorDependencies(db))
 	owners := application.NewOwners(accountAnswers{
 		ownedApplication:   {ID: ownedApplication, OwnerID: applicationOwner},
 		removedApplication: {ID: removedApplication, OwnerID: applicationOwner, Removed: true},
@@ -103,7 +103,8 @@ func TestApplicationInstallationsAdmitTheApplicationAndItsOwner(t *testing.T) {
 	require.NoError(t, err, "an Application may name itself")
 	require.False(t, disabled.Plugin.Enabled)
 
-	_, err = client.InstallConnector(asApplication(ctx, ownedApplication), &marketplacepublicv1.InstallConnectorRequest{Name: "github"})
+	github := platformConnectorID(t, client, "github")
+	_, err = client.InstallConnector(asApplication(ctx, ownedApplication), &marketplacepublicv1.InstallConnectorRequest{ConnectorId: github})
 	require.NoError(t, err)
 	connectors, err := client.ListInstalledConnectors(as(ctx, applicationOwner), &marketplacepublicv1.ListInstalledConnectorsRequest{ApplicationId: ownedApplication})
 	require.NoError(t, err)
@@ -117,7 +118,7 @@ func TestApplicationInstallationsAdmitTheApplicationAndItsOwner(t *testing.T) {
 	_, refused["removed application"] = client.InstallPlugin(as(ctx, applicationOwner), &marketplacepublicv1.InstallPluginRequest{Slug: "reviewer", ApplicationId: removedApplication})
 	_, refused["unknown application"] = client.InstallPlugin(as(ctx, applicationOwner), &marketplacepublicv1.InstallPluginRequest{Slug: "reviewer", ApplicationId: "0193f1a4-7c2e-7b10-8a3d-5e6f70819299"})
 	_, refused["another Application"] = client.GetInstalledPlugin(asApplication(ctx, otherApplication), &marketplacepublicv1.GetInstalledPluginRequest{Slug: "reviewer", ApplicationId: ownedApplication})
-	_, refused["another owner's Application"] = client.UninstallConnector(as(ctx, applicationOwner), &marketplacepublicv1.UninstallConnectorRequest{Name: "github", ApplicationId: otherApplication})
+	_, refused["another owner's Application"] = client.UninstallConnector(as(ctx, applicationOwner), &marketplacepublicv1.UninstallConnectorRequest{ConnectorId: github, ApplicationId: otherApplication})
 	for name, err := range refused {
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), name)
 	}

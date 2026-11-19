@@ -72,7 +72,7 @@ func TestCatalogSynchronization(t *testing.T) {
 	db := catalogDatabase(t)
 	store, err := infrastructure.NewCatalogStore(db, content, "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
-	mux.Handle(marketplacehttp.ContentPath, marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorRepositories{}), slog.Default()))
+	mux.Handle(marketplacehttp.ContentPath, marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorDependencies{}), slog.Default()))
 	synchronizer, err := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 45,
 		CertificateAuthority: certificate, ArchiveBaseURL: server.URL + "/marketplace/archives",
 		Sources: map[string]infrastructure.CatalogSource{"owned": {URI: owned, Owned: true}, "external": {URI: external}}}, store)

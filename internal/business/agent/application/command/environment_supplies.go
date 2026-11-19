@@ -70,8 +70,10 @@ func (s *EnvironmentSupplies) creation(ctx context.Context, execution *domain.Ag
 // credentials is what a delivery hands the bound environment now: the Work's
 // Identity Token, which Account issues afresh for every delivery (Work token
 // issuance), the Space Token of the Work's publication target, the same on
-// every opening, and on a Cloud the current credentials of the repositories
-// and service targets the run may reach, with the access observed for each.
+// every opening, and the current credentials of the service targets the run
+// may reach, with the access observed for each: on a Cloud also those of its
+// repositories, and on a Managed Computer only its Provider Connectors'
+// targets.
 // A Work with no authorization owner holds no Provider Authorization,
 // so none of its targets is supplied.
 func (s *EnvironmentSupplies) credentials(ctx context.Context, execution *domain.AgentExecution) (CredentialSupply, error) {
@@ -86,18 +88,25 @@ func (s *EnvironmentSupplies) credentials(ctx context.Context, execution *domain
 		return CredentialSupply{}, err
 	}
 	supply := CredentialSupply{IdentityToken: identity, SpaceToken: token}
-	if execution.Realization != domain.RealizationCloud {
-		return supply, nil
-	}
 	launch := execution.Launch
-	required := requiredServices(launch.Capabilities, launch.AuthorizationSelection)
+	cloud := execution.Realization == domain.RealizationCloud
+	required := managedConnectorServices(launch.Capabilities)
+	if cloud {
+		required = requiredServices(launch.Capabilities, launch.AuthorizationSelection)
+	}
 	services, repositories := required.unselected(), RepositoryAccessResult{}
 	if owner := launch.AuthorizationOwner(); owner != "" {
-		if repositories, err = s.repositories.Resolve(ctx, owner, execution.WorkID); err != nil {
-			return CredentialSupply{}, err
+		// The machine's own git credentials serve a Managed Work's
+		// repositories.
+		if cloud {
+			if repositories, err = s.repositories.Resolve(ctx, owner, execution.WorkID); err != nil {
+				return CredentialSupply{}, err
+			}
 		}
-		if services, err = s.services.Resolve(ctx, owner, execution.WorkID, required.Targets); err != nil {
-			return CredentialSupply{}, err
+		if cloud || len(required.Targets) > 0 {
+			if services, err = s.services.Resolve(ctx, owner, execution.WorkID, required.Targets); err != nil {
+				return CredentialSupply{}, err
+			}
 		}
 	}
 	supply.Repositories, supply.Services = repositories.Credentials, services.Credentials

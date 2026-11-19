@@ -338,6 +338,12 @@ data:
       network-allow:
         - "${K8S_DNS_SERVICE_IP:10.43.0.10}"
       network-deny: []
+      # Whitespace-separated: the enterprise networks a sandbox reaches, each
+      # CIDR:PORT[,PORT...], and the cluster's own ranges, required with them, which
+      # stay denied even inside an enterprise network. The deploy renders the sandbox
+      # NetworkPolicy from the same environment values.
+      enterprise-networks: "${ENTERPRISE_NETWORKS:}"
+      cluster-networks: "${CLUSTER_NETWORKS:}"
       opensandbox:
         address: ${OPENSANDBOX_ADDRESS:http://opensandbox:80}
         api-key: ${OPENSANDBOX_API_KEY:}
@@ -394,31 +400,44 @@ data:
               uri: https://github.com/talgent-work/marketplace.git
               owned: true
               priority: 100
-      provider-connectors:
-        - name: github
+      # Platform Connectors, keyed by name, each authenticated by a declared
+      # Provider's target through the Credential Proxy.
+      connectors:
+        github:
           description: Read and change repositories, issues and pull requests through your GitHub authorization.
           category: development
           provider: github
           target: github-api
-          authentication: credential_proxy
           command: github-mcp-server
           args: [stdio]
           credential-environment: [GITHUB_PERSONAL_ACCESS_TOKEN]
+      providers:
+        github:
+          enabled: ${GITHUB_SCM_ENABLED:false}
+          display-name: GitHub
+          client-id: ${GITHUB_OAUTH_CLIENT_ID:}
+          client-secret: ${GITHUB_OAUTH_CLIENT_SECRET:}
+          authorization-endpoint: ${GITHUB_WEB_BASE_URL:https://github.com}/login/oauth/authorize
+          token-endpoint: ${GITHUB_WEB_BASE_URL:https://github.com}/login/oauth/access_token
+          target-credentials: shared
+          target-credentials-expire: true
+          targets:
+            github-api:
+              hosts: [api.github.com]
+            github-remote-mcp:
+              hosts: [api.githubcopilot.com]
       directory: /mnt/talgent/marketplace
       name: talgent
       owner: Talgent
       connections:
         credential-token: "${AGENT_CONTROL_TOKEN:}"
+        credential-cipher-key: ${PROVIDER_CREDENTIAL_CIPHER_KEY:}
         github:
           api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
           api-version: ${GITHUB_API_VERSION:2026-03-10}
           app-id: ${GITHUB_APP_ID:}
           app-slug: ${GITHUB_APP_SLUG:}
-          enabled: ${GITHUB_SCM_ENABLED:false}
-          oauth-client-id: ${GITHUB_OAUTH_CLIENT_ID:}
-          oauth-client-secret: ${GITHUB_OAUTH_CLIENT_SECRET:}
           private-key-pem: ${GITHUB_APP_PRIVATE_KEY_PEM:}
-          token-cipher-key: ${GITHUB_SCM_TOKEN_CIPHER_KEY:}
           web-base-url: ${GITHUB_WEB_BASE_URL:https://github.com}
           webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
         maintenance:
@@ -1147,11 +1166,11 @@ spec:
                   key: GITHUB_OAUTH_CLIENT_SECRET
                   name: github-scm
                   optional: true
-            - name: GITHUB_SCM_TOKEN_CIPHER_KEY
+            - name: PROVIDER_CREDENTIAL_CIPHER_KEY
               valueFrom:
                 secretKeyRef:
-                  key: GITHUB_SCM_TOKEN_CIPHER_KEY
-                  name: github-scm
+                  key: PROVIDER_CREDENTIAL_CIPHER_KEY
+                  name: provider-credentials
                   optional: true
             - name: GITHUB_WEBHOOK_SECRET
               valueFrom:

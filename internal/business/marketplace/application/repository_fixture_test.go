@@ -18,10 +18,17 @@ type fakeProviderObserver struct {
 	observeErr   error
 	observations atomic.Int32
 	now          time.Time
+	// rejected tokens are refused as GitHub refuses a revoked token.
+	rejected map[string]bool
+	tokens   []string
 }
 
-func (c *fakeProviderObserver) ObserveAccess(context.Context, string, domain.Provider) (domain.AccessScope, error) {
+func (c *fakeProviderObserver) ObserveAccess(_ context.Context, token string) (domain.AccessScope, error) {
 	c.observations.Add(1)
+	c.tokens = append(c.tokens, token)
+	if c.rejected[token] {
+		return domain.AccessScope{}, ErrCredentialRejected
+	}
 	if c.observeErr != nil {
 		return domain.AccessScope{}, c.observeErr
 	}

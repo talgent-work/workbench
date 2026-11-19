@@ -13,18 +13,18 @@ import (
 // governs credential supply nor merges the declaration into the Connector.
 type ConnectorRelationship struct {
 	ConnectorID, ConnectorName, Provider, Target, Authentication, Status, Reason string
+	// TargetCredentialsExpire reports whether the declared Provider's target
+	// credentials expire.
+	TargetCredentialsExpire bool
 }
 
-// connectorEndpoints indexes Offered catalog entries by Claude Code endpoint
+// connectorEndpoints indexes Published Connectors by Claude Code endpoint
 // equivalence: the URL for remote servers, command and arguments for stdio.
 type connectorEndpoints map[string][]query.CatalogConnector
 
-func indexConnectorEndpoints(catalog []query.CatalogConnector) connectorEndpoints {
+func indexConnectorEndpoints(published []query.CatalogConnector) connectorEndpoints {
 	index := connectorEndpoints{}
-	for _, connector := range catalog {
-		if !connector.Offered {
-			continue
-		}
+	for _, connector := range published {
 		c := connector.Configuration
 		key := endpointKey(c.Type, c.URL, c.Command, c.Arguments)
 		index[key] = append(index[key], connector)
@@ -51,6 +51,7 @@ func (index connectorEndpoints) relate(definition []byte) ConnectorRelationship 
 		relationship := ConnectorRelationship{ConnectorID: connector.ID, ConnectorName: connector.Name, Authentication: connector.Authentication, Status: "supported"}
 		if provider := connector.Provider; provider != nil {
 			relationship.Provider, relationship.Target, relationship.Authentication = provider.Provider, provider.Target, provider.Authentication
+			relationship.TargetCredentialsExpire = provider.TargetCredentialsExpire
 		}
 		return relationship
 	default:

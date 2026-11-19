@@ -2,19 +2,34 @@ package application
 
 import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
-	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
+// PersonalConnections manages owners' Provider Authorizations for every
+// declared Provider: GitHub through its App, every other Provider through
+// OAuth, and credential supply through ProviderCredentials.
 type PersonalConnections struct {
-	authorizations    AuthorizationStore
-	queries           query.ProviderAuthorizationQueryRepository
-	github            GitHubPort
-	tasks             MarketplaceTaskQueuePort
-	authorizationPort domain.ProviderAuthorizationPort
+	authorizations AuthorizationStore
+	queries        query.ProviderAuthorizationQueryRepository
+	providers      ProviderDeclarations
+	github         GitHubPort
+	oauth          OAuthProviderPort
+	tasks          MarketplaceTaskQueuePort
+	credentials    *ProviderCredentials
 }
 
-func NewPersonalConnections(authorizations AuthorizationStore, queries query.ProviderAuthorizationQueryRepository, github GitHubPort,
-	tasks MarketplaceTaskQueuePort, authorizationPort domain.ProviderAuthorizationPort,
-) *PersonalConnections {
-	return &PersonalConnections{authorizations: authorizations, queries: queries, github: github, tasks: tasks, authorizationPort: authorizationPort}
+// ConnectionDependencies are what PersonalConnections works with; OAuth and
+// Tasks may be absent.
+type ConnectionDependencies struct {
+	Authorizations AuthorizationStore
+	Queries        query.ProviderAuthorizationQueryRepository
+	Providers      ProviderDeclarations
+	GitHub         GitHubPort
+	OAuth          OAuthProviderPort
+	Tasks          MarketplaceTaskQueuePort
+	Credentials    *ProviderCredentials
+}
+
+func NewPersonalConnections(dependencies ConnectionDependencies) *PersonalConnections {
+	return &PersonalConnections{authorizations: dependencies.Authorizations, queries: dependencies.Queries, providers: dependencies.Providers,
+		github: dependencies.GitHub, oauth: dependencies.OAuth, tasks: dependencies.Tasks, credentials: dependencies.Credentials}
 }

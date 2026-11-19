@@ -5,6 +5,66 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that lets owners add and publish their own Connectors
+
+Before deploying, apply
+[`20261120-owner-connectors.sql`](../deploy/middleware/migrations/20261120-owner-connectors.sql)
+to the database named by `WORKBENCH_MYSQL_DATABASE`: it gives each Connector an owner, a name unique
+per owner, an icon and a publication time, and turns existing Platform Connectors Published. The
+release changes the Connector contracts in step: every Connector request and Work Connector choice
+names a Connector by its identity, so deploy every Workbench service and web app of the release
+together. A platform operator withdraws a published Connector through the private
+`marketplace.private.v1.ConnectorOperationService`
+with the `connections.credential-token` bearer ([configuration](configuration.md#marketplace)).
+
+## The release that serves Provider Connectors on Managed Computers
+
+Nothing is required. A Work on a Managed Computer now keeps its remote Provider Connectors whose
+Provider declares `target-credentials-expire: true`, reached through Talgent Computer's local proxy
+([Computer protocol](computer-protocol.md#a-works-credentials-and-the-local-proxy)). A machine
+still running an earlier Talgent Computer leaves those Connectors unavailable without blocking the
+Work until it upgrades to this release's Target Version; raise `COMPUTER_MINIMUM_VERSION` to it
+to refuse runs on such machines instead.
+
+## The release that lets Cloud Works reach declared enterprise networks
+
+Nothing is required: without `ENTERPRISE_NETWORKS` sandboxes reach no private network, as
+before. To let Cloud Works reach internal services, declare `ENTERPRISE_NETWORKS` and the cluster's own
+ranges, `CLUSTER_NETWORKS`, in the environment, then deploy ([Enterprise networks](self-hosting.md#enterprise-networks)). The base now renders the
+NetworkPolicy `sandbox-enterprise-networks` in `talgent-sandbox`, empty unless networks are
+declared.
+
+## The release that makes Providers deployment declarations
+
+Every Provider owners authorize is now declared in configuration with the targets its credentials
+reach ([configuration](configuration.md#marketplace)); the old keys are not read. Before
+deploying:
+
+1. Apply
+   [`20261119-provider-target-credentials.sql`](../deploy/middleware/migrations/20261119-provider-target-credentials.sql)
+   to the database named by `WORKBENCH_MYSQL_DATABASE`: it widens
+   `scm_provider_authorization.provider`, adds `target_credentials_json`, and adds
+   `credentials_expire_at`, which the renewal sweep now selects by.
+2. Create the Secret `provider-credentials` with `PROVIDER_CREDENTIAL_CIPHER_KEY` set to the
+   value of `github-scm`'s `GITHUB_SCM_TOKEN_CIPHER_KEY`, which then leaves `github-scm`.
+   Existing authorizations stay readable only under the same key.
+3. Move a profile's configuration:
+
+   | Old key | New key |
+   |---|---|
+   | `marketplace.provider-connectors[]` entry `name: x` | `marketplace.connectors.x`, without `name` and `authentication` |
+   | `marketplace.connections.github.enabled` | `marketplace.providers.github.enabled` |
+   | `marketplace.connections.github.oauth-client-id`, `oauth-client-secret` | `marketplace.providers.github.client-id`, `client-secret` |
+   | `marketplace.connections.github.token-cipher-key` | `marketplace.connections.credential-cipher-key` |
+   | the `github` Provider's fixed targets `github-api`, `github-remote-mcp` | `marketplace.providers.github.targets`, declared by the base |
+
+   A Connector authenticated by a Provider names a target that Provider declares, and a remote
+   one lies within that target's hosts.
+
+A Work's Credential Proxy now binds each Provider credential to its target's declared hosts,
+for every path and method. The `github-remote-mcp` credential, earlier bound to `/mcp` on
+`api.githubcopilot.com`, now reaches any path of that host.
+
 ## The release that upgrades OpenSandbox to 1.2.1
 
 `apply-opensandbox.sh` upgrades the OpenSandbox Controller, Server, CRDs, execd and egress to

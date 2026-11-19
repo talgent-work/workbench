@@ -38,7 +38,8 @@ func TestInitSchemaDefinesSCMTokenLifecycleStateAndLookupIndexes(t *testing.T) {
 		"`last_checked_at` bigint NOT NULL DEFAULT '0'",
 		"`last_failure_code` varchar(128) NOT NULL DEFAULT ''",
 		"`last_failure_detail` varchar(512) NOT NULL DEFAULT ''",
-		"KEY `idx_refresh_candidates` (`status`, `expires_at`, `refresh_lease_until`, `deleted_at`)",
+		"`credentials_expire_at` bigint NOT NULL DEFAULT '0'",
+		"KEY `idx_refresh_candidates` (`status`, `credentials_expire_at`, `refresh_lease_until`, `deleted_at`)",
 		"KEY `idx_provider_account` (`provider`, `provider_account_id`, `deleted_at`)",
 	} {
 		if !strings.Contains(sql, want) {

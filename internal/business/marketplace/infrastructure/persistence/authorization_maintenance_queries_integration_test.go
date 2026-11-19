@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
 	"xorm.io/xorm"
 )
@@ -29,11 +30,16 @@ func TestAuthorizationMaintenanceCandidatesMySQL(t *testing.T) {
 	repo := NewProviderAuthorizations(db)
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	ids := map[string]string{}
-	for _, kind := range []string{"due", "stale", "fresh", "leased", "revoked", "deleted"} {
+	for _, kind := range []string{"due", "target-due", "stale", "fresh", "leased", "revoked", "deleted"} {
 		auth := newProviderAuthorizationForTest(t, kind)
 		auth.ExpiresAt, auth.LastCheckedAt = now.Add(-time.Minute), now
 		if kind == "fresh" || kind == "stale" {
 			auth.ExpiresAt = now.Add(time.Hour)
+		}
+		if kind == "target-due" {
+			// Its own credential is current; a target's expires first.
+			auth.ExpiresAt = now.Add(time.Hour)
+			auth.TargetCredentials = map[string]domain.TargetCredential{"docs": {TokenCiphertext: "target", ExpiresAt: now.Add(-30 * time.Second)}}
 		}
 		if kind == "stale" {
 			auth.LastCheckedAt = now.Add(-2 * time.Hour)
@@ -59,7 +65,7 @@ func TestAuthorizationMaintenanceCandidatesMySQL(t *testing.T) {
 		limit    int
 		expected []string
 	}{
-		{0, []string{}}, {1, []string{ids["due"]}}, {10, []string{ids["due"]}},
+		{0, []string{}}, {1, []string{ids["due"]}}, {10, []string{ids["due"], ids["target-due"]}},
 	} {
 		actual, err := queries.ListRefreshCandidates(ctx, now, now, check.limit)
 		require.NoError(t, err)
@@ -69,6 +75,6 @@ func TestAuthorizationMaintenanceCandidatesMySQL(t *testing.T) {
 	// A stale provider check without a due token is not a refresh candidate.
 	actual, err := queries.ListRefreshCandidates(ctx, now, now.Add(2*time.Minute), 10)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{ids["due"], ids["leased"]}, actual)
+	require.ElementsMatch(t, []string{ids["due"], ids["target-due"], ids["leased"]}, actual)
 	t.Run("revocation event pages", func(t *testing.T) { testConnectionMaintenancePages(t, db) })
 }

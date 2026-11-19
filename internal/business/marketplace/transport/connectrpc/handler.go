@@ -26,13 +26,19 @@ func NewHandler(app *application.Application, owners *application.Owners) *Handl
 // owner is whose installations or Provider Authorizations the request
 // reaches: the caller's own, or an Application the calling person owns.
 func (h *Handler) owner(ctx context.Context, applicationID string) (string, error) {
+	owner, err := h.connectorOwner(ctx, applicationID)
+	return owner.ID, err
+}
+
+// connectorOwner is owner with its kind, a person or an Application.
+func (h *Handler) connectorOwner(ctx context.Context, applicationID string) (domain.ConnectorOwner, error) {
 	caller := application.Caller{}
 	if found, ok := authn.CurrentApplication(ctx); ok {
 		caller.ApplicationID = found.ID
 	} else {
 		caller.UserID, _ = authn.CurrentUserID(ctx)
 	}
-	return h.owners.Resolve(ctx, caller, applicationID)
+	return h.owners.ResolveOwner(ctx, caller, applicationID)
 }
 
 func (h *Handler) ListPlugins(ctx context.Context, request *marketplacepublicv1.ListPluginsRequest) (*marketplacepublicv1.ListPluginsResponse, error) {
@@ -197,6 +203,13 @@ func mapError(err error) error {
 		return connect.NewError(connect.CodeAborted, err.Error()).WithCause(err)
 	case errors.Is(err, domain.ErrConnectorNotFound), errors.Is(err, domain.ErrInstallationNotFound), errors.Is(err, domain.ErrConnectorInstallationNotFound), errors.Is(err, application.ErrReleaseNotFound), errors.Is(err, domain.ErrProviderNotFound):
 		return connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
+	case errors.Is(err, domain.ErrConnectorNameTaken), errors.Is(err, domain.ErrReservedConnectorName):
+		return connect.NewError(connect.CodeAlreadyExists, err.Error()).WithCause(err)
+	case errors.Is(err, domain.ErrInvalidConnector), errors.Is(err, domain.ErrInvalidConnectorIcon), errors.Is(err, domain.ErrCredentialTargetInapplicable),
+		errors.Is(err, domain.ErrProviderConnectorNotRemote), errors.Is(err, application.ErrProviderUnavailable):
+		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
+	case errors.Is(err, domain.ErrInvalidTransition):
+		return connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
 	case errors.Is(err, domain.ErrConnectorNotInstallable):
 		return connect.NewError(connect.CodeFailedPrecondition, domain.ErrConnectorNotInstallable.Error()).WithCause(domain.ErrConnectorNotInstallable)
 	case errors.Is(err, domain.ErrAuthorizationReconnectRequired):

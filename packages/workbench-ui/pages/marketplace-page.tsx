@@ -5,8 +5,8 @@ import { MarketplaceShell } from "../components/marketplace/marketplace-shell";
 import { PluginList } from "../components/marketplace/plugin-list";
 import { PluginPage } from "../components/marketplace/plugin-page";
 import { ProviderPage } from "../components/marketplace/provider-pages";
-import { usePlugin } from "../lib/marketplace-catalog";
-import { providerName, serviceLabel } from "../lib/marketplace-connections";
+import { connectorLabel, useConnector, usePlugin } from "../lib/marketplace-catalog";
+import { useProviderNames } from "../lib/marketplace-connections";
 import { pluginDisplayName, pluginPresentation } from "../lib/marketplace-plugins";
 import { marketplacePaths } from "../lib/marketplace-routes";
 
@@ -26,7 +26,7 @@ export function MarketplacePage() {
     <Route path="plugins/:slug" element={<PluginRoute />} />
     <Route path="connectors" element={<MarketplaceShell title="Connectors"><ConnectorList /></MarketplaceShell>} />
     <Route path="connectors/categories/:category" element={<CategoryRoute kind="connectors" />} />
-    <Route path="connectors/:name" element={<ConnectorRoute />} />
+    <Route path="connectors/:connectorId" element={<ConnectorRoute />} />
     <Route path="providers" element={<Navigate to="/profile" replace />} />
     <Route path="providers/:provider" element={<ProviderRoute />} />
     <Route path="*" element={<Navigate to={marketplacePaths.plugins} replace />} />
@@ -49,11 +49,13 @@ function PluginRoute() {
 }
 
 function ConnectorRoute() {
-  const name = useParams().name ?? "";
-  return <MarketplaceShell title={serviceLabel(name)} trail={[connectors]}><ConnectorPage key={name} name={name} /></MarketplaceShell>;
+  const connectorId = useParams().connectorId ?? "";
+  const connector = useConnector(connectorId).data?.connector;
+  return <MarketplaceShell title={connector ? connectorLabel(connector) : "Connector"} trail={[connectors]}><ConnectorPage key={connectorId} connectorId={connectorId} /></MarketplaceShell>;
 }
 
 function ProviderRoute() {
   const provider = useParams().provider ?? "";
+  const providerName = useProviderNames();
   return <MarketplaceShell title={providerName(provider)} root={profile}><ProviderPage key={provider} provider={provider} /></MarketplaceShell>;
 }

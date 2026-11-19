@@ -36,7 +36,7 @@ func (h *Handler) GetConnector(ctx context.Context, request *marketplacepublicv1
 	if err != nil {
 		return nil, mapError(err)
 	}
-	detail, err := h.application.GetConnector(ctx, owner, request.GetName())
+	detail, err := h.application.GetConnector(ctx, owner, request.GetConnectorId())
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -52,7 +52,7 @@ func (h *Handler) InstallConnector(ctx context.Context, request *marketplacepubl
 	if err != nil {
 		return nil, mapError(err)
 	}
-	detail, err := h.application.InstallConnector(ctx, owner, request.GetName())
+	detail, err := h.application.InstallConnector(ctx, owner, request.GetConnectorId())
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -64,7 +64,7 @@ func (h *Handler) EnableConnector(ctx context.Context, request *marketplacepubli
 	if err != nil {
 		return nil, mapError(err)
 	}
-	detail, err := h.application.EnableConnector(ctx, application.ConnectorInstallationCommand{OwnerID: owner, Name: request.GetName(), Version: int(request.GetVersion())})
+	detail, err := h.application.EnableConnector(ctx, application.ConnectorInstallationCommand{OwnerID: owner, ConnectorID: request.GetConnectorId(), Version: int(request.GetVersion())})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -76,7 +76,7 @@ func (h *Handler) DisableConnector(ctx context.Context, request *marketplacepubl
 	if err != nil {
 		return nil, mapError(err)
 	}
-	detail, err := h.application.DisableConnector(ctx, application.ConnectorInstallationCommand{OwnerID: owner, Name: request.GetName(), Version: int(request.GetVersion())})
+	detail, err := h.application.DisableConnector(ctx, application.ConnectorInstallationCommand{OwnerID: owner, ConnectorID: request.GetConnectorId(), Version: int(request.GetVersion())})
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -88,7 +88,7 @@ func (h *Handler) UninstallConnector(ctx context.Context, request *marketplacepu
 	if err != nil {
 		return nil, mapError(err)
 	}
-	if err := h.application.UninstallConnector(ctx, application.ConnectorInstallationCommand{OwnerID: owner, Name: request.GetName(), Version: int(request.GetVersion())}); err != nil {
+	if err := h.application.UninstallConnector(ctx, application.ConnectorInstallationCommand{OwnerID: owner, ConnectorID: request.GetConnectorId(), Version: int(request.GetVersion())}); err != nil {
 		return nil, mapError(err)
 	}
 	return &marketplacepublicv1.UninstallConnectorResponse{}, nil
@@ -103,6 +103,12 @@ func connectorMessages(connectors []application.Connector) []*marketplacepublicv
 }
 
 func connectorMessage(c application.Connector) *marketplacepublicv1.Connector {
-	return &marketplacepublicv1.Connector{Name: c.Name, Description: c.Description, Category: c.Category, Required: c.Required, Offered: c.Offered, Status: c.Status,
-		InstallationVersion: uint32(c.InstallationVersion), Provider: c.Provider, ProviderConnection: c.ProviderConnection}
+	message := &marketplacepublicv1.Connector{ConnectorId: c.ID, Name: c.Name, Description: c.Description, Category: c.Category, Required: c.Required, Offered: c.Offered,
+		State: c.State, Transport: c.Transport, IconDigest: c.IconDigest, ConnectorVersion: uint32(c.Version), PublishedAtUnixMs: c.PublishedAtMillis,
+		Publisher: &marketplacepublicv1.ConnectorPublisher{Kind: c.Publisher.Kind, DisplayName: c.Publisher.DisplayName, Own: c.Publisher.Own},
+		Status:    c.Status, InstallationVersion: uint32(c.InstallationVersion), Provider: c.Provider, ProviderConnection: c.ProviderConnection}
+	if settings := c.Settings; settings != nil {
+		message.Settings = &marketplacepublicv1.ConnectorSettings{Url: settings.URL, Command: settings.Command, Arguments: settings.Arguments}
+	}
+	return message
 }

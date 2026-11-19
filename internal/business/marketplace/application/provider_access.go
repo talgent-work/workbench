@@ -38,7 +38,11 @@ func (a *PersonalConnections) BeginPersonalAuthorization(ctx context.Context, in
 	if strings.TrimSpace(input.OwnerID) == "" {
 		return BeginProviderAuthorizationResult{}, ErrUnauthenticated
 	}
-	return a.github.BeginProviderAuthorization(ctx, input)
+	port, err := a.establishment(input.Provider)
+	if err != nil {
+		return BeginProviderAuthorizationResult{}, err
+	}
+	return port.BeginProviderAuthorization(ctx, input)
 }
 
 // ListAccessibleRepositories offers the repositories last observed as reachable
@@ -64,11 +68,19 @@ func (a *PersonalConnections) ListAccessibleRepositories(ctx context.Context, ac
 // GetProviderAccess describes the connection and its last observed reach.
 // Permissions are those granted when observed, or those connecting requests.
 func (a *PersonalConnections) GetProviderAccess(ctx context.Context, actor string, provider domain.Provider) (ProviderAccessView, error) {
+	declaration, err := a.declared(provider)
+	if err != nil {
+		return ProviderAccessView{}, err
+	}
 	state, err := a.GetPersonalConnection(ctx, actor, provider)
 	if err != nil {
 		return ProviderAccessView{}, err
 	}
 	view := ProviderAccessView{State: state}
+	// Only a Provider that decides what an authorization reaches is observed.
+	if !declaration.ObservesAccessScope {
+		return view, nil
+	}
 	if view.ManageURL, err = a.github.ManageURL(ctx, provider); err != nil {
 		view.ManageURL = ""
 	}
@@ -132,9 +144,16 @@ func (a *PersonalConnections) observeAccessScope(ctx context.Context, authorizat
 	if !auth.IsActive() {
 		return nil
 	}
+	if declaration, err := a.declared(auth.Provider); err != nil || !declaration.ObservesAccessScope {
+		return nil
+	}
 	observeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	scope, err := a.github.ObserveAccess(observeCtx, auth.OwnerID, auth.Provider)
+	var scope domain.AccessScope
+	err = a.withFreshToken(observeCtx, auth, func(token string) (err error) {
+		scope, err = a.github.ObserveAccess(observeCtx, token)
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -168,4 +187,27 @@ func (a *PersonalConnections) observeAfterAuthorization(ctx context.Context, aut
 	if err := a.observeAccessScope(context.WithoutCancel(ctx), authorizationID, authorizationObservationTimeout); err != nil && a.tasks != nil {
 		_ = a.tasks.ScheduleAccessScopeObservation(context.WithoutCancel(ctx), authorizationID)
 	}
+}
+
+// withFreshToken calls the Provider with the authorization's current
+// credential. A Provider that rejects it before its stated expiry gets one
+// renewed credential; a second rejection is final.
+func (a *PersonalConnections) withFreshToken(ctx context.Context, auth *domain.ProviderAuthorization, call func(token string) error) error {
+	if a.credentials == nil {
+		return ErrProviderUnavailable
+	}
+	_, token, err := a.credentials.Fresh(ctx, auth.ID, auth.OwnerID, false)
+	if err != nil {
+		return err
+	}
+	if err = call(token); !errors.Is(err, ErrCredentialRejected) {
+		return err
+	}
+	if _, token, err = a.credentials.Fresh(ctx, auth.ID, auth.OwnerID, true); err != nil {
+		return err
+	}
+	if err = call(token); errors.Is(err, ErrCredentialRejected) {
+		return NewProviderError(ProviderErrorCredentialFailed, false, "the Provider rejected the renewed credential", err)
+	}
+	return err
 }

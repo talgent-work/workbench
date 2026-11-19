@@ -10,7 +10,7 @@ export interface WorkStartInput {
   thinkingLevel?: string;
   creationCapabilities?: {
     plugins: Array<{ name: string; include: boolean; configuration: JsonObject }>;
-    connectors: Array<{ name: string; include: boolean }>;
+    connectors: Array<{ connectorId: string; include: boolean }>;
     startupAgent?: string;
   };
   repositorySelections?: Array<{ repositoryId: string; baseBranch: string }>;

@@ -18,6 +18,10 @@ func (a *PersonalConnections) CompletePersonalAuthorization(ctx context.Context,
 	if strings.TrimSpace(input.OwnerID) == "" {
 		return ProviderAuthorizationInfo{}, ErrUnauthenticated
 	}
+	port, establishErr := a.establishment(input.Provider)
+	if establishErr != nil {
+		return ProviderAuthorizationInfo{}, establishErr
+	}
 	existing, err := a.authorizations.GetByOwnerAndProvider(ctx, input.OwnerID, input.Provider)
 	if err != nil && !errors.Is(err, domain.ErrProviderNotFound) {
 		return ProviderAuthorizationInfo{}, err
@@ -36,7 +40,7 @@ func (a *PersonalConnections) CompletePersonalAuthorization(ctx context.Context,
 	// must not race with replacement of the same retained authorization.
 	operationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	verified, operationErr := a.github.CompleteProviderAuthorization(operationCtx, input)
+	verified, operationErr := port.CompleteProviderAuthorization(operationCtx, input)
 	if operationErr == nil {
 		if verified == nil || verified.OwnerID != input.OwnerID || verified.Provider != input.Provider {
 			operationErr = domain.ErrPermissionDenied

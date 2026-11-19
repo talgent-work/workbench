@@ -1,50 +1,52 @@
 import { useState } from "react";
 import { Alert, Button, Card, Link as HeroLink, Spinner } from "@heroui/react";
-import type { ProviderAccount } from "@talgent/contracts/marketplace/public/v1/connections_pb";
+import type { DeclaredProvider, ProviderAccount } from "@talgent/contracts/marketplace/public/v1/connections_pb";
 import { Check, ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { connectorStatus, installStatusLabel, useConnectors } from "../../lib/marketplace-catalog";
-import { providerName, serviceLabel, supportedProviders, useConnectProvider, useDisconnectProvider, useProviderAccess, useProviderConnection, useRefreshProviderAccess } from "../../lib/marketplace-connections";
+import { serviceLabel, useConnectProvider, useDisconnectProvider, useProviderAccess, useProviderNames, useProviders, useRefreshProviderAccess } from "../../lib/marketplace-connections";
 import { marketplacePaths } from "../../lib/marketplace-routes";
 import { notify } from "../../lib/notifications";
 import { timeAgo } from "../../lib/relative-time";
 import { ConnectorIcon, ProviderIcon } from "./marketplace-icons";
 import { ConfirmDialog, LoadState } from "./marketplace-shared";
 
-const descriptions: Record<string, string> = { github: "Repositories, issues and pull requests on GitHub." };
 type Connection = "connected" | "not_connected" | "reconnect_required";
 const connectionOf = (status?: string): Connection => status === "active" ? "connected" : status === "reconnect_required" ? "reconnect_required" : "not_connected";
 const connectionText: Record<Connection, string> = { connected: "Connected", not_connected: "Not connected", reconnect_required: "Authorization expired" };
 
-// Every supported Provider with the person's Provider Authorization state; a
-// row opens the Provider page. Profile lists them.
+// Every Provider the deployment declares with the person's Provider
+// Authorization state; a row opens the Provider page. Profile lists them.
 export function ProviderRows() {
-  return <ul className="mk-rows">{supportedProviders.map(provider => <ProviderRow key={provider} provider={provider} />)}</ul>;
+  const providers = useProviders();
+  if (!providers.data) return <LoadState noun="Providers" isPending={providers.isPending} isError={providers.isError} hasData={false} isFetching={providers.isFetching} onRetry={() => void providers.refetch()} />;
+  if (!providers.data.length) return <p className="mk-note">No Providers are available on this deployment.</p>;
+  return <ul className="mk-rows">{providers.data.map(provider => <ProviderRow key={provider.name} provider={provider} />)}</ul>;
 }
 
 // A row shows the stored status only; who is connected and what the
 // authorization reaches are shown on its page.
-function ProviderRow({ provider }: { provider: string }) {
-  const access = useProviderConnection(provider);
-  const connection = connectionOf(access.data?.state?.status);
-  return <li className="mk-row"><Link className="mk-row-open" to={marketplacePaths.provider(provider)}>
-    <ProviderIcon id={provider} /><span className="mk-row-text"><strong>{providerName(provider)}</strong>
-      <span className={connection === "reconnect_required" || (access.isError && !access.data) ? "text-warning" : ""}>{access.isPending ? "Checking…" : access.isError && !access.data ? "Connection status unavailable" : connectionText[connection]}</span></span>
+function ProviderRow({ provider }: { provider: DeclaredProvider }) {
+  const connection = connectionOf(provider.connection?.status);
+  return <li className="mk-row"><Link className="mk-row-open" to={marketplacePaths.provider(provider.name)}>
+    <ProviderIcon id={provider.name} /><span className="mk-row-text"><strong>{provider.displayName || provider.name}</strong>
+      <span className={connection === "reconnect_required" ? "text-warning" : ""}>{connectionText[connection]}</span></span>
   </Link></li>;
 }
 
 // A Provider page: connecting never installs anything and applies to Works
-// started afterwards. What the authorization reaches is decided on GitHub and
-// shown as last seen; Refresh asks GitHub again.
+// started afterwards. Where the Provider decides which accounts the
+// authorization reaches, they are shown as last seen; Refresh asks it again.
 export function ProviderPage({ provider }: { provider: string }) {
   const access = useProviderAccess(provider);
+  const declared = useProviders().data?.find(item => item.name === provider);
   const refresh = useRefreshProviderAccess(provider);
   const connectors = useConnectors();
   const connect = useConnectProvider();
   const disconnect = useDisconnectProvider();
   const { pathname } = useLocation();
   const [confirm, setConfirm] = useState(false);
-  const name = providerName(provider);
+  const name = useProviderNames()(provider);
   if (!access.data) return <LoadState noun={`${name} connection`} isPending={access.isPending} isError={access.isError} hasData={false} isFetching={access.isFetching} onRetry={() => void access.refetch()} />;
   const state = access.data.state;
   const connection = connectionOf(state?.status);
@@ -56,7 +58,7 @@ export function ProviderPage({ provider }: { provider: string }) {
     if (!state?.authorizationId) return;
     disconnect.mutate(state.authorizationId, {
       onSuccess: () => notify(`provider:${provider}`, "default", `${name} disconnected`, "Works you start afterwards can’t use it."),
-      onError: () => notify(`provider:${provider}`, "danger", `${name} couldn’t be disconnected`, "GitHub didn’t confirm it. Try again."),
+      onError: () => notify(`provider:${provider}`, "danger", `${name} couldn’t be disconnected`, `${name} didn’t confirm it. Try again.`),
     });
   };
   return <div className="mk-detail">
@@ -78,7 +80,7 @@ export function ProviderPage({ provider }: { provider: string }) {
 
     <section className="mk-section"><h3 className="mk-section-title">About</h3>
       <Card className="mk-group mk-about">
-        <div className="mk-about-main"><p className="mk-about-text">{descriptions[provider]} Only you can use this authorization. Works you start after connecting can use it; Works already running keep the access they started with.</p></div>
+        <div className="mk-about-main"><p className="mk-about-text">Only you can use this authorization. Works you start after connecting can use it; Works already running keep the access they started with.</p></div>
         <dl className="mk-about-facts">
           <div><dt>Account</dt><dd>{connection === "not_connected" ? "—" : state?.providerLogin}</dd></div>
           <div><dt>Status</dt><dd>{connectionText[connection]}</dd></div>
@@ -93,7 +95,7 @@ export function ProviderPage({ provider }: { provider: string }) {
       </li>)}</ul></Card>
     </section>}
 
-    {connection === "connected" && <section className="mk-section">
+    {connection === "connected" && declared?.observesAccessScope && <section className="mk-section">
       <div className="mk-section-bar"><h3 className="mk-section-title">Organizations <span className="mk-count">{access.data.accounts.length}</span></h3>
         <span className="mk-section-actions">
           <span className="mk-note">{observed ? `Checked ${timeAgo(observed)}` : "Not checked yet"}</span>

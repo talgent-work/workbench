@@ -204,19 +204,28 @@ func TestNativeLaunchReachesTheTalgentConnectorAtTheSandboxGatewayAddress(t *tes
 	require.Contains(t, launch.Command, `"talgent":{"type":"http","url":"${TALGENT_GATEWAY_ADDRESS:-http://connector.talgent.svc.cluster.local}/mcp"}`)
 }
 
-// On a Managed Computer the Talgent Connector is reached through the local
-// proxy, whose URL and token the Harness expands from the run's environment;
-// no other Connector is declared there.
-func TestManagedLaunchDeclaresTheTalgentConnectorThroughTheLocalProxy(t *testing.T) {
+// On a Managed Computer the Talgent Connector and each Provider Connector are
+// reached through the local proxy, whose URL and token the Harness expands
+// from the run's environment, each at its own address; a credential-free
+// local command is declared as it is, to start on the machine. A Provider
+// Connector no proxy address can serve is not declared.
+func TestManagedLaunchDeclaresConnectorsThroughTheLocalProxy(t *testing.T) {
 	input := request()
 	input.ComputerID = "01900000-0000-7000-8000-0000000000c1"
-	// A snapshot established before Managed Connector availability may hold
-	// a Provider-authorized Connector; it is not declared.
-	input.Capabilities.Connectors = append(input.Capabilities.Connectors, connectorcatalogtest.GitHub().SelectedConnector)
+	local := domain.SelectedConnector{ID: "01900000-0000-7000-8000-00000000038b", Name: "chrome-devtools", Command: "npx", Arguments: []string{"-y", "chrome-devtools-mcp@0.6.0"}, Authentication: "none"}
+	lasting := connectorcatalogtest.Remote().SelectedConnector
+	lasting.Name, lasting.TargetCredentialsExpire = "lasting-docs", false
+	// A snapshot established before a rule changed may hold Connectors a
+	// Managed Computer cannot serve; they are not declared.
+	input.Capabilities.Connectors = append(input.Capabilities.Connectors, connectorcatalogtest.GitHub().SelectedConnector, connectorcatalogtest.Remote().SelectedConnector, lasting, local)
 	launch, err := (NativeLaunchConfig{Binary: "claude"}).prepare(machineLayout, input, owner(input), "")
 	require.NoError(t, err)
-	require.Contains(t, launch.Command, `'{"mcpServers":{"talgent":{"headers":{"Authorization":"Bearer ${TALGENT_PROXY_TOKEN}"},"type":"http","url":"${TALGENT_PROXY_URL}/mcp"}}}'`)
-	require.NotContains(t, launch.Command, "github-mcp-server")
+	require.Contains(t, launch.Command, `'{"mcpServers":{"chrome-devtools":{"args":["-y","chrome-devtools-mcp@0.6.0"],"command":"npx"},`+
+		`"enterprise-docs":{"headers":{"Authorization":"Bearer ${TALGENT_PROXY_TOKEN}"},"type":"http","url":"${TALGENT_PROXY_URL}/connectors/01900000-0000-7000-8000-000000000389"},`+
+		`"talgent":{"headers":{"Authorization":"Bearer ${TALGENT_PROXY_TOKEN}"},"type":"http","url":"${TALGENT_PROXY_URL}/mcp"}}}'`)
+	for _, absent := range []string{"github-mcp-server", "lasting-docs", "docs.example.com", "DOCS_TOKEN"} {
+		require.NotContains(t, launch.Command, absent)
+	}
 	require.NotContains(t, launch.Command, "connector.talgent.svc", "the in-cluster Gateway address is not reachable from the machine")
 }
 

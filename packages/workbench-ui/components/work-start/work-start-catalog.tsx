@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Button, ListBox } from "@heroui/react";
 import type { PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { AlertTriangle, ArrowLeft, Plug, Puzzle, Settings2 } from "lucide-react";
-import { providerName, serviceLabel, useConnectProvider } from "../../lib/marketplace-connections";
+import { serviceLabel, useConnectProvider, useProviderNames } from "../../lib/marketplace-connections";
 import { pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
 import { draftsFrom } from "../../lib/plugin-parameters";
 import type { ConnectorRow, LoadoutRow } from "../../lib/work-start-loadout";
@@ -95,22 +95,24 @@ export function PluginsMenu({ rows, catalog, draft, update, disabled, open, onOp
 // out is shown as unavailable, a required one included.
 export function ConnectorsMenu({ rows, update, disabled, open, onOpenChange, returnTo }: { rows: ConnectorRow[]; update: Update; disabled: boolean; open: boolean; onOpenChange: (open: boolean) => void; returnTo: string }) {
   const connect = useConnectProvider();
+  const providerName = useProviderNames();
   const included = rows.filter(row => row.included);
   const toggle = (row: ConnectorRow) => update(current => {
     const connectors = { ...current.connectors };
-    if (row.difference === "removed" || (row.difference === "added" && row.included)) delete connectors[row.name];
-    else connectors[row.name] = !row.included;
+    if (row.difference === "removed" || (row.difference === "added" && row.included)) delete connectors[row.id];
+    else connectors[row.id] = !row.included;
     return { ...current, connectors };
   });
   const entries: Entry[] = rows.map(row => {
     const provider = row.connector?.provider ?? "";
     const needs = Boolean(row.included && provider && row.connector?.providerConnection !== "connected");
     const category = row.connector?.category ? pluginDisplayName(row.connector.category) : "Other";
-    return { key: row.name, category, installed: row.difference !== "added", title: serviceLabel(row.name), checked: row.included, disabled: row.difference === "required" || row.unavailable, warn: needs, onChange: () => toggle(row),
-      secondary: row.unavailable ? "Not available on this Computer" : row.difference === "required" ? "Always included" : row.difference === "added" && row.included ? "Added for this Work" : needs ? `${providerName(provider)} isn’t connected — its tools won’t work` : provider ? `Signs in with ${providerName(provider)}` : row.connector?.description ?? "",
+    const title = row.publisher ? `${serviceLabel(row.name)} · ${row.publisher}` : serviceLabel(row.name);
+    return { key: row.id, category, installed: row.difference !== "added", title, checked: row.included, disabled: row.difference === "required" || row.unavailable, warn: needs || row.clashes, onChange: () => toggle(row),
+      secondary: row.unavailable ? "Not available on this Computer" : row.clashes ? `Another included connector is also named ${row.name}. Keep one.` : row.difference === "required" ? "Always included" : row.difference === "added" && row.included ? "Added for this Work" : needs ? `${providerName(provider)} isn’t connected — its tools won’t work` : provider ? `Signs in with ${providerName(provider)}` : row.connector?.description ?? "",
       trailing: needs ? <Button size="sm" variant="secondary" isPending={connect.isPending} onPress={() => connect.mutate({ provider, returnTo })}>Connect</Button> : undefined };
   });
-  return <TrayPopover label="Connectors" value={`${included.length} ${included.length === 1 ? "connector" : "connectors"}`} icon={<Plug size={16} />} disabled={disabled} wide attention={included.some(row => row.connector?.provider && row.connector.providerConnection !== "connected")} open={open} onOpenChange={onOpenChange}>
+  return <TrayPopover label="Connectors" value={`${included.length} ${included.length === 1 ? "connector" : "connectors"}`} icon={<Plug size={16} />} disabled={disabled} wide attention={included.some(row => row.clashes || (row.connector?.provider && row.connector.providerConnection !== "connected"))} open={open} onOpenChange={onOpenChange}>
     <CatalogPicker noun="connectors" entries={entries} />
   </TrayPopover>;
 }

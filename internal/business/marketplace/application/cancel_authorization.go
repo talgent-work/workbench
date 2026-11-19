@@ -3,9 +3,7 @@ package application
 import (
 	"context"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
@@ -24,17 +22,10 @@ func (a *PersonalConnections) CancelPersonalAuthorization(ctx context.Context, a
 	if auth.OwnerID != actor {
 		return query.PersonalAuthorization{}, domain.ErrProviderNotFound
 	}
-	now := time.Now().UTC()
-	// One minute exceeds the bounded Provider operation and persistence window.
-	// Refresh, cancellation and competing workers share this database fence.
-	auth, err = a.authorizations.AcquireCredentialLease(ctx, auth, uuid.NewString(), now.Add(time.Minute), now)
-	if err != nil {
-		return query.PersonalAuthorization{}, err
+	if a.credentials == nil {
+		return query.PersonalAuthorization{}, ErrProviderUnavailable
 	}
-	operationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	operationErr := auth.CancelAuthorization(operationCtx, actor, now, a.authorizationPort)
-	if err := a.persistCredentialOperation(ctx, auth, operationErr); err != nil {
+	if auth, err = a.credentials.Revoke(ctx, actor, auth); err != nil {
 		return query.PersonalAuthorization{}, err
 	}
 	return query.PersonalAuthorization{ID: auth.ID, Provider: string(auth.Provider), Status: string(auth.Status)}, nil

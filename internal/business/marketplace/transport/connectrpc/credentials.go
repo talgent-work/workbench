@@ -44,7 +44,7 @@ func (h *CredentialHandler) SupplyServiceCredential(ctx context.Context, request
 	if err != nil {
 		return nil, credentialSupplyError(ctx, err)
 	}
-	return &marketplaceprivatev1.SupplyServiceCredentialResponse{Token: material.Token, ExpiresAtUnixMs: expiryMillis(material.ExpiresAt)}, nil
+	return &marketplaceprivatev1.SupplyServiceCredentialResponse{Token: material.Token, ExpiresAtUnixMs: expiryMillis(material.ExpiresAt), Hosts: material.Hosts}, nil
 }
 
 // CredentialStatusHeader states, in the refusal's response metadata, why a
@@ -67,15 +67,6 @@ func credentialSupplyError(ctx context.Context, err error) error {
 	case errors.Is(err, domain.ErrProviderNotFound):
 		// A deleted authorization supplies nothing ever again.
 		reason = "revoked"
-	}
-	var providerErr *application.ProviderError
-	if errors.As(err, &providerErr) {
-		switch providerErr.Code {
-		case "github_authorization_revoked":
-			reason = "revoked"
-		case "github_reconnect_required":
-			reason = "reconnect_required"
-		}
 	}
 	if info, ok := connect.CallInfoForServerContext(ctx); ok {
 		info.ResponseHeader().Set(CredentialStatusHeader, reason)

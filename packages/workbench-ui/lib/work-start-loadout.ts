@@ -1,6 +1,7 @@
 import type { JsonObject } from "@bufbuild/protobuf";
 import type { WorkStartConnector, WorkStartPlugin } from "@talgent/contracts/agent/public/v1/work_start_options_pb";
-import type { Connector, InstalledPlugin, PluginRelease, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
+import type { Connector } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
+import type { InstalledPlugin, PluginRelease, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { pluginDisplayName, pluginPresentation } from "./marketplace-plugins";
 import { missingRequired, parseParameters, parameterLabel } from "./plugin-parameters";
 import type { WorkStartDraft } from "./work-start-draft";
@@ -69,7 +70,11 @@ export function pluginChoices(rows: LoadoutRow[], draft: WorkStartDraft) {
 }
 
 export interface ConnectorRow {
+  /** The Connector's identity, which a Work's choice names. */
+  id: string;
   name: string;
+  /** Who published it; empty for a Platform Connector. */
+  publisher: string;
   difference: Difference;
   included: boolean;
   /** Marketplace presentation and Provider connection, when listed. */
@@ -77,24 +82,30 @@ export interface ConnectorRow {
   /** Left out of a Work on the chosen Managed Computer, as Agent reports;
    * never included or sent. */
   unavailable: boolean;
+  /** Another included Connector has the same name; a Work refuses both. */
+  clashes: boolean;
 }
 
 // Agent reports the default selection (required entries and enabled
 // installations); this Work may remove defaults or add other offered entries.
 // On a Managed Computer, Agent says which Connectors its Work leaves out.
 export function connectorLoadout(options: WorkStartConnector[], catalog: Connector[], draft: WorkStartDraft, managed = false): ConnectorRow[] {
-  const presentation = new Map(catalog.map(connector => [connector.name, connector]));
-  return options.map(option => {
+  const presentation = new Map(catalog.map(connector => [connector.connectorId, connector]));
+  const rows = options.map(option => {
     const base: Difference = option.required ? "required" : option.includedByDefault ? "default" : "added";
-    const connector = presentation.get(option.name);
+    const connector = presentation.get(option.connectorId);
     const unavailable = managed && option.unavailableOnManaged;
-    const choice = draft.connectors[option.name];
+    const choice = draft.connectors[option.connectorId];
     const included = !unavailable && (base === "required" || (choice ?? base === "default"));
-    return { name: option.name, connector, included, unavailable, difference: base === "default" && !included && !unavailable ? "removed" : base };
+    return { id: option.connectorId, name: option.name, publisher: option.publisher, connector, included, unavailable, clashes: false,
+      difference: (base === "default" && !included && !unavailable ? "removed" : base) as Difference };
   });
+  const names = new Map<string, number>();
+  for (const row of rows) if (row.included) names.set(row.name, (names.get(row.name) ?? 0) + 1);
+  return rows.map(row => ({ ...row, clashes: row.included && (names.get(row.name) ?? 0) > 1 }));
 }
 
 export function connectorChoices(rows: ConnectorRow[]) {
   return rows.filter(row => !row.unavailable && (row.difference === "removed" || (row.difference === "added" && row.included)))
-    .map(row => ({ name: row.name, include: row.included }));
+    .map(row => ({ connectorId: row.id, include: row.included }));
 }

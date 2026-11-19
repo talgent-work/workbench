@@ -29,12 +29,14 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/scopemaintenance"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/credentialcipher"
 	scmgithub "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/github"
 	transport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/providertest"
 	"xorm.io/xorm"
 )
 
@@ -120,11 +122,11 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	cfg := scmgithub.Config{
-		Enabled: "true", AppID: "123", AppSlug: "talgent", OAuthClientID: "client-id", OAuthClientSecret: "client-secret",
+		Enabled: true, AppID: "123", AppSlug: "talgent", OAuthClientID: "client-id", OAuthClientSecret: "client-secret",
 		PrivateKeyPEM:  string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})),
 		TokenCipherKey: "integration cipher key", APIBaseURL: githubServer.URL, WebBaseURL: "https://github.test",
 	}
-	cipher, err := scmgithub.NewTokenCipher(cfg)
+	cipher, err := credentialcipher.New(cfg.TokenCipherKey)
 	require.NoError(t, err)
 	repo := NewProviderAuthorizations(db)
 	token, err := cipher.Encrypt("gho_user_token")
@@ -137,13 +139,18 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	require.NoError(t, err)
 	require.NoError(t, repo.Save(ctx, authorization))
 
-	observer, err := scmgithub.NewCatalog(cfg, repo, cipher)
+	port, err := scmgithub.NewAuthorizationPort(cfg, cipher)
+	require.NoError(t, err)
+	providers := providertest.Declarations{providertest.GitHub()}
+	credentials := application.NewProviderCredentials(repo, providers, onePort{port}, cipher, application.CredentialTiming{RequestSkew: 5 * time.Minute})
+	observer, err := scmgithub.NewCatalog(cfg)
 	require.NoError(t, err)
 	queries := NewProviderAuthorizationQueries(db)
 	scheduler := &syncObservations{}
-	connections := application.NewPersonalConnections(repo, queries, testGitHub{access: observer}, scheduler, nil)
+	connections := application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: repo, Queries: queries, Providers: providers,
+		GitHub: testGitHub{access: observer}, Tasks: scheduler, Credentials: credentials})
 	scheduler.connections = connections
-	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
+	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorDependencies{})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())
@@ -259,7 +266,7 @@ func TestProviderAccessIsTheCallersOwn(t *testing.T) {
 	_, err = f.client.GetProviderAccess(t.Context(), &marketplacepublicv1.GetProviderAccessRequest{Provider: "github"})
 	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 	_, err = f.client.GetProviderAccess(personal(t.Context(), f.owner), &marketplacepublicv1.GetProviderAccessRequest{Provider: "linear"})
-	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "only supported Providers are described")
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "only declared Providers are described")
 }
 
 func repositoryNames(repositories []*marketplacepublicv1.AccessibleRepository) []string {

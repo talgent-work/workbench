@@ -9,6 +9,9 @@
 # --placeholders renders with the placeholder values the kustomizations' own
 # environment.env files hold, without a deployment's environment: the offline
 # render CI tests the manifests with. Such a render is never applied.
+#
+# The environment's ENTERPRISE_NETWORKS and CLUSTER_NETWORKS fill the sandbox
+# NetworkPolicy sandbox-enterprise-networks (lib/networks.sh).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -16,6 +19,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${ROOT_DIR}/scripts/deploy/lib/images.sh"
 # shellcheck source=lib/environment.sh
 source "${ROOT_DIR}/scripts/deploy/lib/environment.sh"
+# shellcheck source=lib/networks.sh
+source "${ROOT_DIR}/scripts/deploy/lib/networks.sh"
 
 placeholders=0
 if [[ "${1:-}" == "--placeholders" ]]; then
@@ -63,10 +68,14 @@ fi
 # default adds a component of the base's components/, whichever kustomization
 # is rendered.
 switch_components="$(deploy_switch_components "${environment_files[@]}")"
-if [[ -n "${switch_components}" ]]; then
+# The enterprise networks the environment declares open in the sandbox
+# NetworkPolicy through a component written for this render.
+network_component="$(enterprise_network_component "${work}/tree/workbench/components" "${environment_files[@]}")"
+components="$(printf '%s\n%s\n' "${switch_components}" "${network_component}" | sed '/^$/d')"
+if [[ -n "${components}" ]]; then
   {
     echo "components:"
-    sed 's#^#  - components/#' <<< "${switch_components}"
+    sed 's#^#  - components/#' <<< "${components}"
   } >> "${work}/tree/workbench/kustomization.yaml"
 fi
 

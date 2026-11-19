@@ -69,9 +69,9 @@ func (m *ManagedEnvironment) Reconciliation() *ManagedReconciliation { return m.
 
 func (ManagedEnvironment) launchLayout() launchLayout { return machineLayout }
 
-// specify holds no mounts and no Provider credentials, so the execution uses
-// no authorization the platform would redeliver. It issues the run's own
-// telemetry token (managed_telemetry.go).
+// specify holds no mounts. The execution uses only the authorizations of its
+// Provider Connectors' targets, whose credentials the platform redelivers on
+// a change. It issues the run's own telemetry token (managed_telemetry.go).
 func (m ManagedEnvironment) specify(ctx context.Context, request domain.LaunchSpecification, _ domain.SandboxMounts, _ SandboxOwner, token string) (environmentSpecification, error) {
 	spec, err := managedSpecificationFor(request, m.models, token)
 	if err != nil {
@@ -85,7 +85,11 @@ func (m ManagedEnvironment) specify(ctx context.Context, request domain.LaunchSp
 	if err != nil {
 		return environmentSpecification{}, oops.Wrap(err)
 	}
-	return environmentSpecification{document: document, authorizations: []byte("[]")}, nil
+	authorizations, err := managedAuthorizations(request)
+	if err != nil {
+		return environmentSpecification{}, oops.Wrap(err)
+	}
+	return environmentSpecification{document: document, authorizations: authorizations}, nil
 }
 
 // claim freezes nothing: the machine's own git credentials serve the Work.

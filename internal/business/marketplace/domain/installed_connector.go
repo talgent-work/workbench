@@ -20,13 +20,14 @@ type InstalledConnector struct {
 	Version     int
 }
 
-// InstallConnector establishes an Enabled installation for an application-
-// authorized user after the catalog entry admits personal installation.
+// InstallConnector establishes an Enabled installation for an authorized
+// owner once the Connector admits it: only a Connector in that owner's
+// Connector catalog, neither Withdrawn nor required, is installed.
 func InstallConnector(ownerID string, connector *Connector) (*InstalledConnector, error) {
 	if err := connector.Validate(); err != nil {
 		return nil, err
 	}
-	if err := connector.AdmitInstallation(); err != nil {
+	if err := connector.AdmitInstallation(ownerID); err != nil {
 		return nil, err
 	}
 	installation := &InstalledConnector{ID: uuid.Must(uuid.NewV7()).String(), OwnerID: ownerID, ConnectorID: connector.ID, State: Enabled}

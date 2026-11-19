@@ -29,7 +29,7 @@ func (c *Client) SupplyServiceCredential(ctx context.Context, input command.Serv
 	if err != nil {
 		return command.ServiceCredentialMaterial{}, credentialUnavailable(err, info)
 	}
-	return command.ServiceCredentialMaterial{Token: response.GetToken(), ExpiresAt: declaredExpiry(response.GetExpiresAtUnixMs())}, nil
+	return command.ServiceCredentialMaterial{Token: response.GetToken(), ExpiresAt: declaredExpiry(response.GetExpiresAtUnixMs()), Hosts: response.GetHosts()}, nil
 }
 
 // credentialUnavailable reads Marketplace's refusal of a call, whose status

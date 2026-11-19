@@ -81,3 +81,31 @@ func TestWithoutDirectAPIAccessWorksLoadNoAPIPlugin(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"talgent"}, builtIns.Required(domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "p"}))
 }
+
+// By default a sandbox reaches no enterprise network; the deployment's
+// environment declares them with the cluster's own ranges.
+func TestTheEnvironmentDeclaresTheSandboxNetworks(t *testing.T) {
+	execution := loadDefaults(t).AgentExecution
+	require.Empty(t, execution.EnterpriseNetworks)
+	require.Empty(t, execution.ClusterNetworks)
+
+	t.Setenv("ENTERPRISE_NETWORKS", "172.16.0.0/12:443")
+	t.Setenv("CLUSTER_NETWORKS", "10.42.0.0/16")
+	execution = loadDefaults(t).AgentExecution
+	require.Equal(t, "172.16.0.0/12:443", execution.EnterpriseNetworks)
+	require.Equal(t, "10.42.0.0/16", execution.ClusterNetworks)
+}
+
+// The base declares github, left out until GITHUB_SCM_ENABLED turns it on,
+// at the GitHub host the deployment names.
+func TestTheBaseDeclaresGitHubAtTheNamedHost(t *testing.T) {
+	github := loadDefaults(t).Marketplace.Providers["github"]
+	require.Equal(t, "false", github.Enabled)
+	t.Setenv("GITHUB_SCM_ENABLED", "true")
+	t.Setenv("GITHUB_WEB_BASE_URL", "https://github.example.com")
+	github = loadDefaults(t).Marketplace.Providers["github"]
+	require.Equal(t, "true", github.Enabled)
+	require.Equal(t, "https://github.example.com/login/oauth/access_token", github.TokenEndpoint)
+	require.Equal(t, []string{"api.github.com"}, github.Targets["github-api"].Hosts)
+	require.Equal(t, "shared", github.TargetCredentials)
+}

@@ -17,7 +17,7 @@ export interface WorkStartDraft {
   thinkingLevel?: string;
   repositories: string[];
   plugins: Record<string, WorkPluginChoice>;
-  /** Per-Work Connector inclusion that differs from the default. */
+  /** Per-Work Connector inclusion that differs from the default, by Connector identity. */
   connectors: Record<string, boolean>;
   agent: string;
   /** The chosen Computer; empty keeps the default, the first Cloud. */

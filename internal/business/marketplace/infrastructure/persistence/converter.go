@@ -1,7 +1,10 @@
 package persistence
 
 import (
+	"encoding/json"
 	"time"
+
+	"github.com/samber/oops"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
@@ -11,7 +14,13 @@ func providerAuthorizationToDO(a *domain.ProviderAuthorization) (ProviderAuthori
 	if err != nil {
 		return ProviderAuthorizationDO{}, err
 	}
+	targets, err := targetCredentialsToJSON(a.TargetCredentials)
+	if err != nil {
+		return ProviderAuthorizationDO{}, err
+	}
 	return ProviderAuthorizationDO{
+		TargetCredentialsJSON:  targets,
+		CredentialsExpireAt:    millisFromTime(a.CredentialsExpireAt()),
 		ID:                     a.ID,
 		OwnerID:                a.OwnerID,
 		Provider:               string(a.Provider),
@@ -42,6 +51,10 @@ func providerAuthorizationFromDO(row ProviderAuthorizationDO) (*domain.ProviderA
 	if err != nil {
 		return nil, err
 	}
+	targets, err := targetCredentialsFromJSON(row.TargetCredentialsJSON)
+	if err != nil {
+		return nil, err
+	}
 	return domain.RehydrateProviderAuthorization(domain.ProviderAuthorization{
 		AccessScope: scope,
 		ID:          row.ID,
@@ -65,6 +78,7 @@ func providerAuthorizationFromDO(row ProviderAuthorizationDO) (*domain.ProviderA
 			RefreshTokenCiphertext: row.RefreshTokenCiphertext,
 			ExpiresAt:              timeFromMillis(row.ExpiresAt),
 			RefreshTokenExpiresAt:  timeFromMillis(row.RefreshTokenExpiresAt),
+			TargetCredentials:      targets,
 		},
 	})
 }
@@ -81,4 +95,35 @@ func millisFromTime(t time.Time) int64 {
 		return 0
 	}
 	return t.UnixMilli()
+}
+
+// targetCredentialDO is the stored form of one target credential; the token
+// stays the protected ciphertext.
+type targetCredentialDO struct {
+	TokenCiphertext string `json:"token_ciphertext"`
+	ExpiresAt       int64  `json:"expires_at"`
+}
+
+func targetCredentialsToJSON(credentials map[string]domain.TargetCredential) (string, error) {
+	stored := make(map[string]targetCredentialDO, len(credentials))
+	for target, credential := range credentials {
+		stored[target] = targetCredentialDO{TokenCiphertext: credential.TokenCiphertext, ExpiresAt: millisFromTime(credential.ExpiresAt)}
+	}
+	encoded, err := json.Marshal(stored)
+	return string(encoded), oops.Wrap(err)
+}
+
+func targetCredentialsFromJSON(value string) (map[string]domain.TargetCredential, error) {
+	if value == "" {
+		return nil, nil
+	}
+	var stored map[string]targetCredentialDO
+	if err := json.Unmarshal([]byte(value), &stored); err != nil {
+		return nil, oops.Wrap(err)
+	}
+	credentials := make(map[string]domain.TargetCredential, len(stored))
+	for target, credential := range stored {
+		credentials[target] = domain.TargetCredential{TokenCiphertext: credential.TokenCiphertext, ExpiresAt: timeFromMillis(credential.ExpiresAt)}
+	}
+	return credentials, nil
 }
