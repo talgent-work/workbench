@@ -44,6 +44,10 @@ configToml: |
   mode = "dns+nft"
   readiness_timeout_seconds = 60.0
   [kubernetes]
+  # The server always watches Fast Sandbox SandboxSnapshots (sandbox.fast.io).
+  # This deployment runs no Fast Sandbox and grants no access to it, so the
+  # server logs a 403 "Informer watch error" every 30 seconds; sandboxes are
+  # unaffected. Upstream #2875 reports it once; it ships after 1.2.1.
   kubeconfig_path = ""
   namespace = "talgent-sandbox"
   workload_provider = "batchsandbox"

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# scripts/deploy/apply-opensandbox.sh against a stubbed kubectl: it checks the
-# configured sandbox RuntimeClass and applies it in the workload template, and
+# scripts/deploy/apply-opensandbox.sh against a stubbed kubectl: it creates only
+# missing namespaces, checks the configured sandbox RuntimeClass and applies it
+# in the workload template, and
 # it refuses nodes without Flannel WireGuard unless the operator vouches for
 # their pod network's encryption.
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -17,6 +18,7 @@ set -euo pipefail
 echo "kubectl $*" >> "$PROBE_ARGS"
 case "$*" in
   "get nodes -o json") cat "$PROBE_NODES" ;;
+  "get namespace opensandbox-system") exit 1 ;;
   *"get secret opensandbox-api"*) printf '64' ;;
   "apply -f "*resources.yaml) cp "${@: -1}" "$PROBE_RESOURCES" ;;
   *) : ;;
@@ -40,6 +42,8 @@ fail() { echo "FAIL: $*" >&2; cat "$fixture/out" >&2; exit 1; }
 run "$flannel" || fail "default deploy on Flannel WireGuard nodes"
 grep -q 'get runtimeclass kata-qemu-runtime-rs' "$fixture/args" || fail "default RuntimeClass not checked"
 grep -q 'runtimeClassName: kata-qemu-runtime-rs' "$fixture/resources" || fail "default RuntimeClass not applied"
+grep -q 'create namespace opensandbox-system' "$fixture/args" || fail "missing namespace not created"
+! grep -qE 'create namespace talgent|apply -f -' "$fixture/args" || fail "rewrote the existing talgent namespace"
 
 if run "$plain"; then fail "nodes without Flannel WireGuard were accepted"; fi
 grep -q 'Flannel WireGuard' "$fixture/out" || fail "refusal does not name the missing backend"

@@ -61,8 +61,12 @@ if [[ "$network_check" == flannel-wireguard ]] && ! kubectl get nodes -o json | 
   echo "All cluster nodes must report Flannel WireGuard with a public key before credential management traffic is enabled" >&2
   exit 1
 fi
-kubectl create namespace talgent --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace opensandbox-system --dry-run=client -o yaml | kubectl apply -f -
+# Only a missing namespace is created: applying a bare Namespace strips the
+# labels workbench.yaml gives talgent, among them gateway-access, which the
+# Gateway admits routes by.
+for namespace in talgent opensandbox-system; do
+  kubectl get namespace "$namespace" >/dev/null 2>&1 || kubectl create namespace "$namespace"
+done
 key_length=$(kubectl -n talgent get secret opensandbox-api --ignore-not-found -o go-template='{{with .data}}{{len (index . "api-key")}}{{end}}')
 if [[ -z "$key_length" ]]; then
   openssl rand -hex 32 | tr -d '\n' > "$deployment_dir/api-key"
