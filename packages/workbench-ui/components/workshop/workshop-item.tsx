@@ -3,7 +3,7 @@ import { Alert, Button, Card, Modal, Separator, Typography } from "@heroui/react
 import type { Connector } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
 import { Clock, Globe, KeyRound, Plug, SquareTerminal, Store } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { draftOf, draftProblems, emptyDraft, providerHosts, refusal, useConnectorAuthoring, useConnectorIcon, useOwnedConnectors, type ConnectorDraft, type DraftProblems, type IconImage } from "../../lib/connector-workshop";
+import { draftOf, draftProblems, emptyDraft, providerHosts, refusal, refusedField, useConnectorAuthoring, useConnectorIcon, useOwnedConnectors, type ConnectorDraft, type DraftProblems, type IconImage } from "../../lib/connector-workshop";
 import { useConnectors } from "../../lib/marketplace-catalog";
 import { useProviders } from "../../lib/marketplace-connections";
 import { marketplacePaths, workshopPaths } from "../../lib/marketplace-routes";
@@ -53,6 +53,12 @@ function ItemPage({ connector }: { connector?: Connector }) {
   const categories = [...new Set([...(catalog.data ?? []), ...(owned.data ?? [])].map(item => item.category).filter(Boolean))].sort();
   const failed = (what: string) => (error: unknown) => notify(`workshop:${what}`, "danger", `${draft.name || "The connector"} couldn’t be ${what}`, refusal(error));
 
+  // A refusal that names a field shows under it; any other is a toast.
+  const refuseInline = (otherwise: (error: unknown) => void) => (error: unknown) => {
+    const field = refusedField(error), message = refusal(error);
+    if (field) setRefused({ [field]: message.charAt(0).toUpperCase() + message.slice(1) + "." });
+    else otherwise(error);
+  };
   const save = () => {
     setTouched(true);
     if (Object.keys(problems).length) return;
@@ -62,18 +68,13 @@ function ItemPage({ connector }: { connector?: Connector }) {
           notify(`workshop:add:${added.connectorId}`, "success", `Added ${added.name}`, "Only you see it. Install it from the Marketplace to try it.");
           navigate(workshopPaths.connector(added.connectorId), { replace: true });
         },
-        onError: error => {
-          const message = refusal(error);
-          if (/name/i.test(message)) setRefused({ name: /platform/i.test(message) ? "This name belongs to a platform connector." : "You already have a connector with this name." });
-          else if (/target|remote/i.test(message)) setRefused({ url: message.charAt(0).toUpperCase() + message.slice(1) + "." });
-          else failed("added")(error);
-        },
+        onError: refuseInline(failed("added")),
       });
       return;
     }
     authoring.change.mutate({ connector, draft }, {
       onSuccess: () => notify(`workshop:save:${connector.connectorId}`, "success", "Changes saved", "Works started from now on use them."),
-      onError: failed("saved"),
+      onError: refuseInline(failed("saved")),
     });
   };
   // The icon is saved as soon as it is chosen; a new item keeps it until it is added.

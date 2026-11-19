@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ConnectError } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
 import type { Connector, ConnectorIcon } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
 import type { DeclaredProvider } from "@talgent/contracts/marketplace/public/v1/connections_pb";
 import { useCurrentUser } from "./account-service";
@@ -87,6 +87,20 @@ const iconMessage = (icon?: IconImage): ConnectorIcon | undefined => icon ? { $t
 /** A refusal the Marketplace explained, such as a taken name. */
 export const refusal = (error: unknown) => ConnectError.from(error).rawMessage.replace(/^marketplace: /, "");
 
+/** The field a refused addition points at, by the refusal's code: a taken or
+ * reserved name, or a connection the Marketplace does not accept. */
+export function refusedField(error: unknown): keyof ConnectorDraft | undefined {
+  const code = ConnectError.from(error).code;
+  return code === Code.AlreadyExists ? "name" : code === Code.InvalidArgument ? "url" : undefined;
+}
+
+// Icons are shown as data URLs, which need no release when they are dropped.
+const dataUrl = (mediaType: string, data: Uint8Array) => {
+  let binary = "";
+  for (let at = 0; at < data.length; at += 0x8000) binary += String.fromCharCode(...data.subarray(at, at + 0x8000));
+  return `data:${mediaType};base64,${btoa(binary)}`;
+};
+
 function useOwnerKey(owner: MarketplaceOwner, ...parts: string[]) {
   const userId = useCurrentUser().data?.user?.id ?? "";
   return { key: [...marketplaceQueryKey, ...parts, userId, owner.applicationId ?? ""] as const, enabled: Boolean(userId) };
@@ -98,14 +112,14 @@ export function useOwnedConnectors(owner: MarketplaceOwner = {}) {
   return useQuery({ queryKey: key, enabled, retry: false, queryFn: async ({ signal }) => (await marketplaceClient.listOwnedConnectors({ applicationId: owner.applicationId ?? "" }, { signal })).connectors });
 }
 
-/** A Connector's icon image as an object URL, cached by its digest. */
+/** A Connector's icon image as a data URL, cached by its digest. */
 export function useConnectorIcon(connector: Pick<Connector, "connectorId" | "iconDigest">, owner: MarketplaceOwner = {}) {
   return useQuery({
     queryKey: [...marketplaceQueryKey, "connector-icon", connector.connectorId, connector.iconDigest],
     enabled: Boolean(connector.iconDigest), retry: false, staleTime: Infinity, gcTime: 10 * 60_000,
     queryFn: async ({ signal }) => {
       const icon = (await marketplaceClient.getConnectorIcon({ connectorId: connector.connectorId, applicationId: owner.applicationId ?? "" }, { signal })).icon;
-      return icon ? URL.createObjectURL(new Blob([icon.data as Uint8Array<ArrayBuffer>], { type: icon.mediaType })) : "";
+      return icon ? dataUrl(icon.mediaType, icon.data) : "";
     },
   });
 }
@@ -141,5 +155,5 @@ export async function readIcon(file: File): Promise<IconImage | string> {
   if (!iconTypes.includes(file.type)) return "Use a PNG, SVG, JPG or WebP image.";
   if (file.size > maxIconBytes) return "Use an image under 512 KB.";
   const data = new Uint8Array(await file.arrayBuffer());
-  return { mediaType: file.type, data, url: URL.createObjectURL(file) };
+  return { mediaType: file.type, data, url: dataUrl(file.type, data) };
 }

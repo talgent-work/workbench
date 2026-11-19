@@ -5,7 +5,7 @@ import { providerHosts, type ConnectorDraft, type DraftProblems } from "../../li
 type FieldProps = { draft: ConnectorDraft; set: (patch: Partial<ConnectorDraft>) => void; problems: DraftProblems; touched: boolean };
 
 export function NameField({ draft, set, problems, touched }: FieldProps) {
-  return <TextField value={draft.name} onChange={name => set({ name: name.trim().toLowerCase() })} isInvalid={touched && Boolean(problems.name)} fullWidth variant="secondary" isRequired>
+  return <TextField value={draft.name} onChange={name => set({ name })} isInvalid={touched && Boolean(problems.name)} fullWidth variant="secondary" isRequired>
     <Label>Name</Label><Input placeholder="acme-crm" autoComplete="off" />
     {touched && problems.name ? <FieldError>{problems.name}</FieldError> : <Description>Unique among yours; other people may use the same name. Fixed once added.</Description>}
   </TextField>;
