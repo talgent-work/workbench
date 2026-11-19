@@ -73,9 +73,9 @@ data:
     readiness_timeout_seconds = 60.0
     [kubernetes]
     # The server always watches Fast Sandbox SandboxSnapshots (sandbox.fast.io).
-    # This deployment runs no Fast Sandbox and grants no access to it, so the
-    # server logs a 403 "Informer watch error" every 30 seconds; sandboxes are
-    # unaffected. Upstream #2875 reports it once; it ships after 1.2.1.
+    # This deployment installs no Fast Sandbox CRDs, so the server logs a 404
+    # "Informer watch error" every 30 seconds; sandboxes are unaffected.
+    # Upstream #2875 reports it once; it ships after 1.2.1.
     kubeconfig_path = ""
     namespace = "talgent-sandbox"
     workload_provider = "batchsandbox"
@@ -171,7 +171,7 @@ spec:
         # The server parses config.toml once at startup, so an in-place update
         # of the ConfigMap leaves the running pod on the previous configuration.
         # Hashing the rendered TOML rolls the Deployment whenever it changes.
-        checksum/config: 488a98d46128de8e7ae3fb801f0133579e40326b2868133aa949aa54a51f68df
+        checksum/config: 66a0d90a1550467641128643e8fd8b695b1e3e7d59610fe55dc50b27cf88d45d
         talgent.io/runtime-config-sha256: TALGENT_RUNTIME_CONFIG_SHA256
     spec:
       imagePullSecrets:

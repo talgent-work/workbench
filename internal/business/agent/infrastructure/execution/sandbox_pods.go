@@ -49,7 +49,7 @@ func (p *SandboxPods) runningSandboxes(ctx context.Context, owner SandboxOwner) 
 			continue
 		}
 		// OpenSandbox labels every sandbox Pod with its sandbox identity
-		// (verified on the deployed v0.2.2, 2026-11-08); a Pod without one
+		// (verified on the deployed 1.2.1, 2026-11-19); a Pod without one
 		// is named by itself, matches no sandbox and so is ending, holding
 		// the release rather than allowing it.
 		id := pod.Labels[sandboxIDLabel]
