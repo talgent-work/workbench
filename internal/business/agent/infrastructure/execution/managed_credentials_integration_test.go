@@ -5,7 +5,9 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/application/command/commandtest"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/platformcatalog"
+	"github.com/talgent-work/workbench/internal/testsupport/authorizationcatalogtest"
+	"github.com/talgent-work/workbench/internal/testsupport/connectorcatalogtest"
 )
 
 // A Managed Work on a Model Configuration gets its key, its Identity Token
@@ -169,4 +173,121 @@ func TestManagedRedeliveryRenewsTheTokenAndKeepsAWithdrawnModel(t *testing.T) {
 	require.Equal(t, true, body["keep_model"])
 	require.NotContains(t, body, "model")
 	require.Equal(t, "renewed-token", body["gateway"].(map[string]any)["identity_token"])
+}
+
+// providerTargets is Marketplace's credential supply as a Managed Work sees
+// it: the short-lived target credential of each requirement it is asked for,
+// minted from an authorization whose refresh token Marketplace keeps.
+type providerTargets struct {
+	mu        sync.Mutex
+	token     string
+	expiresAt time.Time
+	temporary bool
+	asked     [][]command.ServiceRequirement
+}
+
+const providerRefreshToken = "marketplace-held-refresh-token"
+
+func (p *providerTargets) Resolve(_ context.Context, _, _ string, requirements []command.ServiceRequirement) (command.ServiceAccessResult, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.asked = append(p.asked, slices.Clone(requirements))
+	result := command.ServiceAccessResult{}
+	for _, requirement := range requirements {
+		if p.temporary {
+			result.Unavailable = append(result.Unavailable, command.UnavailableService{Service: requirement.Service, Target: requirement.Target, Reason: "unavailable", Temporary: true})
+			continue
+		}
+		result.Credentials = append(result.Credentials, command.ServiceAccessMaterial{ServiceRequirement: requirement, AuthorizationID: managedSSOAuthorization,
+			ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: p.token, ExpiresAt: p.expiresAt, Hosts: []string{"docs.example.com"}}})
+	}
+	return result, nil
+}
+
+const (
+	managedSSOAuthorization    = "01900000-0000-7000-8000-0000000005a1"
+	managedGitHubAuthorization = "01900000-0000-7000-8000-0000000005a2"
+)
+
+// A Managed Work's Provider Connector reaches its target through the local
+// proxy: only that Connector's short-lived target credential is delivered to
+// the Computer, never a refresh token or another target's credential; the
+// Work's MCP configuration names the proxy's explicit address for the
+// Connector, never its target; the delivery falls due at the credential's
+// declared expiry, and a redelivery replaces it. A Provider Connector whose
+// target credential declares no expiry is neither declared nor supplied.
+func TestManagedProviderConnectorsTakeOnlyTheirTargetCredentialThroughTheLocalProxy(t *testing.T) {
+	ctx := context.Background()
+	f := newManagedWork(t)
+	targets := &providerTargets{token: "docs-access-1", expiresAt: time.Now().Add(time.Hour)}
+	supplies := command.NewEnvironmentSupplies(authorizationcatalogtest.NoRepositories{}, targets, f.storage, &commandtest.Accounts{Now: time.Now})
+	f.steps.handler = command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, f.steps.executions, f.steps.environment, f.steps.harness, f.steps.desks, supplies, nil)
+
+	remote := connectorcatalogtest.Remote().SelectedConnector
+	lasting := connectorcatalogtest.Remote().SelectedConnector
+	lasting.ID, lasting.Name, lasting.Target, lasting.TargetCredentialsExpire = "01900000-0000-7000-8000-00000000038a", "lasting-tickets", "tickets", false
+	input := managedRequest()
+	input.ContextMode = domain.ContextFresh
+	// A snapshot retained before the rule held the non-expiring Connector.
+	input.Capabilities.Connectors = append(input.Capabilities.Connectors, remote, lasting, connectorcatalogtest.GitHub().SelectedConnector)
+	input.AuthorizationSelection = domain.WorkAuthorizationSelection{OwnerID: input.RepresentedPerson, Authorizations: []domain.WorkServiceAuthorization{
+		{AuthorizationID: managedSSOAuthorization, Provider: "example-sso", Service: "example-sso", SupportedTargets: []string{"docs", "tickets"}},
+		{AuthorizationID: managedGitHubAuthorization, Provider: "github", Service: "github", SupportedTargets: []string{"github-api"}},
+	}}
+	record := f.launch(t, f.begin(t, input).ID)
+	require.True(t, record.CredentialsDelivered)
+
+	targets.mu.Lock()
+	require.Equal(t, []command.ServiceRequirement{{Provider: "example-sso", Service: "example-sso", Target: "docs"}}, targets.asked[0], "only the Provider Connector's own target is supplied")
+	targets.mu.Unlock()
+	f.relay.mu.Lock()
+	delivered := string(f.relay.credentials)
+	f.relay.mu.Unlock()
+	require.JSONEq(t, `{"gateway":{"url":"`+managedGatewayAddress+`","identity_token":"agent-token-`+input.WorkID+`","space_token":"space-token"},"api":{"url":"`+managedAPIAddress+`"},
+		"connectors":[{"id":"`+remote.ID+`","url":"https://docs.example.com/mcp/","token":"docs-access-1"}]}`, delivered)
+	require.NotContains(t, delivered, providerRefreshToken, "no refresh token reaches the machine")
+
+	address := `"enterprise-docs":{"headers":{"Authorization":"Bearer ${TALGENT_PROXY_TOKEN}"},"type":"http","url":"${TALGENT_PROXY_URL}/connectors/` + remote.ID + `"}`
+	require.Contains(t, record.LaunchCommand, address, "the Connector's address is rewritten to its local proxy address")
+	for _, absent := range []string{"docs.example.com", "docs-access-1", "lasting-tickets", "github-mcp-server"} {
+		require.NotContains(t, record.LaunchCommand, absent)
+	}
+	require.NotContains(t, string(record.SpecificationJSON), "docs-access-1", "the target credential is never recorded")
+	require.WithinDuration(t, targets.expiresAt, time.UnixMilli(record.CredentialsExpireAt), time.Millisecond, "the delivery falls due at the credential's declared expiry")
+	require.JSONEq(t, `["`+managedSSOAuthorization+`"]`, string(record.AuthorizationIDs), "a change to the Connector's authorization replaces the delivery")
+	var access []serviceAccessRecord
+	require.NoError(t, json.Unmarshal(record.ServiceAccessJSON, &access))
+	require.Equal(t, []serviceAccessRecord{{Service: "example-sso", Target: "docs", Status: "credential_available"}}, access)
+
+	// A renewed target credential replaces the one the machine holds.
+	renewed := command.CredentialSupply{IdentityToken: command.IdentityToken{Token: "renewed-token", ExpiresAt: time.Now().Add(commandtest.AgentTokenLifetime)}, SpaceToken: "space-token",
+		Services: []command.ServiceAccessMaterial{{ServiceRequirement: command.ServiceRequirement{Provider: "example-sso", Service: "example-sso", Target: "docs"}, AuthorizationID: managedSSOAuthorization,
+			ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "docs-access-2", ExpiresAt: time.Now().Add(2 * time.Hour), Hosts: []string{"docs.example.com"}}}}}
+	_, err := f.provisioning.managed.deliver(ctx, record, renewed, true, func(context.Context) error { return nil })
+	require.NoError(t, err)
+	f.relay.mu.Lock()
+	require.Contains(t, string(f.relay.credentials), `"token":"docs-access-2"`)
+	f.relay.mu.Unlock()
+
+	// A credential Marketplace cannot supply for now keeps the one held.
+	renewed.Services, renewed.Access = nil, []command.ServiceAccessStatus{{Service: "example-sso", Target: "docs", Status: "unavailable", Temporary: true}}
+	_, err = f.provisioning.managed.deliver(ctx, record, renewed, true, func(context.Context) error { return nil })
+	require.ErrorIs(t, err, errSupplyTemporarilyUnavailable)
+	f.relay.mu.Lock()
+	defer f.relay.mu.Unlock()
+	require.Contains(t, string(f.relay.credentials), `"token":"docs-access-2"`)
+}
+
+// A Provider Connector whose address leaves its target's declared hosts gets
+// no credential: its proxy address stays unavailable.
+func TestManagedConnectorCredentialStaysOnItsTargetHosts(t *testing.T) {
+	remote := connectorcatalogtest.Remote().SelectedConnector
+	material := command.ServiceAccessMaterial{ServiceRequirement: command.ServiceRequirement{Provider: remote.Provider, Service: remote.Provider, Target: remote.Target},
+		ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "docs-access", Hosts: []string{"docs.example.com"}}}
+	snapshot := domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{remote}}
+	require.Len(t, connectorCredentials(snapshot, []command.ServiceAccessMaterial{material}), 1)
+	material.Hosts = []string{"*.example.org"}
+	require.Empty(t, connectorCredentials(snapshot, []command.ServiceAccessMaterial{material}))
+	material.Hosts = []string{"*.example.com"}
+	require.Len(t, connectorCredentials(snapshot, []command.ServiceAccessMaterial{material}), 1)
 }

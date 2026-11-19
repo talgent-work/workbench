@@ -49,6 +49,9 @@ type connectorRecord struct {
 	Provider               string            `json:"provider,omitempty"`
 	Target                 string            `json:"target,omitempty"`
 	ProviderAuthentication string            `json:"provider_authentication,omitempty"`
+	// TargetCredentialsExpire is absent from snapshots retained before it was
+	// recorded, which leaves their Provider Connectors off Managed Computers.
+	TargetCredentialsExpire bool `json:"target_credentials_expire,omitempty"`
 }
 
 type selectedPluginRecord struct {
@@ -109,7 +112,7 @@ func encodeCapabilitySnapshot(value domain.CapabilitySnapshot) (string, error) {
 	}
 	for _, c := range value.Connectors {
 		record.Connectors = append(record.Connectors, connectorRecord{ID: c.ID, Name: c.Name, Required: c.Required, Command: c.Command, Arguments: c.Arguments, Authentication: c.Authentication,
-			Type: c.Type, URL: c.URL, Environment: c.Environment, Headers: c.Headers, Provider: c.Provider, Target: c.Target, ProviderAuthentication: c.ProviderAuthentication})
+			Type: c.Type, URL: c.URL, Environment: c.Environment, Headers: c.Headers, Provider: c.Provider, Target: c.Target, ProviderAuthentication: c.ProviderAuthentication, TargetCredentialsExpire: c.TargetCredentialsExpire})
 	}
 	for _, endpoint := range value.ApplicationEndpoints {
 		record.ApplicationEndpoints = append(record.ApplicationEndpoints, applicationEndpointRecord{Name: endpoint.Name, URL: endpoint.URL, Headers: endpoint.Headers})
@@ -154,7 +157,7 @@ func decodeCapabilitySnapshot(body string) (domain.CapabilitySnapshot, error) {
 	}
 	for _, c := range record.Connectors {
 		value.Connectors = append(value.Connectors, domain.SelectedConnector{ID: c.ID, Name: c.Name, Required: c.Required, Command: c.Command, Arguments: c.Arguments, Authentication: c.Authentication,
-			Type: c.Type, URL: c.URL, Environment: c.Environment, Headers: c.Headers, Provider: c.Provider, Target: c.Target, ProviderAuthentication: c.ProviderAuthentication})
+			Type: c.Type, URL: c.URL, Environment: c.Environment, Headers: c.Headers, Provider: c.Provider, Target: c.Target, ProviderAuthentication: c.ProviderAuthentication, TargetCredentialsExpire: c.TargetCredentialsExpire})
 	}
 	for _, endpoint := range record.ApplicationEndpoints {
 		value.ApplicationEndpoints = append(value.ApplicationEndpoints, domain.ApplicationMCPEndpoint{Name: endpoint.Name, URL: endpoint.URL, Headers: endpoint.Headers})

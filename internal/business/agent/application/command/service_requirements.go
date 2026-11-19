@@ -53,6 +53,25 @@ func requiredServices(capabilities domain.CapabilitySnapshot, authorizations dom
 	return result
 }
 
+// managedConnectorServices derives a Managed run's service targets from its
+// retained Provider Connectors alone: of a Managed Work's Provider
+// credentials, only its selected Provider Connectors' target credentials
+// reach its Computer (Managed Provider credentials).
+func managedConnectorServices(capabilities domain.CapabilitySnapshot) serviceRequirements {
+	result := serviceRequirements{}
+	seen := map[string]bool{}
+	for _, connector := range capabilities.Connectors {
+		key := connector.Provider + "/" + connector.Target
+		if !connector.ProviderAuthorized() || !connector.AvailableOnManaged() || seen[key] {
+			continue
+		}
+		seen[key] = true
+		result.Targets = append(result.Targets, ServiceRequirement{Provider: connector.Provider, Service: connector.Provider, Target: connector.Target})
+		result.Statuses = append(result.Statuses, ServiceAccessStatus{Service: connector.Provider, Target: connector.Target, Status: "pending"})
+	}
+	return result
+}
+
 // statuses settles each pending status by what the supply returned.
 func (r serviceRequirements) statuses(result ServiceAccessResult) []ServiceAccessStatus {
 	for n := range r.Statuses {

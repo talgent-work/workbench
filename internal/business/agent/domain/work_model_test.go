@@ -78,15 +78,19 @@ func TestAWorkKeepsOnlyAModelItsComputerCanUse(t *testing.T) {
 	require.Equal(t, input.WorkModel, follow(work).launch().WorkModel)
 }
 
-// On a Managed Computer a Provider-authorized Connector is unavailable: the
-// Work is established without it, and with it on a Cloud.
-func TestAManagedWorkLeavesOutProviderAuthorizedConnectors(t *testing.T) {
+// On a Managed Computer a Work keeps its selected Connectors, apart from a
+// Provider Connector whose target credential declares no expiry and one that
+// runs as a local command, which no local proxy address can serve; leaving
+// them out does not reject creation. A Cloud Work keeps them all.
+func TestAManagedWorkLeavesOutProviderConnectorsItCannotServe(t *testing.T) {
+	remote, lasting := connectorcatalogtest.Remote().SelectedConnector, connectorcatalogtest.Remote().SelectedConnector
+	lasting.ID, lasting.Name, lasting.TargetCredentialsExpire = "01900000-0000-7000-8000-00000000038a", "lasting-docs", false
 	for _, managed := range []bool{true, false} {
 		input := machineLoginInput(managed)
 		if !managed {
 			input.WorkModel = domain.WorkModelSelection{ConfigurationID: "default"}
 		}
-		input.Capabilities.Connectors = append(input.Capabilities.Connectors, connectorcatalogtest.GitHub().SelectedConnector)
+		input.Capabilities.Connectors = append(input.Capabilities.Connectors, connectorcatalogtest.GitHub().SelectedConnector, remote, lasting)
 		admission := seatedFor(input)
 		admission.ModelConfigurationProvided = true
 		work, err := domain.NewAgentWork(input, admission)
@@ -96,19 +100,19 @@ func TestAManagedWorkLeavesOutProviderAuthorizedConnectors(t *testing.T) {
 			names = append(names, connector.Name)
 		}
 		if managed {
-			require.Equal(t, []string{"talgent"}, names)
+			require.Equal(t, []string{"talgent", "enterprise-docs"}, names)
 		} else {
-			require.Equal(t, []string{"talgent", "github"}, names)
+			require.Equal(t, []string{"talgent", "github", "enterprise-docs", "lasting-docs"}, names)
 		}
-		require.Len(t, input.Capabilities.Connectors, 2, "the supplied capabilities are not changed")
+		require.Len(t, input.Capabilities.Connectors, 4, "the supplied capabilities are not changed")
 	}
 }
 
 // Start options say which Connectors a Work on a Managed Computer leaves out,
 // by the rule that leaves them out of its snapshot.
 func TestConnectorOptionsReportManagedAvailability(t *testing.T) {
-	github := connectorcatalogtest.GitHub()
-	options, err := domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required(), github}, EnabledConnectors: []string{github.ID}}.ConnectorOptions()
+	github, remote := connectorcatalogtest.GitHub(), connectorcatalogtest.Remote()
+	options, err := domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required(), github, remote}, EnabledConnectors: []string{github.ID, remote.ID}}.ConnectorOptions()
 	require.NoError(t, err)
-	require.Equal(t, []domain.ConnectorOption{{Name: "github", IncludedByDefault: true, UnavailableOnManaged: true}, {Name: "talgent", Required: true, IncludedByDefault: true}}, options)
+	require.Equal(t, []domain.ConnectorOption{{Name: "enterprise-docs", IncludedByDefault: true}, {Name: "github", IncludedByDefault: true, UnavailableOnManaged: true}, {Name: "talgent", Required: true, IncludedByDefault: true}}, options)
 }

@@ -159,3 +159,18 @@ func TestConnectorOptionsMarkTheDefaultSelectionOfOfferedEntries(t *testing.T) {
 		{Name: "talgent", Required: true, IncludedByDefault: true},
 	}, options, "withdrawn entries are not offered, and per-Work choices never change the defaults")
 }
+
+// A credential-free Connector declares no Provider, whether it runs as a
+// local command or a remote server.
+func TestACredentialFreeConnectorDeclaresNoProvider(t *testing.T) {
+	local := domain.SelectedConnector{ID: "01900000-0000-7000-8000-00000000038b", Name: "chrome-devtools", Command: "npx", Arguments: []string{"chrome-devtools-mcp@0.6.0"}, Authentication: "none"}
+	require.NoError(t, local.Validate())
+	remote := domain.SelectedConnector{ID: local.ID, Name: "docs", Type: "http", URL: "https://docs.example.com/mcp", Authentication: "none"}
+	require.NoError(t, remote.Validate())
+	withProvider := local
+	withProvider.Provider, withProvider.Target, withProvider.ProviderAuthentication = "github", "github-api", "credential_proxy"
+	require.ErrorIs(t, withProvider.Validate(), domain.ErrInvalidCapabilities)
+	required := local
+	required.Required = true
+	require.ErrorIs(t, required.Validate(), domain.ErrInvalidCapabilities)
+}
