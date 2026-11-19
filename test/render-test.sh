@@ -4,7 +4,8 @@
 # placeholders, keeps every sandbox boundary there and grants the platform
 # namespace nothing a sandbox needs. Rendered again with an environment that
 # turns every deployment switch away from its default, each switch changes
-# what it names and nothing else.
+# what it names and nothing else, and the enterprise networks it declares open
+# in the sandbox NetworkPolicy, but for the cluster's own ranges.
 set -euo pipefail
 
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -20,6 +21,8 @@ switched=(
   AGENT_CORE_API_ACCESS=disabled
   ADDITIONAL_ENTRY_HOST=entry.example.org
   CONTROLPLANE_PROFILE=example
+  "ENTERPRISE_NETWORKS=10.0.0.0/8:443,8443 172.16.0.0/12:80"
+  "CLUSTER_NETWORKS=10.42.0.0/16 10.43.0.0/16 192.168.0.0/16"
 )
 {
   grep -vE "^($(printf '%s\n' "${switched[@]%%=*}" | paste -sd'|'))=" "$root_dir/deploy/kubernetes/workbench/environment.env"
@@ -41,6 +44,37 @@ grep -q "AGENT_CORE_API_ACCESS is enabled or disabled, not 'off'" "$work/invalid
   cat "$work/invalid.log" >&2
   exit 1
 }
+
+# The render refuses an enterprise network it cannot open as declared, naming
+# it, as controlplane does; CLUSTER_NETWORKS keeps the switched value unless a
+# third argument replaces it.
+refused() {
+  local declaration="$1" message="$2"
+  {
+    grep -vE '^(ENTERPRISE|CLUSTER)_NETWORKS=' "$work/switched.env"
+    printf 'ENTERPRISE_NETWORKS=%s\n' "$declaration"
+    printf 'CLUSTER_NETWORKS=%s\n' "${3-$(grep '^CLUSTER_NETWORKS=' "$work/switched.env" | cut -d= -f2-)}"
+  } > "$work/refused.env"
+  if TALGENT_ENVIRONMENT_FILE="$work/refused.env" TALGENT_IMAGE_TAG=v0.0.0 \
+    bash "$root_dir/scripts/deploy/render.sh" "$root_dir/deploy/kubernetes/workbench" > /dev/null 2> "$work/refused.log"; then
+    echo "expected: the render refuses ENTERPRISE_NETWORKS=$declaration" >&2
+    exit 1
+  fi
+  grep -qF "$message" "$work/refused.log" || {
+    echo "expected: the render says '$message' for ENTERPRISE_NETWORKS=$declaration, got:" >&2
+    cat "$work/refused.log" >&2
+    exit 1
+  }
+}
+refused "10.42.1.0/24:443" "10.42.1.0/24 lies within the cluster's own range 10.42.0.0/16"
+refused "8.8.8.0/24:443" "8.8.8.0/24 lies outside the private ranges"
+refused "172.16.0.0/12" "172.16.0.0/12 is not CIDR:PORT"
+refused "10.43.0.10/8:443" "10.43.0.10/8:443 is not CIDR:PORT"
+refused "010.0.0.0/8:443" "010.0.0.0/8:443 is not CIDR:PORT"
+refused "172.16.0.0/12:443,0" "172.16.0.0/12:443,0 has an invalid port '0'"
+refused "172.16.0.0/12:" "has an invalid port ''"
+refused "172.16.0.0/12:443" "ENTERPRISE_NETWORKS needs CLUSTER_NETWORKS" ""
+refused "172.16.0.0/12:443" "CLUSTER_NETWORKS: 10.42.0.0 is not an IPv4 network" "10.42.0.0"
 
 RENDERED="$work/rendered.yaml" SWITCHED="$work/switched.yaml" SERVER="$root_dir/deploy/opensandbox/server.yaml" python3 - <<'PYTHON'
 import json, os, re, sys
@@ -66,9 +100,10 @@ for name, namespace in named("NetworkPolicy"):
         check(namespace == "talgent-sandbox", f"NetworkPolicy {name} is in talgent-sandbox, got {namespace}")
 check(("gotenberg-isolation", "talgent") in named("NetworkPolicy"), "Gotenberg keeps its no-egress policy in talgent")
 # A sandbox reaches the platform only through the entry, at its public
-# origin: one policy fences it, opening no platform service.
-check({n for n, ns in named("NetworkPolicy") if ns == "talgent-sandbox"} == {"sandbox-boundary"},
-      f"sandbox-boundary is the only sandbox policy, got {named('NetworkPolicy')}")
+# origin: one policy fences it, opening no platform service, and another
+# opens the declared enterprise networks.
+check({n for n, ns in named("NetworkPolicy") if ns == "talgent-sandbox"} == {"sandbox-boundary", "sandbox-enterprise-networks"},
+      f"sandbox-boundary and sandbox-enterprise-networks are the sandbox policies, got {named('NetworkPolicy')}")
 
 check(("talgent-sandbox", None) in named("Namespace"), "the base creates namespace talgent-sandbox")
 # The Cloud's execution quota counts only sandboxes; every namespace still
@@ -214,7 +249,26 @@ for rendered, how in ((docs, "by default"), (switched, "with every switch set"))
     ports = list(native_ports(rendered))
     check(not ports, f"{how} nothing serves or addresses the native API's port 8081, got {ports}")
 policies = [d["metadata"]["name"] for d in docs if d["kind"] == "NetworkPolicy" and where(d) == "talgent-sandbox"]
-check(policies == ["sandbox-boundary"], f"one sandbox policy bounds every sandbox, got {policies}")
+check(policies == ["sandbox-boundary", "sandbox-enterprise-networks"], f"sandbox-boundary bounds every sandbox and sandbox-enterprise-networks opens the declared networks, got {policies}")
+
+# ENTERPRISE_NETWORKS: none declared, the enterprise policy opens nothing;
+# declared, it opens each network on its TCP ports, except the cluster's own
+# ranges (CLUSTER_NETWORKS) inside it.
+def enterprise_policy(rendered):
+    policy = find(rendered, "NetworkPolicy", "sandbox-enterprise-networks")
+    return policy["spec"]
+
+check(enterprise_policy(docs) == {"podSelector": {}, "policyTypes": ["Egress"], "egress": []},
+      f"by default sandbox-enterprise-networks selects every sandbox and opens nothing, got {enterprise_policy(docs)}")
+tcp = lambda *ports: [{"protocol": "TCP", "port": p} for p in ports]
+want_egress = [
+    {"to": [{"ipBlock": {"cidr": "10.0.0.0/8", "except": ["10.42.0.0/16", "10.43.0.0/16"]}}], "ports": tcp(443, 8443)},
+    {"to": [{"ipBlock": {"cidr": "172.16.0.0/12"}}], "ports": tcp(80)},
+]
+check(enterprise_policy(switched).get("egress") == want_egress,
+      f"declared enterprise networks open on their ports but for the cluster's own ranges, got {enterprise_policy(switched).get('egress')}")
+boundary = lambda rendered: find(rendered, "NetworkPolicy", "sandbox-boundary")
+check(boundary(switched) == boundary(docs), "declared enterprise networks leave sandbox-boundary as it is")
 
 # AGENT_CORE_API_ACCESS: enabled, the entry admits every Principal on the
 # core's routes, leaving admission to each procedure's declaration, and

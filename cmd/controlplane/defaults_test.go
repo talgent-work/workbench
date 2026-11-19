@@ -81,3 +81,17 @@ func TestWithoutDirectAPIAccessWorksLoadNoAPIPlugin(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"talgent"}, builtIns.Required(domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "p"}))
 }
+
+// By default a sandbox reaches no enterprise network; the deployment's
+// environment declares them with the cluster's own ranges.
+func TestTheEnvironmentDeclaresTheSandboxNetworks(t *testing.T) {
+	execution := loadDefaults(t).AgentExecution
+	require.Empty(t, execution.EnterpriseNetworks)
+	require.Empty(t, execution.ClusterNetworks)
+
+	t.Setenv("ENTERPRISE_NETWORKS", "172.16.0.0/12:443")
+	t.Setenv("CLUSTER_NETWORKS", "10.42.0.0/16")
+	execution = loadDefaults(t).AgentExecution
+	require.Equal(t, "172.16.0.0/12:443", execution.EnterpriseNetworks)
+	require.Equal(t, "10.42.0.0/16", execution.ClusterNetworks)
+}

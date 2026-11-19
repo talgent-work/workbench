@@ -20,7 +20,10 @@ type SandboxConfig struct {
 	Environment map[string]string
 	// Models are the platform's Model Configurations, read when a start's
 	// specification is fixed.
-	Models       command.PlatformCatalogPort
+	Models command.PlatformCatalogPort
+	// Networks are the enterprise networks a sandbox reaches and the
+	// cluster's own ranges it never does.
+	Networks     SandboxNetworks
 	NetworkDeny  []string
 	NetworkAllow []string
 	// Lease is how every sandbox is leased: created to expire after its
@@ -38,6 +41,9 @@ type SandboxConfig struct {
 func (c SandboxConfig) Validate() error {
 	if err := c.CreationWait.Validate(); err != nil || c.CreationTimeout <= 0 || time.Duration(c.CreationWait) <= c.CreationTimeout {
 		return errors.New("agent: the creation wait must be valid and longer than the server's creation timeout")
+	}
+	if err := c.Networks.Validate(); err != nil {
+		return err
 	}
 	if err := validateModelTemplates(c.Models); err != nil {
 		return err

@@ -17,7 +17,8 @@ Two namespaces, both fixed by the manifests:
 - **`talgent-sandbox`** holds only the sandbox Pods Works run in. Everything there is untrusted:
   NetworkPolicy `sandbox-boundary` admits traffic only from controlplane, dispatcher and the
   OpenSandbox Server, and lets a sandbox reach the internet (private and reserved IPv4 ranges
-  denied), cluster DNS and the Collector. A sandbox reaches the platform only through the public
+  denied), cluster DNS and the Collector; `sandbox-enterprise-networks` opens the enterprise
+  networks the deployment declares (§3). A sandbox reaches the platform only through the public
   entry at `WORKBENCH_ORIGIN`.
 
 The OpenSandbox Controller runs in `opensandbox-system`. Middleware runs outside the cluster or
@@ -61,7 +62,7 @@ Check each requirement; where it fails, satisfy it or stop and report it to the 
 | Cluster DNS Service address | `kubectl -n kube-system get svc kube-dns -o jsonpath='{.spec.clusterIP}'` | If it is not `10.43.0.10`, set `K8S_DNS_SERVICE_IP` in the environment. |
 | Redis with `appendonly yes` and `maxmemory-policy noeviction` | `redis-cli CONFIG GET appendonly maxmemory-policy` | Set both; queues and Dispatcher state must survive restarts. The JuiceFS metadata database needs the same and must be a database no business key uses. |
 | NFS export, NFS 4.1, root not squashed, open to the nodes only | Mount it from a node | controlplane creates directories as root and hands them to UID 1000. |
-| Model endpoints reachable at public addresses | `curl` the endpoint from outside the private network | Sandboxes reach no private network. |
+| Model endpoints reachable at public addresses | `curl` the endpoint from outside the private network | Sandboxes reach no private network but a declared enterprise network (§3). |
 | Deploy machine tools | `kubectl`, `jq`, `openssl`, `mysql`, `clickhouse-client` (or Docker access to the ClickHouse container); Docker and Python 3 to build images | Install them. |
 
 The Gateway, with the GatewayClass of the Envoy Gateway installation:
@@ -105,6 +106,35 @@ Switches in the environment change what the base renders:
 | `AGENT_CORE_API_ACCESS` | `enabled`: Agents call the core's public APIs at `WORKBENCH_ORIGIN` | `disabled`: Agents reach the platform only through a platform Connector; set that Connector's addresses in a controlplane profile |
 | `ADDITIONAL_ENTRY_HOST` | empty | A second host name must serve the `web-api`, `auth` and `computer` routes |
 | `CONTROLPLANE_PROFILE` | empty | controlplane must read overrides from `controlplane_<profile>.yml` in ConfigMap `controlplane-profile`, which the operator provides; maps merge over the defaults, lists replace |
+
+### Enterprise networks
+
+Cloud Works reach private addresses only on the enterprise networks the environment declares, so
+Connectors to internal services work from them. One pair of keys declares them for both the
+sandbox's egress policy (controlplane) and NetworkPolicy `sandbox-enterprise-networks` (rendered
+by the deploy):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `ENTERPRISE_NETWORKS` | empty | Whitespace-separated `CIDR:PORT[,PORT...]`: each private IPv4 network a sandbox reaches, on those TCP ports |
+| `CLUSTER_NETWORKS` | empty; required with `ENTERPRISE_NETWORKS` | Whitespace-separated CIDRs: the cluster's own ranges, which stay unreachable even inside a declared network |
+
+```bash
+ENTERPRISE_NETWORKS=172.16.0.0/12:443,8443 <another network>:80
+CLUSTER_NETWORKS=10.42.0.0/16 10.43.0.0/16 <node network> <storage network>
+```
+
+- `CLUSTER_NETWORKS` lists every range of the cluster's own a declared network may contain: the
+  pod and Service networks (k3s: `10.42.0.0/16 10.43.0.0/16`), the nodes, and the storage and middleware backends. Cluster DNS and
+  the Collector stay reachable through their own rules.
+- A declared network lies within `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or
+  `100.64.0.0/10`, is written with its host bits clear, and does not lie within a cluster range;
+  the deploy and controlplane both refuse anything else, naming it.
+- The NetworkPolicy limits a declared network to its ports; the sandbox's egress sidecar opens
+  the whole network.
+- To change them, deploy (§6) with the new environment, which renders the policy, then
+  `kubectl -n talgent rollout restart deployment/controlplane`; Works started afterwards reach
+  the new networks.
 
 ## 4. Secrets
 

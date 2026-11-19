@@ -61,6 +61,7 @@ func NewSandboxes(client *sdk.LifecycleClient, pods *SandboxPods, config Sandbox
 	config.Environment = maps.Clone(config.Environment)
 	config.NetworkDeny = slices.Clone(config.NetworkDeny)
 	config.NetworkAllow = slices.Clone(config.NetworkAllow)
+	config.Networks = config.Networks.clone()
 	config.Resources = *config.Resources.DeepCopy()
 	return &Sandboxes{client: client, pods: pods, config: config}, nil
 }

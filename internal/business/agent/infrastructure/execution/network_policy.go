@@ -54,8 +54,24 @@ func (s *Sandboxes) networkPolicy(ctx context.Context) (*sdk.NetworkPolicy, erro
 			allowed = append(allowed, ip.Unmap())
 		}
 	}
+	// The private ranges open only where an enterprise network is declared;
+	// the reserved ranges, the cluster's own ranges and further configured
+	// targets stay denied even where an enterprise network contains them,
+	// since nft rejects deny before allow.
+	private := slices.Clone(privateRanges)
+	for _, network := range s.config.Networks.Enterprise {
+		next := []netip.Prefix{}
+		for _, p := range private {
+			next = append(next, excludePrefix(p, network.Prefix)...)
+		}
+		private = next
+	}
+	targets := []string{}
+	for _, p := range slices.Concat(private, reservedRanges, s.config.Networks.Cluster) {
+		targets = append(targets, p.String())
+	}
+	targets = append(targets, s.config.NetworkDeny...)
 	result := &sdk.NetworkPolicy{DefaultAction: "allow"}
-	targets := append([]string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "100.64.0.0/10", "0.0.0.0/8", "224.0.0.0/4", "240.0.0.0/4", "::/0"}, s.config.NetworkDeny...)
 	for _, target := range targets {
 		prefix, err := netip.ParsePrefix(target)
 		if err != nil {
@@ -66,7 +82,7 @@ func (s *Sandboxes) networkPolicy(ctx context.Context) (*sdk.NetworkPolicy, erro
 		for _, ip := range allowed {
 			next := []netip.Prefix{}
 			for _, p := range prefixes {
-				next = append(next, excludeAddress(p, ip)...)
+				next = append(next, excludePrefix(p, netip.PrefixFrom(ip, ip.BitLen()))...)
 			}
 			prefixes = next
 		}
@@ -87,28 +103,4 @@ func (s *Sandboxes) networkPolicy(ctx context.Context) (*sdk.NetworkPolicy, erro
 		return a.Action == b.Action && a.Target == b.Target && slices.Equal(a.Ports, b.Ports)
 	})
 	return result, nil
-}
-
-func excludeAddress(prefix netip.Prefix, ip netip.Addr) []netip.Prefix {
-	if !prefix.Contains(ip) {
-		return []netip.Prefix{prefix}
-	}
-	if prefix.Bits() == ip.BitLen() {
-		return nil
-	}
-	bits := prefix.Bits() + 1
-	first := netip.PrefixFrom(prefix.Addr(), bits)
-	bytes := prefix.Addr().As16()
-	offset := 0
-	if prefix.Addr().Is4() {
-		offset = 12
-	}
-	bit := prefix.Bits()
-	bytes[offset+bit/8] |= 1 << uint(7-bit%8)
-	addr := netip.AddrFrom16(bytes)
-	if prefix.Addr().Is4() {
-		addr = addr.Unmap()
-	}
-	second := netip.PrefixFrom(addr, bits)
-	return append(excludeAddress(first, ip), excludeAddress(second, ip)...)
 }
