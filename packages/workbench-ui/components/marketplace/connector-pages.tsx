@@ -4,7 +4,7 @@ import type { Connector } from "@talgent/contracts/marketplace/public/v1/marketp
 import { ChevronRight, KeyRound, Lock, MoreHorizontal, Plus } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { installStatusLabel, pluginStatus, connectorStatus, useConnector, useConnectorActions, useConnectors, useAlwaysEnabledPlugins, useInstalledPlugins, usePluginCatalog } from "../../lib/marketplace-catalog";
-import { providerName, serviceLabel, useConnectProvider } from "../../lib/marketplace-connections";
+import { serviceLabel, useConnectProvider, useProviderNames } from "../../lib/marketplace-connections";
 import { pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
 import { marketplacePaths } from "../../lib/marketplace-routes";
 import { notify } from "../../lib/notifications";
@@ -13,7 +13,7 @@ import { ConfirmDialog, LoadState, NothingMatches, SearchBar } from "./marketpla
 
 // A Connector's sign-in always goes through its declared Provider; there is
 // no manual credential entry.
-function providerNotice(connector: Connector) {
+function providerNotice(connector: Connector, providerName: (provider: string) => string) {
   if (!connector.provider) return { text: "No sign-in needed", warning: false };
   const name = providerName(connector.provider);
   if (connector.providerConnection === "connected") return { text: `Signs in with your ${name} account`, warning: false };
@@ -23,6 +23,7 @@ function providerNotice(connector: Connector) {
 function useConnectorCommands() {
   const actions = useConnectorActions();
   const connect = useConnectProvider();
+  const providerName = useProviderNames();
   const { pathname } = useLocation();
   const install = (connector: Connector) => {
     const label = serviceLabel(connector.name);
@@ -52,6 +53,7 @@ function useConnectorCommands() {
 }
 
 function UninstallConnectorDialog({ connector, onClose, onConfirm }: { connector: Connector | null; onClose: () => void; onConfirm: (connector: Connector) => void }) {
+  const providerName = useProviderNames();
   return <ConfirmDialog isOpen={connector !== null} onOpenChange={open => { if (!open) onClose(); }} title={`Uninstall ${connector ? serviceLabel(connector.name) : ""}?`} confirmLabel="Uninstall" onConfirm={() => { if (connector) onConfirm(connector); }}>
     <p>Works you start afterwards can’t use it. Works already running keep it.{connector?.provider ? ` Your ${providerName(connector.provider)} Provider stays connected.` : ""} Plugins aren’t affected.</p>
   </ConfirmDialog>;
@@ -60,13 +62,14 @@ function UninstallConnectorDialog({ connector, onClose, onConfirm }: { connector
 export function ConnectorList({ category }: { category?: string }) {
   const connectors = useConnectors();
   const commands = useConnectorCommands();
+  const providerName = useProviderNames();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [removing, setRemoving] = useState<Connector | null>(null);
   const rows = (connectors.data ?? []).filter(item => (!category || categoryOf(item) === category) && `${serviceLabel(item.name)} ${item.description}`.toLowerCase().includes(query.trim().toLowerCase()));
   const groups = [...new Set(rows.map(categoryOf))].sort((a, b) => a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b)).map(name => ({ name, items: rows.filter(item => categoryOf(item) === name) }));
   const row = (connector: Connector) => {
-    const status = connectorStatus(connector), notice = providerNotice(connector), installed = status === "enabled" || status === "disabled";
+    const status = connectorStatus(connector), notice = providerNotice(connector, providerName), installed = status === "enabled" || status === "disabled";
     const label = serviceLabel(connector.name);
     return <li key={connector.name} className="mk-row" data-off={status === "disabled" || undefined}>
       <Link className="mk-row-open" to={marketplacePaths.connector(connector.name)}>
@@ -104,6 +107,7 @@ const categoryOf = (connector: Connector) => connector.category ? pluginDisplayN
 export function ConnectorPage({ name }: { name: string }) {
   const detail = useConnector(name);
   const commands = useConnectorCommands();
+  const providerName = useProviderNames();
   const catalog = usePluginCatalog();
   const installedPlugins = useInstalledPlugins();
   const required = useAlwaysEnabledPlugins();
@@ -111,7 +115,7 @@ export function ConnectorPage({ name }: { name: string }) {
   const [confirm, setConfirm] = useState(false);
   const connector = detail.data?.connector;
   if (!connector) return <LoadState noun="connector" isPending={detail.isPending} isError={detail.isError} hasData={false} isFetching={detail.isFetching} onRetry={() => void detail.refetch()} />;
-  const label = serviceLabel(connector.name), status = connectorStatus(connector), notice = providerNotice(connector);
+  const label = serviceLabel(connector.name), status = connectorStatus(connector), notice = providerNotice(connector, providerName);
   const installed = status === "enabled" || status === "disabled";
   const releases = new Map((catalog.data ?? []).map(plugin => [plugin.slug, plugin]));
   const connect = () => commands.connect.mutate({ provider: connector.provider, returnTo: pathname });

@@ -7,7 +7,7 @@ import { ConnectorIcon, PluginIcon } from "../../components/marketplace/marketpl
 import { ConfirmDialog, LoadState } from "../../components/marketplace/marketplace-shared";
 import type { Application } from "../../lib/application-service";
 import { useConnectorActions, useConnectors, useInstalledConnectors, useInstalledPlugins, usePluginActions, usePluginCatalog } from "../../lib/marketplace-catalog";
-import { providerName, serviceLabel } from "../../lib/marketplace-connections";
+import { serviceLabel, useProviderNames } from "../../lib/marketplace-connections";
 import { capabilityText, pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
 import { installationNeedsSetup } from "../../lib/plugin-parameters";
 import { notify } from "../../lib/notifications";
@@ -23,6 +23,7 @@ type Removal = { kind: "plugin"; installed: InstalledPlugin; name: string } | { 
  * the person managing it. required are the Plugins every Work loads anyway. */
 export function InstallationsSection({ application, required }: { application: Application; required: Set<string> }) {
   const owner = { applicationId: application.id };
+  const providerName = useProviderNames();
   const catalog = usePluginCatalog();
   const installedPlugins = useInstalledPlugins(owner);
   const installedConnectors = useInstalledConnectors(owner);

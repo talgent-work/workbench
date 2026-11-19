@@ -75,10 +75,11 @@ vi.mock("../lib/client", () => ({
   marketplaceClient: {
     listInstalledPlugins: async () => ({ plugins: [...installedPlugins], nextCursor: "" }),
     listInstalledConnectors: async () => ({ connectors: [...installedConnectors] }),
-    getProviderConnectionState: async (request: { provider: string; applicationId: string }) => {
-      marketplaceCalls.push({ method: "getProviderConnectionState", request });
-      if (request.applicationId !== deskId || !deskGitHub) return { state: { provider: "github", status: "none", authorizationId: "" } };
-      return { state: { provider: "github", status: "active", authorizationId: deskGitHub.authorizationId, providerLogin: deskGitHub.login } };
+    listProviders: async (request: { applicationId: string }) => {
+      marketplaceCalls.push({ method: "listProviders", request });
+      const connection = request.applicationId !== deskId || !deskGitHub ? { provider: "github", status: "none", authorizationId: "" }
+        : { provider: "github", status: "active", authorizationId: deskGitHub.authorizationId, providerLogin: deskGitHub.login };
+      return { providers: [{ name: "github", displayName: "GitHub", targets: [], targetCredentialsExpire: true, observesAccessScope: true, connection }] };
     },
     beginProviderAuthorization: async (request: { provider: string; applicationId: string }) => {
       marketplaceCalls.push({ method: "beginProviderAuthorization", request });
@@ -471,7 +472,7 @@ it("connects GitHub for the application, never for its owner, through the Provid
 
   const providers = await screen.findByRole("list", { name: "Support Desk Providers" });
   expect(await within(providers).findByText("Not connected")).toBeInTheDocument();
-  expect(marketplaceCalls).toContainEqual({ method: "getProviderConnectionState", request: { provider: "github", applicationId: deskId } });
+  expect(marketplaceCalls).toContainEqual({ method: "listProviders", request: { applicationId: deskId } });
   const assign = vi.fn();
   vi.stubGlobal("location", { ...window.location, origin: window.location.origin, assign });
   try {

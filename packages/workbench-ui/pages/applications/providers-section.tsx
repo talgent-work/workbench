@@ -3,38 +3,44 @@ import { Button, Card, Skeleton } from "@heroui/react";
 import { useLocation } from "react-router-dom";
 import { ProviderIcon } from "../../components/marketplace/marketplace-icons";
 import { ConfirmDialog } from "../../components/marketplace/marketplace-shared";
+import type { DeclaredProvider } from "@talgent/contracts/marketplace/public/v1/connections_pb";
 import type { Application } from "../../lib/application-service";
-import { providerName, supportedProviders, useConnectProvider, useDisconnectProvider, useProviderConnection } from "../../lib/marketplace-connections";
+import { useConnectProvider, useDisconnectProvider, useProviders } from "../../lib/marketplace-connections";
 import { notify } from "../../lib/notifications";
 import "../../components/marketplace/marketplace.css";
 
 type Connection = "connected" | "not_connected" | "reconnect_required";
 const connectionOf = (status?: string): Connection => status === "active" ? "connected" : status === "reconnect_required" ? "reconnect_required" : "not_connected";
 
-/** The Application's own Provider Authorizations, such as the GitHub account
- * its Works check out repositories with. Its Application Owner connects them
+/** The Application's own Provider Authorizations, one per declared Provider,
+ * such as the GitHub account its Works check out repositories with. Its Application Owner connects them
  * through the Provider in the browser; they are never the owner's own. */
 export function ProvidersSection({ application }: { application: Application }) {
+  const providers = useProviders(application.id);
   return <section className="mk-section" aria-labelledby="ap-providers">
     <h3 id="ap-providers" className="mk-section-title">Providers</h3>
     <p className="mk-note">Accounts {application.name}’s Works act with, such as the GitHub repositories they check out. Connected for {application.name}, never for you.</p>
-    <Card className="mk-group">
-      <ul className="mk-group-list" aria-label={`${application.name} Providers`}>
-        {supportedProviders.map(provider => <ProviderRow key={provider} application={application} provider={provider} />)}
-      </ul>
-    </Card>
+    {providers.isPending ? <Card className="mk-group" aria-busy="true"><Skeleton className="h-9 w-full rounded" /><p className="sr-only" role="status">Checking Providers…</p></Card>
+      : !providers.data ? <Card className="mk-group"><div className="flex items-center gap-3"><span className="mk-row-text min-w-0 flex-1 text-warning">Providers unavailable</span>
+        <Button size="sm" variant="secondary" isPending={providers.isFetching} onPress={() => void providers.refetch()}>Retry</Button></div></Card>
+      : !providers.data.length ? <p className="mk-note">No Providers are available on this deployment.</p>
+      : <Card className="mk-group">
+        <ul className="mk-group-list" aria-label={`${application.name} Providers`}>
+          {providers.data.map(provider => <ProviderRow key={provider.name} application={application} provider={provider} />)}
+        </ul>
+      </Card>}
   </section>;
 }
 
-function ProviderRow({ application, provider }: { application: Application; provider: string }) {
-  const state = useProviderConnection(provider, application.id);
+function ProviderRow({ application, provider: declared }: { application: Application; provider: DeclaredProvider }) {
+  const provider = declared.name;
   const connect = useConnectProvider();
   const disconnect = useDisconnectProvider(application.id);
   // The page, section and Application in view, so the callback returns here.
   const { pathname, search } = useLocation();
   const [confirm, setConfirm] = useState(false);
-  const name = providerName(provider);
-  const current = state.data?.state;
+  const name = declared.displayName || provider;
+  const current = declared.connection;
   const connection = connectionOf(current?.status);
   const start = () => connect.mutate({ provider, returnTo: pathname + search, applicationId: application.id });
   const confirmDisconnect = () => {
@@ -44,20 +50,6 @@ function ProviderRow({ application, provider }: { application: Application; prov
       onError: () => notify(`provider:${provider}`, "danger", `${name} couldn’t be disconnected`, `${name} didn’t confirm it. Try again.`),
     });
   };
-  if (state.isPending) {
-    return <li className="!items-center" aria-busy="true">
-      <ProviderIcon id={provider} size={36} />
-      <span className="mk-row-text min-w-0 flex-1"><strong>{name}</strong><Skeleton className="h-4 w-32 rounded" /></span>
-      <p className="sr-only" role="status">Checking {name}…</p>
-    </li>;
-  }
-  if (state.isError && !state.data) {
-    return <li className="!items-center">
-      <ProviderIcon id={provider} size={36} />
-      <span className="mk-row-text min-w-0 flex-1"><strong>{name}</strong><span className="text-warning">Connection status unavailable</span></span>
-      <Button size="sm" variant="secondary" isPending={state.isFetching} onPress={() => void state.refetch()}>Retry</Button>
-    </li>;
-  }
   const status = connection === "connected" ? `Connected as ${current?.providerLogin}` : connection === "reconnect_required" ? "Authorization expired" : "Not connected";
   return <li className="!items-center">
     <ProviderIcon id={provider} size={36} />

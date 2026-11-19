@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Button, ListBox } from "@heroui/react";
 import type { PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { AlertTriangle, ArrowLeft, Plug, Puzzle, Settings2 } from "lucide-react";
-import { providerName, serviceLabel, useConnectProvider } from "../../lib/marketplace-connections";
+import { serviceLabel, useConnectProvider, useProviderNames } from "../../lib/marketplace-connections";
 import { pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
 import { draftsFrom } from "../../lib/plugin-parameters";
 import type { ConnectorRow, LoadoutRow } from "../../lib/work-start-loadout";
@@ -95,6 +95,7 @@ export function PluginsMenu({ rows, catalog, draft, update, disabled, open, onOp
 // out is shown as unavailable, a required one included.
 export function ConnectorsMenu({ rows, update, disabled, open, onOpenChange, returnTo }: { rows: ConnectorRow[]; update: Update; disabled: boolean; open: boolean; onOpenChange: (open: boolean) => void; returnTo: string }) {
   const connect = useConnectProvider();
+  const providerName = useProviderNames();
   const included = rows.filter(row => row.included);
   const toggle = (row: ConnectorRow) => update(current => {
     const connectors = { ...current.connectors };
