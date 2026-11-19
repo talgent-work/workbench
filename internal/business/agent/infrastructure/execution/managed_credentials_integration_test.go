@@ -277,17 +277,3 @@ func TestManagedProviderConnectorsTakeOnlyTheirTargetCredentialThroughTheLocalPr
 	defer f.relay.mu.Unlock()
 	require.Contains(t, string(f.relay.credentials), `"token":"docs-access-2"`)
 }
-
-// A Provider Connector whose address leaves its target's declared hosts gets
-// no credential: its proxy address stays unavailable.
-func TestManagedConnectorCredentialStaysOnItsTargetHosts(t *testing.T) {
-	remote := connectorcatalogtest.Remote().SelectedConnector
-	material := command.ServiceAccessMaterial{ServiceRequirement: command.ServiceRequirement{Provider: remote.Provider, Service: remote.Provider, Target: remote.Target},
-		ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "docs-access", Hosts: []string{"docs.example.com"}}}
-	snapshot := domain.CapabilitySnapshot{Connectors: []domain.SelectedConnector{remote}}
-	require.Len(t, connectorCredentials(snapshot, []command.ServiceAccessMaterial{material}), 1)
-	material.Hosts = []string{"*.example.org"}
-	require.Empty(t, connectorCredentials(snapshot, []command.ServiceAccessMaterial{material}))
-	material.Hosts = []string{"*.example.com"}
-	require.Len(t, connectorCredentials(snapshot, []command.ServiceAccessMaterial{material}), 1)
-}

@@ -31,26 +31,24 @@ type workConnectorCredential struct {
 	Token string `json:"token"`
 }
 
-// managedProviderConnectors are the retained Provider Connectors a Managed
-// Work reaches through its local proxy.
-func managedProviderConnectors(capabilities domain.CapabilitySnapshot) []domain.SelectedConnector {
-	var connectors []domain.SelectedConnector
-	for _, connector := range capabilities.Connectors {
-		if connector.ProviderAuthorized() && connector.AvailableOnManaged() {
-			connectors = append(connectors, connector)
+// connectorCredentials pairs each of the Work's Provider Connectors with the
+// supplied credential of its target, and settles the observed access of each
+// target it refuses. A Connector is left out, so its proxy address answers
+// that it is unavailable while the rest of the Work goes on, when its target
+// has no supplied credential, when that credential declares no expiry (only a
+// short-lived target credential reaches the machine), or when its address does
+// not lie on its target's declared hosts.
+func connectorCredentials(capabilities domain.CapabilitySnapshot, services []command.ServiceAccessMaterial, access []command.ServiceAccessStatus) ([]workConnectorCredential, []command.ServiceAccessStatus) {
+	var credentials []workConnectorCredential
+	access = slices.Clone(access)
+	refuse := func(connector domain.SelectedConnector, reason string) {
+		for n := range access {
+			if access[n].Service == connector.Provider && access[n].Target == connector.Target && access[n].Status == "credential_available" {
+				access[n].Status, access[n].Reason = "unavailable", reason
+			}
 		}
 	}
-	return connectors
-}
-
-// connectorCredentials pairs each of the Work's Provider Connectors with the
-// supplied credential of its target. A Connector whose target has no current
-// credential, or whose address does not lie on its target's declared hosts,
-// is left out, so its proxy address answers that it is unavailable while the
-// rest of the Work goes on.
-func connectorCredentials(capabilities domain.CapabilitySnapshot, services []command.ServiceAccessMaterial) []workConnectorCredential {
-	var credentials []workConnectorCredential
-	for _, connector := range managedProviderConnectors(capabilities) {
+	for _, connector := range capabilities.ManagedProviderConnectors() {
 		index := slices.IndexFunc(services, func(material command.ServiceAccessMaterial) bool {
 			return material.Provider == connector.Provider && material.Target == connector.Target
 		})
@@ -59,12 +57,16 @@ func connectorCredentials(capabilities domain.CapabilitySnapshot, services []com
 		}
 		material := services[index]
 		address, err := credentialURL(connector.URL)
-		if err != nil || material.Token == "" || !onTargetHosts(address.Hostname(), material.Hosts) {
-			continue
+		switch {
+		case material.Token == "" || material.ExpiresAt.IsZero():
+			refuse(connector, "not_short_lived")
+		case err != nil || !onTargetHosts(address.Hostname(), material.Hosts):
+			refuse(connector, "outside_target_hosts")
+		default:
+			credentials = append(credentials, workConnectorCredential{ID: connector.ID, URL: connector.URL, Token: material.Token})
 		}
-		credentials = append(credentials, workConnectorCredential{ID: connector.ID, URL: connector.URL, Token: material.Token})
 	}
-	return credentials
+	return credentials, access
 }
 
 // onTargetHosts reports whether host lies on one of a target's declared host
@@ -90,12 +92,12 @@ func onTargetHosts(host string, declared []string) bool {
 // (Credential replacement).
 func managedAuthorizations(request domain.LaunchSpecification) ([]byte, error) {
 	providers := map[string]bool{}
-	for _, connector := range managedProviderConnectors(request.Capabilities) {
+	for _, connector := range request.Capabilities.ManagedProviderConnectors() {
 		providers[connector.Provider] = true
 	}
 	selection := request.AuthorizationSelection.Clone()
 	selection.Authorizations = slices.DeleteFunc(selection.Authorizations, func(authorization domain.WorkServiceAuthorization) bool {
-		return !providers[authorization.Service]
+		return !providers[authorization.Provider]
 	})
 	return usedAuthorizations(selection)
 }

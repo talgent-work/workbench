@@ -60,9 +60,9 @@ func requiredServices(capabilities domain.CapabilitySnapshot, authorizations dom
 func managedConnectorServices(capabilities domain.CapabilitySnapshot) serviceRequirements {
 	result := serviceRequirements{}
 	seen := map[string]bool{}
-	for _, connector := range capabilities.Connectors {
+	for _, connector := range capabilities.ManagedProviderConnectors() {
 		key := connector.Provider + "/" + connector.Target
-		if !connector.ProviderAuthorized() || !connector.AvailableOnManaged() || seen[key] {
+		if seen[key] {
 			continue
 		}
 		seen[key] = true

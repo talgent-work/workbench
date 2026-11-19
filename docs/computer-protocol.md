@@ -280,7 +280,8 @@ the model it holds and takes the rest. `api.url` is the entry's public origin,
 Managed Works do not call them. `model` is absent for a Work on the machine's own Claude login.
 `connectors` lists the Work's remote Provider Connectors whose target credential Marketplace supplied:
 each one's address, an `https` URL without user, query or fragment that lies on its Provider target's
-declared hosts, and its target's short-lived access token. A refresh token never travels; the platform
+declared hosts, and its target's short-lived access token; a credential that declares no expiry is
+not delivered. A refresh token never travels; the platform
 delivers the credentials again at the earliest expiry Marketplace declared for them, and when the
 authorization changes. A redelivery that Marketplace cannot fully supply for now is not sent, so the
 machine keeps what it holds. `connectors` is absent when the Work has none. It

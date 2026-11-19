@@ -113,8 +113,9 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord,
 	if temporary && redelivery {
 		return deliveredCredentials{}, errSupplyTemporarilyUnavailable
 	}
+	connectors, access := connectorCredentials(admitted.Capabilities, supply.Services, supply.Access)
 	credentials := workCredentials{Gateway: workGatewayCredential{URL: m.machines.gateway, IdentityToken: supply.IdentityToken.Token, SpaceToken: supply.SpaceToken},
-		Connectors: connectorCredentials(admitted.Capabilities, supply.Services)}
+		Connectors: connectors}
 	if spec.APIAddress != "" {
 		credentials.API = &workAPICredential{URL: spec.APIAddress}
 	}
@@ -138,7 +139,7 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord,
 		defer cancel()
 		return deliveredCredentials{}, errors.Join(err, m.machines.forgetCredentials(clear, spec, record.SessionID))
 	}
-	delivered := deliveredCredentials{Statuses: supply.Access, ExpiresAt: earliestExpiry(nil, supply.Services), ModelDigest: model.digest()}
+	delivered := deliveredCredentials{Statuses: access, ExpiresAt: earliestExpiry(nil, supply.Services), ModelDigest: model.digest()}
 	if temporary {
 		delivered.ExpiresAt = staleDelivery
 	}

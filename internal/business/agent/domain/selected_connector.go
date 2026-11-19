@@ -13,6 +13,10 @@ const (
 	// connectorNoCredential is a Connector that declares no Provider and
 	// receives no credential (Credential-free Connector).
 	connectorNoCredential = "none"
+
+	// connectorRemote is the native transport of a remote MCP server; a
+	// local command's is stdio or empty.
+	connectorRemote = "http"
 )
 
 // SelectedConnector is a Connector retained by a Work: its catalog identity and
@@ -56,7 +60,20 @@ func (c SelectedConnector) ProviderAuthorized() bool {
 // proxy adds a target credential only at a remote Connector's explicit
 // address and the credential never enters a Work's process.
 func (c SelectedConnector) AvailableOnManaged() bool {
-	return !c.ProviderAuthorized() || (c.TargetCredentialsExpire && c.Type == "http")
+	return !c.ProviderAuthorized() || (c.TargetCredentialsExpire && c.Type == connectorRemote)
+}
+
+// ManagedProviderConnectors are the Provider Connectors a Work on a Managed
+// Computer keeps: only their target credentials reach its Computer (Managed
+// Provider credentials).
+func (c CapabilitySnapshot) ManagedProviderConnectors() []SelectedConnector {
+	var connectors []SelectedConnector
+	for _, connector := range c.Connectors {
+		if connector.ProviderAuthorized() && connector.AvailableOnManaged() {
+			connectors = append(connectors, connector)
+		}
+	}
+	return connectors
 }
 
 // AvailableOn is the snapshot a Work retains on its Computer: on a Managed
@@ -99,7 +116,7 @@ func (c SelectedConnector) Validate() error {
 			return ErrInvalidCapabilities
 		}
 	}
-	if c.Type == "http" {
+	if c.Type == connectorRemote {
 		if c.URL == "" || c.Command != "" {
 			return ErrInvalidCapabilities
 		}
