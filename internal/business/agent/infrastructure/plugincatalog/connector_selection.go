@@ -28,13 +28,17 @@ func (c *Client) ReadConnectorSelection(ctx context.Context, user string) (comma
 	}
 	result := command.ConnectorSelection{EnabledConnectors: slices.Clone(response.GetEnabledConnectorIds())}
 	for _, m := range response.GetConnectors() {
-		connector := domain.CatalogConnector{Offered: m.GetOffered(), SelectedConnector: domain.SelectedConnector{
+		connector := domain.CatalogConnector{Offered: m.GetOffered(), Publisher: m.GetPublisher(), SelectedConnector: domain.SelectedConnector{
 			ID: m.GetId(), Name: m.GetName(), Required: m.GetRequired(), Authentication: m.GetAuthentication(),
 			Type: m.GetType(), URL: m.GetUrl(), Command: m.GetCommand(), Arguments: slices.Clone(m.GetArguments()),
 			Environment: maps.Clone(m.GetEnvironment()), Headers: maps.Clone(m.GetHeaders()),
 			Provider: m.GetProvider(), Target: m.GetTarget(), ProviderAuthentication: m.GetProviderAuthentication(), TargetCredentialsExpire: m.GetProviderTargetCredentialsExpire()}}
-		if err := connector.Validate(); err != nil {
-			return command.ConnectorSelection{}, err
+		// A Connector no longer offered comes by identity only, so a choice
+		// of it is refused; only an offered one carries a configuration.
+		if connector.Offered {
+			if err := connector.Validate(); err != nil {
+				return command.ConnectorSelection{}, err
+			}
 		}
 		result.Catalog = append(result.Catalog, connector)
 	}

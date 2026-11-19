@@ -186,7 +186,7 @@ func TestAManagedWorkIsCreatedWithoutProviderAuthorizedConnectors(t *testing.T) 
 	computers := capacityCheck{others: []command.UsableComputer{{ID: managedComputer}}}
 	handler := command.NewCreateWorkHandler(time.Now, domain.BuiltInPlugins{}, agentStore{agent}, store, store, models, commandtest.StartCatalog(githubCatalog{}, authorizationcatalogtest.Empty{}), computers, store.preparation(models))
 	creation := modelCreation(agent.ID, managedComputer, domain.MachineLoginModel(), "")
-	creation.CapabilityDifferences.Connectors = []domain.ConnectorChoice{{Name: "github", Include: true}}
+	creation.CapabilityDifferences.Connectors = []domain.ConnectorChoice{{ConnectorID: connectorcatalogtest.GitHub().ID, Include: true}}
 	_, err = handler.Handle(t.Context(), creation)
 	require.NoError(t, err)
 	require.Len(t, store.session.CapabilitySnapshot.Connectors, 1)

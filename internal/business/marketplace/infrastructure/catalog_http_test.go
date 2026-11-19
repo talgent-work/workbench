@@ -22,7 +22,7 @@ func TestCatalogHTTPReadinessCachingAndContentIsolation(t *testing.T) {
 	root := t.TempDir()
 	store, err := infrastructure.NewCatalogStore(catalogDatabase(t), root, "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
-	server := httptest.NewServer(marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorRepositories{}), slog.Default()))
+	server := httptest.NewServer(marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorDependencies{}), slog.Default()))
 	t.Cleanup(server.Close)
 	get := func(method, path, etag string) (*http.Response, []byte) {
 		t.Helper()

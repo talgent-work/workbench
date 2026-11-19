@@ -111,8 +111,7 @@ func TestAManagedWorkLeavesOutProviderConnectorsItCannotServe(t *testing.T) {
 // Start options say which Connectors a Work on a Managed Computer leaves out,
 // by the rule that leaves them out of its snapshot.
 func TestConnectorOptionsReportManagedAvailability(t *testing.T) {
-	github, remote := connectorcatalogtest.GitHub(), connectorcatalogtest.Remote()
-	options, err := domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required(), github, remote}, EnabledConnectors: []string{github.ID, remote.ID}}.ConnectorOptions()
-	require.NoError(t, err)
-	require.Equal(t, []domain.ConnectorOption{{Name: "enterprise-docs", IncludedByDefault: true}, {Name: "github", IncludedByDefault: true, UnavailableOnManaged: true}, {Name: "talgent", Required: true, IncludedByDefault: true}}, options)
+	github, remote, required := connectorcatalogtest.GitHub(), connectorcatalogtest.Remote(), connectorcatalogtest.Required()
+	options := domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{required, github, remote}, EnabledConnectors: []string{github.ID, remote.ID}}.ConnectorOptions()
+	require.Equal(t, []domain.ConnectorOption{{ID: remote.ID, Name: "enterprise-docs", IncludedByDefault: true}, {ID: github.ID, Name: "github", IncludedByDefault: true, UnavailableOnManaged: true}, {ID: required.ID, Name: "talgent", Required: true, IncludedByDefault: true}}, options)
 }

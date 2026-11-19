@@ -1,15 +1,16 @@
 import { Avatar, Button, Dropdown, Header, Label, Separator, typographyVariants } from "@heroui/react";
-import { AlertTriangle, AppWindow, Box, ChartColumn, Ellipsis, History, Library, LogOut, Monitor, Plus, Puzzle, UserRound } from "lucide-react";
+import { AlertTriangle, AppWindow, Box, Hammer, ChartColumn, Ellipsis, History, Library, LogOut, Monitor, Plus, Puzzle, UserRound } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useCurrentUser, useLogout } from "../../lib/account-service";
 import type { PersonalPaths } from "./entry-shell";
 import { useInstalledConnectors, useInstalledPlugins, usePluginReleases } from "../../lib/marketplace-catalog";
 import { serviceLabel } from "../../lib/marketplace-connections";
 import { pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
-import { marketplacePaths } from "../../lib/marketplace-routes";
+import { marketplacePaths, workshopPaths } from "../../lib/marketplace-routes";
 import { installationNeedsSetup } from "../../lib/plugin-parameters";
 import { safeDisplayName, safeEmail } from "../../lib/user-display";
-import { ConnectorIcon, PluginIcon } from "../marketplace/marketplace-icons";
+import { ConnectorImage } from "../marketplace/connector-image";
+import { PluginIcon } from "../marketplace/marketplace-icons";
 
 // The account sits at the sidebar bottom and owns what is about the person:
 // what they installed, their profile and signing out.
@@ -37,10 +38,10 @@ function useInstalledItems(enabled: boolean) {
     };
   });
   const connectorItems: InstalledItem[] = (connectors.data ?? []).map(connector => ({
-    id: `connector:${connector.name}`,
+    id: `connector:${connector.connectorId}`,
     label: serviceLabel(connector.name),
-    to: marketplacePaths.connector(connector.name),
-    icon: <ConnectorIcon name={connector.name} size={20} />,
+    to: marketplacePaths.connector(connector.connectorId),
+    icon: <ConnectorImage connector={connector} size={20} />,
     disabled: connector.status === "disabled",
     needsSetup: Boolean(connector.provider && connector.providerConnection !== "connected"),
   }));
@@ -88,6 +89,7 @@ export function AccountMenu({ compact, onNavigate, personal }: { compact: boolea
           else if (key === "profile") onNavigate("/profile");
           else if (key === "computers") onNavigate("/computers");
           else if (key === "applications") onNavigate("/applications");
+          else if (key === "workshop") onNavigate(workshopPaths.list);
           else if (key === "sign-out") logout.mutate();
           else if (key === "installed-retry") retry();
           else { const item = installed.find(entry => entry.id === key); if (item) onNavigate(item.to); }
@@ -118,6 +120,7 @@ export function AccountMenu({ compact, onNavigate, personal }: { compact: boolea
           <Dropdown.Item id="profile" textValue="Edit profile"><UserRound size={16} aria-hidden="true" /><Label>Edit profile</Label></Dropdown.Item>
           <Dropdown.Item id="computers" textValue="Computers"><Monitor size={16} aria-hidden="true" /><Label>Computers</Label></Dropdown.Item>
           <Dropdown.Item id="applications" textValue="Applications"><AppWindow size={16} aria-hidden="true" /><Label>Applications</Label></Dropdown.Item>
+          <Dropdown.Item id="workshop" textValue="Workshop"><Hammer size={16} aria-hidden="true" /><Label>Workshop</Label></Dropdown.Item>
           <Separator />
           <Dropdown.Item id="sign-out" textValue="Sign out" isDisabled={logout.isPending}><LogOut size={16} aria-hidden="true" /><Label>Sign out</Label></Dropdown.Item>
         </Dropdown.Menu>

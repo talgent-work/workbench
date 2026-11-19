@@ -113,7 +113,7 @@ func TestStartupConnectorsCombineRequiredEnabledAndPerWorkChoices(t *testing.T) 
 	require.Equal(t, []string{"github", "talgent"}, connectorNames(snapshot), "defaults are required entries and enabled installations")
 
 	input := domain.StartupCapabilityInput{Connectors: catalog, EnabledConnectors: []string{github.ID},
-		ConnectorChoices: []domain.ConnectorChoice{{Name: "github"}, {Name: "linear", Include: true}, {Name: "talgent"}}}
+		ConnectorChoices: []domain.ConnectorChoice{{ConnectorID: github.ID}, {ConnectorID: linear.ID, Include: true}, {ConnectorID: required.ID}}}
 	snapshot, err = domain.NewCapabilitySnapshot(input, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"linear", "talgent"}, connectorNames(snapshot), "a Work removes defaults and adds uninstalled entries but keeps required ones")
@@ -124,9 +124,9 @@ func TestStartupConnectorsCombineRequiredEnabledAndPerWorkChoices(t *testing.T) 
 	snapshot, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{required, withdrawn}, EnabledConnectors: []string{github.ID}}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"talgent"}, connectorNames(snapshot), "a withdrawn installation leaves the default selection")
-	_, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{required, withdrawn}, ConnectorChoices: []domain.ConnectorChoice{{Name: "github", Include: true}}}, nil)
+	_, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{required, withdrawn}, ConnectorChoices: []domain.ConnectorChoice{{ConnectorID: github.ID, Include: true}}}, nil)
 	require.ErrorIs(t, err, domain.ErrInvalidCapabilities, "an explicitly selected entry must be offered")
-	_, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: catalog, ConnectorChoices: []domain.ConnectorChoice{{Name: "unknown", Include: true}}}, nil)
+	_, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: catalog, ConnectorChoices: []domain.ConnectorChoice{{ConnectorID: "01900000-0000-7000-8000-000000000999", Include: true}}}, nil)
 	require.ErrorIs(t, err, domain.ErrInvalidCapabilities)
 }
 
@@ -150,14 +150,40 @@ func TestConnectorOptionsMarkTheDefaultSelectionOfOfferedEntries(t *testing.T) {
 	withdrawn := connectorcatalogtest.GitHub()
 	withdrawn.ID, withdrawn.Name, withdrawn.Offered = "01900000-0000-7000-8000-000000000388", "figma", false
 
-	options, err := (domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{required, github, linear, withdrawn}, EnabledConnectors: []string{github.ID, withdrawn.ID},
-		ConnectorChoices: []domain.ConnectorChoice{{Name: "github"}}}).ConnectorOptions()
-	require.NoError(t, err)
+	options := (domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{required, github, linear, withdrawn}, EnabledConnectors: []string{github.ID, withdrawn.ID},
+		ConnectorChoices: []domain.ConnectorChoice{{ConnectorID: github.ID}}}).ConnectorOptions()
 	require.Equal(t, []domain.ConnectorOption{
-		{Name: "github", IncludedByDefault: true, UnavailableOnManaged: true},
-		{Name: "linear", UnavailableOnManaged: true},
-		{Name: "talgent", Required: true, IncludedByDefault: true},
+		{ID: github.ID, Name: "github", IncludedByDefault: true, UnavailableOnManaged: true},
+		{ID: linear.ID, Name: "linear", UnavailableOnManaged: true},
+		{ID: required.ID, Name: "talgent", Required: true, IncludedByDefault: true},
 	}, options, "withdrawn entries are not offered, and per-Work choices never change the defaults")
+}
+
+// Two publishers' Connectors may share a name; a Work selects them by
+// identity and refuses two of one name, since the name is the Work's MCP
+// server name.
+func TestStartupRefusesTwoSelectedConnectorsOfOneName(t *testing.T) {
+	required, mine := connectorcatalogtest.Required(), connectorcatalogtest.GitHub()
+	mine.ID, mine.Name, mine.Authentication, mine.Provider, mine.Target, mine.ProviderAuthentication = "01900000-0000-7000-8000-000000000401", "chrome-devtools", "none", "", "", ""
+	theirs := mine
+	theirs.ID, theirs.Publisher = "01900000-0000-7000-8000-000000000402", "Alex Chen"
+	catalog := []domain.CatalogConnector{required, mine, theirs}
+
+	snapshot, err := domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: catalog, ConnectorChoices: []domain.ConnectorChoice{{ConnectorID: theirs.ID, Include: true}}}, nil)
+	require.NoError(t, err)
+	require.Equal(t, theirs.ID, snapshot.Connectors[0].ID, "the choice names exactly one of the two")
+
+	_, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: catalog, EnabledConnectors: []string{mine.ID},
+		ConnectorChoices: []domain.ConnectorChoice{{ConnectorID: theirs.ID, Include: true}}}, nil)
+	require.ErrorIs(t, err, domain.ErrDuplicateConnectorName)
+	require.ErrorContains(t, err, "chrome-devtools")
+	snapshot, err = domain.NewCapabilitySnapshot(domain.StartupCapabilityInput{Connectors: catalog, EnabledConnectors: []string{mine.ID, theirs.ID},
+		ConnectorChoices: []domain.ConnectorChoice{{ConnectorID: mine.ID}}}, nil)
+	require.NoError(t, err, "removing one default leaves one Connector of the name")
+	require.Equal(t, []string{"chrome-devtools", "talgent"}, connectorNames(snapshot))
+
+	options := domain.StartupCapabilityInput{Connectors: catalog, EnabledConnectors: []string{mine.ID, theirs.ID}}.ConnectorOptions()
+	require.Equal(t, []string{"", "Alex Chen", ""}, []string{options[0].Publisher, options[1].Publisher, options[2].Publisher}, "options tell same-named Connectors apart by publisher")
 }
 
 // A credential-free Connector declares no Provider, whether it runs as a

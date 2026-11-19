@@ -34,6 +34,9 @@ type PlatformConnectorEntry struct {
 	CredentialEnvironment []string `json:"credential-environment" yaml:"credential-environment" toml:"credential-environment"`
 }
 
+// platformConnectorName is the required platform Connector's native name.
+const platformConnectorName = "talgent"
+
 // PlatformConnectorConfig locates the platform Connector every Work connects
 // to as its talgent MCP server, where the deployment runs one.
 type PlatformConnectorConfig struct {
@@ -44,19 +47,19 @@ type PlatformConnectorConfig struct {
 	Category       string `json:"category" yaml:"category" toml:"category"`
 }
 
-func (c PlatformConnectorConfig) publication() (application.ConnectorPublication, error) {
+func (c PlatformConnectorConfig) publication() (application.PlatformConnector, error) {
 	address, err := url.Parse(strings.TrimRight(strings.TrimSpace(c.GatewayAddress), "/"))
 	if err != nil || (address.Scheme != "http" && address.Scheme != "https") || address.Host == "" || address.RawQuery != "" || address.Fragment != "" {
-		return application.ConnectorPublication{}, errors.New("marketplace: the platform Connector needs the Gateway's address")
+		return application.PlatformConnector{}, errors.New("marketplace: the platform Connector needs the Gateway's address")
 	}
 	// The sandbox's Credential Proxy adds the Work's Identity Token to every
 	// request to the Gateway; the configuration names none.
 	configuration := domain.MCPConfiguration{Type: "http", URL: address.String() + "/mcp"}
-	return application.ConnectorPublication{Name: "talgent", Configuration: configuration,
+	return application.PlatformConnector{Name: platformConnectorName, Configuration: configuration,
 		Presentation: domain.CatalogPresentation{Description: c.Description, Category: c.Category}}, configuration.Validate()
 }
 
-func (c PlatformConnectorEntry) publication(name string) application.ConnectorPublication {
+func (c PlatformConnectorEntry) publication(name string) application.PlatformConnector {
 	configuration := domain.MCPConfiguration{Type: c.Type, URL: c.URL, Command: c.Command, Arguments: c.Arguments, Headers: c.Headers}
 	for _, variable := range c.CredentialEnvironment {
 		if configuration.Environment == nil {
@@ -67,7 +70,7 @@ func (c PlatformConnectorEntry) publication(name string) application.ConnectorPu
 	// The Connector's address must lie within the declared target, which
 	// publication checks against the Provider declarations.
 	binding := domain.ProviderAccessBinding{Provider: c.Provider, Target: c.Target, Authentication: "credential_proxy"}
-	return application.ConnectorPublication{Name: name, Configuration: configuration, Provider: &binding,
+	return application.PlatformConnector{Name: name, Configuration: configuration, Provider: &binding,
 		Presentation: domain.CatalogPresentation{Description: c.Description, Category: c.Category}}
 }
 
@@ -75,8 +78,8 @@ func (c PlatformConnectorEntry) publication(name string) application.ConnectorPu
 // platform Connector where it names the Gateway's address, and every platform
 // Connector whose Provider the deployment enables. A Connector naming a
 // Provider that is not declared at all is a configuration error.
-func connectorPublications(config Config) ([]application.ConnectorPublication, error) {
-	publications := make([]application.ConnectorPublication, 0, len(config.Connectors)+1)
+func connectorPublications(config Config) ([]application.PlatformConnector, error) {
+	publications := make([]application.PlatformConnector, 0, len(config.Connectors)+1)
 	if strings.TrimSpace(config.PlatformConnector.GatewayAddress) != "" {
 		platform, err := config.PlatformConnector.publication()
 		if err != nil {
@@ -101,6 +104,12 @@ func connectorPublications(config Config) ([]application.ConnectorPublication, e
 	return publications, nil
 }
 
+// platformConnectorNames are the names of every Platform Connector the
+// configuration declares, enabled or not, which no owner adds.
+func platformConnectorNames(config Config) []string {
+	return append(slices.Sorted(maps.Keys(config.Connectors)), platformConnectorName)
+}
+
 func registerPlatformConnectors(lifecycle fx.Lifecycle, app *application.Application, config Config, logger *slog.Logger) {
 	lifecycle.Append(fx.Hook{OnStart: func(ctx context.Context) error {
 		publications, err := connectorPublications(config)
@@ -108,7 +117,7 @@ func registerPlatformConnectors(lifecycle fx.Lifecycle, app *application.Applica
 			return err
 		}
 		for _, publication := range publications {
-			if err := app.PublishConnector(ctx, publication); err != nil {
+			if err := app.EstablishPlatformConnector(ctx, publication); err != nil {
 				logger.ErrorContext(ctx, "platform Connector publication failed", slog.String("connector", publication.Name), slog.Any("error", err))
 				return err
 			}

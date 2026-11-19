@@ -1,15 +1,20 @@
 import { useState } from "react";
-import { Alert, Button, Card, Dropdown, Label, Switch, Tooltip } from "@heroui/react";
-import type { Connector } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
-import { ChevronRight, KeyRound, Lock, MoreHorizontal, Plus } from "lucide-react";
+import { Alert, Button, Card, Chip, Dropdown, Label, Switch, Tooltip, Typography } from "@heroui/react";
+import { Code, ConnectError } from "@connectrpc/connect";
+import type { Connector } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
+import { ChevronRight, Hammer, KeyRound, Lock, MoreHorizontal, Plus } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { installStatusLabel, pluginStatus, connectorStatus, useConnector, useConnectorActions, useConnectors, useAlwaysEnabledPlugins, useInstalledPlugins, usePluginCatalog } from "../../lib/marketplace-catalog";
-import { serviceLabel, useConnectProvider, useProviderNames } from "../../lib/marketplace-connections";
+import { connectorLabel, installStatusLabel, pluginStatus, connectorStatus, publisherLabel, useConnector, useConnectorActions, useConnectors, useAlwaysEnabledPlugins, useInstalledPlugins, usePluginCatalog } from "../../lib/marketplace-catalog";
+import { useConnectProvider, useProviderNames, useProviders } from "../../lib/marketplace-connections";
 import { pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
-import { marketplacePaths } from "../../lib/marketplace-routes";
+import { marketplacePaths, workshopPaths } from "../../lib/marketplace-routes";
 import { notify } from "../../lib/notifications";
+import { ConnectorImage } from "./connector-image";
 import { ConnectorIcon, PluginIcon, ProviderIcon } from "./marketplace-icons";
 import { ConfirmDialog, LoadState, NothingMatches, SearchBar } from "./marketplace-shared";
+
+// The Marketplace finds and installs; it never edits. A person's own
+// Connector links to its Workshop page instead.
 
 // A Connector's sign-in always goes through its declared Provider; there is
 // no manual credential entry.
@@ -26,37 +31,43 @@ function useConnectorCommands() {
   const providerName = useProviderNames();
   const { pathname } = useLocation();
   const install = (connector: Connector) => {
-    const label = serviceLabel(connector.name);
-    actions.install.mutate(connector.name, {
+    const label = connectorLabel(connector);
+    actions.install.mutate(connector.connectorId, {
       // Installation never waits for authorization; connecting is offered after.
       onSuccess: result => {
         const offer = result.provider && result.providerConnection !== "connected";
-        notify(`connector:${connector.name}`, "success", `${label} installed`, offer ? `Connect ${providerName(result.provider)} so Works can use it.` : "Works you start from now on can use it.", {
+        notify(`connector:${connector.connectorId}`, "success", `Installed ${label}`, offer ? `Connect ${providerName(result.provider)} so Works can use it.` : "Works you start from now on include it.", {
           action: offer ? { label: `Connect ${providerName(result.provider)}`, onPress: () => connect.mutate({ provider: result.provider, returnTo: pathname }) } : { label: "Undo", onPress: () => actions.uninstall.mutate(result) },
         });
       },
-      onError: () => notify(`connector:${connector.name}`, "danger", `${label} couldn’t be installed`, "Try again."),
+      onError: () => notify(`connector:${connector.connectorId}`, "danger", `${label} couldn’t be installed`, "Try again."),
     });
   };
   const toggle = (connector: Connector) => {
     const enabled = connector.status !== "enabled";
     actions.setEnabled.mutate({ connector, enabled }, {
-      onSuccess: () => notify(`connector:${connector.name}`, "default", `${serviceLabel(connector.name)} ${enabled ? "enabled" : "disabled"}`),
-      onError: () => notify(`connector:${connector.name}`, "danger", `${serviceLabel(connector.name)} couldn’t be changed`, "Refresh and try again."),
+      onSuccess: () => notify(`connector:${connector.connectorId}`, "default", `${connectorLabel(connector)} ${enabled ? "enabled" : "disabled"}`),
+      onError: () => notify(`connector:${connector.connectorId}`, "danger", `${connectorLabel(connector)} couldn’t be changed`, "Refresh and try again."),
     });
   };
   const uninstall = (connector: Connector) => actions.uninstall.mutate(connector, {
-    onSuccess: () => notify(`connector:${connector.name}`, "default", `${serviceLabel(connector.name)} uninstalled`),
-    onError: () => notify(`connector:${connector.name}`, "danger", `${serviceLabel(connector.name)} couldn’t be uninstalled`, "Refresh and try again."),
+    onSuccess: () => notify(`connector:${connector.connectorId}`, "default", `${connectorLabel(connector)} uninstalled`),
+    onError: () => notify(`connector:${connector.connectorId}`, "danger", `${connectorLabel(connector)} couldn’t be uninstalled`, "Refresh and try again."),
   });
   return { install, toggle, uninstall, connect, pending: actions.install.isPending };
 }
 
 function UninstallConnectorDialog({ connector, onClose, onConfirm }: { connector: Connector | null; onClose: () => void; onConfirm: (connector: Connector) => void }) {
   const providerName = useProviderNames();
-  return <ConfirmDialog isOpen={connector !== null} onOpenChange={open => { if (!open) onClose(); }} title={`Uninstall ${connector ? serviceLabel(connector.name) : ""}?`} confirmLabel="Uninstall" onConfirm={() => { if (connector) onConfirm(connector); }}>
+  return <ConfirmDialog isOpen={connector !== null} onOpenChange={open => { if (!open) onClose(); }} title={`Uninstall ${connector ? connectorLabel(connector) : ""}?`} confirmLabel="Uninstall" onConfirm={() => { if (connector) onConfirm(connector); }}>
     <p>Works you start afterwards can’t use it. Works already running keep it.{connector?.provider ? ` Your ${providerName(connector.provider)} Provider stays connected.` : ""} Plugins aren’t affected.</p>
   </ConfirmDialog>;
+}
+
+/** Who published it: Talgent, another person, or you. */
+function ByLine({ connector }: { connector: Connector }) {
+  if (connector.publisher?.own && connector.state === "private") return <span className="flex items-center gap-1.5 text-[12px] text-muted"><Chip size="sm" variant="soft"><Lock size={11} aria-hidden="true" /><Chip.Label>Private</Chip.Label></Chip>Only you see it</span>;
+  return <span className={`text-[12px] ${connector.publisher?.own ? "text-accent" : "text-muted"}`}>{publisherLabel(connector)}</span>;
 }
 
 export function ConnectorList({ category }: { category?: string }) {
@@ -66,20 +77,20 @@ export function ConnectorList({ category }: { category?: string }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [removing, setRemoving] = useState<Connector | null>(null);
-  const rows = (connectors.data ?? []).filter(item => (!category || categoryOf(item) === category) && `${serviceLabel(item.name)} ${item.description}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const rows = (connectors.data ?? []).filter(item => (!category || categoryOf(item) === category) && `${connectorLabel(item)} ${item.description} ${publisherLabel(item)}`.toLowerCase().includes(query.trim().toLowerCase()));
   const groups = [...new Set(rows.map(categoryOf))].sort((a, b) => a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b)).map(name => ({ name, items: rows.filter(item => categoryOf(item) === name) }));
   const row = (connector: Connector) => {
     const status = connectorStatus(connector), notice = providerNotice(connector, providerName), installed = status === "enabled" || status === "disabled";
-    const label = serviceLabel(connector.name);
-    return <li key={connector.name} className="mk-row" data-off={status === "disabled" || undefined}>
-      <Link className="mk-row-open" to={marketplacePaths.connector(connector.name)}>
-        <ConnectorIcon name={connector.name} />
-        <span className="mk-row-text"><strong>{label}</strong><span className={installed && notice.warning ? "text-warning" : ""}>{status === "disabled" ? "Disabled" : installed && notice.warning ? notice.text : connector.description}</span></span>
+    const label = connectorLabel(connector);
+    return <li key={connector.connectorId} className="mk-row" data-off={status === "disabled" || undefined}>
+      <Link className="mk-row-open" to={marketplacePaths.connector(connector.connectorId)}>
+        <ConnectorImage connector={connector} />
+        <span className="mk-row-text"><strong>{label}</strong><span className={installed && notice.warning ? "text-warning" : ""}>{status === "disabled" ? "Disabled" : installed && notice.warning ? notice.text : connector.description}</span><ByLine connector={connector} /></span>
       </Link>
       {connector.required ? <Tooltip><Tooltip.Trigger aria-label="Always enabled" className="mk-row-lock"><Lock size={16} /></Tooltip.Trigger><Tooltip.Content>Always enabled</Tooltip.Content></Tooltip>
         : installed ? <Dropdown><Button size="sm" variant="ghost" isIconOnly aria-label={`${label} options`}><MoreHorizontal size={18} /></Button>
           <Dropdown.Popover placement="bottom end"><Dropdown.Menu aria-label={`${label} options`} onAction={key => {
-            if (key === "open") navigate(marketplacePaths.connector(connector.name));
+            if (key === "open") navigate(marketplacePaths.connector(connector.connectorId));
             if (key === "toggle") commands.toggle(connector);
             if (key === "uninstall") setRemoving(connector);
           }}>
@@ -104,31 +115,44 @@ export function ConnectorList({ category }: { category?: string }) {
 
 const categoryOf = (connector: Connector) => connector.category ? pluginDisplayName(connector.category) : "Other";
 
-export function ConnectorPage({ name }: { name: string }) {
-  const detail = useConnector(name);
+/** What is left when a Connector is not in the person's Marketplace. */
+function NotInMarketplace() {
+  const navigate = useNavigate();
+  return <Card className="mk-group"><div className="mk-empty"><strong>This isn’t in the Marketplace</strong><span className="text-muted">Its publisher withdrew it or never published it.</span>
+    <Button size="sm" onPress={() => navigate(marketplacePaths.connectors)}>Browse connectors</Button></div></Card>;
+}
+
+export function ConnectorPage({ connectorId }: { connectorId: string }) {
+  const detail = useConnector(connectorId);
   const commands = useConnectorCommands();
   const providerName = useProviderNames();
+  const providers = useProviders();
   const catalog = usePluginCatalog();
   const installedPlugins = useInstalledPlugins();
   const required = useAlwaysEnabledPlugins();
+  const navigate = useNavigate();
   const { pathname } = useLocation();
   const [confirm, setConfirm] = useState(false);
   const connector = detail.data?.connector;
-  if (!connector) return <LoadState noun="connector" isPending={detail.isPending} isError={detail.isError} hasData={false} isFetching={detail.isFetching} onRetry={() => void detail.refetch()} />;
-  const label = serviceLabel(connector.name), status = connectorStatus(connector), notice = providerNotice(connector, providerName);
+  if (!connector) return detail.isError && ConnectError.from(detail.error).code === Code.NotFound ? <NotInMarketplace />
+    : <LoadState noun="connector" isPending={detail.isPending} isError={detail.isError} hasData={false} isFetching={detail.isFetching} onRetry={() => void detail.refetch()} />;
+  const label = connectorLabel(connector), status = connectorStatus(connector), notice = providerNotice(connector, providerName);
   const installed = status === "enabled" || status === "disabled";
+  const own = Boolean(connector.publisher?.own);
+  const provider = providers.data?.find(item => item.name === connector.provider);
   const releases = new Map((catalog.data ?? []).map(plugin => [plugin.slug, plugin]));
   const connect = () => commands.connect.mutate({ provider: connector.provider, returnTo: pathname });
   const connectLabel = connector.providerConnection === "reconnect_required" ? "Reconnect" : "Connect";
   return <div className="mk-detail">
     <header className="mk-detail-head">
-      <ConnectorIcon name={connector.name} size={64} />
-      <div className="mk-detail-title"><h2>{label}</h2><p className="mk-meta">{connector.category && <span>{categoryOf(connector)}</span>}<span>MCP connector</span></p></div>
+      <ConnectorImage connector={connector} size={64} />
+      <div className="mk-detail-title"><h2>{label}</h2><p className="mk-meta">{connector.category && <span>{categoryOf(connector)}</span>}<span>{own || connector.publisher?.kind === "platform" ? publisherLabel(connector) : `Published by ${publisherLabel(connector)}`}</span></p></div>
       <div className="mk-detail-actions">
+        {own && <Button variant="ghost" onPress={() => navigate(workshopPaths.connector(connector.connectorId))}><Hammer size={15} aria-hidden="true" />Manage in workshop</Button>}
         {connector.required ? <span className="mk-muted mk-inline"><Lock size={15} aria-hidden="true" />Always enabled</span>
-          : !installed ? <Button variant="primary" isPending={commands.pending} onPress={() => commands.install(connector)}>Install</Button>
+          : !installed ? connector.offered && <Button variant="primary" isPending={commands.pending} onPress={() => commands.install(connector)}>Install</Button>
           : <>
-            <Switch isSelected={status === "enabled"} onChange={() => commands.toggle(connector)} aria-label={`Enable ${label}`}><Switch.Control><Switch.Thumb /></Switch.Control></Switch>
+            <Switch isSelected={status === "enabled"} onChange={() => commands.toggle(connector)} aria-label={`Use ${label} in new Works`}><Switch.Control><Switch.Thumb /></Switch.Control></Switch>
             <Dropdown><Button size="sm" variant="ghost" isIconOnly aria-label={`More actions for ${label}`}><MoreHorizontal size={18} /></Button>
               <Dropdown.Popover placement="bottom end"><Dropdown.Menu aria-label="More actions" onAction={key => { if (key === "uninstall") setConfirm(true); }}>
                 <Dropdown.Item id="uninstall" textValue="Uninstall" variant="danger"><Label>Uninstall…</Label></Dropdown.Item>
@@ -137,24 +161,28 @@ export function ConnectorPage({ name }: { name: string }) {
       </div>
     </header>
     <UninstallConnectorDialog connector={confirm ? connector : null} onClose={() => setConfirm(false)} onConfirm={commands.uninstall} />
-    {installed && notice.warning && <Alert status="warning"><Alert.Indicator /><Alert.Content><Alert.Title>{notice.text}</Alert.Title>
-      <Alert.Description>Works start without {label} access until you {connectLabel.toLowerCase()} your {providerName(connector.provider)} account.</Alert.Description>
-      <Button size="sm" variant="secondary" className="mt-2" isPending={commands.connect.isPending} onPress={connect}><KeyRound size={14} />{connectLabel} {providerName(connector.provider)}</Button>
+    {!connector.offered && <Alert status="warning"><Alert.Indicator /><Alert.Content><Alert.Title>Withdrawn</Alert.Title>
+      <Alert.Description>Its publisher withdrew it. New Works leave it out; uninstall it when you no longer need it.</Alert.Description></Alert.Content></Alert>}
+    {connector.offered && installed && notice.warning && <Alert status="warning"><Alert.Indicator /><Alert.Content><Alert.Title>{notice.text}</Alert.Title>
+      <Alert.Description>Works start without {label} until you {connectLabel.toLowerCase()} your own {providerName(connector.provider)} account.</Alert.Description>
+      <Button size="sm" variant="secondary" className="mt-2" isPending={commands.connect.isPending} onPress={connect}><KeyRound size={14} aria-hidden="true" />{connectLabel} {providerName(connector.provider)}</Button>
     </Alert.Content></Alert>}
 
     <section className="mk-section"><h3 className="mk-section-title">About</h3>
-      <Card className="mk-group mk-about mk-about-single"><p className="mk-about-text">{connector.description}</p></Card>
+      <Card className="mk-group mk-about mk-about-single"><p className="mk-about-text">{connector.description || "No description."}</p></Card>
     </section>
 
-    {connector.provider && <section className="mk-section"><h3 className="mk-section-title">Provider</h3>
-      <Card className="mk-group"><ul className="mk-group-list"><li className="mk-group-link mk-group-split">
+    <section className="mk-section"><h3 className="mk-section-title">Sign-in</h3>
+      <Card className="mk-group">{connector.provider ? <ul className="mk-group-list"><li className="mk-group-link mk-group-split">
         <Link to={marketplacePaths.provider(connector.provider)}>
-          <ProviderIcon id={connector.provider} size={32} /><span className="mk-row-text"><strong>{providerName(connector.provider)}</strong><span className={notice.warning ? "text-warning" : ""}>{connector.providerConnection === "connected" ? "Connected" : connector.providerConnection === "reconnect_required" ? "Authorization expired" : "Not connected — required to use this connector"}</span></span>
+          <ProviderIcon id={connector.provider} size={32} /><span className="mk-row-text"><strong>Each person signs in with their own {providerName(connector.provider)} account</strong>
+            <span className={notice.warning ? "text-warning" : ""}>{connector.providerConnection === "connected" ? "You’re connected." : connector.providerConnection === "reconnect_required" ? "Your authorization expired." : "You haven’t connected yet."}
+              {provider && !provider.targetCredentialsExpire ? ` Not available on your own computer: ${provider.displayName} access never expires.` : ""}</span></span>
           {!notice.warning && <ChevronRight size={16} className="mk-muted ml-auto" aria-hidden="true" />}
         </Link>
         {notice.warning && <Button size="sm" variant="secondary" isPending={commands.connect.isPending} onPress={connect}>{connectLabel}</Button>}
-      </li></ul></Card>
-    </section>}
+      </li></ul> : <Typography.Paragraph size="sm" className="p-4 text-muted">{connector.transport === "stdio" ? "Runs as a local command next to the Work and receives no credentials." : "Needs no sign-in."}</Typography.Paragraph>}</Card>
+    </section>
 
     {(detail.data?.plugins.length ?? 0) > 0 && <section className="mk-section">
       <h3 className="mk-section-title">Plugins that use it <span className="mk-count">{detail.data!.plugins.length}</span></h3>
@@ -167,5 +195,8 @@ export function ConnectorPage({ name }: { name: string }) {
         </Link></li>;
       })}</ul></Card>
     </section>}
+    {connector.publisher?.kind !== "platform" && !own && <Typography.Paragraph size="sm" className="text-muted">
+      Published by {publisherLabel(connector)}{connector.publishedAtUnixMs > 0n ? ` on ${new Date(Number(connector.publishedAtUnixMs)).toLocaleDateString()}` : ""}. Talgent doesn’t review it; it runs with your own access only.
+    </Typography.Paragraph>}
   </div>;
 }

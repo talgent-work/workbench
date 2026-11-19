@@ -1,8 +1,10 @@
 import type { JsonObject } from "@bufbuild/protobuf";
 import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Connector, InstalledPlugin, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
+import type { Connector } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
+import type { InstalledPlugin, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { marketplaceClient } from "./client";
 import { useCurrentUser } from "./account-service";
+import { serviceLabel } from "./marketplace-connections";
 import { standaloneWorkStartSource } from "./standalone-work-service";
 
 // Marketplace reads and an owner's changes. Catalog data is platform-wide; the
@@ -95,12 +97,14 @@ export function useInstalledConnectors(options: ReadOptions = {}) {
   return useQuery({ queryKey: key, enabled: enabled && options.enabled !== false, retry: false, queryFn: async ({ signal }) => (await marketplaceClient.listInstalledConnectors({ applicationId: options.applicationId ?? "" }, { signal })).connectors });
 }
 
-export function useConnector(name: string) {
-  const { key, enabled } = usePersonalKey({}, "connector", name);
-  return useQuery({ queryKey: key, enabled, retry: false, queryFn: ({ signal }) => marketplaceClient.getConnector({ name }, { signal }) });
+/** One Connector by its identity: one of the owner's catalog, one the owner
+ * made or one the owner installed. */
+export function useConnector(connectorId: string, owner: MarketplaceOwner = {}) {
+  const { key, enabled } = usePersonalKey(owner, "connector", connectorId);
+  return useQuery({ queryKey: key, enabled: enabled && Boolean(connectorId), retry: false, queryFn: ({ signal }) => marketplaceClient.getConnector({ connectorId, applicationId: owner.applicationId ?? "" }, { signal }) });
 }
 
-function useRefreshPersonal() {
+export function useRefreshPersonal() {
   const cache = useQueryClient();
   return () => Promise.all([
     cache.invalidateQueries({ queryKey: marketplaceQueryKey }),
@@ -134,16 +138,16 @@ export function usePluginActions(owner: MarketplaceOwner = {}) {
 export function useConnectorActions(owner: MarketplaceOwner = {}) {
   const refresh = useRefreshPersonal();
   const applicationId = owner.applicationId ?? "";
-  const install = useMutation({ mutationFn: async (name: string) => {
-    const response = await marketplaceClient.installConnector({ name, applicationId });
-    if (response.connector?.name !== name) throw new Error("The installation was not confirmed");
+  const install = useMutation({ mutationFn: async (connectorId: string) => {
+    const response = await marketplaceClient.installConnector({ connectorId, applicationId });
+    if (response.connector?.connectorId !== connectorId) throw new Error("The installation was not confirmed");
     return response.connector;
   }, onSettled: refresh });
   const setEnabled = useMutation({ mutationFn: async ({ connector, enabled }: { connector: Connector; enabled: boolean }) => {
-    const request = { name: connector.name, version: connector.installationVersion, applicationId };
+    const request = { connectorId: connector.connectorId, version: connector.installationVersion, applicationId };
     await (enabled ? marketplaceClient.enableConnector(request) : marketplaceClient.disableConnector(request));
   }, onSettled: refresh });
-  const uninstall = useMutation({ mutationFn: (connector: Connector) => marketplaceClient.uninstallConnector({ name: connector.name, version: connector.installationVersion, applicationId }), onSettled: refresh });
+  const uninstall = useMutation({ mutationFn: (connector: Connector) => marketplaceClient.uninstallConnector({ connectorId: connector.connectorId, version: connector.installationVersion, applicationId }), onSettled: refresh });
   return { install, setEnabled, uninstall };
 }
 
@@ -158,3 +162,15 @@ export function pluginStatus(required: boolean, installed?: InstalledPlugin): In
 }
 
 export const connectorStatus = (connector: Connector) => connector.status as InstallStatus;
+
+/** How a Connector is named in lists: a Platform Connector by its service,
+ * an owner's by the name its owner gave it. */
+export const connectorLabel = (connector: Pick<Connector, "name" | "publisher">) => connector.publisher?.kind === "platform" ? serviceLabel(connector.name) : connector.name;
+
+/** Who published a Connector, as a list row names it. */
+export function publisherLabel(connector: Pick<Connector, "publisher" | "state">) {
+  const publisher = connector.publisher;
+  if (!publisher || publisher.kind === "platform") return "Talgent";
+  if (publisher.own) return connector.state === "private" ? "Private, only you see it" : "Published by you";
+  return publisher.displayName;
+}

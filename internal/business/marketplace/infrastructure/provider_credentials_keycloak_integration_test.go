@@ -82,7 +82,7 @@ func newKeycloakFixture(t *testing.T) *keycloakFixture {
 		application.CredentialTiming{RequestSkew: 5 * time.Minute, ProactiveWindow: 30 * time.Minute, LeaseDuration: 30 * time.Second})
 	connections := application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: store, Queries: persistence.NewProviderAuthorizationQueries(db),
 		Providers: providers, OAuth: authorizer, Credentials: credentials})
-	app := application.NewApplication(nil, nil, nil, persistence.NewProviderAuthorizationQueries(db), connections, application.ConnectorRepositories{})
+	app := application.NewApplication(nil, nil, nil, persistence.NewProviderAuthorizationQueries(db), connections, application.ConnectorDependencies{})
 	mux := http.NewServeMux()
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))

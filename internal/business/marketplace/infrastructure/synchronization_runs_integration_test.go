@@ -40,7 +40,7 @@ func TestSynchronizationAPIQueueAndPublication(t *testing.T) {
 	root := t.TempDir()
 	writeMetadata(t, root, "plugins/valid/.claude-plugin/plugin.json", `{"name":"actual","version":"1.0.0"}`)
 	writeCatalog(t, root, "source", []map[string]any{{"name": "alias", "source": "./plugins/valid"}, {"name": "missing", "source": "./plugins/missing"}})
-	archiveServer := newCatalogHTTPSServer(t, marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorRepositories{}), slog.Default()))
+	archiveServer := newCatalogHTTPSServer(t, marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorDependencies{}), slog.Default()))
 	defer archiveServer.Close()
 	certificate := filepath.Join(t.TempDir(), "ca.pem")
 	require.NoError(t, os.WriteFile(certificate, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: archiveServer.Certificate().Raw}), 0600))

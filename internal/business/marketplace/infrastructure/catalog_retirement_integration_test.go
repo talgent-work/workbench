@@ -36,7 +36,7 @@ func TestCatalogSynchronizationRetiresRemovedSource(t *testing.T) {
 	db := catalogDatabase(t)
 	store, err := infrastructure.NewCatalogStore(db, content, "talgent", "Talgent", slog.Default())
 	require.NoError(t, err)
-	handler := marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorRepositories{}), slog.Default())
+	handler := marketplacehttp.NewCatalogHandler(application.NewApplication(nil, nil, store, nil, nil, application.ConnectorDependencies{}), slog.Default())
 	synchronize := func(sources map[string]infrastructure.CatalogSource) {
 		t.Helper()
 		synchronizer, err := infrastructure.NewCatalogSynchronizer(infrastructure.CatalogAcquisitionConfig{Workers: 2, RequestTimeoutSeconds: 30,

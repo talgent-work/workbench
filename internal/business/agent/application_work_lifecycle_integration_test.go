@@ -220,7 +220,7 @@ func TestAnApplicationsWorkStartsWithItsInstallations(t *testing.T) {
 	chosen, err := desk.works.StartWork(desk.ctx, &agentpublicv2.StartWorkRequest{RequestId: uuid.NewString(), InitialMessage: "Review the refund",
 		CreationCapabilities: &agentpublicv1.CreationCapabilities{
 			Plugins:      []*agentpublicv1.CreationPlugin{{Name: "custom", Include: &drop}, {Name: "caller-plugin", Include: &include}},
-			Connectors:   []*agentpublicv1.CreationConnector{{Name: "github", Include: false}},
+			Connectors:   []*agentpublicv1.CreationConnector{{ConnectorId: supportDeskConnector.ID, Include: false}},
 			StartupAgent: ptr("caller-plugin:reviewer"),
 		}})
 	require.NoError(t, err)
