@@ -10,6 +10,7 @@ import { ConnectComputerPage } from "@talgent/workbench-ui/pages/computers/conne
 import { LoginPage } from "@talgent/workbench-ui/pages/login-page";
 import { MarketplacePage } from "@talgent/workbench-ui/pages/marketplace-page";
 import { ProfilePage } from "@talgent/workbench-ui/pages/profile-page";
+import { WorkshopPage } from "@talgent/workbench-ui/pages/workshop-page";
 import { LibraryPage } from "@talgent/workbench-ui/pages/workbench/library-page";
 import { NewWorkPage } from "@talgent/workbench-ui/pages/workbench/new-work-page";
 import { StandaloneWorkPage } from "@talgent/workbench-ui/pages/workbench/standalone-work-page";
@@ -34,6 +35,7 @@ export default function WorkbenchRoutes() {
     <Route path="/computers" element={page("Computers", <ComputersPage />)} />
     <Route path="/applications" element={page("Applications", <ApplicationsPage />)} />
     <Route path="/applications/works/:workId" element={page("Application work", <ApplicationWorkPage />)} />
+    <Route path="/workshop/*" element={page("Workshop", <WorkshopPage />)} />
     <Route path="/computers/connect" element={page("Connect a computer", <ConnectComputerPage />)} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></EntryShellContext>;

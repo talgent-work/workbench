@@ -1,13 +1,15 @@
 import { useState, type ReactNode } from "react";
 import { Button, Card, Chip, Switch, Tooltip } from "@heroui/react";
-import type { Connector, InstalledPlugin, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
+import type { Connector } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
+import type { InstalledPlugin, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { AlertTriangle, Plus, Settings2, Trash2 } from "lucide-react";
 import type { JsonObject } from "@bufbuild/protobuf";
-import { ConnectorIcon, PluginIcon } from "../../components/marketplace/marketplace-icons";
+import { ConnectorImage } from "../../components/marketplace/connector-image";
+import { PluginIcon } from "../../components/marketplace/marketplace-icons";
 import { ConfirmDialog, LoadState } from "../../components/marketplace/marketplace-shared";
 import type { Application } from "../../lib/application-service";
-import { useConnectorActions, useConnectors, useInstalledConnectors, useInstalledPlugins, usePluginActions, usePluginCatalog } from "../../lib/marketplace-catalog";
-import { serviceLabel, useProviderNames } from "../../lib/marketplace-connections";
+import { connectorLabel, useConnectorActions, useConnectors, useInstalledConnectors, useInstalledPlugins, usePluginActions, usePluginCatalog } from "../../lib/marketplace-catalog";
+import { useProviderNames } from "../../lib/marketplace-connections";
 import { capabilityText, pluginDisplayName, pluginPresentation } from "../../lib/marketplace-plugins";
 import { installationNeedsSetup } from "../../lib/plugin-parameters";
 import { notify } from "../../lib/notifications";
@@ -86,11 +88,11 @@ export function InstallationsSection({ application, required }: { application: A
       {installedConnectors.data && (connectors.length === 0 ? <p className="mk-note">No Connectors yet.</p>
         : <Card className="mk-group"><ul className="mk-group-list" aria-label={`${application.name} Connectors`}>
           {connectors.map(item => {
-            const name = serviceLabel(item.name);
+            const name = connectorLabel(item);
             const enabled = item.status === "enabled";
             const missing = Boolean(item.provider) && item.providerConnection !== "connected";
-            return <li key={item.name} className="!items-center">
-              <ConnectorIcon name={item.name} size={36} />
+            return <li key={item.connectorId} className="!items-center">
+              <ConnectorImage connector={item} size={36} owner={owner} />
               <span className="mk-row-text min-w-0 flex-1">
                 <strong className={enabled ? undefined : "text-muted"}>{name}{missing && <Warning text={`${providerName(item.provider)} not connected`} />}</strong>
                 <span>{missing ? `Connect ${providerName(item.provider)} for ${application.name} so its Works can use it.` : item.description}</span>
@@ -102,11 +104,11 @@ export function InstallationsSection({ application, required }: { application: A
           })}
         </ul></Card>)}
     </Group>
-    {adding && <CatalogDialog applicationName={application.name} initial={adding} plugins={catalog} connectors={connectorCatalog}
+    {adding && <CatalogDialog applicationName={application.name} owner={owner} initial={adding} plugins={catalog} connectors={connectorCatalog}
       installedPlugins={installedPlugins.data ?? new Map()} required={required}
       installing={pluginActions.install.isPending ? `plugin:${pluginActions.install.variables?.slug}` : connectorActions.install.isPending ? `connector:${connectorActions.install.variables}` : ""}
       onInstallPlugin={(plugin, needsSettings) => needsSettings ? setSettings({ plugin }) : installPlugin(plugin)}
-      onInstallConnector={connector => connectorActions.install.mutate(connector.name, { onError: () => failed(serviceLabel(connector.name)) })}
+      onInstallConnector={connector => connectorActions.install.mutate(connector.connectorId, { onError: () => failed(connectorLabel(connector)) })}
       onClose={() => setAdding(null)} />}
     {settings && <PluginSettingsDialog plugin={settings.plugin} installed={settings.installed} saving={pluginActions.install.isPending || pluginActions.configure.isPending}
       error={pluginActions.configure.isError ? "The settings couldn’t be saved. Check the values and try again." : pluginActions.install.isError ? "It couldn’t be installed. Check the values and try again." : ""}

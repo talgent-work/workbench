@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Button, Modal, SearchField, Tabs } from "@heroui/react";
-import type { Connector, InstalledPlugin, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
+import type { Connector } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
+import type { InstalledPlugin, PluginSummary } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
 import { Check, Lock } from "lucide-react";
-import { ConnectorIcon, PluginIcon } from "../../components/marketplace/marketplace-icons";
+import { ConnectorImage } from "../../components/marketplace/connector-image";
+import { PluginIcon } from "../../components/marketplace/marketplace-icons";
 import { LoadState } from "../../components/marketplace/marketplace-shared";
-import { serviceLabel } from "../../lib/marketplace-connections";
+import { connectorLabel, publisherLabel, type MarketplaceOwner } from "../../lib/marketplace-catalog";
 import { capabilityText, pluginPresentation } from "../../lib/marketplace-plugins";
 import { missingRequired } from "../../lib/plugin-parameters";
 
@@ -14,9 +16,9 @@ type Catalog<T> = { data?: T; isPending: boolean; isError: boolean; isFetching: 
 
 /** The Marketplace catalog, installing for the Application rather than for
  * the person: a Plugin that needs settings first opens them. */
-export function CatalogDialog({ applicationName, initial, plugins, connectors, installedPlugins, required, installing, onInstallPlugin, onInstallConnector, onClose }: {
-  applicationName: string; initial: CatalogKind;
-  /** The entry being installed, as `plugin:<slug>` or `connector:<name>`. */
+export function CatalogDialog({ applicationName, owner, initial, plugins, connectors, installedPlugins, required, installing, onInstallPlugin, onInstallConnector, onClose }: {
+  applicationName: string; owner: MarketplaceOwner; initial: CatalogKind;
+  /** The entry being installed, as `plugin:<slug>` or `connector:<id>`. */
   installing: string;
   plugins: Catalog<PluginSummary[]>; connectors: Catalog<Connector[]>;
   installedPlugins: Map<string, InstalledPlugin>; required: Set<string>;
@@ -26,7 +28,7 @@ export function CatalogDialog({ applicationName, initial, plugins, connectors, i
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const pluginRows = (plugins.data ?? []).filter(plugin => `${pluginPresentation(plugin).name} ${plugin.description}`.toLowerCase().includes(q));
-  const connectorRows = (connectors.data ?? []).filter(connector => !connector.required && `${serviceLabel(connector.name)} ${connector.description}`.toLowerCase().includes(q));
+  const connectorRows = (connectors.data ?? []).filter(connector => !connector.required && `${connectorLabel(connector)} ${connector.description} ${publisherLabel(connector)}`.toLowerCase().includes(q));
   const source = kind === "plugins" ? plugins : connectors;
   const rows = kind === "plugins" ? pluginRows : connectorRows;
   const installed = (label: string) => <span className="inline-flex items-center gap-1 px-2 text-[13px] text-muted" aria-label={`${label} is installed`}><Check size={14} aria-hidden="true" />Installed</span>;
@@ -55,11 +57,11 @@ export function CatalogDialog({ applicationName, initial, plugins, connectors, i
               : installedPlugins.has(plugin.slug) ? installed(name) : install(name, `plugin:${plugin.slug}`, () => onInstallPlugin(plugin, needsSettings))}
           </li>;
         }) : connectorRows.map(connector => {
-          const label = serviceLabel(connector.name);
-          return <li key={connector.name} className="!items-center">
-            <ConnectorIcon name={connector.name} size={36} />
-            <span className="mk-row-text min-w-0 flex-1"><strong>{label}</strong><span>{connector.description}</span></span>
-            {connector.status !== "not_installed" ? installed(label) : install(label, `connector:${connector.name}`, () => onInstallConnector(connector))}
+          const label = connectorLabel(connector);
+          return <li key={connector.connectorId} className="!items-center">
+            <ConnectorImage connector={connector} size={36} owner={owner} />
+            <span className="mk-row-text min-w-0 flex-1"><strong>{label}</strong><span>{connector.description}</span><span>{publisherLabel(connector)}</span></span>
+            {connector.status !== "not_installed" ? installed(label) : install(label, `connector:${connector.connectorId}`, () => onInstallConnector(connector))}
           </li>;
         })}
         {rows.length === 0 && <li><span className="text-[13px] text-muted">{q ? `Nothing matches “${query}”.` : `The catalog has no ${kind} yet.`}</span></li>}

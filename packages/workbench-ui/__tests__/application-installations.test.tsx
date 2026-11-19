@@ -11,7 +11,8 @@ const application = { id: applicationId, name: "Support Desk" } as Application;
 const entry = (displayName: string) => new TextEncoder().encode(JSON.stringify({ displayName, category: "productivity" }));
 
 type Installed = { slug: string; enabled: boolean; version: number; configuration: Record<string, unknown>; redactedParameters: string[] };
-type InstalledConnector = { name: string; description: string; required: boolean; status: string; installationVersion: number; provider: string; providerConnection: string; offered: boolean };
+type InstalledConnector = { connectorId: string; publisher: { kind: string }; name: string; description: string; required: boolean; status: string; installationVersion: number; provider: string; providerConnection: string; offered: boolean };
+const githubId = "01900000-0000-7000-8000-000000000301";
 let installed: Installed[] = [];
 let connectors: InstalledConnector[] = [];
 const calls: Array<{ method: string; request: Record<string, unknown> }> = [];
@@ -33,7 +34,7 @@ vi.mock("../lib/client", () => ({
     listInstalledConnectors: async (request: Record<string, unknown>) => { record("listInstalledConnectors", request); return { connectors }; },
     listConnectors: async (request: Record<string, unknown>) => {
       record("listConnectors", request);
-      return { connectors: [{ name: "github", description: "Repositories", required: false, status: connectors.some(item => item.name === "github") ? "enabled" : "not_installed", installationVersion: 0, provider: "github", providerConnection: "not_connected", offered: true }] };
+      return { connectors: [{ connectorId: githubId, publisher: { kind: "platform" }, name: "github", description: "Repositories", required: false, status: connectors.some(item => item.connectorId === githubId) ? "enabled" : "not_installed", installationVersion: 0, provider: "github", providerConnection: "not_connected", offered: true }] };
     },
     installPlugin: async (request: { slug: string; configuration: Record<string, unknown>; applicationId: string }) => {
       record("installPlugin", request);
@@ -47,9 +48,9 @@ vi.mock("../lib/client", () => ({
       return {};
     },
     uninstallPlugin: async (request: { slug: string }) => { record("uninstallPlugin", request); installed = installed.filter(item => item.slug !== request.slug); return {}; },
-    installConnector: async (request: { name: string }) => {
+    installConnector: async (request: { connectorId: string }) => {
       record("installConnector", request);
-      const connector = { name: request.name, description: "Repositories", required: false, status: "enabled", installationVersion: 1, provider: "github", providerConnection: "not_connected", offered: true };
+      const connector = { connectorId: request.connectorId, publisher: { kind: "platform" }, name: "github", description: "Repositories", required: false, status: "enabled", installationVersion: 1, provider: "github", providerConnection: "not_connected", offered: true };
       connectors = [...connectors, connector];
       return { connector };
     },
@@ -100,7 +101,7 @@ it("installs from the catalog for the Application, asking for settings a Plugin 
 
   await user.click(within(dialog).getByRole("tab", { name: "Connectors" }));
   await user.click(await within(dialog).findByRole("button", { name: "Install GitHub" }));
-  await waitFor(() => expect(calls.find(call => call.method === "installConnector")?.request).toMatchObject({ name: "github", applicationId }));
+  await waitFor(() => expect(calls.find(call => call.method === "installConnector")?.request).toMatchObject({ connectorId: githubId, applicationId }));
   expect(calls.find(call => call.method === "listConnectors")?.request).toMatchObject({ applicationId });
 }, 15000);
 
