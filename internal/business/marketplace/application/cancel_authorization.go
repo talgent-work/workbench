@@ -24,6 +24,13 @@ func (a *PersonalConnections) CancelPersonalAuthorization(ctx context.Context, a
 	if auth.OwnerID != actor {
 		return query.PersonalAuthorization{}, domain.ErrProviderNotFound
 	}
+	if a.credentials == nil {
+		return query.PersonalAuthorization{}, ErrProviderUnavailable
+	}
+	port, err := a.credentials.port(auth.Provider)
+	if err != nil {
+		return query.PersonalAuthorization{}, err
+	}
 	now := time.Now().UTC()
 	// One minute exceeds the bounded Provider operation and persistence window.
 	// Refresh, cancellation and competing workers share this database fence.
@@ -33,7 +40,7 @@ func (a *PersonalConnections) CancelPersonalAuthorization(ctx context.Context, a
 	}
 	operationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	operationErr := auth.CancelAuthorization(operationCtx, actor, now, a.authorizationPort)
+	operationErr := auth.CancelAuthorization(operationCtx, actor, now, port)
 	if err := a.persistCredentialOperation(ctx, auth, operationErr); err != nil {
 		return query.PersonalAuthorization{}, err
 	}

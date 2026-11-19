@@ -18,6 +18,7 @@ import (
 	marketstore "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	markettransport "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	"github.com/talgent-work/workbench/internal/pkg/authn"
+	"github.com/talgent-work/workbench/internal/testsupport/providertest"
 )
 
 // SecretCanary is the access token every Marketplace authorization holds: no
@@ -56,7 +57,8 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 		require.NoError(t, store.Save(ctx, authorization))
 		ids[granted.User] = authorization.ID
 	}
-	personal := marketapp.NewPersonalConnections(store, marketstore.NewProviderAuthorizationQueries(db), ownRepository{}, nil, nil)
+	personal := marketapp.NewPersonalConnections(marketapp.ConnectionDependencies{Authorizations: store, Queries: marketstore.NewProviderAuthorizationQueries(db),
+		Providers: providertest.Declarations{providertest.GitHub()}, GitHub: ownRepository{}})
 	for _, id := range ids {
 		require.NoError(t, personal.ObserveAccessScope(ctx, id))
 	}

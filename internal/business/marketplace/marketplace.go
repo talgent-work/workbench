@@ -28,10 +28,13 @@ import (
 // Directory is a private namespace on the existing mounted content volume.
 // Owned archives persist there; release metadata is queried from MySQL.
 type Config struct {
-	Synchronization    SynchronizationConfig     `json:"synchronization" yaml:"synchronization" toml:"synchronization"`
-	ProviderConnectors []ProviderConnectorConfig `json:"provider-connectors" yaml:"provider-connectors" toml:"provider-connectors"`
-	PlatformConnector  PlatformConnectorConfig   `json:"platform-connector" yaml:"platform-connector" toml:"platform-connector"`
-	Connections        ConnectionConfig          `json:"connections" yaml:"connections" toml:"connections"`
+	Synchronization SynchronizationConfig `json:"synchronization" yaml:"synchronization" toml:"synchronization"`
+	// Providers are the deployment's Provider declarations, keyed by name.
+	Providers map[string]ProviderConfig `json:"providers" yaml:"providers" toml:"providers"`
+	// Connectors are the platform Connectors people install, keyed by name.
+	Connectors        map[string]PlatformConnectorEntry `json:"connectors" yaml:"connectors" toml:"connectors"`
+	PlatformConnector PlatformConnectorConfig           `json:"platform-connector" yaml:"platform-connector" toml:"platform-connector"`
+	Connections       ConnectionConfig                  `json:"connections" yaml:"connections" toml:"connections"`
 	// Account locates Account's Application Ownership Query, which admits
 	// an Application Owner to the Application's installations and Provider
 	// Authorizations.

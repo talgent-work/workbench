@@ -10,16 +10,14 @@ import (
 
 type ServiceCredentialRequest struct{ OwnerID, AuthorizationID, Target string }
 
+// SupplyServiceCredential supplies the credential of one target the
+// authorization's Provider declares, for whichever Provider it is.
 func (a *PersonalConnections) SupplyServiceCredential(ctx context.Context, request ServiceCredentialRequest) (credential.ServiceMaterial, error) {
 	if strings.TrimSpace(request.OwnerID) == "" || strings.TrimSpace(request.AuthorizationID) == "" || strings.TrimSpace(request.Target) == "" {
 		return credential.ServiceMaterial{}, domain.ErrInvalidRequiredField
 	}
-	authorization, err := a.authorizations.Get(ctx, request.AuthorizationID)
-	if err != nil {
-		return credential.ServiceMaterial{}, err
+	if a.credentials == nil {
+		return credential.ServiceMaterial{}, ErrProviderUnavailable
 	}
-	if authorization.OwnerID != request.OwnerID || authorization.Provider != domain.ProviderGitHub {
-		return credential.ServiceMaterial{}, domain.ErrPermissionDenied
-	}
-	return a.github.SupplyServiceCredential(ctx, request.OwnerID, request.AuthorizationID, request.Target)
+	return a.credentials.SupplyTarget(ctx, request.OwnerID, request.AuthorizationID, request.Target)
 }

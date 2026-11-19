@@ -72,6 +72,12 @@ func (p *AuthorizationPort) Renew(ctx context.Context, credentials domain.Creden
 	}}, nil
 }
 
+// ObtainTargetCredential is never needed: every GitHub target takes the
+// authorization's own credential.
+func (p *AuthorizationPort) ObtainTargetCredential(context.Context, domain.CredentialSet, domain.ProviderTarget) (domain.TargetCredentialOutcome, error) {
+	return domain.TargetCredentialOutcome{}, domain.ErrCredentialTargetInapplicable
+}
+
 func reconnectResult() domain.CredentialRenewal {
 	return domain.CredentialRenewal{ReconnectRequired: true, ReasonCode: string(providerErrorGitHubReconnectRequired)}
 }

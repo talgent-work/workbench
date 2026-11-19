@@ -37,9 +37,6 @@ func (q *ProviderAuthorizationQueries) ListPersonalAuthorizations(ctx context.Co
 	result := make([]query.PersonalAuthorization, len(rows))
 	for i, row := range rows {
 		result[i] = query.PersonalAuthorization{ID: row.ID, Provider: row.Provider, Status: row.Status}
-		if row.Provider == "github" {
-			result[i].SupportedTargets = []string{"github-api"}
-		}
 	}
 	return result, nil
 }

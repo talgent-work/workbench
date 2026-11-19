@@ -11,7 +11,9 @@ import (
 // Inactive records remain selectable so reauthorization can restore the same ID.
 type PersonalAuthorization struct {
 	ID, Provider, Status string
-	SupportedTargets     []string
+	// SupportedTargets are the targets the Provider declares, which the
+	// application adds from the declarations.
+	SupportedTargets []string
 }
 
 // MaintenanceIdentities is a bounded page of candidate identities, without

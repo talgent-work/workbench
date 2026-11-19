@@ -38,7 +38,11 @@ func (a *PersonalConnections) BeginPersonalAuthorization(ctx context.Context, in
 	if strings.TrimSpace(input.OwnerID) == "" {
 		return BeginProviderAuthorizationResult{}, ErrUnauthenticated
 	}
-	return a.github.BeginProviderAuthorization(ctx, input)
+	port, err := a.establishment(input.Provider)
+	if err != nil {
+		return BeginProviderAuthorizationResult{}, err
+	}
+	return port.BeginProviderAuthorization(ctx, input)
 }
 
 // ListAccessibleRepositories offers the repositories last observed as reachable
@@ -64,11 +68,18 @@ func (a *PersonalConnections) ListAccessibleRepositories(ctx context.Context, ac
 // GetProviderAccess describes the connection and its last observed reach.
 // Permissions are those granted when observed, or those connecting requests.
 func (a *PersonalConnections) GetProviderAccess(ctx context.Context, actor string, provider domain.Provider) (ProviderAccessView, error) {
+	if _, err := a.declared(provider); err != nil {
+		return ProviderAccessView{}, err
+	}
 	state, err := a.GetPersonalConnection(ctx, actor, provider)
 	if err != nil {
 		return ProviderAccessView{}, err
 	}
 	view := ProviderAccessView{State: state}
+	// Only GitHub observes what an authorization reaches.
+	if provider != domain.ProviderGitHub {
+		return view, nil
+	}
 	if view.ManageURL, err = a.github.ManageURL(ctx, provider); err != nil {
 		view.ManageURL = ""
 	}
@@ -97,7 +108,7 @@ func (a *PersonalConnections) RefreshProviderAccess(ctx context.Context, actor s
 		return ProviderAccessView{}, err
 	}
 	var observeErr error
-	if auth != nil && auth.IsActive() {
+	if auth != nil && auth.IsActive() && provider == domain.ProviderGitHub {
 		observeErr = a.ObserveAccessScope(ctx, auth.ID)
 	}
 	view, err := a.GetProviderAccess(ctx, actor, provider)
@@ -129,7 +140,8 @@ func (a *PersonalConnections) observeAccessScope(ctx context.Context, authorizat
 	if err != nil {
 		return err
 	}
-	if !auth.IsActive() {
+	// Providers other than GitHub observe no access scope.
+	if !auth.IsActive() || auth.Provider != domain.ProviderGitHub {
 		return nil
 	}
 	observeCtx, cancel := context.WithTimeout(ctx, timeout)

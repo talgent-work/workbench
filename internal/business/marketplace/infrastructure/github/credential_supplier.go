@@ -2,39 +2,29 @@ package github
 
 import (
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
+// CredentialSupplier materializes repository credentials from the owner's
+// GitHub authorization.
 type CredentialSupplier struct {
-	enabled        bool
-	cfg            Config
-	http           *http.Client
-	authorizations application.AuthorizationStore
-	cipher         TokenCipher
-	now            func() time.Time
+	enabled bool
+	cfg     Config
+	fresh   FreshCredentials
+	now     func() time.Time
 }
 
-func NewCredentialSupplier(cfg Config, authorizations application.AuthorizationStore, cipher TokenCipher) (*CredentialSupplier, error) {
+func NewCredentialSupplier(cfg Config, fresh FreshCredentials) (*CredentialSupplier, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
-	enabled, err := cfg.enabled()
-	if err != nil {
-		return nil, err
+	if cfg.Enabled && fresh == nil {
+		return nil, fmt.Errorf("github credential supplier requires fresh credentials")
 	}
-	if enabled {
-		if authorizations == nil {
-			return nil, fmt.Errorf("github credential supplier requires provider authorization repository")
-		}
-		if cipher == nil {
-			return nil, fmt.Errorf("github credential supplier requires token cipher")
-		}
-	}
-	return &CredentialSupplier{enabled: enabled, cfg: cfg, http: http.DefaultClient, authorizations: authorizations, cipher: cipher, now: time.Now}, nil
+	return &CredentialSupplier{enabled: cfg.Enabled, cfg: cfg, fresh: fresh, now: time.Now}, nil
 }
 
 // runtimeExpiry declares the credential's own expiry at GitHub; a credential

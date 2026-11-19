@@ -1,6 +1,7 @@
 package marketplace
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -16,7 +17,9 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/scopemaintenance"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application/tokenmaintenance"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/credentialcipher"
 	scmgithub "github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/github"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/oauthprovider"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/persistence"
 	marketplaceconnect "github.com/talgent-work/workbench/internal/business/marketplace/transport/connectrpc"
 	marketplacehttp "github.com/talgent-work/workbench/internal/business/marketplace/transport/http"
@@ -26,9 +29,13 @@ import (
 )
 
 type ConnectionConfig struct {
-	CredentialToken string                  `json:"credential-token" toml:"credential-token" yaml:"credential-token"`
-	GitHub          scmgithub.Config        `json:"github" toml:"github" yaml:"github"`
-	Maintenance     tokenmaintenance.Config `json:"maintenance" toml:"maintenance" yaml:"maintenance"`
+	CredentialToken string `json:"credential-token" toml:"credential-token" yaml:"credential-token"`
+	// CredentialCipherKey encrypts every Provider's credentials at rest; a
+	// deployment that declares a Provider needs it.
+	CredentialCipherKey string `json:"credential-cipher-key" toml:"credential-cipher-key" yaml:"credential-cipher-key"`
+	// GitHub is the GitHub App adapter beside the github Provider declaration.
+	GitHub      scmgithub.Config        `json:"github" toml:"github" yaml:"github"`
+	Maintenance tokenmaintenance.Config `json:"maintenance" toml:"maintenance" yaml:"maintenance"`
 }
 
 type connectionHandlerParams struct {
@@ -45,8 +52,18 @@ var ConnectionsModule = fx.Module(
 	"domain.marketplace.connections",
 	fx.Provide(func(cfg Config) ConnectionConfig { return cfg.Connections }),
 	pkgmysql.Bind(Database),
-	fx.Provide(func(cfg ConnectionConfig) scmgithub.Config { return cfg.GitHub }),
+	fx.Provide(newProviderCatalog, fx.Private),
+	fx.Provide(func(catalog *providerCatalog) application.ProviderDeclarations { return catalog }),
+	fx.Provide(func(cfg ConnectionConfig, catalog *providerCatalog) scmgithub.Config {
+		return catalog.gitHub(cfg.GitHub, cfg.CredentialCipherKey)
+	}),
 	fx.Provide(func(cfg ConnectionConfig) tokenmaintenance.Config { return cfg.Maintenance }),
+	fx.Provide(func(cfg ConnectionConfig, catalog *providerCatalog) (application.CredentialCipher, error) {
+		if len(catalog.declarations) > 0 && cfg.CredentialCipherKey == "" {
+			return nil, errors.New("marketplace: connections.credential-cipher-key is required when a Provider is declared")
+		}
+		return credentialcipher.New(cfg.CredentialCipherKey)
+	}),
 	fx.Provide(persistence.NewProviderAuthorizations),
 	// Every save of an authorization goes through the store that dispatches
 	// its recorded credential changes.
@@ -62,6 +79,39 @@ var ConnectionsModule = fx.Module(
 		events.Subscribe(eventlog.Handler(logger, publisher))
 		lc.Append(fx.Hook{OnStop: events.Close})
 	}),
+	fx.Provide(func(catalog *providerCatalog, cfg scmgithub.Config, cipher application.CredentialCipher, httpClient *http.Client) (application.ProviderAuthorizationPorts, error) {
+		ports := providerPorts{}
+		if cfg.Enabled {
+			port, err := scmgithub.NewAuthorizationPort(cfg, cipher)
+			if err != nil {
+				return nil, err
+			}
+			ports[domain.ProviderGitHub] = port
+		}
+		for _, client := range catalog.oauthClients() {
+			port, err := oauthprovider.NewPort(client, cipher, httpClient)
+			if err != nil {
+				return nil, err
+			}
+			ports[client.Provider] = port
+		}
+		return ports, nil
+	}),
+	fx.Provide(func(catalog *providerCatalog, cipher application.CredentialCipher, httpClient *http.Client) (application.OAuthProviderPort, error) {
+		return oauthprovider.NewAuthorizer(catalog.oauthClients(), cipher, httpClient)
+	}),
+	fx.Provide(func(store application.AuthorizationStore, providers application.ProviderDeclarations, ports application.ProviderAuthorizationPorts,
+		cipher application.CredentialCipher, cfg tokenmaintenance.Config) (*application.ProviderCredentials, error) {
+		maintenance, err := cfg.Normalize()
+		if err != nil {
+			return nil, err
+		}
+		return application.NewProviderCredentials(store, providers, ports, cipher, application.CredentialTiming{
+			RequestSkew: maintenance.RequestRefreshSkew.Duration(), ProactiveWindow: maintenance.ProactiveRefreshWindow.Duration(),
+			LeaseDuration: maintenance.RefreshLeaseDuration.Duration(),
+		}), nil
+	}),
+	fx.Provide(func(credentials *application.ProviderCredentials) scmgithub.FreshCredentials { return credentials }, fx.Private),
 	fx.Provide(scmgithub.NewCatalog, fx.Private),
 	fx.Provide(fx.Annotate(scopemaintenance.NewScheduler, fx.As(new(application.MarketplaceTaskQueuePort)), fx.As(fx.Self()))),
 	fx.Provide(func(candidates query.ProviderAuthorizationQueryRepository, scheduler *scopemaintenance.Scheduler) *scopemaintenance.ReconcileScanProcessor {
@@ -70,16 +120,11 @@ var ConnectionsModule = fx.Module(
 	fx.Provide(func(connections *application.PersonalConnections) *scopemaintenance.ObserveProcessor {
 		return scopemaintenance.NewObserveProcessor(connections)
 	}),
-	fx.Provide(fx.Annotate(
-		scmgithub.NewTokenCipher,
-		fx.As(new(scmgithub.TokenCipher)),
-	)),
-	fx.Provide(scmgithub.NewAuthorizer, scmgithub.NewCredentialSupplier, scmgithub.NewAuthorizationRefresher, fx.Private),
+	fx.Provide(scmgithub.NewAuthorizer, scmgithub.NewCredentialSupplier, fx.Private),
 	fx.Provide(fx.Annotate(scmgithub.NewGitHub, fx.As(new(application.GitHubPort)))),
 	fx.Provide(func(cfg scmgithub.Config, app *application.Application, logger *slog.Logger) (*marketplacehttp.WebhookHandler, error) {
 		return marketplacehttp.NewWebhookHandler(cfg.WebhookSecret, app, logger)
 	}),
-	fx.Provide(fx.Annotate(scmgithub.NewAuthorizationPort, fx.As(new(domain.ProviderAuthorizationPort)))),
 	fx.Provide(func(
 		authorizations domain.ProviderAuthorizationRepository,
 		candidates query.ProviderAuthorizationQueryRepository,
@@ -89,12 +134,14 @@ var ConnectionsModule = fx.Module(
 	) *tokenmaintenance.RefreshScanProcessor {
 		return tokenmaintenance.NewRefreshScanProcessor(authorizations, candidates, enqueuer, registry, cfg, time.Now)
 	}),
-	fx.Provide(func(
-		github application.GitHubPort,
-	) *tokenmaintenance.RefreshAuthorizationProcessor {
-		return tokenmaintenance.NewRefreshAuthorizationProcessor(github)
+	fx.Provide(func(credentials *application.ProviderCredentials) *tokenmaintenance.RefreshAuthorizationProcessor {
+		return tokenmaintenance.NewRefreshAuthorizationProcessor(credentials)
 	}),
-	fx.Provide(application.NewPersonalConnections),
+	fx.Provide(func(store application.AuthorizationStore, queries query.ProviderAuthorizationQueryRepository, providers application.ProviderDeclarations,
+		github application.GitHubPort, oauth application.OAuthProviderPort, tasks application.MarketplaceTaskQueuePort, credentials *application.ProviderCredentials) *application.PersonalConnections {
+		return application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: store, Queries: queries, Providers: providers,
+			GitHub: github, OAuth: oauth, Tasks: tasks, Credentials: credentials})
+	}),
 	TaskqueueModule,
 	fx.Invoke(func(params connectionHandlerParams) {
 		params.Mux.Handle(marketplacehttp.GitHubWebhookPath, params.Webhook)

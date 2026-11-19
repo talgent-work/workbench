@@ -22,10 +22,12 @@ func (i *CredentialSupplier) SupplyRepositoryCredential(ctx context.Context, own
 	if err != nil || baseErr != nil || target.Scheme != "https" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || !strings.EqualFold(target.Host, base.Host) || target.Path == "" || target.Path == "/" {
 		return credential.MaterializedCredential{}, domain.ErrCredentialTargetInapplicable
 	}
-	manager := newFreshUserTokenManager(i.cfg, i.http, i.authorizations, i.cipher, i.now)
-	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{OwnerID: owner, AuthorizationID: authorizationID, Provider: domain.ProviderGitHub, Reason: "work_repository"})
+	auth, token, err := i.fresh.Fresh(ctx, authorizationID, owner, false)
 	if err != nil {
 		return credential.MaterializedCredential{}, mapProviderError(err)
+	}
+	if auth.Provider != domain.ProviderGitHub {
+		return credential.MaterializedCredential{}, domain.ErrPermissionDenied
 	}
 	expiresAt, err := i.runtimeExpiry(auth)
 	if err != nil {

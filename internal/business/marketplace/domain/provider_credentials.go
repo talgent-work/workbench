@@ -26,6 +26,31 @@ type CredentialSet struct {
 	RefreshTokenCiphertext string
 	ExpiresAt              time.Time
 	RefreshTokenExpiresAt  time.Time
+	// TargetCredentials are the credentials obtained per Provider target, by
+	// target name, for a Provider that derives one per target.
+	TargetCredentials map[string]TargetCredential
+}
+
+// TargetCredential is the protected credential for one Provider target and
+// its own expiry at the Provider; the zero time declares none.
+type TargetCredential struct {
+	TokenCiphertext string
+	ExpiresAt       time.Time
+}
+
+func (c TargetCredential) usable(now time.Time, skew time.Duration) bool {
+	return strings.TrimSpace(c.TokenCiphertext) != "" && (c.ExpiresAt.IsZero() || c.ExpiresAt.After(now.Add(nonNegativeDuration(skew))))
+}
+
+// TargetCredentialOutcome is what the Provider answers when asked for one
+// target's credential. A Provider that rotates the refresh credential on use
+// returns its replacement.
+type TargetCredentialOutcome struct {
+	Credential             TargetCredential
+	RefreshTokenCiphertext string
+	RefreshTokenExpiresAt  time.Time
+	ReconnectRequired      bool
+	ReasonCode             string
 }
 
 type CredentialRenewal struct {
@@ -34,31 +59,102 @@ type CredentialRenewal struct {
 	ReasonCode        string
 }
 
+// ProviderAuthorizationPort reaches the authorization's Provider.
 type ProviderAuthorizationPort interface {
 	Renew(context.Context, CredentialSet) (CredentialRenewal, error)
+	// ObtainTargetCredential exchanges the authorization for one target's
+	// credential, for a Provider that derives one per target.
+	ObtainTargetCredential(context.Context, CredentialSet, ProviderTarget) (TargetCredentialOutcome, error)
 	Revoke(context.Context, CredentialSet) (bool, error)
 }
 
-// CredentialRequirement is supplied by the trusted authentication boundary after
-// it verifies the consumer's target and authentication contract. A Provider name
-// alone must never be mapped to Applicable=true.
+// CredentialRequirement is supplied by the trusted authentication boundary
+// from the Provider's declaration: the verified target the credential is for
+// and how its credential derives. A Provider name alone names no target.
 type CredentialRequirement struct {
 	OwnerID    string
 	Provider   Provider
-	Applicable bool
+	Target     ProviderTarget
+	Derivation TargetCredentialDerivation
 }
 
-func (a *ProviderAuthorization) SupplyValidCredentials(ctx context.Context, requirement CredentialRequirement, now time.Time, skew time.Duration, port ProviderAuthorizationPort) (CredentialSet, error) {
+// NeedsCredentialWork reports whether supplying the requirement would ask
+// the Provider, which then runs under the authorization's credential lease.
+func (a *ProviderAuthorization) NeedsCredentialWork(requirement CredentialRequirement, now time.Time, skew time.Duration) bool {
+	if requirement.Derivation == ResourceIndicatorTargetCredential {
+		return !a.TargetCredentials[requirement.Target.Name].usable(now, skew)
+	}
+	return !a.CanUseToken(now, skew)
+}
+
+// SupplyValidCredentials admits supply of one verified target's credential,
+// deriving it from the authorization and renewing what has expired.
+func (a *ProviderAuthorization) SupplyValidCredentials(ctx context.Context, requirement CredentialRequirement, now time.Time, skew time.Duration, port ProviderAuthorizationPort) (TargetCredential, error) {
 	if requirement.OwnerID != a.OwnerID || requirement.OwnerID == "" {
-		return CredentialSet{}, ErrPermissionDenied
+		return TargetCredential{}, ErrPermissionDenied
 	}
-	if requirement.Provider != a.Provider || !requirement.Applicable {
-		return CredentialSet{}, ErrCredentialTargetInapplicable
+	if requirement.Provider != a.Provider || requirement.Target.Name == "" {
+		return TargetCredential{}, ErrCredentialTargetInapplicable
 	}
-	if err := a.RenewCredentials(ctx, now, skew, false, port); err != nil {
-		return CredentialSet{}, err
+	switch requirement.Derivation {
+	case SharedTargetCredential:
+		if err := a.RenewCredentials(ctx, now, skew, false, port); err != nil {
+			return TargetCredential{}, err
+		}
+		return TargetCredential{TokenCiphertext: a.AccessTokenCiphertext, ExpiresAt: a.ExpiresAt}, nil
+	case ResourceIndicatorTargetCredential:
+		return a.obtainTargetCredential(ctx, requirement.Target, now, skew, port)
+	default:
+		return TargetCredential{}, ErrCredentialTargetInapplicable
 	}
-	return a.CredentialSet, nil
+}
+
+func (a *ProviderAuthorization) obtainTargetCredential(ctx context.Context, target ProviderTarget, now time.Time, skew time.Duration, port ProviderAuthorizationPort) (TargetCredential, error) {
+	if err := a.CredentialSupplyError(); err != nil {
+		return TargetCredential{}, err
+	}
+	if current := a.TargetCredentials[target.Name]; current.usable(now, skew) {
+		return current, nil
+	}
+	if !a.refreshUsable(now) {
+		_ = a.MarkReconnectRequired("authorization_reconnect_required", "refresh credential unavailable", now)
+		return TargetCredential{}, ErrAuthorizationReconnectRequired
+	}
+	if port == nil {
+		return TargetCredential{}, ErrInvalidRequiredField
+	}
+	outcome, err := port.ObtainTargetCredential(ctx, a.CredentialSet, target)
+	if err != nil {
+		return TargetCredential{}, err
+	}
+	if outcome.ReconnectRequired {
+		_ = a.MarkReconnectRequired(reasonOr(outcome.ReasonCode), "provider requires reauthorization", now)
+		return TargetCredential{}, ErrAuthorizationReconnectRequired
+	}
+	credential := TargetCredential{TokenCiphertext: strings.TrimSpace(outcome.Credential.TokenCiphertext), ExpiresAt: outcome.Credential.ExpiresAt.UTC()}
+	if credential.TokenCiphertext == "" {
+		return TargetCredential{}, ErrInvalidRequiredField
+	}
+	if rotated := strings.TrimSpace(outcome.RefreshTokenCiphertext); rotated != "" {
+		a.RefreshTokenCiphertext, a.RefreshTokenExpiresAt = rotated, outcome.RefreshTokenExpiresAt.UTC()
+	}
+	if a.TargetCredentials == nil {
+		a.TargetCredentials = map[string]TargetCredential{}
+	}
+	a.TargetCredentials[target.Name] = credential
+	a.LastCheckedAt, a.LastFailureCode, a.LastFailureDetail = now.UTC(), "", ""
+	return credential, nil
+}
+
+func (a *ProviderAuthorization) refreshUsable(now time.Time) bool {
+	return strings.TrimSpace(a.RefreshTokenCiphertext) != "" && (a.RefreshTokenExpiresAt.IsZero() || a.RefreshTokenExpiresAt.After(now))
+}
+
+func reasonOr(code string) string {
+	if code == "" {
+		return "authorization_reconnect_required"
+	}
+	return code
 }
 
 func (a *ProviderAuthorization) RenewCredentials(ctx context.Context, now time.Time, skew time.Duration, force bool, port ProviderAuthorizationPort) error {
@@ -68,7 +164,7 @@ func (a *ProviderAuthorization) RenewCredentials(ctx context.Context, now time.T
 	if !force && a.CanUseToken(now, skew) {
 		return nil
 	}
-	if strings.TrimSpace(a.RefreshTokenCiphertext) == "" || (!a.RefreshTokenExpiresAt.IsZero() && !a.RefreshTokenExpiresAt.After(now)) {
+	if !a.refreshUsable(now) {
 		_ = a.MarkReconnectRequired("authorization_reconnect_required", "refresh credential unavailable", now)
 		return ErrAuthorizationReconnectRequired
 	}
@@ -80,11 +176,7 @@ func (a *ProviderAuthorization) RenewCredentials(ctx context.Context, now time.T
 		return err
 	}
 	if result.ReconnectRequired {
-		code := result.ReasonCode
-		if code == "" {
-			code = "authorization_reconnect_required"
-		}
-		_ = a.MarkReconnectRequired(code, "provider requires reauthorization", now)
+		_ = a.MarkReconnectRequired(reasonOr(result.ReasonCode), "provider requires reauthorization", now)
 		return ErrAuthorizationReconnectRequired
 	}
 	c := result.Credentials

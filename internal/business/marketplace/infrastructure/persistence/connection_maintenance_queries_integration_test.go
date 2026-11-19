@@ -53,7 +53,7 @@ func testConnectionMaintenancePages(t *testing.T, db *xorm.Engine) {
 	require.Equal(t, authorizationIDs, collect(byAccount))
 	// Execute the real revocation webhook use case with these adapters and
 	// verify durable aggregate changes on both sides of the page boundary.
-	connections := application.NewPersonalConnections(authRepo, authQueries, nil, nil, nil)
+	connections := application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: authRepo, Queries: authQueries})
 	require.NoError(t, connections.HandleGitHubAppAuthorizationRevoked(ctx, application.GitHubAppAuthorizationRevokedInput{ProviderAccountID: "event-account"}))
 	for _, id := range authorizationIDs {
 		auth, err := authRepo.Get(ctx, id)

@@ -119,7 +119,7 @@ func (c *Connector) Validate() error {
 		if c.Required || c.ProviderAccessBinding == nil {
 			return ErrInvalidConnector
 		}
-		return validateProviderConfiguration(c.Configuration, *c.ProviderAccessBinding, ProviderCompatibility{Configuration: c.Configuration, Binding: *c.ProviderAccessBinding})
+		return validateProviderBinding(c.Configuration, *c.ProviderAccessBinding)
 	case WorkIdentityAuthentication:
 		return validateWorkIdentityConfiguration(c.Required, c.ProviderAccessBinding, c.Configuration)
 	default:

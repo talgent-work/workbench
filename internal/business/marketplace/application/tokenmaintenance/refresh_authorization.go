@@ -2,29 +2,25 @@ package tokenmaintenance
 
 import (
 	"context"
-	"strings"
-
-	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 )
 
-type RefreshAuthorizationProcessor struct {
-	github application.GitHubPort
+// AuthorizationRenewal renews one authorization near its credential expiry,
+// whichever Provider declares it.
+type AuthorizationRenewal interface {
+	RenewAuthorization(ctx context.Context, authorizationID string) error
 }
 
-func NewRefreshAuthorizationProcessor(github application.GitHubPort) *RefreshAuthorizationProcessor {
-	return &RefreshAuthorizationProcessor{github: github}
+type RefreshAuthorizationProcessor struct {
+	renewal AuthorizationRenewal
+}
+
+func NewRefreshAuthorizationProcessor(renewal AuthorizationRenewal) *RefreshAuthorizationProcessor {
+	return &RefreshAuthorizationProcessor{renewal: renewal}
 }
 
 func (p *RefreshAuthorizationProcessor) Process(ctx context.Context, payload RefreshAuthorizationPayload) error {
 	if err := payload.Validate(); err != nil {
 		return err
 	}
-	reason := strings.TrimSpace(payload.Reason)
-	if reason == "" {
-		reason = ReasonAccessExpiring
-	}
-	if err := p.github.RefreshProviderAuthorization(ctx, payload.AuthorizationID, reason); err != nil {
-		return err
-	}
-	return nil
+	return p.renewal.RenewAuthorization(ctx, payload.AuthorizationID)
 }

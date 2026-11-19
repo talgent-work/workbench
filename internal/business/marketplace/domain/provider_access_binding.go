@@ -6,16 +6,33 @@ import "reflect"
 // authorization reference. Identity is selected by the consuming Work.
 type ProviderAccessBinding struct{ Provider, Target, Authentication string }
 
-// ProviderCompatibility is supplied by Marketplace's protocol adapter. The
-// aggregate accepts only a binding for the exact configuration it verified.
+// ProviderCompatibility is the evidence that a configuration suits its
+// Provider binding: the declared Provider target the binding names, for exactly
+// the configuration it was checked against.
 type ProviderCompatibility struct {
 	Configuration MCPConfiguration
 	Binding       ProviderAccessBinding
+	Target        ProviderTarget
 }
 
-func validateProviderConfiguration(configuration MCPConfiguration, binding ProviderAccessBinding, evidence ProviderCompatibility) error {
-	if !reflect.DeepEqual(configuration, evidence.Configuration) || binding != evidence.Binding || binding.Provider == "" || binding.Target == "" || binding.Authentication != "credential_proxy" {
+// validateProviderBinding checks what a retained Provider Connector keeps
+// coherent by itself.
+func validateProviderBinding(configuration MCPConfiguration, binding ProviderAccessBinding) error {
+	if binding.Provider == "" || binding.Target == "" || binding.Authentication != "credential_proxy" {
 		return ErrInvalidConnector
 	}
 	return configuration.Validate()
+}
+
+// validateProviderConfiguration admits a Provider Connector only with evidence
+// for exactly its configuration: a remote server's address lies within the
+// declared target, so the credential reaches no other host.
+func validateProviderConfiguration(configuration MCPConfiguration, binding ProviderAccessBinding, evidence ProviderCompatibility) error {
+	if !reflect.DeepEqual(configuration, evidence.Configuration) || binding != evidence.Binding || evidence.Target.Name != binding.Target {
+		return ErrInvalidConnector
+	}
+	if configuration.Type == "http" && !evidence.Target.Contains(configuration.URL) {
+		return ErrCredentialTargetInapplicable
+	}
+	return validateProviderBinding(configuration, binding)
 }

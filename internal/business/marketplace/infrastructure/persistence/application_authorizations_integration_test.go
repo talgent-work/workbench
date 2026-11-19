@@ -70,7 +70,7 @@ func TestAnApplicationOwnerManagesTheApplicationsAuthorizations(t *testing.T) {
 	require.NoError(t, repo.Save(ctx, own))
 	port := &cancellationAuthority{entered: make(chan struct{}, 2), confirm: make(chan bool, 2)}
 	store := application.NewCredentialChangeDispatch(repo, &credentialChanges{}, slog.Default())
-	connections := application.NewPersonalConnections(store, NewProviderAuthorizationQueries(db), testGitHub{access: unobservableAccess{}, authority: &reauthorizationAuthority{}}, nil, port)
+	connections := declaredConnections(store, NewProviderAuthorizationQueries(db), testGitHub{access: unobservableAccess{}, authority: &reauthorizationAuthority{}}, nil, port)
 	app := application.NewApplication(nil, nil, nil, NewProviderAuthorizationQueries(db), connections, application.ConnectorRepositories{})
 	owners := application.NewOwners(knownApplications{
 		desk:    {ID: desk, OwnerID: owner},

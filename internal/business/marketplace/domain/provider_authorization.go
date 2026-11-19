@@ -8,10 +8,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type Provider string
-
-const ProviderGitHub Provider = "github"
-
 type ProviderAuthorizationStatus string
 
 const (
@@ -115,7 +111,7 @@ func (a *ProviderAuthorization) CanUseToken(now time.Time, skew time.Duration) b
 func (a *ProviderAuthorization) ApplyRefreshSuccess(accessCiphertext, refreshCiphertext string, accessExpiresAt, refreshExpiresAt, now time.Time) error {
 	accessCiphertext = strings.TrimSpace(accessCiphertext)
 	refreshCiphertext = strings.TrimSpace(refreshCiphertext)
-	if accessCiphertext == "" || refreshCiphertext == "" || accessExpiresAt.IsZero() || refreshExpiresAt.IsZero() {
+	if accessCiphertext == "" || refreshCiphertext == "" {
 		return ErrInvalidRequiredField
 	}
 	if !a.IsActive() {
@@ -154,6 +150,7 @@ func (a *ProviderAuthorization) MarkRevoked(now time.Time) error {
 		a.recordCredentialChange(CredentialRevoked, now)
 	}
 	a.Status = ProviderAuthorizationRevoked
+	a.TargetCredentials = nil
 	a.LastCheckedAt = now
 	a.LastFailureCode = ""
 	a.LastFailureDetail = ""
@@ -195,6 +192,8 @@ func (a *ProviderAuthorization) ReplaceWith(input ProviderAuthorizationInput) er
 	candidate.RefreshTokenCiphertext = strings.TrimSpace(input.RefreshTokenCiphertext)
 	candidate.ExpiresAt = input.ExpiresAt.UTC()
 	candidate.RefreshTokenExpiresAt = input.RefreshTokenExpiresAt.UTC()
+	// Target credentials derive from the replaced authorization.
+	candidate.TargetCredentials = nil
 	if candidate.ProviderAccountID != a.ProviderAccountID {
 		// Another external account reaches other resources; its scope is
 		// observed afresh rather than inherited.
@@ -213,7 +212,7 @@ func (a *ProviderAuthorization) ReplaceWith(input ProviderAuthorizationInput) er
 }
 
 func validProvider(provider Provider) bool {
-	return provider == ProviderGitHub
+	return providerName.MatchString(string(provider))
 }
 
 func validProviderAuthorizationStatus(status ProviderAuthorizationStatus) bool {

@@ -17,7 +17,7 @@ func TestRepositoryCredentialSupplierRefusesUntrustedTargetBeforeDecryption(t *t
 		t.Run(target, func(t *testing.T) {
 			cipher := &passthroughTokenCipher{}
 			auth := mustAuthorization(t, "owner", "token", time.Now().Add(time.Hour))
-			supplier, err := NewCredentialSupplier(enabledConfig(t), &fakeAuthorizationRepository{authorization: auth}, cipher)
+			supplier, err := testSupplier(t, enabledConfig(t), &fakeAuthorizationRepository{authorization: auth}, cipher)
 			require.NoError(t, err)
 			material, err := supplier.SupplyRepositoryCredential(t.Context(), "owner", auth.ID, target)
 			require.ErrorIs(t, err, domain.ErrCredentialTargetInapplicable)
@@ -43,7 +43,7 @@ func TestRepositoryCredentialSupplierRefusesForeignOrUnusableAuthorization(t *te
 			case "reconnect required":
 				require.NoError(t, auth.MarkReconnectRequired("expired", "expired", time.Now()))
 			}
-			supplier, err := NewCredentialSupplier(enabledConfig(t), &fakeAuthorizationRepository{authorization: auth}, cipher)
+			supplier, err := testSupplier(t, enabledConfig(t), &fakeAuthorizationRepository{authorization: auth}, cipher)
 			require.NoError(t, err)
 			material, err := supplier.SupplyRepositoryCredential(t.Context(), owner, reference, "https://github.com/acme/project.git")
 			require.Error(t, err)

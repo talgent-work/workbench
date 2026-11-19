@@ -48,6 +48,9 @@ type ServiceCredentialRequest struct{ OwnerID, AuthorizationID, Target string }
 type ServiceCredentialMaterial struct {
 	Token     string
 	ExpiresAt time.Time
+	// Hosts are the target's declared host patterns, the only hosts the
+	// credential is added to.
+	Hosts []string
 }
 
 // ServiceCredentialUnavailable is Marketplace's refusal to supply a credential.

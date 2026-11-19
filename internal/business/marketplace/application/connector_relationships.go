@@ -13,6 +13,9 @@ import (
 // governs credential supply nor merges the declaration into the Connector.
 type ConnectorRelationship struct {
 	ConnectorID, ConnectorName, Provider, Target, Authentication, Status, Reason string
+	// TargetCredentialsExpire reports whether the declared Provider's target
+	// credentials expire.
+	TargetCredentialsExpire bool
 }
 
 // connectorEndpoints indexes Offered catalog entries by Claude Code endpoint
@@ -51,6 +54,7 @@ func (index connectorEndpoints) relate(definition []byte) ConnectorRelationship 
 		relationship := ConnectorRelationship{ConnectorID: connector.ID, ConnectorName: connector.Name, Authentication: connector.Authentication, Status: "supported"}
 		if provider := connector.Provider; provider != nil {
 			relationship.Provider, relationship.Target, relationship.Authentication = provider.Provider, provider.Target, provider.Authentication
+			relationship.TargetCredentialsExpire = provider.TargetCredentialsExpire
 		}
 		return relationship
 	default:

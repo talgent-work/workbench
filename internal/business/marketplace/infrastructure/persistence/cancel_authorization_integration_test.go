@@ -24,6 +24,7 @@ import (
 	"github.com/talgent-work/workbench/internal/pkg/authn"
 	"github.com/talgent-work/workbench/internal/testsupport/connecttest"
 	"github.com/talgent-work/workbench/internal/testsupport/mysqltest"
+	"github.com/talgent-work/workbench/internal/testsupport/providertest"
 	"xorm.io/xorm"
 )
 
@@ -57,6 +58,27 @@ func (p *cancellationAuthority) Renew(context.Context, domain.CredentialSet) (do
 	}}, nil
 }
 
+func (p *cancellationAuthority) ObtainTargetCredential(context.Context, domain.CredentialSet, domain.ProviderTarget) (domain.TargetCredentialOutcome, error) {
+	return domain.TargetCredentialOutcome{}, domain.ErrCredentialTargetInapplicable
+}
+
+// declaredConnections are the Marketplace's personal connections in a
+// deployment declaring github, reached through the given GitHub parts and
+// authorization port.
+func declaredConnections(store application.AuthorizationStore, queries *ProviderAuthorizationQueries, github application.GitHubPort, tasks application.MarketplaceTaskQueuePort, port domain.ProviderAuthorizationPort) *application.PersonalConnections {
+	providers := providertest.Declarations{providertest.GitHub()}
+	return application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: store, Queries: queries, Providers: providers, GitHub: github, Tasks: tasks,
+		Credentials: application.NewProviderCredentials(store, providers, onePort{port}, nil, application.CredentialTiming{})})
+}
+
+type onePort struct {
+	port domain.ProviderAuthorizationPort
+}
+
+func (o onePort) For(domain.Provider) (domain.ProviderAuthorizationPort, bool) {
+	return o.port, o.port != nil
+}
+
 func (p *cancellationAuthority) Revoke(ctx context.Context, _ domain.CredentialSet) (bool, error) {
 	p.revocations.Add(1)
 	p.entered <- struct{}{}
@@ -87,7 +109,7 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	reauthorization := &reauthorizationAuthority{}
 	changes := &credentialChanges{}
 	store := application.NewCredentialChangeDispatch(repo, changes, slog.Default())
-	connections := application.NewPersonalConnections(store, NewProviderAuthorizationQueries(db), testGitHub{access: unobservableAccess{}, authority: reauthorization}, nil, port)
+	connections := declaredConnections(store, NewProviderAuthorizationQueries(db), testGitHub{access: unobservableAccess{}, authority: reauthorization}, nil, port)
 	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
@@ -186,9 +208,10 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	require.True(t, state.State.CanListRepositories)
 	reconnected, err = repo.Get(ctx, auth.ID)
 	require.NoError(t, err)
-	credentials, err := reconnected.SupplyValidCredentials(ctx, domain.CredentialRequirement{OwnerID: owner, Provider: domain.ProviderGitHub, Applicable: true}, time.Now(), 0, port)
+	api, _ := providertest.GitHub().Target("github-api")
+	credentials, err := reconnected.SupplyValidCredentials(ctx, domain.CredentialRequirement{OwnerID: owner, Provider: domain.ProviderGitHub, Target: api, Derivation: domain.SharedTargetCredential}, time.Now(), 0, port)
 	require.NoError(t, err)
-	require.Equal(t, "replacement-protected-access", credentials.AccessTokenCiphertext)
+	require.Equal(t, "replacement-protected-access", credentials.TokenCiphertext)
 
 	// A crashed worker is fenced until expiry; the current version can then
 	// acquire again, while stale versions cannot overwrite the recovered grant.

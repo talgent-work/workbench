@@ -28,7 +28,7 @@ type Catalog struct {
 	enabled        bool
 	app            *appClient
 	authorizations application.AuthorizationStore
-	cipher         TokenCipher
+	fresh          FreshCredentials
 	now            func() time.Time
 
 	// The App's slug and the permissions connecting requests change only when
@@ -38,7 +38,7 @@ type Catalog struct {
 	requested     []application.ProviderPermission
 }
 
-func NewCatalog(cfg Config, authorizations application.AuthorizationStore, cipher TokenCipher) (*Catalog, error) {
+func NewCatalog(cfg Config, authorizations application.AuthorizationStore, fresh FreshCredentials) (*Catalog, error) {
 	app, err := newAppClient(cfg)
 	if err != nil {
 		return nil, err
@@ -51,11 +51,11 @@ func NewCatalog(cfg Config, authorizations application.AuthorizationStore, ciphe
 		if authorizations == nil {
 			return nil, fmt.Errorf("github catalog requires provider authorization repository")
 		}
-		if cipher == nil {
-			return nil, fmt.Errorf("github catalog requires token cipher")
+		if fresh == nil {
+			return nil, fmt.Errorf("github catalog requires fresh credentials")
 		}
 	}
-	return &Catalog{enabled: enabled, app: app, authorizations: authorizations, cipher: cipher, now: time.Now}, nil
+	return &Catalog{enabled: enabled, app: app, authorizations: authorizations, fresh: fresh, now: time.Now}, nil
 }
 
 // ObserveAccess lists the user's installations with their repositories, the
@@ -213,8 +213,7 @@ func (c *Catalog) userSession(ctx context.Context, ownerID string) (*userSession
 	if err != nil {
 		return nil, err
 	}
-	manager := newFreshUserTokenManager(c.app.cfg, c.app.http, c.authorizations, c.cipher, c.now)
-	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{AuthorizationID: auth.ID, OwnerID: ownerID, Provider: domain.ProviderGitHub, Reason: "catalog"})
+	auth, token, err := c.fresh.Fresh(ctx, auth.ID, ownerID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -251,8 +250,7 @@ func (s *userSession) refresh(ctx context.Context, rejected string) (string, err
 	if s.token != rejected {
 		return s.token, nil
 	}
-	manager := newFreshUserTokenManager(s.catalog.app.cfg, s.catalog.app.http, s.catalog.authorizations, s.catalog.cipher, s.catalog.now)
-	auth, token, err := manager.EnsureFreshUserToken(ctx, EnsureFreshUserTokenInput{AuthorizationID: s.auth.ID, OwnerID: s.auth.OwnerID, Provider: domain.ProviderGitHub, ForceRefresh: true, Reason: "github_api_401"})
+	auth, token, err := s.catalog.fresh.Fresh(ctx, s.auth.ID, s.auth.OwnerID, true)
 	if err != nil {
 		return "", err
 	}

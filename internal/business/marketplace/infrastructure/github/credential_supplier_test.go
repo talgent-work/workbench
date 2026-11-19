@@ -10,6 +10,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/credentialcipher"
 )
 
 func TestCredentialSupplier_SupplyRepositoryCredentialUsesUserAuthorizationExpiry(t *testing.T) {
@@ -18,7 +19,7 @@ func TestCredentialSupplier_SupplyRepositoryCredentialUsesUserAuthorizationExpir
 		authorization: mustAuthorization(t, "user-1", "ciphertext", expiresAt),
 	}
 	cipher := &passthroughTokenCipher{}
-	issuer, err := NewCredentialSupplier(enabledConfig(t), repo, cipher)
+	issuer, err := testSupplier(t, enabledConfig(t), repo, cipher)
 	if err != nil {
 		t.Fatalf("NewCredentialSupplier: %v", err)
 	}
@@ -74,12 +75,12 @@ func TestCredentialSupplier_SupplyRepositoryCredentialRefreshesExpiredUserAuthor
 
 	cfg := enabledConfig(t)
 	cfg.WebBaseURL = server.URL
-	issuer, err := NewCredentialSupplier(cfg, repo, cipher)
+	clock := func() time.Time { return now }
+	issuer, err := NewCredentialSupplier(cfg, testFreshOver(cfg, repo, cipher, clock, server.Client()))
 	if err != nil {
 		t.Fatalf("NewCredentialSupplier: %v", err)
 	}
-	issuer.now = func() time.Time { return now }
-	issuer.http = server.Client()
+	issuer.now = clock
 
 	issued, err := issuer.SupplyRepositoryCredential(context.Background(), "user-1", "authorization-1", server.URL+"/acme/api.git")
 	if err != nil {
@@ -115,7 +116,7 @@ func TestCredentialSupplier_SupplyRepositoryCredentialRefreshesExpiredUserAuthor
 func TestCredentialSupplier_SupplyRepositoryCredentialRejectsExpiredAuthorizationWithoutRefreshToken(t *testing.T) {
 	auth := mustAuthorization(t, "user-1", "ciphertext", time.Now().UTC().Add(-time.Minute))
 	auth.RefreshTokenCiphertext = ""
-	issuer, err := NewCredentialSupplier(enabledConfig(t), &fakeAuthorizationRepository{authorization: auth}, &passthroughTokenCipher{})
+	issuer, err := testSupplier(t, enabledConfig(t), &fakeAuthorizationRepository{authorization: auth}, &passthroughTokenCipher{})
 	if err != nil {
 		t.Fatalf("NewCredentialSupplier: %v", err)
 	}
@@ -135,7 +136,7 @@ func TestCredentialSupplier_SupplyRepositoryCredentialUsesUserOAuthAccessToken(t
 	repo := &fakeAuthorizationRepository{
 		authorization: mustAuthorization(t, "user-1", ciphertext, time.Now().UTC().Add(time.Hour)),
 	}
-	issuer, err := NewCredentialSupplier(enabledConfig(t), repo, cipher)
+	issuer, err := testSupplier(t, enabledConfig(t), repo, cipher)
 	if err != nil {
 		t.Fatalf("NewCredentialSupplier: %v", err)
 	}
@@ -153,7 +154,7 @@ func TestCredentialSupplier_SupplyRepositoryCredentialUsesUserOAuthAccessToken(t
 }
 
 func TestCredentialSupplier_MapsMissingAuthorizationToProviderUnavailable(t *testing.T) {
-	issuer, err := NewCredentialSupplier(enabledConfig(t), &fakeAuthorizationRepository{err: domain.ErrProviderNotFound}, &passthroughTokenCipher{})
+	issuer, err := testSupplier(t, enabledConfig(t), &fakeAuthorizationRepository{err: domain.ErrProviderNotFound}, &passthroughTokenCipher{})
 	if err != nil {
 		t.Fatalf("NewCredentialSupplier: %v", err)
 	}
@@ -186,23 +187,59 @@ func TestTokenCipherRoundTripWithVersionPrefix(t *testing.T) {
 
 func mustTokenCipher(t *testing.T) TokenCipher {
 	t.Helper()
-	cipher, err := NewTokenCipher(Config{TokenCipherKey: "test cipher key"})
+	cipher, err := credentialcipher.New("test cipher key")
 	if err != nil {
-		t.Fatalf("NewTokenCipher: %v", err)
+		t.Fatalf("credentialcipher.New: %v", err)
 	}
 	return cipher
 }
 
-func TestTokenCipherCanConstructWhenGitHubProviderDisabled(t *testing.T) {
-	if _, err := NewTokenCipher(Config{Enabled: "false"}); err != nil {
-		t.Fatalf("NewTokenCipher disabled: %v", err)
-	}
+// testFresh is the Marketplace's credential keeper over GitHub's port, as
+// the adapter receives it in a deployment that declares github.
+func testFresh(cfg Config, repo application.AuthorizationStore, cipher TokenCipher, now func() time.Time) FreshCredentials {
+	return testFreshOver(cfg, repo, cipher, now, http.DefaultClient)
+}
+
+func testFreshOver(cfg Config, repo application.AuthorizationStore, cipher TokenCipher, now func() time.Time, client *http.Client) FreshCredentials {
+	port := &AuthorizationPort{cfg: cfg, http: client, cipher: cipher, now: now}
+	return application.NewProviderCredentials(repo, gitHubDeclared{}, gitHubPorts{port}, cipher,
+		application.CredentialTiming{RequestSkew: 5 * time.Minute, LeaseDuration: 30 * time.Second, Clock: now})
+}
+
+func testCatalog(t *testing.T, cfg Config, repo application.AuthorizationStore, cipher TokenCipher) (*Catalog, error) {
+	t.Helper()
+	var catalog *Catalog
+	fresh := testFresh(cfg, repo, cipher, func() time.Time { return catalog.now() })
+	catalog, err := NewCatalog(cfg, repo, fresh)
+	return catalog, err
+}
+
+func testSupplier(t *testing.T, cfg Config, repo application.AuthorizationStore, cipher TokenCipher) (*CredentialSupplier, error) {
+	t.Helper()
+	var supplier *CredentialSupplier
+	fresh := testFresh(cfg, repo, cipher, func() time.Time { return supplier.now() })
+	supplier, err := NewCredentialSupplier(cfg, fresh)
+	return supplier, err
+}
+
+type gitHubDeclared struct{}
+
+func (gitHubDeclared) Providers() []domain.ProviderDeclaration { return nil }
+
+func (gitHubDeclared) Provider(domain.Provider) (domain.ProviderDeclaration, bool) {
+	return domain.ProviderDeclaration{}, false
+}
+
+type gitHubPorts struct{ port *AuthorizationPort }
+
+func (p gitHubPorts) For(provider domain.Provider) (domain.ProviderAuthorizationPort, bool) {
+	return p.port, provider == domain.ProviderGitHub
 }
 
 func enabledConfig(t *testing.T) Config {
 	t.Helper()
 	return Config{
-		Enabled:           "true",
+		Enabled:           true,
 		AppID:             "123",
 		AppSlug:           "talgent",
 		PrivateKeyPEM:     testPrivateKeyPEM(t),

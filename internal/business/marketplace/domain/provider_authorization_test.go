@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
@@ -131,16 +132,15 @@ func TestProviderAuthorization_ApplyRefreshSuccessClearsLeaseAndFailures(t *test
 	}
 }
 
-// GitHub refresh-token rotation returns a new refresh-token expiry; accepting a
-// refresh success without that expiry would keep recovery policy ambiguous.
-func TestProviderAuthorization_ApplyRefreshSuccessRequiresRefreshTokenExpiry(t *testing.T) {
+// A Provider may issue a refresh credential that does not expire: renewal
+// then declares no refresh expiry, and the credential stays usable.
+func TestProviderAuthorization_RefreshCredentialMayDeclareNoExpiry(t *testing.T) {
 	now := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
 	auth := providerAuthorizationForTest(t, now.Add(time.Minute))
 
-	err := auth.ApplyRefreshSuccess("new-access", "new-refresh", now.Add(8*time.Hour), time.Time{}, now)
-	if err != domain.ErrInvalidRequiredField {
-		t.Fatalf("ApplyRefreshSuccess err=%v, want %v", err, domain.ErrInvalidRequiredField)
-	}
+	require.NoError(t, auth.ApplyRefreshSuccess("new-access", "new-refresh", now.Add(8*time.Hour), time.Time{}, now))
+	require.True(t, auth.RefreshTokenExpiresAt.IsZero())
+	require.ErrorIs(t, auth.ApplyRefreshSuccess("new-access", "", now.Add(8*time.Hour), time.Time{}, now), domain.ErrInvalidRequiredField)
 }
 
 // Durable terminal provider states are the recovery contract surfaced to Work

@@ -12,7 +12,7 @@ TASK_SLOTS="${TALGENT_TEST_MYSQL_SLOTS:-8}"
 [[ "$TASK_SLOTS" =~ ^[1-9][0-9]?$ ]] || exit 2
 TASK_NETWORK="${TASK_NAME}-network"
 cleanup() {
-  docker rm -f "$TASK_NAME" "${TASK_NAME}-redis" "${TASK_NAME}-clickhouse" "${TASK_NAME}-nats" "${TASK_NAME}-collector" >/dev/null 2>&1 || true
+  docker rm -f "$TASK_NAME" "${TASK_NAME}-redis" "${TASK_NAME}-clickhouse" "${TASK_NAME}-nats" "${TASK_NAME}-collector" "${TASK_NAME}-keycloak" >/dev/null 2>&1 || true
   docker network rm "$TASK_NETWORK" >/dev/null 2>&1 || true
   rm -f "${TMPDIR:-/tmp}/talgent-test-${TASK_TOKEN}-"*.lock
 }
@@ -38,10 +38,13 @@ TASK_MYSQL_IMAGE=mysql:8.0
 TASK_REDIS_IMAGE=redis:7.2-alpine
 TASK_CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:26.2
 TASK_COLLECTOR_IMAGE=otel/opentelemetry-collector-contrib:0.150.1
+# The authorization server of the declared OAuth Provider in Marketplace's
+# credential supply tests; resource indicators (RFC 8707) are a feature flag.
+TASK_KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.8.2
 # Pull the missing images at once, then start every container before waiting
 # on any: a fresh CI runner otherwise downloads and boots them one by one.
 TASK_PULLS=()
-for image in "$TASK_MYSQL_IMAGE" "$TASK_REDIS_IMAGE" "$TASK_CLICKHOUSE_IMAGE" "$TASK_COLLECTOR_IMAGE"; do
+for image in "$TASK_MYSQL_IMAGE" "$TASK_REDIS_IMAGE" "$TASK_CLICKHOUSE_IMAGE" "$TASK_COLLECTOR_IMAGE" "$TASK_KEYCLOAK_IMAGE"; do
   if ! docker image inspect "$image" >/dev/null 2>&1; then
     docker pull -q "$image" >/dev/null &
     TASK_PULLS+=("$!")
@@ -56,6 +59,9 @@ docker run -d --name "$TASK_NAME" --network "$TASK_NETWORK" --memory 2g --cpus 2
 docker run -d --name "${TASK_NAME}-redis" --network "$TASK_NETWORK" --memory 128m --cpus 1 -p 127.0.0.1::6379 "$TASK_REDIS_IMAGE" >/dev/null
 docker run -d --name "${TASK_NAME}-clickhouse" --network "$TASK_NETWORK" --network-alias clickhouse --memory 1536m --cpus 2 \
   -p 127.0.0.1::9000 -e CLICKHOUSE_SKIP_USER_SETUP=1 "$TASK_CLICKHOUSE_IMAGE" >/dev/null
+docker run -d --name "${TASK_NAME}-keycloak" --network "$TASK_NETWORK" --memory 1g --cpus 2 -p 127.0.0.1::8080 \
+  --mount "type=bind,src=${TASK_ROOT}/scripts/test/keycloak/realm.json,dst=/opt/keycloak/data/import/realm.json,readonly" \
+  "$TASK_KEYCLOAK_IMAGE" start-dev --import-realm --features=resource-indicators >/dev/null
 # The entrypoint temporary socket server can answer SQL before network startup.
 for attempt in $(seq 1 90); do
   if docker exec -e MYSQL_PWD=fixture-only "$TASK_NAME" mysql --protocol=TCP -h127.0.0.1 -uroot -Nse 'SELECT 1' >/dev/null 2>&1; then break; fi
@@ -92,6 +98,12 @@ export TALGENT_TEST_NATS_URL="nats://$(docker port "${TASK_NAME}-nats" 4222/tcp)
 export TALGENT_TEST_CLICKHOUSE_DSN="clickhouse://default:@$(docker port "${TASK_NAME}-clickhouse" 9000/tcp)/talgent_trace"
 export TALGENT_TEST_OTLP_URL="http://$(docker port "${TASK_NAME}-collector" 4318/tcp)"
 export TALGENT_TEST_CLICKHOUSE_CONTAINER="${TASK_NAME}-clickhouse"
+export TALGENT_TEST_KEYCLOAK_URL="http://$(docker port "${TASK_NAME}-keycloak" 8080/tcp)/realms/talgent-test"
+for attempt in $(seq 1 90); do
+  if curl -sf "${TALGENT_TEST_KEYCLOAK_URL}/.well-known/openid-configuration" >/dev/null 2>&1; then break; fi
+  if [[ "$attempt" == 90 ]]; then echo 'test Keycloak did not become ready' >&2; exit 1; fi
+  sleep 1
+done
 (cd "$TASK_ROOT" && go run ./scripts/test/prepare)
-echo "Shared test middleware ready: MySQL (${TASK_SLOTS} initialized reusable schemas), Redis, NATS, ClickHouse, Collector" >&2
+echo "Shared test middleware ready: MySQL (${TASK_SLOTS} initialized reusable schemas), Redis, NATS, ClickHouse, Collector, Keycloak" >&2
 "$@"

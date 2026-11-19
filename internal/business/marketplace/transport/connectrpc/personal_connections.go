@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"connectrpc.com/connect/v2"
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
@@ -130,11 +129,38 @@ func providerAccessMessage(view application.ProviderAccessView) *marketplacepubl
 	return response
 }
 
+// connectionProvider names the requested Provider, GitHub when none; the
+// application refuses one the deployment does not declare.
 func connectionProvider(value string) (domain.Provider, error) {
-	switch strings.TrimSpace(value) {
-	case "", string(domain.ProviderGitHub):
+	switch value = strings.TrimSpace(value); value {
+	case "":
 		return domain.ProviderGitHub, nil
 	default:
-		return "", connect.NewError(connect.CodeInvalidArgument, application.ErrProviderUnavailable.Error()).WithCause(application.ErrProviderUnavailable)
+		return domain.Provider(value), nil
 	}
+}
+
+func (h *Handler) ListProviders(ctx context.Context, req *marketplacepublicv1.ListProvidersRequest) (*marketplacepublicv1.ListProvidersResponse, error) {
+	actor, err := h.owner(ctx, req.GetApplicationId())
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
+	providers, err := h.application.ListProviders(ctx, actor)
+	if err != nil {
+		return nil, mapConnectionError(err)
+	}
+	response := &marketplacepublicv1.ListProvidersResponse{}
+	for _, provider := range providers {
+		message := &marketplacepublicv1.DeclaredProvider{Name: string(provider.Name), DisplayName: provider.DisplayName,
+			TargetCredentialsExpire: provider.CredentialsExpire, ObservesAccessScope: provider.ObservesAccessScope, Connection: connectionStateMessage(provider.Connection)}
+		for _, target := range provider.Targets {
+			hosts := make([]string, len(target.Hosts))
+			for i, host := range target.Hosts {
+				hosts[i] = string(host)
+			}
+			message.Targets = append(message.Targets, &marketplacepublicv1.ProviderTarget{Name: target.Name, Hosts: hosts})
+		}
+		response.Providers = append(response.Providers, message)
+	}
+	return response, nil
 }

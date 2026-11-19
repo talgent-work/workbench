@@ -135,8 +135,8 @@ func TestRefreshAuthorizationProcessor_PropagatesProviderRetryability(t *testing
 			if !errors.Is(err, tc.err) {
 				t.Fatalf("Process err=%v, want wrapped/same %v", err, tc.err)
 			}
-			if refresher.authorizationID != "auth-1" || refresher.reason != ReasonAccessExpiring {
-				t.Fatalf("refresh call id=%q reason=%q", refresher.authorizationID, refresher.reason)
+			if refresher.authorizationID != "auth-1" {
+				t.Fatalf("refresh call id=%q", refresher.authorizationID)
 			}
 		})
 	}
@@ -248,16 +248,12 @@ func newMaintenanceTaskRegistry(t *testing.T) *componenttaskqueue.SchemaRegistry
 }
 
 type fakeAuthorizationRefresher struct {
-	// Only renewal is exercised; GitHub's other operations stay unimplemented.
-	application.GitHubPort
 	authorizationID string
-	reason          string
 	err             error
 }
 
-func (r *fakeAuthorizationRefresher) RefreshProviderAuthorization(_ context.Context, authorizationID string, reason string) error {
+func (r *fakeAuthorizationRefresher) RenewAuthorization(_ context.Context, authorizationID string) error {
 	r.authorizationID = authorizationID
-	r.reason = reason
 	return r.err
 }
 

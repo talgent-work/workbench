@@ -18,6 +18,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/credentialcipher"
 )
 
 const providerAuthorizationStateTTL = 15 * time.Minute
@@ -121,7 +122,7 @@ func (a *Authorizer) CompleteProviderAuthorization(ctx context.Context, input ap
 }
 
 func (a *Authorizer) oauthAuthorizationURL(state, redirectURI string) string {
-	u, _ := url.Parse(a.cfg.webBaseURL() + "/login/oauth/authorize")
+	u, _ := url.Parse(a.cfg.authorizationEndpoint())
 	q := u.Query()
 	q.Set("client_id", strings.TrimSpace(a.cfg.OAuthClientID))
 	q.Set("state", state)
@@ -143,7 +144,7 @@ func (a *Authorizer) exchangeCode(ctx context.Context, code, redirectURI string)
 	if strings.TrimSpace(redirectURI) != "" {
 		form.Set("redirect_uri", strings.TrimSpace(redirectURI))
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.webBaseURL()+"/login/oauth/access_token", bytes.NewBufferString(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.tokenEndpoint(), bytes.NewBufferString(form.Encode()))
 	if err != nil {
 		return oauthTokenResponse{}, err
 	}
@@ -224,7 +225,7 @@ func (a *Authorizer) verifyState(raw string) (providerAuthorizationState, error)
 }
 
 func (a *Authorizer) sign(payload string) string {
-	mac := hmac.New(sha256.New, deriveCipherKey(a.cfg.TokenCipherKey))
+	mac := hmac.New(sha256.New, credentialcipher.DeriveKey(a.cfg.TokenCipherKey))
 	_, _ = mac.Write([]byte(payload))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }

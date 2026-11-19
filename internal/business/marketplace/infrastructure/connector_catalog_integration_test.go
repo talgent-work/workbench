@@ -7,7 +7,10 @@ import (
 	"testing"
 
 	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
+	marketplaceprivatev1 "github.com/talgent-work/contracts/gen/go/marketplace/private/v1"
+	"github.com/talgent-work/contracts/gen/go/marketplace/private/v1/marketplaceprivatev1connect"
 	marketplacepublicv1 "github.com/talgent-work/contracts/gen/go/marketplace/public/v1"
 	agentcommand "github.com/talgent-work/workbench/internal/business/agent/application/command"
 	agentdomain "github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -15,6 +18,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure"
+	"github.com/talgent-work/workbench/internal/pkg/authn"
 )
 
 // publishCatalog publishes the deployed catalog: the required Talgent
@@ -24,9 +28,7 @@ func publishCatalog(t *testing.T, app *application.Application) {
 	require.NoError(t, app.PublishConnector(t.Context(), application.ConnectorPublication{Name: "talgent", Configuration: domain.MCPConfiguration{Type: "http", URL: "http://connector.talgent.svc.cluster.local/mcp"}}))
 	configuration := domain.MCPConfiguration{Command: "github-mcp-server", Arguments: []string{"stdio"}, Environment: map[string]string{"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"}}
 	binding := domain.ProviderAccessBinding{Provider: "github", Target: "github-api", Authentication: "credential_proxy"}
-	evidence, err := infrastructure.VerifyProviderConfiguration(configuration, binding)
-	require.NoError(t, err)
-	require.NoError(t, app.PublishConnector(t.Context(), application.ConnectorPublication{Name: "github", Configuration: configuration, Provider: &binding, Evidence: &evidence,
+	require.NoError(t, app.PublishConnector(t.Context(), application.ConnectorPublication{Name: "github", Configuration: configuration, Provider: &binding,
 		Presentation: domain.CatalogPresentation{Description: "GitHub repositories, issues and pull requests", Category: "development"}}))
 }
 
@@ -120,4 +122,36 @@ func connectorNames(snapshot agentdomain.CapabilitySnapshot) []string {
 		names = append(names, connector.Name)
 	}
 	return names
+}
+
+// The Connector Provider Relationship reports whether each Connector's
+// declared Provider's target credentials expire, and a Provider Connector is
+// registered only at an address within its Provider's target.
+func TestConnectorProviderRelationshipReportsTargetCredentialExpiry(t *testing.T) {
+	_, _, app, _, server := setup(t)
+	ctx := t.Context()
+	publishCatalog(t, app)
+	wiki := domain.MCPConfiguration{Type: "http", URL: "https://wiki.example.com/mcp"}
+	binding := domain.ProviderAccessBinding{Provider: "example-sso", Target: "example-wiki", Authentication: "credential_proxy"}
+	require.NoError(t, app.PublishConnector(ctx, application.ConnectorPublication{Name: "wiki", Configuration: wiki, Provider: &binding}))
+	outside := domain.MCPConfiguration{Type: "http", URL: "https://wiki.attacker.test/mcp"}
+	require.ErrorIs(t, app.PublishConnector(ctx, application.ConnectorPublication{Name: "leaky", Configuration: outside, Provider: &binding}), domain.ErrCredentialTargetInapplicable,
+		"credentials never reach a host outside the Provider's targets")
+	undeclared := domain.ProviderAccessBinding{Provider: "example-sso", Target: "github-api", Authentication: "credential_proxy"}
+	require.Error(t, app.PublishConnector(ctx, application.ConnectorPublication{Name: "stray", Configuration: wiki, Provider: &undeclared}))
+
+	selection := marketplaceprivatev1connect.NewSelectionServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
+	request, info := connect.NewClientContext(ctx)
+	info.RequestHeader().Set("Authorization", "Bearer selection-test")
+	info.RequestHeader().Set(authn.HeaderServiceID, "agent")
+	info.RequestHeader().Set(authn.HeaderDelegatedUserID, "e6c7e756-007d-5236-a492-7f4b9be0b2e8")
+	read, err := selection.ReadConnectorSelection(request, &marketplaceprivatev1.ReadConnectorSelectionRequest{})
+	require.NoError(t, err)
+	expire := map[string]bool{}
+	for _, connector := range read.Connectors {
+		if connector.Provider != "" {
+			expire[connector.Name] = connector.ProviderTargetCredentialsExpire
+		}
+	}
+	require.Equal(t, map[string]bool{"github": true, "wiki": false}, expire)
 }

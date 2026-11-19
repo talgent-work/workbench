@@ -24,11 +24,8 @@ func (c *Client) ListPersonalAuthorizations(ctx context.Context, owner string) (
 	}
 	var facts []domain.PersonalAuthorization
 	for _, record := range response.GetAuthorizations() {
-		// GitHub is the only supported service. Unknown providers cannot
-		// establish a service relationship merely from their names.
-		if record.GetProvider() != "github" {
-			continue
-		}
+		// Marketplace names the targets each declared Provider serves; a
+		// Provider it no longer declares serves none.
 		facts = append(facts, domain.PersonalAuthorization{
 			OwnerID: owner, AuthorizationID: record.GetId(), Provider: record.GetProvider(), Service: record.GetProvider(), SupportedTargets: record.GetSupportedTargets(),
 		})
