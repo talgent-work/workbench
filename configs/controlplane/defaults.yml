@@ -48,8 +48,31 @@ marketplace:
   # Application Owner to the Application's installations and authorizations.
   account:
     address: "${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}"
+  # Every Provider an owner can authorize, keyed by name: its OAuth client,
+  # the targets one authorization serves with the hosts each reaches, whether
+  # target credentials are shared or per target by resource indicator, and
+  # whether they expire. github reaches GitHub through its App; every other
+  # Provider authorizes through the authorization code flow with PKCE.
+  providers:
+    github:
+      enabled: "${GITHUB_SCM_ENABLED:false}"
+      display-name: GitHub
+      client-id: "${GITHUB_OAUTH_CLIENT_ID:}"
+      client-secret: "${GITHUB_OAUTH_CLIENT_SECRET:}"
+      authorization-endpoint: "${GITHUB_WEB_BASE_URL:https://github.com}/login/oauth/authorize"
+      token-endpoint: "${GITHUB_WEB_BASE_URL:https://github.com}/login/oauth/access_token"
+      target-credentials: shared
+      target-credentials-expire: true
+      targets:
+        github-api:
+          hosts: [api.github.com]
+        github-remote-mcp:
+          hosts: [api.githubcopilot.com]
   connections:
     credential-token: "${AGENT_CONTROL_TOKEN:}"
+    # Encrypts every Provider credential at rest; required once a Provider is
+    # declared.
+    credential-cipher-key: "${PROVIDER_CREDENTIAL_CIPHER_KEY:}"
     maintenance:
       enabled: true
       scan-interval: "5m"
@@ -58,17 +81,15 @@ marketplace:
       refresh-lease-duration: "30s"
       batch-size: 100
       queue-name: "scm-maintenance"
+    # The GitHub App behind the github Provider: repository access and
+    # access-scope observation.
     github:
-      enabled: "${GITHUB_SCM_ENABLED:false}"
       app-id: "${GITHUB_APP_ID:}"
       app-slug: "${GITHUB_APP_SLUG:}"
       private-key-pem: "${GITHUB_APP_PRIVATE_KEY_PEM:}"
-      oauth-client-id: "${GITHUB_OAUTH_CLIENT_ID:}"
-      oauth-client-secret: "${GITHUB_OAUTH_CLIENT_SECRET:}"
       web-base-url: "${GITHUB_WEB_BASE_URL:https://github.com}"
       api-base-url: "${GITHUB_API_BASE_URL:https://api.github.com}"
       api-version: "${GITHUB_API_VERSION:2026-03-10}"
-      token-cipher-key: "${GITHUB_SCM_TOKEN_CIPHER_KEY:}"
       webhook-secret: "${GITHUB_WEBHOOK_SECRET:}"
 agent-marketplace:
   credential-token: "${AGENT_CONTROL_TOKEN:}"

@@ -81,3 +81,17 @@ func TestWithoutDirectAPIAccessWorksLoadNoAPIPlugin(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"talgent"}, builtIns.Required(domain.WorkCaller{Kind: domain.CallerKindPerson, ID: "p"}))
 }
+
+// The base declares github, left out until GITHUB_SCM_ENABLED turns it on,
+// at the GitHub host the deployment names.
+func TestTheBaseDeclaresGitHubAtTheNamedHost(t *testing.T) {
+	github := loadDefaults(t).Marketplace.Providers["github"]
+	require.Equal(t, "false", github.Enabled)
+	t.Setenv("GITHUB_SCM_ENABLED", "true")
+	t.Setenv("GITHUB_WEB_BASE_URL", "https://github.example.com")
+	github = loadDefaults(t).Marketplace.Providers["github"]
+	require.Equal(t, "true", github.Enabled)
+	require.Equal(t, "https://github.example.com/login/oauth/access_token", github.TokenEndpoint)
+	require.Equal(t, []string{"api.github.com"}, github.Targets["github-api"].Hosts)
+	require.Equal(t, "shared", github.TargetCredentials)
+}
