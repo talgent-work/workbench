@@ -16,6 +16,8 @@ import (
 	agentcommand "github.com/talgent-work/workbench/internal/business/agent/application/command"
 	agentdomain "github.com/talgent-work/workbench/internal/business/agent/domain"
 	"github.com/talgent-work/workbench/internal/business/agent/infrastructure/plugincatalog"
+	"github.com/talgent-work/workbench/internal/business/marketplace/application"
+	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
 const (
@@ -236,4 +238,30 @@ func TestAnApplicationOwnsConnectorsAsAPersonDoes(t *testing.T) {
 	seen, err := client.GetConnector(as(ctx, anotherPerson), &marketplacepublicv1.GetConnectorRequest{ConnectorId: added.ConnectorId})
 	require.NoError(t, err)
 	require.Equal(t, "Application "+ownedApplication[len(ownedApplication)-2:], seen.Connector.Publisher.GetDisplayName())
+}
+
+// A deployment may later declare a Platform Connector under a name an owner
+// already holds: it is established beside the owner's, and a Work that would
+// select both is refused by the name, as for any two of one name.
+func TestAPlatformConnectorIsEstablishedBesideAnOwnersOfItsName(t *testing.T) {
+	_, _, app, client, server := setup(t)
+	ctx := t.Context()
+	publishCatalog(t, app)
+	mine := addDocs(t, client, as(ctx, alice), "docs")
+	_, err := client.InstallConnector(as(ctx, alice), &marketplacepublicv1.InstallConnectorRequest{ConnectorId: mine.ConnectorId})
+	require.NoError(t, err)
+
+	binding := domain.ProviderAccessBinding{Provider: "github", Target: "github-api", Authentication: "credential_proxy"}
+	require.NoError(t, app.EstablishPlatformConnector(ctx, application.PlatformConnector{Name: "docs", Provider: &binding,
+		Configuration: domain.MCPConfiguration{Command: "github-mcp-server", Arguments: []string{"stdio"}, Environment: map[string]string{"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"}}}))
+	require.ElementsMatch(t, []string{"docs/", "docs/Person 01", "github/", "talgent/"}, catalogNames(t, client, as(ctx, alice)))
+	platform := platformConnectorID(t, client, "docs")
+	require.NotEqual(t, mine.ConnectorId, platform)
+
+	agent, err := plugincatalog.NewClient(server.Client(), plugincatalog.Config{Address: server.URL, CredentialToken: "selection-test"})
+	require.NoError(t, err)
+	_, err = agentcommand.ResolveStartupCapabilities(ctx, agent, alice, agentdomain.StartupCapabilityInput{})
+	require.NoError(t, err, "only the owner's installed one is a default")
+	_, err = agentcommand.ResolveStartupCapabilities(ctx, agent, alice, agentdomain.StartupCapabilityInput{ConnectorChoices: []agentdomain.ConnectorChoice{{ConnectorID: platform, Include: true}}})
+	require.ErrorIs(t, err, agentdomain.ErrDuplicateConnectorName)
 }
