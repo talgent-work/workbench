@@ -50,7 +50,7 @@ const (
 // expire.
 func enterpriseIdP() domain.ProviderDeclaration {
 	return domain.ProviderDeclaration{Name: "example-sso", DisplayName: "Example SSO", Derivation: domain.SharedTargetCredential, CredentialsExpire: true,
-		Targets: []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"}}}}
+		Targets: []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"}, Paths: []domain.PathPattern{"/api/*"}, Methods: []string{"GET", "POST"}}}}
 }
 
 type keycloakFixture struct {
@@ -136,6 +136,9 @@ func TestKeycloakAuthorizationServesEveryDeclaredTarget(t *testing.T) {
 	tickets := f.supplyTarget(t, owner, id, "tickets")
 	require.Equal(t, []string{"docs.example.com"}, docs.Hosts)
 	require.Equal(t, []string{"*.tickets.example.com"}, tickets.Hosts)
+	require.Empty(t, docs.Paths, "a target declaring no paths or methods takes them all")
+	require.Equal(t, []string{"/api/*"}, tickets.Paths, "a target's credential travels with its declared paths and methods")
+	require.Equal(t, []string{"GET", "POST"}, tickets.Methods)
 	require.NotZero(t, docs.ExpiresAtUnixMs, "the declared expiry is the credential's own")
 	for _, supplied := range []*marketplaceprivatev1.SupplyServiceCredentialResponse{docs, tickets} {
 		for _, service := range []string{"service-docs", "service-tickets"} {

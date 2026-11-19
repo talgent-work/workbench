@@ -37,7 +37,7 @@ type workConnectorCredential struct {
 // that it is unavailable while the rest of the Work goes on, when its target
 // has no supplied credential, when that credential declares no expiry (only a
 // short-lived target credential reaches the machine), or when its address does
-// not lie on its target's declared hosts.
+// not lie on its target's declared hosts and paths.
 func connectorCredentials(capabilities domain.CapabilitySnapshot, services []command.ServiceAccessMaterial, access []command.ServiceAccessStatus) ([]workConnectorCredential, []command.ServiceAccessStatus) {
 	var credentials []workConnectorCredential
 	access = slices.Clone(access)
@@ -60,8 +60,8 @@ func connectorCredentials(capabilities domain.CapabilitySnapshot, services []com
 		switch {
 		case material.Token == "" || material.ExpiresAt.IsZero():
 			refuse(connector, "not_short_lived")
-		case err != nil || !onTargetHosts(address.Hostname(), material.Hosts):
-			refuse(connector, "outside_target_hosts")
+		case err != nil || !onTargetHosts(address.Hostname(), material.Hosts) || !onTargetPaths(address.EscapedPath(), material.Paths):
+			refuse(connector, "outside_target")
 		default:
 			credentials = append(credentials, workConnectorCredential{ID: connector.ID, URL: connector.URL, Token: material.Token})
 		}
@@ -83,6 +83,21 @@ func onTargetHosts(host string, declared []string) bool {
 			return strings.HasSuffix(host, "."+domainName)
 		}
 		return host == pattern
+	})
+}
+
+// onTargetPaths reports whether a request path lies on one of a target's
+// declared path patterns: an exact path, or one ending in `/*` for every path
+// beneath it. A target declaring none takes every path.
+func onTargetPaths(requestPath string, declared []string) bool {
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	return len(declared) == 0 || slices.ContainsFunc(declared, func(pattern string) bool {
+		if prefix, beneath := strings.CutSuffix(pattern, "/*"); beneath {
+			return strings.HasPrefix(requestPath, prefix+"/")
+		}
+		return requestPath == pattern
 	})
 }
 

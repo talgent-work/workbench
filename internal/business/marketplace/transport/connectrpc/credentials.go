@@ -44,7 +44,8 @@ func (h *CredentialHandler) SupplyServiceCredential(ctx context.Context, request
 	if err != nil {
 		return nil, credentialSupplyError(ctx, err)
 	}
-	return &marketplaceprivatev1.SupplyServiceCredentialResponse{Token: material.Token, ExpiresAtUnixMs: expiryMillis(material.ExpiresAt), Hosts: material.Hosts}, nil
+	return &marketplaceprivatev1.SupplyServiceCredentialResponse{Token: material.Token, ExpiresAtUnixMs: expiryMillis(material.ExpiresAt), Hosts: material.Hosts,
+		Paths: material.Paths, Methods: material.Methods}, nil
 }
 
 // CredentialStatusHeader states, in the refusal's response metadata, why a

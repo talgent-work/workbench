@@ -9,4 +9,8 @@ type ServiceMaterial struct {
 	// Hosts are the target's declared host patterns, the only hosts the
 	// credential may be added to.
 	Hosts []string
+	// Paths and Methods narrow the credential on those hosts; empty means
+	// every path or method.
+	Paths   []string
+	Methods []string
 }

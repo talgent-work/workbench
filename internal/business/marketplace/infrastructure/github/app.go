@@ -108,6 +108,12 @@ func (c Config) apiBaseURL() string {
 	return defaultAPIBaseURL
 }
 
+// AtGitHubDotCom reports whether the App lives on GitHub.com rather than a
+// GitHub Enterprise Server.
+func (c Config) AtGitHubDotCom() bool {
+	return c.webBaseURL() == "https://github.com" && c.apiBaseURL() == defaultAPIBaseURL
+}
+
 func (c Config) webBaseURL() string {
 	if baseURL := strings.TrimSpace(c.WebBaseURL); baseURL != "" {
 		return strings.TrimRight(baseURL, "/")

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -123,18 +124,20 @@ func credentialPlan(model modelCredential, repositories []command.RepositoryAcce
 		if err != nil {
 			return sdk.CredentialVaultCreateRequest{}, err
 		}
+		paths, methods, err := targetRequests(service.Paths, service.Methods)
+		if err != nil {
+			return sdk.CredentialVaultCreateRequest{}, err
+		}
 		// Marketplace keeps target names unique across Providers.
 		name := service.Target
 		if seen[name] {
 			return sdk.CredentialVaultCreateRequest{}, errors.New("agent: duplicate service credential target")
 		}
 		seen[name] = true
-		// The credential reaches only its target's declared hosts. Match the
-		// official Vault's explicit default methods and path glob: omitted
-		// lists are expanded on write, which would otherwise fail our exact
-		// binding readback before the Work can start.
+		// The credential reaches only its target's declared hosts, paths and
+		// methods.
 		result.Bindings = append(result.Bindings, sdk.CredentialBinding{Name: name,
-			Match: sdk.CredentialMatch{Schemes: []sdk.CredentialScheme{sdk.CredentialSchemeHTTPS}, Hosts: hosts, Methods: []string{"GET", "POST", "PUT", "PATCH", "DELETE"}, Paths: []string{"/*"}},
+			Match: sdk.CredentialMatch{Schemes: []sdk.CredentialScheme{sdk.CredentialSchemeHTTPS}, Hosts: hosts, Methods: methods, Paths: paths},
 			Auth:  sdk.CredentialAuth{Type: sdk.CredentialAuthBearer, Credential: name}})
 		result.Credentials = append(result.Credentials, sdk.Credential{Name: name, Source: sdk.InlineCredentialSource{Value: service.Token}})
 	}
@@ -158,6 +161,39 @@ func targetHosts(declared []string) ([]string, error) {
 		hosts[i] = host
 	}
 	return hosts, nil
+}
+
+// vaultMethods and vaultPaths are the official Vault's explicit defaults: a
+// target declaring no methods or paths takes them, since omitted lists are
+// expanded on write, which would otherwise fail our exact binding readback
+// before the Work can start.
+var (
+	vaultMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+	vaultPaths   = []string{"/*"}
+)
+
+// targetRequests admits the path patterns and methods Marketplace declared
+// for a target: an exact path or one ending in `/*`, and methods among the
+// Vault's.
+func targetRequests(paths, methods []string) ([]string, []string, error) {
+	if len(paths) == 0 {
+		paths = vaultPaths
+	}
+	if len(methods) == 0 {
+		methods = vaultMethods
+	}
+	for _, p := range paths {
+		exact := strings.TrimSuffix(p, "/*")
+		if !strings.HasPrefix(p, "/") || strings.ContainsAny(exact, "*?%#\\ ") {
+			return nil, nil, errors.New("agent: invalid service credential target path")
+		}
+	}
+	for _, method := range methods {
+		if !slices.Contains(vaultMethods, method) {
+			return nil, nil, errors.New("agent: invalid service credential target method")
+		}
+	}
+	return slices.Clone(paths), slices.Clone(methods), nil
 }
 
 // expired reports whether a declared expiry has passed; a credential that

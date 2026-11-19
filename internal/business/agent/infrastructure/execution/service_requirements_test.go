@@ -13,8 +13,9 @@ import (
 )
 
 // The Credential Proxy adds a Provider credential only to requests for its
-// target's declared hosts: every binding names those hosts and nothing else.
-func TestCredentialPlanConfinesServicesToTheirTargetHosts(t *testing.T) {
+// target's declared hosts, paths and methods: every binding names those and
+// nothing else, and a target declaring no paths or methods takes them all.
+func TestCredentialPlanConfinesServicesToTheirTargets(t *testing.T) {
 	model := modelCredential{Endpoint: "https://model.example/anthropic", Key: "model-token"}
 	now := time.Now()
 	base, err := credentialPlan(model, nil, nil, now)
@@ -23,25 +24,39 @@ func TestCredentialPlanConfinesServicesToTheirTargetHosts(t *testing.T) {
 	material := func(target string, hosts ...string) command.ServiceCredentialMaterial {
 		return command.ServiceCredentialMaterial{Token: "token-for-" + target, ExpiresAt: now.Add(time.Hour), Hosts: hosts}
 	}
+	remoteMCP := material("github-remote-mcp", "api.githubcopilot.com")
+	remoteMCP.Paths, remoteMCP.Methods = []string{"/mcp", "/mcp/"}, []string{"GET", "POST", "DELETE"}
 	services := []command.ServiceAccessMaterial{
 		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-api"}, AuthorizationID: "auth", ServiceCredentialMaterial: material("github-api", "api.github.com")},
-		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-remote-mcp"}, AuthorizationID: "auth", ServiceCredentialMaterial: material("github-remote-mcp", "api.githubcopilot.com")},
+		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-remote-mcp"}, AuthorizationID: "auth", ServiceCredentialMaterial: remoteMCP},
 		{ServiceRequirement: command.ServiceRequirement{Provider: "example-sso", Service: "example-sso", Target: "example-docs"}, AuthorizationID: "sso", ServiceCredentialMaterial: material("example-docs", "docs.example.com", "*.svc.example.com")},
 	}
 	plan, err := credentialPlan(model, nil, services, now)
 	require.NoError(t, err)
 	require.Len(t, plan.Credentials, 4)
 	require.Len(t, plan.Bindings, 4)
-	hosts := map[string][]string{}
+	matches := map[string]sdk.CredentialMatch{}
 	for _, binding := range plan.Bindings[1:] {
-		hosts[binding.Auth.Credential] = binding.Match.Hosts
-		require.Equal(t, []sdk.CredentialScheme{sdk.CredentialSchemeHTTPS}, binding.Match.Schemes)
+		matches[binding.Auth.Credential] = binding.Match
 	}
-	require.Equal(t, map[string][]string{"github-api": {"api.github.com"}, "github-remote-mcp": {"api.githubcopilot.com"}, "example-docs": {"docs.example.com", "*.svc.example.com"}}, hosts)
+	every := []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+	https := []sdk.CredentialScheme{sdk.CredentialSchemeHTTPS}
+	require.Equal(t, map[string]sdk.CredentialMatch{
+		"github-api":        {Schemes: https, Hosts: []string{"api.github.com"}, Methods: every, Paths: []string{"/*"}},
+		"github-remote-mcp": {Schemes: https, Hosts: []string{"api.githubcopilot.com"}, Methods: []string{"GET", "POST", "DELETE"}, Paths: []string{"/mcp", "/mcp/"}},
+		"example-docs":      {Schemes: https, Hosts: []string{"docs.example.com", "*.svc.example.com"}, Methods: every, Paths: []string{"/*"}},
+	}, matches)
 
 	for name, declared := range map[string][]string{"no hosts": nil, "bare wildcard": {"*"}, "top-level wildcard": {"*.com"}, "address": {"https://api.github.com"}} {
 		changed := append([]command.ServiceAccessMaterial(nil), services...)
 		changed[0].Hosts = declared
+		_, err = credentialPlan(model, nil, changed, now)
+		require.Error(t, err, name)
+	}
+	for name, declared := range map[string]command.ServiceCredentialMaterial{"relative path": {Paths: []string{"mcp"}}, "inner wildcard": {Paths: []string{"/*/mcp"}},
+		"unknown method": {Methods: []string{"CONNECT"}}} {
+		changed := append([]command.ServiceAccessMaterial(nil), services...)
+		changed[1].Paths, changed[1].Methods = declared.Paths, declared.Methods
 		_, err = credentialPlan(model, nil, changed, now)
 		require.Error(t, err, name)
 	}

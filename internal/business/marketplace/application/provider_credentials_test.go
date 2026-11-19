@@ -57,7 +57,8 @@ func (plainCipher) Encrypt(plaintext string) (string, error)  { return plaintext
 func (plainCipher) Decrypt(ciphertext string) (string, error) { return ciphertext, nil }
 
 func enterpriseDeclaration(derivation domain.TargetCredentialDerivation) domain.ProviderDeclaration {
-	targets := []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"}}}
+	targets := []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"},
+		Paths: []domain.PathPattern{"/api/*"}, Methods: []string{"GET", "POST"}}}
 	return domain.ProviderDeclaration{Name: "example-sso", DisplayName: "Example SSO", Derivation: derivation, CredentialsExpire: true, Targets: targets}
 }
 
@@ -76,13 +77,15 @@ func credentialsFixture(t *testing.T, derivation domain.TargetCredentialDerivati
 }
 
 // A shared target takes the authorization's own credential, reaches only its
-// declared hosts and asks the Provider only once it nears expiry.
+// declared hosts, paths and methods and asks the Provider only once it nears expiry.
 func TestProviderCredentials_SharedTargetsServeTheAuthorizationsCredential(t *testing.T) {
 	credentials, _, port, id := credentialsFixture(t, domain.SharedTargetCredential, time.Hour)
 	material, err := credentials.SupplyTarget(t.Context(), "user-1", id, "tickets")
 	require.NoError(t, err)
 	require.Equal(t, "initial-access", material.Token)
 	require.Equal(t, []string{"*.tickets.example.com"}, material.Hosts)
+	require.Equal(t, []string{"/api/*"}, material.Paths)
+	require.Equal(t, []string{"GET", "POST"}, material.Methods)
 	require.Empty(t, port.renewals)
 
 	near, _, _, nearID := credentialsFixture(t, domain.SharedTargetCredential, 2*time.Minute)

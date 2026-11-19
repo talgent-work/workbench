@@ -109,14 +109,16 @@ func TestInstalledConnectorLifecycle(t *testing.T) {
 // A remote Provider Connector reaches only an address within its declared
 // target, so the credential the proxy adds goes nowhere else.
 func TestRemoteProviderConnectorLiesWithinItsTarget(t *testing.T) {
-	mcp := domain.ProviderTarget{Name: "github-remote-mcp", Hosts: []domain.HostPattern{"api.githubcopilot.com"}}
+	mcp := domain.ProviderTarget{Name: "github-remote-mcp", Hosts: []domain.HostPattern{"api.githubcopilot.com"}, Paths: []domain.PathPattern{"/mcp", "/mcp/"}}
 	binding := domain.ProviderAccessBinding{Provider: "github", Target: mcp.Name, Authentication: "credential_proxy"}
 	inside := domain.MCPConfiguration{Type: "http", URL: "https://api.githubcopilot.com/mcp/"}
 	_, err := domain.EstablishPlatformProviderConnector("github-remote", inside, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: inside, Binding: binding, Target: mcp})
 	require.NoError(t, err)
-	outside := domain.MCPConfiguration{Type: "http", URL: "https://mcp.example.com/mcp"}
-	_, err = domain.EstablishPlatformProviderConnector("github-remote", outside, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: outside, Binding: binding, Target: mcp})
-	require.ErrorIs(t, err, domain.ErrCredentialTargetInapplicable)
+	for _, address := range []string{"https://mcp.example.com/mcp", "https://api.githubcopilot.com/mcp/x/repos", "https://api.githubcopilot.com/"} {
+		outside := domain.MCPConfiguration{Type: "http", URL: address}
+		_, err = domain.EstablishPlatformProviderConnector("github-remote", outside, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: outside, Binding: binding, Target: mcp})
+		require.ErrorIs(t, err, domain.ErrCredentialTargetInapplicable, "%s lies outside the target's hosts and paths", address)
+	}
 	other := domain.ProviderCompatibility{Configuration: inside, Binding: binding, Target: githubAPI}
 	_, err = domain.EstablishPlatformProviderConnector("github-remote", inside, binding, domain.CatalogPresentation{}, other)
 	require.ErrorIs(t, err, domain.ErrInvalidConnector, "evidence names the binding's target")
@@ -130,4 +132,29 @@ func TestRemoteProviderConnectorLiesWithinItsTarget(t *testing.T) {
 	proxied := domain.MCPConfiguration{Type: "http", URL: "https://api.githubcopilot.com/mcp/", Headers: map[string]string{"Authorization": "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"}}
 	_, err = domain.EstablishPlatformProviderConnector("github-remote", proxied, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: proxied, Binding: binding, Target: mcp})
 	require.NoError(t, err)
+}
+
+// A target narrows its credential to the paths and methods it declares; a
+// path pattern is exact or ends in `/*`, and methods are the proxy's.
+func TestProviderTargetPathsAndMethods(t *testing.T) {
+	declare := func(target domain.ProviderTarget) error {
+		return domain.ProviderDeclaration{Name: "example", DisplayName: "Example", Derivation: domain.SharedTargetCredential, Targets: []domain.ProviderTarget{target}}.Validate()
+	}
+	docs := domain.ProviderTarget{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}, Paths: []domain.PathPattern{"/api/*", "/mcp"}, Methods: []string{"GET", "POST"}}
+	require.NoError(t, declare(docs))
+	require.True(t, docs.Contains("https://docs.example.com/api/v1/pages"))
+	require.True(t, docs.Contains("https://docs.example.com/mcp"))
+	require.False(t, docs.Contains("https://docs.example.com/api"), "a `/*` pattern covers what lies beneath it")
+	require.False(t, docs.Contains("https://docs.example.com/mcp/"))
+	require.True(t, domain.ProviderTarget{Name: "any", Hosts: docs.Hosts}.Contains("https://docs.example.com/anything"), "no paths means every path")
+	for name, target := range map[string]domain.ProviderTarget{
+		"relative path":    {Name: "docs", Hosts: docs.Hosts, Paths: []domain.PathPattern{"api/*"}},
+		"inner wildcard":   {Name: "docs", Hosts: docs.Hosts, Paths: []domain.PathPattern{"/*/mcp"}},
+		"unclean path":     {Name: "docs", Hosts: docs.Hosts, Paths: []domain.PathPattern{"/api/../admin"}},
+		"unknown method":   {Name: "docs", Hosts: docs.Hosts, Methods: []string{"CONNECT"}},
+		"lowercase method": {Name: "docs", Hosts: docs.Hosts, Methods: []string{"get"}},
+		"repeated method":  {Name: "docs", Hosts: docs.Hosts, Methods: []string{"GET", "GET"}},
+	} {
+		require.ErrorIs(t, declare(target), domain.ErrInvalidProviderDeclaration, name)
+	}
 }

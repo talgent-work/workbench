@@ -12,7 +12,47 @@ func gitHubProviderConfig() ProviderConfig {
 	return ProviderConfig{DisplayName: "GitHub", ClientID: "client", ClientSecret: "secret",
 		AuthorizationEndpoint: "https://github.com/login/oauth/authorize", TokenEndpoint: "https://github.com/login/oauth/access_token",
 		TargetCredentials: "shared", TargetCredentialsExpire: true,
-		Targets: map[string]TargetConfig{"github-api": {Hosts: []string{"api.github.com"}}, "github-remote-mcp": {Hosts: []string{"api.githubcopilot.com"}}}}
+		Targets: map[string]TargetConfig{"github-api": {Hosts: []string{"api.github.com"}},
+			"github-remote-mcp": {Hosts: []string{"api.githubcopilot.com"}, Paths: []string{"/mcp", "/mcp/"}, Methods: []string{"get", "POST", "DELETE"}}}}
+}
+
+// A target's declared paths and methods narrow its credential; GitHub's
+// remote MCP credential reaches only the MCP endpoint, as it always has.
+func TestProviderTargetsNarrowToDeclaredPathsAndMethods(t *testing.T) {
+	catalog, err := newProviderCatalog(Config{Providers: map[string]ProviderConfig{"github": gitHubProviderConfig()}})
+	require.NoError(t, err)
+	declaration, _ := catalog.Provider(domain.ProviderGitHub)
+	api, _ := declaration.Target("github-api")
+	require.Empty(t, api.Paths, "the REST API credential reaches every path and method")
+	require.Empty(t, api.Methods)
+	remote, _ := declaration.Target("github-remote-mcp")
+	require.Equal(t, []domain.PathPattern{"/mcp", "/mcp/"}, remote.Paths)
+	require.Equal(t, []string{"GET", "POST", "DELETE"}, remote.Methods, "methods are read case-insensitively")
+
+	for name, target := range map[string]TargetConfig{"relative path": {Hosts: []string{"api.githubcopilot.com"}, Paths: []string{"mcp"}},
+		"unknown method": {Hosts: []string{"api.githubcopilot.com"}, Methods: []string{"TRACE"}}} {
+		config := gitHubProviderConfig()
+		config.Targets = map[string]TargetConfig{"github-remote-mcp": target}
+		_, err = newProviderCatalog(Config{Providers: map[string]ProviderConfig{"github": config}})
+		require.Error(t, err, name)
+	}
+}
+
+// A GitHub Enterprise Server's token never reaches GitHub.com: with the App
+// elsewhere, the github Provider's targets name the server's own hosts.
+func TestAGitHubEnterpriseServerKeepsItsCredentialsOffGitHubDotCom(t *testing.T) {
+	catalog, err := newProviderCatalog(Config{Providers: map[string]ProviderConfig{"github": gitHubProviderConfig()}})
+	require.NoError(t, err)
+	enterprise := scmgithub.Config{AppID: "1", WebBaseURL: "https://github.example.com", APIBaseURL: "https://github.example.com/api/v3"}
+	_, err = catalog.gitHub(enterprise, "key")
+	require.ErrorContains(t, err, "not on GitHub.com")
+
+	own := gitHubProviderConfig()
+	own.Targets = map[string]TargetConfig{"github-api": {Hosts: []string{"github.example.com"}, Paths: []string{"/api/v3/*"}}}
+	catalog, err = newProviderCatalog(Config{Providers: map[string]ProviderConfig{"github": own}})
+	require.NoError(t, err)
+	_, err = catalog.gitHub(enterprise, "key")
+	require.NoError(t, err)
 }
 
 func gitHubConnector() PlatformConnectorEntry {
@@ -79,7 +119,8 @@ func TestProviderDeclarationsComeFromConfiguration(t *testing.T) {
 	require.True(t, declarations[1].ObservesAccessScope)
 	require.Len(t, catalog.oauthClients(), 1)
 	require.Equal(t, map[string]string{"docs": "https://docs.example.com", "tickets": "https://tickets.example.com"}, catalog.oauthClients()[0].TargetResources, "the adapter requests each target's credential for its resource")
-	github := catalog.gitHub(scmgithub.Config{AppID: "1"}, "key")
+	github, err := catalog.gitHub(scmgithub.Config{AppID: "1"}, "key")
+	require.NoError(t, err)
 	require.True(t, github.Enabled, "the GitHub App adapter is enabled exactly when github is declared")
 	require.Equal(t, "client", github.OAuthClientID)
 

@@ -61,4 +61,6 @@ func TestTheDeployedConfigurationIsValid(t *testing.T) {
 	var option Option
 	require.NoError(t, loader.Load(&option, loader.WithConfigurationDirectory(directory, "defaults"), loader.WithConfigFilePrefix("controlplane")))
 	require.NoError(t, validateOption(option))
+	require.Equal(t, loadDefaults(t).Marketplace.Providers["github"].Targets, option.Marketplace.Providers["github"].Targets,
+		"the deployment binds GitHub's credentials exactly as the base does")
 }

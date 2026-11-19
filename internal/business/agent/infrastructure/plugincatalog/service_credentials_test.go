@@ -28,6 +28,9 @@ func TestServiceSupplyTransmitsRetainedAuthorityAndCurrentMaterial(t *testing.T)
 			require.NoError(t, err)
 			require.Equal(t, token, material.Token)
 			require.Equal(t, time.UnixMilli(1900000000000), material.ExpiresAt)
+			require.Equal(t, []string{"api.githubcopilot.com"}, material.Hosts)
+			require.Equal(t, []string{"/mcp", "/mcp/"}, material.Paths, "the target's declared paths and methods travel with its credential")
+			require.Equal(t, []string{"GET", "POST", "DELETE"}, material.Methods)
 			require.Equal(t, input, service.received)
 		}
 	}
@@ -93,5 +96,6 @@ func (s *serviceSupplyEndpoint) SupplyServiceCredential(ctx context.Context, r *
 		}
 		return nil, s.failure
 	}
-	return &marketplaceprivatev1.SupplyServiceCredentialResponse{Token: s.token, ExpiresAtUnixMs: 1900000000000}, nil
+	return &marketplaceprivatev1.SupplyServiceCredentialResponse{Token: s.token, ExpiresAtUnixMs: 1900000000000,
+		Hosts: []string{"api.githubcopilot.com"}, Paths: []string{"/mcp", "/mcp/"}, Methods: []string{"GET", "POST", "DELETE"}}, nil
 }
