@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/samber/oops"
@@ -16,8 +17,11 @@ import (
 // them outside every Work root and gives them to no process: its local proxy
 // adds them to the requests a run's processes send through it.
 // The Work's Identity Token, with the Space Token of the Work's input source,
-// goes only to the platform Connector and the entry on its origin, and a Model Configuration key only to its Model Template's
-// endpoint. Provider credentials stay with the platform.
+// goes only to the platform Connector and the entry on its origin, a Model
+// Configuration key only to its Model Template's endpoint, and a Provider
+// Connector's short-lived target credential only to that Connector's address
+// (managed_connectors.go). Every other Provider credential, refresh tokens
+// included, stays with the platform.
 
 // workCredentials is the body of the relay's credentials PUT. It carries
 // secrets: it is never logged, recorded or echoed.
@@ -30,6 +34,9 @@ type workCredentials struct {
 	// API is where the Work's entry calls go, with its Identity Token; absent
 	// when Managed Works have no direct API.
 	API *workAPICredential `json:"api,omitempty"`
+	// Connectors are the Work's Provider Connectors whose target credential
+	// was supplied, each reached at its own proxy address.
+	Connectors []workConnectorCredential `json:"connectors,omitempty"`
 }
 
 type workAPICredential struct {
@@ -80,7 +87,9 @@ func (m *ManagedComputers) forgetCredentials(ctx context.Context, spec managedSp
 // start was realized with; otherwise a redelivery keeps the key already
 // delivered, and a first delivery fails, since without a model the proxy
 // would leave the Harness on the machine's own Claude login. Every delivery
-// carries the Work's new Identity Token (Work token issuance). The Work's
+// carries the Work's new Identity Token (Work token issuance) and its Provider
+// Connectors' current target credentials, falling due again at the earliest
+// expiry Marketplace declared for them (Credential holding). The Work's
 // inputs, which Talgent Computer takes only from the platform origin
 // delivered here, are synced as their own step once it is delivered.
 func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
@@ -98,7 +107,15 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord,
 	if supply.IdentityToken.Token == "" {
 		return deliveredCredentials{}, errors.New("agent: the Work's Identity Token is required to reach the platform")
 	}
-	credentials := workCredentials{Gateway: workGatewayCredential{URL: m.machines.gateway, IdentityToken: supply.IdentityToken.Token, SpaceToken: supply.SpaceToken}}
+	// A redelivery keeps the target credentials the machine holds rather
+	// than drop those Marketplace could not supply for now.
+	temporary := slices.ContainsFunc(supply.Access, func(s command.ServiceAccessStatus) bool { return s.Temporary })
+	if temporary && redelivery {
+		return deliveredCredentials{}, errSupplyTemporarilyUnavailable
+	}
+	connectors, access := connectorCredentials(admitted.Capabilities, supply.Services, supply.Access)
+	credentials := workCredentials{Gateway: workGatewayCredential{URL: m.machines.gateway, IdentityToken: supply.IdentityToken.Token, SpaceToken: supply.SpaceToken},
+		Connectors: connectors}
 	if spec.APIAddress != "" {
 		credentials.API = &workAPICredential{URL: spec.APIAddress}
 	}
@@ -122,7 +139,11 @@ func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord,
 		defer cancel()
 		return deliveredCredentials{}, errors.Join(err, m.machines.forgetCredentials(clear, spec, record.SessionID))
 	}
-	return deliveredCredentials{ModelDigest: model.digest()}, nil
+	delivered := deliveredCredentials{Statuses: access, ExpiresAt: earliestExpiry(nil, supply.Services), ModelDigest: model.digest()}
+	if temporary {
+		delivered.ExpiresAt = staleDelivery
+	}
+	return delivered, nil
 }
 
 // withdraw makes the machine forget the Work's credentials. A machine not

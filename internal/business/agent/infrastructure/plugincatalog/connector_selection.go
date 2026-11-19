@@ -32,7 +32,7 @@ func (c *Client) ReadConnectorSelection(ctx context.Context, user string) (comma
 			ID: m.GetId(), Name: m.GetName(), Required: m.GetRequired(), Authentication: m.GetAuthentication(),
 			Type: m.GetType(), URL: m.GetUrl(), Command: m.GetCommand(), Arguments: slices.Clone(m.GetArguments()),
 			Environment: maps.Clone(m.GetEnvironment()), Headers: maps.Clone(m.GetHeaders()),
-			Provider: m.GetProvider(), Target: m.GetTarget(), ProviderAuthentication: m.GetProviderAuthentication()}}
+			Provider: m.GetProvider(), Target: m.GetTarget(), ProviderAuthentication: m.GetProviderAuthentication(), TargetCredentialsExpire: m.GetProviderTargetCredentialsExpire()}}
 		// A Connector no longer offered comes by identity only, so a choice
 		// of it is refused; only an offered one carries a configuration.
 		if connector.Offered {

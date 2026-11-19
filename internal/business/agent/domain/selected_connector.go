@@ -11,9 +11,13 @@ import (
 const (
 	connectorWorkIdentity          = "work_identity"
 	connectorProviderAuthorization = "provider_authorization"
-	// connectorNoCredential is a credential-free Connector's, which receives
-	// no credential.
+	// connectorNoCredential is a Connector that declares no Provider and
+	// receives no credential (Credential-free Connector).
 	connectorNoCredential = "none"
+
+	// connectorRemote is the native transport of a remote MCP server; a
+	// local command's is stdio or empty.
+	connectorRemote = "http"
 )
 
 // SelectedConnector is a Connector retained by a Work: its catalog identity and
@@ -33,6 +37,10 @@ type SelectedConnector struct {
 	// Provider, Target and ProviderAuthentication are Marketplace-validated
 	// requirements, present only for Provider-authenticated Connectors.
 	Provider, Target, ProviderAuthentication string
+	// TargetCredentialsExpire is whether the Provider declares that its
+	// target credentials expire, as Marketplace's Connector Provider
+	// Relationship states it.
+	TargetCredentialsExpire bool
 }
 
 // UsesWorkIdentity reports whether the Work reaches the Connector with its
@@ -45,11 +53,29 @@ func (c SelectedConnector) ProviderAuthorized() bool {
 	return c.Authentication == connectorProviderAuthorization
 }
 
-// AvailableOnManaged reports whether a Work on a Managed Computer may have
-// the Connector: a Provider-authorized one is unavailable there, because its
-// Provider credential stays with the platform (Managed Connector
-// availability).
-func (c SelectedConnector) AvailableOnManaged() bool { return !c.ProviderAuthorized() }
+// AvailableOnManaged reports whether a Work on a Managed Computer keeps the
+// Connector (Managed Connector availability). A Provider Connector whose
+// target credential declares no expiry is left out (Unavailable Provider
+// Connectors): only a short-lived target credential may reach the machine.
+// So is a Provider Connector that runs as a local command, since the local
+// proxy adds a target credential only at a remote Connector's explicit
+// address and the credential never enters a Work's process.
+func (c SelectedConnector) AvailableOnManaged() bool {
+	return !c.ProviderAuthorized() || (c.TargetCredentialsExpire && c.Type == connectorRemote)
+}
+
+// ManagedProviderConnectors are the Provider Connectors a Work on a Managed
+// Computer keeps: only their target credentials reach its Computer (Managed
+// Provider credentials).
+func (c CapabilitySnapshot) ManagedProviderConnectors() []SelectedConnector {
+	var connectors []SelectedConnector
+	for _, connector := range c.Connectors {
+		if connector.ProviderAuthorized() && connector.AvailableOnManaged() {
+			connectors = append(connectors, connector)
+		}
+	}
+	return connectors
+}
 
 // AvailableOn is the snapshot a Work retains on its Computer: on a Managed
 // Computer, without the Connectors unavailable there, which does not reject
@@ -93,7 +119,7 @@ func (c SelectedConnector) Validate() error {
 			return ErrInvalidCapabilities
 		}
 	}
-	if c.Type == "http" {
+	if c.Type == connectorRemote {
 		if c.URL == "" || c.Command != "" {
 			return ErrInvalidCapabilities
 		}
@@ -110,7 +136,7 @@ func (c SelectedConnector) Validate() error {
 			return ErrInvalidCapabilities
 		}
 	case connectorNoCredential:
-		if c.Required || c.Provider != "" {
+		if c.Required || c.Provider != "" || c.Target != "" || c.ProviderAuthentication != "" {
 			return ErrInvalidCapabilities
 		}
 	default:
