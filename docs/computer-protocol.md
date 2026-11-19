@@ -265,7 +265,9 @@ leftovers ended, so such a step fails.
  "gateway": {"url": "https://<origin>/computer/v1/mcp",
              "identity_token": "<the Work's agent Identity Token>",
              "space_token": "<Space Token, optional>"},
- "api": {"url": "https://<origin>"}}
+ "api": {"url": "https://<origin>"},
+ "connectors": [{"id": "<Connector ID>", "url": "https://<target host>/mcp/",
+                 "token": "<the Connector's short-lived target credential>"}]}
 ```
 
 `gateway.url` is the platform Connector's public MCP address, controlplane's
@@ -275,7 +277,14 @@ front of both the Connector and the core verifies it. A redelivery for a Work wh
 the platform no longer provides sends `"keep_model": true` without `model`: Talgent Computer keeps
 the model it holds and takes the rest. `api.url` is the entry's public origin,
 `agent-computer.api-address`, where the core's public APIs answer under `/api/`; it is absent when
-Managed Works do not call them. `model` is absent for a Work on the machine's own Claude login. It
+Managed Works do not call them. `model` is absent for a Work on the machine's own Claude login.
+`connectors` lists the Work's remote Provider Connectors whose target credential Marketplace supplied:
+each one's address, an `https` URL without user, query or fragment that lies on its Provider target's
+declared hosts, and its target's short-lived access token; a credential that declares no expiry is
+not delivered. A refresh token never travels; the platform
+delivers the credentials again at the earliest expiry Marketplace declared for them, and when the
+authorization changes. A redelivery that Marketplace cannot fully supply for now is not sent, so the
+machine keeps what it holds. `connectors` is absent when the Work has none. It
 answers `204`; repeating it replaces the Work's credentials (a rotated key), and `DELETE` on the
 same path, with the control token, forgets them. Like the environment `PUT`, the service checks
 the control token and relays it with an empty
@@ -297,12 +306,20 @@ running processes keep reaching it. Each run of a process gets a fresh token, an
 |---|---|
 | `/w/<work-id>/model/<rest>` | `model.base_url/<rest>`, query kept. `POST` of `<base path>/v1/messages` and `/v1/messages/count_tokens` carry `Authorization: Bearer <key>`, as a Cloud's Credential Proxy injects it |
 | `/w/<work-id>/mcp[/<rest>]` | `gateway.url[/<rest>]` with `Authorization: Bearer <identity_token>` and, when set, `X-Talgent-Space-Token` |
+| `/w/<work-id>/connectors/<connector-id>[/<rest>]` | that Connector's `url`, exactly as delivered, or below it with `/<rest>`; query kept. It carries `Authorization: Bearer <token>` of that Connector alone. A Connector without a delivered credential answers `503` `{"code":"CONNECTOR_UNAVAILABLE"}`, leaving the Work's other routes as they are |
 | `/w/<work-id>/api/<run token>/<path>` | `api.url/<path>`, such as `/api/<procedure>`, query kept, with the same Identity Token and, when set, `X-Talgent-Space-Token`. The run token is in the path, so a plain HTTP client such as `curl` needs no credential header; another token answers `401`, a Work without `api` answers `404` |
 
 The platform Connector answers a Managed Work's file link tools with Storage Access Links, whose
 query carries a short-lived capability and which need no identity: a model fetches them as they are.
 Every `x-talgent-*` header a process sends is removed before forwarding; the proxy adds only those
 above.
+
+A Managed Work's MCP configuration names each Provider Connector by its proxy path,
+`$TALGENT_PROXY_URL/connectors/<connector-id>` with `Authorization: Bearer $TALGENT_PROXY_TOKEN`, never
+by its target, so the proxy intercepts no TLS and no target credential enters a process. A Provider
+Connector whose target credentials do not expire, or one that runs as a local command, is not part of a
+Managed Work. A credential-free Connector is declared as it is: a local command starts on the machine
+with the tools the machine provides, and one that cannot start leaves only that Connector unavailable.
 
 Every other proxy request presents the token of a run of that Work as `Authorization: Bearer <token>` (or
 `x-api-key: <token>`), which the proxy removes with any other credential header before forwarding;

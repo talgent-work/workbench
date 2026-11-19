@@ -12,8 +12,10 @@ import type { ReadBody } from './request-body.ts'
 import { ARTIFACT_COMMANDS, completeArtifactCommand } from './api-publication.ts'
 
 // The local proxy: Work processes reach the model vendor, the Talgent MCP
-// endpoint and the platform's entry through it with their run's token, and
-// it adds the Work's credentials, which never reach the process.
+// endpoint, the platform's entry and the Work's Provider Connectors through
+// it with their run's token, and it adds the Work's credentials, which never
+// reach the process. Each Provider Connector has its own explicit address,
+// so no TLS is intercepted.
 
 export interface ProxyAccess {
   // Whether token is the current run token of a process of workId.
@@ -27,9 +29,11 @@ export interface ProxyAccess {
 
 // The upstream paths, under the model's base path, that carry the key.
 const KEYED_MODEL_PATHS = new Set(['/v1/messages', '/v1/messages/count_tokens'])
-const ROUTE = /^\/w\/([^/]+)\/(model|mcp|api)(\/.*)?$/
+const ROUTE = /^\/w\/([^/]+)\/(model|mcp|api|connectors)(\/.*)?$/
 // An API call's path: the run's token, then the procedure or Access Link.
 const API_PATH = /^\/([^/]+)(\/.*)$/
+// A Provider Connector's path: its identity, then the path below its address.
+const CONNECTOR_PATH = /^\/([^/]+)(\/.*)?$/
 
 export class LocalProxy {
   private readonly portFile: string
@@ -132,6 +136,7 @@ export class LocalProxy {
     if (credentials === undefined || (route === 'model' && credentials.model === undefined)) {
       return answerJson(response, 503, { code: 'CREDENTIALS_NOT_DELIVERED', message: 'the Work\'s credentials were not delivered' })
     }
+    if (route === 'connectors') return this.connector(request, response, workId, credentials, rest, search)
     const headers = requestHeaders(request.headers)
     let target: URL | undefined
     let body: ReadBody | undefined
@@ -160,6 +165,30 @@ export class LocalProxy {
       body,
       timeouts: this.timeouts,
       fail: (reason) => this.log(`local proxy: Work ${workId} ${route} upstream failed: ${reason}`),
+    })
+  }
+
+  // A Provider Connector's call, forwarded below the Connector's own address
+  // with its target credential and nothing else of the Work's. A Connector
+  // whose credential was not delivered is unavailable; the Work's other
+  // routes are not affected.
+  private connector(request: IncomingMessage, response: ServerResponse, workId: string, credentials: WorkCredentials, rest: string, search: string): void {
+    const match = CONNECTOR_PATH.exec(rest)
+    if (match === null) return notFound(response)
+    const [, connectorId, path = ''] = match
+    const connector = credentials.connectors?.find((candidate) => candidate.id === connectorId)
+    if (connector === undefined) {
+      return answerJson(response, 503, { code: 'CONNECTOR_UNAVAILABLE', message: 'no credential was delivered for this Connector' })
+    }
+    // The Connector's own address is reached exactly as declared, its
+    // trailing slash included.
+    const target = path === '' ? new URL(connector.url + search) : below(connector.url, path, search)
+    if (target === undefined) return notFound(response)
+    const headers = requestHeaders(request.headers)
+    headers.authorization = `Bearer ${connector.token}`
+    forward(request, response, target, headers, {
+      timeouts: this.timeouts,
+      fail: (reason) => this.log(`local proxy: Work ${workId} Connector ${connectorId} upstream failed: ${reason}`),
     })
   }
 

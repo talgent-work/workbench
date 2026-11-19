@@ -5,10 +5,12 @@ import { isObject } from '../json.ts'
 import { isErrno } from '../store.ts'
 
 // A Work's credentials, which the platform delivers so the local proxy can
-// reach the model vendor and the platform on the Work's behalf: its Identity
-// Token goes as `Authorization: Bearer` with the Agent's platform requests.
-// They are kept outside every Work root, readable only by this user, and
-// never given to a process.
+// reach the model vendor, the platform and the Work's Provider Connectors on
+// the Work's behalf: its Identity Token goes as `Authorization: Bearer` with
+// the Agent's platform requests, and each Provider Connector's short-lived
+// target credential with that Connector's requests alone. They are kept
+// outside every Work root, readable only by this user, and never given to a
+// process.
 export interface WorkCredentials {
   // Absent for a Work on the machine's own Claude login.
   model?: { baseUrl: string; key: string }
@@ -16,6 +18,15 @@ export interface WorkCredentials {
   // Where the Work's entry calls go, with its Identity Token; absent where
   // Works reach the platform only through the Gateway.
   api?: { url: string }
+  // The Work's Provider Connectors whose target credential was delivered,
+  // each reached at its own proxy address and forwarded to its url.
+  connectors?: ConnectorCredential[]
+}
+
+export interface ConnectorCredential {
+  id: string
+  url: string
+  token: string
 }
 
 // Its message names the invalid field, never a value.
@@ -125,20 +136,40 @@ export function parseDelivery(body: unknown): { credentials: WorkCredentials; ke
 
 function parseCredentials(body: unknown): WorkCredentials {
   if (!isObject(body)) throw new InvalidCredentialsError('body must be an object')
-  const { model, gateway, api } = body
+  const { model, gateway, api, connectors } = body
   const result: WorkCredentials = { gateway: parseGateway(gateway) }
   if (model !== undefined && model !== null) result.model = parseModel(model)
   if (api !== undefined && api !== null) result.api = parseApi(api, result.gateway.url)
+  if (connectors !== undefined && connectors !== null) result.connectors = parseConnectors(connectors)
   return result
+}
+
+const CONNECTOR_ID = /^[A-Za-z0-9_-]{1,128}$/
+
+function parseConnectors(connectors: unknown): ConnectorCredential[] {
+  if (!Array.isArray(connectors)) throw new InvalidCredentialsError('connectors must be an array')
+  const seen = new Set<string>()
+  return connectors.map((connector: unknown) => {
+    if (!isObject(connector)) throw new InvalidCredentialsError('connectors[] must be an object')
+    const { id } = connector
+    if (typeof id !== 'string' || !CONNECTOR_ID.test(id) || seen.has(id)) throw new InvalidCredentialsError('connectors[].id must be a unique identity')
+    seen.add(id)
+    return { id, url: secureUrl(connector.url, 'connectors[].url').href, token: headerValue(connector.token, 'connectors[].token') }
+  })
+}
+
+// An https URL, or plain http that reaches only a server on this machine.
+function secureUrl(value: unknown, field: string): URL {
+  const url = parseUrl(value, field)
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.has(url.hostname))) {
+    throw new InvalidCredentialsError(`${field} must be an https URL`)
+  }
+  return url
 }
 
 function parseModel(model: unknown): NonNullable<WorkCredentials['model']> {
   if (!isObject(model)) throw new InvalidCredentialsError('model must be an object')
-  const url = parseUrl(model.base_url, 'model.base_url')
-  // Plain http reaches only a vendor on this machine.
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.has(url.hostname))) {
-    throw new InvalidCredentialsError('model.base_url must be an https URL')
-  }
+  const url = secureUrl(model.base_url, 'model.base_url')
   return { baseUrl: url.href, key: headerValue(model.key, 'model.key') }
 }
 

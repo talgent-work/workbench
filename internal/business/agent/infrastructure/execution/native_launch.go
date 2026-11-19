@@ -311,18 +311,32 @@ func freshContext(starting *domain.StartingContext, sessionID string) []string {
 
 // machineServer declares a Managed Work's Connector. A Work established on a
 // Managed Computer holds only Connectors available there
-// (CapabilitySnapshot.AvailableOn); a snapshot established before Managed
-// Connector availability is filtered by the same rule. An available
-// Connector reaches the platform Connector's server with the Work's own identity
-// through Talgent Computer's local proxy, whose one /mcp endpoint adds the
-// Work's Identity Token and Space Token — the Talgent Connector is the only such
-// Connector. The run's proxy URL and token stay variables the Harness
-// expands from its environment, so neither enters the launch command.
+// (CapabilitySnapshot.AvailableOn); a snapshot established before a rule
+// changed is filtered by the same rule. The run's proxy URL and token stay
+// variables the Harness expands from its environment, so neither enters the
+// launch command:
+//   - the Talgent Connector, the only one reached with the Work's own
+//     identity, goes to the local proxy's /mcp endpoint, which adds the
+//     Work's Identity Token and Space Token;
+//   - a Provider Connector goes to its own explicit address at the local
+//     proxy, which adds its target credential (managed_connectors.go); its
+//     declared headers only carry credential placeholders, so none is kept;
+//   - a credential-free Connector is declared as it is, so a local command
+//     starts on the machine with the tools the machine provides, and one
+//     that cannot start leaves only that Connector unavailable.
 func machineServer(connector domain.SelectedConnector) (map[string]any, bool) {
-	if !connector.AvailableOnManaged() || !connector.UsesWorkIdentity() {
-		return nil, false
+	proxied := func(path string) map[string]any {
+		return map[string]any{"type": "http", "url": "${TALGENT_PROXY_URL}" + path, "headers": map[string]string{"Authorization": "Bearer ${TALGENT_PROXY_TOKEN}"}}
 	}
-	return map[string]any{"type": "http", "url": "${TALGENT_PROXY_URL}/mcp", "headers": map[string]string{"Authorization": "Bearer ${TALGENT_PROXY_TOKEN}"}}, true
+	switch {
+	case !connector.AvailableOnManaged():
+		return nil, false
+	case connector.UsesWorkIdentity():
+		return proxied("/mcp"), true
+	case connector.ProviderAuthorized():
+		return proxied(connectorProxyPath(connector)), true
+	}
+	return nativeServer(connector), true
 }
 
 // nativeServer renders a retained Connector as a native MCP declaration. Its

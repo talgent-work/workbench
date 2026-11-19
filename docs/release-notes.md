@@ -5,6 +5,15 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that serves Provider Connectors on Managed Computers
+
+Nothing is required. A Work on a Managed Computer now keeps its remote Provider Connectors whose
+Provider declares `target-credentials-expire: true`, reached through Talgent Computer's local proxy
+([Computer protocol](computer-protocol.md#a-works-credentials-and-the-local-proxy)). A machine
+still running an earlier Talgent Computer leaves those Connectors unavailable without blocking the
+Work until it upgrades to this release's Target Version; raise `COMPUTER_MINIMUM_VERSION` to it
+to refuse runs on such machines instead.
+
 ## The release that lets Cloud Works reach declared enterprise networks
 
 Nothing is required: without `ENTERPRISE_NETWORKS` sandboxes reach no private network, as

@@ -18,6 +18,15 @@ func GitHub() domain.CatalogConnector {
 		Provider: "github", Target: "github-api", ProviderAuthentication: "credential_proxy"}}
 }
 
+// Remote supplies a remote Provider Connector whose Provider declares that
+// its target credentials expire, which a Managed Computer serves through its
+// local proxy.
+func Remote() domain.CatalogConnector {
+	return domain.CatalogConnector{Offered: true, SelectedConnector: domain.SelectedConnector{ID: "01900000-0000-7000-8000-000000000389", Name: "enterprise-docs", Type: "http", URL: "https://docs.example.com/mcp/",
+		Headers: map[string]string{"Authorization": "Bearer ${DOCS_TOKEN}"}, Authentication: "provider_authorization",
+		Provider: "example-sso", Target: "docs", ProviderAuthentication: "credential_proxy", TargetCredentialsExpire: true}}
+}
+
 // Selection supplies a catalog with only the required entry and no installations.
 func Selection() command.ConnectorSelection {
 	return command.ConnectorSelection{Catalog: []domain.CatalogConnector{Required()}}
