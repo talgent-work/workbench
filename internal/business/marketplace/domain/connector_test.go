@@ -127,4 +127,14 @@ func TestRemoteProviderConnectorLiesWithinItsTarget(t *testing.T) {
 	other := domain.ProviderCompatibility{Configuration: inside, Binding: binding, Target: githubAPI}
 	_, err = domain.RegisterProviderConnector("github-remote", inside, binding, domain.CatalogPresentation{}, other)
 	require.ErrorIs(t, err, domain.ErrInvalidConnector, "evidence names the binding's target")
+	for name, configuration := range map[string]domain.MCPConfiguration{
+		"header":      {Type: "http", URL: "https://api.githubcopilot.com/mcp/", Headers: map[string]string{"Authorization": "Bearer literal-token"}},
+		"environment": {Command: "github-mcp-server", Arguments: []string{"stdio"}, Environment: map[string]string{"GITHUB_PERSONAL_ACCESS_TOKEN": "literal-token"}},
+	} {
+		_, err = domain.RegisterProviderConnector("github-remote", configuration, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: configuration, Binding: binding, Target: mcp})
+		require.ErrorIs(t, err, domain.ErrCredentialTargetInapplicable, "a %s carries the credential placeholder, never a secret", name)
+	}
+	proxied := domain.MCPConfiguration{Type: "http", URL: "https://api.githubcopilot.com/mcp/", Headers: map[string]string{"Authorization": "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"}}
+	_, err = domain.RegisterProviderConnector("github-remote", proxied, binding, domain.CatalogPresentation{}, domain.ProviderCompatibility{Configuration: proxied, Binding: binding, Target: mcp})
+	require.NoError(t, err)
 }

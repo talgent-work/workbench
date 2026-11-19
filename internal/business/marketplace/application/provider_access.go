@@ -68,7 +68,8 @@ func (a *PersonalConnections) ListAccessibleRepositories(ctx context.Context, ac
 // GetProviderAccess describes the connection and its last observed reach.
 // Permissions are those granted when observed, or those connecting requests.
 func (a *PersonalConnections) GetProviderAccess(ctx context.Context, actor string, provider domain.Provider) (ProviderAccessView, error) {
-	if _, err := a.declared(provider); err != nil {
+	declaration, err := a.declared(provider)
+	if err != nil {
 		return ProviderAccessView{}, err
 	}
 	state, err := a.GetPersonalConnection(ctx, actor, provider)
@@ -76,8 +77,8 @@ func (a *PersonalConnections) GetProviderAccess(ctx context.Context, actor strin
 		return ProviderAccessView{}, err
 	}
 	view := ProviderAccessView{State: state}
-	// Only GitHub observes what an authorization reaches.
-	if provider != domain.ProviderGitHub {
+	// Only a Provider that decides what an authorization reaches is observed.
+	if !declaration.ObservesAccessScope {
 		return view, nil
 	}
 	if view.ManageURL, err = a.github.ManageURL(ctx, provider); err != nil {
@@ -108,7 +109,7 @@ func (a *PersonalConnections) RefreshProviderAccess(ctx context.Context, actor s
 		return ProviderAccessView{}, err
 	}
 	var observeErr error
-	if auth != nil && auth.IsActive() && provider == domain.ProviderGitHub {
+	if auth != nil && auth.IsActive() {
 		observeErr = a.ObserveAccessScope(ctx, auth.ID)
 	}
 	view, err := a.GetProviderAccess(ctx, actor, provider)
@@ -140,8 +141,10 @@ func (a *PersonalConnections) observeAccessScope(ctx context.Context, authorizat
 	if err != nil {
 		return err
 	}
-	// Providers other than GitHub observe no access scope.
-	if !auth.IsActive() || auth.Provider != domain.ProviderGitHub {
+	if !auth.IsActive() {
+		return nil
+	}
+	if declaration, err := a.declared(auth.Provider); err != nil || !declaration.ObservesAccessScope {
 		return nil
 	}
 	observeCtx, cancel := context.WithTimeout(ctx, timeout)

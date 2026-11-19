@@ -77,8 +77,7 @@ vi.mock("../lib/client", () => ({
     listInstalledConnectors: async () => ({ connectors: [...installedConnectors] }),
     listProviders: async (request: { applicationId: string }) => {
       marketplaceCalls.push({ method: "listProviders", request });
-      const connection = request.applicationId !== deskId || !deskGitHub ? { provider: "github", status: "none", authorizationId: "" }
-        : { provider: "github", status: "active", authorizationId: deskGitHub.authorizationId, providerLogin: deskGitHub.login };
+      const connection = request.applicationId !== deskId || !deskGitHub ? { provider: "github", status: "none", authorizationId: "" } : { provider: "github", status: "active", authorizationId: deskGitHub.authorizationId, providerLogin: deskGitHub.login };
       return { providers: [{ name: "github", displayName: "GitHub", targets: [], targetCredentialsExpire: true, observesAccessScope: true, connection }] };
     },
     beginProviderAuthorization: async (request: { provider: string; applicationId: string }) => {

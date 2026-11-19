@@ -114,6 +114,12 @@ func TestProviderAuthorization_SuppliesOneCredentialPerTarget(t *testing.T) {
 	require.Equal(t, []string{"https://api.example.com", "https://docs.example.com"}, asked, "a current target credential is reused")
 	require.True(t, auth.NeedsCredentialWork(requirement(apiTarget), now.Add(9*time.Minute+30*time.Second), time.Minute), "one near expiry is renewed")
 
+	port.renew = func(c domain.CredentialSet) (domain.CredentialRenewal, error) {
+		return domain.CredentialRenewal{Credentials: domain.CredentialSet{AccessTokenCiphertext: "renewed", RefreshTokenCiphertext: c.RefreshTokenCiphertext, ExpiresAt: now.Add(2 * time.Hour)}}, nil
+	}
+	require.NoError(t, auth.RenewCredentials(context.Background(), now, time.Minute, true, port))
+	require.True(t, auth.NeedsCredentialWork(requirement(apiTarget), now, time.Minute), "a renewal obtains every target credential afresh")
+
 	refused := authorizationAuthority{obtain: func(domain.CredentialSet, domain.ProviderTarget) (domain.TargetCredentialOutcome, error) {
 		return domain.TargetCredentialOutcome{ReconnectRequired: true}, nil
 	}}

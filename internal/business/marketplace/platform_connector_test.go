@@ -78,6 +78,7 @@ func TestProviderDeclarationsComeFromConfiguration(t *testing.T) {
 	require.False(t, declarations[0].ObservesAccessScope, "Providers other than GitHub observe no access scope")
 	require.True(t, declarations[1].ObservesAccessScope)
 	require.Len(t, catalog.oauthClients(), 1)
+	require.Equal(t, []string{"https://docs.example.com", "https://tickets.example.com"}, catalog.oauthClients()[0].Resources, "the authorization asks for every target's resource")
 	github := catalog.gitHub(scmgithub.Config{AppID: "1"}, "key")
 	require.True(t, github.Enabled, "the GitHub App adapter is enabled exactly when github is declared")
 	require.Equal(t, "client", github.OAuthClientID)

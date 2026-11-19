@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -89,6 +90,9 @@ func (a *Authorizer) BeginProviderAuthorization(_ context.Context, input applica
 	query.Set("code_challenge_method", "S256")
 	if len(client.Scopes) > 0 {
 		query.Set("scope", strings.Join(client.Scopes, " "))
+	}
+	for _, resource := range client.Resources {
+		query.Add("resource", resource)
 	}
 	address.RawQuery = query.Encode()
 	return application.BeginProviderAuthorizationResult{AuthorizationURL: address.String()}, nil
@@ -206,7 +210,7 @@ func (a *Authorizer) userinfo(ctx context.Context, client Client, accessToken st
 	if response.StatusCode != http.StatusOK {
 		return transient("userinfo unavailable", fmt.Errorf("userinfo HTTP %d", response.StatusCode))
 	}
-	return json.NewDecoder(response.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(out)
 }
 
 func partOr(parts []string, index int) string {

@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"maps"
 	"strings"
 	"time"
 )
@@ -138,10 +139,11 @@ func (a *ProviderAuthorization) obtainTargetCredential(ctx context.Context, targ
 	if rotated := strings.TrimSpace(outcome.RefreshTokenCiphertext); rotated != "" {
 		a.RefreshTokenCiphertext, a.RefreshTokenExpiresAt = rotated, outcome.RefreshTokenExpiresAt.UTC()
 	}
-	if a.TargetCredentials == nil {
-		a.TargetCredentials = map[string]TargetCredential{}
-	}
-	a.TargetCredentials[target.Name] = credential
+	// The held set is replaced, never written through: the port saw the old one.
+	held := make(map[string]TargetCredential, len(a.TargetCredentials)+1)
+	maps.Copy(held, a.TargetCredentials)
+	held[target.Name] = credential
+	a.TargetCredentials = held
 	a.LastCheckedAt, a.LastFailureCode, a.LastFailureDetail = now.UTC(), "", ""
 	return credential, nil
 }
@@ -183,6 +185,10 @@ func (a *ProviderAuthorization) RenewCredentials(ctx context.Context, now time.T
 	if err := a.ApplyRefreshSuccess(c.AccessTokenCiphertext, c.RefreshTokenCiphertext, c.ExpiresAt, c.RefreshTokenExpiresAt, now); err != nil {
 		return err
 	}
+	// Target credentials follow the authorization's renewal: consumers act on
+	// the renewal by supplying again, which obtains them afresh, so none
+	// outlives the cycle that announces it.
+	a.TargetCredentials = nil
 	a.recordCredentialChange(CredentialRenewed, now)
 	return nil
 }

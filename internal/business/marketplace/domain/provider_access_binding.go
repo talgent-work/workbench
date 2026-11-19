@@ -1,6 +1,13 @@
 package domain
 
-import "reflect"
+import (
+	"reflect"
+	"regexp"
+)
+
+// credentialPlaceholder is the public marker the Credential Proxy replaces
+// with the target's credential, such as ${GITHUB_PERSONAL_ACCESS_TOKEN}.
+var credentialPlaceholder = regexp.MustCompile(`\$\{[A-Z][A-Z0-9_]*\}`)
 
 // ProviderAccessBinding contains verified service requirements, never a personal
 // authorization reference. Identity is selected by the consuming Work.
@@ -33,6 +40,15 @@ func validateProviderConfiguration(configuration MCPConfiguration, binding Provi
 	}
 	if configuration.Type == "http" && !evidence.Target.Contains(configuration.URL) {
 		return ErrCredentialTargetInapplicable
+	}
+	// Credentials reach the server only through the proxy: every header and
+	// environment value carries the placeholder, never a literal secret.
+	for _, values := range []map[string]string{configuration.Headers, configuration.Environment} {
+		for _, value := range values {
+			if !credentialPlaceholder.MatchString(value) {
+				return ErrCredentialTargetInapplicable
+			}
+		}
 	}
 	return validateProviderBinding(configuration, binding)
 }

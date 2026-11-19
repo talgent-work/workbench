@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -36,6 +37,10 @@ type Client struct {
 	// UserinfoEndpoint is optional; the ID Token names the account otherwise.
 	UserinfoEndpoint string
 	Scopes           []string
+	// Resources are the declared targets' resource indicators, requested with
+	// the authorization so each target's credential lies within the grant
+	// (RFC 8707, section 2).
+	Resources []string
 }
 
 func (c Client) Validate() error {
@@ -48,11 +53,21 @@ func (c Client) Validate() error {
 			continue
 		}
 		u, err := url.Parse(endpoint)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.Fragment != "" {
-			return fmt.Errorf("Provider %s: %s must be an absolute HTTP(S) address", c.Provider, name)
+		if err != nil || u.Host == "" || u.Fragment != "" || (u.Scheme != "https" && !(u.Scheme == "http" && loopback(u.Hostname()))) {
+			return fmt.Errorf("Provider %s: %s must be an absolute HTTPS address", c.Provider, name)
 		}
 	}
 	return nil
+}
+
+// loopback admits plain HTTP only to this machine, where a client secret and
+// tokens never cross a network.
+func loopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // tokenResponse is an OAuth token endpoint response; refresh_expires_in is

@@ -57,6 +57,7 @@ func fixture(t *testing.T) (*authorizationServer, Client, application.Credential
 	cipher, err := credentialcipher.New("oauth provider test key")
 	require.NoError(t, err)
 	client := Client{Provider: "example-sso", ClientID: "workbench", ClientSecret: "secret", Scopes: []string{"openid", "offline_access"},
+		Resources:             []string{"https://docs.example.com", "https://tickets.example.com"},
 		AuthorizationEndpoint: "https://sso.example.com/authorize", TokenEndpoint: httpServer.URL + "/token", RevocationEndpoint: httpServer.URL + "/revoke"}
 	return server, client, cipher
 }
@@ -82,6 +83,7 @@ func TestAuthorizationCodeFlowWithPKCE(t *testing.T) {
 	require.Equal(t, "sso.example.com", address.Host)
 	require.Equal(t, "S256", query.Get("code_challenge_method"))
 	require.Equal(t, "openid offline_access", query.Get("scope"))
+	require.Equal(t, []string{"https://docs.example.com", "https://tickets.example.com"}, query["resource"], "every target's resource lies within the grant")
 
 	server.answer = map[string]any{"access_token": "access", "refresh_token": "refresh", "expires_in": 300, "refresh_expires_in": 1800,
 		"id_token": idToken(map[string]string{"sub": "subject-1", "preferred_username": "alice"})}
@@ -170,6 +172,15 @@ func TestTargetCredentialByResourceIndicator(t *testing.T) {
 
 // Revocation sends the refresh credential to the declared endpoint; only an
 // answered 200 confirms it.
+// Client secrets and tokens travel over HTTPS, or over HTTP to this machine
+// alone.
+func TestEndpointsAreHTTPS(t *testing.T) {
+	_, client, _ := fixture(t)
+	require.NoError(t, client.Validate(), "a loopback test server")
+	client.TokenEndpoint = "http://sso.example.com/token"
+	require.Error(t, client.Validate())
+}
+
 func TestRevocation(t *testing.T) {
 	server, client, cipher := fixture(t)
 	port, err := NewPort(client, cipher, nil)

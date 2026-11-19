@@ -119,7 +119,7 @@ func (c *ProviderCredentials) SupplyTarget(ctx context.Context, ownerID, authori
 			return credential.ServiceMaterial{}, authorizationError(err)
 		}
 	}
-	if !supplied.ExpiresAt.IsZero() && !supplied.ExpiresAt.After(c.now()) {
+	if !supplied.ExpiresAt.IsZero() && !supplied.ExpiresAt.After(c.now().UTC()) {
 		return credential.ServiceMaterial{}, ErrProviderUnavailable
 	}
 	token, err := c.decrypt(supplied.TokenCiphertext)
@@ -185,8 +185,12 @@ func (c *ProviderCredentials) underLease(ctx context.Context, auth *domain.Provi
 	switch {
 	case operationErr == nil, errors.Is(operationErr, domain.ErrAuthorizationReconnectRequired), errors.Is(operationErr, domain.ErrAuthorizationRevoked),
 		errors.Is(operationErr, domain.ErrCredentialTargetInapplicable), errors.Is(operationErr, domain.ErrPermissionDenied):
+	case ctx.Err() != nil:
+		// The caller left; the Provider did not fail. The lease is released
+		// with the authorization unchanged.
+		operationErr = NewProviderError(ProviderErrorTransient, true, "credential renewal cancelled", ctx.Err())
 	default:
-		if err := leased.RecordTransientFailure(string(ProviderErrorTransient), "Provider credential renewal unavailable", c.now()); err != nil {
+		if err := leased.RecordTransientFailure(string(ProviderErrorTransient), "Provider credential renewal unavailable", c.now().UTC()); err != nil {
 			return nil, err
 		}
 		operationErr = NewProviderError(ProviderErrorTransient, true, "Provider credential renewal unavailable", operationErr)

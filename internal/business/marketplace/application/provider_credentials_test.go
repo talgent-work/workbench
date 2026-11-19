@@ -146,6 +146,21 @@ func TestProviderCredentials_ProviderFailures(t *testing.T) {
 	require.Equal(t, domain.ProviderAuthorizationReconnectRequired, saved.Status)
 }
 
+// A caller leaving mid-renewal is no Provider failure: the lease is released
+// and nothing is recorded against the authorization.
+func TestProviderCredentials_CallerCancellationRecordsNoFailure(t *testing.T) {
+	credentials, store, port, id := credentialsFixture(t, domain.SharedTargetCredential, time.Minute)
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	port.fail = context.Canceled
+	_, err := credentials.SupplyTarget(cancelled, "user-1", id, "docs")
+	require.ErrorIs(t, err, context.Canceled)
+	saved, err := store.Get(t.Context(), id)
+	require.NoError(t, err)
+	require.Empty(t, saved.LastFailureCode)
+	require.Equal(t, domain.ProviderAuthorizationActive, saved.Status)
+}
+
 // conflictingStore loses the lease to another worker, whose result it
 // stores first.
 type conflictingStore struct {

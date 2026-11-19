@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 )
@@ -19,6 +20,9 @@ const (
 	providerErrorGitHubTokenRefreshFailed application.ProviderErrorCode = "github_token_refresh_failed"
 )
 
+// refreshTimeout bounds one renewal at GitHub.
+const refreshTimeout = 15 * time.Second
+
 func refreshOAuthToken(ctx context.Context, cfg Config, httpClient *http.Client, refreshToken string) (oauthTokenResponse, error) {
 	refreshToken = strings.TrimSpace(refreshToken)
 	if refreshToken == "" {
@@ -27,6 +31,8 @@ func refreshOAuthToken(ctx context.Context, cfg Config, httpClient *http.Client,
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
+	defer cancel()
 	form := url.Values{}
 	form.Set("client_id", strings.TrimSpace(cfg.OAuthClientID))
 	form.Set("client_secret", strings.TrimSpace(cfg.OAuthClientSecret))

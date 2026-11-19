@@ -115,6 +115,11 @@ func newProviderCatalog(config Config) (*providerCatalog, error) {
 			targets[target.Name] = name
 		}
 		client := provider.client(name)
+		if declaration.Derivation == domain.ResourceIndicatorTargetCredential {
+			for _, target := range declaration.Targets {
+				client.Resources = append(client.Resources, target.Resource)
+			}
+		}
 		if err := client.Validate(); err != nil {
 			return nil, err
 		}
