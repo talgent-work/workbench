@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/oauthtoken"
 )
 
 const (
@@ -53,6 +55,13 @@ func (c Config) authorizationEndpoint() string {
 		return endpoint
 	}
 	return c.webBaseURL() + "/login/oauth/authorize"
+}
+
+// tokenClient is the OAuth App at GitHub's token endpoint, which takes the
+// client's credentials in the form.
+func (c Config) tokenClient() oauthtoken.Endpoint {
+	return oauthtoken.Endpoint{URL: c.tokenEndpoint(), ClientID: strings.TrimSpace(c.OAuthClientID), ClientSecret: strings.TrimSpace(c.OAuthClientSecret),
+		Authentication: oauthtoken.ClientSecretPost}
 }
 
 func (c Config) tokenEndpoint() string {

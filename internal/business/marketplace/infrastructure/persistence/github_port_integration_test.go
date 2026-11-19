@@ -10,7 +10,7 @@ import (
 )
 
 type accessObserver interface {
-	ObserveAccess(context.Context, string, domain.Provider) (domain.AccessScope, error)
+	ObserveAccess(context.Context, string) (domain.AccessScope, error)
 	RequestedPermissions(context.Context, domain.Provider) ([]application.ProviderPermission, error)
 	ManageURL(context.Context, domain.Provider) (string, error)
 }
@@ -28,8 +28,8 @@ type testGitHub struct {
 	authority authorizationAuthority
 }
 
-func (g testGitHub) ObserveAccess(ctx context.Context, ownerID string, provider domain.Provider) (domain.AccessScope, error) {
-	return g.access.ObserveAccess(ctx, ownerID, provider)
+func (g testGitHub) ObserveAccess(ctx context.Context, token string) (domain.AccessScope, error) {
+	return g.access.ObserveAccess(ctx, token)
 }
 
 func (g testGitHub) RequestedPermissions(ctx context.Context, provider domain.Provider) ([]application.ProviderPermission, error) {

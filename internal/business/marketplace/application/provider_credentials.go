@@ -60,7 +60,7 @@ func (c *ProviderCredentials) Fresh(ctx context.Context, authorizationID, ownerI
 	needs := func(a *domain.ProviderAuthorization) bool {
 		return force || !a.CanUseToken(c.now().UTC(), c.timing.RequestSkew)
 	}
-	auth, err = c.underLease(ctx, auth, needs, func(a *domain.ProviderAuthorization, port domain.ProviderAuthorizationPort) error {
+	auth, err = c.underLease(ctx, auth, needs, func(ctx context.Context, a *domain.ProviderAuthorization, port domain.ProviderAuthorizationPort) error {
 		return a.RenewCredentials(ctx, c.now().UTC(), c.timing.RequestSkew, true, port)
 	})
 	if err != nil {
@@ -80,7 +80,7 @@ func (c *ProviderCredentials) RenewAuthorization(ctx context.Context, authorizat
 	needs := func(a *domain.ProviderAuthorization) bool {
 		return a.NeedsRefresh(c.now().UTC(), c.timing.ProactiveWindow)
 	}
-	_, err = c.underLease(ctx, auth, needs, func(a *domain.ProviderAuthorization, port domain.ProviderAuthorizationPort) error {
+	_, err = c.underLease(ctx, auth, needs, func(ctx context.Context, a *domain.ProviderAuthorization, port domain.ProviderAuthorizationPort) error {
 		return a.RenewCredentials(ctx, c.now().UTC(), c.timing.ProactiveWindow, true, port)
 	})
 	return err
@@ -106,7 +106,7 @@ func (c *ProviderCredentials) SupplyTarget(ctx context.Context, ownerID, authori
 	needs := func(a *domain.ProviderAuthorization) bool {
 		return a.NeedsCredentialWork(requirement, c.now().UTC(), c.timing.RequestSkew)
 	}
-	auth, err = c.underLease(ctx, auth, needs, func(a *domain.ProviderAuthorization, port domain.ProviderAuthorizationPort) error {
+	auth, err = c.underLease(ctx, auth, needs, func(ctx context.Context, a *domain.ProviderAuthorization, port domain.ProviderAuthorizationPort) error {
 		supplied, err = a.SupplyValidCredentials(ctx, requirement, c.now().UTC(), c.timing.RequestSkew, port)
 		return err
 	})
@@ -165,39 +165,80 @@ func (c *ProviderCredentials) load(ctx context.Context, authorizationID, ownerID
 // underLease runs the Provider operation when the authorization needs it,
 // under its credential lease. A concurrent holder's result is used once it
 // satisfies the need; otherwise the refresh is reported in progress.
-func (c *ProviderCredentials) underLease(ctx context.Context, auth *domain.ProviderAuthorization, needs func(*domain.ProviderAuthorization) bool, operation func(*domain.ProviderAuthorization, domain.ProviderAuthorizationPort) error) (*domain.ProviderAuthorization, error) {
+func (c *ProviderCredentials) underLease(ctx context.Context, auth *domain.ProviderAuthorization, needs func(*domain.ProviderAuthorization) bool, operation leasedOperation) (*domain.ProviderAuthorization, error) {
 	if !needs(auth) {
 		return auth, nil
 	}
+	leased, err := c.withLease(ctx, auth, operation, func(leased *domain.ProviderAuthorization, operationErr error) error {
+		switch {
+		case errors.Is(operationErr, domain.ErrAuthorizationReconnectRequired), errors.Is(operationErr, domain.ErrAuthorizationRevoked),
+			errors.Is(operationErr, domain.ErrCredentialTargetInapplicable), errors.Is(operationErr, domain.ErrPermissionDenied):
+			return operationErr
+		case ctx.Err() != nil:
+			// The caller left; the Provider did not fail. The lease is released
+			// with the authorization unchanged.
+			return NewProviderError(ProviderErrorTransient, true, "credential renewal cancelled", ctx.Err())
+		}
+		if err := leased.RecordTransientFailure(string(ProviderErrorTransient), "Provider credential renewal unavailable", c.now().UTC()); err != nil {
+			return err
+		}
+		return NewProviderError(ProviderErrorTransient, true, "Provider credential renewal unavailable", operationErr)
+	})
+	if errors.Is(err, errLeaseHeld) {
+		return c.afterConcurrentOperation(ctx, auth, needs)
+	}
+	return leased, err
+}
+
+// Revoke cancels the owner's authorization at its Provider under the same
+// credential lease as renewal and supply; an unconfirmed revocation keeps the
+// authorization as it was.
+func (c *ProviderCredentials) Revoke(ctx context.Context, ownerID string, auth *domain.ProviderAuthorization) (*domain.ProviderAuthorization, error) {
+	leased, err := c.withLease(ctx, auth, func(ctx context.Context, a *domain.ProviderAuthorization, port domain.ProviderAuthorizationPort) error {
+		return a.CancelAuthorization(ctx, ownerID, c.now().UTC(), port)
+	}, func(_ *domain.ProviderAuthorization, operationErr error) error { return operationErr })
+	if errors.Is(err, errLeaseHeld) {
+		return nil, NewProviderError(ProviderErrorRefreshInProgress, true, "a credential operation is in progress", domain.ErrConcurrentModification)
+	}
+	return leased, err
+}
+
+// leasedOperation is one Provider operation on a leased authorization.
+type leasedOperation func(context.Context, *domain.ProviderAuthorization, domain.ProviderAuthorizationPort) error
+
+// errLeaseHeld is another worker holding the authorization's credential lease.
+var errLeaseHeld = errors.New("marketplace: credential lease held")
+
+// withLease runs one Provider operation on the authorization under its
+// credential lease, bounded so it ends before the lease does, and saves the
+// result, which releases the lease. failure decides what a failed operation
+// records and returns.
+func (c *ProviderCredentials) withLease(ctx context.Context, auth *domain.ProviderAuthorization, operation leasedOperation,
+	failure func(*domain.ProviderAuthorization, error) error) (*domain.ProviderAuthorization, error) {
 	port, err := c.port(auth.Provider)
 	if err != nil {
 		return nil, err
 	}
 	now := c.now().UTC()
-	leased, err := c.store.AcquireCredentialLease(ctx, auth, uuid.NewString(), now.Add(c.leaseDuration()), now)
+	lease := c.leaseDuration()
+	leased, err := c.store.AcquireCredentialLease(ctx, auth, uuid.NewString(), now.Add(lease), now)
 	if errors.Is(err, domain.ErrConcurrentModification) {
-		return c.afterConcurrentOperation(ctx, auth, needs)
+		return nil, errLeaseHeld
 	}
 	if err != nil {
 		return nil, NewProviderError(ProviderErrorTransient, true, "acquire credential lease", err)
 	}
-	operationErr := operation(leased, port)
-	switch {
-	case operationErr == nil, errors.Is(operationErr, domain.ErrAuthorizationReconnectRequired), errors.Is(operationErr, domain.ErrAuthorizationRevoked),
-		errors.Is(operationErr, domain.ErrCredentialTargetInapplicable), errors.Is(operationErr, domain.ErrPermissionDenied):
-	case ctx.Err() != nil:
-		// The caller left; the Provider did not fail. The lease is released
-		// with the authorization unchanged.
-		operationErr = NewProviderError(ProviderErrorTransient, true, "credential renewal cancelled", ctx.Err())
-	default:
-		if err := leased.RecordTransientFailure(string(ProviderErrorTransient), "Provider credential renewal unavailable", c.now().UTC()); err != nil {
-			return nil, err
+	operationCtx, cancel := context.WithTimeout(ctx, lease-leaseSaveWindow)
+	operationErr := operation(operationCtx, leased, port)
+	cancel()
+	if operationErr != nil {
+		if operationErr = failure(leased, operationErr); operationErr == nil {
+			operationErr = ErrProviderUnavailable
 		}
-		operationErr = NewProviderError(ProviderErrorTransient, true, "Provider credential renewal unavailable", operationErr)
 	}
 	// The final write also releases the lease and survives caller cancellation.
-	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
+	saveCtx, cancelSave := context.WithTimeout(context.WithoutCancel(ctx), leaseSaveWindow)
+	defer cancelSave()
 	if err := c.store.Save(saveCtx, leased); err != nil {
 		return nil, errors.Join(authorizationError(operationErr), NewProviderError(ProviderErrorCredentialFailed, false, "persist credentials", err))
 	}
@@ -224,11 +265,14 @@ func (c *ProviderCredentials) afterConcurrentOperation(ctx context.Context, stal
 	return nil, NewProviderError(ProviderErrorRefreshInProgress, true, "refresh in progress", domain.ErrConcurrentModification)
 }
 
+// leaseSaveWindow is the part of a lease kept for saving the operation's
+// result.
+const leaseSaveWindow = 5 * time.Second
+
+// leaseDuration is the configured lease, never shorter than an operation
+// needs beside its save window.
 func (c *ProviderCredentials) leaseDuration() time.Duration {
-	if c.timing.LeaseDuration > 0 {
-		return c.timing.LeaseDuration
-	}
-	return 30 * time.Second
+	return max(c.timing.LeaseDuration, 30*time.Second)
 }
 
 func (c *ProviderCredentials) decrypt(ciphertext string) (string, error) {

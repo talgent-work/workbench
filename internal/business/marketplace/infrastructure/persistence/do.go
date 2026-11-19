@@ -20,10 +20,13 @@ type ProviderAuthorizationDO struct {
 	AccessScopeJSON        string `xorm:"access_scope_json json"`
 	AccessScopeObservedAt  int64  `xorm:"access_scope_observed_at bigint notnull default(0)"`
 	TargetCredentialsJSON  string `xorm:"target_credentials_json json"`
-	Version                int    `xorm:"version notnull default(0)"`
-	CreatedAt              int64  `xorm:"created_at bigint notnull default(0)"`
-	UpdatedAt              int64  `xorm:"updated_at bigint notnull default(0)"`
-	DeletedAt              int64  `xorm:"deleted_at bigint notnull default(0)"`
+	// CredentialsExpireAt is the earliest expiry over the authorization's own
+	// and target credentials, kept for the renewal sweep.
+	CredentialsExpireAt int64 `xorm:"credentials_expire_at bigint notnull default(0)"`
+	Version             int   `xorm:"version notnull default(0)"`
+	CreatedAt           int64 `xorm:"created_at bigint notnull default(0)"`
+	UpdatedAt           int64 `xorm:"updated_at bigint notnull default(0)"`
+	DeletedAt           int64 `xorm:"deleted_at bigint notnull default(0)"`
 }
 
 func (ProviderAuthorizationDO) TableName() string { return "scm_provider_authorization" }

@@ -111,7 +111,6 @@ var ConnectionsModule = fx.Module(
 			LeaseDuration: maintenance.RefreshLeaseDuration.Duration(),
 		}), nil
 	}),
-	fx.Provide(func(credentials *application.ProviderCredentials) scmgithub.FreshCredentials { return credentials }, fx.Private),
 	fx.Provide(scmgithub.NewCatalog, fx.Private),
 	fx.Provide(fx.Annotate(scopemaintenance.NewScheduler, fx.As(new(application.MarketplaceTaskQueuePort)), fx.As(fx.Self()))),
 	fx.Provide(func(candidates query.ProviderAuthorizationQueryRepository, scheduler *scopemaintenance.Scheduler) *scopemaintenance.ReconcileScanProcessor {

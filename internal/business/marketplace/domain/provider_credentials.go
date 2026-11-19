@@ -82,7 +82,7 @@ type CredentialRequirement struct {
 // NeedsCredentialWork reports whether supplying the requirement would ask
 // the Provider, which then runs under the authorization's credential lease.
 func (a *ProviderAuthorization) NeedsCredentialWork(requirement CredentialRequirement, now time.Time, skew time.Duration) bool {
-	if requirement.Derivation == ResourceIndicatorTargetCredential {
+	if requirement.Derivation == PerTargetCredential {
 		return !a.TargetCredentials[requirement.Target.Name].usable(now, skew)
 	}
 	return !a.CanUseToken(now, skew)
@@ -103,7 +103,7 @@ func (a *ProviderAuthorization) SupplyValidCredentials(ctx context.Context, requ
 			return TargetCredential{}, err
 		}
 		return TargetCredential{TokenCiphertext: a.AccessTokenCiphertext, ExpiresAt: a.ExpiresAt}, nil
-	case ResourceIndicatorTargetCredential:
+	case PerTargetCredential:
 		return a.obtainTargetCredential(ctx, requirement.Target, now, skew, port)
 	default:
 		return TargetCredential{}, ErrCredentialTargetInapplicable

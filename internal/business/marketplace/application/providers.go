@@ -35,25 +35,28 @@ type CredentialCipher interface {
 	Decrypt(ciphertext string) (string, error)
 }
 
-// DeclaredProvider is one declaration with the owner's connection to it.
-type DeclaredProvider struct {
-	domain.ProviderDeclaration
-	Connection *query.ProviderConnectionState
-}
-
 // ListProviders lists every declared Provider with the owner's connection.
-func (a *PersonalConnections) ListProviders(ctx context.Context, actor string) ([]DeclaredProvider, error) {
+func (a *PersonalConnections) ListProviders(ctx context.Context, actor string) ([]query.DeclaredProvider, error) {
 	if actor == "" {
 		return nil, ErrUnauthenticated
 	}
 	declarations := a.providers.Providers()
-	result := make([]DeclaredProvider, 0, len(declarations))
+	result := make([]query.DeclaredProvider, 0, len(declarations))
 	for _, declaration := range declarations {
 		state, err := a.queries.GetProviderConnectionState(ctx, actor, declaration.Name)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, DeclaredProvider{ProviderDeclaration: declaration, Connection: state})
+		provider := query.DeclaredProvider{Name: string(declaration.Name), DisplayName: declaration.DisplayName,
+			TargetCredentialsExpire: declaration.CredentialsExpire, ObservesAccessScope: declaration.ObservesAccessScope, Connection: state}
+		for _, target := range declaration.Targets {
+			hosts := make([]string, len(target.Hosts))
+			for i, host := range target.Hosts {
+				hosts[i] = string(host)
+			}
+			provider.Targets = append(provider.Targets, query.ProviderTarget{Name: target.Name, Hosts: hosts})
+		}
+		result = append(result, provider)
 	}
 	return result, nil
 }

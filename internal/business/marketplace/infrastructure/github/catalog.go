@@ -25,11 +25,9 @@ const installationFetchConcurrency = 4
 // token. One authorization reaches every installation of the App the user can
 // access. The App's own declaration is read once per process.
 type Catalog struct {
-	enabled        bool
-	app            *appClient
-	authorizations application.AuthorizationStore
-	fresh          FreshCredentials
-	now            func() time.Time
+	enabled bool
+	app     *appClient
+	now     func() time.Time
 
 	// The App's slug and the permissions connecting requests change only when
 	// the App is edited; each is read once per process.
@@ -38,7 +36,7 @@ type Catalog struct {
 	requested     []application.ProviderPermission
 }
 
-func NewCatalog(cfg Config, authorizations application.AuthorizationStore, fresh FreshCredentials) (*Catalog, error) {
+func NewCatalog(cfg Config) (*Catalog, error) {
 	app, err := newAppClient(cfg)
 	if err != nil {
 		return nil, err
@@ -47,31 +45,23 @@ func NewCatalog(cfg Config, authorizations application.AuthorizationStore, fresh
 	if err != nil {
 		return nil, err
 	}
-	if enabled {
-		if authorizations == nil {
-			return nil, fmt.Errorf("github catalog requires provider authorization repository")
-		}
-		if fresh == nil {
-			return nil, fmt.Errorf("github catalog requires fresh credentials")
-		}
-	}
-	return &Catalog{enabled: enabled, app: app, authorizations: authorizations, fresh: fresh, now: time.Now}, nil
+	return &Catalog{enabled: enabled, app: app, now: time.Now}, nil
 }
 
 // ObserveAccess lists the user's installations with their repositories, the
 // installations fetched concurrently. An installation that disappears between
 // the two reads only narrows the scope.
-func (c *Catalog) ObserveAccess(ctx context.Context, ownerID string, provider domain.Provider) (domain.AccessScope, error) {
-	if !c.enabled || provider != domain.ProviderGitHub {
+func (c *Catalog) ObserveAccess(ctx context.Context, token string) (domain.AccessScope, error) {
+	if !c.enabled {
 		return domain.AccessScope{}, application.ErrProviderUnavailable
+	}
+	if strings.TrimSpace(token) == "" {
+		return domain.AccessScope{}, application.ErrCredentialRejected
 	}
 	// The observation is as of its start: a slower one must not look newer
 	// than one that began after it.
 	observedAt := c.now().UTC()
-	session, err := c.userSession(ctx, ownerID)
-	if err != nil {
-		return domain.AccessScope{}, mapProviderError(err)
-	}
+	session := &userSession{catalog: c, token: token}
 	var installations []githubInstallation
 	for page := 1; ; page++ {
 		var response struct {
@@ -198,64 +188,20 @@ func (c *Catalog) installationSettingsURL(installation githubInstallation) strin
 	return c.app.cfg.webBaseURL() + "/settings/installations/" + id
 }
 
-// userSession holds a fresh user token and retries a request once after a
-// forced refresh when GitHub rejects the token. Concurrent requests share one
-// refresh.
+// userSession reads GitHub with the owner's user token. A rejected token
+// fails the whole observation as ErrCredentialRejected; renewing it is the
+// Marketplace's decision.
 type userSession struct {
 	catalog *Catalog
-	mu      sync.Mutex
-	auth    *domain.ProviderAuthorization
 	token   string
 }
 
-func (c *Catalog) userSession(ctx context.Context, ownerID string) (*userSession, error) {
-	auth, err := c.authorizations.GetByOwnerAndProvider(ctx, ownerID, domain.ProviderGitHub)
-	if err != nil {
-		return nil, err
-	}
-	auth, token, err := c.fresh.Fresh(ctx, auth.ID, ownerID, false)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(token) == "" {
-		return nil, fmt.Errorf("github user access token is empty")
-	}
-	return &userSession{catalog: c, auth: auth, token: token}, nil
-}
-
 func (s *userSession) get(ctx context.Context, path string, out any) error {
-	s.mu.Lock()
-	rejected := s.token
-	s.mu.Unlock()
-	err := s.catalog.app.doJSON(ctx, http.MethodGet, path, "Bearer "+rejected, nil, out)
-	if !isGitHubUnauthorized(err) {
-		return mapRequestError(err)
-	}
-	token, err := s.refresh(ctx, rejected)
-	if err != nil {
-		return mapProviderError(err)
-	}
-	err = s.catalog.app.doJSON(ctx, http.MethodGet, path, "Bearer "+token, nil, out)
+	err := s.catalog.app.doJSON(ctx, http.MethodGet, path, "Bearer "+s.token, nil, out)
 	if isGitHubUnauthorized(err) {
-		return application.NewProviderError(providerErrorGitHubTokenRefreshFailed, false, "github api unauthorized after refresh", err)
+		return fmt.Errorf("%w: %v", application.ErrCredentialRejected, err)
 	}
 	return mapRequestError(err)
-}
-
-// refresh replaces a rejected token once; a request that saw the same rejected
-// token reuses the replacement.
-func (s *userSession) refresh(ctx context.Context, rejected string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.token != rejected {
-		return s.token, nil
-	}
-	auth, token, err := s.catalog.fresh.Fresh(ctx, s.auth.ID, s.auth.OwnerID, true)
-	if err != nil {
-		return "", err
-	}
-	s.auth, s.token = auth, token
-	return token, nil
 }
 
 func (s *userSession) installationRepositories(ctx context.Context, installationID int64) ([]domain.ScopeRepository, error) {
@@ -329,7 +275,7 @@ func sortedPermissions(permissions map[string]string) []application.ProviderPerm
 }
 
 func mapProviderError(err error) error {
-	if errors.Is(err, domain.ErrRepositoryNotFound) {
+	if errors.Is(err, domain.ErrRepositoryNotFound) || errors.Is(err, application.ErrCredentialRejected) {
 		return err
 	}
 	var providerErr *application.ProviderError

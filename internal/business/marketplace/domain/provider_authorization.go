@@ -88,14 +88,29 @@ func (a *ProviderAuthorization) Validate() error {
 	return nil
 }
 
+// NeedsRefresh reports whether any credential the authorization holds, its
+// own or a target's, expires within skew: renewal replaces them all.
 func (a *ProviderAuthorization) NeedsRefresh(now time.Time, skew time.Duration) bool {
 	if !a.IsActive() {
 		return false
 	}
-	if a.ExpiresAt.IsZero() {
+	expiry := a.CredentialsExpireAt()
+	if expiry.IsZero() {
 		return false
 	}
-	return !a.ExpiresAt.UTC().After(now.UTC().Add(nonNegativeDuration(skew)))
+	return !expiry.After(now.UTC().Add(nonNegativeDuration(skew)))
+}
+
+// CredentialsExpireAt is when the first credential the authorization holds
+// expires, its own or a target's; zero when none expires.
+func (a *ProviderAuthorization) CredentialsExpireAt() time.Time {
+	earliest := a.ExpiresAt.UTC()
+	for _, credential := range a.TargetCredentials {
+		if expiry := credential.ExpiresAt.UTC(); !expiry.IsZero() && (earliest.IsZero() || expiry.Before(earliest)) {
+			earliest = expiry
+		}
+	}
+	return earliest
 }
 
 func (a *ProviderAuthorization) CanUseToken(now time.Time, skew time.Duration) bool {

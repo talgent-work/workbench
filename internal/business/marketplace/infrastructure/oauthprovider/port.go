@@ -11,6 +11,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/oauthtoken"
 )
 
 // Port is one OAuth Provider's adapter for the ProviderAuthorizationPort.
@@ -52,18 +53,19 @@ func (p *Port) Renew(ctx context.Context, credentials domain.CredentialSet) (dom
 	renewed := domain.CredentialSet{AccessTokenCiphertext: access, RefreshTokenCiphertext: credentials.RefreshTokenCiphertext,
 		ExpiresAt: expiry(now, token.ExpiresIn), RefreshTokenExpiresAt: credentials.RefreshTokenExpiresAt}
 	if refresh != "" {
-		renewed.RefreshTokenCiphertext, renewed.RefreshTokenExpiresAt = refresh, expiry(now, token.RefreshExpiresIn)
+		renewed.RefreshTokenCiphertext, renewed.RefreshTokenExpiresAt = refresh, expiry(now, token.RefreshLifetime())
 	}
 	return domain.CredentialRenewal{Credentials: renewed}, nil
 }
 
 // ObtainTargetCredential asks for an access credential bound to the target's
-// resource with the refresh credential (RFC 8707, section 2.2).
+// resource indicator with the refresh credential (RFC 8707, section 2.2).
 func (p *Port) ObtainTargetCredential(ctx context.Context, credentials domain.CredentialSet, target domain.ProviderTarget) (domain.TargetCredentialOutcome, error) {
-	if target.Resource == "" {
+	resource := p.client.TargetResources[target.Name]
+	if resource == "" {
 		return domain.TargetCredentialOutcome{}, domain.ErrCredentialTargetInapplicable
 	}
-	token, refresh, err := p.refresh(ctx, credentials, target.Resource)
+	token, refresh, err := p.refresh(ctx, credentials, resource)
 	if grantRefused(err) {
 		return domain.TargetCredentialOutcome{ReconnectRequired: true, ReasonCode: "provider_grant_refused"}, nil
 	}
@@ -77,35 +79,35 @@ func (p *Port) ObtainTargetCredential(ctx context.Context, credentials domain.Cr
 	now := p.now().UTC()
 	outcome := domain.TargetCredentialOutcome{Credential: domain.TargetCredential{TokenCiphertext: access, ExpiresAt: expiry(now, token.ExpiresIn)}}
 	if refresh != "" {
-		outcome.RefreshTokenCiphertext, outcome.RefreshTokenExpiresAt = refresh, expiry(now, token.RefreshExpiresIn)
+		outcome.RefreshTokenCiphertext, outcome.RefreshTokenExpiresAt = refresh, expiry(now, token.RefreshLifetime())
 	}
 	return outcome, nil
 }
 
 // refresh runs the refresh grant, for one resource when named, and returns
 // the protected replacement refresh credential when the server rotated it.
-func (p *Port) refresh(ctx context.Context, credentials domain.CredentialSet, resource string) (tokenResponse, string, error) {
+func (p *Port) refresh(ctx context.Context, credentials domain.CredentialSet, resource string) (oauthtoken.Token, string, error) {
 	refreshToken, err := p.cipher.Decrypt(credentials.RefreshTokenCiphertext)
 	if err != nil || strings.TrimSpace(refreshToken) == "" {
-		return tokenResponse{}, "", &oauthError{Code: "invalid_grant"}
+		return oauthtoken.Token{}, "", &oauthtoken.Error{Code: "invalid_grant"}
 	}
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}}
 	if resource != "" {
 		form.Set("resource", resource)
 	}
-	token, err := p.client.token(ctx, p.http, form)
+	token, err := p.client.endpoint().Request(ctx, p.http, form)
 	if err != nil {
 		if grantRefused(err) {
-			return tokenResponse{}, "", err
+			return oauthtoken.Token{}, "", err
 		}
-		return tokenResponse{}, "", transient(fmt.Sprintf("Provider %s credential renewal unavailable", p.client.Provider), err)
+		return oauthtoken.Token{}, "", transient(fmt.Sprintf("Provider %s credential renewal unavailable", p.client.Provider), err)
 	}
 	if token.RefreshToken == "" || token.RefreshToken == refreshToken {
 		return token, "", nil
 	}
 	rotated, err := p.cipher.Encrypt(token.RefreshToken)
 	if err != nil {
-		return tokenResponse{}, "", err
+		return oauthtoken.Token{}, "", err
 	}
 	return token, rotated, nil
 }
@@ -126,7 +128,7 @@ func (p *Port) Revoke(ctx context.Context, credentials domain.CredentialSet) (bo
 	}
 	ctx, cancel := context.WithTimeout(ctx, providerTimeout)
 	defer cancel()
-	request, err := p.client.post(ctx, p.client.RevocationEndpoint, url.Values{"token": {token}, "token_type_hint": {hint}})
+	request, err := p.client.endpoint().Post(ctx, p.client.RevocationEndpoint, url.Values{"token": {token}, "token_type_hint": {hint}})
 	if err != nil {
 		return false, err
 	}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/oauthtoken"
 )
 
 // stateLifetime bounds how long a person may take at the Provider.
@@ -91,7 +92,8 @@ func (a *Authorizer) BeginProviderAuthorization(_ context.Context, input applica
 	if len(client.Scopes) > 0 {
 		query.Set("scope", strings.Join(client.Scopes, " "))
 	}
-	for _, resource := range client.Resources {
+	// Every target's resource lies within the grant (RFC 8707, section 2).
+	for _, resource := range client.resources() {
 		query.Add("resource", resource)
 	}
 	address.RawQuery = query.Encode()
@@ -113,7 +115,7 @@ func (a *Authorizer) CompleteProviderAuthorization(ctx context.Context, input ap
 	}
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {state.RedirectURI}, "code_verifier": {state.Verifier}}
 	now := a.now().UTC()
-	token, err := client.token(ctx, a.http, form)
+	token, err := client.endpoint().Request(ctx, a.http, form)
 	if err != nil {
 		if grantRefused(err) {
 			return nil, application.NewProviderError(application.ProviderErrorCredentialFailed, false, "the Provider refused the authorization code", err)
@@ -137,7 +139,7 @@ func (a *Authorizer) CompleteProviderAuthorization(ctx context.Context, input ap
 	return domain.NewProviderAuthorization(domain.ProviderAuthorizationInput{
 		OwnerID: state.OwnerID, Provider: input.Provider, ProviderAccountID: account.ID, ProviderLogin: account.Login,
 		AccessTokenCiphertext: access, RefreshTokenCiphertext: refresh,
-		ExpiresAt: expiry(now, token.ExpiresIn), RefreshTokenExpiresAt: expiry(now, token.RefreshExpiresIn),
+		ExpiresAt: expiry(now, token.ExpiresIn), RefreshTokenExpiresAt: expiry(now, token.RefreshLifetime()),
 	})
 }
 
@@ -165,7 +167,7 @@ type externalAccount struct{ ID, Login string }
 
 // account names the authorized account from the ID Token the token endpoint
 // returned over TLS, or else from the userinfo endpoint.
-func (a *Authorizer) account(ctx context.Context, client Client, token tokenResponse) (externalAccount, error) {
+func (a *Authorizer) account(ctx context.Context, client Client, token oauthtoken.Token) (externalAccount, error) {
 	var claims struct {
 		Subject           string `json:"sub"`
 		PreferredUsername string `json:"preferred_username"`

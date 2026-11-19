@@ -33,7 +33,7 @@ func (p *fakeProviderPort) Renew(_ context.Context, credentials domain.Credentia
 }
 
 func (p *fakeProviderPort) ObtainTargetCredential(_ context.Context, _ domain.CredentialSet, target domain.ProviderTarget) (domain.TargetCredentialOutcome, error) {
-	p.exchanges = append(p.exchanges, target.Resource)
+	p.exchanges = append(p.exchanges, target.Name)
 	if p.fail != nil {
 		return domain.TargetCredentialOutcome{}, p.fail
 	}
@@ -58,9 +58,6 @@ func (plainCipher) Decrypt(ciphertext string) (string, error) { return ciphertex
 
 func enterpriseDeclaration(derivation domain.TargetCredentialDerivation) domain.ProviderDeclaration {
 	targets := []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"}}}
-	if derivation == domain.ResourceIndicatorTargetCredential {
-		targets[0].Resource, targets[1].Resource = "https://docs.example.com", "https://tickets.example.com"
-	}
 	return domain.ProviderDeclaration{Name: "example-sso", DisplayName: "Example SSO", Derivation: derivation, CredentialsExpire: true, Targets: targets}
 }
 
@@ -94,10 +91,10 @@ func TestProviderCredentials_SharedTargetsServeTheAuthorizationsCredential(t *te
 	require.Equal(t, "renewed-access", material.Token, "a credential within the request skew is renewed first")
 }
 
-// One authorization yields a distinct credential per target by resource
-// indicator, each saved and reused until it nears expiry.
-func TestProviderCredentials_ResourceIndicatorTargetsEachGetTheirOwnCredential(t *testing.T) {
-	credentials, store, port, id := credentialsFixture(t, domain.ResourceIndicatorTargetCredential, time.Hour)
+// One authorization yields a distinct credential per target, each saved and
+// reused until it nears expiry.
+func TestProviderCredentials_PerTargetCredentialsAreEachTheirOwn(t *testing.T) {
+	credentials, store, port, id := credentialsFixture(t, domain.PerTargetCredential, time.Hour)
 	docs, err := credentials.SupplyTarget(t.Context(), "user-1", id, "docs")
 	require.NoError(t, err)
 	tickets, err := credentials.SupplyTarget(t.Context(), "user-1", id, "tickets")
@@ -107,7 +104,7 @@ func TestProviderCredentials_ResourceIndicatorTargetsEachGetTheirOwnCredential(t
 	again, err := credentials.SupplyTarget(t.Context(), "user-1", id, "docs")
 	require.NoError(t, err)
 	require.Equal(t, docs, again)
-	require.Equal(t, []string{"https://docs.example.com", "https://tickets.example.com"}, port.exchanges)
+	require.Equal(t, []string{"docs", "tickets"}, port.exchanges)
 	saved, err := store.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Len(t, saved.TargetCredentials, 2)
@@ -214,4 +211,16 @@ func TestProviderCredentials_RenewAuthorizationWithinTheWindow(t *testing.T) {
 	saved, err := store.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(saved.AccessTokenCiphertext, "renewed"))
+
+	// A target credential expiring first is due as well; renewal replaces it.
+	credentials, store, port, id = credentialsFixture(t, domain.PerTargetCredential, time.Hour)
+	held, err := store.Get(t.Context(), id)
+	require.NoError(t, err)
+	held.TargetCredentials = map[string]domain.TargetCredential{"docs": {TokenCiphertext: "for-docs", ExpiresAt: credentials.now().Add(10 * time.Minute)}}
+	store.save(held)
+	require.NoError(t, credentials.RenewAuthorization(t.Context(), id))
+	require.Len(t, port.renewals, 1)
+	saved, err = store.Get(t.Context(), id)
+	require.NoError(t, err)
+	require.Empty(t, saved.TargetCredentials, "the next supply obtains it afresh")
 }

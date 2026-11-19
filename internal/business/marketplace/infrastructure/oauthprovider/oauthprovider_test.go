@@ -57,7 +57,7 @@ func fixture(t *testing.T) (*authorizationServer, Client, application.Credential
 	cipher, err := credentialcipher.New("oauth provider test key")
 	require.NoError(t, err)
 	client := Client{Provider: "example-sso", ClientID: "workbench", ClientSecret: "secret", Scopes: []string{"openid", "offline_access"},
-		Resources:             []string{"https://docs.example.com", "https://tickets.example.com"},
+		TargetResources:       map[string]string{"docs": "https://docs.example.com", "tickets": "https://tickets.example.com"},
 		AuthorizationEndpoint: "https://sso.example.com/authorize", TokenEndpoint: httpServer.URL + "/token", RevocationEndpoint: httpServer.URL + "/revoke"}
 	return server, client, cipher
 }
@@ -147,7 +147,7 @@ func TestRenewal(t *testing.T) {
 	require.True(t, providerErr.Retryable)
 }
 
-// A resource-indicator target's credential is requested for its resource,
+// A per-target credential is requested for the target's resource indicator,
 // and a rotated refresh credential is returned for the authorization.
 func TestTargetCredentialByResourceIndicator(t *testing.T) {
 	server, client, cipher := fixture(t)
@@ -157,7 +157,7 @@ func TestTargetCredentialByResourceIndicator(t *testing.T) {
 	require.NoError(t, err)
 	server.answer = map[string]any{"access_token": "for-docs", "refresh_token": "rotated", "expires_in": 300}
 	outcome, err := port.ObtainTargetCredential(t.Context(), domain.CredentialSet{RefreshTokenCiphertext: refresh},
-		domain.ProviderTarget{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}, Resource: "https://docs.example.com"})
+		domain.ProviderTarget{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}})
 	require.NoError(t, err)
 	require.Equal(t, "https://docs.example.com", server.last().Get("resource"))
 	require.Equal(t, "refresh_token", server.last().Get("grant_type"))

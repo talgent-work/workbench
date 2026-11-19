@@ -476,6 +476,7 @@ CREATE TABLE IF NOT EXISTS `scm_provider_authorization` (
     `access_scope_json` json DEFAULT NULL COMMENT 'Last observed accounts, repositories and permissions the authorization reaches',
     `access_scope_observed_at` bigint NOT NULL DEFAULT '0' COMMENT 'When the access scope was last observed, in milliseconds; 0 when never',
     `target_credentials_json` json DEFAULT NULL COMMENT 'Encrypted credentials obtained per Provider target, by target name, with their expiry',
+    `credentials_expire_at` bigint NOT NULL DEFAULT '0' COMMENT 'Earliest expiry over the own and target credentials in milliseconds, for the renewal sweep',
     `version` int unsigned NOT NULL DEFAULT '0' COMMENT 'Optimistic lock version',
     `created_at` bigint NOT NULL DEFAULT '0' COMMENT 'Creation timestamp in milliseconds',
     `updated_at` bigint NOT NULL DEFAULT '0' COMMENT 'Update timestamp in milliseconds',
@@ -485,7 +486,7 @@ CREATE TABLE IF NOT EXISTS `scm_provider_authorization` (
     KEY `idx_scope_observation` (`status`, `access_scope_observed_at`, `deleted_at`),
     KEY `idx_scope_installations` ((CAST(`access_scope_json`->'$.installation_ids' AS CHAR(32) ARRAY))),
     KEY `idx_owner_provider` (`owner_id`, `provider`, `deleted_at`),
-    KEY `idx_refresh_candidates` (`status`, `expires_at`, `refresh_lease_until`, `deleted_at`),
+    KEY `idx_refresh_candidates` (`status`, `credentials_expire_at`, `refresh_lease_until`, `deleted_at`),
     KEY `idx_provider_account` (`provider`, `provider_account_id`, `deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Provider authorizations';
 

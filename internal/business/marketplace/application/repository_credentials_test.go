@@ -49,16 +49,16 @@ func TestRepositorySupplyValidatesRetainedAuthorizationAndObservedTarget(t *test
 			}
 			require.NoError(t, err)
 			require.Equal(t, "current-token", material.Password)
-			require.Equal(t, [][3]string{{"owner", authorization.ID, request.CloneURL}}, supplier.requests)
+			require.Equal(t, [][2]string{{request.CloneURL, "access-token-ciphertext"}}, supplier.requests, "the authorization's current credential")
 		})
 	}
 }
 
-type recordingRepositorySupplier struct{ requests [][3]string }
+type recordingRepositorySupplier struct{ requests [][2]string }
 
-func (s *recordingRepositorySupplier) SupplyRepositoryCredential(_ context.Context, owner, authorizationID, cloneURL string) (credential.MaterializedCredential, error) {
-	s.requests = append(s.requests, [3]string{owner, authorizationID, cloneURL})
-	return credential.MaterializedCredential{Username: "x-access-token", Password: "current-token", ExpiresAt: time.Now().Add(time.Hour)}, nil
+func (s *recordingRepositorySupplier) SupplyRepositoryCredential(_ context.Context, cloneURL, token string, expiresAt time.Time) (credential.MaterializedCredential, error) {
+	s.requests = append(s.requests, [2]string{cloneURL, token})
+	return credential.MaterializedCredential{Username: "x-access-token", Password: "current-token", ExpiresAt: expiresAt}, nil
 }
 
 // Intent (real): a repository missing from a stale scope is checked with the

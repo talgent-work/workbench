@@ -5,50 +5,45 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
 
-func TestRepositoryCredentialSupplierRefusesUntrustedTargetBeforeDecryption(t *testing.T) {
+// The user token is presented only for a repository on this deployment's
+// GitHub, over HTTPS, without credentials, query or fragment of its own.
+func TestRepositoryCredentialSupplierRefusesUntrustedTargets(t *testing.T) {
+	supplier, err := NewCredentialSupplier(enabledConfig(t))
+	require.NoError(t, err)
 	for _, target := range []string{
 		"https://other.example/acme/project.git", "http://github.com/acme/project.git",
 		"https://user@github.com/acme/project.git", "https://github.com/acme/project.git?token=bad",
 		"https://github.com/acme/project.git#fragment", "https://github.com/", "https://github.com:444/acme/project.git",
 	} {
-		t.Run(target, func(t *testing.T) {
-			cipher := &passthroughTokenCipher{}
-			auth := mustAuthorization(t, "owner", "token", time.Now().Add(time.Hour))
-			supplier, err := testSupplier(t, enabledConfig(t), &fakeAuthorizationRepository{authorization: auth}, cipher)
-			require.NoError(t, err)
-			material, err := supplier.SupplyRepositoryCredential(t.Context(), "owner", auth.ID, target)
-			require.ErrorIs(t, err, domain.ErrCredentialTargetInapplicable)
-			require.Empty(t, material.Password)
-			require.Zero(t, cipher.decryptCalls)
-		})
+		material, err := supplier.SupplyRepositoryCredential(t.Context(), target, "gho_token", time.Now().Add(time.Hour))
+		require.ErrorIs(t, err, domain.ErrCredentialTargetInapplicable, target)
+		require.Empty(t, material.Password)
 	}
 }
 
-func TestRepositoryCredentialSupplierRefusesForeignOrUnusableAuthorization(t *testing.T) {
-	for _, scenario := range []string{"foreign owner", "missing reference", "revoked", "reconnect required"} {
-		t.Run(scenario, func(t *testing.T) {
-			cipher := &passthroughTokenCipher{}
-			auth := mustAuthorization(t, "owner", "token", time.Now().Add(time.Hour))
-			owner, reference := "owner", auth.ID
-			switch scenario {
-			case "foreign owner":
-				owner = "other-owner"
-			case "missing reference":
-				reference = ""
-			case "revoked":
-				require.NoError(t, auth.MarkRevoked(time.Now()))
-			case "reconnect required":
-				require.NoError(t, auth.MarkReconnectRequired("expired", "expired", time.Now()))
-			}
-			supplier, err := testSupplier(t, enabledConfig(t), &fakeAuthorizationRepository{authorization: auth}, cipher)
-			require.NoError(t, err)
-			material, err := supplier.SupplyRepositoryCredential(t.Context(), owner, reference, "https://github.com/acme/project.git")
-			require.Error(t, err)
-			require.Empty(t, material.Password)
-			require.Zero(t, cipher.decryptCalls)
-		})
+// The material is the user token with its own expiry at GitHub; an expired
+// or missing token is never presented.
+func TestRepositoryCredentialSupplierPresentsTheUserToken(t *testing.T) {
+	supplier, err := NewCredentialSupplier(enabledConfig(t))
+	require.NoError(t, err)
+	expiresAt := time.Now().UTC().Add(30 * time.Minute)
+	material, err := supplier.SupplyRepositoryCredential(t.Context(), "https://github.com/acme/api.git", "gho_user_access_token", expiresAt)
+	require.NoError(t, err)
+	require.Equal(t, "x-access-token", material.Username)
+	require.Equal(t, "gho_user_access_token", material.Password)
+	require.True(t, material.ExpiresAt.Equal(expiresAt))
+	material, err = supplier.SupplyRepositoryCredential(t.Context(), "https://github.com/acme/api.git", "gho_user_access_token", time.Time{})
+	require.NoError(t, err)
+	require.True(t, material.ExpiresAt.IsZero(), "a token that does not expire declares no expiry")
+	for _, token := range []struct {
+		value   string
+		expires time.Time
+	}{{"", expiresAt}, {"gho_expired", time.Now().Add(-time.Second)}} {
+		_, err = supplier.SupplyRepositoryCredential(t.Context(), "https://github.com/acme/api.git", token.value, token.expires)
+		require.ErrorIs(t, err, application.ErrProviderUnavailable)
 	}
 }

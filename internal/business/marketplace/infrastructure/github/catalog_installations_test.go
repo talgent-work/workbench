@@ -19,11 +19,6 @@ import (
 // organization. Repositories are their union; a vanished installation only
 // narrows the scope.
 func TestCatalog_ObserveAccessCoversEveryInstallation(t *testing.T) {
-	cipher := mustTokenCipher(t)
-	ciphertext, err := cipher.Encrypt("gho_user_catalog_token")
-	if err != nil {
-		t.Fatalf("Encrypt: %v", err)
-	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -45,11 +40,11 @@ func TestCatalog_ObserveAccessCoversEveryInstallation(t *testing.T) {
 	defer server.Close()
 	cfg := enabledConfig(t)
 	cfg.APIBaseURL, cfg.WebBaseURL = server.URL, "https://github.example.test"
-	catalog, err := testCatalog(t, cfg, &fakeAuthorizationRepository{authorization: mustActiveAuthorization(t, "user-1", ciphertext, time.Now().UTC().Add(time.Hour))}, cipher)
+	catalog, err := NewCatalog(cfg)
 	if err != nil {
 		t.Fatalf("NewCatalog: %v", err)
 	}
-	access, err := catalog.ObserveAccess(context.Background(), "user-1", domain.ProviderGitHub)
+	access, err := catalog.ObserveAccess(context.Background(), "gho_user_catalog_token")
 	if err != nil {
 		t.Fatalf("ObserveAccess: %v", err)
 	}
@@ -72,7 +67,7 @@ func TestCatalog_ObserveAccessCoversEveryInstallation(t *testing.T) {
 			t.Fatalf("permissions=%+v, want %+v", access.Permissions, want)
 		}
 	}
-	scope, err := catalog.ObserveAccess(context.Background(), "user-1", domain.ProviderGitHub)
+	scope, err := catalog.ObserveAccess(context.Background(), "gho_user_catalog_token")
 	if err != nil {
 		t.Fatalf("ObserveAccess: %v", err)
 	}
@@ -106,7 +101,7 @@ func TestCatalog_ManageURLAndRequestedPermissionsUseTheAppSlug(t *testing.T) {
 	defer server.Close()
 	cfg := enabledConfig(t)
 	cfg.AppSlug, cfg.APIBaseURL, cfg.WebBaseURL = "", server.URL, "https://github.example.test"
-	catalog, err := testCatalog(t, cfg, &fakeAuthorizationRepository{}, mustTokenCipher(t))
+	catalog, err := NewCatalog(cfg)
 	if err != nil {
 		t.Fatalf("NewCatalog: %v", err)
 	}
@@ -126,11 +121,6 @@ func TestCatalog_ManageURLAndRequestedPermissionsUseTheAppSlug(t *testing.T) {
 // Intent (real): installations are fetched concurrently, and the observation
 // equals what fetching them one by one would give.
 func TestCatalog_ObserveAccessFetchesManyInstallationsConcurrently(t *testing.T) {
-	cipher := mustTokenCipher(t)
-	ciphertext, err := cipher.Encrypt("gho_user_catalog_token")
-	if err != nil {
-		t.Fatalf("Encrypt: %v", err)
-	}
 	const installations = 12
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -153,11 +143,11 @@ func TestCatalog_ObserveAccessFetchesManyInstallationsConcurrently(t *testing.T)
 	defer server.Close()
 	cfg := enabledConfig(t)
 	cfg.APIBaseURL = server.URL
-	catalog, err := testCatalog(t, cfg, &fakeAuthorizationRepository{authorization: mustActiveAuthorization(t, "user-1", ciphertext, time.Now().UTC().Add(time.Hour))}, cipher)
+	catalog, err := NewCatalog(cfg)
 	if err != nil {
 		t.Fatalf("NewCatalog: %v", err)
 	}
-	scope, err := catalog.ObserveAccess(context.Background(), "user-1", domain.ProviderGitHub)
+	scope, err := catalog.ObserveAccess(context.Background(), "gho_user_catalog_token")
 	if err != nil {
 		t.Fatalf("ObserveAccess: %v", err)
 	}
@@ -175,11 +165,6 @@ func TestCatalog_ObserveAccessFetchesManyInstallationsConcurrently(t *testing.T)
 // Intent (real): a refused installation listing, such as a secondary rate
 // limit, fails the observation; only a missing installation narrows it.
 func TestCatalog_ObserveAccessFailsOnRefusedInstallation(t *testing.T) {
-	cipher := mustTokenCipher(t)
-	ciphertext, err := cipher.Encrypt("gho_user_catalog_token")
-	if err != nil {
-		t.Fatalf("Encrypt: %v", err)
-	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -192,11 +177,11 @@ func TestCatalog_ObserveAccessFailsOnRefusedInstallation(t *testing.T) {
 	defer server.Close()
 	cfg := enabledConfig(t)
 	cfg.APIBaseURL = server.URL
-	catalog, err := testCatalog(t, cfg, &fakeAuthorizationRepository{authorization: mustActiveAuthorization(t, "user-1", ciphertext, time.Now().UTC().Add(time.Hour))}, cipher)
+	catalog, err := NewCatalog(cfg)
 	if err != nil {
 		t.Fatalf("NewCatalog: %v", err)
 	}
-	if _, err := catalog.ObserveAccess(context.Background(), "user-1", domain.ProviderGitHub); !errors.Is(err, application.ErrProviderUnavailable) {
+	if _, err := catalog.ObserveAccess(context.Background(), "gho_user_catalog_token"); !errors.Is(err, application.ErrProviderUnavailable) {
 		t.Fatalf("err=%v, want ErrProviderUnavailable", err)
 	}
 }

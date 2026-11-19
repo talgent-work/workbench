@@ -143,7 +143,7 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	require.NoError(t, err)
 	providers := providertest.Declarations{providertest.GitHub()}
 	credentials := application.NewProviderCredentials(repo, providers, onePort{port}, cipher, application.CredentialTiming{RequestSkew: 5 * time.Minute})
-	observer, err := scmgithub.NewCatalog(cfg, repo, credentials)
+	observer, err := scmgithub.NewCatalog(cfg)
 	require.NoError(t, err)
 	queries := NewProviderAuthorizationQueries(db)
 	scheduler := &syncObservations{}

@@ -20,6 +20,7 @@ func providerAuthorizationToDO(a *domain.ProviderAuthorization) (ProviderAuthori
 	}
 	return ProviderAuthorizationDO{
 		TargetCredentialsJSON:  targets,
+		CredentialsExpireAt:    millisFromTime(a.CredentialsExpireAt()),
 		ID:                     a.ID,
 		OwnerID:                a.OwnerID,
 		Provider:               string(a.Provider),

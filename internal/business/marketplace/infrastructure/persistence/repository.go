@@ -40,8 +40,8 @@ func (r *ProviderAuthorizations) Save(ctx context.Context, authorization *domain
 		return nil
 	}
 	result, err := r.db.Context(ctx).Exec(
-		"UPDATE scm_provider_authorization SET provider_account_id = ?, provider_login = ?, access_token_ciphertext = ?, refresh_token_ciphertext = ?, expires_at = ?, refresh_token_expires_at = ?, status = ?, refresh_lease_id = '', refresh_lease_until = 0, last_refreshed_at = ?, last_checked_at = ?, last_failure_code = ?, last_failure_detail = ?, access_scope_json = ?, access_scope_observed_at = ?, target_credentials_json = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND deleted_at = 0",
-		row.ProviderAccountID, row.ProviderLogin, row.AccessTokenCiphertext, row.RefreshTokenCiphertext, row.ExpiresAt, row.RefreshTokenExpiresAt, row.Status, row.LastRefreshedAt, row.LastCheckedAt, row.LastFailureCode, row.LastFailureDetail, row.AccessScopeJSON, row.AccessScopeObservedAt, row.TargetCredentialsJSON, row.UpdatedAt, row.ID, row.Version,
+		"UPDATE scm_provider_authorization SET provider_account_id = ?, provider_login = ?, access_token_ciphertext = ?, refresh_token_ciphertext = ?, expires_at = ?, refresh_token_expires_at = ?, status = ?, refresh_lease_id = '', refresh_lease_until = 0, last_refreshed_at = ?, last_checked_at = ?, last_failure_code = ?, last_failure_detail = ?, access_scope_json = ?, access_scope_observed_at = ?, target_credentials_json = ?, credentials_expire_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND deleted_at = 0",
+		row.ProviderAccountID, row.ProviderLogin, row.AccessTokenCiphertext, row.RefreshTokenCiphertext, row.ExpiresAt, row.RefreshTokenExpiresAt, row.Status, row.LastRefreshedAt, row.LastCheckedAt, row.LastFailureCode, row.LastFailureDetail, row.AccessScopeJSON, row.AccessScopeObservedAt, row.TargetCredentialsJSON, row.CredentialsExpireAt, row.UpdatedAt, row.ID, row.Version,
 	)
 	if err != nil {
 		return oops.Wrap(err)

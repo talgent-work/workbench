@@ -25,9 +25,9 @@ const (
 	// SharedTargetCredential serves every target with the authorization's own
 	// credential.
 	SharedTargetCredential TargetCredentialDerivation = "shared"
-	// ResourceIndicatorTargetCredential obtains a credential per target, its
-	// resource named as an OAuth resource indicator (RFC 8707).
-	ResourceIndicatorTargetCredential TargetCredentialDerivation = "resource-indicator"
+	// PerTargetCredential obtains a distinct credential for each target from
+	// the authorization; how is the Provider adapter's.
+	PerTargetCredential TargetCredentialDerivation = "per-target"
 )
 
 var (
@@ -64,12 +64,10 @@ func (p HostPattern) Matches(host string) bool {
 }
 
 // ProviderTarget is one destination a Provider declares for the credentials
-// of its authorization: the hosts they reach and, for credentials obtained per
-// target, the resource indicator that names it.
+// of its authorization: the hosts they reach.
 type ProviderTarget struct {
-	Name     string
-	Hosts    []HostPattern
-	Resource string
+	Name  string
+	Hosts []HostPattern
 }
 
 // Contains reports whether an HTTPS address lies on one of the target's hosts.
@@ -91,8 +89,8 @@ type ProviderDeclaration struct {
 	Targets           []ProviderTarget
 	Derivation        TargetCredentialDerivation
 	CredentialsExpire bool
-	// ObservesAccessScope is true only for GitHub, whose adapter observes
-	// the accounts and repositories an authorization reaches.
+	// ObservesAccessScope marks a Provider whose adapter observes the
+	// accounts and repositories an authorization reaches.
 	ObservesAccessScope bool
 }
 
@@ -100,10 +98,7 @@ func (d ProviderDeclaration) Validate() error {
 	if !providerName.MatchString(string(d.Name)) || strings.TrimSpace(d.DisplayName) == "" || len(d.Targets) == 0 {
 		return ErrInvalidProviderDeclaration
 	}
-	if d.Derivation != SharedTargetCredential && d.Derivation != ResourceIndicatorTargetCredential {
-		return ErrInvalidProviderDeclaration
-	}
-	if d.ObservesAccessScope != (d.Name == ProviderGitHub) {
+	if d.Derivation != SharedTargetCredential && d.Derivation != PerTargetCredential {
 		return ErrInvalidProviderDeclaration
 	}
 	names := map[string]bool{}
@@ -114,14 +109,6 @@ func (d ProviderDeclaration) Validate() error {
 		names[target.Name] = true
 		for _, host := range target.Hosts {
 			if !host.valid() {
-				return ErrInvalidProviderDeclaration
-			}
-		}
-		if (d.Derivation == ResourceIndicatorTargetCredential) != (target.Resource != "") {
-			return ErrInvalidProviderDeclaration
-		}
-		if target.Resource != "" {
-			if u, err := url.Parse(target.Resource); err != nil || !u.IsAbs() || u.Fragment != "" {
 				return ErrInvalidProviderDeclaration
 			}
 		}

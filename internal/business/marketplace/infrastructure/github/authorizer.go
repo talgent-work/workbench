@@ -1,7 +1,6 @@
 package github
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -9,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,6 +17,7 @@ import (
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/credentialcipher"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/oauthtoken"
 )
 
 const providerAuthorizationStateTTL = 15 * time.Minute
@@ -133,43 +132,15 @@ func (a *Authorizer) oauthAuthorizationURL(state, redirectURI string) string {
 	return u.String()
 }
 
-func (a *Authorizer) exchangeCode(ctx context.Context, code, redirectURI string) (oauthTokenResponse, error) {
+func (a *Authorizer) exchangeCode(ctx context.Context, code, redirectURI string) (oauthtoken.Token, error) {
 	if code == "" {
-		return oauthTokenResponse{}, fmt.Errorf("github oauth code is required")
+		return oauthtoken.Token{}, fmt.Errorf("github oauth code is required")
 	}
-	form := url.Values{}
-	form.Set("client_id", strings.TrimSpace(a.cfg.OAuthClientID))
-	form.Set("client_secret", strings.TrimSpace(a.cfg.OAuthClientSecret))
-	form.Set("code", code)
+	form := url.Values{"code": {code}}
 	if strings.TrimSpace(redirectURI) != "" {
 		form.Set("redirect_uri", strings.TrimSpace(redirectURI))
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.tokenEndpoint(), bytes.NewBufferString(form.Encode()))
-	if err != nil {
-		return oauthTokenResponse{}, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := a.app.http.Do(req)
-	if err != nil {
-		return oauthTokenResponse{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return oauthTokenResponse{}, fmt.Errorf("github oauth status %d", resp.StatusCode)
-	}
-	var out oauthTokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return oauthTokenResponse{}, err
-	}
-	if strings.TrimSpace(out.AccessToken) == "" {
-		if out.Error != "" {
-			return oauthTokenResponse{}, fmt.Errorf("github oauth error: %s", out.Error)
-		}
-		return oauthTokenResponse{}, fmt.Errorf("github oauth response missing access token")
-	}
-	return out, nil
+	return a.cfg.tokenClient().Request(ctx, a.app.http, form)
 }
 
 func (a *Authorizer) currentUser(ctx context.Context, accessToken string) (githubUserResponse, error) {
@@ -234,15 +205,6 @@ type providerAuthorizationState struct {
 	OwnerID      string `json:"owner_id"`
 	RedirectURI  string `json:"redirect_uri,omitempty"`
 	IssuedAtUnix int64  `json:"issued_at_unix"`
-}
-
-type oauthTokenResponse struct {
-	AccessToken           string `json:"access_token"`
-	RefreshToken          string `json:"refresh_token"`
-	ExpiresIn             int64  `json:"expires_in"`
-	RefreshTokenExpiresIn int64  `json:"refresh_token_expires_in"`
-	Error                 string `json:"error"`
-	ErrorDescription      string `json:"error_description"`
 }
 
 type githubUserResponse struct {

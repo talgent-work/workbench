@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,14 +44,9 @@ func (p *AuthorizationPort) Renew(ctx context.Context, credentials domain.Creden
 	}
 	client := *p.http
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
 	token, err := refreshOAuthToken(ctx, p.cfg, &client, refresh)
 	if err != nil {
-		var oauthErr *githubOAuthError
-		// GitHub reports an unusable refresh token as bad_refresh_token,
-		// including in HTTP 200 responses; retrying cannot restore that grant.
-		if errors.As(err, &oauthErr) && (oauthErr.Code == "bad_refresh_token" || oauthErr.Code == "invalid_grant" || oauthErr.Code == "incomplete_response") {
+		if refreshRefused(err) {
 			return reconnectResult(), nil
 		}
 		return domain.CredentialRenewal{}, application.NewProviderError(providerErrorGitHubProviderTransient, true, "GitHub credential renewal unavailable", err)

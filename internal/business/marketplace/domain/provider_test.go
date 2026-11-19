@@ -30,12 +30,10 @@ func TestProviderDeclaration_Validates(t *testing.T) {
 		Targets: []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}}}
 	require.NoError(t, valid.Validate())
 	for name, change := range map[string]func(*domain.ProviderDeclaration){
-		"no targets":                func(d *domain.ProviderDeclaration) { d.Targets = nil },
-		"bare wildcard":             func(d *domain.ProviderDeclaration) { d.Targets[0].Hosts = []domain.HostPattern{"*"} },
-		"top-level wildcard":        func(d *domain.ProviderDeclaration) { d.Targets[0].Hosts = []domain.HostPattern{"*.com"} },
-		"unknown derivation":        func(d *domain.ProviderDeclaration) { d.Derivation = "token-exchange" },
-		"resource without mode":     func(d *domain.ProviderDeclaration) { d.Targets[0].Resource = "https://docs.example.com" },
-		"scope observed off GitHub": func(d *domain.ProviderDeclaration) { d.ObservesAccessScope = true },
+		"no targets":         func(d *domain.ProviderDeclaration) { d.Targets = nil },
+		"bare wildcard":      func(d *domain.ProviderDeclaration) { d.Targets[0].Hosts = []domain.HostPattern{"*"} },
+		"top-level wildcard": func(d *domain.ProviderDeclaration) { d.Targets[0].Hosts = []domain.HostPattern{"*.com"} },
+		"unknown derivation": func(d *domain.ProviderDeclaration) { d.Derivation = "token-exchange" },
 	} {
 		declaration := valid
 		declaration.Targets = []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}}

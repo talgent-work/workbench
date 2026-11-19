@@ -151,14 +151,10 @@ func (h *Handler) ListProviders(ctx context.Context, req *marketplacepublicv1.Li
 	}
 	response := &marketplacepublicv1.ListProvidersResponse{}
 	for _, provider := range providers {
-		message := &marketplacepublicv1.DeclaredProvider{Name: string(provider.Name), DisplayName: provider.DisplayName,
-			TargetCredentialsExpire: provider.CredentialsExpire, ObservesAccessScope: provider.ObservesAccessScope, Connection: connectionStateMessage(provider.Connection)}
+		message := &marketplacepublicv1.DeclaredProvider{Name: provider.Name, DisplayName: provider.DisplayName,
+			TargetCredentialsExpire: provider.TargetCredentialsExpire, ObservesAccessScope: provider.ObservesAccessScope, Connection: connectionStateMessage(provider.Connection)}
 		for _, target := range provider.Targets {
-			hosts := make([]string, len(target.Hosts))
-			for i, host := range target.Hosts {
-				hosts[i] = string(host)
-			}
-			message.Targets = append(message.Targets, &marketplacepublicv1.ProviderTarget{Name: target.Name, Hosts: hosts})
+			message.Targets = append(message.Targets, &marketplacepublicv1.ProviderTarget{Name: target.Name, Hosts: target.Hosts})
 		}
 		response.Providers = append(response.Providers, message)
 	}

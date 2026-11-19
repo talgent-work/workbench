@@ -13,8 +13,9 @@ deploying:
 
 1. Apply
    [`20261119-provider-target-credentials.sql`](../deploy/middleware/migrations/20261119-provider-target-credentials.sql)
-   to the database named by `WORKBENCH_MYSQL_DATABASE`: it widens `scm_provider_authorization.provider` and adds
-   `target_credentials_json`.
+   to the database named by `WORKBENCH_MYSQL_DATABASE`: it widens
+   `scm_provider_authorization.provider`, adds `target_credentials_json`, and adds
+   `credentials_expire_at`, which the renewal sweep now selects by.
 2. Create the Secret `provider-credentials` with `PROVIDER_CREDENTIAL_CIPHER_KEY` set to the
    value of `github-scm`'s `GITHUB_SCM_TOKEN_CIPHER_KEY`, which then leaves `github-scm`.
    Existing authorizations stay readable only under the same key.
@@ -30,6 +31,10 @@ deploying:
 
    A Connector authenticated by a Provider names a target that Provider declares, and a remote
    one lies within that target's hosts.
+
+A Work's Credential Proxy now binds each Provider credential to its target's declared hosts,
+for every path and method. The `github-remote-mcp` credential, earlier bound to `/mcp` on
+`api.githubcopilot.com`, now reaches any path of that host.
 
 ## The release that upgrades OpenSandbox to 1.2.1
 

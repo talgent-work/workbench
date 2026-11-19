@@ -60,9 +60,9 @@ func (q *ProviderAuthorizationQueries) ListRefreshCandidates(ctx context.Context
 		ID string `xorm:"'id'"`
 	}
 	err := q.db.Context(ctx).Table("scm_provider_authorization").Cols("id").
-		Where("status = ? AND deleted_at = 0 AND (refresh_lease_until = 0 OR refresh_lease_until <= ?) AND expires_at > 0 AND expires_at <= ?",
+		Where("status = ? AND deleted_at = 0 AND (refresh_lease_until = 0 OR refresh_lease_until <= ?) AND credentials_expire_at > 0 AND credentials_expire_at <= ?",
 			string(domain.ProviderAuthorizationActive), leaseCutoff.UTC().UnixMilli(), refreshCutoff.UTC().UnixMilli()).
-		Asc("expires_at", "id").Limit(min(limit, 1000)).Find(&rows)
+		Asc("credentials_expire_at", "id").Limit(min(limit, 1000)).Find(&rows)
 	if err != nil {
 		return nil, oops.With("operation", "marketplace.authorization_maintenance_candidates").Wrap(err)
 	}

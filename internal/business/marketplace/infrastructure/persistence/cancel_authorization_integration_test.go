@@ -245,7 +245,7 @@ func personal(ctx context.Context, actor string) context.Context {
 // is outside this test.
 type unobservableAccess struct{}
 
-func (unobservableAccess) ObserveAccess(context.Context, string, domain.Provider) (domain.AccessScope, error) {
+func (unobservableAccess) ObserveAccess(context.Context, string) (domain.AccessScope, error) {
 	return domain.AccessScope{}, application.ErrProviderUnavailable
 }
 

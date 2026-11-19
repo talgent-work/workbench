@@ -67,7 +67,7 @@ func TestPlatformConnectorsFollowTheirProvider(t *testing.T) {
 func TestProviderDeclarationsComeFromConfiguration(t *testing.T) {
 	enterprise := ProviderConfig{DisplayName: "Example SSO", ClientID: "workbench", ClientSecret: "secret",
 		AuthorizationEndpoint: "https://sso.example.com/auth", TokenEndpoint: "https://sso.example.com/token", Scopes: []string{"openid", "offline_access"},
-		TargetCredentials: "resource-indicator", TargetCredentialsExpire: true,
+		TargetCredentials: "per-target", TargetCredentialsExpire: true,
 		Targets: map[string]TargetConfig{"docs": {Hosts: []string{"docs.example.com"}, Resource: "https://docs.example.com"}, "tickets": {Hosts: []string{"*.tickets.example.com"}, Resource: "https://tickets.example.com"}}}
 	catalog, err := newProviderCatalog(Config{Providers: map[string]ProviderConfig{"github": gitHubProviderConfig(), "example-sso": enterprise}})
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestProviderDeclarationsComeFromConfiguration(t *testing.T) {
 	require.False(t, declarations[0].ObservesAccessScope, "Providers other than GitHub observe no access scope")
 	require.True(t, declarations[1].ObservesAccessScope)
 	require.Len(t, catalog.oauthClients(), 1)
-	require.Equal(t, []string{"https://docs.example.com", "https://tickets.example.com"}, catalog.oauthClients()[0].Resources, "the authorization asks for every target's resource")
+	require.Equal(t, map[string]string{"docs": "https://docs.example.com", "tickets": "https://tickets.example.com"}, catalog.oauthClients()[0].TargetResources, "the adapter requests each target's credential for its resource")
 	github := catalog.gitHub(scmgithub.Config{AppID: "1"}, "key")
 	require.True(t, github.Enabled, "the GitHub App adapter is enabled exactly when github is declared")
 	require.Equal(t, "client", github.OAuthClientID)
@@ -92,7 +92,7 @@ func TestProviderDeclarationsComeFromConfiguration(t *testing.T) {
 	missingResource := enterprise
 	missingResource.Targets = map[string]TargetConfig{"docs": {Hosts: []string{"docs.example.com"}}}
 	_, err = newProviderCatalog(Config{Providers: map[string]ProviderConfig{"example-sso": missingResource}})
-	require.Error(t, err, "a resource-indicator target names its resource")
+	require.Error(t, err, "a per-target target names its resource")
 
 	everywhere := enterprise
 	everywhere.Targets = map[string]TargetConfig{"docs": {Hosts: []string{"*.com"}, Resource: "https://docs.example.com"}}

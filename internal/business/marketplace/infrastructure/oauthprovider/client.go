@@ -6,19 +6,18 @@
 package oauthprovider
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/marketplace/application"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
+	"github.com/talgent-work/workbench/internal/business/marketplace/infrastructure/oauthtoken"
 )
 
 // providerTimeout bounds one call to an authorization server.
@@ -37,10 +36,20 @@ type Client struct {
 	// UserinfoEndpoint is optional; the ID Token names the account otherwise.
 	UserinfoEndpoint string
 	Scopes           []string
-	// Resources are the declared targets' resource indicators, requested with
-	// the authorization so each target's credential lies within the grant
-	// (RFC 8707, section 2).
-	Resources []string
+	// TargetResources name each target of a per-target Provider as an OAuth
+	// resource indicator (RFC 8707), by target name: its credential is
+	// requested for that resource.
+	TargetResources map[string]string
+}
+
+// resources are the target resources in a stable order.
+func (c Client) resources() []string {
+	names := slices.Sorted(maps.Keys(c.TargetResources))
+	resources := make([]string, len(names))
+	for i, name := range names {
+		resources[i] = c.TargetResources[name]
+	}
+	return resources
 }
 
 func (c Client) Validate() error {
@@ -57,6 +66,11 @@ func (c Client) Validate() error {
 			return fmt.Errorf("Provider %s: %s must be an absolute HTTPS address", c.Provider, name)
 		}
 	}
+	for target, resource := range c.TargetResources {
+		if u, err := url.Parse(resource); err != nil || !u.IsAbs() || u.Fragment != "" {
+			return fmt.Errorf("Provider %s: target %s needs an absolute resource without a fragment", c.Provider, target)
+		}
+	}
 	return nil
 }
 
@@ -70,81 +84,15 @@ func loopback(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// tokenResponse is an OAuth token endpoint response; refresh_expires_in is
-// the refresh token's lifetime where the server reports one.
-type tokenResponse struct {
-	AccessToken      string `json:"access_token"`
-	RefreshToken     string `json:"refresh_token"`
-	ExpiresIn        int64  `json:"expires_in"`
-	RefreshExpiresIn int64  `json:"refresh_expires_in"`
-	IDToken          string `json:"id_token"`
-	Error            string `json:"error"`
-	ErrorDescription string `json:"error_description"`
-}
-
-// oauthError is an error the authorization server answered.
-type oauthError struct {
-	StatusCode int
-	Code       string
-}
-
-func (e *oauthError) Error() string {
-	return fmt.Sprintf("oauth error %s (HTTP %d)", e.Code, e.StatusCode)
-}
-
 // grantRefused reports a refresh credential the server will never accept
 // again; retrying cannot restore it.
 func grantRefused(err error) bool {
-	var refused *oauthError
-	return errors.As(err, &refused) && (refused.Code == "invalid_grant" || refused.Code == "unauthorized_client")
+	return oauthtoken.Refused(err, "invalid_grant", "unauthorized_client")
 }
 
-// token posts a grant to the token endpoint with the client's credentials.
-func (c Client) token(ctx context.Context, httpClient *http.Client, form url.Values) (tokenResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, providerTimeout)
-	defer cancel()
-	request, err := c.post(ctx, c.TokenEndpoint, form)
-	if err != nil {
-		return tokenResponse{}, err
-	}
-	response, err := httpClient.Do(request)
-	if err != nil {
-		return tokenResponse{}, err
-	}
-	defer response.Body.Close()
-	var out tokenResponse
-	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	if err != nil {
-		return tokenResponse{}, err
-	}
-	if json.Unmarshal(body, &out) != nil && response.StatusCode < 300 {
-		return tokenResponse{}, fmt.Errorf("oauth token response is not JSON (HTTP %d)", response.StatusCode)
-	}
-	if out.Error != "" || response.StatusCode >= 300 {
-		return tokenResponse{}, &oauthError{StatusCode: response.StatusCode, Code: out.Error}
-	}
-	if strings.TrimSpace(out.AccessToken) == "" {
-		return tokenResponse{}, &oauthError{StatusCode: response.StatusCode, Code: "incomplete_response"}
-	}
-	return out, nil
-}
-
-// post authenticates the client with HTTP Basic when it has a secret, and
-// names it in the form when it is public.
-func (c Client) post(ctx context.Context, endpoint string, form url.Values) (*http.Request, error) {
-	if c.ClientSecret == "" {
-		form.Set("client_id", c.ClientID)
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	if c.ClientSecret != "" {
-		request.SetBasicAuth(url.QueryEscape(c.ClientID), url.QueryEscape(c.ClientSecret))
-	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept", "application/json")
-	return request, nil
+// endpoint is the client at its token endpoint.
+func (c Client) endpoint() oauthtoken.Endpoint {
+	return oauthtoken.Endpoint{URL: c.TokenEndpoint, ClientID: c.ClientID, ClientSecret: c.ClientSecret}
 }
 
 // noRedirects keeps every credential-bearing request at the address declared.

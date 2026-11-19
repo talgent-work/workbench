@@ -32,13 +32,15 @@ type ProviderConfig struct {
 	Scopes                []string                `json:"scopes" yaml:"scopes" toml:"scopes"`
 	Targets               map[string]TargetConfig `json:"targets" yaml:"targets" toml:"targets"`
 	// TargetCredentials is shared (every target takes the authorization's own
-	// credential) or resource-indicator (one credential per target, RFC 8707).
+	// credential) or per-target (one credential per target, requested for the
+	// target's resource indicator, RFC 8707).
 	TargetCredentials       string `json:"target-credentials" yaml:"target-credentials" toml:"target-credentials"`
 	TargetCredentialsExpire bool   `json:"target-credentials-expire" yaml:"target-credentials-expire" toml:"target-credentials-expire"`
 }
 
 // TargetConfig is one destination of a Provider's credentials: the host
-// patterns they reach and, for resource-indicator credentials, the resource.
+// patterns they reach and, for per-target credentials, the resource
+// indicator the authorization server knows it by.
 type TargetConfig struct {
 	Hosts    []string `json:"hosts" yaml:"hosts" toml:"hosts"`
 	Resource string   `json:"resource" yaml:"resource" toml:"resource"`
@@ -65,7 +67,7 @@ func (c ProviderConfig) declaration(name string) (domain.ProviderDeclaration, er
 		for i, host := range config.Hosts {
 			hosts[i] = domain.HostPattern(strings.ToLower(strings.TrimSpace(host)))
 		}
-		declaration.Targets = append(declaration.Targets, domain.ProviderTarget{Name: target, Hosts: hosts, Resource: strings.TrimSpace(config.Resource)})
+		declaration.Targets = append(declaration.Targets, domain.ProviderTarget{Name: target, Hosts: hosts})
 	}
 	if err := declaration.Validate(); err != nil {
 		return domain.ProviderDeclaration{}, fmt.Errorf("marketplace: Provider %s: %w", name, err)
@@ -115,9 +117,17 @@ func newProviderCatalog(config Config) (*providerCatalog, error) {
 			targets[target.Name] = name
 		}
 		client := provider.client(name)
-		if declaration.Derivation == domain.ResourceIndicatorTargetCredential {
-			for _, target := range declaration.Targets {
-				client.Resources = append(client.Resources, target.Resource)
+		// A per-target Provider names each target as a resource indicator.
+		for target, config := range provider.Targets {
+			resource := strings.TrimSpace(config.Resource)
+			if (declaration.Derivation == domain.PerTargetCredential) != (resource != "") {
+				return nil, fmt.Errorf("marketplace: Provider %s: target %s names a resource exactly when target credentials are per-target", name, target)
+			}
+			if resource != "" {
+				if client.TargetResources == nil {
+					client.TargetResources = map[string]string{}
+				}
+				client.TargetResources[target] = resource
 			}
 		}
 		if err := client.Validate(); err != nil {
