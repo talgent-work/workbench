@@ -91,7 +91,7 @@ var apiTarget = domain.ProviderTarget{Name: "api", Hosts: []domain.HostPattern{"
 func TestProviderAuthorization_SuppliesOneCredentialPerTarget(t *testing.T) {
 	now := time.Now().UTC()
 	auth := providerAuthorizationForTest(t, now.Add(time.Hour))
-	wiki := domain.ProviderTarget{Name: "wiki", Hosts: []domain.HostPattern{"wiki.example.com"}, Resource: "https://wiki.example.com"}
+	docs := domain.ProviderTarget{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}, Resource: "https://docs.example.com"}
 	var asked []string
 	port := authorizationAuthority{obtain: func(c domain.CredentialSet, target domain.ProviderTarget) (domain.TargetCredentialOutcome, error) {
 		asked = append(asked, target.Resource)
@@ -103,15 +103,15 @@ func TestProviderAuthorization_SuppliesOneCredentialPerTarget(t *testing.T) {
 	}
 	api, err := auth.SupplyValidCredentials(context.Background(), requirement(apiTarget), now, time.Minute, port)
 	require.NoError(t, err)
-	other, err := auth.SupplyValidCredentials(context.Background(), requirement(wiki), now, time.Minute, port)
+	other, err := auth.SupplyValidCredentials(context.Background(), requirement(docs), now, time.Minute, port)
 	require.NoError(t, err)
 	require.Equal(t, "token-for-api", api.TokenCiphertext)
-	require.Equal(t, "token-for-wiki", other.TokenCiphertext)
+	require.Equal(t, "token-for-docs", other.TokenCiphertext)
 	require.Equal(t, "rotated-rotated-refresh-token-ciphertext", auth.RefreshTokenCiphertext)
 	require.False(t, auth.NeedsCredentialWork(requirement(apiTarget), now, time.Minute))
 	_, err = auth.SupplyValidCredentials(context.Background(), requirement(apiTarget), now, time.Minute, port)
 	require.NoError(t, err)
-	require.Equal(t, []string{"https://api.example.com", "https://wiki.example.com"}, asked, "a current target credential is reused")
+	require.Equal(t, []string{"https://api.example.com", "https://docs.example.com"}, asked, "a current target credential is reused")
 	require.True(t, auth.NeedsCredentialWork(requirement(apiTarget), now.Add(9*time.Minute+30*time.Second), time.Minute), "one near expiry is renewed")
 
 	refused := authorizationAuthority{obtain: func(domain.CredentialSet, domain.ProviderTarget) (domain.TargetCredentialOutcome, error) {

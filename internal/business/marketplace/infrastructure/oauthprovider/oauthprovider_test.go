@@ -153,15 +153,15 @@ func TestTargetCredentialByResourceIndicator(t *testing.T) {
 	require.NoError(t, err)
 	refresh, err := cipher.Encrypt("refresh")
 	require.NoError(t, err)
-	server.answer = map[string]any{"access_token": "for-wiki", "refresh_token": "rotated", "expires_in": 300}
+	server.answer = map[string]any{"access_token": "for-docs", "refresh_token": "rotated", "expires_in": 300}
 	outcome, err := port.ObtainTargetCredential(t.Context(), domain.CredentialSet{RefreshTokenCiphertext: refresh},
-		domain.ProviderTarget{Name: "wiki", Hosts: []domain.HostPattern{"wiki.example.com"}, Resource: "https://wiki.example.com"})
+		domain.ProviderTarget{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}, Resource: "https://docs.example.com"})
 	require.NoError(t, err)
-	require.Equal(t, "https://wiki.example.com", server.last().Get("resource"))
+	require.Equal(t, "https://docs.example.com", server.last().Get("resource"))
 	require.Equal(t, "refresh_token", server.last().Get("grant_type"))
 	token, err := cipher.Decrypt(outcome.Credential.TokenCiphertext)
 	require.NoError(t, err)
-	require.Equal(t, "for-wiki", token)
+	require.Equal(t, "for-docs", token)
 	require.NotEmpty(t, outcome.RefreshTokenCiphertext)
 
 	_, err = port.ObtainTargetCredential(t.Context(), domain.CredentialSet{RefreshTokenCiphertext: refresh}, domain.ProviderTarget{Name: "shared"})

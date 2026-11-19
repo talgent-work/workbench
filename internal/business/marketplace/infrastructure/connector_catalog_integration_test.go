@@ -131,14 +131,14 @@ func TestConnectorProviderRelationshipReportsTargetCredentialExpiry(t *testing.T
 	_, _, app, _, server := setup(t)
 	ctx := t.Context()
 	publishCatalog(t, app)
-	wiki := domain.MCPConfiguration{Type: "http", URL: "https://wiki.example.com/mcp"}
-	binding := domain.ProviderAccessBinding{Provider: "example-sso", Target: "example-wiki", Authentication: "credential_proxy"}
-	require.NoError(t, app.PublishConnector(ctx, application.ConnectorPublication{Name: "wiki", Configuration: wiki, Provider: &binding}))
-	outside := domain.MCPConfiguration{Type: "http", URL: "https://wiki.attacker.test/mcp"}
+	docs := domain.MCPConfiguration{Type: "http", URL: "https://docs.example.com/mcp"}
+	binding := domain.ProviderAccessBinding{Provider: "example-sso", Target: "example-docs", Authentication: "credential_proxy"}
+	require.NoError(t, app.PublishConnector(ctx, application.ConnectorPublication{Name: "docs", Configuration: docs, Provider: &binding}))
+	outside := domain.MCPConfiguration{Type: "http", URL: "https://docs.attacker.test/mcp"}
 	require.ErrorIs(t, app.PublishConnector(ctx, application.ConnectorPublication{Name: "leaky", Configuration: outside, Provider: &binding}), domain.ErrCredentialTargetInapplicable,
 		"credentials never reach a host outside the Provider's targets")
 	undeclared := domain.ProviderAccessBinding{Provider: "example-sso", Target: "github-api", Authentication: "credential_proxy"}
-	require.Error(t, app.PublishConnector(ctx, application.ConnectorPublication{Name: "stray", Configuration: wiki, Provider: &undeclared}))
+	require.Error(t, app.PublishConnector(ctx, application.ConnectorPublication{Name: "stray", Configuration: docs, Provider: &undeclared}))
 
 	selection := marketplaceprivatev1connect.NewSelectionServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL)))
 	request, info := connect.NewClientContext(ctx)
@@ -153,5 +153,5 @@ func TestConnectorProviderRelationshipReportsTargetCredentialExpiry(t *testing.T
 			expire[connector.Name] = connector.ProviderTargetCredentialsExpire
 		}
 	}
-	require.Equal(t, map[string]bool{"github": true, "wiki": false}, expire)
+	require.Equal(t, map[string]bool{"github": true, "docs": false}, expire)
 }

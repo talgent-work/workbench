@@ -46,11 +46,11 @@ const (
 )
 
 // enterpriseIdP declares the realm as an enterprise identity provider: one
-// authorization serves the wiki and the ticket services, whose credentials
+// authorization serves the docs and the ticket services, whose credentials
 // expire.
 func enterpriseIdP() domain.ProviderDeclaration {
 	return domain.ProviderDeclaration{Name: "example-sso", DisplayName: "Example SSO", Derivation: domain.SharedTargetCredential, CredentialsExpire: true,
-		Targets: []domain.ProviderTarget{{Name: "wiki", Hosts: []domain.HostPattern{"wiki.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"}}}}
+		Targets: []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"}}}}
 }
 
 type keycloakFixture struct {
@@ -129,16 +129,16 @@ func TestKeycloakAuthorizationServesEveryDeclaredTarget(t *testing.T) {
 	authorizations, err := f.public.ListPersonalAuthorizations(as(ctx, owner), &marketplacepublicv1.ListPersonalAuthorizationsRequest{})
 	require.NoError(t, err)
 	require.Len(t, authorizations.Authorizations, 1)
-	require.ElementsMatch(t, []string{"wiki", "tickets"}, authorizations.Authorizations[0].SupportedTargets, "one authorization serves every declared target")
+	require.ElementsMatch(t, []string{"docs", "tickets"}, authorizations.Authorizations[0].SupportedTargets, "one authorization serves every declared target")
 	id := authorizations.Authorizations[0].Id
 
-	wiki := f.supplyTarget(t, owner, id, "wiki")
+	docs := f.supplyTarget(t, owner, id, "docs")
 	tickets := f.supplyTarget(t, owner, id, "tickets")
-	require.Equal(t, []string{"wiki.example.com"}, wiki.Hosts)
+	require.Equal(t, []string{"docs.example.com"}, docs.Hosts)
 	require.Equal(t, []string{"*.tickets.example.com"}, tickets.Hosts)
-	require.NotZero(t, wiki.ExpiresAtUnixMs, "the declared expiry is the credential's own")
-	for _, supplied := range []*marketplaceprivatev1.SupplyServiceCredentialResponse{wiki, tickets} {
-		for _, service := range []string{"service-wiki", "service-tickets"} {
+	require.NotZero(t, docs.ExpiresAtUnixMs, "the declared expiry is the credential's own")
+	for _, supplied := range []*marketplaceprivatev1.SupplyServiceCredentialResponse{docs, tickets} {
+		for _, service := range []string{"service-docs", "service-tickets"} {
 			require.True(t, f.accepts(t, service, supplied.Token), "%s accepts the credential", service)
 		}
 	}
@@ -146,9 +146,9 @@ func TestKeycloakAuthorizationServesEveryDeclaredTarget(t *testing.T) {
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "a target the Provider does not declare gets nothing")
 
 	require.NoError(t, f.credentials.RenewAuthorization(ctx, id), "the credential expires within the proactive window")
-	renewed := f.supplyTarget(t, owner, id, "wiki")
-	require.NotEqual(t, wiki.Token, renewed.Token)
-	require.True(t, f.accepts(t, "service-wiki", renewed.Token), "renewal keeps the targets' credential valid")
+	renewed := f.supplyTarget(t, owner, id, "docs")
+	require.NotEqual(t, docs.Token, renewed.Token)
+	require.True(t, f.accepts(t, "service-docs", renewed.Token), "renewal keeps the targets' credential valid")
 	require.True(t, f.accepts(t, "service-tickets", f.supplyTarget(t, owner, id, "tickets").Token))
 	var refresh string
 	_, err = f.db.SQL("SELECT refresh_token_ciphertext FROM scm_provider_authorization WHERE id = ?", id).Get(&refresh)

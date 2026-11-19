@@ -26,7 +26,7 @@ func TestCredentialPlanConfinesServicesToTheirTargetHosts(t *testing.T) {
 	services := []command.ServiceAccessMaterial{
 		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-api"}, AuthorizationID: "auth", ServiceCredentialMaterial: material("github-api", "api.github.com")},
 		{ServiceRequirement: command.ServiceRequirement{Provider: "github", Service: "github", Target: "github-remote-mcp"}, AuthorizationID: "auth", ServiceCredentialMaterial: material("github-remote-mcp", "api.githubcopilot.com")},
-		{ServiceRequirement: command.ServiceRequirement{Provider: "example-sso", Service: "example-sso", Target: "example-wiki"}, AuthorizationID: "sso", ServiceCredentialMaterial: material("example-wiki", "wiki.example.com", "*.svc.example.com")},
+		{ServiceRequirement: command.ServiceRequirement{Provider: "example-sso", Service: "example-sso", Target: "example-docs"}, AuthorizationID: "sso", ServiceCredentialMaterial: material("example-docs", "docs.example.com", "*.svc.example.com")},
 	}
 	plan, err := credentialPlan(model, nil, services, now)
 	require.NoError(t, err)
@@ -37,7 +37,7 @@ func TestCredentialPlanConfinesServicesToTheirTargetHosts(t *testing.T) {
 		hosts[binding.Auth.Credential] = binding.Match.Hosts
 		require.Equal(t, []sdk.CredentialScheme{sdk.CredentialSchemeHTTPS}, binding.Match.Schemes)
 	}
-	require.Equal(t, map[string][]string{"github-api": {"api.github.com"}, "github-remote-mcp": {"api.githubcopilot.com"}, "example-wiki": {"wiki.example.com", "*.svc.example.com"}}, hosts)
+	require.Equal(t, map[string][]string{"github-api": {"api.github.com"}, "github-remote-mcp": {"api.githubcopilot.com"}, "example-docs": {"docs.example.com", "*.svc.example.com"}}, hosts)
 
 	for name, declared := range map[string][]string{"no hosts": nil, "bare wildcard": {"*"}, "top-level wildcard": {"*.com"}, "address": {"https://api.github.com"}} {
 		changed := append([]command.ServiceAccessMaterial(nil), services...)

@@ -12,7 +12,7 @@ func TestProviderTarget_ContainsOnlyItsHosts(t *testing.T) {
 	for address, inside := range map[string]bool{
 		"https://mcp.example.com/mcp":           true,
 		"https://MCP.example.com:443/mcp":       true,
-		"https://wiki.svc.example.com/mcp":      true,
+		"https://docs.svc.example.com/mcp":      true,
 		"https://a.b.svc.example.com/":          true,
 		"https://svc.example.com/mcp":           false,
 		"https://mcp.example.com.evil.test/mcp": false,
@@ -27,18 +27,18 @@ func TestProviderTarget_ContainsOnlyItsHosts(t *testing.T) {
 
 func TestProviderDeclaration_Validates(t *testing.T) {
 	valid := domain.ProviderDeclaration{Name: "example-sso", DisplayName: "Example", Derivation: domain.SharedTargetCredential,
-		Targets: []domain.ProviderTarget{{Name: "wiki", Hosts: []domain.HostPattern{"wiki.example.com"}}}}
+		Targets: []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}}}
 	require.NoError(t, valid.Validate())
 	for name, change := range map[string]func(*domain.ProviderDeclaration){
 		"no targets":                func(d *domain.ProviderDeclaration) { d.Targets = nil },
 		"bare wildcard":             func(d *domain.ProviderDeclaration) { d.Targets[0].Hosts = []domain.HostPattern{"*"} },
 		"top-level wildcard":        func(d *domain.ProviderDeclaration) { d.Targets[0].Hosts = []domain.HostPattern{"*.com"} },
 		"unknown derivation":        func(d *domain.ProviderDeclaration) { d.Derivation = "token-exchange" },
-		"resource without mode":     func(d *domain.ProviderDeclaration) { d.Targets[0].Resource = "https://wiki.example.com" },
+		"resource without mode":     func(d *domain.ProviderDeclaration) { d.Targets[0].Resource = "https://docs.example.com" },
 		"scope observed off GitHub": func(d *domain.ProviderDeclaration) { d.ObservesAccessScope = true },
 	} {
 		declaration := valid
-		declaration.Targets = []domain.ProviderTarget{{Name: "wiki", Hosts: []domain.HostPattern{"wiki.example.com"}}}
+		declaration.Targets = []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}}
 		change(&declaration)
 		require.ErrorIs(t, declaration.Validate(), domain.ErrInvalidProviderDeclaration, name)
 	}

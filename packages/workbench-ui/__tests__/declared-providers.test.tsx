@@ -12,7 +12,7 @@ vi.mock("../lib/notifications", () => ({ notify: (...args: unknown[]) => notify(
 
 const github = { name: "github", displayName: "GitHub", targets: [{ name: "github-api", hosts: ["api.github.com"] }], targetCredentialsExpire: true, observesAccessScope: true,
   connection: { provider: "github", status: "none", authorizationId: "" } };
-const sso = { name: "example-sso", displayName: "Example SSO", targets: [{ name: "wiki", hosts: ["wiki.example.com"] }], targetCredentialsExpire: false, observesAccessScope: false,
+const sso = { name: "example-sso", displayName: "Example SSO", targets: [{ name: "docs", hosts: ["docs.example.com"] }], targetCredentialsExpire: false, observesAccessScope: false,
   connection: { provider: "example-sso", status: "active", authorizationId: "authorization", providerLogin: "alice" } };
 const completed: Array<{ provider: string }> = [];
 vi.mock("../lib/client", () => ({

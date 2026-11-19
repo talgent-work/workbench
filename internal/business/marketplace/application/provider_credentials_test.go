@@ -57,9 +57,9 @@ func (plainCipher) Encrypt(plaintext string) (string, error)  { return plaintext
 func (plainCipher) Decrypt(ciphertext string) (string, error) { return ciphertext, nil }
 
 func enterpriseDeclaration(derivation domain.TargetCredentialDerivation) domain.ProviderDeclaration {
-	targets := []domain.ProviderTarget{{Name: "wiki", Hosts: []domain.HostPattern{"wiki.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"}}}
+	targets := []domain.ProviderTarget{{Name: "docs", Hosts: []domain.HostPattern{"docs.example.com"}}, {Name: "tickets", Hosts: []domain.HostPattern{"*.tickets.example.com"}}}
 	if derivation == domain.ResourceIndicatorTargetCredential {
-		targets[0].Resource, targets[1].Resource = "https://wiki.example.com", "https://tickets.example.com"
+		targets[0].Resource, targets[1].Resource = "https://docs.example.com", "https://tickets.example.com"
 	}
 	return domain.ProviderDeclaration{Name: "example-sso", DisplayName: "Example SSO", Derivation: derivation, CredentialsExpire: true, Targets: targets}
 }
@@ -89,7 +89,7 @@ func TestProviderCredentials_SharedTargetsServeTheAuthorizationsCredential(t *te
 	require.Empty(t, port.renewals)
 
 	near, _, _, nearID := credentialsFixture(t, domain.SharedTargetCredential, 2*time.Minute)
-	material, err = near.SupplyTarget(t.Context(), "user-1", nearID, "wiki")
+	material, err = near.SupplyTarget(t.Context(), "user-1", nearID, "docs")
 	require.NoError(t, err)
 	require.Equal(t, "renewed-access", material.Token, "a credential within the request skew is renewed first")
 }
@@ -98,16 +98,16 @@ func TestProviderCredentials_SharedTargetsServeTheAuthorizationsCredential(t *te
 // indicator, each saved and reused until it nears expiry.
 func TestProviderCredentials_ResourceIndicatorTargetsEachGetTheirOwnCredential(t *testing.T) {
 	credentials, store, port, id := credentialsFixture(t, domain.ResourceIndicatorTargetCredential, time.Hour)
-	wiki, err := credentials.SupplyTarget(t.Context(), "user-1", id, "wiki")
+	docs, err := credentials.SupplyTarget(t.Context(), "user-1", id, "docs")
 	require.NoError(t, err)
 	tickets, err := credentials.SupplyTarget(t.Context(), "user-1", id, "tickets")
 	require.NoError(t, err)
-	require.Equal(t, "for-wiki", wiki.Token)
+	require.Equal(t, "for-docs", docs.Token)
 	require.Equal(t, "for-tickets", tickets.Token)
-	again, err := credentials.SupplyTarget(t.Context(), "user-1", id, "wiki")
+	again, err := credentials.SupplyTarget(t.Context(), "user-1", id, "docs")
 	require.NoError(t, err)
-	require.Equal(t, wiki, again)
-	require.Equal(t, []string{"https://wiki.example.com", "https://tickets.example.com"}, port.exchanges)
+	require.Equal(t, docs, again)
+	require.Equal(t, []string{"https://docs.example.com", "https://tickets.example.com"}, port.exchanges)
 	saved, err := store.Get(t.Context(), id)
 	require.NoError(t, err)
 	require.Len(t, saved.TargetCredentials, 2)
@@ -117,10 +117,10 @@ func TestProviderCredentials_RefusesWhatTheDeclarationDoesNotAdmit(t *testing.T)
 	credentials, _, port, id := credentialsFixture(t, domain.SharedTargetCredential, time.Hour)
 	_, err := credentials.SupplyTarget(t.Context(), "user-1", id, "github-api")
 	require.ErrorIs(t, err, domain.ErrCredentialTargetInapplicable, "a target the Provider does not declare")
-	_, err = credentials.SupplyTarget(t.Context(), "user-2", id, "wiki")
+	_, err = credentials.SupplyTarget(t.Context(), "user-2", id, "docs")
 	require.ErrorIs(t, err, domain.ErrPermissionDenied)
 	withdrawn := NewProviderCredentials(credentials.store, staticProviders{}, onePort{port}, plainCipher{}, credentials.timing)
-	_, err = withdrawn.SupplyTarget(t.Context(), "user-1", id, "wiki")
+	_, err = withdrawn.SupplyTarget(t.Context(), "user-1", id, "docs")
 	require.ErrorIs(t, err, ErrProviderUnavailable, "a Provider no longer declared supplies nothing")
 }
 
@@ -129,7 +129,7 @@ func TestProviderCredentials_RefusesWhatTheDeclarationDoesNotAdmit(t *testing.T)
 func TestProviderCredentials_ProviderFailures(t *testing.T) {
 	credentials, store, port, id := credentialsFixture(t, domain.SharedTargetCredential, time.Minute)
 	port.fail = errors.New("connection reset")
-	_, err := credentials.SupplyTarget(t.Context(), "user-1", id, "wiki")
+	_, err := credentials.SupplyTarget(t.Context(), "user-1", id, "docs")
 	var providerErr *ProviderError
 	require.ErrorAs(t, err, &providerErr)
 	require.True(t, providerErr.Retryable)
@@ -139,7 +139,7 @@ func TestProviderCredentials_ProviderFailures(t *testing.T) {
 	require.Equal(t, string(ProviderErrorTransient), saved.LastFailureCode)
 
 	port.fail, port.refuse = nil, true
-	_, err = credentials.SupplyTarget(t.Context(), "user-1", id, "wiki")
+	_, err = credentials.SupplyTarget(t.Context(), "user-1", id, "docs")
 	require.ErrorIs(t, err, domain.ErrAuthorizationReconnectRequired)
 	saved, err = store.Get(t.Context(), id)
 	require.NoError(t, err)
@@ -170,14 +170,14 @@ func TestProviderCredentials_ConcurrentRenewal(t *testing.T) {
 	credentials.store = conflictingStore{store, func(a *domain.ProviderAuthorization) {
 		a.AccessTokenCiphertext, a.ExpiresAt = "winner-access", credentials.now().Add(time.Hour)
 	}}
-	material, err := credentials.SupplyTarget(t.Context(), "user-1", id, "wiki")
+	material, err := credentials.SupplyTarget(t.Context(), "user-1", id, "docs")
 	require.NoError(t, err)
 	require.Equal(t, "winner-access", material.Token)
 	require.Empty(t, port.renewals)
 
 	credentials, store, _, id = credentialsFixture(t, domain.SharedTargetCredential, time.Minute)
 	credentials.store = conflictingStore{store, func(*domain.ProviderAuthorization) {}}
-	_, err = credentials.SupplyTarget(t.Context(), "user-1", id, "wiki")
+	_, err = credentials.SupplyTarget(t.Context(), "user-1", id, "docs")
 	var providerErr *ProviderError
 	require.ErrorAs(t, err, &providerErr)
 	require.Equal(t, ProviderErrorRefreshInProgress, providerErr.Code)

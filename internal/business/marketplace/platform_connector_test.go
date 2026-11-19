@@ -68,13 +68,13 @@ func TestProviderDeclarationsComeFromConfiguration(t *testing.T) {
 	enterprise := ProviderConfig{DisplayName: "Example SSO", ClientID: "workbench", ClientSecret: "secret",
 		AuthorizationEndpoint: "https://sso.example.com/auth", TokenEndpoint: "https://sso.example.com/token", Scopes: []string{"openid", "offline_access"},
 		TargetCredentials: "resource-indicator", TargetCredentialsExpire: true,
-		Targets: map[string]TargetConfig{"wiki": {Hosts: []string{"wiki.example.com"}, Resource: "https://wiki.example.com"}, "tickets": {Hosts: []string{"*.tickets.example.com"}, Resource: "https://tickets.example.com"}}}
+		Targets: map[string]TargetConfig{"docs": {Hosts: []string{"docs.example.com"}, Resource: "https://docs.example.com"}, "tickets": {Hosts: []string{"*.tickets.example.com"}, Resource: "https://tickets.example.com"}}}
 	catalog, err := newProviderCatalog(Config{Providers: map[string]ProviderConfig{"github": gitHubProviderConfig(), "example-sso": enterprise}})
 	require.NoError(t, err)
 	declarations := catalog.Providers()
 	require.Len(t, declarations, 2)
 	require.Equal(t, domain.Provider("example-sso"), declarations[0].Name, "ordered by name")
-	require.Equal(t, []string{"tickets", "wiki"}, declarations[0].TargetNames())
+	require.Equal(t, []string{"docs", "tickets"}, declarations[0].TargetNames())
 	require.False(t, declarations[0].ObservesAccessScope, "Providers other than GitHub observe no access scope")
 	require.True(t, declarations[1].ObservesAccessScope)
 	require.Len(t, catalog.oauthClients(), 1)
@@ -89,12 +89,12 @@ func TestProviderDeclarationsComeFromConfiguration(t *testing.T) {
 	require.ErrorContains(t, err, "declared by Providers", "a target name belongs to one Provider")
 
 	missingResource := enterprise
-	missingResource.Targets = map[string]TargetConfig{"wiki": {Hosts: []string{"wiki.example.com"}}}
+	missingResource.Targets = map[string]TargetConfig{"docs": {Hosts: []string{"docs.example.com"}}}
 	_, err = newProviderCatalog(Config{Providers: map[string]ProviderConfig{"example-sso": missingResource}})
 	require.Error(t, err, "a resource-indicator target names its resource")
 
 	everywhere := enterprise
-	everywhere.Targets = map[string]TargetConfig{"wiki": {Hosts: []string{"*.com"}, Resource: "https://wiki.example.com"}}
+	everywhere.Targets = map[string]TargetConfig{"docs": {Hosts: []string{"*.com"}, Resource: "https://docs.example.com"}}
 	_, err = newProviderCatalog(Config{Providers: map[string]ProviderConfig{"example-sso": everywhere}})
 	require.Error(t, err, "a wildcard covers subdomains of a domain, never a top-level domain")
 }

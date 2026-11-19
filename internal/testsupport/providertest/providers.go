@@ -33,5 +33,5 @@ func GitHub() domain.ProviderDeclaration {
 // one per internal service, never expire.
 func Enterprise() domain.ProviderDeclaration {
 	return domain.ProviderDeclaration{Name: "example-sso", DisplayName: "Example SSO", Derivation: domain.SharedTargetCredential,
-		Targets: []domain.ProviderTarget{{Name: "example-wiki", Hosts: []domain.HostPattern{"wiki.example.com"}}}}
+		Targets: []domain.ProviderTarget{{Name: "example-docs", Hosts: []domain.HostPattern{"docs.example.com"}}}}
 }
