@@ -1,4 +1,4 @@
--- Owners add their own Connectors (orchestra#152): a Connector has an owner,
+-- Owners add their own Connectors: a Connector has an owner,
 -- a name unique per owner, the Lifecycle State Private, Published or
 -- Withdrawn, an optional icon and a publication time. Existing rows are
 -- Platform Connectors: their offered state becomes Published and their
