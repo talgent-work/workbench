@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +12,7 @@ import { SHIM_ARG } from '../src/execd/shim.ts'
 import { Works } from '../src/execd/works.ts'
 import { Fence, FENCE_AFTER_MS, type FenceOptions } from '../src/fence.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
+import { removeScratch } from './support/platform.ts'
 
 const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url))
 const MINUTE = 60_000
@@ -47,7 +48,7 @@ beforeEach(async () => {
 afterEach(async () => {
   for (const fence of fences.splice(0)) await fence.stop()
   for (const id of created.splice(0)) await processes.delete('w-1', id)
-  await rm(dir, { recursive: true, force: true })
+  await removeScratch(dir)
 })
 
 // A fence on the test's clock, whose periodic check runs only through tick.

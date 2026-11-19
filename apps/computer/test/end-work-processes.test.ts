@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,7 +13,7 @@ import { SHIM_ARG } from '../src/execd/shim.ts'
 import { Works } from '../src/execd/works.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
 import { endEveryWorkProcess } from '../src/end-work-processes.ts'
-import { posixOnly } from './support/platform.ts'
+import { posixOnly, removeScratch } from './support/platform.ts'
 
 const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url))
 
@@ -45,9 +45,7 @@ afterEach(async () => {
     const [work, id] = entry.split('/')
     await processes.delete(work, id)
   }
-  // On Windows an ended process tree can hold its Work directory for a moment
-  // after it is recorded as exited, so removal retries a bounded few times.
-  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  await removeScratch(dir)
 })
 
 // A Work process that runs until it is ended: it waits for stdin.

@@ -3,7 +3,7 @@ module github.com/talgent-work/workbench
 go 1.26.10
 
 require (
-	github.com/alibaba/OpenSandbox/sdks/sandbox/go v1.0.6-0.20260909123024-05a8d26a18bb
+	github.com/alibaba/OpenSandbox/sdks/sandbox/go v1.2.1
 	google.golang.org/protobuf v1.36.12
 )
 

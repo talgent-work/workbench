@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,7 +12,7 @@ import { ExecdService } from '../src/execd/service.ts'
 import { SHIM_ARG } from '../src/execd/shim.ts'
 import { Works } from '../src/execd/works.ts'
 import { CredentialStore } from '../src/proxy/credentials.ts'
-import { posixOnly } from './support/platform.ts'
+import { posixOnly, removeScratch } from './support/platform.ts'
 
 const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url))
 
@@ -40,7 +40,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   for (const id of created.splice(0)) await processes.delete('w-1', id)
-  await rm(dir, { recursive: true, force: true })
+  await removeScratch(dir)
 })
 
 const call = (method: string, path: string, body?: unknown, token = 'tok', workId = 'w-1') =>

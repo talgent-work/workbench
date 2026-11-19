@@ -16,8 +16,8 @@ github.com/Masterminds/semver/v3 v3.3.0 h1:B8LGeaivUe71a5qox1ICM/JLl0NqZSW5CHyL+
 github.com/Masterminds/semver/v3 v3.3.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/alibaba/OpenSandbox/sdks/sandbox/go v1.0.6-0.20260909123024-05a8d26a18bb h1:NB9nuXD0698tKHswvEJM2oO52C65uVjnZaOk5bG6jNQ=
-github.com/alibaba/OpenSandbox/sdks/sandbox/go v1.0.6-0.20260909123024-05a8d26a18bb/go.mod h1:w0nIMCTL1L3oSS67ABFOdYxrezYQZhk01UtmKSi2UhA=
+github.com/alibaba/OpenSandbox/sdks/sandbox/go v1.2.1 h1:oikjPivbXj/9MenqLRhNUU6+1TeWHa6RuXz4QodLoeo=
+github.com/alibaba/OpenSandbox/sdks/sandbox/go v1.2.1/go.mod h1:c3C+dMDq0EdnZAgui4ot4hiZhQKUb57/tK97TQO5aHk=
 github.com/alicebob/miniredis/v2 v2.37.0 h1:RheObYW32G1aiJIj81XVt78ZHJpHonHLHW7OLIshq68=
 github.com/alicebob/miniredis/v2 v2.37.0/go.mod h1:TcL7YfarKPGDAthEtl5NBeHZfeUQj6OXMm/+iu5cLMM=
 github.com/andybalholm/brotli v1.2.0 h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
@@ -316,8 +316,6 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/syndtr/goleveldb v1.0.0 h1:fBdIW9lB4Iz0n9khmH8w27SJ3QEJ7+IgjPEwGSZiFdE=
 github.com/syndtr/goleveldb v1.0.0/go.mod h1:ZVVdQEZoIme9iO1Ch2Jdy24qqXrMMOU6lpPAyBWyWuQ=
-github.com/talgent-work/contracts v0.6.0 h1:VH0nuy6jyzQdbicAxLVZX7aIu38GsLLd2vipi5KRKLo=
-github.com/talgent-work/contracts v0.6.0/go.mod h1:dwq89uUFAHjxXlq/yc6j3TlEJ58n06C3d8ygENkxizE=
 github.com/talgent-work/contracts v0.7.0 h1:KZ2oi7VMcZ43ATSsGFZyERAiuEj4SdrPiJB/luHttjk=
 github.com/talgent-work/contracts v0.7.0/go.mod h1:dwq89uUFAHjxXlq/yc6j3TlEJ58n06C3d8ygENkxizE=
 github.com/testcontainers/testcontainers-go v0.42.0 h1:He3IhTzTZOygSXLJPMX7n44XtK+qhjat1nI9cneBbUY=

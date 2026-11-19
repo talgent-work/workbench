@@ -5,6 +5,12 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that upgrades OpenSandbox to 1.2.1
+
+`apply-opensandbox.sh` upgrades the OpenSandbox Controller, Server, CRDs, execd and egress to
+1.2.1. A deployment that sets `TALGENT_EXECD_IMAGE` points it at a 1.2.1 execd image or unsets it
+to take the pinned one. Sandboxes keep the execd they started with until their Work starts again.
+
 ## The release that fixes a Work's Work Caller, Work Key and File Home
 
 A Work now fixes three facts at creation in place of its Project and Work Subject: its Work

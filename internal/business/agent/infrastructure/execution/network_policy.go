@@ -83,7 +83,9 @@ func (s *Sandboxes) networkPolicy(ctx context.Context) (*sdk.NetworkPolicy, erro
 		}
 		return 0
 	})
-	result.Egress = slices.Compact(result.Egress)
+	result.Egress = slices.CompactFunc(result.Egress, func(a, b sdk.NetworkRule) bool {
+		return a.Action == b.Action && a.Target == b.Target && slices.Equal(a.Ports, b.Ports)
+	})
 	return result, nil
 }
 

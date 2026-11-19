@@ -5,7 +5,7 @@ imagePullSecrets:
 server:
   image:
     repository: sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server
-    tag: v0.2.2@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb
+    tag: release-1.2.1@sha256:07f9b39adb8cadf68357dd1b86367068210e960fc4cb50e11b75176387557ea7
   # The chart default (4Gi/1 CPU requests) far exceeds this server's use; it
   # idles near 120Mi.
   resources:
@@ -38,20 +38,18 @@ configToml: |
   port = 80
   [runtime]
   type = "kubernetes"
-  execd_image = "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd:v1.1.0@sha256:6cf7dba2f21f0b536e100563d841ac58a9f31c2b0a081b7ac76796a24d6f47e2"
+  execd_image = "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd:release-1.2.1@sha256:6b12d17844ac7167271488302c71934e47f76abb9ddab19ec8529bd1c1c56b23"
   [egress]
-  image = "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress:v1.1.7@sha256:db7345d567b0970f384b8e3fa7a93a71b7f43d4b16bb2009de34096e9a87b3b5"
+  image = "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress:release-1.2.1@sha256:84b98d3b5989a87389c977f6433f8cd3c7998d03aa15aaae41ebcb15b7eb8000"
   mode = "dns+nft"
   readiness_timeout_seconds = 60.0
   [kubernetes]
+  # The server always watches Fast Sandbox SandboxSnapshots (sandbox.fast.io).
+  # This deployment installs no Fast Sandbox CRDs, so the server logs a 404
+  # "Informer watch error" every 30 seconds; sandboxes are unaffected.
+  # Upstream #2875 reports it once; it ships after 1.2.1.
   kubeconfig_path = ""
   namespace = "talgent-sandbox"
   workload_provider = "batchsandbox"
   sandbox_create_timeout_seconds = 300
-  # The informer cache stopped following BatchSandbox status on this cluster:
-  # a create waited on a stale "pending allocation" until its timeout deleted a
-  # sandbox that was already Ready (seen in an E2E run, 2026-11-03). Reads go to the
-  # API server instead; the server polls one sandbox at a time, so the load is
-  # small. Re-enable only after verifying the cache follows status updates.
-  informer_enabled = false
   batchsandbox_template_file = "/etc/opensandbox/talgent.batchsandbox.yaml"

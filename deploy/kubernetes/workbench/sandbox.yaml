@@ -162,6 +162,13 @@ rules:
   - apiGroups: ["sandbox.opensandbox.io"]
     resources: ["sandboxsnapshots", "sandboxsnapshots/status", "sandboxsnapshots/finalizers"]
     verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  # The server reads Fast Sandbox resources whatever its workload provider.
+  # This deployment installs no Fast Sandbox CRDs, so these reads answer 404,
+  # which the server takes as "none"; a 403 instead fails its sandbox listing
+  # with 503.
+  - apiGroups: ["sandbox.fast.io"]
+    resources: ["sandboxes", "sandboxsnapshots", "sandboxtemplates"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
