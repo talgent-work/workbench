@@ -29,7 +29,7 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 			value.Plugins = append(value.Plugins, AssembleWorkPluginOption(plugin.Release, slices.Contains(builtIns, plugin.Release.Slug)))
 		}
 		for _, connector := range work.Capabilities.Connectors {
-			value.Connectors = append(value.Connectors, domain.ConnectorOption{Name: connector.Name, Required: connector.Required, IncludedByDefault: true, UnavailableOnManaged: !connector.AvailableOnManaged()})
+			value.Connectors = append(value.Connectors, domain.ConnectorOption{ID: connector.ID, Name: connector.Name, Required: connector.Required, IncludedByDefault: true, UnavailableOnManaged: !connector.AvailableOnManaged()})
 		}
 		return value, nil
 	}
@@ -84,10 +84,7 @@ func (a *Application) GetWorkStartOptions(ctx context.Context, input query.WorkS
 	if err != nil {
 		return query.WorkStartOptions{}, err
 	}
-	value.Connectors, err = (domain.StartupCapabilityInput{Connectors: selection.Catalog, EnabledConnectors: selection.EnabledConnectors}).ConnectorOptions()
-	if err != nil {
-		return query.WorkStartOptions{}, err
-	}
+	value.Connectors = domain.StartupCapabilityInput{Connectors: selection.Catalog, EnabledConnectors: selection.EnabledConnectors}.ConnectorOptions()
 	return value, nil
 }
 

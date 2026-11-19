@@ -71,7 +71,7 @@ func TestAnApplicationOwnerManagesTheApplicationsAuthorizations(t *testing.T) {
 	port := &cancellationAuthority{entered: make(chan struct{}, 2), confirm: make(chan bool, 2)}
 	store := application.NewCredentialChangeDispatch(repo, &credentialChanges{}, slog.Default())
 	connections := declaredConnections(store, NewProviderAuthorizationQueries(db), testGitHub{access: unobservableAccess{}, authority: &reauthorizationAuthority{}}, nil, port)
-	app := application.NewApplication(nil, nil, nil, NewProviderAuthorizationQueries(db), connections, application.ConnectorRepositories{})
+	app := application.NewApplication(nil, nil, nil, NewProviderAuthorizationQueries(db), connections, application.ConnectorDependencies{})
 	owners := application.NewOwners(knownApplications{
 		desk:    {ID: desk, OwnerID: owner},
 		billing: {ID: billing, OwnerID: other},

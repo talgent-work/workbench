@@ -181,7 +181,7 @@ func optionalTimestamp(t time.Time) *timestamppb.Timestamp {
 func workStartOptionsToProto(value query.WorkStartOptions) *agentpublicv1.GetWorkStartOptionsResponse {
 	result := &agentpublicv1.GetWorkStartOptionsResponse{DefaultStartupAgent: value.DefaultStartupAgent, DefaultModelConfigurationId: value.DefaultModel.ConfigurationID, DefaultThinkingLevel: value.DefaultThinkingLevel}
 	for _, connector := range value.Connectors {
-		result.Connectors = append(result.Connectors, &agentpublicv1.WorkStartConnector{Name: connector.Name, Required: connector.Required, IncludedByDefault: connector.IncludedByDefault, UnavailableOnManaged: connector.UnavailableOnManaged})
+		result.Connectors = append(result.Connectors, &agentpublicv1.WorkStartConnector{ConnectorId: connector.ID, Name: connector.Name, Publisher: connector.Publisher, Required: connector.Required, IncludedByDefault: connector.IncludedByDefault, UnavailableOnManaged: connector.UnavailableOnManaged})
 	}
 	for _, plugin := range value.Plugins {
 		item := &agentpublicv1.WorkStartPlugin{Name: plugin.Name, DisplayName: plugin.DisplayName, Category: plugin.Category, Description: plugin.Description, Required: plugin.Required}

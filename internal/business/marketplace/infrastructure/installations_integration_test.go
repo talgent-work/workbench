@@ -66,7 +66,7 @@ func setupWithCatalog(t *testing.T, catalog application.PluginCatalogQueryReposi
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	repository := infrastructure.NewInstalledPluginRepository(db)
-	app := application.NewApplication(repository, repository, catalog, persistence.NewProviderAuthorizationQueries(db), declaredConnections(db), application.ConnectorRepositories{Catalog: infrastructure.NewConnectorRepository(db), Installed: infrastructure.NewInstalledConnectorRepository(db), CatalogQueries: infrastructure.NewConnectorRepository(db), InstalledQueries: infrastructure.NewInstalledConnectorRepository(db)})
+	app := application.NewApplication(repository, repository, catalog, persistence.NewProviderAuthorizationQueries(db), declaredConnections(db), connectorDependencies(db))
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())
@@ -76,6 +76,10 @@ func setupWithCatalog(t *testing.T, catalog application.PluginCatalogQueryReposi
 		marketplaceprivatev1connect.RegisterSelectionServiceHandler(s, transport.NewSelectionHandler(app, "selection-test"))
 	})
 	mux.Handle(selectionPath, selectionHandler)
+	operationPath, operationHandler := "/"+marketplaceprivatev1connect.ConnectorOperationServiceName+"/", connecttest.Handler(func(s *connect.Server) {
+		marketplaceprivatev1connect.RegisterConnectorOperationServiceHandler(s, transport.NewConnectorOperationHandler(app, "selection-test"))
+	})
+	mux.Handle(operationPath, operationHandler)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return db, repository, app, marketplacepublicv1connect.NewMarketplaceServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL))), server
@@ -198,6 +202,30 @@ func TestPersonalInstallationConcurrencyAndPagination(t *testing.T) {
 
 // declaredConnections declares github and an enterprise identity provider
 // whose target credentials never expire, as a deployment does.
+// connectorDependencies reach the real Connector tables; the deployment's
+// Platform Connectors are talgent and github.
+func connectorDependencies(db *xorm.Engine) application.ConnectorDependencies {
+	connectors, installed := infrastructure.NewConnectorRepository(db), infrastructure.NewInstalledConnectorRepository(db)
+	return application.ConnectorDependencies{Catalog: connectors, Installed: installed, CatalogQueries: connectors, InstalledQueries: installed,
+		Publishers: publisherNames{}, PlatformNames: []string{"github", "talgent"}}
+}
+
+// publisherNames is Account's answer for the people and Applications the
+// tests name.
+type publisherNames struct{}
+
+func (publisherNames) PersonNames(_ context.Context, ids []string) (map[string]string, error) {
+	names := map[string]string{}
+	for _, id := range ids {
+		names[id] = "Person " + id[len(id)-2:]
+	}
+	return names, nil
+}
+
+func (publisherNames) ApplicationName(_ context.Context, id string) (string, error) {
+	return "Application " + id[len(id)-2:], nil
+}
+
 func declaredConnections(db *xorm.Engine) *application.PersonalConnections {
 	return application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: persistence.NewProviderAuthorizations(db),
 		Queries: persistence.NewProviderAuthorizationQueries(db), Providers: providertest.Declarations{providertest.GitHub(), providertest.Enterprise()}})

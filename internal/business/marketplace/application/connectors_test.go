@@ -27,8 +27,8 @@ func newConnectorStore() *connectorStore {
 	return &connectorStore{catalog: map[string]*domain.Connector{}, installed: map[string]*domain.InstalledConnector{}}
 }
 
-func (s *connectorStore) GetByName(_ context.Context, name string) (*domain.Connector, error) {
-	connector, found := s.catalog[name]
+func (s *connectorStore) Get(_ context.Context, id string) (*domain.Connector, error) {
+	connector, found := s.catalog[id]
 	if !found {
 		return nil, domain.ErrConnectorNotFound
 	}
@@ -36,31 +36,45 @@ func (s *connectorStore) GetByName(_ context.Context, name string) (*domain.Conn
 	return &copied, nil
 }
 
-func (s *connectorStore) List(context.Context) ([]*domain.Connector, error) {
-	var result []*domain.Connector
-	for _, connector := range s.catalog {
-		copied := *connector
-		result = append(result, &copied)
+func (s *connectorStore) GetPlatform(ctx context.Context, name string) (*domain.Connector, error) {
+	return s.Get(ctx, s.idOf(name))
+}
+
+func (s *connectorStore) idOf(name string) string {
+	for id, connector := range s.catalog {
+		if connector.Name == name {
+			return id
+		}
 	}
-	slices.SortFunc(result, func(a, b *domain.Connector) int { return strings.Compare(a.Name, b.Name) })
-	return result, nil
+	return ""
 }
 
 func (s *connectorStore) Save(_ context.Context, connector *domain.Connector) error {
-	if current, found := s.catalog[connector.Name]; found && current.Version != connector.Version {
+	if current, found := s.catalog[connector.ID]; found && current.Version != connector.Version {
 		return domain.ErrConcurrentModification
 	}
 	copied := *connector
 	copied.Version++
-	s.catalog[connector.Name] = &copied
+	s.catalog[connector.ID] = &copied
 	return nil
 }
 
-func (s *connectorStore) ListCatalog(context.Context) ([]query.CatalogConnector, error) {
+func (s *connectorStore) Delete(_ context.Context, connector *domain.Connector) error {
+	delete(s.catalog, connector.ID)
+	return nil
+}
+
+func (s *connectorStore) ListPublished(ctx context.Context) ([]query.CatalogConnector, error) {
+	all, err := s.ListForOwner(ctx, "")
+	return slices.DeleteFunc(all, func(c query.CatalogConnector) bool { return c.State != query.ConnectorPublished }), err
+}
+
+func (s *connectorStore) ListForOwner(context.Context, string) ([]query.CatalogConnector, error) {
+	states := map[domain.ConnectorState]string{domain.ConnectorPrivate: query.ConnectorPrivate, domain.ConnectorPublished: query.ConnectorPublished, domain.ConnectorWithdrawn: query.ConnectorWithdrawn}
 	var result []query.CatalogConnector
 	for _, c := range s.catalog {
 		item := query.CatalogConnector{ID: c.ID, Name: c.Name, Description: c.Presentation.Description, Category: c.Presentation.Category, Required: c.Required,
-			Offered: c.State == domain.ConnectorOffered, Authentication: c.Authentication,
+			Owner: query.ConnectorOwner{Kind: query.OwnerPlatform}, State: states[c.State], Authentication: c.Authentication, Version: c.Version,
 			Configuration: query.ConnectorConfiguration{Type: c.Configuration.Type, URL: c.Configuration.URL, Command: c.Configuration.Command, Arguments: c.Configuration.Arguments}}
 		if b := c.ProviderAccessBinding; b != nil {
 			item.Provider = &query.ConnectorProvider{Provider: b.Provider, Target: b.Target, Authentication: b.Authentication}
@@ -131,11 +145,11 @@ func connectorApplication(t *testing.T, plugins ...PluginRelease) (*Application,
 	t.Helper()
 	store := newConnectorStore()
 	connections := NewPersonalConnections(ConnectionDependencies{Providers: staticProviders{gitHubDeclaration()}})
-	app := NewApplication(nil, nil, mcpCatalog(plugins), store, connections, ConnectorRepositories{Catalog: store, Installed: installedConnectors{store}, CatalogQueries: store, InstalledQueries: store})
-	require.NoError(t, app.PublishConnector(t.Context(), ConnectorPublication{Name: "talgent", Configuration: domain.MCPConfiguration{Type: "http", URL: "http://connector.talgent.svc.cluster.local/mcp"}}))
+	app := NewApplication(nil, nil, mcpCatalog(plugins), store, connections, ConnectorDependencies{Catalog: store, Installed: installedConnectors{store}, CatalogQueries: store, InstalledQueries: store})
+	require.NoError(t, app.EstablishPlatformConnector(t.Context(), PlatformConnector{Name: "talgent", Configuration: domain.MCPConfiguration{Type: "http", URL: "http://connector.talgent.svc.cluster.local/mcp"}}))
 	configuration := domain.MCPConfiguration{Command: "github-mcp-server", Arguments: []string{"stdio"}}
 	binding := domain.ProviderAccessBinding{Provider: "github", Target: "github-api", Authentication: "credential_proxy"}
-	require.NoError(t, app.PublishConnector(t.Context(), ConnectorPublication{Name: "github", Configuration: configuration, Provider: &binding,
+	require.NoError(t, app.EstablishPlatformConnector(t.Context(), PlatformConnector{Name: "github", Configuration: configuration, Provider: &binding,
 		Presentation: domain.CatalogPresentation{Description: "GitHub repositories and pull requests", Category: "development"}}))
 	return app, store
 }
@@ -148,7 +162,7 @@ func connectorNamed(t *testing.T, connectors []Connector, name string) Connector
 }
 
 func TestConnectorInstallationDoesNotRequireProviderAuthorization(t *testing.T) {
-	app, _ := connectorApplication(t)
+	app, store := connectorApplication(t)
 	listed, err := app.ListConnectors(t.Context(), "user")
 	require.NoError(t, err)
 	require.Equal(t, ConnectorAlwaysEnabled, connectorNamed(t, listed, "talgent").Status)
@@ -156,11 +170,11 @@ func TestConnectorInstallationDoesNotRequireProviderAuthorization(t *testing.T) 
 	require.Equal(t, ConnectorNotInstalled, github.Status)
 	require.Equal(t, ProviderNotConnected, github.ProviderConnection)
 
-	installed, err := app.InstallConnector(t.Context(), "user", "github")
+	installed, err := app.InstallConnector(t.Context(), "user", store.idOf("github"))
 	require.NoError(t, err, "a missing Provider authorization never blocks installation")
 	require.Equal(t, ConnectorEnabled, installed.Status)
 	require.Equal(t, ProviderNotConnected, installed.ProviderConnection)
-	repeated, err := app.InstallConnector(t.Context(), "user", "github")
+	repeated, err := app.InstallConnector(t.Context(), "user", store.idOf("github"))
 	require.NoError(t, err)
 	require.Equal(t, installed.InstallationVersion, repeated.InstallationVersion, "repeating installation keeps the existing record")
 
@@ -171,52 +185,48 @@ func TestConnectorInstallationDoesNotRequireProviderAuthorization(t *testing.T) 
 
 func TestRequiredAndWithdrawnConnectorsRefuseInstallation(t *testing.T) {
 	app, store := connectorApplication(t)
-	_, err := app.InstallConnector(t.Context(), "user", "talgent")
+	_, err := app.InstallConnector(t.Context(), "user", store.idOf("talgent"))
 	require.ErrorIs(t, err, domain.ErrConnectorNotInstallable)
-	store.catalog["github"].State = domain.ConnectorWithdrawn
-	_, err = app.InstallConnector(t.Context(), "user", "github")
-	require.ErrorIs(t, err, domain.ErrConnectorNotInstallable)
+	store.catalog[store.idOf("github")].State = domain.ConnectorWithdrawn
+	_, err = app.InstallConnector(t.Context(), "user", store.idOf("github"))
+	require.ErrorIs(t, err, domain.ErrConnectorNotFound, "a withdrawn Connector is in no catalog")
 	listed, err := app.ListConnectors(t.Context(), "user")
 	require.NoError(t, err)
 	require.Len(t, listed, 1, "withdrawn entries are not browsable")
 	selection, err := app.ReadConnectorSelection(t.Context(), "user")
 	require.NoError(t, err)
-	github := selection.Catalog[0]
-	require.Equal(t, "github", github.Name)
-	require.False(t, github.Offered, "a withdrawn entry provides no connection")
-	require.Empty(t, github.Configuration.Command)
-	require.Nil(t, github.Provider)
-	require.True(t, selection.Catalog[1].Offered)
-	require.NotEmpty(t, selection.Catalog[1].Configuration.URL, "the platform Connector reaches the Gateway")
-	_, err = app.GetConnector(t.Context(), "user", "github")
+	require.Len(t, selection.Catalog, 1, "a withdrawn entry the owner never installed is not selectable")
+	require.True(t, selection.Catalog[0].Offered)
+	require.NotEmpty(t, selection.Catalog[0].Configuration.URL, "the platform Connector reaches the Gateway")
+	_, err = app.GetConnector(t.Context(), "user", store.idOf("github"))
 	require.ErrorIs(t, err, domain.ErrConnectorNotFound)
 }
 
 func TestConnectorEnablementAndUninstallation(t *testing.T) {
 	app, store := connectorApplication(t)
-	installed, err := app.InstallConnector(t.Context(), "user", "github")
+	installed, err := app.InstallConnector(t.Context(), "user", store.idOf("github"))
 	require.NoError(t, err)
-	_, err = app.DisableConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github", Version: installed.InstallationVersion + 1})
+	_, err = app.DisableConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", ConnectorID: store.idOf("github"), Version: installed.InstallationVersion + 1})
 	require.ErrorIs(t, err, domain.ErrConcurrentModification, "a stale version is rejected")
-	disabled, err := app.DisableConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github", Version: installed.InstallationVersion})
+	disabled, err := app.DisableConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", ConnectorID: store.idOf("github"), Version: installed.InstallationVersion})
 	require.NoError(t, err)
 	require.Equal(t, ConnectorDisabled, disabled.Status)
 	selection, err := app.ReadConnectorSelection(t.Context(), "user")
 	require.NoError(t, err)
 	require.Empty(t, selection.EnabledConnectorIDs, "disabled installations leave the default selection")
-	enabled, err := app.EnableConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github", Version: disabled.InstallationVersion})
+	enabled, err := app.EnableConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", ConnectorID: store.idOf("github"), Version: disabled.InstallationVersion})
 	require.NoError(t, err)
 	require.Equal(t, ConnectorEnabled, enabled.Status)
 	selection, err = app.ReadConnectorSelection(t.Context(), "user")
 	require.NoError(t, err)
-	require.Equal(t, []string{store.catalog["github"].ID}, selection.EnabledConnectorIDs)
+	require.Equal(t, []string{store.catalog[store.idOf("github")].ID}, selection.EnabledConnectorIDs)
 	require.Len(t, selection.Catalog, 2)
 
 	installedList, err := app.ListInstalledConnectors(t.Context(), "user")
 	require.NoError(t, err)
 	require.Len(t, installedList, 2, "required entries appear with the user's installations")
-	require.NoError(t, app.UninstallConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github", Version: enabled.InstallationVersion}))
-	require.NoError(t, app.UninstallConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", Name: "github"}), "uninstalling an absent installation succeeds")
+	require.NoError(t, app.UninstallConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", ConnectorID: store.idOf("github"), Version: enabled.InstallationVersion}))
+	require.NoError(t, app.UninstallConnector(t.Context(), ConnectorInstallationCommand{OwnerID: "user", ConnectorID: store.idOf("github")}), "uninstalling an absent installation succeeds")
 	installedList, err = app.ListInstalledConnectors(t.Context(), "user")
 	require.NoError(t, err)
 	require.Len(t, installedList, 1)
@@ -226,7 +236,7 @@ func TestConnectorReportsCurrentProviderConnection(t *testing.T) {
 	app, store := connectorApplication(t)
 	for status, want := range map[string]string{"active": ProviderConnected, "reconnect_required": ProviderReconnectRequired, "revoked": ProviderNotConnected} {
 		store.authorizations = []query.PersonalAuthorization{{ID: "authorization", Provider: "github", Status: status}}
-		detail, err := app.GetConnector(t.Context(), "user", "github")
+		detail, err := app.GetConnector(t.Context(), "user", store.idOf("github"))
 		require.NoError(t, err)
 		require.Equal(t, "github", detail.Provider)
 		require.Equal(t, want, detail.ProviderConnection, status)
@@ -236,8 +246,8 @@ func TestConnectorReportsCurrentProviderConnection(t *testing.T) {
 func TestPluginsRelateToConnectorsOnlyByEndpointEquivalence(t *testing.T) {
 	uses := PluginRelease{Slug: "github-tools", Description: "Uses GitHub", MCPServers: []MCPComponent{{Name: "github", Definition: []byte(`{"command":"github-mcp-server","args":["stdio"]}`)}}}
 	other := PluginRelease{Slug: "remote", MCPServers: []MCPComponent{{Name: "github", Definition: []byte(`{"type":"http","url":"https://api.githubcopilot.com/mcp/"}`)}}}
-	app, _ := connectorApplication(t, uses, other)
-	detail, err := app.GetConnector(t.Context(), "user", "github")
+	app, store := connectorApplication(t, uses, other)
+	detail, err := app.GetConnector(t.Context(), "user", store.idOf("github"))
 	require.NoError(t, err)
 	require.Equal(t, []ConnectorPlugin{{Slug: "github-tools", Description: "Uses GitHub"}}, detail.Plugins, "a same-named server at another endpoint is unrelated")
 

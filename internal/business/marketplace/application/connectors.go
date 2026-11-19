@@ -20,17 +20,46 @@ const (
 	ProviderReconnectRequired = "reconnect_required"
 )
 
-// Connector is one catalog entry as seen by the authenticated user: its
-// personal status and, for Provider-authenticated entries, the user's current
-// connection to that Provider. Neither status implies a working connection.
+// Connector is one Connector as its reading owner sees it: its publisher,
+// its Lifecycle State, the owner's personal status and, for a Provider
+// Connector, the owner's current connection to that Provider. Neither status
+// implies a working connection.
 type Connector struct {
-	Name, Description, Category string
-	Required, Offered           bool
-	Status                      string
-	// InstallationVersion is the concurrency token for personal changes; zero
-	// when the user has no installation.
+	ID, Name, Description, Category string
+	Required                        bool
+	// Offered reports whether the Connector is in the owner's catalog, so new
+	// installations and Works may select it.
+	Offered bool
+	// State is private, published or withdrawn.
+	State     string
+	Publisher Publisher
+	// Transport is http or stdio.
+	Transport  string
+	IconDigest string
+	// Version is the concurrency token for changing the Connector itself.
+	Version           int
+	PublishedAtMillis int64
+	// Settings are present only for the owner's own Connector.
+	Settings *ConnectorSettings
+	Status   string
+	// InstallationVersion is the concurrency token for installation changes;
+	// zero when the owner has no installation.
 	InstallationVersion          int
 	Provider, ProviderConnection string
+}
+
+// Publisher names who provides a Connector.
+type Publisher struct {
+	// Kind is platform, person or application.
+	Kind, DisplayName string
+	// Own reports whether the reading owner made the Connector.
+	Own bool
+}
+
+// ConnectorSettings is an owner's Connector connection without credentials.
+type ConnectorSettings struct {
+	URL, Command string
+	Arguments    []string
 }
 
 type ConnectorDetail struct {
@@ -42,79 +71,58 @@ type ConnectorDetail struct {
 type ConnectorPlugin struct{ Slug, Description string }
 
 type ConnectorInstallationCommand struct {
-	OwnerID, Name string
-	Version       int
+	OwnerID, ConnectorID string
+	Version              int
 }
 
-// ConnectorSelection is trusted startup input for Agent: the catalog with offer
-// status and the owner's enabled installations. Agent composes the Work choice.
-type ConnectorSelection struct {
-	Catalog []query.CatalogConnector
-	// EnabledConnectorIDs identifies the owner's enabled installations.
-	EnabledConnectorIDs []string
+// ListConnectors returns the owner's Connector catalog: the Platform
+// Connectors, the Published Connectors and the owner's own Private ones.
+func (a *Application) ListConnectors(ctx context.Context, owner string) ([]Connector, error) {
+	return a.connectorViews(ctx, owner, func(view Connector) bool { return view.Offered })
 }
 
-// ListConnectors returns the browsable catalog: every Offered entry.
-func (a *Application) ListConnectors(ctx context.Context, actor string) ([]Connector, error) {
-	views, err := a.connectorViews(ctx, actor)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]Connector, 0, len(views))
-	for _, view := range views {
-		if view.Offered {
-			result = append(result, view)
-		}
-	}
-	return result, nil
+// ListInstalledConnectors returns required entries and the owner's
+// installations, including those of Withdrawn Connectors, which remain
+// removable.
+func (a *Application) ListInstalledConnectors(ctx context.Context, owner string) ([]Connector, error) {
+	return a.connectorViews(ctx, owner, func(view Connector) bool { return view.Status != ConnectorNotInstalled })
 }
 
-// ListInstalledConnectors returns required entries and the user's installations,
-// including installations of entries no longer offered, which remain removable.
-func (a *Application) ListInstalledConnectors(ctx context.Context, actor string) ([]Connector, error) {
-	views, err := a.connectorViews(ctx, actor)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]Connector, 0, len(views))
-	for _, view := range views {
-		if view.Status != ConnectorNotInstalled {
-			result = append(result, view)
-		}
-	}
-	return result, nil
+// ListOwnedConnectors returns every Connector the owner made, Withdrawn ones
+// included.
+func (a *Application) ListOwnedConnectors(ctx context.Context, owner string) ([]Connector, error) {
+	return a.connectorViews(ctx, owner, func(view Connector) bool { return view.Publisher.Own })
 }
 
-func (a *Application) GetConnector(ctx context.Context, actor, name string) (ConnectorDetail, error) {
-	views, err := a.connectorViews(ctx, actor)
+// GetConnector reads a Connector of the owner's catalog, one the owner made or
+// one the owner installed.
+func (a *Application) GetConnector(ctx context.Context, owner, id string) (ConnectorDetail, error) {
+	views, err := a.connectorViews(ctx, owner, func(view Connector) bool { return view.ID == id })
 	if err != nil {
 		return ConnectorDetail{}, err
 	}
-	for _, view := range views {
-		if view.Name != name || (!view.Offered && view.Status == ConnectorNotInstalled) {
-			continue
-		}
-		plugins, err := a.pluginsUsingConnector(ctx, name)
-		if err != nil {
-			return ConnectorDetail{}, err
-		}
-		return ConnectorDetail{Connector: view, Plugins: plugins}, nil
+	if len(views) == 0 {
+		return ConnectorDetail{}, domain.ErrConnectorNotFound
 	}
-	return ConnectorDetail{}, domain.ErrConnectorNotFound
+	plugins, err := a.pluginsUsingConnector(ctx, id)
+	if err != nil {
+		return ConnectorDetail{}, err
+	}
+	return ConnectorDetail{Connector: views[0], Plugins: plugins}, nil
 }
 
 // InstallConnector does not consult Provider authorization. Repeating it keeps
 // the existing installation and its enablement.
-func (a *Application) InstallConnector(ctx context.Context, actor, name string) (ConnectorDetail, error) {
-	if strings.TrimSpace(actor) == "" {
+func (a *Application) InstallConnector(ctx context.Context, owner, id string) (ConnectorDetail, error) {
+	if strings.TrimSpace(owner) == "" {
 		return ConnectorDetail{}, ErrUnauthenticated
 	}
-	connector, err := a.connectors.GetByName(ctx, name)
+	connector, err := a.visibleConnector(ctx, owner, id)
 	if err != nil {
 		return ConnectorDetail{}, err
 	}
-	if _, err = a.installedConnectors.Get(ctx, actor, connector.ID); errors.Is(err, domain.ErrConnectorInstallationNotFound) {
-		installation, err := domain.InstallConnector(actor, connector)
+	if _, err = a.installedConnectors.Get(ctx, owner, connector.ID); errors.Is(err, domain.ErrConnectorInstallationNotFound) {
+		installation, err := domain.InstallConnector(owner, connector)
 		if err != nil {
 			return ConnectorDetail{}, err
 		}
@@ -125,7 +133,7 @@ func (a *Application) InstallConnector(ctx context.Context, actor, name string) 
 	} else if err != nil {
 		return ConnectorDetail{}, err
 	}
-	return a.GetConnector(ctx, actor, name)
+	return a.GetConnector(ctx, owner, id)
 }
 
 func (a *Application) EnableConnector(ctx context.Context, command ConnectorInstallationCommand) (ConnectorDetail, error) {
@@ -150,36 +158,6 @@ func (a *Application) UninstallConnector(ctx context.Context, command ConnectorI
 	return a.installedConnectors.Delete(ctx, installation)
 }
 
-// ReadConnectorSelection is restricted to trusted Agent startup composition.
-func (a *Application) ReadConnectorSelection(ctx context.Context, owner string) (ConnectorSelection, error) {
-	if strings.TrimSpace(owner) == "" {
-		return ConnectorSelection{}, ErrUnauthenticated
-	}
-	connectors, err := a.connectors.List(ctx)
-	if err != nil {
-		return ConnectorSelection{}, err
-	}
-	installed, err := a.installedQueries.ListInstalled(ctx, owner)
-	if err != nil {
-		return ConnectorSelection{}, err
-	}
-	selection := ConnectorSelection{Catalog: make([]query.CatalogConnector, 0, len(connectors))}
-	for _, connector := range connectors {
-		entry, err := selectionEntry(connector)
-		if err != nil {
-			return ConnectorSelection{}, err
-		}
-		selection.Catalog = append(selection.Catalog, entry)
-	}
-	a.annotateProviderExpiry(selection.Catalog)
-	for _, installation := range installed {
-		if installation.Enabled {
-			selection.EnabledConnectorIDs = append(selection.EnabledConnectorIDs, installation.ConnectorID)
-		}
-	}
-	return selection, nil
-}
-
 func (a *Application) changeConnectorInstallation(ctx context.Context, command ConnectorInstallationCommand, change func(*domain.InstalledConnector)) (ConnectorDetail, error) {
 	installation, err := a.loadConnectorInstallation(ctx, command)
 	if err != nil {
@@ -189,18 +167,14 @@ func (a *Application) changeConnectorInstallation(ctx context.Context, command C
 	if err := a.installedConnectors.Save(ctx, installation); err != nil {
 		return ConnectorDetail{}, err
 	}
-	return a.GetConnector(ctx, command.OwnerID, command.Name)
+	return a.GetConnector(ctx, command.OwnerID, command.ConnectorID)
 }
 
 func (a *Application) loadConnectorInstallation(ctx context.Context, command ConnectorInstallationCommand) (*domain.InstalledConnector, error) {
 	if strings.TrimSpace(command.OwnerID) == "" {
 		return nil, ErrUnauthenticated
 	}
-	connector, err := a.connectors.GetByName(ctx, command.Name)
-	if err != nil {
-		return nil, err
-	}
-	installation, err := a.installedConnectors.Get(ctx, command.OwnerID, connector.ID)
+	installation, err := a.installedConnectors.Get(ctx, command.OwnerID, command.ConnectorID)
 	if err != nil {
 		return nil, err
 	}
@@ -210,19 +184,35 @@ func (a *Application) loadConnectorInstallation(ctx context.Context, command Con
 	return installation, nil
 }
 
-func (a *Application) connectorViews(ctx context.Context, actor string) ([]Connector, error) {
-	if strings.TrimSpace(actor) == "" {
+// visibleConnector loads a Connector the owner may see: one in the owner's
+// catalog or one the owner made. Any other reads as absent, so a Private
+// Connector's existence never reaches another owner.
+func (a *Application) visibleConnector(ctx context.Context, owner, id string) (*domain.Connector, error) {
+	connector, err := a.connectors.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !connector.InCatalogOf(owner) && !connector.Owner.Is(owner) {
+		return nil, domain.ErrConnectorNotFound
+	}
+	return connector, nil
+}
+
+// connectorViews reads what the owner sees of every Connector the keep
+// filter admits, ordered by name.
+func (a *Application) connectorViews(ctx context.Context, owner string, keep func(Connector) bool) ([]Connector, error) {
+	if strings.TrimSpace(owner) == "" {
 		return nil, ErrUnauthenticated
 	}
-	catalog, err := a.connectorQueries.ListCatalog(ctx)
+	catalog, err := a.connectorQueries.ListForOwner(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
-	installed, err := a.installedQueries.ListInstalled(ctx, actor)
+	installed, err := a.installedQueries.ListInstalled(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
-	authorizations, err := a.authorizations.ListPersonalAuthorizations(ctx, actor)
+	authorizations, err := a.authorizations.ListPersonalAuthorizations(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -236,10 +226,14 @@ func (a *Application) connectorViews(ctx context.Context, actor string) ([]Conne
 	}
 	views := make([]Connector, 0, len(catalog))
 	for _, entry := range catalog {
-		view := Connector{Name: entry.Name, Description: entry.Description, Category: entry.Category, Required: entry.Required, Offered: entry.Offered, Status: ConnectorNotInstalled}
-		if installation, found := installations[entry.ID]; entry.Required {
+		installation, isInstalled := installations[entry.ID]
+		if !entry.InCatalogOf(owner) && !entry.OwnedBy(owner) && !isInstalled {
+			continue
+		}
+		view := connectorView(owner, entry)
+		if entry.Required {
 			view.Status = ConnectorAlwaysEnabled
-		} else if found {
+		} else if isInstalled {
 			view.Status, view.InstallationVersion = ConnectorDisabled, installation.Version
 			if installation.Enabled {
 				view.Status = ConnectorEnabled
@@ -251,9 +245,32 @@ func (a *Application) connectorViews(ctx context.Context, actor string) ([]Conne
 				view.ProviderConnection = connection
 			}
 		}
-		views = append(views, view)
+		if keep(view) {
+			views = append(views, view)
+		}
 	}
-	return views, nil
+	return views, a.namePublishers(ctx, views)
+}
+
+func connectorView(owner string, entry query.CatalogConnector) Connector {
+	view := Connector{ID: entry.ID, Name: entry.Name, Description: entry.Description, Category: entry.Category, Required: entry.Required,
+		Offered: entry.InCatalogOf(owner), State: entry.State, Publisher: Publisher{Kind: entry.Owner.Kind, Own: entry.OwnedBy(owner)},
+		Transport: transport(entry.Configuration.Type), IconDigest: entry.IconDigest, Version: entry.Version, PublishedAtMillis: entry.PublishedAtMillis,
+		Status: ConnectorNotInstalled}
+	if view.Publisher.Own {
+		view.Settings = &ConnectorSettings{URL: entry.Configuration.URL, Command: entry.Configuration.Command, Arguments: entry.Configuration.Arguments}
+	}
+	if entry.Owner.Kind != query.OwnerPlatform {
+		view.Publisher.DisplayName = entry.Owner.ID
+	}
+	return view
+}
+
+func transport(kind string) string {
+	if kind == "http" {
+		return "http"
+	}
+	return "stdio"
 }
 
 func providerConnection(status string) string {
@@ -268,19 +285,14 @@ func providerConnection(status string) string {
 }
 
 // pluginsUsingConnector scans catalog Plugins declaring MCP servers and keeps
-// those whose declarations address the named Connector's endpoint.
-func (a *Application) pluginsUsingConnector(ctx context.Context, name string) ([]ConnectorPlugin, error) {
-	catalog, err := a.connectorQueries.ListCatalog(ctx)
+// those whose declarations address the Connector's endpoint. Only Published
+// Connectors relate to the platform-wide Plugin catalog.
+func (a *Application) pluginsUsingConnector(ctx context.Context, id string) ([]ConnectorPlugin, error) {
+	published, err := a.connectorQueries.ListPublished(ctx)
 	if err != nil {
 		return nil, err
 	}
-	index := indexConnectorEndpoints(catalog)
-	var id string
-	for _, entry := range catalog {
-		if entry.Name == name {
-			id = entry.ID
-		}
-	}
+	index := indexConnectorEndpoints(published)
 	var plugins []ConnectorPlugin
 	for cursor := ""; ; {
 		page, err := a.catalog.List(ctx, cursor, 100, "mcp")
@@ -300,25 +312,4 @@ func (a *Application) pluginsUsingConnector(ctx context.Context, name string) ([
 		}
 		cursor = page.NextCursor
 	}
-}
-
-// selectionEntry is what a new Work may select: the connection the Connector
-// provides while Offered, or only its identity otherwise so Agent can reject a
-// selection of it.
-func selectionEntry(connector *domain.Connector) (query.CatalogConnector, error) {
-	provided, err := connector.ProvideConnection()
-	if errors.Is(err, domain.ErrConnectorNotOffered) {
-		return query.CatalogConnector{ID: connector.ID, Name: connector.Name, Required: connector.Required}, nil
-	}
-	if err != nil {
-		return query.CatalogConnector{}, err
-	}
-	entry := query.CatalogConnector{ID: provided.ID, Name: provided.Name, Description: provided.Presentation.Description, Category: provided.Presentation.Category,
-		Required: provided.Required, Offered: true, Authentication: provided.Authentication,
-		Configuration: query.ConnectorConfiguration{Type: provided.Configuration.Type, URL: provided.Configuration.URL, Command: provided.Configuration.Command,
-			Arguments: provided.Configuration.Arguments, Environment: provided.Configuration.Environment, Headers: provided.Configuration.Headers}}
-	if binding := provided.ProviderAccessBinding; binding != nil {
-		entry.Provider = &query.ConnectorProvider{Provider: binding.Provider, Target: binding.Target, Authentication: binding.Authentication}
-	}
-	return entry, nil
 }

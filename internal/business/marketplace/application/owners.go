@@ -47,28 +47,35 @@ func NewOwners(ownership AccountPort) *Owners {
 // their own, or, naming an Application, that Application while they are its
 // Application Owner and it is not removed.
 func (o *Owners) Resolve(ctx context.Context, caller Caller, applicationID string) (string, error) {
+	owner, err := o.ResolveOwner(ctx, caller, applicationID)
+	return owner.ID, err
+}
+
+// ResolveOwner is Resolve with the kind of owner reached: a person or an
+// Application, which owns a Connector it adds as a person does.
+func (o *Owners) ResolveOwner(ctx context.Context, caller Caller, applicationID string) (domain.ConnectorOwner, error) {
 	applicationID = strings.TrimSpace(applicationID)
 	if caller.ApplicationID != "" {
 		if applicationID != "" && applicationID != caller.ApplicationID {
-			return "", domain.ErrPermissionDenied
+			return domain.ConnectorOwner{}, domain.ErrPermissionDenied
 		}
-		return caller.ApplicationID, nil
+		return domain.ConnectorOwner{Kind: domain.OwnerApplication, ID: caller.ApplicationID}, nil
 	}
 	if strings.TrimSpace(caller.UserID) == "" {
-		return "", ErrUnauthenticated
+		return domain.ConnectorOwner{}, ErrUnauthenticated
 	}
 	if applicationID == "" {
-		return caller.UserID, nil
+		return domain.ConnectorOwner{Kind: domain.OwnerPerson, ID: caller.UserID}, nil
 	}
 	owned, err := o.ownership.GetApplication(ctx, applicationID)
 	if errors.Is(err, ErrApplicationUnknown) {
-		return "", domain.ErrPermissionDenied
+		return domain.ConnectorOwner{}, domain.ErrPermissionDenied
 	}
 	if err != nil {
-		return "", err
+		return domain.ConnectorOwner{}, err
 	}
 	if owned.OwnerID != caller.UserID || owned.Removed {
-		return "", domain.ErrPermissionDenied
+		return domain.ConnectorOwner{}, domain.ErrPermissionDenied
 	}
-	return owned.ID, nil
+	return domain.ConnectorOwner{Kind: domain.OwnerApplication, ID: owned.ID}, nil
 }

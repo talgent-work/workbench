@@ -77,7 +77,7 @@ func (h *SelectionHandler) ReadConnectorSelection(ctx context.Context, request *
 	for _, c := range selection.Catalog {
 		message := &marketplaceprivatev1.CatalogConnector{Id: c.ID, Name: c.Name, Required: c.Required, Offered: c.Offered, Authentication: c.Authentication,
 			Type: c.Configuration.Type, Url: c.Configuration.URL, Command: c.Configuration.Command, Arguments: c.Configuration.Arguments,
-			Environment: c.Configuration.Environment, Headers: c.Configuration.Headers}
+			Environment: c.Configuration.Environment, Headers: c.Configuration.Headers, Publisher: c.Publisher}
 		if provider := c.Provider; provider != nil {
 			message.Provider, message.Target, message.ProviderAuthentication = provider.Provider, provider.Target, provider.Authentication
 			message.ProviderTargetCredentialsExpire = provider.TargetCredentialsExpire

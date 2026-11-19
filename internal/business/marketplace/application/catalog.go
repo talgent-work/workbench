@@ -100,10 +100,11 @@ func (a *Application) GetRelease(ctx context.Context, slug string) (PluginReleas
 	return releases[0], nil
 }
 
-// relateConnectors annotates MCP declarations with their corresponding catalog
-// Connector, reading the catalog once for all supplied releases.
+// relateConnectors annotates MCP declarations with their corresponding
+// Published Connector, which every owner sees, reading them once for all
+// supplied releases.
 func (a *Application) relateConnectors(ctx context.Context, releases []PluginRelease) error {
-	catalog, err := a.connectorQueries.ListCatalog(ctx)
+	catalog, err := a.connectorQueries.ListPublished(ctx)
 	if err != nil {
 		return err
 	}

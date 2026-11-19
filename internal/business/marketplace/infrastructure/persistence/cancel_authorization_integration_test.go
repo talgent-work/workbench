@@ -110,7 +110,7 @@ func TestCancelPersonalAuthorizationPersistsProviderOutcomeAndFencesRenewal(t *t
 	changes := &credentialChanges{}
 	store := application.NewCredentialChangeDispatch(repo, changes, slog.Default())
 	connections := declaredConnections(store, NewProviderAuthorizationQueries(db), testGitHub{access: unobservableAccess{}, authority: reauthorization}, nil, port)
-	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
+	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorDependencies{})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())

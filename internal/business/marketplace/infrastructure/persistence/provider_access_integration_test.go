@@ -150,7 +150,7 @@ func newProviderAccessFixture(t *testing.T) *providerAccessFixture {
 	connections := application.NewPersonalConnections(application.ConnectionDependencies{Authorizations: repo, Queries: queries, Providers: providers,
 		GitHub: testGitHub{access: observer}, Tasks: scheduler, Credentials: credentials})
 	scheduler.connections = connections
-	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorRepositories{})
+	app := application.NewApplication(nil, nil, nil, nil, connections, application.ConnectorDependencies{})
 	path, handler := "/"+marketplacepublicv1connect.MarketplaceServiceName+"/", connecttest.Handler(func(s *connect.Server) {
 		marketplacepublicv1connect.RegisterMarketplaceServiceHandler(s, transport.NewHandler(app, application.NewOwners(nil)))
 	}, authn.NewPrincipalInterceptor())

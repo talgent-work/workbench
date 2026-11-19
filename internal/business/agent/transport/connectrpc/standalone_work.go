@@ -108,7 +108,7 @@ func creationCapabilitiesFromProto(value *agentpublicv1.CreationCapabilities) do
 		result.Plugins = append(result.Plugins, domain.PluginChoice{Slug: plugin.GetName(), Include: plugin.Include == nil || plugin.GetInclude(), Configuration: pluginconfig.FromJSON(plugin.GetConfiguration().AsMap())})
 	}
 	for _, connector := range value.GetConnectors() {
-		result.Connectors = append(result.Connectors, domain.ConnectorChoice{Name: connector.GetName(), Include: connector.GetInclude()})
+		result.Connectors = append(result.Connectors, domain.ConnectorChoice{ConnectorID: connector.GetConnectorId(), Include: connector.GetInclude()})
 	}
 	return result
 }

@@ -5,6 +5,18 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that lets owners add and publish their own Connectors
+
+Before deploying, apply
+[`20261120-owner-connectors.sql`](../deploy/middleware/migrations/20261120-owner-connectors.sql)
+to the database named by `WORKBENCH_MYSQL_DATABASE`: it gives each Connector an owner, a name unique
+per owner, an icon and a publication time, and turns existing Platform Connectors Published. The
+release changes the Connector contracts in step: every Connector request and Work Connector choice
+names a Connector by its identity, so deploy every Workbench service and web app of the release
+together. A platform operator withdraws a published Connector through the private
+`marketplace.private.v1.ConnectorOperationService`
+with the `connections.credential-token` bearer ([configuration](configuration.md#marketplace)).
+
 ## The release that lets Cloud Works reach declared enterprise networks
 
 Nothing is required: without `ENTERPRISE_NETWORKS` sandboxes reach no private network, as

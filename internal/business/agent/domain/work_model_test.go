@@ -108,7 +108,7 @@ func TestAManagedWorkLeavesOutProviderAuthorizedConnectors(t *testing.T) {
 // by the rule that leaves them out of its snapshot.
 func TestConnectorOptionsReportManagedAvailability(t *testing.T) {
 	github := connectorcatalogtest.GitHub()
-	options, err := domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{connectorcatalogtest.Required(), github}, EnabledConnectors: []string{github.ID}}.ConnectorOptions()
-	require.NoError(t, err)
-	require.Equal(t, []domain.ConnectorOption{{Name: "github", IncludedByDefault: true, UnavailableOnManaged: true}, {Name: "talgent", Required: true, IncludedByDefault: true}}, options)
+	required := connectorcatalogtest.Required()
+	options := domain.StartupCapabilityInput{Connectors: []domain.CatalogConnector{required, github}, EnabledConnectors: []string{github.ID}}.ConnectorOptions()
+	require.Equal(t, []domain.ConnectorOption{{ID: github.ID, Name: "github", IncludedByDefault: true, UnavailableOnManaged: true}, {ID: required.ID, Name: "talgent", Required: true, IncludedByDefault: true}}, options)
 }

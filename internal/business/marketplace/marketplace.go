@@ -89,8 +89,9 @@ var Module = fx.Module("domain.marketplace",
 		fx.As(new(domain.InstalledPluginRepository)), fx.As(new(query.InstalledPluginQueryRepository)),
 	)),
 	fx.Provide(infrastructure.NewConnectorRepository, infrastructure.NewInstalledConnectorRepository),
-	fx.Provide(func(connectors *infrastructure.ConnectorRepository, installed *infrastructure.InstalledConnectorRepository) application.ConnectorRepositories {
-		return application.ConnectorRepositories{Catalog: connectors, Installed: installed, CatalogQueries: connectors, InstalledQueries: installed}
+	fx.Provide(func(config Config, connectors *infrastructure.ConnectorRepository, installed *infrastructure.InstalledConnectorRepository, account *marketplaceaccount.Client, logger *slog.Logger) application.ConnectorDependencies {
+		return application.ConnectorDependencies{Catalog: connectors, Installed: installed, CatalogQueries: connectors, InstalledQueries: installed,
+			Publishers: account, PlatformNames: platformConnectorNames(config), Logger: logger}
 	}),
 	fx.Invoke(registerPlatformConnectors),
 	fx.Provide(func(store *infrastructure.CatalogStore) application.PluginCatalogQueryRepository { return store }),
@@ -108,6 +109,7 @@ var Module = fx.Module("domain.marketplace",
 		connectserver.Mount(params.Mux, public)
 		private := connectserver.New(params.Logger)
 		marketplaceprivatev1connect.RegisterSelectionServiceHandler(private, marketplaceconnect.NewSelectionHandler(params.App, params.Config.Connections.CredentialToken))
+		marketplaceprivatev1connect.RegisterConnectorOperationServiceHandler(private, marketplaceconnect.NewConnectorOperationHandler(params.App, params.Config.Connections.CredentialToken))
 		connectserver.Mount(params.Mux, private)
 		params.Mux.Handle(marketplacehttp.ContentPath, params.Catalog)
 	}),

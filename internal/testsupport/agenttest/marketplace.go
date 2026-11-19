@@ -68,7 +68,7 @@ func Marketplace(t testing.TB, dsn string, authorizations ...Authorization) (str
 	for _, id := range ids {
 		require.NoError(t, personal.ObserveAccessScope(ctx, id))
 	}
-	market := marketapp.NewApplication(nil, nil, nil, marketstore.NewProviderAuthorizationQueries(db), personal, marketapp.ConnectorRepositories{})
+	market := marketapp.NewApplication(nil, nil, nil, marketstore.NewProviderAuthorizationQueries(db), personal, marketapp.ConnectorDependencies{})
 	marketplace := connect.NewServer(authn.NewPrincipalInterceptor())
 	marketplacepublicv1connect.RegisterMarketplaceServiceHandler(marketplace, markettransport.NewHandler(market, marketapp.NewOwners(noApplications{})))
 	mux := http.NewServeMux()

@@ -6,7 +6,9 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
+	domainevent "github.com/go-jimu/components/ddd/event"
 	"github.com/google/uuid"
 )
 
@@ -14,21 +16,25 @@ var (
 	ErrInvalidConnector        = errors.New("invalid MCP connector")
 	ErrConnectorNotFound       = errors.New("MCP connector not found")
 	ErrConnectorNotInstallable = errors.New("MCP connector cannot be personally installed")
-	ErrConnectorNotOffered     = errors.New("MCP connector is not offered")
 )
 
-// ConnectorState is the catalog offer status. Withdrawn is reserved: no current
-// behavior enters or leaves it, but installation and selection already refuse it.
+// ConnectorState is the Connector's Lifecycle State: an owner's Connector is
+// added Private, published to every owner and withdrawn for good. A Platform
+// Connector is established Published.
 type ConnectorState uint8
 
 const (
-	ConnectorOffered ConnectorState = iota + 1
+	ConnectorPrivate ConnectorState = iota + 1
+	ConnectorPublished
 	ConnectorWithdrawn
 )
 
 const (
 	WorkIdentityAuthentication          = "work_identity"
 	ProviderAuthorizationAuthentication = "provider_authorization"
+	// NoAuthentication is a credential-free Connector's: it receives no
+	// credential (Credential-free Connector).
+	NoAuthentication = "none"
 )
 
 // MCPConfiguration retains a native stdio or HTTP declaration without issued credentials.
@@ -48,9 +54,12 @@ func (c MCPConfiguration) Clone() MCPConfiguration {
 	return c
 }
 
+// Remote reports whether Works reach the server over HTTP.
+func (c MCPConfiguration) Remote() bool { return c.Type == "http" }
+
 func (c MCPConfiguration) Validate() error {
 	if c.Type == "http" {
-		if c.URL == "" || c.Command != "" {
+		if c.URL == "" || c.Command != "" || len(c.URL) > 2048 {
 			return ErrInvalidConnector
 		}
 		return nil
@@ -69,16 +78,29 @@ func (c MCPConfiguration) Validate() error {
 	return nil
 }
 
-// CatalogPresentation is what catalog browsing shows for an entry.
+// CatalogPresentation is what catalog browsing shows for an entry: its
+// description, category and optional icon image.
 type CatalogPresentation struct {
 	Description string `validate:"max=1024"`
 	Category    string `validate:"max=64"`
+	Icon        *ConnectorIcon
 }
 
-// Connector is one platform-registered catalog MCP integration. Only platform
-// publication registers or reconfigures it; users install it, never edit it.
+func (p CatalogPresentation) validate() error {
+	if domainValidator.Struct(p) != nil {
+		return ErrInvalidConnector
+	}
+	if p.Icon != nil {
+		return p.Icon.Validate()
+	}
+	return nil
+}
+
+// Connector is one MCP integration that the deployment provides or an owner
+// adds. Only its owner sees it until its owner publishes it to every owner.
 type Connector struct {
 	ProviderAccessBinding *ProviderAccessBinding
+	Owner                 ConnectorOwner
 	ID                    string `validate:"required,uuid"`
 	Name                  string `validate:"required,max=128"`
 	Presentation          CatalogPresentation
@@ -86,33 +108,47 @@ type Connector struct {
 	Authentication        string
 	Configuration         MCPConfiguration
 	State                 ConnectorState
-	Version               int
+	// PublishedAt is when the Connector was published; zero while Private.
+	PublishedAt time.Time
+	Version     int
+	events      domainevent.Collection
 }
 
 // EstablishRequiredPlatformConnector creates the mandatory platform integration
 // authenticated by Agent-owned Work identity.
 func EstablishRequiredPlatformConnector(name string, configuration MCPConfiguration, presentation CatalogPresentation) (*Connector, error) {
-	c := &Connector{ID: uuid.Must(uuid.NewV7()).String(), Name: name, Presentation: presentation, Required: true,
-		Configuration: configuration.Clone(), Authentication: WorkIdentityAuthentication, State: ConnectorOffered}
+	c := &Connector{ID: uuid.Must(uuid.NewV7()).String(), Owner: PlatformOwner, Name: name, Presentation: presentation, Required: true,
+		Configuration: configuration.Clone(), Authentication: WorkIdentityAuthentication, State: ConnectorPublished}
 	return c, c.Validate()
 }
 
-// RegisterProviderConnector creates a catalog integration authenticated through
-// personal Provider authorization, accepted only with evidence for exactly this
-// configuration. Registration requires no personal Identity.
-func RegisterProviderConnector(name string, configuration MCPConfiguration, binding ProviderAccessBinding, presentation CatalogPresentation, evidence ProviderCompatibility) (*Connector, error) {
+// EstablishPlatformProviderConnector creates a Platform Connector authenticated
+// through personal Provider authorization, accepted only with evidence for
+// exactly this configuration. It requires no personal Identity.
+func EstablishPlatformProviderConnector(name string, configuration MCPConfiguration, binding ProviderAccessBinding, presentation CatalogPresentation, evidence ProviderCompatibility) (*Connector, error) {
 	if err := validateProviderConfiguration(configuration, binding, evidence); err != nil {
 		return nil, err
 	}
-	c := &Connector{ID: uuid.Must(uuid.NewV7()).String(), Name: name, Presentation: presentation,
-		Configuration: configuration.Clone(), ProviderAccessBinding: &binding, Authentication: ProviderAuthorizationAuthentication, State: ConnectorOffered}
+	c := &Connector{ID: uuid.Must(uuid.NewV7()).String(), Owner: PlatformOwner, Name: name, Presentation: presentation,
+		Configuration: configuration.Clone(), ProviderAccessBinding: &binding, Authentication: ProviderAuthorizationAuthentication, State: ConnectorPublished}
 	return c, c.Validate()
 }
 
 func (c *Connector) Validate() error {
-	if c == nil || domainValidator.Struct(c) != nil || !pluginSlug.MatchString(c.Name) || c.Version < 0 ||
-		(c.State != ConnectorOffered && c.State != ConnectorWithdrawn) || domainValidator.Struct(c.Presentation) != nil {
+	if c == nil || domainValidator.Struct(c) != nil || !pluginSlug.MatchString(c.Name) || c.Version < 0 || c.Owner.validate() != nil ||
+		c.State < ConnectorPrivate || c.State > ConnectorWithdrawn {
 		return ErrInvalidConnector
+	}
+	if err := c.Presentation.validate(); err != nil {
+		return err
+	}
+	if c.Owner.Platform() && c.State == ConnectorPrivate {
+		return ErrInvalidConnector
+	}
+	if !c.Owner.Platform() {
+		if err := validateOwnerConfiguration(c.Configuration, c.ProviderAccessBinding); err != nil {
+			return err
+		}
 	}
 	switch c.Authentication {
 	case ProviderAuthorizationAuthentication:
@@ -121,19 +157,30 @@ func (c *Connector) Validate() error {
 		}
 		return validateProviderBinding(c.Configuration, *c.ProviderAccessBinding)
 	case WorkIdentityAuthentication:
+		if !c.Owner.Platform() {
+			return ErrInvalidConnector
+		}
 		return validateWorkIdentityConfiguration(c.Required, c.ProviderAccessBinding, c.Configuration)
+	case NoAuthentication:
+		if c.Required || c.ProviderAccessBinding != nil || c.Owner.Platform() {
+			return ErrInvalidConnector
+		}
+		return c.Configuration.Validate()
 	default:
 		return ErrInvalidConnector
 	}
 }
 
-// Reconfigure replaces the platform-owned configuration and presentation. A
-// required Connector keeps Work identity authentication; a Provider Connector
-// accepts target or authentication changes only with matching evidence.
-// Repeating an unchanged publication reports no change.
+// Reconfigure replaces a Platform Connector's deployment-owned configuration
+// and presentation. A required Connector keeps Work identity authentication;
+// a Provider Connector accepts target or authentication changes only with
+// matching evidence. Repeating an unchanged publication reports no change.
 func (c *Connector) Reconfigure(configuration MCPConfiguration, binding *ProviderAccessBinding, presentation CatalogPresentation, evidence *ProviderCompatibility) (bool, error) {
 	if err := c.Validate(); err != nil {
 		return false, err
+	}
+	if !c.Owner.Platform() {
+		return false, ErrInvalidConnector
 	}
 	candidate := *c
 	candidate.Configuration = configuration.Clone()
@@ -161,30 +208,27 @@ func (c *Connector) Reconfigure(configuration MCPConfiguration, binding *Provide
 	return true, nil
 }
 
-// AdmitInstallation refuses personal installation of a withdrawn or required entry.
-func (c *Connector) AdmitInstallation() error {
-	if c.Required || c.State != ConnectorOffered {
+// InCatalogOf reports whether the Connector is in an owner's Connector
+// catalog: a Platform or Published Connector, or the owner's own Private
+// one. A Withdrawn Connector is in no catalog (Catalog withdrawal).
+func (c *Connector) InCatalogOf(owner string) bool {
+	switch c.State {
+	case ConnectorPublished:
+		return true
+	case ConnectorPrivate:
+		return c.Owner.Is(owner)
+	default:
+		return false
+	}
+}
+
+// AdmitInstallation admits an owner's installation only while the Connector
+// is in that owner's Connector catalog and neither Withdrawn nor required.
+func (c *Connector) AdmitInstallation(owner string) error {
+	if c.Required || !c.InCatalogOf(owner) {
 		return ErrConnectorNotInstallable
 	}
 	return nil
-}
-
-// ProvideConnection supplies a copy of the non-secret configuration for a new
-// Work's selection while the entry is Offered.
-func (c *Connector) ProvideConnection() (Connector, error) {
-	if err := c.Validate(); err != nil {
-		return Connector{}, err
-	}
-	if c.State != ConnectorOffered {
-		return Connector{}, ErrConnectorNotOffered
-	}
-	result := *c
-	result.Configuration = c.Configuration.Clone()
-	if c.ProviderAccessBinding != nil {
-		binding := *c.ProviderAccessBinding
-		result.ProviderAccessBinding = &binding
-	}
-	return result, nil
 }
 
 // validateWorkIdentityConfiguration admits the required platform Connector:
