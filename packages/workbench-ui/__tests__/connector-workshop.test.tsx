@@ -7,7 +7,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { DeclaredProvider } from "@talgent/contracts/marketplace/public/v1/connections_pb";
 import type { WorkStartConnector } from "@talgent/contracts/agent/public/v1/work_start_options_pb";
 import { EntryShellContext, personalPathsAt, type PageLayoutProps } from "../components/shell/entry-shell";
-import { draftProblems, emptyDraft, splitCommand } from "../lib/connector-workshop";
+import { draftProblems, emptyDraft } from "../lib/connector-workshop";
 import { connectorChoices, connectorLoadout } from "../lib/work-start-loadout";
 import { WorkshopPage } from "../pages/workshop-page";
 
@@ -62,7 +62,7 @@ it("checks a draft as the Marketplace would before asking it", () => {
   expect(draftProblems({ ...emptyDraft, name: "gh", provider: "github", url: "https://mcp.github.example.com/mcp" }, options)).toEqual({});
   expect(draftProblems({ ...emptyDraft, name: "gh", provider: "github", url: "https://mcp.github.example.com:8443/mcp" }, options).url).toBeTruthy();
   expect(draftProblems({ ...emptyDraft, name: "chrome", transport: "stdio", command: " " }, options).command).toBeTruthy();
-  expect(splitCommand("  npx  chrome-devtools-mcp@0.6.0 --headless ")).toEqual({ command: "npx", arguments: ["chrome-devtools-mcp@0.6.0", "--headless"] });
+  expect(draftProblems({ ...emptyDraft, name: "chrome", transport: "stdio", command: "node 'server" }, options).command).toBe("Close the single quote.");
 });
 
 it("marks two included Connectors of one name and chooses them by identity", () => {
@@ -76,21 +76,29 @@ it("marks two included Connectors of one name and chooses them by identity", () 
   expect(resolved.map(row => row.clashes)).toEqual([false, false]);
 });
 
-it("adds a private Connector and publishes it after confirmation", async () => {
+it("adds a private Connector and opens its page", async () => {
   const user = userEvent.setup();
   renderWorkshop("/workshop");
   await user.click(await screen.findByRole("button", { name: /Add/ }));
   await user.click(await screen.findByRole("menuitem", { name: /Connector/ }));
 
-  await user.type(await screen.findByRole("textbox", { name: "Name" }), "acme-crm");
-  await user.type(screen.getByRole("textbox", { name: "Server address" }), "https://crm.example.com/mcp");
+  await user.click(await screen.findByRole("textbox", { name: "Name" }));
+  await user.paste("acme-crm");
+  await user.click(screen.getByRole("textbox", { name: "Server address" }));
+  await user.paste("https://crm.example.com/mcp");
   await user.click(screen.getByRole("button", { name: "Add connector" }));
   await waitFor(() => expect(calls.find(call => call.method === "addConnector")?.request).toMatchObject({ name: "acme-crm", transport: "http", provider: "", settings: { url: "https://crm.example.com/mcp" } }));
   // Adding opens the added Connector's own page, Private to its owner.
   expect(await screen.findByText("Private")).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "acme-crm" })).toBeInTheDocument();
+}, 3000);
 
-  await user.click(screen.getByRole("button", { name: "Publish…" }));
+it("publishes a private Connector after confirmation", async () => {
+  const user = userEvent.setup();
+  owned = [{ connectorId: "01900000-0000-7000-8000-000000000502", name: "acme-crm", state: "private", transport: "http", provider: "", description: "", category: "", iconDigest: "",
+    connectorVersion: 1, publishedAtUnixMs: 0n, publisher: { kind: "person", own: true, displayName: "" }, settings: { url: "https://crm.example.com/mcp", command: "", arguments: [] } }];
+  renderWorkshop(`/workshop/connectors/${owned[0].connectorId}`);
+  await user.click(await screen.findByRole("button", { name: "Publish…" }));
   const dialog = await screen.findByRole("dialog");
   await user.click(within(dialog).getByRole("button", { name: "Publish" }));
   await waitFor(() => expect(calls.find(call => call.method === "publishConnector")?.request).toMatchObject({ connectorId: owned[0].connectorId, version: 1 }));

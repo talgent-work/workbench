@@ -3,6 +3,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import type { Connector, ConnectorIcon } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
 import type { DeclaredProvider } from "@talgent/contracts/marketplace/public/v1/connections_pb";
 import { useCurrentUser } from "./account-service";
+import { formatCommandLine, parseCommandLine } from "./command-line";
 import { marketplaceClient } from "./client";
 import { marketplaceQueryKey, useRefreshPersonal, type MarketplaceOwner } from "./marketplace-catalog";
 
@@ -16,7 +17,7 @@ export type ConnectorDraft = {
   name: string;
   transport: "http" | "stdio";
   url: string;
-  /** The command line: the command and its arguments, split on spaces. */
+  /** The command line: the program and its arguments, quoted as a shell would. */
   command: string;
   provider: string;
   description: string;
@@ -32,7 +33,7 @@ export const maxIconBytes = 512 * 1024;
 export const iconTypes = ["image/png", "image/svg+xml", "image/jpeg", "image/webp"];
 
 /** The command line of a local command Connector. */
-export const commandLine = (connector: Connector) => [connector.settings?.command ?? "", ...(connector.settings?.arguments ?? [])].filter(Boolean).join(" ");
+export const commandLine = (connector: Connector) => formatCommandLine({ command: connector.settings?.command ?? "", arguments: connector.settings?.arguments ?? [] });
 
 export function draftOf(connector: Connector): ConnectorDraft {
   return { name: connector.name, transport: connector.transport === "stdio" ? "stdio" : "http", url: connector.settings?.url ?? "", command: commandLine(connector),
@@ -63,7 +64,9 @@ export function draftProblems(draft: ConnectorDraft, options: { adding: boolean;
   }
   const provider = options.providers.find(item => item.name === draft.provider);
   if (draft.transport === "stdio") {
-    if (!draft.command.trim()) problems.command = "Enter the command that starts the server.";
+    const parsed = parseCommandLine(draft.command);
+    if ("problem" in parsed) problems.command = parsed.problem;
+    else if (!parsed.command) problems.command = "Enter the command that starts the server.";
     if (draft.provider) problems.provider = "A connector that signs in through a provider is a remote server.";
   } else if (!/^https?:\/\/[^/]/.test(draft.url.trim())) problems.url = "Enter the server’s http(s) address.";
   else if (provider && !withinTargets(draft.url.trim(), provider)) problems.url = `${provider.displayName} credentials only reach ${providerHosts(provider).join(", ")}.`;
@@ -72,14 +75,14 @@ export function draftProblems(draft: ConnectorDraft, options: { adding: boolean;
   return problems;
 }
 
-/** A command line as its command and arguments. */
-export function splitCommand(line: string) {
-  const [command = "", ...args] = line.trim().split(/\s+/).filter(Boolean);
-  return { command, arguments: args };
+// A draft is checked before it is sent, so its line parses.
+function commandOf(line: string) {
+  const parsed = parseCommandLine(line);
+  return "problem" in parsed ? { command: "", arguments: [] } : parsed;
 }
 
 function settingsOf(draft: ConnectorDraft) {
-  return draft.transport === "http" ? { url: draft.url.trim(), command: "", arguments: [] } : { url: "", ...splitCommand(draft.command) };
+  return draft.transport === "http" ? { url: draft.url.trim(), command: "", arguments: [] } : { url: "", ...commandOf(draft.command) };
 }
 
 const iconMessage = (icon?: IconImage): ConnectorIcon | undefined => icon ? { $typeName: "marketplace.public.v1.ConnectorIcon", mediaType: icon.mediaType, data: icon.data } : undefined;

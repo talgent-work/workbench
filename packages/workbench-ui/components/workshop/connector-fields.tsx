@@ -42,7 +42,7 @@ export function AddressField({ draft, set, problems, touched }: FieldProps) {
     : <TextField value={draft.command} onChange={command => set({ command })} isInvalid={touched && Boolean(problems.command)} fullWidth variant="secondary" isRequired>
       <Label>Command</Label><Input placeholder="npx chrome-devtools-mcp@0.6.0" autoComplete="off" className="font-mono" spellCheck={false} />
       {touched && problems.command ? <FieldError>{problems.command}</FieldError>
-        : <Description>Pin a package version, such as chrome-devtools-mcp@0.6.0 rather than @latest, so every Work runs the same server. If it can’t start in a Work, it just won’t be available there.</Description>}
+        : <Description>Pin a package version, such as chrome-devtools-mcp@0.6.0 rather than @latest, so every Work runs the same server. Quote an argument that holds spaces. If it can’t start in a Work, it just won’t be available there.</Description>}
     </TextField>;
 }
 

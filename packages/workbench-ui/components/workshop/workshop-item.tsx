@@ -73,7 +73,11 @@ function ItemPage({ connector }: { connector?: Connector }) {
       return;
     }
     authoring.change.mutate({ connector, draft }, {
-      onSuccess: () => notify(`workshop:save:${connector.connectorId}`, "success", "Changes saved", "Works started from now on use them."),
+      onSuccess: saved => {
+        // The saved form, so a line quoted differently is no longer a change.
+        setDraft(draftOf(saved));
+        notify(`workshop:save:${connector.connectorId}`, "success", "Changes saved", "Works started from now on use them.");
+      },
       onError: refuseInline(failed("saved")),
     });
   };
@@ -85,10 +89,12 @@ function ItemPage({ connector }: { connector?: Connector }) {
       onError: failed("changed"),
     });
   };
-  type Command = { mutate: (connector: Connector, options: { onSuccess: () => void; onError: (error: unknown) => void }) => void };
+  // The outcome is awaited rather than left to per-call callbacks, which
+  // never run once a deleted Connector's page has left.
+  type Command = { mutateAsync: (connector: Connector) => Promise<unknown> };
   const run = (mutation: Command, what: string, toast: [string, string?], after?: () => void) => {
     if (!connector) return;
-    mutation.mutate(connector, { onSuccess: () => { notify(`workshop:${what}:${connector.connectorId}`, "success", ...toast); after?.(); }, onError: failed(what) });
+    mutation.mutateAsync(connector).then(() => { notify(`workshop:${what}:${connector.connectorId}`, "success", ...toast); after?.(); }, failed(what));
   };
 
   const showForm = !connector || connector.state !== "withdrawn";
