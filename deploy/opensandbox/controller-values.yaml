@@ -1,0 +1,6 @@
+controller:
+  image:
+    repository: sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/controller
+    tag: release-1.2.1@sha256:cf44111b69920f711a245f8a7dea6be1709e2a135d0aa8be151978571e1b915f
+  snapshot:
+    imageCommitterImage: sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/image-committer:release-1.2.1@sha256:75ef864be01b81fc57d65624b5a371705580680b15c4eb6183faeecc584388a9

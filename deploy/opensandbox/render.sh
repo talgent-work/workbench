@@ -8,15 +8,24 @@ command -v helm >/dev/null
 render_dir=$(mktemp -d)
 trap 'rm -rf "$render_dir"' EXIT
 # Fetch chart sources only.
-chart_revision=05a8d26a18bbdf1b3e698483fa7c14a9b4d903ec
+# The commit tagged release-1.2.1.
+chart_revision=db708c218771a8d311356f0e96552c15df6e097a
 git init -q "$render_dir/source"
 git -C "$render_dir/source" remote add origin https://github.com/opensandbox-group/OpenSandbox.git
 git -C "$render_dir/source" fetch --depth 1 origin "$chart_revision"
 git -C "$render_dir/source" checkout --detach FETCH_HEAD
 test "$(git -C "$render_dir/source" rev-parse HEAD)" = "$chart_revision"
-charts="$render_dir/source/kubernetes/charts"
-helm template opensandbox-controller "$charts/opensandbox-controller" --namespace opensandbox-system > "$render_dir/controller.yaml"
-helm template opensandbox "$charts/opensandbox-server" --namespace talgent -f "$root_dir/deploy/opensandbox/server-values.yaml" > "$render_dir/server.yaml"
+charts="$render_dir/source/manifests/charts"
+# The base chart carries the sandbox.opensandbox.io CRDs; they ship with the
+# controller. Its unbound user ClusterRoles and everything of Fast Sandbox,
+# which this deployment does not run, are left out.
+{
+  helm template opensandbox-base "$charts/base" --namespace opensandbox-system \
+    --set rbac.create=false --set fastSandbox.crds.install=false --set fastSandbox.rbac.create=false \
+    --set fastSandbox.namespaces.createSystem=false --set fastSandbox.namespaces.create=false
+  helm template opensandbox-controller "$charts/controller" --namespace opensandbox-system -f "$root_dir/deploy/opensandbox/controller-values.yaml"
+} > "$render_dir/controller.yaml"
+helm template opensandbox "$charts/server" --namespace talgent -f "$root_dir/deploy/opensandbox/server-values.yaml" > "$render_dir/server.yaml"
 # The chart grants the server a ClusterRole over Pods, Secrets and every other
 # resource it manages, in any namespace. The Kubernetes base grants it those only in
 # the sandbox namespace (deploy/kubernetes/workbench/sandbox.yaml), so the chart's
