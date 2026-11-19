@@ -134,6 +134,8 @@ How a Work's run gets its sandbox from OpenSandbox.
 | `models.configurations-path` | `${MODEL_CONFIGURATIONS_PATH:/etc/talgent/model-configurations/configurations.yml}` | Model Configurations with their keys; base: Secret `agent-model-configurations`. At least one is required. |
 | `network-allow` | `[${K8S_DNS_SERVICE_IP:10.43.0.10}]` | IP addresses a sandbox may reach despite the private-range denial; the platform addresses in `environment` are added |
 | `network-deny` | `[]` | Further egress targets denied beside the private ranges and all IPv6 |
+| `enterprise-networks` | `${ENTERPRISE_NETWORKS:}` | The enterprise networks a sandbox reaches, `CIDR:PORT[,PORT...]` separated by whitespace; the deploy renders the sandbox NetworkPolicy from the same value ([Enterprise networks](self-hosting.md#enterprise-networks)) |
+| `cluster-networks` | `${CLUSTER_NETWORKS:10.42.0.0/16 10.43.0.0/16}` | The cluster's own ranges, CIDRs separated by whitespace, denied even inside an enterprise network |
 | `opensandbox.address`, `opensandbox.api-key` | `${OPENSANDBOX_ADDRESS:http://opensandbox:80}`, `${OPENSANDBOX_API_KEY:}` | The OpenSandbox Server; base key: Secret `opensandbox-api` |
 | `native.binary` | `claude` | The Claude Code command in the sandbox image |
 | `image` | `${AGENT_NATIVE_IMAGE:}` | The sandbox image; base: `ghcr.io/talgent-work/sandbox:<tag>`, set when rendered |

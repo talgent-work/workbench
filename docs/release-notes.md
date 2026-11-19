@@ -5,6 +5,15 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that lets Cloud Works reach declared enterprise networks
+
+Nothing is required: without `ENTERPRISE_NETWORKS` sandboxes reach no private network, as
+before. To let Cloud Works reach internal services, declare `ENTERPRISE_NETWORKS` and, when the
+cluster's own ranges are not only the k3s defaults, `CLUSTER_NETWORKS` in the environment, then
+deploy ([Enterprise networks](self-hosting.md#enterprise-networks)). The base now renders the
+NetworkPolicy `sandbox-enterprise-networks` in `talgent-sandbox`, empty unless networks are
+declared.
+
 ## The release that upgrades OpenSandbox to 1.2.1
 
 `apply-opensandbox.sh` upgrades the OpenSandbox Controller, Server, CRDs, execd and egress to

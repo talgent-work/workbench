@@ -261,8 +261,9 @@ spec:
         - protocol: TCP
           port: 18080
   # The internet, DNS and the Collector; private networks, the NAS included,
-  # stay closed. A sandbox reaches the platform only through the entry, at
-  # its public origin.
+  # stay closed but for the declared enterprise networks
+  # (sandbox-enterprise-networks). A sandbox reaches the platform only
+  # through the entry, at its public origin.
   egress:
     - to:
         - ipBlock:
@@ -299,3 +300,18 @@ spec:
       ports:
         - protocol: TCP
           port: 4318
+---
+# The enterprise networks the deployment declares (ENTERPRISE_NETWORKS),
+# each on its TCP ports, except the cluster's own ranges inside it
+# (CLUSTER_NETWORKS). scripts/deploy/render.sh fills the egress from the
+# environment; declaring none leaves it empty, adding nothing to
+# sandbox-boundary.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-enterprise-networks
+  namespace: talgent-sandbox
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress: []

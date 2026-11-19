@@ -258,6 +258,12 @@ agent-execution:
   network-allow:
     - "${K8S_DNS_SERVICE_IP:10.43.0.10}"
   network-deny: []
+  # Whitespace-separated: the enterprise networks a sandbox reaches, each
+  # CIDR:PORT[,PORT...], and the cluster's own ranges, which stay denied even
+  # inside an enterprise network. The deploy renders the sandbox
+  # NetworkPolicy from the same environment values.
+  enterprise-networks: "${ENTERPRISE_NETWORKS:}"
+  cluster-networks: "${CLUSTER_NETWORKS:10.42.0.0/16 10.43.0.0/16}"
   opensandbox:
     address: ${OPENSANDBOX_ADDRESS:http://opensandbox:80}
     api-key: ${OPENSANDBOX_API_KEY:}

@@ -33,8 +33,13 @@ type ExecutionClientConfig struct {
 type ExecutionConfig struct {
 	NetworkAllow []string `json:"network-allow" yaml:"network-allow" toml:"network-allow"`
 	// Models names the mounted Model Template and Model Configuration files.
-	Models              platformcatalog.Config       `json:"models" yaml:"models" toml:"models"`
-	NetworkDeny         []string                     `json:"network-deny" yaml:"network-deny" toml:"network-deny"`
+	Models      platformcatalog.Config `json:"models" yaml:"models" toml:"models"`
+	NetworkDeny []string               `json:"network-deny" yaml:"network-deny" toml:"network-deny"`
+	// EnterpriseNetworks and ClusterNetworks hold ENTERPRISE_NETWORKS and
+	// CLUSTER_NETWORKS of the deployment's environment, which also renders
+	// the sandbox NetworkPolicy from them (execution.ParseSandboxNetworks).
+	EnterpriseNetworks  string                       `json:"enterprise-networks" yaml:"enterprise-networks" toml:"enterprise-networks"`
+	ClusterNetworks     string                       `json:"cluster-networks" yaml:"cluster-networks" toml:"cluster-networks"`
 	CredentialTransport string                       `json:"credential-transport" yaml:"credential-transport" toml:"credential-transport"`
 	OpenSandbox         opensandbox.Config           `json:"opensandbox" yaml:"opensandbox" toml:"opensandbox"`
 	Native              execution.NativeLaunchConfig `json:"native" yaml:"native" toml:"native"`
@@ -125,6 +130,9 @@ func (cfg ExecutionConfig) Validate() error {
 	if strings.TrimSpace(cfg.SandboxNamespace) == "" {
 		return errors.New("agent: sandbox namespace is required")
 	}
+	if _, err := execution.ParseSandboxNetworks(cfg.EnterpriseNetworks, cfg.ClusterNetworks); err != nil {
+		return err
+	}
 	return cfg.OpenSandbox.Validate()
 }
 
@@ -133,6 +141,10 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, clu
 		return nil, err
 	}
 	pods, err := execution.NewSandboxPods(cluster, cfg.SandboxNamespace)
+	if err != nil {
+		return nil, err
+	}
+	networks, err := execution.ParseSandboxNetworks(cfg.EnterpriseNetworks, cfg.ClusterNetworks)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +163,7 @@ func newExecutionSandboxes(cfg ExecutionConfig, client *sdk.LifecycleClient, clu
 		}
 		resources.Limits[corev1.ResourceName(name)] = quantity
 	}
-	return execution.NewSandboxes(client, pods, execution.SandboxConfig{CreationTimeout: cfg.creationTimeout(), CreationWait: cfg.creationWait(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
+	return execution.NewSandboxes(client, pods, execution.SandboxConfig{CreationTimeout: cfg.creationTimeout(), CreationWait: cfg.creationWait(), Image: cfg.Image, Resources: resources, Environment: cfg.Environment, Models: models, Networks: networks, NetworkDeny: cfg.NetworkDeny, NetworkAllow: cfg.NetworkAllow, Lease: cfg.Lease.terms()})
 }
 
 var ExecutionModule = fx.Module("agent.execution-integration",
