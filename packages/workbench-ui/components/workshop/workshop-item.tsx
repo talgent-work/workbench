@@ -147,18 +147,18 @@ function ItemPage({ connector }: { connector?: Connector }) {
       <Modal.Header><Modal.Heading>Publish {connector.name} to the Marketplace?</Modal.Heading></Modal.Header>
       <Modal.Body className="grid gap-3">
         <Typography.Paragraph>Everyone in this workspace can find and install it.</Typography.Paragraph>
-        <Typography.Paragraph size="sm" className="text-muted">Each person signs in with their own account, never yours. Your later changes reach Works started afterwards. Once published you can withdraw it, but not delete it.</Typography.Paragraph>
+        <Typography.Paragraph size="sm" className="text-muted">Each person uses their own access, never yours. Your later changes reach Works started afterwards. Once published you can withdraw it, but not delete it.</Typography.Paragraph>
       </Modal.Body>
       <Modal.Footer><Button variant="tertiary" onPress={() => setConfirm(null)}>Cancel</Button>
         <Button variant="primary" isPending={authoring.publish.isPending} onPress={() => run(authoring.publish, "published", [`Published ${connector.name}`, "It’s in the Marketplace for everyone."], () => setConfirm(null))}>Publish</Button></Modal.Footer>
     </Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>}
     {connector && <ConfirmDialog isOpen={confirm === "withdraw"} onOpenChange={open => { if (!open) setConfirm(null); }} title={`Withdraw ${connector.name}?`} confirmLabel="Withdraw"
       onConfirm={() => run(authoring.withdraw, "withdrawn", [`Withdrew ${connector.name}`, "New Works can’t select it. Existing installations stay."])}>
-      <p>It leaves the Marketplace and no new Work can select it. People who installed it keep it. This can’t be undone: you can’t publish it again.</p>
+      <p>It leaves the Marketplace and no new Work can select it. People who installed it keep it. You can’t publish it again.</p>
     </ConfirmDialog>}
     {connector && <ConfirmDialog isOpen={confirm === "delete"} onOpenChange={open => { if (!open) setConfirm(null); }} title={`Delete ${connector.name}?`} confirmLabel="Delete"
       onConfirm={() => run(authoring.remove, "deleted", [`Deleted ${connector.name}`], back)}>
-      <p>Your installation goes with it. Works already running keep it. This can’t be undone.</p>
+      <p>Your installation goes with it. Works already running keep it.</p>
     </ConfirmDialog>}
   </PageLayout>;
 }

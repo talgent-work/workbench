@@ -7,7 +7,7 @@ type FieldProps = { draft: ConnectorDraft; set: (patch: Partial<ConnectorDraft>)
 export function NameField({ draft, set, problems, touched }: FieldProps) {
   return <TextField value={draft.name} onChange={name => set({ name })} isInvalid={touched && Boolean(problems.name)} fullWidth variant="secondary" isRequired>
     <Label>Name</Label><Input placeholder="acme-crm" autoComplete="off" />
-    {touched && problems.name ? <FieldError>{problems.name}</FieldError> : <Description>Unique among yours; other people may use the same name. Fixed once added.</Description>}
+    {touched && problems.name ? <FieldError>{problems.name}</FieldError> : <Description>Unique among yours; other people may use the same name.</Description>}
   </TextField>;
 }
 
@@ -24,7 +24,7 @@ export function ProviderField({ draft, set, problems, providers }: Omit<FieldPro
   return <Select value={draft.provider || "none"} onChange={value => set({ provider: value === "none" ? "" : String(value) })} isDisabled={draft.transport === "stdio"} isInvalid={Boolean(problems.provider)} fullWidth variant="secondary">
     <Label>Signs in with</Label>
     <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
-    <Description>{chosen ? `Each person uses their own ${chosen.displayName} account. Reaches ${providerHosts(chosen).join(", ")}.` : "No sign-in: the server receives no credentials."} Fixed once added.</Description>
+    <Description>{chosen ? `Each person uses their own ${chosen.displayName} account. Reaches ${providerHosts(chosen).join(", ")}.` : "No sign-in: the server receives no credentials."}</Description>
     {problems.provider && <FieldError>{problems.provider}</FieldError>}
     <Select.Popover><ListBox>
       <ListBox.Item id="none" textValue="No sign-in"><Label>No sign-in</Label><ListBox.ItemIndicator /></ListBox.Item>

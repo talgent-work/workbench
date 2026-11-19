@@ -31,7 +31,8 @@ a.mk-section-head:hover svg { transform: translateX(2px); }
 .mk-row-text strong { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; }
 .mk-row-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); }
 .mk-row[data-off="true"] .mk-row-text strong { color: var(--muted); }
-.mk-row-lock { color: var(--muted); padding: 8px; }
+.mk-row-lock { color: var(--muted); padding: 8px; box-sizing: content-box; }
+.mk-row-status { flex-shrink: 0; padding: 0 8px; font-size: 12px; color: var(--muted); }
 .mk-empty { display: grid; justify-items: center; gap: 6px; padding: 40px 16px; text-align: center; font-size: 13px; }
 .mk-skeletons { display: grid; gap: 12px; }
 .mk-skeleton { height: 72px; border-radius: 16px; }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Button, Card, Chip, Dropdown, Label, Switch, Tooltip, Typography } from "@heroui/react";
+import { Alert, Button, Card, Chip, Dropdown, Label, Switch, Typography } from "@heroui/react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import type { Connector } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
 import { ChevronRight, Hammer, KeyRound, Lock, MoreHorizontal, Plus } from "lucide-react";
@@ -11,20 +11,13 @@ import { marketplacePaths, workshopPaths } from "../../lib/marketplace-routes";
 import { notify } from "../../lib/notifications";
 import { ConnectorImage } from "./connector-image";
 import { ConnectorIcon, PluginIcon, ProviderIcon } from "./marketplace-icons";
-import { ConfirmDialog, LoadState, NothingMatches, SearchBar } from "./marketplace-shared";
+import { ConfirmDialog, LoadState, NothingMatches, RowStatus, SearchBar } from "./marketplace-shared";
 
 // The Marketplace finds and installs; it never edits. A person's own
 // Connector links to its Workshop page instead.
 
 // A Connector's sign-in always goes through its declared Provider; there is
 // no manual credential entry.
-function providerNotice(connector: Connector, providerName: (provider: string) => string) {
-  if (!connector.provider) return { text: "No sign-in needed", warning: false };
-  const name = providerName(connector.provider);
-  if (connector.providerConnection === "connected") return { text: `Signs in with your ${name} account`, warning: false };
-  return { text: connector.providerConnection === "reconnect_required" ? `${name} authorization needs renewal` : `${name} isn’t connected yet`, warning: true };
-}
-
 function useConnectorCommands() {
   const actions = useConnectorActions();
   const connect = useConnectProvider();
@@ -46,7 +39,7 @@ function useConnectorCommands() {
   const toggle = (connector: Connector) => {
     const enabled = connector.status !== "enabled";
     actions.setEnabled.mutate({ connector, enabled }, {
-      onSuccess: () => notify(`connector:${connector.connectorId}`, "default", `${connectorLabel(connector)} ${enabled ? "enabled" : "disabled"}`),
+      onSuccess: () => notify(`connector:${connector.connectorId}`, "default", `${connectorLabel(connector)} turned ${enabled ? "on" : "off"}`),
       onError: () => notify(`connector:${connector.connectorId}`, "danger", `${connectorLabel(connector)} couldn’t be changed`, "Refresh and try again."),
     });
   };
@@ -73,32 +66,19 @@ function ByLine({ connector }: { connector: Connector }) {
 export function ConnectorList({ category }: { category?: string }) {
   const connectors = useConnectors();
   const commands = useConnectorCommands();
-  const providerName = useProviderNames();
-  const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const [removing, setRemoving] = useState<Connector | null>(null);
   const rows = (connectors.data ?? []).filter(item => (!category || categoryOf(item) === category) && `${connectorLabel(item)} ${item.description} ${publisherLabel(item)}`.toLowerCase().includes(query.trim().toLowerCase()));
   const groups = [...new Set(rows.map(categoryOf))].sort((a, b) => a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b)).map(name => ({ name, items: rows.filter(item => categoryOf(item) === name) }));
   const row = (connector: Connector) => {
-    const status = connectorStatus(connector), notice = providerNotice(connector, providerName), installed = status === "enabled" || status === "disabled";
+    const status = connectorStatus(connector), installed = status === "enabled" || status === "disabled";
     const label = connectorLabel(connector);
     return <li key={connector.connectorId} className="mk-row" data-off={status === "disabled" || undefined}>
       <Link className="mk-row-open" to={marketplacePaths.connector(connector.connectorId)}>
         <ConnectorImage connector={connector} />
-        <span className="mk-row-text"><strong>{label}</strong><span className={installed && notice.warning ? "text-warning" : ""}>{status === "disabled" ? "Disabled" : installed && notice.warning ? notice.text : connector.description}</span><ByLine connector={connector} /></span>
+        <span className="mk-row-text"><strong>{label}</strong><span>{connector.description}</span><ByLine connector={connector} /></span>
       </Link>
-      {connector.required ? <Tooltip><Tooltip.Trigger aria-label="Always enabled" className="mk-row-lock"><Lock size={16} /></Tooltip.Trigger><Tooltip.Content>Always enabled</Tooltip.Content></Tooltip>
-        : installed ? <Dropdown><Button size="sm" variant="ghost" isIconOnly aria-label={`${label} options`}><MoreHorizontal size={18} /></Button>
-          <Dropdown.Popover placement="bottom end"><Dropdown.Menu aria-label={`${label} options`} onAction={key => {
-            if (key === "open") navigate(marketplacePaths.connector(connector.connectorId));
-            if (key === "toggle") commands.toggle(connector);
-            if (key === "uninstall") setRemoving(connector);
-          }}>
-            <Dropdown.Item id="open" textValue="Open"><Label>Open</Label></Dropdown.Item>
-            <Dropdown.Item id="toggle" textValue={status === "enabled" ? "Disable" : "Enable"}><Label>{status === "enabled" ? "Disable" : "Enable"}</Label></Dropdown.Item>
-            <Dropdown.Item id="uninstall" textValue="Uninstall" variant="danger"><Label>Uninstall…</Label></Dropdown.Item>
-          </Dropdown.Menu></Dropdown.Popover></Dropdown>
-          : <Button size="sm" variant="ghost" isIconOnly isPending={commands.pending} aria-label={`Install ${label}`} onPress={() => commands.install(connector)}><Plus size={20} strokeWidth={1.75} /></Button>}
+      {connector.required || installed ? <RowStatus required={connector.required} enabled={status === "enabled"} />
+        : <Button size="sm" variant="ghost" isIconOnly isPending={commands.pending} aria-label={`Install ${label}`} onPress={() => commands.install(connector)}><Plus size={20} strokeWidth={1.75} /></Button>}
     </li>;
   };
   return <>
@@ -109,7 +89,6 @@ export function ConnectorList({ category }: { category?: string }) {
         {!category && <Link className="mk-section-head" to={marketplacePaths.connectorCategory(group.name)}>{group.name}<ChevronRight size={18} aria-hidden="true" /></Link>}
         <ul className="mk-rows">{(category ? group.items : group.items.slice(0, 6)).map(row)}</ul>
       </section>))}
-    <UninstallConnectorDialog connector={removing} onClose={() => setRemoving(null)} onConfirm={commands.uninstall} />
   </>;
 }
 
@@ -136,7 +115,7 @@ export function ConnectorPage({ connectorId }: { connectorId: string }) {
   const connector = detail.data?.connector;
   if (!connector) return detail.isError && ConnectError.from(detail.error).code === Code.NotFound ? <NotInMarketplace />
     : <LoadState noun="connector" isPending={detail.isPending} isError={detail.isError} hasData={false} isFetching={detail.isFetching} onRetry={() => void detail.refetch()} />;
-  const label = connectorLabel(connector), status = connectorStatus(connector), notice = providerNotice(connector, providerName);
+  const label = connectorLabel(connector), status = connectorStatus(connector), unconnected = Boolean(connector.provider) && connector.providerConnection !== "connected";
   const installed = status === "enabled" || status === "disabled";
   const own = Boolean(connector.publisher?.own);
   const provider = providers.data?.find(item => item.name === connector.provider);
@@ -149,7 +128,7 @@ export function ConnectorPage({ connectorId }: { connectorId: string }) {
       <div className="mk-detail-title"><h2>{label}</h2><p className="mk-meta">{connector.category && <span>{categoryOf(connector)}</span>}<span>{own || connector.publisher?.kind === "platform" ? publisherLabel(connector) : `Published by ${publisherLabel(connector)}`}</span></p></div>
       <div className="mk-detail-actions">
         {own && <Button variant="ghost" onPress={() => navigate(workshopPaths.connector(connector.connectorId))}><Hammer size={15} aria-hidden="true" />Manage in workshop</Button>}
-        {connector.required ? <span className="mk-muted mk-inline"><Lock size={15} aria-hidden="true" />Always enabled</span>
+        {connector.required ? <span className="mk-muted mk-inline"><Lock size={15} aria-hidden="true" />Always on</span>
           : !installed ? connector.offered && <Button variant="primary" isPending={commands.pending} onPress={() => commands.install(connector)}>Install</Button>
           : <>
             <Switch isSelected={status === "enabled"} onChange={() => commands.toggle(connector)} aria-label={`Use ${label} in new Works`}><Switch.Control><Switch.Thumb /></Switch.Control></Switch>
@@ -163,8 +142,8 @@ export function ConnectorPage({ connectorId }: { connectorId: string }) {
     <UninstallConnectorDialog connector={confirm ? connector : null} onClose={() => setConfirm(false)} onConfirm={commands.uninstall} />
     {!connector.offered && <Alert status="warning"><Alert.Indicator /><Alert.Content><Alert.Title>Withdrawn</Alert.Title>
       <Alert.Description>Its publisher withdrew it. New Works leave it out; uninstall it when you no longer need it.</Alert.Description></Alert.Content></Alert>}
-    {connector.offered && installed && notice.warning && <Alert status="warning"><Alert.Indicator /><Alert.Content><Alert.Title>{notice.text}</Alert.Title>
-      <Alert.Description>Works start without {label} until you {connectLabel.toLowerCase()} your own {providerName(connector.provider)} account.</Alert.Description>
+    {connector.offered && installed && unconnected && <Alert status="warning"><Alert.Indicator /><Alert.Content><Alert.Title>{connectLabel} {providerName(connector.provider)} to use {label}</Alert.Title>
+      <Alert.Description>Your Works start without it until you sign in with your own {providerName(connector.provider)} account.</Alert.Description>
       <Button size="sm" variant="secondary" className="mt-2" isPending={commands.connect.isPending} onPress={connect}><KeyRound size={14} aria-hidden="true" />{connectLabel} {providerName(connector.provider)}</Button>
     </Alert.Content></Alert>}
 
@@ -173,15 +152,11 @@ export function ConnectorPage({ connectorId }: { connectorId: string }) {
     </section>
 
     <section className="mk-section"><h3 className="mk-section-title">Sign-in</h3>
-      <Card className="mk-group">{connector.provider ? <ul className="mk-group-list"><li className="mk-group-link mk-group-split">
-        <Link to={marketplacePaths.provider(connector.provider)}>
-          <ProviderIcon id={connector.provider} size={32} /><span className="mk-row-text"><strong>Each person signs in with their own {providerName(connector.provider)} account</strong>
-            <span className={notice.warning ? "text-warning" : ""}>{connector.providerConnection === "connected" ? "You’re connected." : connector.providerConnection === "reconnect_required" ? "Your authorization expired." : "You haven’t connected yet."}
-              {provider && !provider.targetCredentialsExpire ? ` Not available on your own computer: ${provider.displayName} access never expires.` : ""}</span></span>
-          {!notice.warning && <ChevronRight size={16} className="mk-muted ml-auto" aria-hidden="true" />}
-        </Link>
-        {notice.warning && <Button size="sm" variant="secondary" isPending={commands.connect.isPending} onPress={connect}>{connectLabel}</Button>}
-      </li></ul> : <Typography.Paragraph size="sm" className="p-4 text-muted">{connector.transport === "stdio" ? "Runs as a local command next to the Work and receives no credentials." : "Needs no sign-in."}</Typography.Paragraph>}</Card>
+      <Card className="mk-group">{connector.provider ? <div className="flex items-center gap-3 p-4">
+        <ProviderIcon id={connector.provider} size={32} /><span className="grid text-[13px]"><strong>Each person signs in with their own {providerName(connector.provider)} account</strong>
+          <span className="text-muted">{connector.providerConnection === "connected" ? "You’re connected." : connector.providerConnection === "reconnect_required" ? "Your authorization expired." : "You haven’t connected yet."}
+            {provider && !provider.targetCredentialsExpire ? ` Not available on your own computer: ${provider.displayName} access never expires.` : ""}</span></span>
+      </div> : <Typography.Paragraph size="sm" className="p-4 text-muted">{connector.transport === "stdio" ? "Runs as a local command next to the Work and receives no credentials." : "Needs no sign-in."}</Typography.Paragraph>}</Card>
     </section>
 
     {(detail.data?.plugins.length ?? 0) > 0 && <section className="mk-section">

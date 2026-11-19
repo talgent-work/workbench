@@ -1,5 +1,5 @@
 import { Alert, AlertDialog, Button, SearchField, Skeleton } from "@heroui/react";
-import { Bot, Plug, Sparkles } from "lucide-react";
+import { Bot, Lock, Plug, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 
 // One hue per native component type, used on every Marketplace page.
@@ -7,6 +7,13 @@ const capabilityIcons = { skill: Sparkles, agent: Bot, mcp: Plug } as const;
 export function CapIcon({ kind, size = 16 }: { kind: keyof typeof capabilityIcons; size?: number }) {
   const Icon = capabilityIcons[kind];
   return <Icon size={size} className={`mk-cap mk-cap-${kind}`} aria-hidden="true" />;
+}
+
+// A list row's control once the item needs no install: its status, read on
+// the row and changed on its page.
+export function RowStatus({ required, enabled }: { required: boolean; enabled: boolean }) {
+  if (required) return <Lock size={16} className="mk-row-lock" aria-label="Always on" />;
+  return <span className="mk-row-status">{enabled ? "Installed" : "Turned off"}</span>;
 }
 
 export function SearchBar({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
