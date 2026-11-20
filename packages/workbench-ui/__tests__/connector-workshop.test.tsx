@@ -91,18 +91,21 @@ it("marks two included Connectors of one name and chooses them by identity", () 
   expect(resolved.map(row => row.clashes)).toEqual([false, false]);
 });
 
-it("adds a private Connector and opens its page", async () => {
+it("opens the add page from the Add menu, its required fields marked without an asterisk", async () => {
   const user = userEvent.setup();
   renderWorkshop("/workshop");
   await user.click(await screen.findByRole("button", { name: /Add/ }));
   await user.click(await screen.findByRole("menuitem", { name: /Connector/ }));
-
-  const name = await screen.findByRole("textbox", { name: "Name" });
   // Required without an asterisk, as the prototype settles; assistive
   // technology still hears it.
-  expect(name).toHaveAttribute("aria-required", "true");
+  expect(await screen.findByRole("textbox", { name: "Name" })).toHaveAttribute("aria-required", "true");
   expect(screen.getByRole("textbox", { name: "Server address" })).toHaveAttribute("aria-required", "true");
-  await user.click(name);
+}, 3000);
+
+it("adds a private Connector and opens its page", async () => {
+  const user = userEvent.setup();
+  renderWorkshop("/workshop/connectors/new");
+  await user.click(await screen.findByRole("textbox", { name: "Name" }));
   await user.paste("acme-crm");
   await user.click(screen.getByRole("textbox", { name: "Server address" }));
   await user.paste("https://crm.example.com/mcp");
