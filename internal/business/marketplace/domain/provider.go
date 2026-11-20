@@ -85,8 +85,8 @@ func (p PathPattern) Matches(requestPath string) bool {
 	return requestPath == string(p)
 }
 
-// TargetMethods are the HTTP methods a target's credential may accompany.
-var TargetMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+// targetMethods are the HTTP methods a target's credential may accompany.
+var targetMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
 
 // ProviderTarget is one destination a Provider declares for the credentials
 // of its authorization: the hosts they reach and, when declared, the only
@@ -129,7 +129,7 @@ func (t ProviderTarget) valid() bool {
 		}
 	}
 	for n, method := range t.Methods {
-		if !slices.Contains(TargetMethods, method) || slices.Contains(t.Methods[:n], method) {
+		if !slices.Contains(targetMethods, method) || slices.Contains(t.Methods[:n], method) {
 			return false
 		}
 	}

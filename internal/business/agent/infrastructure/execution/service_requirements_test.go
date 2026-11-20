@@ -54,6 +54,7 @@ func TestCredentialPlanConfinesServicesToTheirTargets(t *testing.T) {
 		require.Error(t, err, name)
 	}
 	for name, declared := range map[string]command.ServiceCredentialMaterial{"relative path": {Paths: []string{"mcp"}}, "inner wildcard": {Paths: []string{"/*/mcp"}},
+		"dot segment":    {Paths: []string{"/mcp/../admin/*"}},
 		"unknown method": {Methods: []string{"CONNECT"}}} {
 		changed := append([]command.ServiceAccessMaterial(nil), services...)
 		changed[1].Paths, changed[1].Methods = declared.Paths, declared.Methods

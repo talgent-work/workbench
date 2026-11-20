@@ -183,27 +183,16 @@ func (c *providerCatalog) gitHub(adapter scmgithub.Config, cipherKey string) (sc
 	adapter.OAuthClientID, adapter.OAuthClientSecret = client.ClientID, client.ClientSecret
 	adapter.AuthorizationEndpoint, adapter.TokenEndpoint = client.AuthorizationEndpoint, client.TokenEndpoint
 	adapter.TokenCipherKey = cipherKey
-	if declaration, ok := c.Provider(domain.ProviderGitHub); ok && !adapter.AtGitHubDotCom() {
+	if declaration, ok := c.Provider(domain.ProviderGitHub); ok {
 		for _, target := range declaration.Targets {
 			for _, host := range target.Hosts {
-				if gitHubDotComHost(string(host)) {
+				if !adapter.MaySendCredentialTo(string(host)) {
 					return scmgithub.Config{}, fmt.Errorf("marketplace: the github Provider's App is not on GitHub.com, yet target %s reaches %s", target.Name, host)
 				}
 			}
 		}
 	}
 	return adapter, nil
-}
-
-// gitHubDotComHost reports a host pattern within GitHub.com's own services.
-func gitHubDotComHost(pattern string) bool {
-	host := strings.TrimPrefix(pattern, "*.")
-	for _, domainName := range []string{"github.com", "githubcopilot.com"} {
-		if host == domainName || strings.HasSuffix(host, "."+domainName) {
-			return true
-		}
-	}
-	return false
 }
 
 // providerPorts selects each declared Provider's adapter.

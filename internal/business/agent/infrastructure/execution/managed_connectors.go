@@ -1,8 +1,8 @@
 package execution
 
 import (
+	"net/url"
 	"slices"
-	"strings"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -60,7 +60,7 @@ func connectorCredentials(capabilities domain.CapabilitySnapshot, services []com
 		switch {
 		case material.Token == "" || material.ExpiresAt.IsZero():
 			refuse(connector, "not_short_lived")
-		case err != nil || !onTargetHosts(address.Hostname(), material.Hosts) || !onTargetPaths(address.EscapedPath(), material.Paths):
+		case err != nil || !onTarget(address, material.ServiceCredentialMaterial):
 			refuse(connector, "outside_target")
 		default:
 			credentials = append(credentials, workConnectorCredential{ID: connector.ID, URL: connector.URL, Token: material.Token})
@@ -69,36 +69,11 @@ func connectorCredentials(capabilities domain.CapabilitySnapshot, services []com
 	return credentials, access
 }
 
-// onTargetHosts reports whether host lies on one of a target's declared host
-// patterns: an exact host, or `*.` and a domain, which matches its
-// subdomains.
-func onTargetHosts(host string, declared []string) bool {
-	patterns, err := targetHosts(declared)
-	if err != nil {
-		return false
-	}
-	host = strings.ToLower(host)
-	return slices.ContainsFunc(patterns, func(pattern string) bool {
-		if domainName, wildcard := strings.CutPrefix(pattern, "*."); wildcard {
-			return strings.HasSuffix(host, "."+domainName)
-		}
-		return host == pattern
-	})
-}
-
-// onTargetPaths reports whether a request path lies on one of a target's
-// declared path patterns: an exact path, or one ending in `/*` for every path
-// beneath it. A target declaring none takes every path.
-func onTargetPaths(requestPath string, declared []string) bool {
-	if requestPath == "" {
-		requestPath = "/"
-	}
-	return len(declared) == 0 || slices.ContainsFunc(declared, func(pattern string) bool {
-		if prefix, beneath := strings.CutSuffix(pattern, "/*"); beneath {
-			return strings.HasPrefix(requestPath, prefix+"/")
-		}
-		return requestPath == pattern
-	})
+// onTarget reports whether an address lies on its target's declared hosts
+// and paths; an undeclarable rule covers nothing.
+func onTarget(address *url.URL, material command.ServiceCredentialMaterial) bool {
+	rule, err := admitTarget(material)
+	return err == nil && rule.covers(address)
 }
 
 // managedAuthorizations lists, as a JSON array, the Provider Authorizations

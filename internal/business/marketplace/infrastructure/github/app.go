@@ -108,10 +108,21 @@ func (c Config) apiBaseURL() string {
 	return defaultAPIBaseURL
 }
 
-// AtGitHubDotCom reports whether the App lives on GitHub.com rather than a
-// GitHub Enterprise Server.
-func (c Config) AtGitHubDotCom() bool {
-	return c.webBaseURL() == "https://github.com" && c.apiBaseURL() == defaultAPIBaseURL
+// MaySendCredentialTo reports whether the App's user tokens may be added to
+// requests for a host pattern: a GitHub Enterprise Server's token never
+// reaches GitHub.com's own services, whose hosts lie within github.com and
+// githubcopilot.com.
+func (c Config) MaySendCredentialTo(pattern string) bool {
+	if c.webBaseURL() == "https://github.com" && c.apiBaseURL() == defaultAPIBaseURL {
+		return true
+	}
+	host := strings.TrimPrefix(strings.ToLower(pattern), "*.")
+	for _, domainName := range []string{"github.com", "githubcopilot.com"} {
+		if host == domainName || strings.HasSuffix(host, "."+domainName) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c Config) webBaseURL() string {
