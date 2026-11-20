@@ -13,9 +13,11 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// Recovery wakes and performs Agent's retained recovery obligations. A wake
-// only enqueues the task for one object; its processor performs one step from
-// current state, and the periodic sweep re-wakes every unfinished object.
+// Recovery queues and performs Agent's tasks: its retained recovery
+// obligations, whose wake only enqueues the task for one object while its
+// processor performs one step from current state and the periodic sweep
+// re-wakes every unfinished object, and the deliveries it queues once, such as
+// a Work Reclamation Request or an input change notice.
 type Recovery struct {
 	app        *Application
 	enqueuer   taskqueue.Enqueuer
@@ -161,17 +163,6 @@ func (r *Recovery) CredentialChanged(ctx context.Context, authorizationID string
 		failures = append(failures, r.WakeExecution(ctx, id))
 	}
 	return errors.Join(failures...)
-}
-
-// InputsChanged follows Storage's fact that a file in a Directory changed:
-// every unclosed Work reading that Directory as its located inputs is told
-// of the change (Notify changed inputs). A repeated fact leads to no second
-// notice.
-func (r *Recovery) InputsChanged(ctx context.Context, change domain.InputChange) error {
-	if !change.Directory.Present() {
-		return domain.ErrInvalidWork
-	}
-	return r.notifyChangedInputs(ctx, change)
 }
 
 // RecoverWork applies what the Work's execution reported and passes the

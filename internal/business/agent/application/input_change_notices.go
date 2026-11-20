@@ -8,12 +8,16 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// notifyChangedInputs queues one notice task for each unclosed Work whose
-// located inputs hold the changed Directory (Notify changed inputs). Each Work
-// admits or refuses its notice when the task runs, so a Work with a File Home
-// is listed yet told nothing. A task is keyed by the Work and the change, so a
-// redelivered change queues nothing twice.
-func (r *Recovery) notifyChangedInputs(ctx context.Context, change domain.InputChange) error {
+// InputsChanged follows Storage's fact that a file in a Directory changed: it
+// queues one notice task for each unclosed Work whose located inputs hold the
+// changed Directory (Notify changed inputs). Each Work admits or refuses its
+// notice when the task runs, so a Work with a File Home is listed yet told
+// nothing. A task is keyed by the Work and the change, so a redelivered change
+// queues nothing twice.
+func (r *Recovery) InputsChanged(ctx context.Context, change domain.InputChange) error {
+	if !change.Directory.Present() {
+		return domain.ErrInvalidWork
+	}
 	list := func(ctx context.Context, after string, limit int) ([]string, error) {
 		return r.app.WorkQueries.ListUnclosedWorksReadingInputs(ctx, change.Directory, after, limit)
 	}

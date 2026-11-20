@@ -5,7 +5,7 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
-## The release that tells Works of changes to their inputs
+## The release that tells Works of changes to their inputs and stops copying them onto Managed Computers
 
 Before deploying, apply
 [`20261120-work-inputs-directory.sql`](../deploy/middleware/migrations/20261120-work-inputs-directory.sql)
