@@ -1,0 +1,8 @@
+{
+  "name": "talgent-test-oidc-provider",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "oidc-provider": "9.13.3"
+  }
+}
