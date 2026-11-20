@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"log/slog"
 
 	agenttask "github.com/talgent-work/workbench/internal/business/agent/application/task"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -13,18 +14,20 @@ import (
 // is listed yet told nothing. A task is keyed by the Work and the change, so a
 // redelivered change queues nothing twice.
 func (r *Recovery) notifyChangedInputs(ctx context.Context, change domain.InputChange) error {
-	if err := change.Validate(); err != nil {
-		return err
-	}
 	list := func(ctx context.Context, after string, limit int) ([]string, error) {
 		return r.app.WorkQueries.ListUnclosedWorksReadingInputs(ctx, change.Directory, after, limit)
 	}
 	notify := func(ctx context.Context, workID string) error {
 		task, err := agenttask.NewDeliverInputChangeNotice(workID, change)
-		if err != nil {
-			return err
+		if err == nil {
+			err = r.enqueuer.Enqueue(ctx, task, agenttask.InputChangeNotice()...)
 		}
-		return r.enqueuer.Enqueue(ctx, task, agenttask.InputChangeNotice()...)
+		if err != nil && r.app.Logger != nil {
+			// The fact is handled again a bounded number of times; this
+			// names the Work whose notice it has not queued yet.
+			r.app.Logger.WarnContext(ctx, "input change notice not queued", slog.String("work_id", workID), slog.String("change_id", change.ID), slog.Any("error", err))
+		}
+		return err
 	}
 	return sweep(ctx, list, notify, identity)
 }

@@ -3,11 +3,12 @@
 --
 -- The key is what the controlplane writes for a new Work: the SHA-256, in
 -- hex, of the JSON {"owner":[{"condition":...,"value":...},...],"name":...}
--- with the owner facts in their stored order, encoded as Go's encoding/json
+-- with the owner facts in their stored order, which is condition order,
+-- encoded as Go's encoding/json
 -- encodes it. JSON_QUOTE matches that encoding once <, >, &, U+2028 and
 -- U+2029 are escaped as Go escapes them; no stored owner fact or Directory
 -- name holds a control character, the one case the two would encode apart.
--- Only Works not Closed are filled: a Closed Work hears of nothing.
+-- Only Works not Closed (state 7) are filled: a Closed Work hears of nothing.
 --
 -- Run it against AGENT_MYSQL_DATABASE, once, as a whole, before the
 -- controlplane of this release starts: the ALTER fails on a second run and

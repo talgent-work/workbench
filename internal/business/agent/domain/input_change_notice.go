@@ -74,11 +74,12 @@ func (n InputChangeNotice) Text() string {
 }
 
 // AdmitInputChangeNotice admits the notice of a change in the Work's located
-// inputs while the Work has no File Home and is not Closing or Closed (Admit
-// input change notice). Agent itself delivers it, the one requester besides
-// an Agent Owner or its extension that Work control authority and Standalone
-// Work control admit to give a Work input. A Work with a File Home hears of
-// its input changes from that File Home's owner instead.
+// inputs while the Work has no File Home and is not Closing or Closed (Input
+// change notice, Input acceptance). Agent itself delivers it, the one
+// requester besides an Agent Owner or its extension that Work control
+// authority and Standalone Work control admit to give a Work input. A Work
+// with a File Home hears of its input changes from that File Home's owner
+// instead (File Home change notices).
 func (s *AgentWork) AdmitInputChangeNotice(change InputChange) (InputChangeNotice, error) {
 	if err := change.Validate(); err != nil {
 		return InputChangeNotice{}, err

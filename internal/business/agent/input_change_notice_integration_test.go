@@ -111,24 +111,32 @@ func TestAStandaloneWorkHearsOfEachChangeInItsInputs(t *testing.T) {
 	}, m.port.bufferedFor(work), "the start message first, then one notice per change")
 }
 
-// A stopped Work's notice waits in its input buffer without starting it; a
-// Work with a File Home hears of its inputs from that File Home's owner, and
-// a Closed Work hears nothing.
+// A running Work's notice joins its buffered input and a stopped Work's
+// waits there without starting it; a Work with a File Home hears of its
+// inputs from that File Home's owner, and a Closing or Closed Work hears
+// nothing.
 func TestOnlyAnUnclosedWorkWithoutAFileHomeIsNotified(t *testing.T) {
 	m := newLifecycleModule(t)
 	definition := seedDefinition(t, m.db)
+	working := seedWork(t, m.db, definition, workSeed{subject: "working", state: domain.WorkWorking, turns: 1}).ID
 	stopped := seedWork(t, m.db, definition, workSeed{subject: "stopped", state: domain.WorkStopped}).ID
+	closing := seedWork(t, m.db, definition, workSeed{subject: "closing", state: domain.WorkClosing, closeRequest: "close"}).ID
 	closed := seedWork(t, m.db, definition, workSeed{subject: "closed", state: domain.WorkClosed, closeRequest: "close"}).ID
 	homed := seedWork(t, m.db, definition, workSeed{subject: "homed", state: domain.WorkWorking, turns: 1, fileHome: domain.FileHome{Kind: "case", ID: "1"}}).ID
 	m.start()
 	changes := newInputChanges(m, slog.Default())
 
-	changes.publish(uuid.NewString(), workInputs(stopped), added("brief.md"))
-	changes.publish(uuid.NewString(), workInputs(closed), added("brief.md"))
+	for _, work := range []string{working, stopped, closing, closed} {
+		changes.publish(uuid.NewString(), workInputs(work), added("brief.md"))
+	}
 	changes.publish(uuid.NewString(), &storageintegrationv1.OwnerFact{Condition: "file_home", Value: "case:1"}, added("brief.md"))
 
-	require.Equal(t, []string{`Input file "brief.md" was added at 2026-11-20T08:30:00Z.`}, m.port.bufferedFor(stopped))
+	notice := []string{`Input file "brief.md" was added at 2026-11-20T08:30:00Z.`}
+	require.Equal(t, notice, m.port.bufferedFor(working))
+	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_WORKING, m.state(working))
+	require.Equal(t, notice, m.port.bufferedFor(stopped))
 	require.Equal(t, agentprivatev1.WorkState_WORK_STATE_STOPPED, m.state(stopped), "accepting a notice never starts the Work")
+	require.Empty(t, m.port.bufferedFor(closing))
 	require.Empty(t, m.port.bufferedFor(closed))
 	require.Empty(t, m.port.bufferedFor(homed))
 }

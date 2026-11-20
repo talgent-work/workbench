@@ -17,6 +17,14 @@ var fileOperations = map[domain.FileOperation]agenttaskv1.InputFileOperation{
 	domain.FileDeleted:  agenttaskv1.InputFileOperation_INPUT_FILE_OPERATION_DELETED,
 }
 
+var decodedOperations = func() map[agenttaskv1.InputFileOperation]domain.FileOperation {
+	decoded := make(map[agenttaskv1.InputFileOperation]domain.FileOperation, len(fileOperations))
+	for operation, encoded := range fileOperations {
+		decoded[encoded] = operation
+	}
+	return decoded
+}()
+
 // NewDeliverInputChangeNotice queues the notice of one change to one Work,
 // keyed by both, so a redelivered change collapses into the task already
 // queued. A change that cannot be told is refused.
@@ -43,11 +51,7 @@ func InputChangeOf(payload *agenttaskv1.DeliverInputChangeNoticeTaskV1) domain.I
 	for _, fact := range payload.GetDirectory().GetOwner() {
 		change.Directory.Owner = append(change.Directory.Owner, domain.OwnerFact{Condition: domain.LocatorCondition(fact.GetCondition()), Value: fact.GetValue()})
 	}
-	for operation, encoded := range fileOperations {
-		if encoded == payload.GetOperation() {
-			change.Operation = operation
-		}
-	}
+	change.Operation = decodedOperations[payload.GetOperation()]
 	if payload.GetOccurredAt() != nil {
 		change.At = payload.GetOccurredAt().AsTime()
 	}

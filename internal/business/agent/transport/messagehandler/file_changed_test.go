@@ -6,6 +6,7 @@ import (
 	"time"
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
+	contribkafka "github.com/go-jimu/contrib/message/kafka"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -53,6 +54,18 @@ func TestFileChangesReachTheirDirectorysReaders(t *testing.T) {
 		{ID: "e3", Directory: workInputs, File: "b.pdf", Operation: domain.FileReplaced, At: at},
 		{ID: "e4", Directory: workInputs, File: "b.pdf", Operation: domain.FileDeleted, At: at},
 	}, *changed)
+
+	// A change that names no operation or no time can never be told: the
+	// consumer drops it rather than handling it again.
+	for _, malformed := range []*storageintegrationv1.FileChangedV1{
+		{EventId: "e5", OccurredAt: timestamppb.New(at), Directory: directoryOf("work", "work-2", "inputs"), Name: "b.pdf"},
+		{EventId: "e6", Directory: directoryOf("work", "work-2", "inputs"), Name: "b.pdf", Operation: storageintegrationv1.FileOperation_FILE_OPERATION_CREATED},
+	} {
+		msg, err := integrationmessage.New(integrationmessage.KindOf(malformed), malformed)
+		require.NoError(t, err)
+		require.ErrorIs(t, handler.Handle(context.Background(), msg), contribkafka.ErrNonRetryable)
+	}
+	require.Len(t, *changed, 4)
 
 	other := &marketplaceintegrationv1.CredentialChangedV1{AuthorizationId: "authorization-1"}
 	msg, err := integrationmessage.New(integrationmessage.KindOf(other), other)
