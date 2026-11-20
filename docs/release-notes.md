@@ -5,6 +5,30 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that tells Works of changes to their inputs and stops copying them onto Managed Computers
+
+Before deploying, apply
+[`20261120-work-inputs-directory.sql`](../deploy/middleware/migrations/20261120-work-inputs-directory.sql)
+to the database named by `AGENT_MYSQL_DATABASE`: it adds `agent_session.inputs_directory` with its
+index and fills it for every Work not Closed. Agent then finds the Works a file change concerns
+by it, and each such Work without a File Home receives a notice naming the changed file, the
+operation and the time.
+
+The platform no longer copies a Managed Work's inputs onto its machine: a start or Resume sends
+the machine no inputs, and the Work's Agent downloads the inputs it needs. Remove
+`agent-computer.content-address` and `agent-recovery.inputs-refresh-interval` from your
+configuration, as the controlplane no longer reads them. Once every controlplane of this release
+runs, apply
+[`20261120-drop-input-copies.sql`](../deploy/middleware/migrations/20261120-drop-input-copies.sql)
+to the same database: it drops `inputs_due`, `inputs_directory` with its index,
+`inputs_synced_at`, `inputs_sync_failures` and `inputs_sync_abandoned` from `agent_execution`. A
+rollback to the previous release needs those columns back first.
+
+Talgent Computer of this release no longer accepts input copies. Its first start removes the copies
+an earlier release downloaded into each Work's `inputs/`, and leaves every other file there. A machine
+still on an earlier release keeps running its Works, but their `inputs/` keeps its last copies,
+read-only and no longer updated, until the machine upgrades.
+
 ## The release that lets owners add and publish their own Connectors
 
 Before deploying, apply

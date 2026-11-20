@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -32,7 +31,7 @@ type ServiceSupply interface {
 
 // EnvironmentSupplies obtains, from the authorities Agent does not own, what
 // the environment steps of an execution hand its environment: Storage's
-// Mount Grants, Space Token and input files, and Marketplace's current
+// Mount Grants and Space Token, and Marketplace's current
 // repository and service credentials. The environment adapter receives them
 // and calls neither authority itself.
 type EnvironmentSupplies struct {
@@ -130,31 +129,4 @@ func (s *EnvironmentSupplies) identityToken(ctx context.Context, launch domain.L
 		OwningApplication: launch.OwningApplication,
 		WorkLabels:        launch.WorkLabels,
 	})
-}
-
-// inputs lists the located inputs' files, each with a fresh download Access
-// Link; a file deleted since it was listed is left out, and its change fact
-// brings the next sync.
-func (s *EnvironmentSupplies) inputs(ctx context.Context, located *domain.LocatedDirectory) (ManagedInputs, error) {
-	if located == nil {
-		return ManagedInputs{}, nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, supplyAttemptTimeout)
-	defer cancel()
-	files, err := s.storage.ListFiles(ctx, located.Directory)
-	if err != nil {
-		return ManagedInputs{}, err
-	}
-	inputs := ManagedInputs{Located: true, Files: make([]InputFile, 0, len(files))}
-	for _, file := range files {
-		link, err := s.storage.IssueAccessLink(ctx, FilePosition{Directory: located.Directory, Name: file.Name}, false)
-		if errors.Is(err, ErrFileNotFound) {
-			continue
-		}
-		if err != nil {
-			return ManagedInputs{}, err
-		}
-		inputs.Files = append(inputs.Files, InputFile{Name: file.Name, SizeBytes: file.SizeBytes, UpdatedAt: file.UpdatedAt, AccessPath: link.Path})
-	}
-	return inputs, nil
 }

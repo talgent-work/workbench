@@ -166,22 +166,49 @@ func ReadableWorkFile(workID string, inFileHome, artifact bool, publishedBy stri
 	return !inFileHome || (artifact && publishedBy == workID)
 }
 
-// AdmitFileReader admits a reader of the Work's files: an owner of its
-// definition or a Work Share holder, who reads the files ReadableWorkFile
-// allows.
-func (s *AgentWork) AdmitFileReader(definition *AgentDefinition, reader string) (ReadBasis, error) {
-	return s.fileReadBasis(definition, reader)
+// FileReader is who reads a Work's files: an Account by its id, or the Agent
+// of a Work by that Work's identity.
+type FileReader struct {
+	account string
+	agentOf string
 }
 
-func (s *AgentWork) fileReadBasis(definition *AgentDefinition, reader string) (ReadBasis, error) {
-	if reader == "" {
+// AccountReader is a person or an Application reading for itself, or the
+// person whose Library their Work's Agent reads.
+func AccountReader(id string) FileReader { return FileReader{account: id} }
+
+// AgentReader is the Agent of the Work, by that Work's identity.
+func AgentReader(workID string) FileReader { return FileReader{agentOf: workID} }
+
+// AdmitFileReader admits a reader of the Work's files: an owner of its
+// definition or a Work Share holder, who reads the files ReadableWorkFile
+// allows, or the Work's own Agent, which reads the current Attachments of
+// its located inputs, whatever its File Home and Computer (Own input
+// reading, Managed input reading), as LocatedInputs names them.
+func (s *AgentWork) AdmitFileReader(definition *AgentDefinition, reader FileReader) (ReadBasis, error) {
+	if reader.agentOf != "" {
+		if reader.agentOf != s.ID {
+			return "", ErrWorkReaderNotAdmitted
+		}
+		return ReadAsOwnAgent, nil
+	}
+	if reader.account == "" {
 		return "", ErrWorkReaderNotAdmitted
 	}
-	if definition != nil && definition.ID == s.AgentID && definition.IsOwner(reader) {
+	if definition != nil && definition.ID == s.AgentID && definition.IsOwner(reader.account) {
 		return ReadAsOwner, nil
 	}
-	if slices.Contains(s.WorkShares, reader) {
+	if slices.Contains(s.WorkShares, reader.account) {
 		return ReadAsShare, nil
 	}
 	return "", ErrWorkReaderNotAdmitted
+}
+
+// LocatedInputs is the Directory the Work reads its inputs from: its own File
+// Space, or its File Home's for a Work with one.
+func (s *AgentWork) LocatedInputs() (Directory, error) {
+	if s.LocatedLayout.Inputs == nil {
+		return Directory{}, ErrWorkFilesUnavailable
+	}
+	return s.LocatedLayout.Inputs.Directory.clone(), nil
 }

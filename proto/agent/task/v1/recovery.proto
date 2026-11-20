@@ -4,6 +4,8 @@ package agent.task.v1;
 
 option go_package = "github.com/talgent-work/workbench/gen/agent/task/v1;agenttaskv1";
 
+import "google/protobuf/timestamp.proto";
+
 // ReconcileExecutionTaskV1 asks Agent to take whichever short step one
 // AgentExecution's current facts call for, and to wake its long step when one
 // is due.
@@ -50,6 +52,58 @@ message CloseRemovedApplicationWorkTaskV1 {
   string work_id = 1;
   // The removed Application, which owns the Work.
   string application_id = 2;
+}
+
+// DeliverInputChangeNoticeTaskV1 delivers one Work the notice of one change
+// in its located inputs, retried a bounded number of times. Agent keeps no
+// obligation for it: a delivery that exhausts its retries is logged as an
+// error naming the Work.
+message DeliverInputChangeNoticeTaskV1 {
+  // The AgentWork's identity.
+  string work_id = 1;
+  // Identity of the file change, from which the notice's input identity
+  // derives.
+  string change_id = 2;
+  // The Directory the file changed in.
+  InputDirectoryV1 directory = 3;
+  // The file's name after the change; for a deletion, the name it had.
+  string file = 4;
+  // The former name of a renamed file; empty otherwise.
+  string previous_file = 5;
+  // How the file changed.
+  InputFileOperation operation = 6;
+  // Time the change was committed.
+  google.protobuf.Timestamp occurred_at = 7;
+}
+
+// InputDirectoryV1 identifies a Directory by its owner facts, in condition
+// order, and its name.
+message InputDirectoryV1 {
+  // One condition of the owner with its value.
+  message OwnerFact {
+    // The condition's name.
+    string condition = 1;
+    // The condition's value.
+    string value = 2;
+  }
+  // Owner facts ordered by condition name.
+  repeated OwnerFact owner = 1;
+  // Name within the owner.
+  string name = 2;
+}
+
+// InputFileOperation is how a file in a Directory changed.
+enum InputFileOperation {
+  // Unspecified operation; never queued.
+  INPUT_FILE_OPERATION_UNSPECIFIED = 0;
+  // A file was added.
+  INPUT_FILE_OPERATION_ADDED = 1;
+  // A file's content was replaced.
+  INPUT_FILE_OPERATION_REPLACED = 2;
+  // A file was renamed.
+  INPUT_FILE_OPERATION_RENAMED = 3;
+  // A file was deleted.
+  INPUT_FILE_OPERATION_DELETED = 4;
 }
 
 // The task payloads below are retired: their queued tasks are dropped without

@@ -57,7 +57,7 @@ func recovery(t *testing.T, environments *observed) (*application.Recovery, stri
 	})
 	require.NoError(t, err)
 	repository := executions{execution: queued}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, repository, environments, nil, unseated{}, nil, nil)
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, repository, environments, nil, unseated{}, nil)
 	return application.NewRecovery(&application.Application{}, nil, repository, nil, reconciliation, nil, nil), queued.ID
 }
 
@@ -113,10 +113,10 @@ var removedTypes = []struct {
 	{true, "agent.initial-execution.prepare.v1"},
 }
 
-// Agent's queues serve exactly six tasks: Reconcile execution, Run long
+// Agent's queues serve exactly seven tasks: Reconcile execution, Run long
 // execution step, Recover Work, Request workspace reclamation, Close removed
-// Application's Work and the Recovery sweep.
-func TestAgentServesSixTasks(t *testing.T) {
+// Application's Work, Deliver input change notice and the Recovery sweep.
+func TestAgentServesSevenTasks(t *testing.T) {
 	recovery, _ := recovery(t, &observed{})
 	removed := map[taskqueue.TaskType]bool{}
 	for _, step := range removedTypes {
@@ -128,7 +128,7 @@ func TestAgentServesSixTasks(t *testing.T) {
 			served = append(served, processor.TaskType())
 		}
 	}
-	require.ElementsMatch(t, []taskqueue.TaskType{agenttask.ReconcileExecutionType, agenttask.RunLongExecutionStepType, agenttask.RecoverWorkType, agenttask.RequestWorkReclamationType, agenttask.CloseRemovedApplicationWorkType, agenttask.SweepRecoveryType}, served)
+	require.ElementsMatch(t, []taskqueue.TaskType{agenttask.ReconcileExecutionType, agenttask.RunLongExecutionStepType, agenttask.RecoverWorkType, agenttask.RequestWorkReclamationType, agenttask.CloseRemovedApplicationWorkType, agenttask.DeliverInputChangeNoticeType, agenttask.SweepRecoveryType}, served)
 }
 
 // A task queued under a type no longer enqueued is dropped without

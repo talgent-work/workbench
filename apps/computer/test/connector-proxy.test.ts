@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, test } from 'node:test'
 import type { PipeSink } from '../src/execd/pipe.ts'
-import { WorkInputs } from '../src/execd/inputs.ts'
 import { ProcessTable } from '../src/execd/processes.ts'
 import { ExecdService } from '../src/execd/service.ts'
 import { SHIM_ARG } from '../src/execd/shim.ts'
@@ -57,7 +56,6 @@ beforeEach(async () => {
     works,
     processes,
     credentials,
-    inputs: new WorkInputs({ recordsDir: join(dir, 'state', 'inputs'), credentials, log: () => {} }),
     proxyOrigin: () => proxy.origin(),
     baseEnv: { PATH: '/usr/bin:/bin' },
     home: '/home/owner',

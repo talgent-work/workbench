@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"time"
 
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -29,16 +28,10 @@ type ReconcileExecutionHandler struct {
 	// supplies obtains what the environment steps hand the environment from
 	// Storage and Marketplace.
 	supplies *EnvironmentSupplies
-	// logger shows a terminal outcome nothing else retries, such as an
-	// abandoned input sync.
-	logger *slog.Logger
 }
 
-func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, creationWaits domain.CreationWaits, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, supplies *EnvironmentSupplies, logger *slog.Logger) *ReconcileExecutionHandler {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &ReconcileExecutionHandler{now: now, lease: lease, creationWaits: creationWaits, executions: executions, environments: environments, harness: harness, computers: computers, supplies: supplies, logger: logger}
+func NewReconcileExecutionHandler(now func() time.Time, lease domain.LeaseTerms, creationWaits domain.CreationWaits, executions domain.AgentExecutionRepository, environments ExecutionEnvironmentPort, harness DispatcherPort, computers ComputerPort, supplies *EnvironmentSupplies) *ReconcileExecutionHandler {
+	return &ReconcileExecutionHandler{now: now, lease: lease, creationWaits: creationWaits, executions: executions, environments: environments, harness: harness, computers: computers, supplies: supplies}
 }
 
 // reconcileRounds bounds the decisions one reconciliation makes: after a step
@@ -49,7 +42,7 @@ const reconcileRounds = 4
 
 // Reconcile decides the execution's steps and takes each short one:
 // environment deletion, credential delivery and withdrawal, the connection of
-// its launched process, input sync, the exit signal and its Desk's departure,
+// its launched process, the exit signal and its Desk's departure,
 // then confirms a retired execution's release. It never waits for a creation:
 // a submitted one's environment is bound once observed. It reports whether
 // the execution's last decision called for a long step, which RunLongStep

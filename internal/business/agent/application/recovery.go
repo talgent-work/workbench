@@ -13,9 +13,11 @@ import (
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
-// Recovery wakes and performs Agent's retained recovery obligations. A wake
-// only enqueues the task for one object; its processor performs one step from
-// current state, and the periodic sweep re-wakes every unfinished object.
+// Recovery queues and performs Agent's tasks: its retained recovery
+// obligations, whose wake only enqueues the task for one object while its
+// processor performs one step from current state and the periodic sweep
+// re-wakes every unfinished object, and the deliveries it queues once, such as
+// a Work Reclamation Request or an input change notice.
 type Recovery struct {
 	app        *Application
 	enqueuer   taskqueue.Enqueuer
@@ -156,28 +158,6 @@ func (r *Recovery) CredentialChanged(ctx context.Context, authorizationID string
 		return err
 	}
 	marked, err := r.reconciliation.MarkCredentialsChanged(ctx, ids)
-	failures := []error{err}
-	for _, id := range marked {
-		failures = append(failures, r.WakeExecution(ctx, id))
-	}
-	return errors.Join(failures...)
-}
-
-// InputsChanged follows Storage's fact that a file in a Directory changed
-// (Sync changed inputs): every Work on a Managed Computer whose located inputs
-// are that Directory receives its current inputs from its execution's
-// reconciliation, which this wakes. A Cloud Work mounts its inputs and needs
-// nothing. Repeated or reordered facts lead to the same sync of the current
-// files.
-func (r *Recovery) InputsChanged(ctx context.Context, directory domain.Directory) error {
-	if !directory.Present() {
-		return domain.ErrInvalidWork
-	}
-	ids, err := r.lookups.ListExecutionsReadingInputs(ctx, directory)
-	if err != nil {
-		return err
-	}
-	marked, err := r.reconciliation.MarkInputsChanged(ctx, ids)
 	failures := []error{err}
 	for _, id := range marked {
 		failures = append(failures, r.WakeExecution(ctx, id))

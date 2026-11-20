@@ -58,6 +58,8 @@ type workSeed struct {
 	// closeRequest is a close kept by a Stopped Work, or the one a Closed
 	// Work applied.
 	closeRequest string
+	// fileHome is the Work's File Home; none when empty.
+	fileHome domain.FileHome
 }
 
 // seededWork is a seeded Work and its current start's AgentExecution.
@@ -88,7 +90,7 @@ func seedWork(t *testing.T, db *xorm.Engine, definition *domain.AgentDefinition,
 	admission := domain.StartAdmission{AdmittedAt: now, AgentID: definition.ID, DefinitionAdmitted: true, ModelConfigurationProvided: true, Soul: definition.Soul,
 		Seat: domain.ComputerSeat{ComputerID: cloud.ID, Kind: domain.ComputerCloud, DeskID: uuid.NewString()}}
 	work, created, err := definition.CreateWork(domain.WorkCreationRequest{StartedBy: workOwner, AuthorizationInput: domain.WorkAuthorizationInput{OwnerID: definition.RepresentedPerson()},
-		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, WorkCaller: domain.WorkCaller{Kind: "project", ID: workProject}, WorkKey: domain.WorkKey{Kind: "case", ID: strings.ReplaceAll(seed.subject, " ", "-")},
+		WorkModel: domain.WorkModelSelection{ConfigurationID: "deployment-default"}, WorkCaller: domain.WorkCaller{Kind: "project", ID: workProject}, WorkKey: domain.WorkKey{Kind: "case", ID: strings.ReplaceAll(seed.subject, " ", "-")}, FileHome: seed.fileHome,
 		Capabilities: capabilities, TraceAttributes: definition.WorkTraceAttributes(nil), Admission: admission}, domain.WorkCreationFacts{})
 	require.NoError(t, err)
 	require.True(t, created)

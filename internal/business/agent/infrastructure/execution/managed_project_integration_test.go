@@ -6,14 +6,12 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 )
 
 // An Extension Work on a Managed Computer mounts no Directory: its
@@ -33,24 +31,12 @@ func TestAManagedExtensionWorkReadsReferencesThroughTheConnector(t *testing.T) {
 
 // managedStorage stands in for Storage as a Managed Work's reconciliation
 // reaches it: it counts mount acquisitions, of which a Managed start makes
-// none, opens every Directory with one Space Token, and lists the files of
-// each Directory with their Access Links.
+// none, and opens every Directory with one Space Token. Anything else it is
+// asked fails the case.
 type managedStorage struct {
 	command.StoragePort
 	mu     sync.Mutex
 	mounts int
-	// files are each Directory's files, by its key.
-	files map[string][]managedFile
-	err   error
-	// bound is how long the last listing had left when it began, zero when
-	// it was unbounded.
-	bound time.Duration
-}
-
-// managedFile is a file of a Directory and the path of its Access Link.
-type managedFile struct {
-	command.SpaceFile
-	link string
 }
 
 func (s *managedStorage) AcquireMounts(context.Context, string, []domain.DirectoryMount) (domain.SandboxMounts, error) {
@@ -62,44 +48,6 @@ func (s *managedStorage) AcquireMounts(context.Context, string, []domain.Directo
 
 func (s *managedStorage) OpenDirectory(context.Context, domain.LocatedDirectory) (string, error) {
 	return "space-token", nil
-}
-
-func (s *managedStorage) ListFiles(ctx context.Context, directory domain.Directory) ([]command.SpaceFile, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.bound = 0
-	if deadline, ok := ctx.Deadline(); ok {
-		s.bound = time.Until(deadline)
-	}
-	if s.err != nil {
-		return nil, s.err
-	}
-	files := []command.SpaceFile{}
-	for _, file := range s.files[infrastructure.DirectoryKey(directory)] {
-		files = append(files, file.SpaceFile)
-	}
-	return files, nil
-}
-
-func (s *managedStorage) IssueAccessLink(_ context.Context, position command.FilePosition, _ bool) (command.FileLink, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, file := range s.files[infrastructure.DirectoryKey(position.Directory)] {
-		if file.Name == position.Name {
-			return command.FileLink{Path: file.link}, nil
-		}
-	}
-	return command.FileLink{}, command.ErrFileNotFound
-}
-
-// place puts files in directory.
-func (s *managedStorage) place(directory domain.Directory, files ...managedFile) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.files == nil {
-		s.files = map[string][]managedFile{}
-	}
-	s.files[infrastructure.DirectoryKey(directory)] = files
 }
 
 // caseInputs is the inputs Directory of a fresh case's File Home.

@@ -156,8 +156,8 @@ func (g *Gateway) serveLocal(w http.ResponseWriter, r *http.Request, t *tunnel, 
 
 // controlled reports whether a call is the platform's, authorized by the
 // control token rather than the Work's execd token: the machine's
-// reconciliation, opening the Work's environment, delivering or forgetting
-// its credentials, and delivering its inputs. Every other call, another
+// reconciliation, opening the Work's environment, and delivering or forgetting
+// its credentials. Every other call, another
 // method on these paths included, carries the execd token and the machine
 // answers it.
 func controlled(workID, method, path string) bool {
@@ -165,7 +165,7 @@ func controlled(workID, method, path string) bool {
 		return path == reconciliationPath && (method == http.MethodGet || method == http.MethodPost)
 	}
 	switch path {
-	case "/", "/inputs":
+	case "/":
 		return method == http.MethodPut
 	case "/credentials":
 		return method == http.MethodPut || method == http.MethodDelete

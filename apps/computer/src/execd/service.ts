@@ -1,7 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { InvalidCredentialsError, type CredentialStore } from '../proxy/credentials.ts'
 import { deleteVariable, mergeEnvironment, prependPath } from './environment.ts'
-import { InvalidManifestError, parseManifest, type WorkInputs } from './inputs.ts'
 import { openPipe, type PipeInput, type PipeSink } from './pipe.ts'
 import type { ProcessTable } from './processes.ts'
 import { Reconciliation } from './reconciliation.ts'
@@ -50,7 +49,6 @@ export interface ServiceOptions {
   // Where Work processes find the bundled Claude Code, first on PATH.
   claudeBinDir?: string
   credentials: CredentialStore
-  inputs: WorkInputs
   // The local proxy's origin, http://127.0.0.1:<port>.
   proxyOrigin: () => string
   // The machine's own environment and home, which every process starts from.
@@ -66,10 +64,6 @@ const unauthorized: ExecResponse = { status: 401, body: { error: 'Unauthorized: 
 function notFound(id: string): ExecResponse {
   return { status: 404, body: { code: 'CONTEXT_NOT_FOUND', message: `pty session ${id} not found` } }
 }
-
-// How long a run waits for the Work's inputs being brought in before it
-// starts without them.
-const INPUTS_WAIT_MS = 2 * 60_000
 
 // The relay path of the machine's own reconciliation, which names no Work.
 export const RECONCILIATION_PATH = '/reconciliation'
@@ -101,7 +95,6 @@ export class ExecdService {
       }
     }
     if (request.path === '/credentials') return this.credentials(request)
-    if (request.path === '/inputs') return this.inputs(request)
     const access = await works.authorize(request.workId, request.token)
     if (access.kind === 'unknown') return { status: 404 }
     if (access.kind === 'denied') return unauthorized
@@ -117,7 +110,6 @@ export class ExecdService {
     const { credentials } = this.options
     if (method === 'DELETE') {
       await credentials.delete(workId)
-      this.options.inputs.forget(workId)
       return { status: 204 }
     }
     try {
@@ -126,24 +118,7 @@ export class ExecdService {
       if (error instanceof InvalidCredentialsError) return { status: 400, body: { code: 'INVALID_REQUEST_BODY', message: error.message } }
       throw error
     }
-    this.options.inputs.credentialsDelivered(workId)
     return { status: 204 }
-  }
-
-  // The Work's input File Space, relayed like the credentials. It is
-  // accepted at once and brought into the Work root in the background.
-  private async inputs(request: ExecRequest): Promise<ExecResponse> {
-    const { method, workId } = request
-    if (method !== 'PUT') return { status: 405 }
-    const { works, inputs } = this.options
-    if (!(await works.known(workId))) return { status: 404 }
-    try {
-      inputs.submit(workId, works.root(workId), parseManifest(request.body))
-    } catch (error) {
-      if (error instanceof InvalidManifestError) return { status: 400, body: { code: 'INVALID_REQUEST_BODY', message: error.message } }
-      throw error
-    }
-    return { status: 202 }
   }
 
   private async route(work: WorkEnvironment, request: ExecRequest): Promise<ExecResponse> {
@@ -228,12 +203,8 @@ export class ExecdService {
         id: open.processId,
         since: open.since,
         env: (proxyToken) => this.runEnv(open.workId, access.work, proxyToken),
-        // A run starts once the reconciliation decided what may run, and
-        // its first turn sees the inputs the latest manifest lists.
-        ready: async (signal) => {
-          await this.reconciliation.settled(signal)
-          if (!signal.aborted) await this.options.inputs.settled(open.workId, INPUTS_WAIT_MS)
-        },
+        // A run starts once the reconciliation decided what may run.
+        ready: (signal) => this.reconciliation.settled(signal),
         log: this.options.log,
       },
       sink,

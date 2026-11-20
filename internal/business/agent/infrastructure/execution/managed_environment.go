@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -26,17 +25,12 @@ import (
 // Configuration key) are delivered to Talgent Computer's local proxy,
 // which alone carries them (managed_credentials.go).
 type ManagedEnvironment struct {
-	// records are the executions, whose input owner and released handles
-	// this realization keeps.
+	// records are the executions, whose released handles this realization
+	// keeps.
 	records  records
 	machines *ManagedComputers
 	// models are the platform's Model Configurations.
 	models command.PlatformCatalogPort
-	// inputs are the Attachments of the Work's input source, which their
-	// own sync hands the machine (managed_inputs.go).
-	// inputsRefresh is how long synced inputs stay current before the
-	// recovery sweep syncs them again (managed_inputs.go).
-	inputsRefresh time.Duration
 	// reconciliation reconciles a reconnected machine before anything of
 	// its Works runs there (managed_reconciliation.go).
 	reconciliation *ManagedReconciliation
@@ -49,18 +43,15 @@ var (
 
 // NewManagedEnvironment is the Managed realization of a deployment whose
 // relay reaches Managed Computers.
-func NewManagedEnvironment(db *xorm.Engine, machines *ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository, inputsRefresh time.Duration) (*ManagedEnvironment, error) {
+func NewManagedEnvironment(db *xorm.Engine, machines *ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository) (*ManagedEnvironment, error) {
 	if db == nil || machines == nil || models == nil || sessions == nil {
 		return nil, errors.New("agent: executions, Managed Computers, Model Configurations and Works are required for the Managed realization")
-	}
-	if inputsRefresh <= 0 {
-		return nil, errors.New("agent: the inputs refresh interval must be positive")
 	}
 	reconciliation, err := NewManagedReconciliation(db, machines, sessions)
 	if err != nil {
 		return nil, err
 	}
-	return &ManagedEnvironment{records: records{db: db}, machines: machines, models: models, inputsRefresh: inputsRefresh, reconciliation: reconciliation}, nil
+	return &ManagedEnvironment{records: records{db: db}, machines: machines, models: models, reconciliation: reconciliation}, nil
 }
 
 // Reconciliation reconciles the Managed Computers this realization runs

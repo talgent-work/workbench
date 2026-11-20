@@ -156,8 +156,8 @@ function parseEnvironment(body: unknown): { accessToken: string; environment: Re
   return { accessToken, environment: result, modelProxy, platformApi, telemetry }
 }
 
-// Removes a directory tree, read-only parts included: the Work's inputs
-// directory is left without write permission, which a plain removal of its
+// Removes a directory tree, read-only parts included: a Work's processes may
+// leave a directory without write permission, which a plain removal of its
 // files meets on POSIX.
 export async function removeTree(path: string): Promise<void> {
   try {

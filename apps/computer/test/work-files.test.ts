@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'node:test'
-import { WorkInputs } from '../src/execd/inputs.ts'
 import type { PipeSink } from '../src/execd/pipe.ts'
 import { ExecdService } from '../src/execd/service.ts'
 import { FILE_CHUNK_BYTES } from '../src/execd/work-files.ts'
@@ -22,7 +21,6 @@ beforeEach(async () => {
     works: new Works({ worksDir: join(dir, 'works'), recordsDir: join(dir, 'state', 'works') }),
     processes: undefined as never,
     credentials: undefined as never,
-    inputs: new WorkInputs({ recordsDir: join(dir, 'state', 'inputs'), credentials: { get: async () => undefined }, log: () => {} }),
     proxyOrigin: () => 'http://127.0.0.1:1',
     baseEnv: {},
     home: '/home/owner',

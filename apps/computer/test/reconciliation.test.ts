@@ -99,7 +99,7 @@ describe('reconciliation on reconnecting', () => {
 
   test('a closed Work loses its processes, its files and everything kept for it', async () => {
     const { client, gateway, cwd, dataDir } = target
-    // Its inputs are read-only copies, as the inputs sync leaves them.
+    // A Work process may leave a directory read-only.
     const running = await client.create(cwd, 'mkdir -p ../inputs && echo x > ../inputs/brief.txt && chmod 0444 ../inputs/brief.txt && chmod 0555 ../inputs; echo up; while :; do sleep 1; done')
     const pipe = await client.attach(running, 0)
     assert.ok(pipe instanceof Pipe)

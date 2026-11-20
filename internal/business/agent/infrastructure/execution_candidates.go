@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/samber/oops"
-	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // The executions the recovery sweep and published changes concern, found by
@@ -38,21 +37,6 @@ func (r *ExecutionQueryRepository) ListExecutionsUsingAuthorization(ctx context.
  WHERE ? MEMBER OF(authorization_ids) AND deleted_at = 0`, authorizationID).Find(&ids)
 	if err != nil {
 		return nil, oops.With("operation", "list_executions_using_authorization").Wrap(err)
-	}
-	return ids, nil
-}
-
-// ListExecutionsReadingInputs lists the unretired Managed executions whose
-// Work's located inputs are the Directory, recorded when each began.
-func (r *ExecutionQueryRepository) ListExecutionsReadingInputs(ctx context.Context, directory domain.Directory) ([]string, error) {
-	if !directory.Present() {
-		return nil, nil
-	}
-	var ids []string
-	err := r.db.Context(ctx).SQL(`SELECT id FROM agent_execution
- WHERE inputs_directory = ? AND deleted_at = 0 AND realization = ?`, DirectoryKey(directory), string(domain.RealizationManaged)).Find(&ids)
-	if err != nil {
-		return nil, oops.With("operation", "list_executions_reading_inputs").Wrap(err)
 	}
 	return ids, nil
 }

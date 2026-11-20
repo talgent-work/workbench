@@ -64,11 +64,6 @@ type ExecutionEnvironmentPort interface {
 	// RenewLease renews the bound environment's lease to expiresAt and
 	// reports the expiry the authority returned.
 	RenewLease(ctx context.Context, execution *domain.AgentExecution, expiresAt time.Time) (time.Time, error)
-	// SyncInputs hands a Managed Computer the current files of its Work's
-	// located inputs and reports how many due changes it covered. It asks
-	// holding before the sync, whose downloads authenticate with the
-	// delivered credentials.
-	SyncInputs(ctx context.Context, execution *domain.AgentExecution, inputs ManagedInputs, holding EnvironmentHolding) (int64, error)
 	// ReconcileComputer reconciles a Managed Computer that is reachable again:
 	// it ends the processes of Works no longer running there and removes the
 	// files of Works gone from it before anything new starts on it (Computer
@@ -102,21 +97,4 @@ type CredentialSupply struct {
 	Repositories  []RepositoryAccessMaterial
 	Services      []ServiceAccessMaterial
 	Access        []ServiceAccessStatus
-}
-
-// ManagedInputs are the current files of a Managed Work's located inputs,
-// each with a fresh download Access Link; Located is false for a Work whose
-// layout located no inputs, which has none to copy.
-type ManagedInputs struct {
-	Located bool
-	Files   []InputFile
-}
-
-// InputFile is one file of a Work's located inputs and the path of its Access
-// Link, as Storage issues it for the platform's public address.
-type InputFile struct {
-	Name       string
-	SizeBytes  int64
-	UpdatedAt  time.Time
-	AccessPath string
 }

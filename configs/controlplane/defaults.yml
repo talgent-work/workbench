@@ -120,9 +120,6 @@ marketplace-taskqueue:
   shutdown-timeout: "30s"
 agent-recovery:
   sweep-interval: "60s"
-  # How long a Managed Work's synced inputs stay current before the sweep
-  # syncs them again with fresh Access Links; inside storage.link-ttl.
-  inputs-refresh-interval: "10m"
 # Agent's own consumer group for Marketplace credential changes.
 agent-credential-changes:
   consumer-group: "${AGENT_CREDENTIAL_CHANGES_GROUP:agent-credential-changes}"
@@ -332,10 +329,6 @@ agent-computer:
   # The entry, where a Managed Work calls the core's public APIs through
   # its local proxy; empty gives Managed Works none.
   api-address: "${PLATFORM_API_ADDRESS:}"
-  # Where the same Connector serves Access Links on its public origin, from
-  # which a Managed Computer downloads its Works' inputs; required with
-  # relay-address.
-  content-address: "${COMPUTER_CONTENT_ADDRESS:}"
   # Where a reader's browser reaches Agent's links to a Managed Work's files;
   # required with relay-address.
   workspace-file-address: "${AGENT_WORKSPACE_FILE_ADDRESS:/api/v1/agent/workspace-files}"

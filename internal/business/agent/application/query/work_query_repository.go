@@ -3,6 +3,8 @@ package query
 import (
 	"context"
 	"time"
+
+	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // WorkQueryRepository reads Works without loading the AgentWork: their
@@ -39,6 +41,9 @@ type WorkQueryRepository interface {
 	// ReadWorkHistory reads the Works in scope created before the instant,
 	// each with its state history observed before it and its current state.
 	ReadWorkHistory(ctx context.Context, scope WorkReportScope, before time.Time) ([]WorkHistory, error)
+	// ListUnclosedWorksReadingInputs pages the Works not Closed whose located
+	// inputs are the Directory, by identity after afterID.
+	ListUnclosedWorksReadingInputs(ctx context.Context, directory domain.Directory, afterID string, limit int) ([]string, error)
 	// WorkOwners reads the Owners of the Work's definition; false for an
 	// unknown Work.
 	WorkOwners(ctx context.Context, workID string) ([]string, bool, error)

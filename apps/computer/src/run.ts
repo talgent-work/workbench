@@ -5,7 +5,7 @@ import { ClaudeCodeMissingError, PACKAGE_ROOT, prepareClaudeCode, removeUnusedCo
 import type { CliIO } from './cli.ts'
 import { runConnection } from './connection.ts'
 import { endEveryWorkProcess } from './end-work-processes.ts'
-import { WorkInputs } from './execd/inputs.ts'
+import { removeInputCopies } from './execd/input-copies.ts'
 import { ProcessTable } from './execd/processes.ts'
 import { ExecdService } from './execd/service.ts'
 import { SHIM_ARG } from './execd/shim.ts'
@@ -110,6 +110,9 @@ async function connect(options: Connecting): Promise<number> {
   const { io, log, url, credential, claudeCode, processes, fence, upgrade } = options
   const { dataDir } = io.paths
   const works = new Works({ worksDir: join(dataDir, 'works'), recordsDir: join(dataDir, 'state', 'works') })
+  // Before any Work is served: once after the upgrade, then never again.
+  await removeInputCopies({ recordsDir: join(dataDir, 'state', 'inputs'), workRoot: (workId) => works.root(workId), log })
+    .catch((error: unknown) => log(`cannot look for input copies earlier releases downloaded: ${error instanceof Error ? error.message : String(error)}`))
   // Work credentials live in Talgent Computer's state, outside every Work root.
   const credentials = new CredentialStore({ dir: join(dataDir, 'state', 'credentials') })
   const proxy = new LocalProxy({
@@ -129,7 +132,6 @@ async function connect(options: Connecting): Promise<number> {
     processes,
     claudeBinDir: claudeCode.binDir,
     credentials,
-    inputs: new WorkInputs({ recordsDir: join(dataDir, 'state', 'inputs'), credentials, log }),
     proxyOrigin: () => proxy.origin(),
     baseEnv: process.env,
     home: homedir(),

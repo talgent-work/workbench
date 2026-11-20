@@ -160,7 +160,7 @@ func startWorkspaceReading(t *testing.T, ctx context.Context) *workspaceReading 
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	computers := agent.ComputerConfig{Address: server.URL, Token: "computer", RelayAddress: relay.URL,
-		MCPAddress: "https://workbench.test/mcp", ContentAddress: "https://workbench.test/content", TelemetryAddress: "https://workbench.test/otel",
+		MCPAddress: "https://workbench.test/mcp", TelemetryAddress: "https://workbench.test/otel",
 		WorkspaceFileAddress: server.URL + "/v1/agent/workspace-files"}
 	app := fx.New(computer.Module, agent.Module, moduleCatalog(), sessionStateTransport(t), fx.NopLogger, storageStub(), testRedis(t),
 		fx.Provide(func() command.ExecutionEnvironmentPort { return realizedEnvironments{} }),

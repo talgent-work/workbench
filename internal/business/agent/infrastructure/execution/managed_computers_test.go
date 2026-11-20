@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
@@ -45,9 +44,6 @@ const managedComputerID = "01900000-0000-7000-8000-0000000000c1"
 
 // managedGatewayAddress is the platform Connector's public address.
 const managedGatewayAddress = "https://workbench.example/computer/v1/mcp"
-
-// managedContentAddress is where the same Gateway serves Access Links.
-const managedContentAddress = "https://workbench.example/api/v1/storage/content"
 
 // managedTelemetryAddress is the platform's public OTLP endpoint.
 const managedTelemetryAddress = "https://workbench.example/computer/v1/otel"
@@ -233,7 +229,7 @@ func TestManagedComputersReachTheWorkThroughTheRelay(t *testing.T) {
 	server := httptest.NewServer(relay)
 	defer server.Close()
 	place := &managedPlace{}
-	managed, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", place)
+	managed, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Telemetry: managedTelemetryAddress}, "control", place)
 	require.NoError(t, err)
 	spec, err := managedSpecificationFor(managedRequest(), fixtureModels(), "execd-token")
 	require.NoError(t, err)
@@ -326,15 +322,13 @@ func TestTheRecordedRealizationChoosesTheEnvironmentAuthority(t *testing.T) {
 	_, err = cloudOnly.authority(executionRecord{Realization: "kubernetes"})
 	require.Error(t, err)
 
-	machines, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+	machines, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
-	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, nil, unusedWorks{}, time.Minute)
+	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, nil, unusedWorks{})
 	require.Error(t, err, "the Managed realization needs the Model Configurations")
-	_, err = NewManagedEnvironment(nil, machines, fixtureModels(), unusedWorks{}, time.Minute)
+	_, err = NewManagedEnvironment(nil, machines, fixtureModels(), unusedWorks{})
 	require.Error(t, err, "the Managed realization keeps its marks on the executions")
-	_, err = NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, 0)
-	require.Error(t, err, "inputs are refreshed at a positive interval")
-	managed, err := NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{}, time.Minute)
+	managed, err := NewManagedEnvironment(&xorm.Engine{}, machines, fixtureModels(), unusedWorks{})
 	require.NoError(t, err)
 	authority, err = NewProvisioning(nil, nil, nil, NativeLaunchConfig{Binary: "claude"}, nil, managed).authority(executionRecord{Realization: realizationManaged})
 	require.NoError(t, err)
@@ -352,7 +346,7 @@ func TestManagedComputersDeliverAndForgetTheWorksCredentials(t *testing.T) {
 	relay := &relayFixture{}
 	server := httptest.NewServer(relay)
 	defer server.Close()
-	managed, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+	managed, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
 	spec, err := startedSpecification(managedRequest())
 	require.NoError(t, err)
@@ -385,7 +379,7 @@ func TestManagedComputersDeliverAndForgetTheWorksCredentials(t *testing.T) {
 // credential, so only an HTTPS address is accepted.
 func TestManagedComputersNeedTheGatewaysPublicHTTPSAddress(t *testing.T) {
 	for _, address := range []string{"", "http://workbench.example/computer/v1/mcp", "https://user@workbench.example/mcp", "https://workbench.example/mcp?x=1", "/computer/v1/mcp"} {
-		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: address, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: address, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 		require.Error(t, err, address)
 	}
 }
@@ -407,9 +401,9 @@ func TestManagedWorksCallTheEntryDirectlyOnlyWhereItIsServed(t *testing.T) {
 		require.NoError(t, err)
 		return spec
 	}
-	with, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, API: managedAPIAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+	with, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, API: managedAPIAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
-	without, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+	without, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
 
 	served := started(with)
@@ -423,7 +417,7 @@ func TestManagedWorksCallTheEntryDirectlyOnlyWhereItIsServed(t *testing.T) {
 	require.NotContains(t, relay.environment, "platform_api")
 
 	for _, address := range []string{"https://other.example", "http://workbench.example", "https://workbench.example/api", "https://workbench.example?x=1"} {
-		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, API: address, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, API: address, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 		require.Error(t, err, address)
 	}
 }

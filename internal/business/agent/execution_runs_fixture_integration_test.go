@@ -30,7 +30,7 @@ const launchedProcess = "process"
 // launches as launchedProcess, Dispatcher reads it, and a retired execution
 // owns nothing once its environment's deletion completes. The executions' own
 // reconciliation takes every step; like the realizations, a delivery, a
-// preparation, a launch or an input sync asks its holding check first.
+// preparation or a launch asks its holding check first.
 type realizedEnvironments struct {
 	// pendingDeletion, when set and true, keeps a retired execution's
 	// environment observed: its deletion has not completed.
@@ -76,9 +76,6 @@ func (realizedEnvironments) Launch(ctx context.Context, _ *domain.AgentExecution
 	return launchedProcess, nil
 }
 func (realizedEnvironments) Connect(context.Context, *domain.AgentExecution) error { return nil }
-func (realizedEnvironments) SyncInputs(ctx context.Context, e *domain.AgentExecution, _ command.ManagedInputs, holding command.EnvironmentHolding) (int64, error) {
-	return e.Inputs.Due, holding(ctx)
-}
 func (realizedEnvironments) RenewLease(_ context.Context, _ *domain.AgentExecution, expiresAt time.Time) (time.Time, error) {
 	return expiresAt, nil
 }

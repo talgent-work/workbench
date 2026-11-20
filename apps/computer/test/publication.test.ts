@@ -118,7 +118,7 @@ test('a call that cannot be completed is answered with a JSON-RPC error and neve
   await mkdir(join(root, 'knowledge'))
   await writeFile(join(root, 'knowledge', 'notes.md'), 'knowledge')
   // As on a Cloud: one regular file of the Work, reached without symbolic
-  // links, outside the directories the Work only reads.
+  // links, outside the directories of what the Work was given.
   const refused: [string, RegExp][] = [
     ['out/huge.bin', /larger than 64 MiB/],
     ['missing.md', /names no file/],

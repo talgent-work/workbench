@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	integrationmessage "github.com/go-jimu/components/ddd/message"
+	contribkafka "github.com/go-jimu/contrib/message/kafka"
 
 	storageintegrationv1 "github.com/talgent-work/contracts/gen/go/storage/integration/v1"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -12,7 +13,16 @@ import (
 
 // InputChanges follows a change of the files in a Directory.
 type InputChanges interface {
-	InputsChanged(ctx context.Context, directory domain.Directory) error
+	InputsChanged(ctx context.Context, change domain.InputChange) error
+}
+
+// fileOperations are the operations of Storage's contract, as Agent names
+// them.
+var fileOperations = map[storageintegrationv1.FileOperation]domain.FileOperation{
+	storageintegrationv1.FileOperation_FILE_OPERATION_CREATED:  domain.FileAdded,
+	storageintegrationv1.FileOperation_FILE_OPERATION_REPLACED: domain.FileReplaced,
+	storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED:  domain.FileRenamed,
+	storageintegrationv1.FileOperation_FILE_OPERATION_DELETED:  domain.FileDeleted,
 }
 
 // FileChangedHandler consumes Storage's File Change Published Fact. Agent
@@ -42,5 +52,14 @@ func (h *FileChangedHandler) Handle(ctx context.Context, msg integrationmessage.
 	if !directory.Present() || len(directory.Owner) == 0 {
 		return nil
 	}
-	return h.changes.InputsChanged(ctx, directory)
+	change := domain.InputChange{ID: changed.GetEventId(), Directory: directory, File: changed.GetName(), PreviousFile: changed.GetPreviousName(), Operation: fileOperations[changed.GetOperation()]}
+	if changed.GetOccurredAt() != nil {
+		change.At = changed.GetOccurredAt().AsTime()
+	}
+	// A change that names no file, operation or time can never be told, so
+	// the consumer drops it at once instead of handling it again.
+	if err := change.Validate(); err != nil {
+		return contribkafka.NonRetryable(fmt.Errorf("agent file changed %q: %w", change.ID, err))
+	}
+	return h.changes.InputsChanged(ctx, change)
 }

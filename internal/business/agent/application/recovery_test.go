@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 
@@ -58,12 +59,11 @@ func (e *recordingEnqueuer) reconciliations(t *testing.T) []string {
 }
 
 // executionLookups lists the executions the recovery reads: the outstanding
-// ones, those using each authorization, and the Managed ones reading each
-// owner's File Space.
+// ones and those using each authorization.
 type executionLookups struct {
 	query.ExecutionQueryRepository
-	outstanding   []string
-	using, inputs map[string][]string
+	outstanding []string
+	using       map[string][]string
 }
 
 func (l executionLookups) ListOutstandingExecutions(_ context.Context, after string, limit int) ([]string, error) {
@@ -72,10 +72,6 @@ func (l executionLookups) ListOutstandingExecutions(_ context.Context, after str
 
 func (l executionLookups) ListExecutionsUsingAuthorization(_ context.Context, authorizationID string) ([]string, error) {
 	return l.using[authorizationID], nil
-}
-
-func (l executionLookups) ListExecutionsReadingInputs(_ context.Context, directory domain.Directory) ([]string, error) {
-	return l.inputs[directory.Name], nil
 }
 
 // recoveryFixture is a Recovery over in-memory executions, their environment
@@ -89,7 +85,7 @@ type recoveryFixture struct {
 
 func newRecoveryFixture(app *application.Application, lookups executionLookups, storage command.StoragePort) *recoveryFixture {
 	f := &recoveryFixture{executions: &commandtest.Executions{}, environment: &commandtest.Environment{}, enqueuer: &recordingEnqueuer{}}
-	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, commandtest.Supplies(&commandtest.Storage{}, &commandtest.Accounts{}), nil)
+	reconciliation := command.NewReconcileExecutionHandler(time.Now, domain.LeaseTerms{}, commandtest.CreationWaits, f.executions, f.environment, commandtest.NewHarness(), &commandtest.Computers{}, commandtest.Supplies(&commandtest.Storage{}, &commandtest.Accounts{}))
 	f.recovery = application.NewRecovery(app, f.enqueuer, f.executions, lookups, reconciliation, storage, nil)
 	return f
 }
@@ -242,14 +238,11 @@ func TestReconciliationWakesTheLongStepItsExecutionDecided(t *testing.T) {
 	require.Zero(t, f.environment.Prepared, "the reconciliation never prepares itself")
 
 	f = newRecoveryFixture(&application.Application{}, executionLookups{}, nil)
-	f.environment.Observation = running
-	f.environment.StepErr = errors.New("inputs unavailable")
-	managed := f.execution(t, "work-1", domain.RealizationManaged, func(execution *domain.AgentExecution) {
-		bound(t)(execution)
-		require.True(t, execution.MarkInputsChanged())
-	})
-	require.Error(t, f.recovery.ReconcileExecution(ctx, managed))
-	require.Equal(t, []string{"agent:execution-long-step:" + managed}, f.enqueuer.keys, "a failed short step holds back no long step")
+	f.environment.Observation = domain.EnvironmentObservation{Environments: append(slices.Clone(running.Environments), domain.ObservedEnvironment{ID: "stray"})}
+	f.environment.StepErr = errors.New("deletion unavailable")
+	strayed := f.execution(t, "work-1", domain.RealizationCloud, bound(t))
+	require.Error(t, f.recovery.ReconcileExecution(ctx, strayed))
+	require.Equal(t, []string{"agent:execution-long-step:" + strayed}, f.enqueuer.keys, "a failed short step holds back no long step")
 
 	f = newRecoveryFixture(&application.Application{}, executionLookups{}, nil)
 	f.environment.Observation = running
@@ -281,9 +274,9 @@ func TestALongStepHoldsBackNoShortStep(t *testing.T) {
 	go func() { long <- f.recovery.RunLongExecutionStep(ctx, managed) }()
 	<-preparing
 
-	f.change(t, managed, func(execution *domain.AgentExecution) bool { return execution.MarkInputsChanged() })
+	f.environment.Observation.Environments = append(f.environment.Observation.Environments, domain.ObservedEnvironment{ID: "stray"})
 	require.NoError(t, f.recovery.ReconcileExecution(ctx, managed))
-	require.Equal(t, 1, f.environment.Synced, "the preparing execution syncs its inputs meanwhile")
+	require.Equal(t, []string{"stray"}, f.environment.Deleted, "the preparing execution deletes a stray environment meanwhile")
 	require.NoError(t, f.recovery.ReconcileExecution(ctx, other))
 	require.Equal(t, 1, f.environment.Delivered, "another execution receives its credentials meanwhile")
 
@@ -356,24 +349,27 @@ func TestCredentialChangeReachesTheReconciliationOfItsWorks(t *testing.T) {
 	require.Equal(t, 1, f.environment.Delivered, "the woken reconciliation replaces the credentials")
 }
 
-// A changed file in an input source's File Space wakes the reconciliation of
-// every Managed Work reading it, which syncs its inputs.
-func TestInputChangeReachesTheReconciliationOfItsManagedWorks(t *testing.T) {
-	inputs := map[string][]string{}
-	f := newRecoveryFixture(&application.Application{}, executionLookups{inputs: inputs}, &commandtest.Storage{})
-	managed := f.execution(t, "work-1", domain.RealizationManaged, bound(t))
-	cloud := f.execution(t, "work-2", domain.RealizationCloud, bound(t))
-	inputs["owner-1"] = []string{managed, cloud}
-	require.NoError(t, f.recovery.InputsChanged(context.Background(), domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "w"}}, Name: "owner-1"}))
-	require.Equal(t, []string{managed}, f.enqueuer.reconciliations(t))
-	require.NoError(t, f.recovery.InputsChanged(context.Background(), domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "w"}}, Name: "owner-unread"}))
-	require.Len(t, f.enqueuer.keys, 1)
-	require.Error(t, f.recovery.InputsChanged(context.Background(), domain.Directory{}))
+// A changed file in a Directory wakes no execution's reconciliation: a
+// Managed Work's Agent downloads the inputs it needs, and the change only
+// reaches the Works reading it as notices.
+func TestInputChangeWakesNoReconciliation(t *testing.T) {
+	f := newRecoveryFixture(&application.Application{WorkQueries: noInputReaders{}}, executionLookups{}, &commandtest.Storage{})
+	f.execution(t, "work-1", domain.RealizationManaged, bound(t))
+	require.NoError(t, f.recovery.InputsChanged(context.Background(), changeIn("owner-1")))
+	require.Empty(t, f.enqueuer.keys)
+	require.Error(t, f.recovery.InputsChanged(context.Background(), domain.InputChange{}))
+}
 
-	f.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}}}
-	require.NoError(t, f.recovery.ReconcileExecution(context.Background(), managed))
-	require.Equal(t, 1, f.environment.Synced, "the woken reconciliation syncs the inputs")
-	require.Zero(t, f.environment.Delivered, "an input change delivers no credentials")
+// noInputReaders is a store where no Work reads any Directory as its inputs.
+type noInputReaders struct{ query.WorkQueryRepository }
+
+func (noInputReaders) ListUnclosedWorksReadingInputs(context.Context, domain.Directory, string, int) ([]string, error) {
+	return nil, nil
+}
+
+func changeIn(name string) domain.InputChange {
+	return domain.InputChange{ID: "change-" + name, Directory: domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "w"}}, Name: name},
+		File: "brief.md", Operation: domain.FileAdded, At: time.Now()}
 }
 
 // Delivering a queued reclamation task sends exactly its request through

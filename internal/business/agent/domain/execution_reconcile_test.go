@@ -124,8 +124,9 @@ func TestABoundEnvironmentNoLongerObservedIsLost(t *testing.T) {
 
 // A launched run connects while Dispatcher does not read it, replaces its
 // credentials past their expiry or after the model key rotated, and a
-// Managed run syncs its input copies when due.
-func TestARunningRunConnectsAndKeepsItsCredentialsAndInputsCurrent(t *testing.T) {
+// delivered Managed run goes on to its preparation, with no step for its
+// inputs.
+func TestARunningRunConnectsAndKeepsItsCredentialsCurrent(t *testing.T) {
 	_, execution := launchedExecution(t)
 	now := execution.Desk.SeatedAt
 	require.Equal(t, []domain.ExecutionStepKind{domain.StepConnect}, kinds(decide(t, execution, runningEnvironment("env-1"), now)))
@@ -159,16 +160,7 @@ func TestARunningRunConnectsAndKeepsItsCredentialsAndInputsCurrent(t *testing.T)
 	_, err = managed.RecordCreationAnswer(domain.CreationAnswer{EnvironmentID: "env-m"})
 	require.NoError(t, err)
 	require.True(t, managed.RecordCredentialDelivery(domain.CredentialDelivery{}))
-	syncedAt := managed.Desk.SeatedAt
-	observed := runningEnvironment("env-m")
-	observed.InputsRefresh = time.Minute
-	require.Equal(t, []domain.ExecutionStepKind{domain.StepSyncInputs, domain.StepPrepare}, kinds(decide(t, managed, observed, syncedAt)), "never synced inputs are due")
-	require.True(t, managed.RecordInputSync(0, syncedAt))
-	require.Equal(t, []domain.ExecutionStepKind{domain.StepPrepare}, kinds(decide(t, managed, observed, syncedAt)))
-	require.True(t, managed.MarkInputsChanged())
-	require.Equal(t, []domain.ExecutionStepKind{domain.StepSyncInputs, domain.StepPrepare}, kinds(decide(t, managed, observed, syncedAt)))
-	require.True(t, managed.RecordInputSync(managed.Inputs.Due, syncedAt))
-	require.Equal(t, []domain.ExecutionStepKind{domain.StepSyncInputs, domain.StepPrepare}, kinds(decide(t, managed, observed, syncedAt.Add(time.Minute))), "synced copies past their refresh are due")
+	require.Equal(t, []domain.ExecutionStepKind{domain.StepPrepare}, kinds(decide(t, managed, runningEnvironment("env-m"), managed.Desk.SeatedAt)))
 }
 
 // A seating needs its time and applies once, only to a Queued execution.

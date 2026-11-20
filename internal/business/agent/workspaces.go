@@ -34,7 +34,7 @@ func newManagedComputers(cfg ComputerConfig, computers command.ComputerPort) (*e
 	if strings.TrimSpace(cfg.RelayAddress) == "" {
 		return nil, nil
 	}
-	return execution.NewManagedComputers(relayClient(), cfg.RelayAddress, execution.ManagedAddresses{Gateway: cfg.MCPAddress, Content: cfg.ContentAddress, API: cfg.APIAddress, Telemetry: cfg.TelemetryAddress}, cfg.Token, computers)
+	return execution.NewManagedComputers(relayClient(), cfg.RelayAddress, execution.ManagedAddresses{Gateway: cfg.MCPAddress, API: cfg.APIAddress, Telemetry: cfg.TelemetryAddress}, cfg.Token, computers)
 }
 
 // newWorkspaceFileSigner signs Agent's links to Managed Works' files with a

@@ -221,7 +221,7 @@ func TestManagedProviderConnectorsTakeOnlyTheirTargetCredentialThroughTheLocalPr
 	f := newManagedWork(t)
 	targets := &providerTargets{token: "docs-access-1", expiresAt: time.Now().Add(time.Hour)}
 	supplies := command.NewEnvironmentSupplies(authorizationcatalogtest.NoRepositories{}, targets, f.storage, &commandtest.Accounts{Now: time.Now})
-	f.steps.handler = command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, f.steps.executions, f.steps.environment, f.steps.harness, f.steps.desks, supplies, nil)
+	f.steps.handler = command.NewReconcileExecutionHandler(time.Now, fixtureLease, fixtureCreationWaits, f.steps.executions, f.steps.environment, f.steps.harness, f.steps.desks, supplies)
 
 	remote := connectorcatalogtest.Remote().SelectedConnector
 	lasting := connectorcatalogtest.Remote().SelectedConnector
