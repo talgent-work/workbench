@@ -12,21 +12,21 @@ Each directory of a Work holds one kind of file and lasts as long as its owner k
 | Directory | Holds | You | Lasts |
 |---|---|---|---|
 | `$TALGENT_WORK_ROOT` | this Work's own files: drafts, builds, notes | write | a Work with a Session Workspace: while the Work exists, browsable by people, reclaimed after it closes. Any other Work: until the sandbox ends |
-| `$TALGENT_WORK_ROOT/inputs` | the Work's inputs, its Attachments: on a Cloud, mounted with their current content; on a Managed Computer, only the files you fetched | read | a Work with a Session Workspace |
+| `$TALGENT_WORK_ROOT/inputs` | the Work's inputs, its Attachments (see Reading an input) | read; on a Managed Computer, also download into it | a Work with a Session Workspace |
 | `$TALGENT_WORK_ROOT/repos` | the checked-out repositories, each on its checked-out branch | write | a Work with a Session Workspace, with its workspace |
 | `$HOME` | on a Cloud, your HOME: personal memory and configuration, shared by every Work of your Agent, including those running now. On a Managed Computer, the machine owner's own home | write on a Cloud; leave it as it is on a Managed Computer | across Works |
 
 ## Reading an input
 
-On a Cloud, read an input straight from `inputs/`.
+On a Cloud, `inputs/` is mounted with the inputs' current content: read them there.
 
-On a Managed Computer, `inputs/` holds only what you fetched. When you need an input, list the Work's inputs and download that one into `inputs/`, through the `talgent` MCP server's input tools when the Work has them, otherwise `talgent-api:reading-inputs`. Each download is a snapshot: note its `updatedAt`, and fetch it again when you need its current content.
+On a Managed Computer, `inputs/` holds only the inputs you downloaded. When you need an input, list the Work's inputs and download that one into `inputs/`, through the `talgent` MCP server's input tools when the Work has them, otherwise `talgent-api:reading-inputs`. Each download is a snapshot: note its `updatedAt`, and download it again when you need its current content.
 
-A notice that an input changed names the file, the operation and the time. Apply it to your snapshots: after a delete, remove that file from `inputs/`; after a rename, rename your snapshot or fetch it again under its new name.
+A notice that an input changed names the file, the operation and the time. Apply it to your snapshots: after a delete, remove that file from `inputs/`; after a rename, rename your snapshot or download it again under its new name.
 
 ## What goes where
 
-- **A deliverable**: drafted under `$TALGENT_WORK_ROOT`, outside `inputs/`, and published as an Artifact from there. A workspace file reaches nobody until it is published.
+- **A deliverable**: drafted under `$TALGENT_WORK_ROOT`, outside `inputs/`, and published as an Artifact from there. `inputs/` is a place to read, never a source to publish from. A workspace file reaches nobody until it is published.
 - **A change to a repository**: committed on its branch under `$TALGENT_WORK_ROOT/repos`, following the repository's own conventions.
 - **An Attachment you would change**: copied into `$TALGENT_WORK_ROOT`; the change is published as a new Artifact or agreed with whoever owns the Attachment.
 - **A Project's facts**: where a Work of a Project's product context says they are.
