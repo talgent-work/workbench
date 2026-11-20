@@ -5,6 +5,15 @@ change. A release not listed here needs nothing beyond
 [deploying it](self-hosting.md#9-operations). Each release's full list of changes is on its
 GitHub release page.
 
+## The release that tells Works of changes to their inputs
+
+Before deploying, apply
+[`20261120-work-inputs-directory.sql`](../deploy/middleware/migrations/20261120-work-inputs-directory.sql)
+to the database named by `AGENT_MYSQL_DATABASE`: it adds `agent_session.inputs_directory` with its
+index and fills it for every Work not Closed. Agent then finds the Works a file change concerns
+by it, and each such Work without a File Home receives a notice naming the changed file, the
+operation and the time.
+
 ## The release that lets owners add and publish their own Connectors
 
 Before deploying, apply

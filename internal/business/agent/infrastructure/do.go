@@ -64,22 +64,25 @@ type agentWorkDO struct {
 	WorkCallerID         string `xorm:"work_caller_id varchar(255)"`
 	// WorkKeyKind and WorkKeyID are NULL for a Work without a Work Key, so
 	// the unique index binds only Works with one.
-	WorkKeyKind     *string `xorm:"work_key_kind varchar(32)"`
-	WorkKeyID       *string `xorm:"work_key_id varchar(255)"`
-	FileHomeKind    string  `xorm:"file_home_kind varchar(32)"`
-	FileHomeID      string  `xorm:"file_home_id varchar(255)"`
-	StartedBy       string  `xorm:"started_by varchar(255)"`
-	ComputerID      string  `xorm:"computer_id varchar(36)"`
-	ComputerKind    string  `xorm:"computer_kind varchar(16)"`
-	ID              string  `xorm:"id pk varchar(36)"`
-	AgentID         string  `xorm:"agent_id varchar(36)"`
-	State           uint8   `xorm:"state tinyint"`
-	Capabilities    string  `xorm:"capabilities text"`
-	ContextRef      string  `xorm:"context_ref varchar(36)"`
-	AgentHarness    string  `xorm:"agent_harness varchar(64)"`
-	LocatedLayout   string  `xorm:"located_layout JSON"`
-	DisplayTitle    string  `xorm:"display_title varchar(200)"`
-	StartingContext string  `xorm:"starting_context"`
+	WorkKeyKind   *string `xorm:"work_key_kind varchar(32)"`
+	WorkKeyID     *string `xorm:"work_key_id varchar(255)"`
+	FileHomeKind  string  `xorm:"file_home_kind varchar(32)"`
+	FileHomeID    string  `xorm:"file_home_id varchar(255)"`
+	StartedBy     string  `xorm:"started_by varchar(255)"`
+	ComputerID    string  `xorm:"computer_id varchar(36)"`
+	ComputerKind  string  `xorm:"computer_kind varchar(16)"`
+	ID            string  `xorm:"id pk varchar(36)"`
+	AgentID       string  `xorm:"agent_id varchar(36)"`
+	State         uint8   `xorm:"state tinyint"`
+	Capabilities  string  `xorm:"capabilities text"`
+	ContextRef    string  `xorm:"context_ref varchar(36)"`
+	AgentHarness  string  `xorm:"agent_harness varchar(64)"`
+	LocatedLayout string  `xorm:"located_layout JSON"`
+	// InputsDirectory is the DirectoryKey of the Work's located inputs,
+	// fixed at creation; empty when it has none.
+	InputsDirectory string `xorm:"inputs_directory char(64)"`
+	DisplayTitle    string `xorm:"display_title varchar(200)"`
+	StartingContext string `xorm:"starting_context"`
 	// RepresentedPerson is the person the Work's Agent represents; empty for
 	// one that represents no person.
 	RepresentedPerson string `xorm:"represented_person varchar(255)"`

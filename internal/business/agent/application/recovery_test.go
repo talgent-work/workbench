@@ -360,20 +360,32 @@ func TestCredentialChangeReachesTheReconciliationOfItsWorks(t *testing.T) {
 // every Managed Work reading it, which syncs its inputs.
 func TestInputChangeReachesTheReconciliationOfItsManagedWorks(t *testing.T) {
 	inputs := map[string][]string{}
-	f := newRecoveryFixture(&application.Application{}, executionLookups{inputs: inputs}, &commandtest.Storage{})
+	f := newRecoveryFixture(&application.Application{WorkQueries: noInputReaders{}}, executionLookups{inputs: inputs}, &commandtest.Storage{})
 	managed := f.execution(t, "work-1", domain.RealizationManaged, bound(t))
 	cloud := f.execution(t, "work-2", domain.RealizationCloud, bound(t))
 	inputs["owner-1"] = []string{managed, cloud}
-	require.NoError(t, f.recovery.InputsChanged(context.Background(), domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "w"}}, Name: "owner-1"}))
+	require.NoError(t, f.recovery.InputsChanged(context.Background(), changeIn("owner-1")))
 	require.Equal(t, []string{managed}, f.enqueuer.reconciliations(t))
-	require.NoError(t, f.recovery.InputsChanged(context.Background(), domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "w"}}, Name: "owner-unread"}))
+	require.NoError(t, f.recovery.InputsChanged(context.Background(), changeIn("owner-unread")))
 	require.Len(t, f.enqueuer.keys, 1)
-	require.Error(t, f.recovery.InputsChanged(context.Background(), domain.Directory{}))
+	require.Error(t, f.recovery.InputsChanged(context.Background(), domain.InputChange{}))
 
 	f.environment.Observation = domain.EnvironmentObservation{Environments: []domain.ObservedEnvironment{{ID: "environment", Running: true}}}
 	require.NoError(t, f.recovery.ReconcileExecution(context.Background(), managed))
 	require.Equal(t, 1, f.environment.Synced, "the woken reconciliation syncs the inputs")
 	require.Zero(t, f.environment.Delivered, "an input change delivers no credentials")
+}
+
+// noInputReaders is a store where no Work reads any Directory as its inputs.
+type noInputReaders struct{ query.WorkQueryRepository }
+
+func (noInputReaders) ListUnclosedWorksReadingInputs(context.Context, domain.Directory, string, int) ([]string, error) {
+	return nil, nil
+}
+
+func changeIn(name string) domain.InputChange {
+	return domain.InputChange{ID: "change-" + name, Directory: domain.Directory{Owner: []domain.OwnerFact{{Condition: domain.ConditionWork, Value: "w"}}, Name: name},
+		File: "brief.md", Operation: domain.FileAdded, At: time.Now()}
 }
 
 // Delivering a queued reclamation task sends exactly its request through
