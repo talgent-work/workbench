@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   `context_ref` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Harness Session reference kept across process restarts',
   `agent_harness` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Agent Harness chosen at creation, kept for the Work''s life',
   `located_layout` json NOT NULL COMMENT 'Directories its definition''s Work Layout located at creation, each with its path and access mode, its located inputs and its publication target; no mounts on a Managed Computer',
+  `inputs_directory` char(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'SHA-256 key of the Work''s located inputs Directory, fixed at creation; empty when it has none. Finds the Works a file change concerns',
   `display_title` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'A Personal Work''s display title: its first input''s first line, changed by its owner; empty for any other Work',
   `starting_context` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'JSON of the Work this one started from and the context position; empty when it started afresh',
   `represented_person` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'Person the Work''s Agent represents, fixed at creation; empty when it represents none',
@@ -123,7 +124,8 @@ CREATE TABLE IF NOT EXISTS `agent_session` (
   KEY `idx_represented_person_deleted_at_created_at_id` (`represented_person`,`deleted_at`,`created_at`,`id`),
   KEY `idx_owning_application_deleted_at_created_at_id` (`owning_application`,`deleted_at`,`created_at`,`id`),
   KEY `idx_started_by_deleted_at_updated_at_created_at_id` (`started_by`,`deleted_at`,`updated_at`,`created_at`,`id`),
-  KEY `idx_computer_id_state_deleted_at_id` (`computer_id`,`state`,`deleted_at`,`id`) COMMENT 'Presence changes find the Works running on a Computer'
+  KEY `idx_computer_id_state_deleted_at_id` (`computer_id`,`state`,`deleted_at`,`id`) COMMENT 'Presence changes find the Works running on a Computer',
+  KEY `idx_inputs_directory_deleted_at_id` (`inputs_directory`,`deleted_at`,`id`) COMMENT 'File changes find the Works reading a Directory as their inputs'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentWork conversation and Harness process lifecycle authority';
 
 CREATE TABLE IF NOT EXISTS `agent_session_state_history` (

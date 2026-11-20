@@ -53,6 +53,20 @@ func RecoveryProcessors(recovery *application.Recovery, logger *slog.Logger) []t
 				}
 				return err
 			}),
+		processor(logger, agenttask.DeliverInputChangeNoticeType, func() *agenttaskv1.DeliverInputChangeNoticeTaskV1 {
+			return &agenttaskv1.DeliverInputChangeNoticeTaskV1{}
+		},
+			func(ctx context.Context, p *agenttaskv1.DeliverInputChangeNoticeTaskV1) error {
+				err := recovery.DeliverInputChangeNotice(ctx, p.GetWorkId(), agenttask.InputChangeOf(p))
+				if err != nil && pkgtaskqueue.LastAttempt(ctx) {
+					// Agent keeps no obligation for the notice: it ends here,
+					// and only this error shows it.
+					execution, _ := taskqueue.ExecutionInfoFromContext(ctx)
+					logger.ErrorContext(ctx, "input change notice failed", slog.String("work_id", p.GetWorkId()),
+						slog.String("change_id", p.GetChangeId()), slog.String("task_id", execution.TaskID()), slog.Any("error", err))
+				}
+				return err
+			}),
 		processor(logger, agenttask.SweepRecoveryType, func() *agenttaskv1.SweepRecoveryTaskV1 { return &agenttaskv1.SweepRecoveryTaskV1{} },
 			func(ctx context.Context, _ *agenttaskv1.SweepRecoveryTaskV1) error { return recovery.Sweep(ctx) }),
 	}, retired(logger, retiredRecoveryTypes)...)

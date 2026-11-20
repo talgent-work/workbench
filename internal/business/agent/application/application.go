@@ -10,25 +10,28 @@ import (
 )
 
 type Commands struct {
-	EnsureAgentDefinition  *command.EnsureAgentDefinitionHandler
-	ChangeAgentAppearance  *command.ChangeAgentAppearanceHandler
-	ChangeAgentSoul        *command.ChangeAgentSoulHandler
-	ChangeWorkDefaults     *command.ChangeAgentWorkDefaultsHandler
-	SendMessage            *command.SendWorkMessageHandler
-	ReplyToInteraction     *command.ReplyToWorkInteractionHandler
-	PrepareWorkExecution   *command.PrepareWorkExecutionHandler
-	EndWorkExecution       *command.EndWorkExecutionHandler
-	RecoverWork            *command.RecoverWorkHandler
-	ReconcileDesks         *command.ReconcileDesksHandler
-	RespondToInteraction   *command.RespondWorkInteractionHandler
-	ResumeWork             *command.ResumeWorkHandler
-	RestartWork            *command.RestartWorkHandler
-	StopWork               *command.StopWorkHandler
-	CloseWork              *command.CloseWorkHandler
-	DeliverInput           *command.DeliverWorkInputHandler
-	CreateWork             *command.CreateWorkHandler
-	ApplyExecutionFeedback *command.ApplyExecutionFeedbackHandler
-	ExecutionCoordination  *command.ExecutionCoordination
+	EnsureAgentDefinition *command.EnsureAgentDefinitionHandler
+	ChangeAgentAppearance *command.ChangeAgentAppearanceHandler
+	ChangeAgentSoul       *command.ChangeAgentSoulHandler
+	ChangeWorkDefaults    *command.ChangeAgentWorkDefaultsHandler
+	SendMessage           *command.SendWorkMessageHandler
+	ReplyToInteraction    *command.ReplyToWorkInteractionHandler
+	PrepareWorkExecution  *command.PrepareWorkExecutionHandler
+	EndWorkExecution      *command.EndWorkExecutionHandler
+	RecoverWork           *command.RecoverWorkHandler
+	ReconcileDesks        *command.ReconcileDesksHandler
+	RespondToInteraction  *command.RespondWorkInteractionHandler
+	ResumeWork            *command.ResumeWorkHandler
+	RestartWork           *command.RestartWorkHandler
+	StopWork              *command.StopWorkHandler
+	CloseWork             *command.CloseWorkHandler
+	DeliverInput          *command.DeliverWorkInputHandler
+	// DeliverInputChangeNotice is Agent's own delivery of an input change
+	// notice (Notify changed inputs).
+	DeliverInputChangeNotice *command.DeliverInputChangeNoticeHandler
+	CreateWork               *command.CreateWorkHandler
+	ApplyExecutionFeedback   *command.ApplyExecutionFeedbackHandler
+	ExecutionCoordination    *command.ExecutionCoordination
 }
 
 type Queries struct {
@@ -106,6 +109,7 @@ func NewApplication(
 	stop *command.StopWorkHandler,
 	close *command.CloseWorkHandler,
 	input *command.DeliverWorkInputHandler,
+	notices *command.DeliverInputChangeNoticeHandler,
 	createSession *command.CreateWorkHandler,
 	feedback *command.ApplyExecutionFeedbackHandler,
 	getAgent *query.GetAgentDefinitionHandler,
@@ -137,25 +141,26 @@ func NewApplication(
 		Accounts:          accounts,
 		Logger:            logger,
 		Commands: Commands{
-			EnsureAgentDefinition:  ensure,
-			ChangeAgentAppearance:  appearance,
-			ChangeAgentSoul:        command.NewChangeAgentSoulHandler(definitions),
-			ChangeWorkDefaults:     command.NewChangeAgentWorkDefaultsHandler(definitions, models),
-			SendMessage:            sendMessage,
-			ReplyToInteraction:     reply,
-			PrepareWorkExecution:   prepare,
-			EndWorkExecution:       endExecution,
-			RecoverWork:            recovery,
-			ReconcileDesks:         reconcileDesks,
-			RespondToInteraction:   interaction,
-			ResumeWork:             resume,
-			RestartWork:            restart,
-			StopWork:               stop,
-			CloseWork:              close,
-			DeliverInput:           input,
-			CreateWork:             createSession,
-			ApplyExecutionFeedback: feedback,
-			ExecutionCoordination:  coordination,
+			EnsureAgentDefinition:    ensure,
+			ChangeAgentAppearance:    appearance,
+			ChangeAgentSoul:          command.NewChangeAgentSoulHandler(definitions),
+			ChangeWorkDefaults:       command.NewChangeAgentWorkDefaultsHandler(definitions, models),
+			SendMessage:              sendMessage,
+			ReplyToInteraction:       reply,
+			PrepareWorkExecution:     prepare,
+			EndWorkExecution:         endExecution,
+			RecoverWork:              recovery,
+			ReconcileDesks:           reconcileDesks,
+			RespondToInteraction:     interaction,
+			ResumeWork:               resume,
+			RestartWork:              restart,
+			StopWork:                 stop,
+			CloseWork:                close,
+			DeliverInput:             input,
+			DeliverInputChangeNotice: notices,
+			CreateWork:               createSession,
+			ApplyExecutionFeedback:   feedback,
+			ExecutionCoordination:    coordination,
 		},
 		Queries: Queries{
 			GetAgentSoul:                 query.NewGetAgentSoulHandler(definitions),

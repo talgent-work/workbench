@@ -32,8 +32,8 @@ func (h *CloseWorkHandler) Handle(ctx context.Context, request WorkControl) erro
 }
 
 // CloseForRemovedApplication closes a Work of an Application that Account
-// removed (Close removed Application's Works). Agent itself closes it, the
-// one exception to Standalone Work control: the definition, which the caller
+// removed (Close removed Application's Works). Agent itself closes it, an
+// exception to Standalone Work control: the definition, which the caller
 // read, must have recorded that its own Application was removed and must be
 // the Work's, so a task naming another Work is refused. A running Work is
 // stopped first between Turns, as any close; a Turn still active refuses it,

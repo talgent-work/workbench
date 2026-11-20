@@ -12,7 +12,16 @@ import (
 
 // InputChanges follows a change of the files in a Directory.
 type InputChanges interface {
-	InputsChanged(ctx context.Context, directory domain.Directory) error
+	InputsChanged(ctx context.Context, change domain.InputChange) error
+}
+
+// fileOperations are the operations of Storage's contract, as Agent names
+// them.
+var fileOperations = map[storageintegrationv1.FileOperation]domain.FileOperation{
+	storageintegrationv1.FileOperation_FILE_OPERATION_CREATED:  domain.FileAdded,
+	storageintegrationv1.FileOperation_FILE_OPERATION_REPLACED: domain.FileReplaced,
+	storageintegrationv1.FileOperation_FILE_OPERATION_RENAMED:  domain.FileRenamed,
+	storageintegrationv1.FileOperation_FILE_OPERATION_DELETED:  domain.FileDeleted,
 }
 
 // FileChangedHandler consumes Storage's File Change Published Fact. Agent
@@ -42,5 +51,9 @@ func (h *FileChangedHandler) Handle(ctx context.Context, msg integrationmessage.
 	if !directory.Present() || len(directory.Owner) == 0 {
 		return nil
 	}
-	return h.changes.InputsChanged(ctx, directory)
+	change := domain.InputChange{ID: changed.GetEventId(), Directory: directory, File: changed.GetName(), PreviousFile: changed.GetPreviousName(), Operation: fileOperations[changed.GetOperation()]}
+	if changed.GetOccurredAt() != nil {
+		change.At = changed.GetOccurredAt().AsTime()
+	}
+	return h.changes.InputsChanged(ctx, change)
 }

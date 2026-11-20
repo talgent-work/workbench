@@ -36,6 +36,8 @@ type sessionCommandRecorder struct {
 	// Dispatcher keeps it.
 	buffered map[string]string
 	replies  map[string]bool
+	// inputWorks names the Work each buffered input identity was handed to.
+	inputWorks map[string]string
 }
 
 // observe sets Dispatcher's current observation of a launched process.
@@ -54,7 +56,7 @@ func (p *sessionCommandRecorder) ObserveProcess(context.Context, string, string)
 // The recorder stands in for Dispatcher's input buffer: it holds each input
 // identity once until the test settles it, and refuses other content under a
 // buffered identity.
-func (p *sessionCommandRecorder) BufferInput(_ context.Context, _ string, input command.ExecutionInput) (command.InputHandOff, error) {
+func (p *sessionCommandRecorder) BufferInput(_ context.Context, workID string, input command.ExecutionInput) (command.InputHandOff, error) {
 	if p.inputError != nil {
 		return "", p.inputError
 	}
@@ -70,7 +72,24 @@ func (p *sessionCommandRecorder) BufferInput(_ context.Context, _ string, input 
 		p.buffered = map[string]string{}
 	}
 	p.buffered[input.ID] = input.Text
+	if p.inputWorks == nil {
+		p.inputWorks = map[string]string{}
+	}
+	p.inputWorks[input.ID] = workID
 	return command.InputBuffered, nil
+}
+
+// bufferedFor is the text of each input buffered for the Work.
+func (p *sessionCommandRecorder) bufferedFor(workID string) []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var texts []string
+	for id, text := range p.buffered {
+		if p.inputWorks[id] == workID {
+			texts = append(texts, text)
+		}
+	}
+	return texts
 }
 
 func (p *sessionCommandRecorder) BufferResponse(_ context.Context, _ string, response command.InteractionResponse) (command.InputHandOff, error) {

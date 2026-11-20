@@ -61,6 +61,16 @@ func RemovedApplicationClose() []taskqueue.EnqueueOption {
 	return []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(RemovedApplicationCloseRetries), taskqueue.WithTimeout(RecoveryAttemptTimeout)}
 }
 
+// InputChangeNoticeRetries bounds the delivery of one input change notice.
+// Agent keeps no obligation for it, so a delivery that exhausts them is
+// logged as an error naming the Work, and nothing wakes it again.
+const InputChangeNoticeRetries = 10
+
+// InputChangeNotice is the policy of an input change notice delivery.
+func InputChangeNotice() []taskqueue.EnqueueOption {
+	return []taskqueue.EnqueueOption{taskqueue.WithMaxRetry(InputChangeNoticeRetries), taskqueue.WithTimeout(RecoveryAttemptTimeout)}
+}
+
 const (
 	ReconcileExecutionType   taskqueue.TaskType = "agent.execution.reconcile.v1"
 	RunLongExecutionStepType taskqueue.TaskType = "agent.execution.run-long-step.v1"
@@ -75,6 +85,9 @@ const (
 	// CloseRemovedApplicationWorkType closes one Work of a removed
 	// Application.
 	CloseRemovedApplicationWorkType taskqueue.TaskType = "agent.work.close-removed-application.v1"
+	// DeliverInputChangeNoticeType delivers one Work the notice of one
+	// change in its located inputs.
+	DeliverInputChangeNoticeType taskqueue.TaskType = "agent.work.deliver-input-change-notice.v1"
 )
 
 // NewReconcileExecution wakes the execution's short steps.

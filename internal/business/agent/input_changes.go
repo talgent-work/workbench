@@ -21,9 +21,11 @@ type InputChangeConfig struct {
 
 const defaultInputChangeGroup = "agent-input-changes"
 
-// InputChangeModule consumes the File Change Published Fact and hands the
-// Works on Managed Computers whose input source changed their current
-// inputs. It requires RecoveryModule and a Kafka consumer factory.
+// InputChangeModule consumes the File Change Published Fact: the Works on
+// Managed Computers whose inputs changed receive their current inputs, and
+// every unclosed Work reading them is told of the change by its own bounded
+// task (Notify changed inputs). It requires RecoveryModule, whose queue runs
+// those tasks, and a Kafka consumer factory.
 var InputChangeModule = fx.Module("agent.input_changes",
 	fx.Invoke(consumeInputChanges),
 )
