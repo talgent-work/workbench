@@ -16,8 +16,8 @@ export const MAX_SOURCE_BYTES = 64 * 1024 * 1024
 export const MAX_REQUEST_BYTES = base64Length(MAX_SOURCE_BYTES) + 1024 * 1024
 // A request body is read this far before it waits for a completion slot.
 export const UNHELD_REQUEST_BYTES = 1024 * 1024
-// The directories a Work only reads, which a publication never reads
-// from.
+// The directories of what the Work was given, its inputs and the knowledge
+// it reads, which a publication never takes from.
 const RESERVED_DIRS = ['inputs', 'knowledge']
 
 // Requests completed at a time, over both routes, each holding up to a
@@ -32,7 +32,7 @@ export function holdingCompletion<T>(task: () => Promise<T>): Promise<T> {
 const noFile = (field: string) => `${field} names no file in the Work's workspace.`
 const notOneFile = (field: string) => `${field} is not one regular file in the Work's workspace, reached without symbolic links.`
 const TOO_LARGE = 'The source file is larger than 64 MiB. Split it or compress it into a smaller archive.'
-const reserved = (field: string, dir: string) => `${field} is under ${dir}/, which the Work only reads. Publish a file outside inputs/ and knowledge/.`
+const reserved = (field: string, dir: string) => `${field} is under ${dir}/, which holds what the Work was given, not what it made. Publish a file outside inputs/ and knowledge/.`
 const OVER_REQUEST = 'The files published in this request exceed its size limit. Publish them in separate requests.'
 
 // Why a source is refused: missing names no file at all; anything else is

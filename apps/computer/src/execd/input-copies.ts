@@ -1,17 +1,19 @@
-import { chmod, lstat, readdir, readFile, rm } from 'node:fs/promises'
+import { chmod, lstat, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isObject } from '../json.ts'
 import { isErrno } from '../store.ts'
 import { validId } from './works.ts'
 
-// Earlier releases kept read-only copies of each Work's inputs in its
-// inputs/ directory and recorded each Work's downloads under recordsDir. A
-// Work's Agent now downloads the inputs it needs itself, and an old copy
-// would read as current, so the first start after the upgrade removes every
-// recorded copy, any download left unfinished and the record, and gives
-// inputs/ back to the Work. Records gone, later starts find nothing to do
-// and never touch inputs/. A Work whose cleanup fails keeps its record, so
-// the next start finishes it.
+// Earlier releases kept copies of a Work's inputs in its inputs/ directory,
+// each file and the directory read-only, and a download record per Work
+// under recordsDir. A Work's Agent now downloads the inputs it needs itself,
+// and an old copy would read as current, so the first start after the
+// upgrade clears the inputs/ of each recorded Work once: it removes every
+// read-only file, which only those releases left there, and any download
+// they left unfinished, makes inputs/ writable, then deletes the record.
+// Records gone, later starts never touch inputs/. A start cut short goes on
+// at the next one, whose read-only test still spares what an Agent wrote. A
+// copy that cannot be removed is logged and left for the person; it is not
+// tried again.
 
 // The suffix of a download the earlier releases had not finished.
 const PARTIAL_DOWNLOAD = '.talgent-download'
@@ -32,56 +34,41 @@ export async function removeInputCopies(options: InputCopies): Promise<void> {
     if (isErrno(error, 'ENOENT')) return
     throw error
   }
-  let failed = false
   for (const name of names) {
     const workId = name.endsWith('.json') ? name.slice(0, -'.json'.length) : ''
-    const record = join(recordsDir, name)
-    try {
-      if (validId(workId)) await removeCopies(join(options.workRoot(workId), 'inputs'), await recordedNames(record))
-      await rm(record, { force: true })
-    } catch (error) {
-      failed = true
-      log(`Work ${workId} inputs: cannot remove the copies earlier releases downloaded, the next start tries again: ${reasonOf(error)}`)
-    }
+    if (validId(workId)) await clearInputs(join(options.workRoot(workId), 'inputs'), (message) => log(`Work ${workId} inputs: ${message}`))
+    await rm(join(recordsDir, name), { force: true })
   }
-  if (!failed) await rm(recordsDir, { recursive: true, force: true })
+  await rm(recordsDir, { recursive: true, force: true })
 }
 
-async function recordedNames(record: string): Promise<string[]> {
-  try {
-    const parsed = JSON.parse(await readFile(record, 'utf8')) as unknown
-    return isObject(parsed) ? Object.keys(parsed) : []
-  } catch (error) {
-    // A record cut short by a crash names nothing.
-    if (error instanceof SyntaxError) return []
-    throw error
-  }
-}
-
-// Removes the recorded copies and unfinished downloads from dir, then lets
-// the Work write there; anything else in dir stays.
-async function removeCopies(dir: string, recorded: string[]): Promise<void> {
+// Removes the copies and unfinished downloads from dir, then lets the Work
+// write there; anything else in dir stays.
+async function clearInputs(dir: string, log: (message: string) => void): Promise<void> {
   try {
     if (!(await lstat(dir)).isDirectory()) return
+    await chmod(dir, 0o755)
   } catch (error) {
     if (isErrno(error, 'ENOENT')) return
-    throw error
+    return log(`cannot open inputs/ to the Work: ${messageOf(error)}`)
   }
-  // The earlier releases left dir read-only.
-  await chmod(dir, 0o755)
-  const copies = new Set(recorded)
+  let removed = 0
   for (const name of await readdir(dir)) {
-    if (!copies.has(name) && !name.endsWith(PARTIAL_DOWNLOAD)) continue
     const path = join(dir, name)
-    // Only a file is a copy: a directory or link of that name was placed by someone else.
-    if (!(await lstat(path)).isFile()) continue
-    // Windows refuses to remove a read-only file.
-    await chmod(path, 0o644)
-    await rm(path, { force: true })
+    try {
+      const info = await lstat(path)
+      if (!info.isFile() || (!name.endsWith(PARTIAL_DOWNLOAD) && (info.mode & 0o222) !== 0)) continue
+      // Windows refuses to remove a read-only file.
+      await chmod(path, 0o644)
+      await rm(path, { force: true })
+      removed += 1
+    } catch (error) {
+      log(`cannot remove ${JSON.stringify(name)}, an outdated copy an earlier release downloaded; remove it by hand: ${messageOf(error)}`)
+    }
   }
+  if (removed > 0) log(`removed ${removed} outdated copies an earlier release downloaded`)
 }
 
-function reasonOf(error: unknown): string {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code
-  return typeof code === 'string' ? code : 'failed'
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
