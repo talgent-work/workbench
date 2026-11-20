@@ -11,9 +11,9 @@ import (
 )
 
 // Only a short-lived credential for a Connector whose address lies on its
-// target's declared hosts is delivered; a refused one is observed as
+// target's declared hosts and paths is delivered; a refused one is observed as
 // unavailable, with why.
-func TestManagedConnectorCredentialIsShortLivedAndStaysOnItsTargetHosts(t *testing.T) {
+func TestManagedConnectorCredentialIsShortLivedAndStaysOnItsTarget(t *testing.T) {
 	remote := connectorcatalogtest.Remote().SelectedConnector
 	material := command.ServiceAccessMaterial{ServiceRequirement: command.ServiceRequirement{Provider: remote.Provider, Service: remote.Provider, Target: remote.Target},
 		ServiceCredentialMaterial: command.ServiceCredentialMaterial{Token: "docs-access", ExpiresAt: time.Now().Add(time.Hour), Hosts: []string{"docs.example.com"}}}
@@ -21,15 +21,18 @@ func TestManagedConnectorCredentialIsShortLivedAndStaysOnItsTargetHosts(t *testi
 	available := []command.ServiceAccessStatus{{Service: remote.Provider, Target: remote.Target, Status: "credential_available"}}
 	for name, c := range map[string]struct {
 		hosts     []string
+		paths     []string
 		expiresAt time.Time
 		reason    string
 	}{
 		"exact host":     {hosts: []string{"docs.example.com"}, expiresAt: material.ExpiresAt},
 		"subdomains":     {hosts: []string{"*.example.com"}, expiresAt: material.ExpiresAt},
-		"another domain": {hosts: []string{"*.example.org"}, expiresAt: material.ExpiresAt, reason: "outside_target_hosts"},
+		"another domain": {hosts: []string{"*.example.org"}, expiresAt: material.ExpiresAt, reason: "outside_target"},
 		"no expiry":      {hosts: []string{"docs.example.com"}, reason: "not_short_lived"},
+		"path beneath":   {hosts: []string{"docs.example.com"}, paths: []string{"/other", "/mcp/*"}, expiresAt: material.ExpiresAt},
+		"another path":   {hosts: []string{"docs.example.com"}, paths: []string{"/mcp/v2/*"}, expiresAt: material.ExpiresAt, reason: "outside_target"},
 	} {
-		material.Hosts, material.ExpiresAt = c.hosts, c.expiresAt
+		material.Hosts, material.Paths, material.ExpiresAt = c.hosts, c.paths, c.expiresAt
 		credentials, access := connectorCredentials(snapshot, []command.ServiceAccessMaterial{material}, available)
 		if c.reason == "" {
 			require.Equal(t, []workConnectorCredential{{ID: remote.ID, URL: remote.URL, Token: "docs-access"}}, credentials, name)

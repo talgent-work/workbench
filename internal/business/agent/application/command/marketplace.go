@@ -51,6 +51,10 @@ type ServiceCredentialMaterial struct {
 	// Hosts are the target's declared host patterns, the only hosts the
 	// credential is added to.
 	Hosts []string
+	// Paths and Methods are the target's declared path patterns and HTTP
+	// methods on those hosts; empty means every path or method.
+	Paths   []string
+	Methods []string
 }
 
 // ServiceCredentialUnavailable is Marketplace's refusal to supply a credential.

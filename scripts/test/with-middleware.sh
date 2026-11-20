@@ -12,7 +12,7 @@ TASK_SLOTS="${TALGENT_TEST_MYSQL_SLOTS:-8}"
 [[ "$TASK_SLOTS" =~ ^[1-9][0-9]?$ ]] || exit 2
 TASK_NETWORK="${TASK_NAME}-network"
 cleanup() {
-  docker rm -f "$TASK_NAME" "${TASK_NAME}-redis" "${TASK_NAME}-clickhouse" "${TASK_NAME}-nats" "${TASK_NAME}-collector" "${TASK_NAME}-keycloak" >/dev/null 2>&1 || true
+  docker rm -f "$TASK_NAME" "${TASK_NAME}-redis" "${TASK_NAME}-clickhouse" "${TASK_NAME}-nats" "${TASK_NAME}-collector" "${TASK_NAME}-keycloak" "${TASK_NAME}-oidc-provider" >/dev/null 2>&1 || true
   docker network rm "$TASK_NETWORK" >/dev/null 2>&1 || true
   rm -f "${TMPDIR:-/tmp}/talgent-test-${TASK_TOKEN}-"*.lock
 }
@@ -41,6 +41,11 @@ TASK_COLLECTOR_IMAGE=otel/opentelemetry-collector-contrib:0.150.1
 # The authorization server of the declared OAuth Provider in Marketplace's
 # credential supply tests; resource indicators (RFC 8707) are a feature flag.
 TASK_KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.8.2
+# The authorization server of a declared per-target OAuth Provider: Keycloak
+# binds one authorization to at most one resource indicator, so the per-target
+# tests use panva/node-oidc-provider, built from scripts/test/oidc-provider at
+# the version its package-lock.json pins.
+TASK_OIDC_PROVIDER_IMAGE=talgent-test-oidc-provider:9.13.3
 # Pull the missing images at once, then start every container before waiting
 # on any: a fresh CI runner otherwise downloads and boots them one by one.
 TASK_PULLS=()
@@ -50,8 +55,10 @@ for image in "$TASK_MYSQL_IMAGE" "$TASK_REDIS_IMAGE" "$TASK_CLICKHOUSE_IMAGE" "$
     TASK_PULLS+=("$!")
   fi
 done
+docker build -q -t "$TASK_OIDC_PROVIDER_IMAGE" "${TASK_ROOT}/scripts/test/oidc-provider" >/dev/null &
+TASK_PULLS+=("$!")
 for pull in "${TASK_PULLS[@]}"; do
-  wait "$pull" || { echo 'a test middleware image could not be pulled' >&2; exit 1; }
+  wait "$pull" || { echo 'a test middleware image could not be pulled or built' >&2; exit 1; }
 done
 docker run -d --name "$TASK_NAME" --network "$TASK_NETWORK" --memory 2g --cpus 2 \
   --tmpfs /var/lib/mysql:rw,size=768m -p 127.0.0.1::3306 \
@@ -62,6 +69,7 @@ docker run -d --name "${TASK_NAME}-clickhouse" --network "$TASK_NETWORK" --netwo
 docker run -d --name "${TASK_NAME}-keycloak" --network "$TASK_NETWORK" --memory 1g --cpus 2 -p 127.0.0.1::8080 \
   --mount "type=bind,src=${TASK_ROOT}/scripts/test/keycloak/realm.json,dst=/opt/keycloak/data/import/realm.json,readonly" \
   "$TASK_KEYCLOAK_IMAGE" start-dev --import-realm --features=resource-indicators >/dev/null
+docker run -d --name "${TASK_NAME}-oidc-provider" --network "$TASK_NETWORK" --memory 256m --cpus 1 -p 127.0.0.1::3000 "$TASK_OIDC_PROVIDER_IMAGE" >/dev/null
 # The entrypoint temporary socket server can answer SQL before network startup.
 for attempt in $(seq 1 90); do
   if docker exec -e MYSQL_PWD=fixture-only "$TASK_NAME" mysql --protocol=TCP -h127.0.0.1 -uroot -Nse 'SELECT 1' >/dev/null 2>&1; then break; fi
@@ -104,6 +112,12 @@ for attempt in $(seq 1 90); do
   if [[ "$attempt" == 90 ]]; then echo 'test Keycloak did not become ready' >&2; exit 1; fi
   sleep 1
 done
+export TALGENT_TEST_OIDC_PROVIDER_URL="http://$(docker port "${TASK_NAME}-oidc-provider" 3000/tcp)"
+for attempt in $(seq 1 30); do
+  if curl -sf "${TALGENT_TEST_OIDC_PROVIDER_URL}/.well-known/openid-configuration" >/dev/null 2>&1; then break; fi
+  if [[ "$attempt" == 30 ]]; then echo 'test OIDC provider did not become ready' >&2; exit 1; fi
+  sleep 1
+done
 (cd "$TASK_ROOT" && go run ./scripts/test/prepare)
-echo "Shared test middleware ready: MySQL (${TASK_SLOTS} initialized reusable schemas), Redis, NATS, ClickHouse, Collector, Keycloak" >&2
+echo "Shared test middleware ready: MySQL (${TASK_SLOTS} initialized reusable schemas), Redis, NATS, ClickHouse, Collector, Keycloak, OIDC provider" >&2
 "$@"

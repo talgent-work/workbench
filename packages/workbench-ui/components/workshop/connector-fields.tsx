@@ -1,13 +1,13 @@
 import { ComboBox, Description, FieldError, Input, Label, ListBox, Radio, RadioGroup, Select, TextArea, TextField } from "@heroui/react";
 import type { DeclaredProvider } from "@talgent/contracts/marketplace/public/v1/connections_pb";
-import { providerHosts, type ConnectorDraft, type DraftProblems } from "../../lib/connector-workshop";
+import { providerReach, type ConnectorDraft, type DraftProblems } from "../../lib/connector-workshop";
 
 type FieldProps = { draft: ConnectorDraft; set: (patch: Partial<ConnectorDraft>) => void; problems: DraftProblems; touched: boolean };
 
 export function NameField({ draft, set, problems, touched }: FieldProps) {
-  return <TextField value={draft.name} onChange={name => set({ name })} isInvalid={touched && Boolean(problems.name)} fullWidth variant="secondary" isRequired>
-    <Label>Name</Label><Input placeholder="acme-crm" autoComplete="off" />
-    {touched && problems.name ? <FieldError>{problems.name}</FieldError> : <Description>Unique among yours; other people may use the same name. Fixed once added.</Description>}
+  return <TextField value={draft.name} onChange={name => set({ name })} isInvalid={touched && Boolean(problems.name)} fullWidth variant="secondary">
+    <Label>Name</Label><Input aria-required="true" placeholder="acme-crm" autoComplete="off" />
+    {touched && problems.name ? <FieldError>{problems.name}</FieldError> : <Description>Unique among yours; other people may use the same name.</Description>}
   </TextField>;
 }
 
@@ -24,7 +24,7 @@ export function ProviderField({ draft, set, problems, providers }: Omit<FieldPro
   return <Select value={draft.provider || "none"} onChange={value => set({ provider: value === "none" ? "" : String(value) })} isDisabled={draft.transport === "stdio"} isInvalid={Boolean(problems.provider)} fullWidth variant="secondary">
     <Label>Signs in with</Label>
     <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
-    <Description>{chosen ? `Each person uses their own ${chosen.displayName} account. Reaches ${providerHosts(chosen).join(", ")}.` : "No sign-in: the server receives no credentials."} Fixed once added.</Description>
+    <Description>{chosen ? `Each person uses their own ${chosen.displayName} account. Reaches ${providerReach(chosen).join(", ")}.` : "No sign-in: the server receives no credentials."}</Description>
     {problems.provider && <FieldError>{problems.provider}</FieldError>}
     <Select.Popover><ListBox>
       <ListBox.Item id="none" textValue="No sign-in"><Label>No sign-in</Label><ListBox.ItemIndicator /></ListBox.Item>
@@ -35,12 +35,12 @@ export function ProviderField({ draft, set, problems, providers }: Omit<FieldPro
 
 export function AddressField({ draft, set, problems, touched }: FieldProps) {
   return draft.transport === "http"
-    ? <TextField value={draft.url} onChange={url => set({ url })} isInvalid={touched && Boolean(problems.url)} fullWidth variant="secondary" isRequired>
-      <Label>Server address</Label><Input placeholder="https://service.corp.example.com/mcp" autoComplete="off" inputMode="url" />
+    ? <TextField value={draft.url} onChange={url => set({ url })} isInvalid={touched && Boolean(problems.url)} fullWidth variant="secondary">
+      <Label>Server address</Label><Input aria-required="true" placeholder="https://service.corp.example.com/mcp" autoComplete="off" inputMode="url" />
       {touched && problems.url ? <FieldError>{problems.url}</FieldError> : <Description>Changes reach Works started afterwards.</Description>}
     </TextField>
-    : <TextField value={draft.command} onChange={command => set({ command })} isInvalid={touched && Boolean(problems.command)} fullWidth variant="secondary" isRequired>
-      <Label>Command</Label><Input placeholder="npx chrome-devtools-mcp@0.6.0" autoComplete="off" className="font-mono" spellCheck={false} />
+    : <TextField value={draft.command} onChange={command => set({ command })} isInvalid={touched && Boolean(problems.command)} fullWidth variant="secondary">
+      <Label>Command</Label><Input aria-required="true" placeholder="npx chrome-devtools-mcp@0.6.0" autoComplete="off" className="font-mono" spellCheck={false} />
       {touched && problems.command ? <FieldError>{problems.command}</FieldError>
         : <Description>Pin a package version, such as chrome-devtools-mcp@0.6.0 rather than @latest, so every Work runs the same server. Quote an argument that holds spaces. If it can’t start in a Work, it just won’t be available there.</Description>}
     </TextField>;

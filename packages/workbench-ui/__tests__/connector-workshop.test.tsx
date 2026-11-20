@@ -7,12 +7,14 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { DeclaredProvider } from "@talgent/contracts/marketplace/public/v1/connections_pb";
 import type { WorkStartConnector } from "@talgent/contracts/agent/public/v1/work_start_options_pb";
 import { EntryShellContext, personalPathsAt, type PageLayoutProps } from "../components/shell/entry-shell";
-import { draftProblems, emptyDraft } from "../lib/connector-workshop";
+import { Code, ConnectError } from "@connectrpc/connect";
+import { draftProblems, emptyDraft, refusedProblem } from "../lib/connector-workshop";
 import { connectorChoices, connectorLoadout } from "../lib/work-start-loadout";
 import { WorkshopPage } from "../pages/workshop-page";
 
 const userId = "01a11fb2-e6c2-701f-80b7-38c54aa2eae9";
-const github = { name: "github", displayName: "GitHub", targets: [{ name: "github-api", hosts: ["api.github.com", "*.github.example.com"] }] } as unknown as DeclaredProvider;
+const github = { name: "github", displayName: "GitHub", targets: [{ name: "github-api", hosts: ["api.github.com", "*.github.example.com"], paths: [] },
+  { name: "github-remote-mcp", hosts: ["api.githubcopilot.com"], paths: ["/mcp", "/mcp/"] }] } as unknown as DeclaredProvider;
 
 type Stored = { connectorId: string; name: string; state: string; transport: string; provider: string; description: string; category: string; iconDigest: string; connectorVersion: number;
   publishedAtUnixMs: bigint; publisher: { kind: string; own: boolean; displayName: string }; settings: { url: string; command: string; arguments: string[] } };
@@ -58,11 +60,24 @@ it("checks a draft as the Marketplace would before asking it", () => {
   const options = { adding: true, providers: [github], takenNames: ["acme-crm"] };
   expect(draftProblems({ ...emptyDraft, name: "Acme CRM", url: "https://crm.example.com/mcp" }, options).name).toMatch(/lowercase/);
   expect(draftProblems({ ...emptyDraft, name: "acme-crm", url: "https://crm.example.com/mcp" }, options).name).toMatch(/already have/);
-  expect(draftProblems({ ...emptyDraft, name: "gh", provider: "github", url: "https://evil.example.com/mcp" }, options).url).toMatch(/only reach api.github.com/);
+  const reach = "GitHub credentials only reach api.github.com, *.github.example.com, api.githubcopilot.com/mcp.";
+  expect(draftProblems({ ...emptyDraft, name: "gh", provider: "github", url: "https://evil.example.com/mcp" }, options).url).toBe(reach);
+  // A target that declares paths reaches only them on its hosts.
+  expect(draftProblems({ ...emptyDraft, name: "gh", provider: "github", url: "https://api.githubcopilot.com/other" }, options).url).toBe(reach);
+  expect(draftProblems({ ...emptyDraft, name: "gh", provider: "github", url: "https://api.githubcopilot.com/mcp/" }, options)).toEqual({});
   expect(draftProblems({ ...emptyDraft, name: "gh", provider: "github", url: "https://mcp.github.example.com/mcp" }, options)).toEqual({});
   expect(draftProblems({ ...emptyDraft, name: "gh", provider: "github", url: "https://mcp.github.example.com:8443/mcp" }, options).url).toBeTruthy();
   expect(draftProblems({ ...emptyDraft, name: "chrome", transport: "stdio", command: " " }, options).command).toBeTruthy();
   expect(draftProblems({ ...emptyDraft, name: "chrome", transport: "stdio", command: "node 'server" }, options).command).toBe("Close the single quote.");
+});
+
+it("words a refused address or name itself rather than showing the Marketplace's text", () => {
+  const refused = (code: Code) => new ConnectError("marketplace: credential target is not applicable", code);
+  const draft = { ...emptyDraft, name: "gh", provider: "github", url: "https://api.githubcopilot.com/mcp" };
+  expect(refusedProblem(refused(Code.InvalidArgument), draft, [github])).toEqual({ url: "GitHub credentials only reach api.github.com, *.github.example.com, api.githubcopilot.com/mcp." });
+  expect(refusedProblem(refused(Code.InvalidArgument), { ...draft, provider: "" }, [github])).toEqual({ url: "The Marketplace doesn’t accept this address." });
+  expect(refusedProblem(refused(Code.AlreadyExists), draft, [github])).toEqual({ name: "This name is taken. Choose another." });
+  expect(refusedProblem(refused(Code.Internal), draft, [github])).toBeUndefined();
 });
 
 it("marks two included Connectors of one name and chooses them by identity", () => {
@@ -76,12 +91,20 @@ it("marks two included Connectors of one name and chooses them by identity", () 
   expect(resolved.map(row => row.clashes)).toEqual([false, false]);
 });
 
-it("adds a private Connector and opens its page", async () => {
+it("opens the add page from the Add menu, its required fields marked without an asterisk", async () => {
   const user = userEvent.setup();
   renderWorkshop("/workshop");
   await user.click(await screen.findByRole("button", { name: /Add/ }));
   await user.click(await screen.findByRole("menuitem", { name: /Connector/ }));
+  // Required without an asterisk, as the prototype settles; assistive
+  // technology still hears it.
+  expect(await screen.findByRole("textbox", { name: "Name" })).toHaveAttribute("aria-required", "true");
+  expect(screen.getByRole("textbox", { name: "Server address" })).toHaveAttribute("aria-required", "true");
+}, 3000);
 
+it("adds a private Connector and opens its page", async () => {
+  const user = userEvent.setup();
+  renderWorkshop("/workshop/connectors/new");
   await user.click(await screen.findByRole("textbox", { name: "Name" }));
   await user.paste("acme-crm");
   await user.click(screen.getByRole("textbox", { name: "Server address" }));

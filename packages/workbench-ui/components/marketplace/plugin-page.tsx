@@ -53,7 +53,7 @@ export function PluginPage({ plugin }: { plugin: PluginRelease }) {
     });
   };
   const toggle = (value: InstalledPlugin) => actions.setEnabled.mutate({ installed: value, enabled: !value.enabled }, {
-    onSuccess: () => notify(`plugin:${plugin.slug}`, "default", `${presentation.name} ${value.enabled ? "disabled" : "enabled"}`),
+    onSuccess: () => notify(`plugin:${plugin.slug}`, "default", `${presentation.name} turned ${value.enabled ? "off" : "on"}`),
     onError: () => notify(`plugin:${plugin.slug}`, "danger", `${presentation.name} couldn’t be changed`, "Refresh and try again."),
   });
 
@@ -62,10 +62,10 @@ export function PluginPage({ plugin }: { plugin: PluginRelease }) {
       <PluginIcon plugin={plugin} size={64} />
       <div className="mk-detail-title"><h2>{presentation.name}</h2><p className="mk-meta"><span>{presentation.category}</span><span>Version {plugin.version}</span></p></div>
       <div className="mk-detail-actions">
-        {platform ? <span className="mk-muted mk-inline"><Lock size={15} aria-hidden="true" />Always enabled</span>
+        {platform ? <span className="mk-muted mk-inline"><Lock size={15} aria-hidden="true" />Always on</span>
           : !installed ? <Button variant="primary" isPending={actions.install.isPending} isDisabled={installedPlugins.isPending || required.isPending} onPress={submit}>Install</Button>
           : <>
-            <Switch isSelected={installed.enabled} isDisabled={actions.setEnabled.isPending} onChange={() => toggle(installed)} aria-label={`Enable ${presentation.name}`}><Switch.Control><Switch.Thumb /></Switch.Control></Switch>
+            <Switch isSelected={installed.enabled} isDisabled={actions.setEnabled.isPending} onChange={() => toggle(installed)} aria-label={`Use ${presentation.name} in new Works`}><Switch.Control><Switch.Thumb /></Switch.Control></Switch>
             <Dropdown><Button size="sm" variant="ghost" isIconOnly aria-label={`More actions for ${presentation.name}`}><MoreHorizontal size={18} /></Button>
               <Dropdown.Popover placement="bottom end"><Dropdown.Menu aria-label="More actions" onAction={key => { if (key === "uninstall") setConfirm(true); }}>
                 <Dropdown.Item id="uninstall" textValue="Uninstall" variant="danger"><Label>Uninstall…</Label></Dropdown.Item>

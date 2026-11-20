@@ -1,8 +1,8 @@
 package execution
 
 import (
+	"net/url"
 	"slices"
-	"strings"
 
 	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
@@ -37,7 +37,7 @@ type workConnectorCredential struct {
 // that it is unavailable while the rest of the Work goes on, when its target
 // has no supplied credential, when that credential declares no expiry (only a
 // short-lived target credential reaches the machine), or when its address does
-// not lie on its target's declared hosts.
+// not lie on its target's declared hosts and paths.
 func connectorCredentials(capabilities domain.CapabilitySnapshot, services []command.ServiceAccessMaterial, access []command.ServiceAccessStatus) ([]workConnectorCredential, []command.ServiceAccessStatus) {
 	var credentials []workConnectorCredential
 	access = slices.Clone(access)
@@ -60,8 +60,8 @@ func connectorCredentials(capabilities domain.CapabilitySnapshot, services []com
 		switch {
 		case material.Token == "" || material.ExpiresAt.IsZero():
 			refuse(connector, "not_short_lived")
-		case err != nil || !onTargetHosts(address.Hostname(), material.Hosts):
-			refuse(connector, "outside_target_hosts")
+		case err != nil || !onTarget(address, material.ServiceCredentialMaterial):
+			refuse(connector, "outside_target")
 		default:
 			credentials = append(credentials, workConnectorCredential{ID: connector.ID, URL: connector.URL, Token: material.Token})
 		}
@@ -69,21 +69,11 @@ func connectorCredentials(capabilities domain.CapabilitySnapshot, services []com
 	return credentials, access
 }
 
-// onTargetHosts reports whether host lies on one of a target's declared host
-// patterns: an exact host, or `*.` and a domain, which matches its
-// subdomains.
-func onTargetHosts(host string, declared []string) bool {
-	patterns, err := targetHosts(declared)
-	if err != nil {
-		return false
-	}
-	host = strings.ToLower(host)
-	return slices.ContainsFunc(patterns, func(pattern string) bool {
-		if domainName, wildcard := strings.CutPrefix(pattern, "*."); wildcard {
-			return strings.HasSuffix(host, "."+domainName)
-		}
-		return host == pattern
-	})
+// onTarget reports whether an address lies on its target's declared hosts
+// and paths; an undeclarable rule covers nothing.
+func onTarget(address *url.URL, material command.ServiceCredentialMaterial) bool {
+	rule, err := admitTarget(material)
+	return err == nil && rule.covers(address)
 }
 
 // managedAuthorizations lists, as a JSON array, the Provider Authorizations

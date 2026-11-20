@@ -40,19 +40,33 @@ export function draftOf(connector: Connector): ConnectorDraft {
     provider: connector.provider, description: connector.description, category: connector.category };
 }
 
-const hostOf = (address: string) => { try { return new URL(address).hostname; } catch { return ""; } };
+type Target = DeclaredProvider["targets"][number];
 
-/** Whether an address lies on one of a Provider's target hosts, as the
- * Marketplace decides it: HTTPS on the default port. */
+const hostWithin = (host: string, pattern: string) => pattern.startsWith("*.") ? host.endsWith(pattern.slice(1)) && host !== pattern.slice(2) : host === pattern;
+const pathWithin = (path: string, pattern: string) => pattern.endsWith("/*") ? path.startsWith(pattern.slice(0, -1)) : path === pattern;
+const targetContains = (target: Target, url: URL) => target.hosts.some(pattern => hostWithin(url.hostname, pattern))
+  && (target.paths.length === 0 || target.paths.some(pattern => pathWithin(url.pathname || "/", pattern)));
+
+/** Whether an address lies within one of a Provider's targets, as the
+ * Marketplace decides it: HTTPS on the default port, on a target's hosts and,
+ * where the target declares paths, on one of them. */
 export function withinTargets(address: string, provider?: DeclaredProvider) {
   let url: URL;
   try { url = new URL(address); } catch { return false; }
-  if (!provider || url.protocol !== "https:" || (url.port && url.port !== "443")) return false;
-  const host = hostOf(address);
-  return provider.targets.some(target => target.hosts.some(pattern => pattern.startsWith("*.") ? host.endsWith(pattern.slice(1)) && host !== pattern.slice(2) : host === pattern));
+  if (!provider || url.protocol !== "https:" || (url.port && url.port !== "443") || url.username || url.password) return false;
+  return provider.targets.some(target => targetContains(target, url));
 }
 
-export const providerHosts = (provider?: DeclaredProvider) => provider?.targets.flatMap(target => target.hosts) ?? [];
+// A declared path as people read it: `/mcp` and `/mcp/` are one place.
+const shownPath = (pattern: string) => pattern === "/" ? "" : pattern.replace(/\/$/, "");
+
+/** Where a Provider's credentials reach: each target's hosts, with its paths
+ * where it narrows them. */
+export const providerReach = (provider?: DeclaredProvider) => [...new Set(provider?.targets.flatMap(target => target.paths.length
+  ? target.hosts.flatMap(host => target.paths.map(path => host + shownPath(path))) : target.hosts) ?? [])];
+
+/** Why a Provider's credentials can't reach an address. */
+export const outsideTargets = (provider: DeclaredProvider) => `${provider.displayName} credentials only reach ${providerReach(provider).join(", ")}.`;
 
 /** The checks the Marketplace makes when a Connector is added or changed,
  * shown inline before the request; the Marketplace still decides. */
@@ -69,7 +83,7 @@ export function draftProblems(draft: ConnectorDraft, options: { adding: boolean;
     else if (!parsed.command) problems.command = "Enter the command that starts the server.";
     if (draft.provider) problems.provider = "A connector that signs in through a provider is a remote server.";
   } else if (!/^https?:\/\/[^/]/.test(draft.url.trim())) problems.url = "Enter the server’s http(s) address.";
-  else if (provider && !withinTargets(draft.url.trim(), provider)) problems.url = `${provider.displayName} credentials only reach ${providerHosts(provider).join(", ")}.`;
+  else if (provider && !withinTargets(draft.url.trim(), provider)) problems.url = outsideTargets(provider);
   if (draft.description.length > 1024) problems.description = "Keep it under 1,024 characters.";
   if (draft.category.length > 64) problems.category = "Keep it under 64 characters.";
   return problems;
@@ -90,11 +104,17 @@ const iconMessage = (icon?: IconImage): ConnectorIcon | undefined => icon ? { $t
 /** A refusal the Marketplace explained, such as a taken name. */
 export const refusal = (error: unknown) => ConnectError.from(error).rawMessage.replace(/^marketplace: /, "");
 
-/** The field a refused addition points at, by the refusal's code: a taken or
- * reserved name, or a connection the Marketplace does not accept. */
-export function refusedField(error: unknown): keyof ConnectorDraft | undefined {
+/** The field a refused addition or change points at, by the refusal's code,
+ * with this page's own words for it: a taken or reserved name, or an address
+ * the Marketplace does not accept, which for a Provider's Connector is one
+ * outside the Provider's targets. Any other refusal names no field. */
+export function refusedProblem(error: unknown, draft: ConnectorDraft, providers: DeclaredProvider[]): DraftProblems | undefined {
   const code = ConnectError.from(error).code;
-  return code === Code.AlreadyExists ? "name" : code === Code.InvalidArgument ? "url" : undefined;
+  if (code === Code.AlreadyExists) return { name: "This name is taken. Choose another." };
+  if (code !== Code.InvalidArgument) return undefined;
+  if (draft.transport === "stdio") return { command: "The Marketplace doesn’t accept this command." };
+  const provider = providers.find(item => item.name === draft.provider);
+  return { url: provider ? outsideTargets(provider) : "The Marketplace doesn’t accept this address." };
 }
 
 // Icons are shown as data URLs, which need no release when they are dropped.

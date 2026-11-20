@@ -107,6 +107,6 @@ func gitHubDeclaration() domain.ProviderDeclaration {
 	return domain.ProviderDeclaration{Name: domain.ProviderGitHub, DisplayName: "GitHub", Derivation: domain.SharedTargetCredential,
 		CredentialsExpire: true, ObservesAccessScope: true, Targets: []domain.ProviderTarget{
 			{Name: "github-api", Hosts: []domain.HostPattern{"api.github.com"}},
-			{Name: "github-remote-mcp", Hosts: []domain.HostPattern{"api.githubcopilot.com"}},
+			{Name: "github-remote-mcp", Hosts: []domain.HostPattern{"api.githubcopilot.com"}, Paths: []domain.PathPattern{"/mcp", "/mcp/"}},
 		}}
 }

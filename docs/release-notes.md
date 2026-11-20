@@ -62,8 +62,12 @@ deploying:
    one lies within that target's hosts.
 
 A Work's Credential Proxy now binds each Provider credential to its target's declared hosts,
-for every path and method. The `github-remote-mcp` credential, earlier bound to `/mcp` on
-`api.githubcopilot.com`, now reaches any path of that host.
+paths and methods. The base declares GitHub's targets as they were bound before: `github-api` on
+every path and method of `api.github.com`, and `github-remote-mcp` on `/mcp` and `/mcp/` of
+`api.githubcopilot.com` with `GET`, `POST` and `DELETE`. A profile that redeclares them keeps
+those `paths` and `methods`. A deployment whose GitHub App is on a GitHub Enterprise Server
+declares `github`'s targets on that server's hosts: the controlplane refuses to start while they
+name GitHub.com's.
 
 ## The release that upgrades OpenSandbox to 1.2.1
 

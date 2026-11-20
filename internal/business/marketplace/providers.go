@@ -39,10 +39,13 @@ type ProviderConfig struct {
 }
 
 // TargetConfig is one destination of a Provider's credentials: the host
-// patterns they reach and, for per-target credentials, the resource
-// indicator the authorization server knows it by.
+// patterns they reach, optionally narrowed to path patterns and HTTP
+// methods there, and, for per-target credentials, the resource indicator the
+// authorization server knows it by.
 type TargetConfig struct {
 	Hosts    []string `json:"hosts" yaml:"hosts" toml:"hosts"`
+	Paths    []string `json:"paths" yaml:"paths" toml:"paths"`
+	Methods  []string `json:"methods" yaml:"methods" toml:"methods"`
 	Resource string   `json:"resource" yaml:"resource" toml:"resource"`
 }
 
@@ -67,7 +70,15 @@ func (c ProviderConfig) declaration(name string) (domain.ProviderDeclaration, er
 		for i, host := range config.Hosts {
 			hosts[i] = domain.HostPattern(strings.ToLower(strings.TrimSpace(host)))
 		}
-		declaration.Targets = append(declaration.Targets, domain.ProviderTarget{Name: target, Hosts: hosts})
+		paths := make([]domain.PathPattern, len(config.Paths))
+		for i, p := range config.Paths {
+			paths[i] = domain.PathPattern(strings.TrimSpace(p))
+		}
+		methods := make([]string, len(config.Methods))
+		for i, method := range config.Methods {
+			methods[i] = strings.ToUpper(strings.TrimSpace(method))
+		}
+		declaration.Targets = append(declaration.Targets, domain.ProviderTarget{Name: target, Hosts: hosts, Paths: paths, Methods: methods})
 	}
 	if err := declaration.Validate(); err != nil {
 		return domain.ProviderDeclaration{}, fmt.Errorf("marketplace: Provider %s: %w", name, err)
@@ -164,13 +175,24 @@ func (c *providerCatalog) oauthClients() []oauthprovider.Client {
 
 // gitHub completes the GitHub App adapter's settings from the github
 // declaration: the adapter is enabled exactly when github is declared.
-func (c *providerCatalog) gitHub(adapter scmgithub.Config, cipherKey string) scmgithub.Config {
+// A GitHub Enterprise Server's token never goes to GitHub.com: an App
+// elsewhere needs the github Provider's targets on its own hosts.
+func (c *providerCatalog) gitHub(adapter scmgithub.Config, cipherKey string) (scmgithub.Config, error) {
 	client, declared := c.clients[domain.ProviderGitHub]
 	adapter.Enabled = declared
 	adapter.OAuthClientID, adapter.OAuthClientSecret = client.ClientID, client.ClientSecret
 	adapter.AuthorizationEndpoint, adapter.TokenEndpoint = client.AuthorizationEndpoint, client.TokenEndpoint
 	adapter.TokenCipherKey = cipherKey
-	return adapter
+	if declaration, ok := c.Provider(domain.ProviderGitHub); ok {
+		for _, target := range declaration.Targets {
+			for _, host := range target.Hosts {
+				if !adapter.MaySendCredentialTo(string(host)) {
+					return scmgithub.Config{}, fmt.Errorf("marketplace: the github Provider's App is not on GitHub.com, yet target %s reaches %s", target.Name, host)
+				}
+			}
+		}
+	}
+	return adapter, nil
 }
 
 // providerPorts selects each declared Provider's adapter.

@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"net/url"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -63,20 +64,76 @@ func (p HostPattern) Matches(host string) bool {
 	return host == string(p)
 }
 
-// ProviderTarget is one destination a Provider declares for the credentials
-// of its authorization: the hosts they reach.
-type ProviderTarget struct {
-	Name  string
-	Hosts []HostPattern
+// PathPattern is an exact request path, or a path ending in `/*` for every
+// path beneath it.
+type PathPattern string
+
+func (p PathPattern) valid() bool {
+	exact := strings.TrimSuffix(string(p), "/*")
+	if !strings.HasPrefix(string(p), "/") || strings.ContainsAny(exact, "*?%#\\ ") {
+		return false
+	}
+	trimmed := strings.TrimSuffix(exact, "/")
+	return trimmed == "" || path.Clean(trimmed) == trimmed
 }
 
-// Contains reports whether an HTTPS address lies on one of the target's hosts.
+// Matches reports whether a request path lies within the pattern.
+func (p PathPattern) Matches(requestPath string) bool {
+	if prefix, beneath := strings.CutSuffix(string(p), "/*"); beneath {
+		return strings.HasPrefix(requestPath, prefix+"/")
+	}
+	return requestPath == string(p)
+}
+
+// targetMethods are the HTTP methods a target's credential may accompany.
+var targetMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+
+// ProviderTarget is one destination a Provider declares for the credentials
+// of its authorization: the hosts they reach and, when declared, the only
+// paths and methods there. No paths means every path, no methods every
+// method.
+type ProviderTarget struct {
+	Name    string
+	Hosts   []HostPattern
+	Paths   []PathPattern
+	Methods []string
+}
+
+// Contains reports whether an HTTPS address lies on one of the target's hosts
+// and paths.
 func (t ProviderTarget) Contains(address string) bool {
 	u, err := url.Parse(address)
 	if err != nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" || (u.Port() != "" && u.Port() != "443") {
 		return false
 	}
-	return slices.ContainsFunc(t.Hosts, func(p HostPattern) bool { return p.Matches(u.Hostname()) })
+	requestPath := u.EscapedPath()
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	return slices.ContainsFunc(t.Hosts, func(p HostPattern) bool { return p.Matches(u.Hostname()) }) &&
+		(len(t.Paths) == 0 || slices.ContainsFunc(t.Paths, func(p PathPattern) bool { return p.Matches(requestPath) }))
+}
+
+func (t ProviderTarget) valid() bool {
+	if !providerName.MatchString(t.Name) || len(t.Hosts) == 0 {
+		return false
+	}
+	for _, host := range t.Hosts {
+		if !host.valid() {
+			return false
+		}
+	}
+	for _, p := range t.Paths {
+		if !p.valid() {
+			return false
+		}
+	}
+	for n, method := range t.Methods {
+		if !slices.Contains(targetMethods, method) || slices.Contains(t.Methods[:n], method) {
+			return false
+		}
+	}
+	return true
 }
 
 // ProviderDeclaration is a Provider as the deployment declares it: the
@@ -103,15 +160,10 @@ func (d ProviderDeclaration) Validate() error {
 	}
 	names := map[string]bool{}
 	for _, target := range d.Targets {
-		if !providerName.MatchString(target.Name) || names[target.Name] || len(target.Hosts) == 0 {
+		if names[target.Name] || !target.valid() {
 			return ErrInvalidProviderDeclaration
 		}
 		names[target.Name] = true
-		for _, host := range target.Hosts {
-			if !host.valid() {
-				return ErrInvalidProviderDeclaration
-			}
-		}
 	}
 	return nil
 }

@@ -153,7 +153,7 @@ export function useConnectorActions(owner: MarketplaceOwner = {}) {
 
 // Status vocabulary shared by Plugins and Connectors.
 export type InstallStatus = "always_enabled" | "enabled" | "disabled" | "not_installed";
-export const installStatusLabel: Record<InstallStatus, string> = { always_enabled: "Always enabled", enabled: "Enabled", disabled: "Disabled", not_installed: "Not installed" };
+export const installStatusLabel: Record<InstallStatus, string> = { always_enabled: "Always on", enabled: "Installed", disabled: "Turned off", not_installed: "Not installed" };
 
 export function pluginStatus(required: boolean, installed?: InstalledPlugin): InstallStatus {
   if (required) return "always_enabled";

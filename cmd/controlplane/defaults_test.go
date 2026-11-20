@@ -107,5 +107,10 @@ func TestTheBaseDeclaresGitHubAtTheNamedHost(t *testing.T) {
 	require.Equal(t, "true", github.Enabled)
 	require.Equal(t, "https://github.example.com/login/oauth/access_token", github.TokenEndpoint)
 	require.Equal(t, []string{"api.github.com"}, github.Targets["github-api"].Hosts)
+	require.Empty(t, github.Targets["github-api"].Paths, "the REST API credential reaches every path")
+	remote := github.Targets["github-remote-mcp"]
+	require.Equal(t, []string{"api.githubcopilot.com"}, remote.Hosts)
+	require.Equal(t, []string{"/mcp", "/mcp/"}, remote.Paths, "the remote MCP credential reaches only the MCP endpoint")
+	require.Equal(t, []string{"GET", "POST", "DELETE"}, remote.Methods)
 	require.Equal(t, "shared", github.TargetCredentials)
 }

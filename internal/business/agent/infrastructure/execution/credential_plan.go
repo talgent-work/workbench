@@ -119,7 +119,7 @@ func credentialPlan(model modelCredential, repositories []command.RepositoryAcce
 		if service.Service == "" || service.Provider == "" || service.AuthorizationID == "" || service.Token == "" || expired(service.ExpiresAt, now) {
 			return sdk.CredentialVaultCreateRequest{}, errors.New("agent: current supported service credential required")
 		}
-		hosts, err := targetHosts(service.Hosts)
+		rule, err := admitTarget(service.ServiceCredentialMaterial)
 		if err != nil {
 			return sdk.CredentialVaultCreateRequest{}, err
 		}
@@ -129,35 +129,14 @@ func credentialPlan(model modelCredential, repositories []command.RepositoryAcce
 			return sdk.CredentialVaultCreateRequest{}, errors.New("agent: duplicate service credential target")
 		}
 		seen[name] = true
-		// The credential reaches only its target's declared hosts. Match the
-		// official Vault's explicit default methods and path glob: omitted
-		// lists are expanded on write, which would otherwise fail our exact
-		// binding readback before the Work can start.
+		// The credential reaches only its target's declared hosts, paths and
+		// methods.
 		result.Bindings = append(result.Bindings, sdk.CredentialBinding{Name: name,
-			Match: sdk.CredentialMatch{Schemes: []sdk.CredentialScheme{sdk.CredentialSchemeHTTPS}, Hosts: hosts, Methods: []string{"GET", "POST", "PUT", "PATCH", "DELETE"}, Paths: []string{"/*"}},
+			Match: sdk.CredentialMatch{Schemes: []sdk.CredentialScheme{sdk.CredentialSchemeHTTPS}, Hosts: rule.hosts, Methods: rule.methods, Paths: rule.paths},
 			Auth:  sdk.CredentialAuth{Type: sdk.CredentialAuthBearer, Credential: name}})
 		result.Credentials = append(result.Credentials, sdk.Credential{Name: name, Source: sdk.InlineCredentialSource{Value: service.Token}})
 	}
 	return result, nil
-}
-
-// targetHosts admits the host patterns Marketplace declared for a target: an
-// exact host name or `*.` and a domain of at least two labels, never a bare
-// wildcard that would send the credential anywhere.
-func targetHosts(declared []string) ([]string, error) {
-	if len(declared) == 0 {
-		return nil, errors.New("agent: a service credential needs its target hosts")
-	}
-	hosts := make([]string, len(declared))
-	for i, host := range declared {
-		host = strings.ToLower(host)
-		bare := strings.TrimPrefix(host, "*.")
-		if bare == "" || strings.ContainsAny(bare, "*/:@ ") || (bare != host && !strings.Contains(bare, ".")) || strings.HasPrefix(bare, ".") || strings.HasSuffix(bare, ".") {
-			return nil, errors.New("agent: invalid service credential target host")
-		}
-		hosts[i] = host
-	}
-	return hosts, nil
 }
 
 // expired reports whether a declared expiry has passed; a credential that

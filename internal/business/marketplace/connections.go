@@ -54,7 +54,7 @@ var ConnectionsModule = fx.Module(
 	pkgmysql.Bind(Database),
 	fx.Provide(newProviderCatalog, fx.Private),
 	fx.Provide(func(catalog *providerCatalog) application.ProviderDeclarations { return catalog }),
-	fx.Provide(func(cfg ConnectionConfig, catalog *providerCatalog) scmgithub.Config {
+	fx.Provide(func(cfg ConnectionConfig, catalog *providerCatalog) (scmgithub.Config, error) {
 		return catalog.gitHub(cfg.GitHub, cfg.CredentialCipherKey)
 	}),
 	fx.Provide(func(cfg ConnectionConfig) tokenmaintenance.Config { return cfg.Maintenance }),

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -130,7 +131,11 @@ func (c *ProviderCredentials) SupplyTarget(ctx context.Context, ownerID, authori
 	for i, host := range target.Hosts {
 		hosts[i] = string(host)
 	}
-	return credential.ServiceMaterial{Token: token, ExpiresAt: supplied.ExpiresAt, Hosts: hosts}, nil
+	paths := make([]string, len(target.Paths))
+	for i, p := range target.Paths {
+		paths[i] = string(p)
+	}
+	return credential.ServiceMaterial{Token: token, ExpiresAt: supplied.ExpiresAt, Hosts: hosts, Paths: paths, Methods: slices.Clone(target.Methods)}, nil
 }
 
 // port is the adapter of the authorization's declared Provider.

@@ -3,7 +3,7 @@ import { Alert, Button, Card, Modal, Separator, Typography } from "@heroui/react
 import type { Connector } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
 import { Clock, Globe, KeyRound, Plug, SquareTerminal, Store } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { draftOf, draftProblems, emptyDraft, providerHosts, refusal, refusedField, useConnectorAuthoring, useConnectorIcon, useOwnedConnectors, type ConnectorDraft, type DraftProblems, type IconImage } from "../../lib/connector-workshop";
+import { draftOf, draftProblems, emptyDraft, providerReach, refusal, refusedProblem, useConnectorAuthoring, useConnectorIcon, useOwnedConnectors, type ConnectorDraft, type DraftProblems, type IconImage } from "../../lib/connector-workshop";
 import { useConnectors } from "../../lib/marketplace-catalog";
 import { useProviders } from "../../lib/marketplace-connections";
 import { marketplacePaths, workshopPaths } from "../../lib/marketplace-routes";
@@ -55,8 +55,8 @@ function ItemPage({ connector }: { connector?: Connector }) {
 
   // A refusal that names a field shows under it; any other is a toast.
   const refuseInline = (otherwise: (error: unknown) => void) => (error: unknown) => {
-    const field = refusedField(error), message = refusal(error);
-    if (field) setRefused({ [field]: message.charAt(0).toUpperCase() + message.slice(1) + "." });
+    const problem = refusedProblem(error, draft, providers);
+    if (problem) setRefused(problem);
     else otherwise(error);
   };
   const save = () => {
@@ -109,9 +109,9 @@ function ItemPage({ connector }: { connector?: Connector }) {
             {connector && (connector.transport === "stdio" ? <Fact icon={SquareTerminal}>Local command</Fact> : <>
               <Fact icon={Plug}>Remote server</Fact>
               {provider && <Fact icon={KeyRound}>{provider.displayName} sign-in</Fact>}
-              {provider && <Fact icon={Globe}>{providerHosts(provider).join(", ")}</Fact>}
+              {provider && <Fact icon={Globe}>{providerReach(provider).join(", ")}</Fact>}
             </>)}
-            {connector && connector.publishedAtUnixMs > 0n && <Fact icon={Clock}>Published {dateOf(connector.publishedAtUnixMs)}</Fact>}
+            {connector?.state === "published" && connector.publishedAtUnixMs > 0n && <Fact icon={Clock}>Published {dateOf(connector.publishedAtUnixMs)}</Fact>}
           </div>
         </div>
         {connector && connector.state !== "withdrawn" && <div className="flex flex-wrap gap-2">
@@ -147,18 +147,18 @@ function ItemPage({ connector }: { connector?: Connector }) {
       <Modal.Header><Modal.Heading>Publish {connector.name} to the Marketplace?</Modal.Heading></Modal.Header>
       <Modal.Body className="grid gap-3">
         <Typography.Paragraph>Everyone in this workspace can find and install it.</Typography.Paragraph>
-        <Typography.Paragraph size="sm" className="text-muted">Each person signs in with their own account, never yours. Your later changes reach Works started afterwards. Once published you can withdraw it, but not delete it.</Typography.Paragraph>
+        <Typography.Paragraph size="sm" className="text-muted">Each person uses their own access, never yours. Your later changes reach Works started afterwards. Once published you can withdraw it, but not delete it.</Typography.Paragraph>
       </Modal.Body>
       <Modal.Footer><Button variant="tertiary" onPress={() => setConfirm(null)}>Cancel</Button>
         <Button variant="primary" isPending={authoring.publish.isPending} onPress={() => run(authoring.publish, "published", [`Published ${connector.name}`, "It’s in the Marketplace for everyone."], () => setConfirm(null))}>Publish</Button></Modal.Footer>
     </Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>}
     {connector && <ConfirmDialog isOpen={confirm === "withdraw"} onOpenChange={open => { if (!open) setConfirm(null); }} title={`Withdraw ${connector.name}?`} confirmLabel="Withdraw"
       onConfirm={() => run(authoring.withdraw, "withdrawn", [`Withdrew ${connector.name}`, "New Works can’t select it. Existing installations stay."])}>
-      <p>It leaves the Marketplace and no new Work can select it. People who installed it keep it. This can’t be undone: you can’t publish it again.</p>
+      <p>It leaves the Marketplace and no new Work can select it. People who installed it keep it. You can’t publish it again.</p>
     </ConfirmDialog>}
     {connector && <ConfirmDialog isOpen={confirm === "delete"} onOpenChange={open => { if (!open) setConfirm(null); }} title={`Delete ${connector.name}?`} confirmLabel="Delete"
       onConfirm={() => run(authoring.remove, "deleted", [`Deleted ${connector.name}`], back)}>
-      <p>Your installation goes with it. Works already running keep it. This can’t be undone.</p>
+      <p>Your installation goes with it. Works already running keep it.</p>
     </ConfirmDialog>}
   </PageLayout>;
 }

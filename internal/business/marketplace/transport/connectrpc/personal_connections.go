@@ -154,7 +154,7 @@ func (h *Handler) ListProviders(ctx context.Context, req *marketplacepublicv1.Li
 		message := &marketplacepublicv1.DeclaredProvider{Name: provider.Name, DisplayName: provider.DisplayName,
 			TargetCredentialsExpire: provider.TargetCredentialsExpire, ObservesAccessScope: provider.ObservesAccessScope, Connection: connectionStateMessage(provider.Connection)}
 		for _, target := range provider.Targets {
-			message.Targets = append(message.Targets, &marketplacepublicv1.ProviderTarget{Name: target.Name, Hosts: target.Hosts})
+			message.Targets = append(message.Targets, &marketplacepublicv1.ProviderTarget{Name: target.Name, Hosts: target.Hosts, Paths: target.Paths})
 		}
 		response.Providers = append(response.Providers, message)
 	}

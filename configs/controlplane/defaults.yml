@@ -49,7 +49,8 @@ marketplace:
   account:
     address: "${CONTROLPLANE_INTERNAL_ADDRESS:http://127.0.0.1:8080}"
   # Every Provider an owner can authorize, keyed by name: its OAuth client,
-  # the targets one authorization serves with the hosts each reaches, whether
+  # the targets one authorization serves with the hosts each reaches (narrowed
+  # to paths and methods where declared), whether
   # target credentials are shared or per target by resource indicator, and
   # whether they expire. github reaches GitHub through its App; every other
   # Provider authorizes through the authorization code flow with PKCE.
@@ -66,8 +67,11 @@ marketplace:
       targets:
         github-api:
           hosts: [api.github.com]
+        # GitHub's remote MCP server, reached only at its MCP endpoint.
         github-remote-mcp:
           hosts: [api.githubcopilot.com]
+          paths: [/mcp, /mcp/]
+          methods: [GET, POST, DELETE]
   connections:
     credential-token: "${AGENT_CONTROL_TOKEN:}"
     # Encrypts every Provider credential at rest; required once a Provider is
