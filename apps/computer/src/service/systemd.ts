@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { RUN_ENDED_FOR_GOOD } from '../exit-codes.ts'
+import { EXIT_RESTART, RUN_ENDED_FOR_GOOD } from '../exit-codes.ts'
 import { definesSupervised, mustRun, SERVICE_NAME, type RunCommand, type ServiceManager, type ServiceSpec, type ServiceStatus } from './manager.ts'
 
 const UNIT = `${SERVICE_NAME}.service`
@@ -74,6 +74,10 @@ export function systemdUnit(spec: ServiceSpec): string {
     'Restart=on-failure',
     'RestartSec=10',
     `RestartPreventExitStatus=${RUN_ENDED_FOR_GOOD.join(' ')}`,
+    // A run that ends to restart into an installed upgrade succeeded, and
+    // starts again at once whatever Restart= says.
+    `SuccessExitStatus=${EXIT_RESTART}`,
+    `RestartForceExitStatus=${EXIT_RESTART}`,
     // Work processes outlive the run, as they do when a person stops it;
     // the next run picks them up.
     'KillMode=process',
