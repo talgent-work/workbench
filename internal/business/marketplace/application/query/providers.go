@@ -10,9 +10,11 @@ type DeclaredProvider struct {
 	Connection              *ProviderConnectionState
 }
 
-// ProviderTarget is one destination of a Provider's credentials and the
-// host patterns it reaches.
+// ProviderTarget is one destination of a Provider's credentials: the host
+// patterns it reaches and the path patterns that narrow it there, none
+// meaning every path.
 type ProviderTarget struct {
 	Name  string
 	Hosts []string
+	Paths []string
 }

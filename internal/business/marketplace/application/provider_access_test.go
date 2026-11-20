@@ -6,8 +6,24 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/talgent-work/workbench/internal/business/marketplace/application/query"
 	"github.com/talgent-work/workbench/internal/business/marketplace/domain"
 )
+
+// Intent (real): an owner adding a Connector learns where a Provider's
+// credentials reach, paths included where a target narrows them, so the
+// Workshop can name them before the Marketplace refuses an address.
+func TestListProvidersNamesEachTargetsHostsAndPaths(t *testing.T) {
+	app := newTestApplication(t)
+
+	providers, err := app.ListProviders(t.Context(), "owner")
+	require.NoError(t, err)
+	require.Len(t, providers, 1)
+	require.Equal(t, []query.ProviderTarget{
+		{Name: "github-api", Hosts: []string{"api.github.com"}, Paths: []string{}},
+		{Name: "github-remote-mcp", Hosts: []string{"api.githubcopilot.com"}, Paths: []string{"/mcp", "/mcp/"}},
+	}, providers[0].Targets)
+}
 
 // Intent (real): reading the Provider page and the repository choices never
 // asks the Provider; they show what was last observed.

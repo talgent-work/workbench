@@ -54,7 +54,11 @@ func (a *PersonalConnections) ListProviders(ctx context.Context, actor string) (
 			for i, host := range target.Hosts {
 				hosts[i] = string(host)
 			}
-			provider.Targets = append(provider.Targets, query.ProviderTarget{Name: target.Name, Hosts: hosts})
+			paths := make([]string, len(target.Paths))
+			for i, p := range target.Paths {
+				paths[i] = string(p)
+			}
+			provider.Targets = append(provider.Targets, query.ProviderTarget{Name: target.Name, Hosts: hosts, Paths: paths})
 		}
 		result = append(result, provider)
 	}

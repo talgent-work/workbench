@@ -3,7 +3,7 @@ import { Alert, Button, Card, Modal, Separator, Typography } from "@heroui/react
 import type { Connector } from "@talgent/contracts/marketplace/public/v1/connectors_pb";
 import { Clock, Globe, KeyRound, Plug, SquareTerminal, Store } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { draftOf, draftProblems, emptyDraft, providerHosts, refusal, refusedField, useConnectorAuthoring, useConnectorIcon, useOwnedConnectors, type ConnectorDraft, type DraftProblems, type IconImage } from "../../lib/connector-workshop";
+import { draftOf, draftProblems, emptyDraft, providerReach, refusal, refusedProblem, useConnectorAuthoring, useConnectorIcon, useOwnedConnectors, type ConnectorDraft, type DraftProblems, type IconImage } from "../../lib/connector-workshop";
 import { useConnectors } from "../../lib/marketplace-catalog";
 import { useProviders } from "../../lib/marketplace-connections";
 import { marketplacePaths, workshopPaths } from "../../lib/marketplace-routes";
@@ -55,8 +55,8 @@ function ItemPage({ connector }: { connector?: Connector }) {
 
   // A refusal that names a field shows under it; any other is a toast.
   const refuseInline = (otherwise: (error: unknown) => void) => (error: unknown) => {
-    const field = refusedField(error), message = refusal(error);
-    if (field) setRefused({ [field]: message.charAt(0).toUpperCase() + message.slice(1) + "." });
+    const problem = refusedProblem(error, draft, providers);
+    if (problem) setRefused(problem);
     else otherwise(error);
   };
   const save = () => {
@@ -109,9 +109,9 @@ function ItemPage({ connector }: { connector?: Connector }) {
             {connector && (connector.transport === "stdio" ? <Fact icon={SquareTerminal}>Local command</Fact> : <>
               <Fact icon={Plug}>Remote server</Fact>
               {provider && <Fact icon={KeyRound}>{provider.displayName} sign-in</Fact>}
-              {provider && <Fact icon={Globe}>{providerHosts(provider).join(", ")}</Fact>}
+              {provider && <Fact icon={Globe}>{providerReach(provider).join(", ")}</Fact>}
             </>)}
-            {connector && connector.publishedAtUnixMs > 0n && <Fact icon={Clock}>Published {dateOf(connector.publishedAtUnixMs)}</Fact>}
+            {connector?.state === "published" && connector.publishedAtUnixMs > 0n && <Fact icon={Clock}>Published {dateOf(connector.publishedAtUnixMs)}</Fact>}
           </div>
         </div>
         {connector && connector.state !== "withdrawn" && <div className="flex flex-wrap gap-2">
