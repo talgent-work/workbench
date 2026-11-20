@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { isObject } from '../json.ts'
 import type { CredentialStore } from '../proxy/credentials.ts'
-import type { WorkInputs } from './inputs.ts'
 import type { ProcessTable } from './processes.ts'
 import type { ExecResponse } from './service.ts'
 import { validId, type Works } from './works.ts'
@@ -27,7 +26,6 @@ export interface ReconciliationOptions {
   works: Works
   processes: ProcessTable
   credentials: CredentialStore
-  inputs: WorkInputs
   log: (message: string) => void
 }
 
@@ -125,7 +123,7 @@ export class Reconciliation {
     // A repeated or late decision for a round already decided changes
     // nothing: what started since must not be ended by it.
     if (this.round.applied) return { status: 204 }
-    const { processes, works, credentials, inputs, log } = this.options
+    const { processes, works, credentials, log } = this.options
     let ended = 0
     for (const { workId, processId } of decision.endProcesses) {
       if (await processes.delete(workId, processId)) ended += 1
@@ -133,7 +131,6 @@ export class Reconciliation {
     for (const workId of decision.removeWorks) {
       await processes.deleteWork(workId)
       await credentials.delete(workId)
-      await inputs.remove(workId)
       await works.remove(workId)
     }
     // The connection may have changed while the decision was applied.

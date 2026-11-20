@@ -242,7 +242,7 @@ none that exited, which an attach would run again; every other process of it end
 
 The machine kills and forgets each named process, as `DELETE /pty/<id>` does, so a later attach answers
 `404` and never runs it again; for each named Work it kills and forgets every process, forgets the Work's
-credentials and inputs, and removes its Work root, read-only inputs included, and its record, after which
+credentials, and removes its Work root and its record, after which
 every call of that Work answers `404`. It then decides the round and answers `204`. A decision for a round
 other than the current one answers `409` `{"code":"ROUND_SUPERSEDED"}`: the machine reconnected since, and
 the decision is made again from the new round. A decision for the current round once it is decided,
@@ -364,35 +364,6 @@ Agent, Project, person and caller attributes, and its Computer as `talgent.compu
 it to the OTel Collector. The Collector's success, `429` and `503` reach the exporter as they are, a
 refusal of the data as `400`, any other failure as `502`, and an unreachable Collector as `503`.
 
-### Work inputs
-
-`PUT /relay/<computer-id>/works/<work-id>/inputs`, `X-Talgent-Control-Token`, body:
-
-```json
-{"files": [{"name": "brief.pdf", "size": 1024, "updated_at": "2026-11-02T10:00:00Z",
-            "url": "https://<origin>/api/v1/storage/content?grant=..."}]}
-```
-
-The manifest is the Work's whole input File Space as Agent lists it, replacing the previous one; the
-service checks the control token and relays it with an empty `token`, as for `/credentials`. It answers
-`202` and Talgent Computer brings `<work root>/inputs/` to the manifest: it downloads each file whose
-size or `updated_at` changed, sending no identity since each Access Link carries its own authority,
-only from a `url` on the origin of the Work's `gateway.url`, and removes files no longer listed. Files
-are written atomically, with their modification time set to `updated_at`, and left read-only (`0444`,
-the directory `0555`). Processes run as the same OS user, so read-only is a mode only: a copy whose size
-or modification time differs from the manifest is fetched again on the next sync.
-
-The platform sends a Work's manifest again at least every 10 minutes while the Work runs, with fresh
-Access Links that last 15 minutes; files whose size and `updated_at` are unchanged are not fetched again.
-A failed download keeps the previous copy and is retried while its manifest is the latest, after 10 s,
-30 s, 90 s and 5 min, all within its links' lifetime, then until the next manifest. A newer manifest
-listing other versions replaces the sync in progress and its retries; one listing the same versions
-lets the sync in progress finish and then follows with its fresh links. Downloads that wait for the Work's credentials run when a credentials `PUT`
-delivers them; a credentials `DELETE` stops the Work's sync until the next manifest.
-
-A run a pipe attach starts waits, up to 2 minutes, for the Work's sync in progress to finish or fail,
-so its first turn sees `inputs/`.
-
 ### Work files
 
 With the Work's token:
@@ -474,7 +445,7 @@ Relay traffic travels inside the connection as frames correlated by an id the se
 
 | Direction | Frame | Fields |
 |---|---|---|
-| service → machine | text `exec_request` | `request_id`, `work_id` (absent for the machine's `/reconciliation`), `method`, `path` (relative to the Work base: `/`, `/credentials`, `/inputs`, `/ping`, `/pty`, `/pty/<id>`, `/files?path=<relative path>` and `/files/stat?path=<relative path>` with their query), `token`, `body` (JSON value or absent) |
+| service → machine | text `exec_request` | `request_id`, `work_id` (absent for the machine's `/reconciliation`), `method`, `path` (relative to the Work base: `/`, `/credentials`, `/ping`, `/pty`, `/pty/<id>`, `/files?path=<relative path>` and `/files/stat?path=<relative path>` with their query), `token`, `body` (JSON value or absent) |
 | machine → service | text `exec_response` | `request_id`, `status`, `body` (JSON value or absent) |
 | service → machine | text `stream_open` | `stream_id`, `work_id`, `token`, and either `process_id`, `since` (a pipe) or `"kind": "file"`, `path` (a file read) |
 | service → machine | text `stream_credit` | `stream_id`, `bytes` (bytes of a file read the service wrote to its reader, which the machine may send again) |

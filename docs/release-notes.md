@@ -24,6 +24,11 @@ to the same database: it drops `inputs_due`, `inputs_directory` with its index,
 `inputs_synced_at`, `inputs_sync_failures` and `inputs_sync_abandoned` from `agent_execution`. A
 rollback to the previous release needs those columns back first.
 
+Talgent Computer of this release no longer accepts input copies. Its first start removes the copies
+an earlier release downloaded into each Work's `inputs/`, and leaves every other file there. A machine
+still on an earlier release keeps running its Works, but their `inputs/` keeps its last copies,
+read-only and no longer updated, until the machine upgrades.
+
 ## The release that lets owners add and publish their own Connectors
 
 Before deploying, apply

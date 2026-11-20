@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, test } from 'node:test'
 import type { PipeSink } from '../src/execd/pipe.ts'
-import { WorkInputs } from '../src/execd/inputs.ts'
 import { currentHost, type ProcessHost } from '../src/execd/host.ts'
 import { ProcessTable, type RunningProcess } from '../src/execd/processes.ts'
 import { ExecdService } from '../src/execd/service.ts'
@@ -29,7 +28,6 @@ beforeEach(async () => {
     works: new Works({ worksDir: join(dir, 'works'), recordsDir: join(dir, 'state', 'works') }),
     processes,
     credentials: new CredentialStore({ dir: join(dir, 'state', 'credentials') }),
-    inputs: new WorkInputs({ recordsDir: join(dir, 'state', 'inputs'), credentials: { get: async () => undefined }, log: () => {} }),
     proxyOrigin: () => 'http://127.0.0.1:1',
     baseEnv: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
     home: dir,

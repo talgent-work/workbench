@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, test } from 'node:test'
 import type { PipeInput, PipeSink } from '../src/execd/pipe.ts'
-import { WorkInputs } from '../src/execd/inputs.ts'
 import { ProcessTable } from '../src/execd/processes.ts'
 import { ExecdService } from '../src/execd/service.ts'
 import { SHIM_ARG } from '../src/execd/shim.ts'
@@ -29,7 +28,6 @@ beforeEach(async () => {
     processes,
     claudeBinDir: '/opt/claude-code/bin',
     credentials: new CredentialStore({ dir: join(dir, 'state', 'credentials') }),
-    inputs: new WorkInputs({ recordsDir: join(dir, 'state', 'inputs'), credentials: { get: async () => undefined }, log: () => {} }),
     proxyOrigin: () => 'http://127.0.0.1:1',
     baseEnv: { PATH: '/usr/bin:/bin', MACHINE: 'm', HOME: '/ignored' },
     home: '/home/owner',

@@ -7,7 +7,6 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, test } from 'node:test'
 import type { PipeSink } from '../src/execd/pipe.ts'
-import { WorkInputs } from '../src/execd/inputs.ts'
 import { ProcessTable } from '../src/execd/processes.ts'
 import { ExecdService } from '../src/execd/service.ts'
 import { SHIM_ARG } from '../src/execd/shim.ts'
@@ -64,7 +63,6 @@ beforeEach(async () => {
     works,
     processes,
     credentials,
-    inputs: new WorkInputs({ recordsDir: join(dir, 'state', 'inputs'), credentials, log: () => {} }),
     proxyOrigin: () => proxy.origin(),
     baseEnv: { PATH: '/usr/bin:/bin', ANTHROPIC_API_KEY: 'machine-key' },
     home: '/home/owner',
@@ -207,7 +205,6 @@ test("a run's telemetry goes to the platform with its Work's token, never where 
     works,
     processes,
     credentials: new CredentialStore({ dir: join(dir, 'state', 'credentials') }),
-    inputs: new WorkInputs({ recordsDir: join(dir, 'state', 'inputs'), credentials: new CredentialStore({ dir: join(dir, 'state', 'credentials') }), log: () => {} }),
     proxyOrigin: () => proxy.origin(),
     baseEnv: { PATH: '/usr/bin:/bin', OTEL_EXPORTER_OTLP_ENDPOINT: 'https://mine.example', OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'https://mine.example/v1/traces', OTEL_EXPORTER_OTLP_LOGS_HEADERS: 'Authorization=Bearer mine' },
     home: '/home/owner',
