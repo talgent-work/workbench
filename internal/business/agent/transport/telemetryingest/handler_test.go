@@ -178,7 +178,8 @@ func TestTheEndpointTakesOnlyBoundedOTLPProtobuf(t *testing.T) {
 	response = post(t, server.URL+Prefix+"/v1/traces", make([]byte, maxWireBytes+1), auth)
 	require.Equal(t, http.StatusRequestEntityTooLarge, response.StatusCode)
 	var bomb bytes.Buffer
-	writer := gzip.NewWriter(&bomb)
+	writer, err := gzip.NewWriterLevel(&bomb, gzip.BestSpeed)
+	require.NoError(t, err)
 	_, _ = writer.Write(make([]byte, maxDecodedBytes+1))
 	require.NoError(t, writer.Close())
 	response = post(t, server.URL+Prefix+"/v1/traces", bomb.Bytes(), map[string]string{"Authorization": "Bearer token-a", "X-Talgent-Work-Id": "work-a", "Content-Encoding": "gzip"})

@@ -63,6 +63,8 @@ test('systemd keeps the run going, except after a run that ended for good, and l
   assert.match(unit, /^Environment="PATH=\/a\$\$b%%c\\"d"$/m)
   assert.match(unit, /^Restart=on-failure$/m)
   assert.match(unit, /^RestartPreventExitStatus=3 4 5 7$/m)
+  assert.match(unit, /^SuccessExitStatus=9$/m, 'restarting into an upgrade is no failure')
+  assert.match(unit, /^RestartForceExitStatus=9$/m)
   assert.match(unit, /^KillMode=process$/m)
   assert.match(unit, /^WantedBy=default.target$/m)
 })
