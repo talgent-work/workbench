@@ -25,14 +25,14 @@ a.mk-section-head:hover svg { transform: translateX(2px); }
 .mk-section-head svg { color: var(--muted); transition: transform 150ms; }
 .mk-rows { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 40px; }
 .mk-row { display: flex; align-items: center; gap: 12px; min-height: 72px; }
-.mk-row-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; padding: 10px 8px; margin-left: -8px; border-radius: 14px; text-align: left; }
+.mk-row-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; padding: 10px 8px; margin-left: -8px; border-radius: 14px; text-align: left; font-size: 14px; font-weight: 500; line-height: 20px; }
 .mk-row-open:focus-visible { outline: 2px solid var(--focus); }
 .mk-row-text { display: grid; gap: 2px; min-width: 0; }
 .mk-row-text strong { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; }
 .mk-row-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); }
 .mk-row[data-off="true"] .mk-row-text strong { color: var(--muted); }
-.mk-row-lock { color: var(--muted); padding: 8px; box-sizing: content-box; }
-.mk-row-status { flex-shrink: 0; padding: 0 8px; font-size: 12px; color: var(--muted); }
+.mk-row-lock { flex-shrink: 0; color: var(--muted); }
+.mk-row-status { flex-shrink: 0; font-size: 12px; color: var(--muted); }
 .mk-empty { display: grid; justify-items: center; gap: 6px; padding: 40px 16px; text-align: center; font-size: 13px; }
 .mk-skeletons { display: grid; gap: 12px; }
 .mk-skeleton { height: 72px; border-radius: 16px; }

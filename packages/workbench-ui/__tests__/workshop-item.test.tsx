@@ -143,6 +143,8 @@ it("withdraws a published Connector only after confirmation", async () => {
   await waitFor(() => expect(toasts()).toContain("Withdrew acme-crm"));
   expect(await screen.findByText("You withdrew it")).toBeInTheDocument();
   expect(screen.queryByRole("textbox", { name: "Server address" })).toBeNull();
+  // Its publication date belongs to it only while it is Published.
+  expect(screen.queryByText(/^Published /)).toBeNull();
 }, 3000);
 
 it("deletes a private Connector only after confirmation and returns to the Workshop", async () => {

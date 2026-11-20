@@ -16,7 +16,7 @@ const entry = (connectorId: string, name: string, state: string, publisher: { ki
 const catalog = [
   entry("01900000-0000-7000-8000-000000000701", "github", "published", { kind: "platform", own: false, displayName: "" }),
   { ...entry("01900000-0000-7000-8000-000000000702", "acme-crm", "published", { kind: "person", own: false, displayName: "Alex Chen" }), status: "enabled", installationVersion: 1 },
-  entry("01900000-0000-7000-8000-000000000703", "chrome-devtools", "private", { kind: "person", own: true, displayName: "Me" }),
+  { ...entry("01900000-0000-7000-8000-000000000703", "chrome-devtools", "private", { kind: "person", own: true, displayName: "Me" }), category: "" },
   { ...entry("01900000-0000-7000-8000-000000000704", "docs", "published", { kind: "person", own: true, displayName: "Me" }), status: "disabled", installationVersion: 1 },
   { ...entry("01900000-0000-7000-8000-000000000705", "talgent", "published", { kind: "platform", own: false, displayName: "" }), required: true },
 ];
@@ -69,6 +69,16 @@ it("links a person's own Connector to its Workshop page, and only their own", as
   renderAt("/marketplace/connectors/01900000-0000-7000-8000-000000000703");
   await user.click(await screen.findByRole("button", { name: "Manage in workshop" }));
   expect(screen.getByTestId("location")).toHaveTextContent("/workshop/connectors/01900000-0000-7000-8000-000000000703");
+}, 3000);
+
+it("files a Connector added without a category under Other, in the list and on its page", async () => {
+  const { unmount } = renderAt("/marketplace/connectors");
+  const own = await rowOf("chrome-devtools");
+  expect(own.closest("section")).toHaveAccessibleName("Other");
+  unmount();
+
+  renderAt("/marketplace/connectors/01900000-0000-7000-8000-000000000703");
+  expect(await screen.findByText("Other")).toBeInTheDocument();
 }, 3000);
 
 // A row says whether its item is installed and leaves turning it off or

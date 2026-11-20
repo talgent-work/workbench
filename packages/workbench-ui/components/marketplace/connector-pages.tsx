@@ -125,7 +125,7 @@ export function ConnectorPage({ connectorId }: { connectorId: string }) {
   return <div className="mk-detail">
     <header className="mk-detail-head">
       <ConnectorImage connector={connector} size={64} />
-      <div className="mk-detail-title"><h2>{label}</h2><p className="mk-meta">{connector.category && <span>{categoryOf(connector)}</span>}<span>{own || connector.publisher?.kind === "platform" ? publisherLabel(connector) : `Published by ${publisherLabel(connector)}`}</span></p></div>
+      <div className="mk-detail-title"><h2>{label}</h2><p className="mk-meta"><span>{categoryOf(connector)}</span><span>{own || connector.publisher?.kind === "platform" ? publisherLabel(connector) : `Published by ${publisherLabel(connector)}`}</span></p></div>
       <div className="mk-detail-actions">
         {own && <Button variant="ghost" onPress={() => navigate(workshopPaths.connector(connector.connectorId))}><Hammer size={15} aria-hidden="true" />Manage in workshop</Button>}
         {connector.required ? <span className="mk-muted mk-inline"><Lock size={15} aria-hidden="true" />Always on</span>
