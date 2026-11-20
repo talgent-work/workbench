@@ -43,8 +43,14 @@ func TestAWorksAgentReadsItsInputsOverThePublicAPI(t *testing.T) {
 		{homed, "project:" + readersProject},
 	} {
 		ctx := asAgent(reader.work, reader.caller)
-		_, err = files.ListWorkFiles(ctx, &agentpublicv1.ListWorkFilesRequest{WorkId: reader.work})
+		listed, err := files.ListWorkFiles(ctx, &agentpublicv1.ListWorkFilesRequest{WorkId: reader.work})
 		require.NoError(t, err, "the Agent of %s lists its inputs", reader.work)
+		require.Len(t, listed.GetFiles(), 1)
+		input := listed.GetFiles()[0]
+		require.Equal(t, agentpublicv1.WorkFileKind_WORK_FILE_KIND_ATTACHMENT, input.GetKind())
+		require.Equal(t, "brief.md", input.GetName())
+		require.EqualValues(t, 12, input.GetSizeBytes())
+		require.Empty(t, input.GetUploaderUserId(), "an Agent learns no uploader")
 		issued, err := link(ctx, reader.work)
 		require.NoError(t, err, "the Agent of %s reads its inputs", reader.work)
 		require.Equal(t, "access://inputs/brief.md", issued.GetAccessUrl())
@@ -54,10 +60,10 @@ func TestAWorksAgentReadsItsInputsOverThePublicAPI(t *testing.T) {
 	_, err = files.ListWorkFiles(ctx, &agentpublicv1.ListWorkFilesRequest{WorkId: works.standalone})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "an Agent lists no other Work's inputs")
 	_, err = link(ctx, works.standalone)
-	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "an Agent reads no other Work's inputs")
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "an Agent reads no other Work's inputs")
 	personal := asAgent(works.standalone, "person:"+works.person)
 	_, err = files.ListWorkFiles(personal, &agentpublicv1.ListWorkFilesRequest{WorkId: homed})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "the Agent of the person's own Standalone Work lists no other Work's files")
 	_, err = link(personal, homed)
-	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "nor reads another Work's inputs")
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), "nor reads another Work's inputs")
 }

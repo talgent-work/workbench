@@ -142,8 +142,13 @@ func (stubStorage) OpenDirectory(context.Context, domain.LocatedDirectory) (stri
 	return "space-token", nil
 }
 
-func (stubStorage) ListFiles(context.Context, domain.Directory) ([]command.SpaceFile, error) {
-	return nil, nil
+// ListFiles holds one Attachment, uploaded by a person, in every inputs
+// Directory.
+func (stubStorage) ListFiles(_ context.Context, directory domain.Directory) ([]command.SpaceFile, error) {
+	if directory.Name != "inputs" {
+		return nil, nil
+	}
+	return []command.SpaceFile{{Directory: directory, Kind: command.FileKindAttachment, Name: "brief.md", SizeBytes: 12, Uploader: command.FileActor{UserID: "uploader"}}}, nil
 }
 
 func (stubStorage) ListDirectoryFiles(context.Context, []domain.Directory) ([]command.SpaceFile, error) {

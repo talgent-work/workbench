@@ -82,8 +82,8 @@ func TestAWorksAgentReadsItsOwnInputs(t *testing.T) {
 	_, err = works.ListFiles(ctx, homedAgent, standalone)
 	require.ErrorIs(t, err, access.ErrAccessDenied, "an Agent lists no other Work's inputs")
 	_, err = works.IssueAccessLink(ctx, homedAgent, standalonework.WorkFile{WorkID: standalone, Kind: command.FileKindAttachment, Name: "brief.md"}, false)
-	require.ErrorIs(t, err, command.ErrFileNotFound, "an Agent reads no other Work's inputs")
+	require.ErrorIs(t, err, access.ErrAccessDenied, "an Agent reads no other Work's inputs")
 	_, err = works.IssueAccessLink(ctx, standaloneAgent, standalonework.WorkFile{WorkID: homed, Kind: command.FileKindAttachment, Name: "spec.md"}, false)
-	require.ErrorIs(t, err, command.ErrFileNotFound, "reading its person's Library, an Agent reads Artifacts only")
+	require.ErrorIs(t, err, access.ErrAccessDenied, "reading its person's Library, an Agent reads Artifacts only")
 	require.Len(t, spaces.issued, 3, "a refused read issues no Access Link")
 }

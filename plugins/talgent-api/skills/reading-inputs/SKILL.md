@@ -28,7 +28,7 @@ The Work's environment adds its identity to every request sent there: you call a
    curl -fsS -o "$TALGENT_WORK_ROOT/inputs/<name>" "$TALGENT_API_ADDRESS<accessUrl>"
    ```
 
-The download is a snapshot of the input at that moment. Note its `updatedAt`, and download it again when you need its current content. A file in `inputs/` is never published as an Artifact.
+The download is a snapshot of the input at that moment. Note its `updatedAt`, and download it again when you need its current content.
 
 ## Refusals
 

@@ -78,13 +78,13 @@ func TestOwnerAndWorkShareHoldersReadAWorksFiles(t *testing.T) {
 	_, err = work.GrantWorkShare(work.definition, "owner", "reader", domain.ReaderAdmission{Directory: true})
 	require.NoError(t, err)
 
-	basis, err := work.AdmitFileReader(work.definition, domain.FileReader{ID: "owner"})
+	basis, err := work.AdmitFileReader(work.definition, domain.AccountReader("owner"))
 	require.NoError(t, err)
 	require.Equal(t, domain.ReadAsOwner, basis)
-	basis, err = work.AdmitFileReader(work.definition, domain.FileReader{ID: "reader"})
+	basis, err = work.AdmitFileReader(work.definition, domain.AccountReader("reader"))
 	require.NoError(t, err)
 	require.Equal(t, domain.ReadAsShare, basis)
-	_, err = work.AdmitFileReader(work.definition, domain.FileReader{ID: "stranger"})
+	_, err = work.AdmitFileReader(work.definition, domain.AccountReader("stranger"))
 	require.ErrorIs(t, err, domain.ErrWorkReaderNotAdmitted)
 
 	withProject := humanWork(t)
@@ -94,20 +94,20 @@ func TestOwnerAndWorkShareHoldersReadAWorksFiles(t *testing.T) {
 
 func TestAWorksOwnAgentReadsItsLocatedInputs(t *testing.T) {
 	for _, work := range []visibleWork{standaloneWork(t), humanWork(t)} {
-		basis, err := work.AdmitFileReader(work.definition, domain.FileReader{AgentOf: work.ID})
+		basis, err := work.AdmitFileReader(work.definition, domain.AgentReader(work.ID))
 		require.NoError(t, err)
 		require.Equal(t, domain.ReadAsOwnAgent, basis)
 		inputs, err := work.LocatedInputs()
 		require.NoError(t, err)
 		require.Equal(t, work.LocatedLayout.Inputs.Directory, inputs)
 
-		_, err = work.AdmitFileReader(work.definition, domain.FileReader{AgentOf: uuid.NewString()})
+		_, err = work.AdmitFileReader(work.definition, domain.AgentReader(uuid.NewString()))
 		require.ErrorIs(t, err, domain.ErrWorkReaderNotAdmitted, "another Work's Agent reads none of its inputs")
 	}
 
 	work := humanWork(t)
 	work.LocatedLayout.Inputs = nil
-	_, err := work.AdmitFileReader(work.definition, domain.FileReader{AgentOf: work.ID})
+	_, err := work.LocatedInputs()
 	require.ErrorIs(t, err, domain.ErrWorkFilesUnavailable, "a Work whose layout located no inputs has none to read")
 }
 

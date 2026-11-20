@@ -84,16 +84,9 @@ func (p *StandaloneWorks) libraryReader(ctx context.Context, caller Caller) (str
 // fileReader is whom a read of a Work's files is for: the owner asking for
 // itself, a person or an Application, or the person whose Library their
 // Work's Agent reads.
-func (p *StandaloneWorks) fileReader(ctx context.Context, caller Caller) (domain.FileReader, error) {
+func (p *StandaloneWorks) fileReader(ctx context.Context, caller Caller) (string, error) {
 	if caller.Agent != nil {
-		person, err := p.libraryReader(ctx, caller)
-		return domain.FileReader{ID: person}, err
+		return p.libraryReader(ctx, caller)
 	}
-	return domain.FileReader{ID: caller.Owner()}, nil
-}
-
-// ownAgent tells whether the caller is the Agent of the Work it asks about,
-// reading that Work's own inputs (Own input reading).
-func (c Caller) ownAgent(workID string) bool {
-	return c.Agent != nil && c.Agent.WorkID == workID
+	return caller.Owner(), nil
 }
