@@ -78,18 +78,37 @@ func TestOwnerAndWorkShareHoldersReadAWorksFiles(t *testing.T) {
 	_, err = work.GrantWorkShare(work.definition, "owner", "reader", domain.ReaderAdmission{Directory: true})
 	require.NoError(t, err)
 
-	basis, err := work.AdmitFileReader(work.definition, "owner")
+	basis, err := work.AdmitFileReader(work.definition, domain.FileReader{ID: "owner"})
 	require.NoError(t, err)
 	require.Equal(t, domain.ReadAsOwner, basis)
-	basis, err = work.AdmitFileReader(work.definition, "reader")
+	basis, err = work.AdmitFileReader(work.definition, domain.FileReader{ID: "reader"})
 	require.NoError(t, err)
 	require.Equal(t, domain.ReadAsShare, basis)
-	_, err = work.AdmitFileReader(work.definition, "stranger")
+	_, err = work.AdmitFileReader(work.definition, domain.FileReader{ID: "stranger"})
 	require.ErrorIs(t, err, domain.ErrWorkReaderNotAdmitted)
 
 	withProject := humanWork(t)
 	_, err = withProject.GrantWorkShare(withProject.definition, "owner", "reader", domain.ReaderAdmission{Directory: true})
 	require.ErrorIs(t, err, domain.ErrWorkShareOutOfScope, "an Extension Work is shared among its Work Caller's members only")
+}
+
+func TestAWorksOwnAgentReadsItsLocatedInputs(t *testing.T) {
+	for _, work := range []visibleWork{standaloneWork(t), humanWork(t)} {
+		basis, err := work.AdmitFileReader(work.definition, domain.FileReader{AgentOf: work.ID})
+		require.NoError(t, err)
+		require.Equal(t, domain.ReadAsOwnAgent, basis)
+		inputs, err := work.LocatedInputs()
+		require.NoError(t, err)
+		require.Equal(t, work.LocatedLayout.Inputs.Directory, inputs)
+
+		_, err = work.AdmitFileReader(work.definition, domain.FileReader{AgentOf: uuid.NewString()})
+		require.ErrorIs(t, err, domain.ErrWorkReaderNotAdmitted, "another Work's Agent reads none of its inputs")
+	}
+
+	work := humanWork(t)
+	work.LocatedLayout.Inputs = nil
+	_, err := work.AdmitFileReader(work.definition, domain.FileReader{AgentOf: work.ID})
+	require.ErrorIs(t, err, domain.ErrWorkFilesUnavailable, "a Work whose layout located no inputs has none to read")
 }
 
 func TestAnEmployeeDefinitionRepresentsItsPersonPrivately(t *testing.T) {

@@ -1,7 +1,7 @@
 {
   "name": "talgent-api",
   "version": "0.1.0",
-  "description": "Talgent's public API for Agents that call it directly: publishing a Work's Artifacts and reading its owner's Personal Library.",
+  "description": "Talgent's public API for Agents that call it directly: reading a Work's inputs, publishing its Artifacts and reading its owner's Personal Library.",
   "author": {
     "name": "Talgent"
   },

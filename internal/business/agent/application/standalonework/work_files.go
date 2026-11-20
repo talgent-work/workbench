@@ -21,7 +21,7 @@ type ownedWork struct {
 	work       *domain.AgentWork
 	definition *domain.AgentDefinition
 	// reader is whom a read of its files is for.
-	reader string
+	reader domain.FileReader
 }
 
 // loadWork loads a Work for a reader of its files: the owner asking for
@@ -32,17 +32,60 @@ func (p *StandaloneWorks) loadWork(ctx context.Context, caller Caller, workID st
 	if err != nil {
 		return ownedWork{}, err
 	}
-	if reader == "" {
+	if reader.ID == "" {
 		return ownedWork{}, access.ErrAccessDenied
 	}
 	work, definition, err := p.app.WorkWithDefinition(ctx, workID)
 	return ownedWork{work: work, definition: definition, reader: reader}, err
 }
 
+// ownInputs admits a Work's own Agent reading its located inputs and names
+// their Directory: the Work's own File Space, or its File Home's, which
+// Agent never interprets (Own input reading).
+func (p *StandaloneWorks) ownInputs(ctx context.Context, workID string) (domain.Directory, error) {
+	work, definition, err := p.app.WorkWithDefinition(ctx, workID)
+	if err != nil {
+		return domain.Directory{}, err
+	}
+	if _, err := work.AdmitFileReader(definition, domain.FileReader{AgentOf: workID}); err != nil {
+		return domain.Directory{}, denied(err)
+	}
+	return work.LocatedInputs()
+}
+
+// listOwnInputs lists the current Attachments of the Work's located inputs to
+// its own Agent, without Share Links.
+func (p *StandaloneWorks) listOwnInputs(ctx context.Context, workID string) ([]command.SpaceFile, error) {
+	inputs, err := p.ownInputs(ctx, workID)
+	if err != nil {
+		return nil, err
+	}
+	listed, err := p.files.ListFiles(ctx, inputs)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]command.SpaceFile, 0, len(listed))
+	for _, file := range listed {
+		if file.Kind == command.FileKindAttachment {
+			file.ShareLinks = nil
+			files = append(files, file)
+		}
+	}
+	return files, nil
+}
+
 // ListFiles lists a Standalone Work's files to its owner and Work Share
-// holders, its Attachments then its Artifacts, and to the Agent reading its
-// person's Library its Artifacts alone; only the owner sees Share Links.
+// holders, its Attachments then its Artifacts; only the owner sees Share
+// Links. To a Work's own Agent, it lists the Attachments of that Work's
+// inputs, for any Work; an Agent finds other Works' Artifacts in its
+// person's Library.
 func (p *StandaloneWorks) ListFiles(ctx context.Context, caller Caller, workID string) ([]command.SpaceFile, error) {
+	if caller.Agent != nil {
+		if !caller.ownAgent(workID) {
+			return nil, access.ErrAccessDenied
+		}
+		return p.listOwnInputs(ctx, workID)
+	}
 	owned, err := p.loadWork(ctx, caller, workID)
 	if err != nil {
 		return nil, err
@@ -58,13 +101,8 @@ func (p *StandaloneWorks) ListFiles(ctx context.Context, caller Caller, workID s
 	if err != nil {
 		return nil, err
 	}
-	// An Agent reads its person's Library, which holds Artifacts only.
-	read := []domain.LocatedDirectory{spaces.Inputs, spaces.Artifacts}
-	if caller.Agent != nil {
-		read = read[1:]
-	}
 	var files []command.SpaceFile
-	for _, space := range read {
+	for _, space := range []domain.LocatedDirectory{spaces.Inputs, spaces.Artifacts} {
 		listed, err := p.files.ListFiles(ctx, space.Directory)
 		if err != nil {
 			return nil, err
@@ -219,8 +257,13 @@ func (p *StandaloneWorks) admitFileReader(ctx context.Context, caller Caller, ow
 // readablePosition admits the caller to read one file and names its File
 // position: in a Standalone Work's own File Spaces, or, for another Work, an
 // Artifact it published itself into its publication target. An Agent reads
-// its owner's Library, which holds Artifacts only.
+// its owner's Library, which holds Artifacts only, and its own Work's inputs'
+// Attachments.
 func (p *StandaloneWorks) readablePosition(ctx context.Context, caller Caller, file WorkFile) (command.FilePosition, error) {
+	if caller.ownAgent(file.WorkID) && file.Kind == command.FileKindAttachment {
+		inputs, err := p.ownInputs(ctx, file.WorkID)
+		return command.FilePosition{Directory: inputs, Name: file.Name}, err
+	}
 	if caller.Agent != nil && file.Kind != command.FileKindArtifact {
 		return command.FilePosition{}, command.ErrFileNotFound
 	}

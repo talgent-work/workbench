@@ -12,7 +12,8 @@ import (
 )
 
 // WorkFileHandler serves Work files for the gateway-asserted person or
-// Application, or a Work's Agent reading its owner's Library.
+// Application, or a Work's Agent reading its own inputs or its owner's
+// Library.
 type WorkFileHandler struct {
 	works *standalonework.StandaloneWorks
 }

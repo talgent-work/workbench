@@ -166,22 +166,46 @@ func ReadableWorkFile(workID string, inFileHome, artifact bool, publishedBy stri
 	return !inFileHome || (artifact && publishedBy == workID)
 }
 
-// AdmitFileReader admits a reader of the Work's files: an owner of its
-// definition or a Work Share holder, who reads the files ReadableWorkFile
-// allows.
-func (s *AgentWork) AdmitFileReader(definition *AgentDefinition, reader string) (ReadBasis, error) {
-	return s.fileReadBasis(definition, reader)
+// FileReader is who reads a Work's files: a person or an Application by its
+// id, or the Agent of a Work by that Work's identity.
+type FileReader struct {
+	ID string
+	// AgentOf is the Work whose Agent reads.
+	AgentOf string
 }
 
-func (s *AgentWork) fileReadBasis(definition *AgentDefinition, reader string) (ReadBasis, error) {
-	if reader == "" {
+// AdmitFileReader admits a reader of the Work's files: an owner of its
+// definition or a Work Share holder, who reads the files ReadableWorkFile
+// allows, or the Work's own Agent, which reads the current Attachments of
+// its located inputs, whatever its File Home and Computer (Own input
+// reading, Managed input reading).
+func (s *AgentWork) AdmitFileReader(definition *AgentDefinition, reader FileReader) (ReadBasis, error) {
+	if reader.AgentOf != "" {
+		if reader.AgentOf != s.ID {
+			return "", ErrWorkReaderNotAdmitted
+		}
+		if _, err := s.LocatedInputs(); err != nil {
+			return "", err
+		}
+		return ReadAsOwnAgent, nil
+	}
+	if reader.ID == "" {
 		return "", ErrWorkReaderNotAdmitted
 	}
-	if definition != nil && definition.ID == s.AgentID && definition.IsOwner(reader) {
+	if definition != nil && definition.ID == s.AgentID && definition.IsOwner(reader.ID) {
 		return ReadAsOwner, nil
 	}
-	if slices.Contains(s.WorkShares, reader) {
+	if slices.Contains(s.WorkShares, reader.ID) {
 		return ReadAsShare, nil
 	}
 	return "", ErrWorkReaderNotAdmitted
+}
+
+// LocatedInputs is the Directory the Work reads its inputs from: its own File
+// Space, or its File Home's for a Work with one.
+func (s *AgentWork) LocatedInputs() (Directory, error) {
+	if s.LocatedLayout.Inputs == nil {
+		return Directory{}, ErrWorkFilesUnavailable
+	}
+	return s.LocatedLayout.Inputs.Directory.clone(), nil
 }

@@ -39,7 +39,7 @@ type ReaderAdmission struct {
 	Directory  bool
 }
 
-// ReadBasis is why Agent admits a reader to a Work's message stream.
+// ReadBasis is why Agent admits a reader to a Work's message stream or files.
 type ReadBasis string
 
 const (
@@ -49,6 +49,9 @@ const (
 	// ReadAsApplicationOwner is the Application Owner of the Application whose
 	// Work it is, who reads it and acts on none of it.
 	ReadAsApplicationOwner ReadBasis = "application_owner"
+	// ReadAsOwnAgent is the Work's own Agent, which reads only its located
+	// inputs' Attachments.
+	ReadAsOwnAgent ReadBasis = "own_agent"
 )
 
 // ChangeVisibility switches the Work between private and public to the
