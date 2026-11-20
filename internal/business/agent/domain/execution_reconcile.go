@@ -39,9 +39,6 @@ type EnvironmentObservation struct {
 	// ModelDigest identifies the model key a delivery would carry now; empty
 	// when none is known.
 	ModelDigest string
-	// InputsRefresh is how long a Managed Computer's synced input copies stay
-	// current (Input copy sync).
-	InputsRefresh time.Duration
 }
 
 func (o EnvironmentObservation) find(id string) (ObservedEnvironment, bool) {
@@ -76,8 +73,6 @@ const (
 	// StepSignalExit asks its launched process to exit, cancelling a Waiting
 	// Turn first when the Work asked.
 	StepSignalExit ExecutionStepKind = "signal_exit"
-	// StepSyncInputs syncs a Managed Computer's input copies.
-	StepSyncInputs ExecutionStepKind = "sync_inputs"
 	// StepLeaveDesk reports its Desk's departure to its Computer.
 	StepLeaveDesk ExecutionStepKind = "leave_desk"
 	// StepRenewLease renews its bound environment's lease to the step's
@@ -236,8 +231,7 @@ func (e *AgentExecution) exitSteps() []ExecutionStep {
 
 // runSteps bring a running bound environment's run up and keep it current:
 // first delivery, then preparation with the Harness start, then its
-// connection and credential replacement before expiry; a Managed Computer's
-// input copies are synced beside them.
+// connection and credential replacement before expiry.
 func (e *AgentExecution) runSteps(observation EnvironmentObservation, now time.Time) []ExecutionStep {
 	if !e.Credentials.Delivered {
 		if e.Outcome.StartFailure != "" {
@@ -245,22 +239,18 @@ func (e *AgentExecution) runSteps(observation EnvironmentObservation, now time.T
 		}
 		return []ExecutionStep{{Kind: StepDeliverCredentials}}
 	}
-	var steps []ExecutionStep
-	if e.inputsDue(observation, now) {
-		steps = append(steps, ExecutionStep{Kind: StepSyncInputs})
-	}
 	switch {
 	case e.Process.ID == "":
 		if e.Outcome.StartFailure == "" {
-			steps = append(steps, ExecutionStep{Kind: StepPrepare})
+			return []ExecutionStep{{Kind: StepPrepare}}
 		}
 	case e.Process.Exited:
 	case !observation.Attached:
-		steps = append(steps, ExecutionStep{Kind: StepConnect})
+		return []ExecutionStep{{Kind: StepConnect}}
 	case e.credentialsDue(observation, now) && e.wantsRun():
-		steps = append(steps, ExecutionStep{Kind: StepDeliverCredentials})
+		return []ExecutionStep{{Kind: StepDeliverCredentials}}
 	}
-	return steps
+	return nil
 }
 
 // credentialsDue reports delivered credentials past their declared expiry or

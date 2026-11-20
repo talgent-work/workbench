@@ -68,7 +68,7 @@ func TestOnlyACloudWorkMountsItsLocatedLayout(t *testing.T) {
 		_, err := handler.Handle(t.Context(), creation)
 		require.NoError(t, err)
 		require.Len(t, store.session.LocatedLayout.Mounts, mounts)
-		require.NotNil(t, store.session.LocatedLayout.Inputs, "both copy or mount their File Home's inputs")
+		require.NotNil(t, store.session.LocatedLayout.Inputs, "both read their File Home's inputs")
 	}
 }
 

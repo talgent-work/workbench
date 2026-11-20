@@ -163,27 +163,15 @@ func (r *Recovery) CredentialChanged(ctx context.Context, authorizationID string
 	return errors.Join(failures...)
 }
 
-// InputsChanged follows Storage's fact that a file in a Directory changed.
-// Every Work on a Managed Computer whose located inputs are that Directory
-// receives its current inputs from its execution's reconciliation, which this
-// wakes (Sync changed inputs); a Cloud Work mounts its inputs and needs
-// nothing. Every unclosed Work reading that Directory is also told of the
-// change (Notify changed inputs). Repeated or reordered facts lead to the
-// same sync of the current files and to no second notice.
+// InputsChanged follows Storage's fact that a file in a Directory changed:
+// every unclosed Work reading that Directory as its located inputs is told
+// of the change (Notify changed inputs). A repeated fact leads to no second
+// notice.
 func (r *Recovery) InputsChanged(ctx context.Context, change domain.InputChange) error {
 	if !change.Directory.Present() {
 		return domain.ErrInvalidWork
 	}
-	ids, err := r.lookups.ListExecutionsReadingInputs(ctx, change.Directory)
-	if err != nil {
-		return errors.Join(err, r.notifyChangedInputs(ctx, change))
-	}
-	marked, err := r.reconciliation.MarkInputsChanged(ctx, ids)
-	failures := []error{err, r.notifyChangedInputs(ctx, change)}
-	for _, id := range marked {
-		failures = append(failures, r.WakeExecution(ctx, id))
-	}
-	return errors.Join(failures...)
+	return r.notifyChangedInputs(ctx, change)
 }
 
 // RecoverWork applies what the Work's execution reported and passes the

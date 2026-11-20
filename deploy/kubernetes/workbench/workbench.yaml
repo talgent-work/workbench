@@ -276,10 +276,6 @@ data:
       # its local proxy, which adds its Identity Token. Empty where Agents
       # reach the platform only through a Gateway (AGENT_CORE_API_ACCESS).
       api-address: "${PLATFORM_API_ADDRESS:}"
-      # Where Storage's Access Links are served on that origin, from which a
-      # Managed Computer downloads its Works' inputs: the web-api route's
-      # storage-content-api rule, which takes no Identity Token.
-      content-address: "${WORKBENCH_ORIGIN}/api/v1/storage/content"
       # Where a reader's browser reaches Agent's links to a Managed Work's
       # files: the web-api route's agent-workspace-file rule.
       workspace-file-address: "${AGENT_WORKSPACE_FILE_ADDRESS:/api/v1/agent/workspace-files}"

@@ -42,14 +42,10 @@ type machineRelay struct {
 	// forgotten.
 	credentials           []byte
 	deliveries, forgotten int
-	// manifests are the bodies of the inputs PUTs, in order, each noted
-	// with whether credentials had been delivered before it.
-	manifests     [][]byte
-	afterDelivery []bool
-	files         map[string]string
-	created       []struct{ Cwd, Command string }
-	deleted       []string
-	calls         []string
+	files                 map[string]string
+	created               []struct{ Cwd, Command string }
+	deleted               []string
+	calls                 []string
 	// reconciliation serves the machine's reconciliation; nil answers 404,
 	// as a Talgent Computer from before reconciliation does. Its rounds'
 	// state is what the ping reports; without it the round is decided,
@@ -133,18 +129,6 @@ func (m *machineRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		m.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if r.Method == http.MethodPut && path == "/inputs" {
-		if r.Header.Get("X-Talgent-Control-Token") != "computer-control" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		body, _ := io.ReadAll(r.Body)
-		m.mu.Lock()
-		m.manifests, m.afterDelivery = append(m.manifests, body), append(m.afterDelivery, m.credentials != nil)
-		m.mu.Unlock()
-		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 	m.mu.Lock()
@@ -289,11 +273,11 @@ func newManagedWork(t *testing.T) *managedWork {
 	relayServer := httptest.NewServer(f.relay)
 	t.Cleanup(relayServer.Close)
 	f.relayURL = relayServer.URL
-	machines, err := NewManagedComputers(relayServer.Client(), relayServer.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, API: managedAPIAddress, Telemetry: managedTelemetryAddress}, "computer-control", f.place)
+	machines, err := NewManagedComputers(relayServer.Client(), relayServer.URL, ManagedAddresses{Gateway: managedGatewayAddress, API: managedAPIAddress, Telemetry: managedTelemetryAddress}, "computer-control", f.place)
 	require.NoError(t, err)
 	f.provisioning = NewProvisioning(db, provider, fixtureSandboxCredentials(db, provider), NativeLaunchConfig{Binary: "claude"}, time.Now, nil)
 	attachNativeCredentials(t, db, f.provisioning, lifecycle)
-	f.provisioning.managed, err = NewManagedEnvironment(db, machines, fixtureModels(), f.works, managedInputsRefresh)
+	f.provisioning.managed, err = NewManagedEnvironment(db, machines, fixtureModels(), f.works)
 	require.NoError(t, err)
 
 	f.receiver = &nativeConnectionReceiver{provisioning: f.provisioning}
@@ -331,8 +315,8 @@ func (f *managedWork) begin(t *testing.T, input domain.LaunchSpecification) exec
 }
 
 // launch reconciles the execution until its Harness process is launched and
-// handed to Dispatcher: its creation, first delivery, input sync,
-// preparation and start.
+// handed to Dispatcher: its creation, first delivery, preparation and
+// start.
 func (f *managedWork) launch(t *testing.T, id string) executionRecord {
 	t.Helper()
 	ctx := context.Background()
@@ -350,32 +334,13 @@ func (f *managedWork) launch(t *testing.T, id string) executionRecord {
 	return executionRecord{}
 }
 
-// decided is what the execution decides from its observation now, without
-// taking it.
-func (f *managedWork) decided(t *testing.T, id string) []domain.ExecutionStepKind {
+// reading is Dispatcher reading the record's launched process at the relay
+// endpoint it was handed.
+func (f *managedWork) reading(t *testing.T, record executionRecord) StreamReading {
 	t.Helper()
-	run := current(t, f.steps, id)
-	observation, err := f.steps.environment.Observe(context.Background(), run)
+	spec, err := decodeManagedSpecification(record)
 	require.NoError(t, err)
-	decision, err := run.Reconcile(observation, domain.LeaseTerms{}, time.Now())
-	require.NoError(t, err)
-	kinds := []domain.ExecutionStepKind{}
-	for _, step := range decision.Steps {
-		kinds = append(kinds, step.Kind)
-	}
-	return kinds
-}
-
-// markInputsChanged marks the inputs of every execution reading directory
-// due, as Storage's change report does.
-func (f *managedWork) markInputsChanged(t *testing.T, directory domain.Directory) []string {
-	t.Helper()
-	ctx := context.Background()
-	ids, err := infrastructure.NewExecutionQueryRepository(f.db).ListExecutionsReadingInputs(ctx, directory)
-	require.NoError(t, err)
-	marked, err := f.steps.handler.MarkInputsChanged(ctx, ids)
-	require.NoError(t, err)
-	return marked
+	return StreamReading{ProcessID: record.ProcessID, Endpoint: f.provisioning.managed.machines.endpoint(spec, record.SessionID)}
 }
 
 // startManaged begins and launches a Managed Work's run and answers its
@@ -406,13 +371,15 @@ func (f *managedWork) exit(t *testing.T, record executionRecord) {
 // environment is opened on the machine through the relay, it prepares and
 // launches in /workspace there, and Dispatcher is handed the relay as its
 // execd endpoint. Its compute is released through the relay and its
-// directory stays.
+// directory stays. Neither its start nor its Resume hands the machine its
+// located inputs: the Work's Agent downloads those it needs (Managed input
+// reading).
 func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.T) {
 	ctx := context.Background()
 	f := newManagedWork(t)
 	db, relay, receiver := f.db, f.relay, f.receiver
 
-	input := managedRequest()
+	input := readingInputs(managedRequest(), caseInputs())
 	input.ContextMode = domain.ContextFresh
 	begun := f.begin(t, input)
 	require.Equal(t, realizationManaged, begun.Realization, "the realization is recorded, never inferred")
@@ -449,6 +416,7 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	for _, call := range relay.calls {
 		require.True(t, strings.HasPrefix(call, http.MethodPut+" /relay/") || strings.Contains(call, "/relay/"+managedComputerID+"/works/"+input.WorkID) || call == http.MethodGet+" /relay/"+managedComputerID+"/reconciliation", call)
 	}
+	requireNoInputsCall(t, relay)
 
 	// The process exited and its Work retired the execution: its compute is
 	// released through the relay, and the Work's directory stays.
@@ -470,13 +438,23 @@ func TestManagedWorkStartsPreparesLaunchesAndConnectsThroughTheRelay(t *testing.
 	input.HarnessSessionReference = "context"
 	next := f.begin(t, input)
 	require.NotEqual(t, record.ID, next.ID)
-	require.NoError(t, f.steps.reconcile(ctx, next.ID))
-	resumed, _, err := latestAllocation(ctx, db, input.WorkID)
-	require.NoError(t, err)
+	resumed := f.launch(t, next.ID)
 	require.Equal(t, next.ID, resumed.ID)
 	require.Contains(t, resumed.LaunchCommand, "--resume '"+record.NativeSessionID+"'")
 	require.Equal(t, realizationManaged, resumed.Realization)
 	resumedSpec, err := decodeManagedSpecification(resumed)
 	require.NoError(t, err)
 	require.Equal(t, managedComputerID, resumedSpec.ComputerID)
+	requireNoInputsCall(t, relay)
+}
+
+// requireNoInputsCall asserts that no call reached a Work's inputs on the
+// machine.
+func requireNoInputsCall(t *testing.T, relay *machineRelay) {
+	t.Helper()
+	relay.mu.Lock()
+	defer relay.mu.Unlock()
+	for _, call := range relay.calls {
+		require.False(t, strings.HasSuffix(call, "/inputs"), "the platform hands the machine no inputs: %s", call)
+	}
 }

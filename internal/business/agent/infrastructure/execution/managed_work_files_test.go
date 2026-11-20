@@ -14,19 +14,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/talgent-work/workbench/internal/business/agent/application/command"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
 )
 
 // machineFiles is a machine's Work root as the relay serves it: listings,
-// file reads and the inputs manifest of the Work "session".
+// and file reads of the Work "session".
 type machineFiles struct {
 	mu          sync.Mutex
 	unreachable bool
 	unknown     bool
 	dirs        map[string][]machineFileEntry
 	files       map[string]string
-	manifest    []byte
 	reads       []string
 	// listed are the directories listed, in order.
 	listed []string
@@ -40,15 +38,6 @@ func (m *machineFiles) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := "/relay/" + managedComputerID + "/works/session"
-	if r.Method == http.MethodPut && r.URL.Path == base+"/inputs" {
-		if r.Header.Get("X-Talgent-Control-Token") != "control" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		m.manifest, _ = io.ReadAll(r.Body)
-		w.WriteHeader(http.StatusAccepted)
-		return
-	}
 	if r.Header.Get("X-EXECD-ACCESS-TOKEN") != "execd-token" {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
@@ -117,39 +106,11 @@ func newMachineFiles(t *testing.T) (*machineFiles, *ManagedComputers, *ManagedWo
 	}
 	server := httptest.NewServer(machine)
 	t.Cleanup(server.Close)
-	machines, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+	machines, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
 	files := &ManagedWorkFiles{tokens: openedToken("execd-token"), machines: machines}
 	spec := managedSpecification{ComputerID: managedComputerID, AccessToken: "execd-token"}
 	return machine, machines, files, spec
-}
-
-// The machine downloads each Attachment from the Gateway's content address
-// on its own origin, with the grant Storage signed; nothing else of the
-// Access Link travels.
-func TestManagedInputsHandTheMachineTheWholeListOfAttachments(t *testing.T) {
-	machine, machines, _, spec := newMachineFiles(t)
-	updated := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
-	require.NoError(t, machines.deliverInputs(context.Background(), spec, "session", []command.InputFile{
-		{Name: "brief.pdf", SizeBytes: 1024, UpdatedAt: updated, AccessPath: "/v1/storage/content?grant=signed.grant"},
-	}))
-	require.JSONEq(t, `{"files":[{"name":"brief.pdf","size":1024,"updated_at":"2026-11-02T10:00:00Z","url":"`+managedContentAddress+`?grant=signed.grant"}]}`, string(machine.manifest))
-
-	require.NoError(t, machines.deliverInputs(context.Background(), spec, "session", nil))
-	require.JSONEq(t, `{"files":[]}`, string(machine.manifest), "an emptied inputs Directory empties inputs/")
-	require.Error(t, machines.deliverInputs(context.Background(), spec, "session", []command.InputFile{{Name: "x", AccessPath: "/v1/storage/content"}}), "a link without a grant is never sent")
-
-	machine.unreachable = true
-	require.ErrorIs(t, machines.deliverInputs(context.Background(), spec, "session", nil), errMachineUnreachable)
-}
-
-// Talgent Computer downloads inputs only from the origin it sends the Work's
-// identity to, so the content address must be there.
-func TestManagedComputersNeedTheContentAddressOnTheGatewaysOrigin(t *testing.T) {
-	for _, address := range []string{"", "https://elsewhere.example/api/v1/storage/content", "http://workbench.example/api/v1/storage/content", "https://workbench.example", "https://workbench.example/c?x=1"} {
-		_, err := NewManagedComputers(http.DefaultClient, "http://relay.invalid", ManagedAddresses{Gateway: managedGatewayAddress, Content: address, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
-		require.Error(t, err, address)
-	}
 }
 
 // A Managed Work's files are read on its machine with the execd token it
@@ -203,7 +164,7 @@ func TestAStalledWorkFileReadFails(t *testing.T) {
 	}))
 	defer server.Close()
 	defer close(release)
-	machines, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Content: managedContentAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
+	machines, err := NewManagedComputers(server.Client(), server.URL, ManagedAddresses{Gateway: managedGatewayAddress, Telemetry: managedTelemetryAddress}, "control", &managedPlace{})
 	require.NoError(t, err)
 	machines.fileIdle = 200 * time.Millisecond
 	spec := managedSpecification{ComputerID: managedComputerID, AccessToken: "execd-token"}

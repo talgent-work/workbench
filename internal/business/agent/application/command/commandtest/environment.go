@@ -47,16 +47,14 @@ type Environment struct {
 
 	Observations, Specified, Submitted int
 	// SubmittedState is the execution each submission was sent for.
-	SubmittedState                          []domain.AgentExecution
-	Deleted                                 []string
-	Delivered, Withdrawn, Prepared          int
-	Launched, Connected, Synced, Reconciled int
+	SubmittedState                  []domain.AgentExecution
+	Deleted                         []string
+	Delivered, Withdrawn, Prepared  int
+	Launched, Connected, Reconciled int
 	// Creations are what each specification was handed from other
-	// authorities, Supplies what each delivery was handed, and SyncedInputs
-	// the inputs each sync was handed.
-	Creations    []command.CreationSupply
-	Supplies     []command.CredentialSupply
-	SyncedInputs []command.ManagedInputs
+	// authorities, and Supplies what each delivery was handed.
+	Creations []command.CreationSupply
+	Supplies  []command.CredentialSupply
 	// Cleared counts deliveries cleared once their holding check refused.
 	Cleared int
 	// Renewals are the expiries each lease renewal asked for; each is
@@ -173,17 +171,6 @@ func (e *Environment) Connect(context.Context, *domain.AgentExecution) error {
 	defer e.mu.Unlock()
 	e.Connected++
 	return e.StepErr
-}
-
-func (e *Environment) SyncInputs(ctx context.Context, execution *domain.AgentExecution, inputs command.ManagedInputs, holding command.EnvironmentHolding) (int64, error) {
-	if err := holding(ctx); err != nil {
-		return 0, err
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.Synced++
-	e.SyncedInputs = append(e.SyncedInputs, inputs)
-	return execution.Inputs.Due, e.StepErr
 }
 
 func (e *Environment) ReconcileComputer(context.Context, string) error {

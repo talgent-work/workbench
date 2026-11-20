@@ -101,9 +101,6 @@ func (e *ExecutionEnvironment) Observe(ctx context.Context, execution *domain.Ag
 			return domain.EnvironmentObservation{}, withExecution(err, execution)
 		}
 	}
-	if inputs, syncs := authority.(inputDelivery); syncs {
-		observation.InputsRefresh = inputs.refresh()
-	}
 	return observation, nil
 }
 
@@ -282,40 +279,6 @@ func (e *ExecutionEnvironment) Connect(ctx context.Context, execution *domain.Ag
 	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
 	defer cancel()
 	return withExecution(e.recovering(ctx, record, e.connections.connect(attempt, record)), execution)
-}
-
-// SyncInputs hands a Managed Computer the current files of the execution's
-// Work's located inputs and answers the input changes the sync covers: those
-// the execution had marked when it was read.
-func (e *ExecutionEnvironment) SyncInputs(ctx context.Context, execution *domain.AgentExecution, inputs command.ManagedInputs, holding command.EnvironmentHolding) (int64, error) {
-	record, err := e.record(ctx, execution)
-	if err != nil {
-		return 0, err
-	}
-	authority, err := e.provisioning.authority(record)
-	if err != nil {
-		return 0, withExecution(err, execution)
-	}
-	delivery, syncs := authority.(inputDelivery)
-	if !syncs {
-		return 0, nil
-	}
-	attempt, cancel := context.WithTimeout(ctx, e.provisioning.attemptTimeout)
-	defer cancel()
-	err = e.connections.credentials.withLock(attempt, record.SandboxID, func() error {
-		if err := holding(attempt); err != nil {
-			return err
-		}
-		current, err := e.provisioning.current(attempt, record)
-		if err != nil {
-			return err
-		}
-		return delivery.syncInputs(attempt, current, inputs)
-	})
-	if err != nil {
-		return 0, withExecution(err, execution)
-	}
-	return execution.Inputs.Due, nil
 }
 
 // ReconcileComputer reconciles a Managed Computer that is reachable again;

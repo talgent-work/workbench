@@ -171,7 +171,6 @@ type AgentExecution struct {
 	CheckoutResults []RepositoryCheckout
 	ExitRequest     ExitRequest
 	Credentials     CredentialDelivery
-	Inputs          InputSync
 	// StartupSetback names the cause of the latest failed attempt at one of
 	// its long startup steps, which may pass; empty while none failed since
 	// its start last progressed (bound, prepared or launched). A start failure

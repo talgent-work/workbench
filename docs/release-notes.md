@@ -14,6 +14,16 @@ index and fills it for every Work not Closed. Agent then finds the Works a file 
 by it, and each such Work without a File Home receives a notice naming the changed file, the
 operation and the time.
 
+The platform no longer copies a Managed Work's inputs onto its machine: a start or Resume sends
+the machine no inputs, and the Work's Agent downloads the inputs it needs. Remove
+`agent-computer.content-address` and `agent-recovery.inputs-refresh-interval` from your
+configuration, as the controlplane no longer reads them. Once every controlplane of this release
+runs, apply
+[`20261120-drop-input-copies.sql`](../deploy/middleware/migrations/20261120-drop-input-copies.sql)
+to the same database: it drops `inputs_due`, `inputs_directory` with its index,
+`inputs_synced_at`, `inputs_sync_failures` and `inputs_sync_abandoned` from `agent_execution`. A
+rollback to the previous release needs those columns back first.
+
 ## The release that lets owners add and publish their own Connectors
 
 Before deploying, apply

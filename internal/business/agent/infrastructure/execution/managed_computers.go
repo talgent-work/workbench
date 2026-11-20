@@ -25,17 +25,14 @@ import (
 // compute, is the run's processes only. The Work's credentials reach the
 // machine's local proxy, never its processes, through the relay's credentials
 // PUT; the proxy carries the Work's Identity Token to the platform Connector
-// and the entry at their public addresses. The Work's inputs reach the machine as a manifest of Access
-// Links it downloads from the same origin (managed_inputs.go), and the Work's
-// files are read back through the relay (managed_files.go). A run's Harness
+// and the entry at their public addresses. The Work's files are read back
+// through the relay (managed_files.go). A run's Harness
 // sends its telemetry to the platform's public telemetry endpoint
 // (managed_telemetry.go).
 type ManagedComputers struct {
 	http    *http.Client
 	relay   *url.URL
 	gateway string
-	// content is where the machine downloads an Access Link.
-	content string
 	// api is where the machine's local proxy sends its Works' entry calls;
 	// empty when Managed Works have none.
 	api string
@@ -49,12 +46,11 @@ type ManagedComputers struct {
 
 // ManagedAddresses are the platform's public addresses a Managed Computer
 // reaches: Gateway, the platform Connector's HTTPS address, for its local
-// proxy; Content, where the same origin serves Access Links, for its Works'
-// inputs; API, that same origin, where the entry serves its API, for its Works'
+// proxy; API, that same origin, where the entry serves its API, for its Works'
 // direct calls, or empty for none; and Telemetry, the platform's HTTPS OTLP
 // endpoint, for its Harness's telemetry.
 type ManagedAddresses struct {
-	Gateway, Content, API, Telemetry string
+	Gateway, API, Telemetry string
 }
 
 // NewManagedComputers reaches the machines through the relay and gives them
@@ -69,14 +65,9 @@ func NewManagedComputers(client *http.Client, relayAddress string, addresses Man
 	if err != nil || gateway.Scheme != "https" || gateway.Host == "" || gateway.User != nil || gateway.RawQuery != "" || gateway.Fragment != "" {
 		return nil, errors.New("agent: the platform Connector's public HTTPS address is required for Managed Computers")
 	}
-	// Talgent Computer sends the Work's Identity Token only to that origin,
-	// and takes the Work's inputs only from it.
-	content, ok := onOrigin(gateway, addresses.Content)
-	if !ok {
-		return nil, errors.New("agent: the public content address, on the platform Connector's origin, is required for Managed Computers")
-	}
 	api := ""
 	if addresses.API != "" {
+		var ok bool
 		if api, ok = sameOrigin(gateway, addresses.API); !ok {
 			return nil, errors.New("agent: the entry's public API address must be the platform Connector's origin")
 		}
@@ -89,7 +80,7 @@ func NewManagedComputers(client *http.Client, relayAddress string, addresses Man
 	h := *client
 	// Redirects would carry the control or execd token to another endpoint.
 	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &ManagedComputers{http: &h, relay: relay, gateway: strings.TrimRight(gateway.String(), "/"), content: content, api: api, telemetry: strings.TrimRight(telemetry.String(), "/"), token: controlToken, computers: computers, fileIdle: workFileIdle}, nil
+	return &ManagedComputers{http: &h, relay: relay, gateway: strings.TrimRight(gateway.String(), "/"), api: api, telemetry: strings.TrimRight(telemetry.String(), "/"), token: controlToken, computers: computers, fileIdle: workFileIdle}, nil
 }
 
 // sameOrigin is address as a bare origin when it is origin's scheme and host
@@ -101,16 +92,6 @@ func sameOrigin(origin *url.URL, address string) (string, bool) {
 		return "", false
 	}
 	return parsed.Scheme + "://" + parsed.Host, true
-}
-
-// onOrigin is address without a trailing slash when it names a path on
-// origin's scheme and host, with no credentials, query or fragment.
-func onOrigin(origin *url.URL, address string) (string, bool) {
-	parsed, err := url.Parse(address)
-	if err != nil || parsed.Scheme != origin.Scheme || parsed.Host != origin.Host || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || strings.Trim(parsed.Path, "/") == "" {
-		return "", false
-	}
-	return strings.TrimRight(parsed.String(), "/"), true
 }
 
 // managedSpecification is the recorded environment of a Managed execution,

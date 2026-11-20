@@ -37,27 +37,9 @@ type RecoveryConfig struct {
 	// SweepInterval defaults to, and may not exceed, one minute, which bounds
 	// how long a lost wake goes unnoticed.
 	SweepInterval Duration `json:"sweep-interval" yaml:"sweep-interval" toml:"sweep-interval"`
-	// InputsRefreshInterval is how long a Managed Work's synced inputs stay
-	// current before the sweep syncs them again with fresh Access Links;
-	// it defaults to ten minutes, inside Storage's Access Link lifetime.
-	InputsRefreshInterval Duration `json:"inputs-refresh-interval" yaml:"inputs-refresh-interval" toml:"inputs-refresh-interval"`
 }
 
-const (
-	maxSweepInterval             = time.Minute
-	defaultInputsRefreshInterval = 10 * time.Minute
-)
-
-func (c RecoveryConfig) inputsRefreshInterval() (time.Duration, error) {
-	interval := c.InputsRefreshInterval.Duration()
-	if interval == 0 {
-		return defaultInputsRefreshInterval, nil
-	}
-	if interval < 0 {
-		return 0, errors.New("agent: the inputs refresh interval must be positive")
-	}
-	return interval, nil
-}
+const maxSweepInterval = time.Minute
 
 func (c RecoveryConfig) sweepInterval() (time.Duration, error) {
 	interval := c.SweepInterval.Duration()

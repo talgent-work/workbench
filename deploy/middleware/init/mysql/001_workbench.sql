@@ -266,11 +266,6 @@ CREATE TABLE IF NOT EXISTS `agent_execution` (
   `process_exited` boolean NOT NULL DEFAULT false COMMENT 'Agent acknowledged the exit fact of this execution''s process',
   `credentials_expire_at` bigint NOT NULL DEFAULT '0' COMMENT 'Earliest declared expiry of the credentials last delivered to the Vault in Unix milliseconds; zero when none expires',
   `model_credential_digest` varchar(32) NOT NULL DEFAULT '' COMMENT 'Identifies, without revealing it, the model key last delivered to the Vault',
-  `inputs_due` int unsigned NOT NULL DEFAULT '0' COMMENT 'Input changes a Managed execution''s machine has not been synced with; zero when it holds the current inputs',
-  `inputs_directory` char(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT 'SHA-256 key of a Managed Work''s located inputs Directory, recorded when the execution begins; finds the executions a file change concerns',
-  `inputs_synced_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds of a Managed execution''s last successful inputs sync; zero before the first. The recovery sweep syncs again once it is older than the refresh interval, before the copies'' Access Links expire',
-  `inputs_sync_failures` int unsigned NOT NULL DEFAULT '0' COMMENT 'Failed inputs sync attempts of a Managed execution since its last sync or input change; the attempt reaching the ceiling abandons the sync',
-  `inputs_sync_abandoned` varchar(512) NOT NULL DEFAULT '' COMMENT 'Why a Managed execution''s inputs sync was abandoned at its attempt ceiling; empty while it is retried. A later input change clears it',
   `submitted_at` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds when the environment creation was recorded as submitted, before it was sent; zero while unsubmitted; never blindly resubmit',
   `creation_deadline` bigint NOT NULL DEFAULT '0' COMMENT 'Unix milliseconds after which an unanswered creation can no longer produce an environment: submission plus the configured creation wait',
   `creation_answered` boolean NOT NULL DEFAULT false COMMENT 'A definite answer to the creation arrived; an unanswered one holds release until its deadline',
@@ -313,7 +308,6 @@ CREATE TABLE IF NOT EXISTS `agent_execution` (
   KEY `idx_sandbox_id_deleted_at_updated_at_id` (`sandbox_id`, `deleted_at`, `updated_at`, `id`),
   UNIQUE KEY `uniq_live_session_id` (`live_session_id`),
   KEY `idx_ownership_label` (`ownership_label`),
-  KEY `idx_inputs_directory_deleted_at` (`inputs_directory`, `deleted_at`),
   KEY `idx_session_id_created_at_id` (`session_id`, `created_at`, `id`),
   KEY `idx_authorization_ids` ((CAST(`authorization_ids` AS CHAR(36) ARRAY)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AgentExecution aggregate: one run of a Work and its execution environment';

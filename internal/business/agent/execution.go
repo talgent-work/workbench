@@ -236,17 +236,12 @@ func relayClient() *http.Client {
 }
 
 // newManagedEnvironment is the Managed realization, nil without Managed
-// Computers. Its Works' located inputs, which Application reads from
-// Storage, are synced again by the recovery sweep at its refresh interval.
-func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository, recovery RecoveryConfig) (*execution.ManagedEnvironment, error) {
+// Computers.
+func newManagedEnvironment(db *xorm.Engine, machines *execution.ManagedComputers, models command.PlatformCatalogPort, sessions domain.AgentWorkRepository) (*execution.ManagedEnvironment, error) {
 	if machines == nil {
 		return nil, nil
 	}
-	refresh, err := recovery.inputsRefreshInterval()
-	if err != nil {
-		return nil, err
-	}
-	return execution.NewManagedEnvironment(db, machines, models, sessions, refresh)
+	return execution.NewManagedEnvironment(db, machines, models, sessions)
 }
 
 // registerManagedTelemetry takes the telemetry of Works on Managed Computers,

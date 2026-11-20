@@ -89,9 +89,7 @@ func (m *ManagedComputers) forgetCredentials(ctx context.Context, spec managedSp
 // would leave the Harness on the machine's own Claude login. Every delivery
 // carries the Work's new Identity Token (Work token issuance) and its Provider
 // Connectors' current target credentials, falling due again at the earliest
-// expiry Marketplace declared for them (Credential holding). The Work's
-// inputs, which Talgent Computer takes only from the platform origin
-// delivered here, are synced as their own step once it is delivered.
+// expiry Marketplace declared for them (Credential holding).
 func (m ManagedEnvironment) deliver(ctx context.Context, record executionRecord, supply command.CredentialSupply, redelivery bool, holding command.EnvironmentHolding) (deliveredCredentials, error) {
 	spec, err := decodeManagedSpecification(record)
 	if err != nil {

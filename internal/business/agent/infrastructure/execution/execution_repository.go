@@ -8,7 +8,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/samber/oops"
 	"github.com/talgent-work/workbench/internal/business/agent/domain"
-	"github.com/talgent-work/workbench/internal/business/agent/infrastructure"
 	"xorm.io/xorm"
 )
 
@@ -28,7 +27,7 @@ func NewAgentExecutionRepository(db *xorm.Engine, now func() time.Time) *AgentEx
 }
 
 // factColumns are the columns holding an execution's facts.
-var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted_at", "creation_deadline", "creation_answered", "start_rejected", "sandbox_id", "lease_expires_at", "credentials_delivered", "preparation_ended", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "inputs_due", "inputs_synced_at", "inputs_sync_failures", "inputs_sync_abandoned", "start_failure", "rejection_reason", "startup_setback", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "checkout_results", "request_json", "version", "updated_at"}
+var factColumns = []string{"state", "start_admitted_at", "desk_id", "seated_at", "desk_left_at", "submitted_at", "creation_deadline", "creation_answered", "start_rejected", "sandbox_id", "lease_expires_at", "credentials_delivered", "preparation_ended", "process_id", "process_prepared", "process_started", "process_exited", "exit_code", "exit_reason", "exit_request_id", "exit_cancels_turn", "credentials_expire_at", "model_credential_digest", "credentials_withdrawn", "start_failure", "rejection_reason", "startup_setback", "abandoned", "environment_lost", "loss_reason", "retirement", "deleted_at", "released_at", "checkout_results", "request_json", "version", "updated_at"}
 
 func (r *AgentExecutionRepository) Get(ctx context.Context, id string) (*domain.AgentExecution, error) {
 	record, found, err := r.get(ctx, id)
@@ -138,20 +137,15 @@ func recordFromExecution(e *domain.AgentExecution) (executionRecord, error) {
 	if err != nil {
 		return executionRecord{}, err
 	}
-	inputs := ""
-	if located := e.Launch.LocatedLayout.Inputs; located != nil && e.Realization == domain.RealizationManaged {
-		inputs = infrastructure.DirectoryKey(located.Directory)
-	}
 	return executionRecord{
-		CheckoutResults: checkouts, InputsDirectory: inputs,
-		ID: e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch,
+		CheckoutResults: checkouts,
+		ID:              e.ID, SessionID: e.WorkID, Realization: string(e.Realization), RequestJSON: launch,
 		State: string(e.State), StartAdmittedAt: millis(e.StartAdmittedAt), DeskID: e.Desk.ID, SeatedAt: millis(e.Desk.SeatedAt), DeskLeftAt: millis(e.Desk.LeftAt),
 		SubmittedAt: millis(e.Creation.SubmittedAt), CreationDeadline: millis(e.Creation.Deadline), CreationAnswered: e.Creation.Answered, StartRejected: e.Outcome.Rejected, SandboxID: e.Environment, LeaseExpiresAt: millis(e.Lease),
 		CredentialsDelivered: e.Credentials.Delivered, PreparationEnded: e.Process.PreparationEnded,
 		ProcessID: e.Process.ID, ProcessPrepared: e.Process.Prepared, ProcessStarted: e.Process.Started, ProcessExited: e.Process.Exited, ExitCode: e.Process.Exit.ExitCode, ExitReason: e.Process.Exit.Reason,
 		ExitRequestID: e.ExitRequest.StopRequestID, ExitCancels: e.ExitRequest.CancelWaitingTurn,
 		CredentialsExpireAt: millis(e.Credentials.ExpiresAt), ModelCredentialDigest: e.Credentials.Digest, CredentialsWithdrawn: e.Credentials.Withdrawn,
-		InputsDue: e.Inputs.Due, InputsSyncedAt: millis(e.Inputs.SyncedAt), InputsSyncFailures: e.Inputs.Failures, InputsSyncAbandoned: e.Inputs.Abandoned,
 		StartFailure: e.Outcome.StartFailure, RejectionReason: e.Outcome.RejectionReason, StartupSetback: e.StartupSetback, Abandoned: e.Outcome.Abandoned, EnvironmentLost: e.Outcome.Lost, LossReason: e.Outcome.LossReason,
 		Retirement: string(e.Retirement), DeletedAt: millis(e.RetiredAt), ReleasedAt: millis(e.ReleasedAt),
 	}, nil
@@ -178,7 +172,6 @@ func executionFromRecord(r executionRecord) (*domain.AgentExecution, error) {
 			Exit: domain.HarnessExit{ExitCode: r.ExitCode, Reason: r.ExitReason}},
 		ExitRequest:    domain.ExitRequest{StopRequestID: r.ExitRequestID, CancelWaitingTurn: r.ExitCancels},
 		Credentials:    domain.CredentialDelivery{Delivered: r.CredentialsDelivered, Digest: r.ModelCredentialDigest, ExpiresAt: fromMillis(r.CredentialsExpireAt), Withdrawn: r.CredentialsWithdrawn},
-		Inputs:         domain.InputSync{Due: r.InputsDue, SyncedAt: fromMillis(r.InputsSyncedAt), Failures: r.InputsSyncFailures, Abandoned: r.InputsSyncAbandoned},
 		StartupSetback: r.StartupSetback,
 		Outcome:        domain.ExecutionOutcome{StartFailure: r.StartFailure, Rejected: r.StartRejected, RejectionReason: r.RejectionReason, Abandoned: r.Abandoned, Lost: r.EnvironmentLost, LossReason: r.LossReason},
 		State:          domain.ExecutionState(r.State), Retirement: domain.RetirementCause(r.Retirement),

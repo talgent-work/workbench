@@ -18,7 +18,8 @@ type LocatedMount struct {
 // fixed for its life (Fixed layout): the Directories its sandbox mounts, the
 // Directory it reads its inputs from and its publication target. A Work on a
 // Managed Computer mounts no Directory (Managed workspace), so it keeps only
-// its inputs, which its machine copies, and its publication target.
+// its inputs, which its Agent downloads on demand, and its publication
+// target.
 type LocatedLayout struct {
 	Mounts []LocatedMount
 	// Inputs is the Directory located at /workspace/inputs; nil when that

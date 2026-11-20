@@ -289,8 +289,8 @@ func TestAWorkKeepsItsLocatedLayoutWhenItsDefinitionChanges(t *testing.T) {
 }
 
 // A Work on a Managed Computer mounts no Directory: its files stay on the
-// machine, which copies its located inputs, and it still publishes into its
-// publication target.
+// machine, its Agent downloads its located inputs, and it still publishes
+// into its publication target.
 func TestAManagedWorkMountsNoDirectory(t *testing.T) {
 	definition := employeeDefinition(t, "jack")
 	request := layoutCreation(definition, "jack", true)

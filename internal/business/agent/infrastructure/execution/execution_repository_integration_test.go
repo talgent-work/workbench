@@ -103,12 +103,6 @@ func TestAgentExecutionRepositoryRoundTripsUnderItsVersion(t *testing.T) {
 	_, err = stored.RecordLaunch("process-round-trip")
 	require.NoError(t, err)
 	require.True(t, stored.RecordCredentialDelivery(domain.CredentialDelivery{Delivered: true, Digest: "digest", ExpiresAt: now.Add(time.Hour)}))
-	require.True(t, stored.MarkInputsChanged())
-	require.True(t, stored.MarkInputsChanged())
-	require.True(t, stored.RecordInputSync(1, now))
-	for range domain.InputSyncAttempts {
-		stored.RecordInputSyncFailure("syncing the input copies failed")
-	}
 	_, err = stored.RequestExit(domain.WorkStopRequested{WorkID: launch.WorkID, StartAdmittedAt: now, StopRequestID: "stop-round-trip", CancelWaitingTurn: true})
 	require.NoError(t, err)
 	current, exited := stored.RecordExit("process-round-trip", domain.HarnessExit{ExitCode: 3, Reason: "fixture"})
@@ -127,10 +121,6 @@ func TestAgentExecutionRepositoryRoundTripsUnderItsVersion(t *testing.T) {
 	require.True(t, loaded.Credentials.Delivered)
 	require.Equal(t, "digest", loaded.Credentials.Digest)
 	require.True(t, now.Add(time.Hour).Equal(loaded.Credentials.ExpiresAt))
-	require.Equal(t, int64(1), loaded.Inputs.Due)
-	require.True(t, now.Equal(loaded.Inputs.SyncedAt))
-	require.Equal(t, domain.InputSyncAttempts, loaded.Inputs.Failures)
-	require.Equal(t, "Input copies not synced after 30 attempts. Last error: syncing the input copies failed.", loaded.Inputs.Abandoned)
 
 	require.ErrorIs(t, repository.Save(ctx, stale), domain.ErrConcurrentModification, "an execution loaded before the last save cannot overwrite it")
 	unchanged, err := repository.Get(ctx, run.ID)
@@ -219,18 +209,6 @@ func TestExecutionQueryRepositoryFindsTheExecutionsAChangeConcerns(t *testing.T)
 		require.Empty(t, blank)
 	})
 
-	t.Run("an inputs Directory concerns the unretired managed executions reading it", func(t *testing.T) {
-		// Every execution here reads the inputs testLayout located.
-		reading, err := lookups.ListExecutionsReadingInputs(ctx, testLayout().Inputs.Directory)
-		require.NoError(t, err)
-		require.Equal(t, []string{managed.ID}, reading, "a cloud or retired execution syncs no inputs")
-		other, err := lookups.ListExecutionsReadingInputs(ctx, workDirectory("other-work", "inputs"))
-		require.NoError(t, err)
-		require.Empty(t, other)
-		blank, err := lookups.ListExecutionsReadingInputs(ctx, domain.Directory{})
-		require.NoError(t, err)
-		require.Empty(t, blank)
-	})
 }
 
 // The checkout outcomes a run's preparation recorded survive the round trip;

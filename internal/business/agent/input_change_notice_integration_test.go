@@ -40,8 +40,6 @@ type inputChanges struct {
 
 func newInputChanges(m *lifecycleModule, logger *slog.Logger) *inputChanges {
 	queued := &queuedTasks{}
-	// No Managed execution reads these inputs, so the input copy sync this
-	// fact also wakes finds nothing to mark.
 	recovery := application.NewRecovery(m.app, queued, nil, m.app.ExecutionQueries, nil, nil, nil)
 	changes := &inputChanges{m: m, queued: queued, handler: messagehandler.NewFileChangedHandler(recovery)}
 	for _, processor := range taskprocessor.RecoveryProcessors(recovery, logger) {

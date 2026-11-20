@@ -31,10 +31,6 @@ type Config struct {
 	// Managed Computer's local proxy sends its Works' Talgent Connector
 	// calls; required with RelayAddress.
 	MCPAddress string `json:"mcp-address" yaml:"mcp-address" toml:"mcp-address"`
-	// ContentAddress is where the same Gateway serves Access Links on its
-	// public origin, from which a Managed Computer downloads its Works'
-	// inputs; required with RelayAddress.
-	ContentAddress string `json:"content-address" yaml:"content-address" toml:"content-address"`
 	// APIAddress is where a Managed Work calls the entry's API directly, on
 	// the same public origin, through its local proxy; empty gives Managed
 	// Works no direct API, as where Agents reach the platform only through

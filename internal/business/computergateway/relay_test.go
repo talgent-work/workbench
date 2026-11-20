@@ -119,8 +119,6 @@ func serveMachine(conn *websocket.Conn) {
 				send(relayFrame{Type: "exec_response", RequestID: f.RequestID, Status: 200, Body: json.RawMessage(`{"work_root":"/home/u/works/w1"}`)})
 			case (f.Method == http.MethodPut || f.Method == http.MethodDelete) && f.Path == "/credentials" && f.Token == "":
 				send(relayFrame{Type: "exec_response", RequestID: f.RequestID, Status: http.StatusNoContent})
-			case f.Method == http.MethodPut && f.Path == "/inputs" && f.Token == "":
-				send(relayFrame{Type: "exec_response", RequestID: f.RequestID, Status: http.StatusAccepted})
 			case f.WorkID == "" && f.Path == "/reconciliation" && f.Token == "" && f.Method == http.MethodGet:
 				send(relayFrame{Type: "exec_response", RequestID: f.RequestID, Status: 200, Body: json.RawMessage(`{"round":"r1","reconciled":false,"works":[]}`)})
 			case f.WorkID == "" && f.Path == "/reconciliation" && f.Token == "" && f.Method == http.MethodPost && string(f.Body) == `{"round":"r1"}`:
@@ -421,22 +419,20 @@ func TestTheRelayPacesAFileReadToItsReader(t *testing.T) {
 	}
 }
 
-// Delivering a Work's inputs is the platform's call, as delivering its
-// credentials is.
-func TestTheRelayChecksTheControlTokenOfInputDelivery(t *testing.T) {
+// The platform makes no call to a Work's inputs: the control token carries
+// none there, so the machine answers it as any call without its execd token.
+func TestTheRelayCarriesNoPlatformCallToAWorksInputs(t *testing.T) {
 	r := startReplicas(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	for _, server := range []*httptest.Server{r.a, r.b} {
-		for header, status := range map[string]int{execdTokenHeader: http.StatusUnauthorized, HeaderControlToken: http.StatusAccepted} {
-			request, err := http.NewRequestWithContext(ctx, http.MethodPut, server.URL+"/relay/c1/works/w1/inputs", strings.NewReader(`{"files":[]}`))
-			require.NoError(t, err)
-			request.Header.Set(header, map[string]string{execdTokenHeader: "token", HeaderControlToken: "control"}[header])
-			response, err := http.DefaultClient.Do(request)
-			require.NoError(t, err)
-			_ = response.Body.Close()
-			require.Equal(t, status, response.StatusCode, header)
-		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodPut, server.URL+"/relay/c1/works/w1/inputs", strings.NewReader(`{"files":[]}`))
+		require.NoError(t, err)
+		request.Header.Set(HeaderControlToken, "control")
+		response, err := http.DefaultClient.Do(request)
+		require.NoError(t, err)
+		_ = response.Body.Close()
+		require.Equal(t, http.StatusUnauthorized, response.StatusCode)
 	}
 }
 

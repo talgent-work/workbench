@@ -14,7 +14,7 @@ import (
 // execution's facts and its version; the execution environment adapter
 // writes only the technical columns that realize its steps: the environment
 // specification, launch commands, credential plan, service access, the
-// preparation process and checkout plan, and the Managed input owner.
+// preparation process and checkout plan, and the Managed process handles.
 type executionRecord struct {
 	ID        string `xorm:"pk 'id'"`
 	SessionID string `xorm:"'session_id'"`
@@ -68,18 +68,7 @@ type executionRecord struct {
 	// ModelCredentialDigest identifies the model key last delivered.
 	ModelCredentialDigest string `xorm:"'model_credential_digest'"`
 	CredentialsWithdrawn  bool   `xorm:"'credentials_withdrawn'"`
-	// InputsDue counts the input changes a Managed execution's machine has
-	// not been synced with; zero when it holds the current inputs.
-	InputsDue int64 `xorm:"'inputs_due'"`
-	// InputsSyncedAt is when, in Unix milliseconds, a Managed execution's
-	// inputs were last synced; zero before the first.
-	InputsSyncedAt int64 `xorm:"'inputs_synced_at'"`
-	// InputsSyncFailures counts the failed input sync attempts since the
-	// last sync or change; InputsSyncAbandoned names why the sync stopped
-	// once they reached the ceiling.
-	InputsSyncFailures  int    `xorm:"'inputs_sync_failures'"`
-	InputsSyncAbandoned string `xorm:"'inputs_sync_abandoned'"`
-	StartFailure        string `xorm:"'start_failure'"`
+	StartFailure          string `xorm:"'start_failure'"`
 	// RejectionReason names why the start was rejected, when known.
 	RejectionReason string `xorm:"'rejection_reason'"`
 	// StartupSetback names the latest failed attempt at a long startup step.
@@ -117,10 +106,6 @@ type executionRecord struct {
 	CheckoutPlan    []byte `xorm:"'checkout_plan'"`
 	LaunchCommand   string `xorm:"'launch_command'"`
 	NativeSessionID string `xorm:"'native_session_id'"`
-	// InputsDirectory is the key of a Managed Work's located inputs
-	// Directory, recorded when the execution begins; a change in that
-	// Directory finds the execution by it.
-	InputsDirectory string `xorm:"'inputs_directory'"`
 	// HandlesReleased records that a Managed execution's process handles were
 	// deleted on its machine.
 	HandlesReleased       bool `xorm:"'handles_released'"`
