@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Button, ListBox, Modal, SearchField, Spinner } from "@heroui/react";
+import { Alert, Button, ListBox, Modal, SearchField, Spinner, Tooltip } from "@heroui/react";
 import { Share2 } from "lucide-react";
 import { useDirectoryUsers, useGrantWorkShare, useRevokeWorkShare, useShareCandidates } from "../../lib/standalone-work-service";
 import { personName } from "../../lib/user-display";
@@ -9,14 +9,17 @@ import { Person } from "./person";
  * User Directory may be added; the Work stays private to the rest. */
 export function ShareButton({ workId, ownerId, readerIds }: { workId: string; ownerId: string; readerIds: string[] }) {
   const [open, setOpen] = useState(false);
-  return <Modal isOpen={open} onOpenChange={setOpen}>
-    <Button size="sm" variant="secondary"><Share2 size={15} aria-hidden="true" />Share</Button>
+  // The top bar's actions are quiet icons alike; the dialog names what it does.
+  return <>
+    <Tooltip><Button size="sm" variant="ghost" isIconOnly aria-label="Share work" onPress={() => setOpen(true)}><Share2 size={15} aria-hidden="true" /></Button><Tooltip.Content>Share work</Tooltip.Content></Tooltip>
+    <Modal isOpen={open} onOpenChange={setOpen}>
     <Modal.Backdrop><Modal.Container placement="center" size="md"><Modal.Dialog>
       <Modal.CloseTrigger />
       <Modal.Header><Modal.Heading>Share this work</Modal.Heading></Modal.Header>
       <Modal.Body className="grid gap-4"><ShareReaders workId={workId} ownerId={ownerId} readerIds={readerIds} /></Modal.Body>
     </Modal.Dialog></Modal.Container></Modal.Backdrop>
-  </Modal>;
+  </Modal>
+  </>;
 }
 
 function ShareReaders({ workId, ownerId, readerIds }: { workId: string; ownerId: string; readerIds: string[] }) {

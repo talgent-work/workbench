@@ -13,6 +13,9 @@ export interface ReadingKinds {
    * names an Extension Work's Work Caller; a Standalone Work leaves it out. */
   trace: { label: string; workCaller?: WorkCaller; workId: string; createdAt: Date | null };
   "work-file": { label: string; workId: string; file: WorkFile };
+  /** A Standalone Work's Session Workspace, read by its owner or a Work
+   * Share holder. */
+  "work-workspace": { label: string; workId: string };
 }
 
 export type ReadingContent = { [Kind in keyof ReadingKinds]: { kind: Kind } & ReadingKinds[Kind] }[keyof ReadingKinds];

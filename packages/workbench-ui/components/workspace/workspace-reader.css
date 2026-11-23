@@ -1,0 +1,30 @@
+/* The workspace reader: a floating directory card over the open file. */
+.wsb-host { position: relative; min-height: 100%; }
+.wsb-spin { animation: wsb-spin 0.8s linear infinite; }
+@keyframes wsb-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .wsb-spin { animation: none; } }
+
+.wsb-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding-top: 18vh; text-align: center; color: var(--muted); }
+.wsb-center p { max-width: 42ch; }
+.wsb-prompt p { font-size: 18px; font-weight: 500; color: var(--foreground); }
+.wsb-muted { color: var(--muted); font-size: 12px; }
+.wsb-failure { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--danger); }
+
+.wsb-tree { list-style: none; margin: 0; padding: 0; }
+.wsb-tree .wsb-row.button { display: flex; justify-content: flex-start; align-items: center; gap: 6px; width: 100%; min-width: max-content; height: 28px; min-height: 28px; padding-block: 0; padding-right: 10px; border-radius: 8px; font-size: 13px; font-weight: 400; text-align: left; }
+.wsb-tree .wsb-row[data-current="true"] { background: var(--default); font-weight: 500; }
+/* A link stays focusable so its hover card can say why it does not open. */
+.wsb-tree .wsb-row[aria-disabled="true"] { color: var(--muted); cursor: default; }
+.wsb-caret { width: 13px; flex-shrink: 0; color: var(--muted); transition: transform 120ms; }
+.wsb-caret[data-open="true"] { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .wsb-caret { transition: none; } }
+.wsb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wsb-tree-note { display: flex; align-items: center; gap: 6px; height: 28px; font-size: 12px; color: var(--muted); }
+
+/* The card is anchored to the reading area's top right and does not scroll
+   with the document, which keeps the full width. */
+.wsb-float-anchor { position: sticky; top: 0; z-index: 5; height: 0; }
+.wsb-float-anchor .wsb-float-card { position: absolute; top: -8px; right: -8px; width: 280px; max-width: calc(100% + 8px); max-height: calc(100dvh - 120px); overflow: auto; padding: 10px 8px; }
+/* Open folders stick under their ancestors while their contents scroll. */
+.wsb-float-card .wsb-tree .wsb-row[data-sticky="true"] { position: sticky; z-index: 2; background: var(--surface); }
+.wsb-float-card .wsb-tree .wsb-row[data-sticky="true"]:hover { background: color-mix(in oklch,var(--default) 100%,var(--surface)); }

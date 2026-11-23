@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useEntryShell } from "../../components/shell/entry-shell";
 import { PageLayout } from "../../components/shell/page-layout";
 import { ConversationUnavailable } from "../../components/work/conversation-unavailable";
+import { WorkspaceButton } from "../../components/workspace/workspace-reader";
 import { WorkConversation } from "../../components/work/work-conversation";
 import { WorkSnapshotUnavailable } from "../../components/work/work-snapshot-state";
 import { useCurrentUser } from "../../lib/account-service";
@@ -60,9 +61,13 @@ export function StandaloneWorkPage() {
     : refused === Code.NotFound ? <WorkSnapshotUnavailable notFound onRetry={refresh} />
     : snapshot.isError && !reader ? <WorkSnapshotUnavailable notFound={false} onRetry={refresh} />
     : null;
-  return <PageLayout workspaceTitle={title} trail={[{ label: "Works", onPress: () => navigate(paths.works) }]} topActions={work && ownWork && <>
-    <TitleButton workId={workId} title={title} />
-    <ShareButton workId={workId} ownerId={userId} readerIds={work.shareReaderIds} />
+  return <PageLayout workspaceTitle={title} trail={[{ label: "Works", onPress: () => navigate(paths.works) }]} topActions={<>
+    {/* The owner and a Work Share holder read a running or stopped Standalone Work's workspace. */}
+    {standaloneWork && !unavailable && workLifecycle && workLifecycle !== "closed" && <WorkspaceButton content={{ kind: "work-workspace", label: title, workId }} />}
+    {work && ownWork && <>
+      <TitleButton workId={workId} title={title} />
+      <ShareButton workId={workId} ownerId={userId} readerIds={work.shareReaderIds} />
+    </>}
   </>}>
     <div className="agent-grid">
       {unavailable ? <section data-testid="agent-stream-panel" className="stream-panel" aria-label="Agent Stream">{unavailable}</section>

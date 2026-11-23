@@ -3,6 +3,7 @@ import { Code, ConnectError, createRouterTransport, type ConnectRouter, type Han
 import { AgentWorkService } from "@talgent/contracts/agent/public/v1/work_pb";
 import { WorkService } from "@talgent/contracts/agent/public/v2/work_pb";
 import { WorkFileService } from "@talgent/contracts/agent/public/v1/work_file_pb";
+import { WorkWorkspaceService } from "@talgent/contracts/agent/public/v1/work_workspace_pb";
 import { SessionService } from "@talgent/contracts/account/public/v1/session_pb";
 import { ComputerService } from "@talgent/contracts/computer/public/v1/computer_pb";
 import { MarketplaceService } from "@talgent/contracts/marketplace/public/v1/marketplace_pb";
@@ -18,7 +19,7 @@ type Handler = (request: never, context: HandlerContext) => unknown;
 export type Fakes = Record<string, Handler | undefined>;
 
 /** The core's services, each a set of faked methods. */
-export const services = { session: {} as Fakes, marketplace: {} as Fakes, agent: {} as Fakes, stream: {} as Fakes, trace: {} as Fakes, work: {} as Fakes, workFile: {} as Fakes, computer: {} as Fakes };
+export const services = { session: {} as Fakes, marketplace: {} as Fakes, agent: {} as Fakes, stream: {} as Fakes, trace: {} as Fakes, work: {} as Fakes, workFile: {} as Fakes, workWorkspace: {} as Fakes, computer: {} as Fakes };
 
 /** Routes service to fakes(); a method nobody faked is unimplemented. */
 export function routeFakes(router: ConnectRouter, service: DescService, fakes: () => Fakes) {
@@ -41,6 +42,7 @@ export function routeCoreServices(router: ConnectRouter) {
   routeFakes(router, TraceQueryService, () => services.trace);
   routeFakes(router, WorkService, () => services.work);
   routeFakes(router, WorkFileService, () => services.workFile);
+  routeFakes(router, WorkWorkspaceService, () => services.workWorkspace);
   routeFakes(router, ComputerService, () => services.computer);
 }
 
