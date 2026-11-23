@@ -1748,6 +1748,10 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: web-api
+      sectionName: work-workspace-api
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: web-api
       sectionName: marketplace-api
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
