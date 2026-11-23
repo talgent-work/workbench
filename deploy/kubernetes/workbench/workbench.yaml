@@ -66,7 +66,7 @@ data:
         fable-model: deepseek-flash[1m]
         subagent-model: deepseek-flash
         thinking-levels: [low, high, max]
-        default-thinking-level: max
+        default-thinking-level: high
         environment:
           CLAUDE_CODE_AUTO_COMPACT_WINDOW: "786432"
       # https://docs.bigmodel.cn/cn/coding-plan/tool/claude
@@ -79,7 +79,7 @@ data:
         fable-model: glm-5.3[1m]
         subagent-model: glm-5.3-flash[1m]
         thinking-levels: [low, high, max]
-        default-thinking-level: max
+        default-thinking-level: high
         environment:
           CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1000000"
           API_TIMEOUT_MS: "3000000"
@@ -109,7 +109,7 @@ data:
         fable-model: MiniMax-M3.1-Flash-Preview[1m]
         subagent-model: MiniMax-M3.1-Flash-Preview[1m]
         thinking-levels: [low, medium, high, xhigh, max]
-        default-thinking-level: max
+        default-thinking-level: high
         environment:
           CLAUDE_CODE_AUTO_COMPACT_WINDOW: "524288"
       # https://help.aliyun.com/zh/model-studio/claude-code (Coding Plan)
@@ -133,7 +133,7 @@ data:
         fable-model: deepseek-v4.1-flash[1m]
         subagent-model: deepseek-v4.1-flash
         thinking-levels: [low, high, max]
-        default-thinking-level: max
+        default-thinking-level: high
         environment:
           CLAUDE_CODE_AUTO_COMPACT_WINDOW: "786432"
       - id: glm-5.3-token-plan
@@ -145,7 +145,7 @@ data:
         fable-model: glm-5.3[1m]
         subagent-model: glm-5.3[1m]
         thinking-levels: [low, high, max]
-        default-thinking-level: max
+        default-thinking-level: high
         environment:
           CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1000000"
           API_TIMEOUT_MS: "3000000"
@@ -179,7 +179,7 @@ data:
         fable-model: claude-fable-5-2
         subagent-model: claude-sonnet-5-5
         thinking-levels: [low, medium, high, xhigh, max]
-        default-thinking-level: high
+        default-thinking-level: medium
         environment:
           ANTHROPIC_BETAS: oauth-2025-04-20
 ---
