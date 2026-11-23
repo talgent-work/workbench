@@ -96,7 +96,7 @@ importers:
         version: 9.39.4
       '@heroui/styles':
         specifier: ^3.1.0
-        version: 3.1.0(tailwind-merge@3.7.0)(tailwindcss@4.2.2)
+        version: 3.1.0(tailwind-merge@3.4.0)(tailwindcss@4.2.2)
       '@tailwindcss/vite':
         specifier: ^4.2.2
         version: 4.2.2(vite@8.1.6(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1))
@@ -171,7 +171,7 @@ importers:
         version: 3.1.0(@react-spectrum/provider@3.11.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(tailwindcss@4.2.2)
       '@heroui/styles':
         specifier: ^3.1.0
-        version: 3.1.0(tailwind-merge@3.4.0)(tailwindcss@4.2.2)
+        version: 3.1.0(tailwind-merge@3.7.0)(tailwindcss@4.2.2)
       '@streamdown/code':
         specifier: 1.1.1
         version: 1.1.1(react@19.2.5)
