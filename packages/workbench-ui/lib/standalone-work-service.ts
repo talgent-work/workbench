@@ -30,12 +30,29 @@ export function standaloneWorksQueryKey(userId: string | undefined) {
  * title for it, such as a Work another product started. */
 export const untitledWorkLabel = "Work";
 
+/** The Work States a Work is still open in: everything but closed. */
+export const openWorkStates = ["starting", "working", "stopping", "stopped", "failed", "closing"];
+
 /** The person's Standalone Works, closed ones included, most recently updated first. */
 export function useStandaloneWorks() {
   const userId = useCurrentUser().data?.user?.id;
   return useQuery({
     queryKey: standaloneWorksQueryKey(userId),
     queryFn: async ({ signal }) => (await workClient.listWorks({ limit: 100 }, { signal })).works.map(standaloneWork),
+    enabled: Boolean(userId),
+    retry: false,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Recent: the person's latest open Standalone Works, most recently updated
+ * first. Closed Works leave it; the Works page still lists them. */
+export function useRecentStandaloneWorks(limit: number) {
+  const userId = useCurrentUser().data?.user?.id;
+  return useQuery({
+    queryKey: [...standaloneWorksQueryKey(userId), "recent", limit],
+    queryFn: async ({ signal }) => (await workClient.listWorks({ limit, states: openWorkStates }, { signal })).works.map(standaloneWork),
     enabled: Boolean(userId),
     retry: false,
     refetchInterval: 10000,

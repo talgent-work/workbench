@@ -64,7 +64,6 @@ export function WorkHistory({ history, activeId, onNavigate }: { history: WorkHi
   const accessLost = history.error && [Code.PermissionDenied, Code.Unauthenticated].includes(ConnectError.from(history.error).code);
   const rows = accessLost ? [] : history.data ?? [];
   return <section className="p-session-history" aria-label="History">
-    {/* Archived Works stay in Recent, marked by their Closed state. */}
     <Typography type="body-sm" color="muted" className="p-history-heading">Recent</Typography>
     {history.error && <div role="alert"><Typography type="body-sm">History unavailable</Typography><Button size="sm" variant="ghost" onPress={() => { void history.refetch(); }}>Retry history</Button></div>}
     {control.isError && !archiveTarget && <Typography type="body-sm" className="text-danger" role="alert">{workControlErrorMessage(control.error)}</Typography>}
