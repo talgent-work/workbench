@@ -30,7 +30,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "2.1.266"
+    "@anthropic-ai/claude-code": "2.1.323"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

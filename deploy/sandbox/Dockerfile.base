@@ -5,9 +5,9 @@ FROM node:${NODE_VERSION}-bookworm-slim AS native-claude
 # The native protocol and shared project HOME behavior are verified against this
 # version. Install outside HOME so mounting a persistent HOME cannot hide the CLI.
 RUN npm install --prefix /opt/talgent-claude --global --omit=dev \
-        @anthropic-ai/claude-code@2.1.266 \
+        @anthropic-ai/claude-code@2.1.323 \
     && /opt/talgent-claude/bin/claude --version \
-        | grep -Fx '2.1.266 (Claude Code)' \
+        | grep -Fx '2.1.323 (Claude Code)' \
     && npm cache clean --force
 
 FROM node:${NODE_VERSION}-bookworm-slim
