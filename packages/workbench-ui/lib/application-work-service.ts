@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "./account-service";
 import { workClient } from "./client";
-import { standaloneWork, type StandaloneWork } from "./standalone-work-service";
+import { openWorkStates, standaloneWork, type StandaloneWork } from "./standalone-work-service";
 
 // An Application's Works as its Application Owner reads them (Agent's
 // WorkService, naming the Application): never driven from here.
@@ -17,8 +17,6 @@ export const applicationWorkPath = (applicationId: string, workId: string) =>
 export type LabelPair = readonly [key: string, value: string];
 export const labelText = ([key, value]: LabelPair) => `${key}=${value}`;
 
-/** The Work States a Work is still open in: everything but closed. */
-const openStates = ["starting", "working", "stopping", "stopped", "failed", "closing"];
 /** At most this many Works are listed; a full page means there may be more. */
 export const listedApplicationWorks = 100;
 
@@ -48,6 +46,6 @@ export function useOpenApplicationWorks(applicationId: string) {
     enabled: Boolean(userId && applicationId),
     retry: false,
     refetchOnWindowFocus: false,
-    queryFn: async ({ signal }) => (await workClient.listWorks({ applicationId, states: openStates, limit: listedApplicationWorks }, { signal })).works.length,
+    queryFn: async ({ signal }) => (await workClient.listWorks({ applicationId, states: openWorkStates, limit: listedApplicationWorks }, { signal })).works.length,
   });
 }
