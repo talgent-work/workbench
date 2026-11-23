@@ -1,7 +1,7 @@
 import { workPresentation } from "../../lib/work-state-presentation";
 import { useRef, useState } from "react";
-import { typographyVariants, Button, Chip, Dropdown, Label, ListBox, Modal, Spinner, Tabs, Tooltip, Typography } from "@heroui/react";
-import { Archive, Circle, Ellipsis, Folder, Pause, Play } from "lucide-react";
+import { typographyVariants, Button, Chip, Dropdown, Label, ListBox, Modal, Spinner, Tooltip, Typography } from "@heroui/react";
+import { Archive, ChevronDown, Circle, Ellipsis, Folder, Pause, Play } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { agentWorkClient } from "../../lib/client";
@@ -25,9 +25,9 @@ export type WorkHistorySource = {
 /** Which of the person's Works the sidebar lists: the open ones, or the Closed ones they archived. */
 export type WorkHistoryView = "recent" | "archived";
 
-const viewLabels: Record<WorkHistoryView, { tab: string; empty: string }> = {
-  recent: { tab: "Recent", empty: "No recent work" },
-  archived: { tab: "Archived", empty: "No archived work" },
+const viewLabels: Record<WorkHistoryView, { name: string; empty: string }> = {
+  recent: { name: "Recent", empty: "No recent work" },
+  archived: { name: "Archived", empty: "No archived work" },
 };
 
 /** The sidebar's Works, open ones under Recent and Closed ones under Archived,
@@ -73,16 +73,23 @@ export function WorkHistory({ history, view, onViewChange, activeId, onNavigate 
   const accessLost = history.error && [Code.PermissionDenied, Code.Unauthenticated].includes(ConnectError.from(history.error).code);
   const rows = accessLost ? [] : history.data ?? [];
   return <section className="p-session-history" aria-label="History">
-    <Tabs variant="secondary" className="p-history-tabs" selectedKey={view} onSelectionChange={key => { setHoverId(null); onViewChange(key === "archived" ? "archived" : "recent"); }}>
-      <Tabs.ListContainer><Tabs.List aria-label="Work history">{(["recent", "archived"] as const).map(id => <Tabs.Tab key={id} id={id}>{viewLabels[id].tab}<Tabs.Indicator /></Tabs.Tab>)}</Tabs.List></Tabs.ListContainer>
-      <Tabs.Panel id={view} className="p-history-panel">
+    {/* The heading names the view and switches it, taking no more room than a heading. */}
+    <div className="p-history-heading"><Dropdown>
+      <Button size="sm" variant="ghost" className="p-history-switch" aria-label={`Work history: ${viewLabels[view].name}`}>{viewLabels[view].name}<ChevronDown size={14} aria-hidden="true" /></Button>
+      <Dropdown.Popover><Dropdown.Menu aria-label="Work history" selectionMode="single" disallowEmptySelection selectedKeys={new Set([view])} onSelectionChange={keys => {
+        const next = keys === "all" ? undefined : [...keys][0];
+        if (next === "recent" || next === "archived") { setHoverId(null); onViewChange(next); }
+      }}>
+        {(["recent", "archived"] as const).map(id => <Dropdown.Item key={id} id={id} textValue={viewLabels[id].name}><Dropdown.ItemIndicator /><Label>{viewLabels[id].name}</Label></Dropdown.Item>)}
+      </Dropdown.Menu></Dropdown.Popover>
+    </Dropdown></div>
     {history.error && <div role="alert"><Typography type="body-sm">History unavailable</Typography><Button size="sm" variant="ghost" onPress={() => { void history.refetch(); }}>Retry history</Button></div>}
     {control.isError && !archiveTarget && <Typography type="body-sm" className="text-danger" role="alert">{workControlErrorMessage(control.error)}</Typography>}
     {/* Selection marks the open Work, so choosing a row navigates on selection
         change: with toggle selection a click on a list that already has a
         selected row changes selection and never fires onAction. */}
     <div className="p-history-list"><div className="p-session-rows" onMouseLeave={() => setHoverId(null)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setHoverId(null); }}>
-      <ListBox className="p-session-list" aria-label={viewLabels[view].tab} selectionMode="single" disallowEmptySelection selectedKeys={activeId && rows.some(row => row.id === activeId) ? [activeId] : []} onSelectionChange={keys => { const id = keys === "all" ? undefined : [...keys][0]; const row = rows.find(item => item.id === id); if (row && row.id !== activeId) onNavigate(row.to); }} renderEmptyState={() => <Typography type="body-sm" color="muted" className={history.isLoading ? "sr-only" : "p-sidebar-empty"}>{history.isLoading ? "Loading history…" : history.error ? "" : viewLabels[view].empty}</Typography>}>
+      <ListBox className="p-session-list" aria-label={viewLabels[view].name} selectionMode="single" disallowEmptySelection selectedKeys={activeId && rows.some(row => row.id === activeId) ? [activeId] : []} onSelectionChange={keys => { const id = keys === "all" ? undefined : [...keys][0]; const row = rows.find(item => item.id === id); if (row && row.id !== activeId) onNavigate(row.to); }} renderEmptyState={() => <Typography type="body-sm" color="muted" className={history.isLoading ? "sr-only" : "p-sidebar-empty"}>{history.isLoading ? "Loading history…" : history.error ? "" : viewLabels[view].empty}</Typography>}>
         {rows.map(row => {
           // A forgotten question outranks the lifecycle, so the row asks for the
           // person even after the Work stopped.
@@ -114,8 +121,6 @@ export function WorkHistory({ history, view, onViewChange, activeId, onNavigate 
         </Dropdown>
       </div>)}</div>
     </div></div>
-      </Tabs.Panel>
-    </Tabs>
     <Modal><Modal.Backdrop isOpen={Boolean(archiveTarget)} onOpenChange={open => { if (!open && !control.isPending) setArchiveTarget(null); }} isDismissable={!control.isPending} isKeyboardDismissDisabled={control.isPending}>
       <Modal.Container placement="center" size="sm"><Modal.Dialog>
         <Modal.Header><Modal.Heading>Archive work?</Modal.Heading></Modal.Header>

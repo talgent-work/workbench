@@ -14,15 +14,16 @@ it("switches between Recent and Archived, which the entry owns", async () => {
   const onViewChange = vi.fn();
   render(<WorkHistory history={source([{ id: "w1", title: "Open work", state: "stopped", waiting: false, to: "/works/w1" }])} view="recent" onViewChange={onViewChange} activeId={null} onNavigate={() => undefined} />, { wrapper });
 
-  expect(screen.getByRole("tab", { name: "Recent" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("listbox", { name: "Recent" })).toHaveTextContent("Open work");
-  await userEvent.click(screen.getByRole("tab", { name: "Archived" }));
+  await userEvent.click(screen.getByRole("button", { name: "Work history: Recent" }));
+  expect(await screen.findByRole("menuitemradio", { name: "Recent" })).toHaveAttribute("aria-checked", "true");
+  await userEvent.click(screen.getByRole("menuitemradio", { name: "Archived" }));
   expect(onViewChange).toHaveBeenCalledWith("archived");
 });
 
 it("says when nothing is archived", () => {
   render(<WorkHistory history={source([])} view="archived" onViewChange={() => undefined} activeId={null} onNavigate={() => undefined} />, { wrapper });
 
-  expect(screen.getByRole("tab", { name: "Archived" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("button", { name: "Work history: Archived" })).toBeInTheDocument();
   expect(screen.getByRole("listbox", { name: "Archived" })).toHaveTextContent("No archived work");
 });
