@@ -28,8 +28,13 @@ Images build with `scripts/deploy/build-and-push-images.sh` (see the
 
 ## Releases
 
-Every merge to the main branch is a release `vX.Y.Z`. That one version names the Go module, the
-npm packages (`@talgent/workbench-ui`, which takes `@talgent/contracts` from the web app
-that hosts it, and `@talgent/computer`), the images under `ghcr.io/talgent-work`, the Kubernetes base with
-its schema, and the core plugins.
+Every merge to the main branch is a release `vX.Y.Z`. That one version names the Go module,
+`@talgent/workbench-ui` (which takes `@talgent/contracts` from the web app that hosts it), the
+images under `ghcr.io/talgent-work`, the Kubernetes base with its schema, and the core plugins.
+
+`@talgent/computer` is published at a release only when its package changed, because every Managed
+Computer upgrades to each Talgent Computer release it is offered. `publish-npm.yml` builds it at the
+newest published version and publishes the release only when the result differs from that version's
+tarball. A deployment of platform release `X.Y.Z` runs the newest `@talgent/computer` at or below
+`X.Y.Z` (`scripts/deploy/lib/computer-release.sh`).
 

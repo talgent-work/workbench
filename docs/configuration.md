@@ -264,7 +264,7 @@ for a machine connected to another replica; Talgent Computer reconnects to any o
 | `gateway.computer-address` | `${COMPUTER_ADDR:http://127.0.0.1:8080}` | `http://controlplane:8080` | Required. Computer's connection contract |
 | `gateway.control-token` | `${COMPUTER_CONTROL_TOKEN:}` | | Required |
 | `gateway.replica`, `gateway.endpoint` | `${POD_NAME:computer-gateway}`, `${POD_IP:127.0.0.1}:8085` | | Required. This replica's name and the address peers forward to |
-| `gateway.release-version` | `${TALGENT_RELEASE_VERSION:}` | the release of a `vX.Y.Z` image tag | The Talgent Computer release machines should run and the Computers page installs (`X.Y.Z`); empty installs npm's latest |
+| `gateway.release-version` | `${TALGENT_RELEASE_VERSION:}` | the newest `@talgent/computer` at or below a `vX.Y.Z` image tag's release, or `TALGENT_COMPUTER_RELEASE` | The Talgent Computer release machines should run and the Computers page installs (`X.Y.Z`); empty installs npm's latest |
 
 ## OTel Collector
 
@@ -303,6 +303,7 @@ such as `[1m]` from model names, creates its tables (`otel_traces`, `otel_logs`,
 |---|---|---|
 | `TALGENT_ENVIRONMENT_FILE` | `apply.sh`, `render.sh` | The environment, a `KEY=VALUE` file outside the repository; unset reads ConfigMap `workbench-environment` |
 | `TALGENT_IMAGE_TAG`, `TALGENT_REGISTRY` | `render.sh`, `build-and-push-images.sh` | Tag of the Workbench's images (listed in `scripts/deploy/lib/images.sh`), and registry (default `ghcr.io/talgent-work`) |
+| `TALGENT_COMPUTER_RELEASE`, `TALGENT_NPM_REGISTRY` | `render.sh` | With a `vX.Y.Z` tag: the Talgent Computer release to deploy (`X.Y.Z`) instead of the newest `@talgent/computer` at or below the release, or the npm registry to read that from (default `https://registry.npmjs.org`); a deployment that cannot reach npm sets the release |
 | `TALGENT_OVERLAY_IMAGE_TAG` | `render.sh` | Tag of an overlay's own images of `ghcr.io/talgent-work`; required when the overlay names any |
 | `TALGENT_PUSH_IMAGES` | `build-and-push-images.sh` | `1` pushes what it builds |
 | `TALGENT_NAMESPACE` | all | The platform namespace; must be `talgent` |

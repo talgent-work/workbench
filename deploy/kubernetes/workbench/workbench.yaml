@@ -224,8 +224,8 @@ data:
       control-token: "${COMPUTER_CONTROL_TOKEN:}"
       replica: "${POD_NAME:computer-gateway}"
       endpoint: "${POD_IP:127.0.0.1}:8085"
-      # The platform release this deployment runs (X.Y.Z), which
-      # scripts/deploy/apply.sh fills in from a vX.Y.Z image tag.
+      # The Talgent Computer release (X.Y.Z) of the platform release a
+      # vX.Y.Z image tag deploys, which scripts/deploy/render.sh fills in.
       release-version: "__TALGENT_RELEASE_VERSION__"
 ---
 apiVersion: v1
