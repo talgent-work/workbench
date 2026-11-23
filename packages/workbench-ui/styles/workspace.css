@@ -124,7 +124,8 @@ html:has(.p-app) { scroll-padding-top: 72px; }
 .p-trace-event { display: flex; gap: 12px; padding: 12px 0; }
 .p-trace-event small { margin-inline-start: auto; }
 .p-session-history { display: flex; flex-direction: column; gap: 4px; }
-.p-history-heading { display: flex; align-items: center; min-height: 32px; padding-inline: 12px; }
+.p-history-tabs { gap: 4px; }
+.p-history-panel { display: flex; flex-direction: column; gap: 4px; }
 
 /* Analytics marks carry data colors in SVG. Containers use unmodified HeroUI cards. */
 .p-analytics { display: flex; flex-direction: column; gap: 16px; }

@@ -12,11 +12,19 @@ vi.mock("../lib/account-service", () => ({ useCurrentUser: () => ({ data: { user
 const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>;
 
 it("asks for the latest Works in every state but closed, so Recent stays full without Closed Works", async () => {
-  const { result } = renderHook(() => useRecentStandaloneWorks(20), { wrapper });
+  const { result } = renderHook(() => useRecentStandaloneWorks(20, false), { wrapper });
 
   await waitFor(() => expect(result.current.data?.map(work => work.id)).toEqual(["work-1"]));
   const request = listWorks.mock.calls[0][0];
   expect(request.limit).toBe(20);
   expect(request.states).not.toContain("closed");
   expect(request.states).toEqual(expect.arrayContaining(["starting", "working", "stopping", "stopped", "failed", "closing"]));
+});
+
+it("asks for the latest Closed Works when the sidebar shows Archived", async () => {
+  listWorks.mockClear();
+  const { result } = renderHook(() => useRecentStandaloneWorks(20, true), { wrapper });
+
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(listWorks.mock.calls[0][0]).toEqual({ limit: 20, states: ["closed"] });
 });

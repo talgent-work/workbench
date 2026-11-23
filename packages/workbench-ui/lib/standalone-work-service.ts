@@ -46,13 +46,13 @@ export function useStandaloneWorks() {
   });
 }
 
-/** Recent: the person's latest open Standalone Works, most recently updated
- * first. Closed Works leave it; the Works page still lists them. */
-export function useRecentStandaloneWorks(limit: number) {
+/** The sidebar's history: the person's latest open Standalone Works, or with
+ * archived the Closed ones, most recently updated first. */
+export function useRecentStandaloneWorks(limit: number, archived: boolean) {
   const userId = useCurrentUser().data?.user?.id;
   return useQuery({
-    queryKey: [...standaloneWorksQueryKey(userId), "recent", limit],
-    queryFn: async ({ signal }) => (await workClient.listWorks({ limit, states: openWorkStates }, { signal })).works.map(standaloneWork),
+    queryKey: [...standaloneWorksQueryKey(userId), "recent", archived, limit],
+    queryFn: async ({ signal }) => (await workClient.listWorks({ limit, states: archived ? ["closed"] : openWorkStates }, { signal })).works.map(standaloneWork),
     enabled: Boolean(userId),
     retry: false,
     refetchInterval: 10000,
