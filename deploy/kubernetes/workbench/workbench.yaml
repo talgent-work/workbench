@@ -1500,6 +1500,26 @@ spec:
       backendRefs:
         - name: controlplane
           port: 8080
+    # A Work's readers browse its workspace.
+    - name: work-workspace-api
+      matches:
+        - path:
+            type: PathPrefix
+            value: /api/agent.public.v1.WorkWorkspaceService
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /agent.public.v1.WorkWorkspaceService
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-talgent-authenticated-by
+                value: envoy
+      backendRefs:
+        - name: controlplane
+          port: 8080
     # A Work's Agent asks who it is.
     - name: agent-identity-api
       matches:
