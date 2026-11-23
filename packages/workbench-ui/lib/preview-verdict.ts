@@ -4,7 +4,7 @@ import type { PreviewVerdict } from "../components/preview/preview-verdict";
 // Storage's file preview as a context relays it. Agent's preview contract
 // numbers its values as Storage does, and a context relaying it keeps that
 // numbering, so one reading of Agent's enums serves every relay.
-type RelayedPreview = { mode: number; display: number; refusal: number; limitBytes: bigint; accessUrl: string; rendering: boolean };
+export type RelayedPreview = { mode: number; display: number; refusal: number; limitBytes: bigint; accessUrl: string; rendering: boolean };
 
 const previewModes: Partial<Record<number, PreviewVerdict["mode"]>> = {
   [Mode.REFUSED]: "refused", [Mode.PREVIEW_COPY]: "preview_copy", [Mode.RENDER]: "render", [Mode.DIRECT]: "direct", [Mode.TRUNCATED]: "truncated",

@@ -33,14 +33,16 @@ import (
 // accessFixture serves Agent's handlers over in-memory Works: a human's Work
 // and a project-scoped Agent's Work, both bound to project-a.
 type accessFixture struct {
-	sessions    *rpcSessions
-	public      agentpublicv1connect.AgentWorkServiceClient
-	access      agentprivatev1connect.WorkAccessServiceClient
-	workspaces  agentprivatev1connect.WorkspaceReadingServiceClient
-	agent       agentprivatev1connect.AgentServiceClient
-	withdrawals *recordedWithdrawals
-	humanWork   string
-	digitalWork string
+	sessions   *rpcSessions
+	public     agentpublicv1connect.AgentWorkServiceClient
+	access     agentprivatev1connect.WorkAccessServiceClient
+	workspaces agentprivatev1connect.WorkspaceReadingServiceClient
+	// publicWorkspaces is the same reading for the caller itself.
+	publicWorkspaces agentpublicv1connect.WorkWorkspaceServiceClient
+	agent            agentprivatev1connect.AgentServiceClient
+	withdrawals      *recordedWithdrawals
+	humanWork        string
+	digitalWork      string
 }
 
 func newAccessFixture(t *testing.T) *accessFixture {
@@ -74,6 +76,7 @@ func newAccessFixtureWith(t *testing.T, views application.WorkspaceReadingPort) 
 	f.public = agentpublicv1connect.NewAgentWorkServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	f.access = agentprivatev1connect.NewWorkAccessServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	f.workspaces = agentprivatev1connect.NewWorkspaceReadingServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
+	f.publicWorkspaces = agentpublicv1connect.NewWorkWorkspaceServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	f.agent = agentprivatev1connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithReadMaxBytes(0))))
 	return f
 }
