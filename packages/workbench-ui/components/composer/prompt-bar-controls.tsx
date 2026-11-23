@@ -49,7 +49,7 @@ export function PromptModelControl({ models, model, thinking, disabled, loading,
         <SearchField.Group><SearchField.SearchIcon /><SearchField.Input autoFocus placeholder="Search models" /><SearchField.ClearButton aria-label="Clear search" /></SearchField.Group>
       </SearchField>}
       <ListBox aria-label="Models" selectionMode="single" disallowEmptySelection selectedKeys={model ? [startModelKey(model)] : []} renderEmptyState={() => <p className="wpb-empty" role="status">No matches</p>}
-        onSelectionChange={keys => { if (keys === "all") return; const next = models.find(item => keys.has(startModelKey(item))); if (next) onChange(next, next.thinkingLevels.includes(thinking) ? thinking : next.defaultThinkingLevel); }}>
+        onSelectionChange={keys => { if (keys === "all") return; const next = models.find(item => keys.has(startModelKey(item))); if (next) onChange(next, next.defaultThinkingLevel); }}>
         {shown.map(item => <ListBox.Item id={startModelKey(item)} key={startModelKey(item)} textValue={item.name} className="wpb-choice"><ModelVendorIcon vendor={item.vendor} /><span className="wpb-choice-copy"><Label>{item.name}</Label><span className="wpb-muted">{modelVendors[item.vendor]?.label}</span></span><ListBox.ItemIndicator /></ListBox.Item>)}
       </ListBox>
       {model && model.thinkingLevels.length > 0 && <ThinkingEffort levels={model.thinkingLevels} value={thinking} onChange={level => onChange(model, level)} />}
