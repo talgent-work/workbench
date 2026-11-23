@@ -1,10 +1,11 @@
 name: Publish npm packages
 
-# Publishes the Workbench's npm packages at a release, each at the release's
-# version: @talgent/computer and @talgent/workbench-ui, which leaves
-# @talgent/contracts to the web app that hosts it. Auto Tag runs it on the vX.Y.Z tag it just
-# pushed (a tag pushed with the workflow token starts no workflow by itself);
-# running it again by hand on a released tag publishes what npm lacks.
+# Publishes the Workbench's npm packages at a release, at the release's
+# version: @talgent/workbench-ui at every release, which leaves
+# @talgent/contracts to the web app that hosts it, and @talgent/computer when
+# its package changed. Auto Tag runs it on the vX.Y.Z tag it just pushed (a tag
+# pushed with the workflow token starts no workflow by itself); running it
+# again by hand on a released tag publishes what npm lacks.
 on:
   workflow_dispatch:
 
@@ -54,33 +55,55 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
-    # Every package takes the release's version.
-    - name: Build at the release version
-      env:
-        VERSION: ${{ steps.release.outputs.version }}
-      run: |
-        for dir in apps/computer packages/workbench-ui; do
-          (cd "$dir" && npm version "$VERSION" --no-git-tag-version --allow-same-version)
-        done
-        pnpm --filter @talgent/computer run build
-        pnpm --filter @talgent/workbench-ui run typecheck
+    - name: Check @talgent/workbench-ui
+      run: pnpm --filter @talgent/workbench-ui run typecheck
 
-    # pnpm packs each package, replacing workspace: dependencies with the
-    # release's version; npm publishes the tarball through Trusted Publishing.
-    # Every release is latest: @talgent/computer carries 0.30.x from before the
-    # Workbench's own versions began at 0.1.0, and npm applies latest to a
-    # lower version only when told.
+    # Each package is built at the release's version, and pnpm packs it,
+    # replacing workspace: dependencies with that version; npm publishes the
+    # tarball through Trusted Publishing. Every release is latest:
+    # @talgent/computer carries 0.30.x from before the Workbench's own
+    # versions began at 0.1.0, and npm applies latest to a lower version only
+    # when told.
+    #
+    # Every Managed Computer upgrades to each Talgent Computer release it is
+    # offered, so @talgent/computer ships only when it changed: built at the
+    # newest published release's version, a package that matches that
+    # release's tarball file for file is that release, and a deployment of
+    # this platform release runs it (scripts/deploy/lib/computer-release.sh).
     - name: Publish
       env:
         VERSION: ${{ steps.release.outputs.version }}
       run: |
         packed="$(mktemp -d)"
-        for package in @talgent/computer @talgent/workbench-ui; do
+        build() {
+          (cd "$2" && npm version "$3" --no-git-tag-version --allow-same-version >/dev/null)
+          if [ "$1" = "@talgent/computer" ]; then pnpm --filter "$1" run build; fi
+          rm -rf "${packed:?}"/*
+          pnpm --filter "$1" pack --pack-destination "${packed}"
+        }
+        computer_unchanged() {
+          local latest compared
+          latest="$(npm view @talgent/computer dist-tags.latest)"
+          compared="$(mktemp -d)"
+          mkdir "${compared}/built" "${compared}/published"
+          build @talgent/computer apps/computer "${latest}"
+          tar -xzf "${packed}"/*.tgz -C "${compared}/built"
+          (cd "${compared}/published" && npm pack "@talgent/computer@${latest}" && tar -xzf ./*.tgz)
+          if diff -r "${compared}/published/package" "${compared}/built/package"; then
+            echo "@talgent/computer is unchanged since ${latest}; this release does not publish it."
+            return 0
+          fi
+          return 1
+        }
+        for entry in "@talgent/computer apps/computer" "@talgent/workbench-ui packages/workbench-ui"; do
+          read -r package dir <<< "${entry}"
           if [ "$(npm view "${package}@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
             echo "${package}@${VERSION} is already published."
             continue
           fi
-          rm -f "${packed}"/*.tgz
-          pnpm --filter "${package}" pack --pack-destination "${packed}"
+          if [ "${package}" = "@talgent/computer" ] && computer_unchanged; then
+            continue
+          fi
+          build "${package}" "${dir}" "${VERSION}"
           npm publish "${packed}"/*.tgz --access public --tag latest
         done

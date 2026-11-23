@@ -29,9 +29,9 @@ type Config struct {
 	// Replica names this replica; Endpoint is where it takes forwarded calls.
 	Replica  string `json:"replica" yaml:"replica" toml:"replica"`
 	Endpoint string `json:"endpoint" yaml:"endpoint" toml:"endpoint"`
-	// ReleaseVersion is the platform release this deployment runs, X.Y.Z, the
-	// version Talgent Computer is published to npm at; empty for a deployment
-	// that is no release.
+	// ReleaseVersion is the Talgent Computer release, X.Y.Z, that the platform
+	// release this deployment runs has on npm; empty for a deployment that is
+	// no release.
 	ReleaseVersion string `json:"release-version" yaml:"release-version" toml:"release-version"`
 }
 

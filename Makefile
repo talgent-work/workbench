@@ -89,6 +89,7 @@ test-scripts:
 	bash test/marketplace-publish-test.sh
 	bash test/pre-push-leak-check-test.sh
 	bash test/render-test.sh
+	bash test/computer-release-test.sh
 	bash test/request-catalog-sync-test.sh
 	bash test/apply-opensandbox-test.sh
 

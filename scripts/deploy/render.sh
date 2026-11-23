@@ -3,12 +3,14 @@
 # overlay of it kept elsewhere, which names the base ../workbench) as it is
 # applied: the deployment's environment (lib/environment.sh) in place of the
 # placeholders, the components its deployment switches turn on, images at
-# TALGENT_REGISTRY with their product's tag (lib/images.sh), the platform
-# release the Workbench's tag names, and the Collector pipeline's hash.
+# TALGENT_REGISTRY with their product's tag (lib/images.sh), the Talgent
+# Computer release of the platform release the Workbench's tag names
+# (lib/computer-release.sh), and the Collector pipeline's hash.
 #
 # --placeholders renders with the placeholder values the kustomizations' own
 # environment.env files hold, without a deployment's environment: the offline
-# render CI tests the manifests with. Such a render is never applied.
+# render CI tests the manifests with. Such a render is never applied, and it
+# names the platform release itself as the Talgent Computer release.
 #
 # The environment's ENTERPRISE_NETWORKS and CLUSTER_NETWORKS fill the sandbox
 # NetworkPolicy sandbox-enterprise-networks (lib/networks.sh).
@@ -21,6 +23,8 @@ source "${ROOT_DIR}/scripts/deploy/lib/images.sh"
 source "${ROOT_DIR}/scripts/deploy/lib/environment.sh"
 # shellcheck source=lib/networks.sh
 source "${ROOT_DIR}/scripts/deploy/lib/networks.sh"
+# shellcheck source=lib/computer-release.sh
+source "${ROOT_DIR}/scripts/deploy/lib/computer-release.sh"
 
 placeholders=0
 if [[ "${1:-}" == "--placeholders" ]]; then
@@ -79,12 +83,15 @@ if [[ -n "${components}" ]]; then
   } >> "${work}/tree/workbench/kustomization.yaml"
 fi
 
-# A vX.Y.Z tag deploys that platform release; the Computer Gateway tells the
-# Computers page which @talgent/computer to install. Any other tag is no
-# release.
+# A vX.Y.Z tag deploys that platform release; the Computer Gateway tells
+# Managed Computers and the Computers page which @talgent/computer it runs.
+# Any other tag is no release.
 release_version=""
 if [[ "${TAG}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
   release_version="${BASH_REMATCH[1]}"
+  if [[ "${placeholders}" == "0" ]]; then
+    release_version="$(computer_release "${release_version}")"
+  fi
 fi
 # The Collector's pipeline has one copy, configs/otelcol/config.yaml; its hash
 # rolls the Pods when it changes.

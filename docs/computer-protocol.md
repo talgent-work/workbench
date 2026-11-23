@@ -49,9 +49,9 @@ output kept; contact before then changes nothing. Both values change together: A
 `DisconnectionTimeout` (`internal/business/agent/domain/disconnection.go`) and Talgent Computer's
 `FENCE_AFTER_MS` (`apps/computer/src/fence.ts`).
 
-The service also answers `GET <origin>/computer/v1/release` with `{"version":"X.Y.Z"}`: the platform
-release the deployment runs, at which `@talgent/computer` is published to npm, or `""` when the
-deployment is no release. It is the platform's Target Version, the release every Managed Computer
+The service also answers `GET <origin>/computer/v1/release` with `{"version":"X.Y.Z"}`: the
+`@talgent/computer` release the deployment's platform release runs, or `""` when the deployment is
+no release. It is the platform's Target Version, the release every Managed Computer
 should run, and the single source of it: the Computers page builds the install command from it, and
 every `welcome` announces the same release as `target_version`.
 

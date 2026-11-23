@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
-// The platform release this deployment runs, as Computer's machine service
-// answers it (GET /computer/v1/release): Talgent Computer is published to npm at that
+// The Talgent Computer release this deployment runs, as Computer's machine
+// service answers it (GET /computer/v1/release), published to npm at that
 // version. Empty when the deployment is no release.
 
 const release = /^\d+\.\d+\.\d+$/;

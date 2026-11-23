@@ -68,7 +68,8 @@ jobs:
         tag_name: ${{ needs.auto-tag.outputs.new_tag }}
         generate_release_notes: true
 
-  # The npm packages ship at every release, so their version is the release's.
+  # The npm packages ship at the release's version: @talgent/workbench-ui at
+  # every release, @talgent/computer when it changed (publish-npm.yml).
   publish-npm:
     needs: auto-tag
     if: needs.auto-tag.outputs.new_tag != ''
