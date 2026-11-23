@@ -170,6 +170,12 @@ data:
       # accepts for OAuth tokens only alongside the oauth beta; Claude Code adds that beta only
       # when it holds the token itself, so the template asks for it. An API key needs x-api-key,
       # which the Credential Proxy does not send, so this template takes OAuth tokens only.
+      # Holding only a placeholder, Claude Code also misses that the key is a subscription and
+      # caches the main conversation for 5 minutes, so a reply after a longer pause re-reads the
+      # whole conversation uncached. The template restores the subscription default: 1 hour for
+      # the main conversation, 5 minutes for subagents and other requests
+      # (https://code.claude.com/docs/en/prompt-caching.md). Other vendors' endpoints are not
+      # known to honor or accept the 1-hour TTL, so only this template sets it.
       - id: claude-5.5-oauth
         vendor: anthropic
         base-url: https://api.anthropic.com
@@ -182,6 +188,7 @@ data:
         default-thinking-level: medium
         environment:
           ANTHROPIC_BETAS: oauth-2025-04-20
+          CLAUDE_CODE_PROMPT_CACHE_TTL: 1h
 ---
 apiVersion: v1
 kind: ConfigMap
